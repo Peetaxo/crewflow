@@ -102,7 +102,7 @@ const CrewDetailView = () => {
         ))}
       </div>
 
-      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3 lg:items-stretch">
+      <div className="mb-6 grid grid-cols-1 gap-4 lg:h-[34rem] lg:grid-cols-3 lg:items-stretch">
         <div className="flex h-full flex-col gap-4">
           <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
             <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-50">

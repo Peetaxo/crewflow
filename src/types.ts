@@ -1,5 +1,5 @@
 /** Uživatelská role v systému */
-export type Role = 'hoc' | 'coo';
+export type Role = 'crew' | 'crewhead' | 'coo';
 
 /** Status akce */
 export type EventStatus = 'upcoming' | 'full' | 'planning';
@@ -50,12 +50,17 @@ export interface Contractor {
   dic: string;
   bank: string;
   city: string;
+  billingName?: string;
+  billingStreet?: string;
+  billingZip?: string;
+  billingCity?: string;
+  billingCountry?: string;
   reliable: boolean;
   note: string;
 }
 
 /** Status výkazu práce */
-export type TimelogStatus = 'draft' | 'pending_hoc' | 'pending_coo' | 'approved' | 'invoiced' | 'paid';
+export type TimelogStatus = 'draft' | 'pending_ch' | 'pending_coo' | 'approved' | 'invoiced' | 'paid' | 'rejected';
 
 /** Typ práce (fáze akce) */
 export type TimelogType = 'instal' | 'provoz' | 'deinstal';

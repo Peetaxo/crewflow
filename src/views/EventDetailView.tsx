@@ -10,6 +10,7 @@ import StatusBadge from '../components/shared/StatusBadge';
 /** Detail jedné akce */
 const EventDetailView = () => {
   const {
+    role,
     selectedEventId, setSelectedEventId,
     events, timelogs, contractors, setTimelogs,
     findContractor, eventTab, setEventTab,
@@ -24,6 +25,7 @@ const EventDetailView = () => {
   const totalHours = eventTimelogs.reduce((s, t) => s + calculateTotalHours(t.days), 0);
   const days = getDatesBetween(event.startDate, event.endDate);
   const eventCrew = contractors.filter(c => eventTimelogs.some(t => t.cid === c.id));
+  const canManageEvents = role !== 'crew';
 
   /** Odebrat osobu z akce — smaže její timelog pro tuto akci */
   const handleRemoveFromEvent = (contractorId: number) => {
@@ -67,17 +69,19 @@ const EventDetailView = () => {
               )}
             </div>
           </div>
-          <div className="flex gap-2">
-            <button onClick={() => setAssigningCrewToEvent(event)} className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-medium hover:bg-emerald-700 shadow-sm shadow-emerald-200">
-              Obsadit crew
-            </button>
-            <button onClick={() => setEditingEvent(event)} className="px-4 py-2 border border-gray-200 rounded-xl text-sm font-medium hover:bg-gray-50">
-              Upravit akci
-            </button>
-            <button onClick={() => setDeleteConfirm({ type: 'event', id: event.id, name: event.name })} className="px-4 py-2 border border-red-100 text-red-600 rounded-xl text-sm font-medium hover:bg-red-50 transition-colors" title="Smazat akci">
-              <Trash2 size={18} />
-            </button>
-          </div>
+          {canManageEvents && (
+            <div className="flex gap-2">
+              <button onClick={() => setAssigningCrewToEvent(event)} className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-medium hover:bg-emerald-700 shadow-sm shadow-emerald-200">
+                Obsadit crew
+              </button>
+              <button onClick={() => setEditingEvent(event)} className="px-4 py-2 border border-gray-200 rounded-xl text-sm font-medium hover:bg-gray-50">
+                Upravit akci
+              </button>
+              <button onClick={() => setDeleteConfirm({ type: 'event', id: event.id, name: event.name })} className="px-4 py-2 border border-red-100 text-red-600 rounded-xl text-sm font-medium hover:bg-red-50 transition-colors" title="Smazat akci">
+                <Trash2 size={18} />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Záložky dnů */}
@@ -156,24 +160,26 @@ const EventDetailView = () => {
                               <td className="px-4 py-3 text-xs font-semibold">{hours.toFixed(1)}h</td>
                               <td className="px-4 py-3 text-right text-xs font-bold text-gray-900">{formatCurrency(hours * c.rate)}</td>
                               <td className="px-4 py-3 text-right">
-                                <div className="flex items-center justify-end gap-1">
-                                  {tl && (
+                                {canManageEvents && (
+                                  <div className="flex items-center justify-end gap-1">
+                                    {tl && (
+                                      <button
+                                        onClick={() => setEditingTimelog(tl)}
+                                        className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
+                                        title="Upravit timelog"
+                                      >
+                                        <FileText size={14} />
+                                      </button>
+                                    )}
                                     <button
-                                      onClick={() => setEditingTimelog(tl)}
-                                      className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
-                                      title="Upravit timelog"
+                                      onClick={() => handleRemoveFromEvent(c.id)}
+                                      className="p-1.5 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                                      title="Odebrat z akce"
                                     >
-                                      <FileText size={14} />
+                                      <Trash2 size={14} />
                                     </button>
-                                  )}
-                                  <button
-                                    onClick={() => handleRemoveFromEvent(c.id)}
-                                    className="p-1.5 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                                    title="Odebrat z akce"
-                                  >
-                                    <Trash2 size={14} />
-                                  </button>
-                                </div>
+                                  </div>
+                                )}
                               </td>
                             </tr>
                           );

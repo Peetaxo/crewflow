@@ -1,17 +1,13 @@
 import React from 'react';
 import { Search, Settings } from 'lucide-react';
 import { useAppContext } from '../../context/AppContext';
-import { NAV_ITEMS } from '../../constants';
+import { getNavItemsForRole, ROLE_LABELS, ROLE_SHORT_LABELS } from '../../constants';
 
-/**
- * Sidebar — boční navigace aplikace.
- * Obsahuje: logo, vyhledávání, přepínač rolí (HoC / COO),
- * navigační položky s badge počty a uživatelský profil.
- */
 const Sidebar: React.FC = () => {
   const {
     role, setRole,
     currentTab, setCurrentTab,
+    setSettingsSection,
     searchQuery, setSearchQuery,
     setSelectedContractorId,
     setSelectedEventId,
@@ -20,18 +16,20 @@ const Sidebar: React.FC = () => {
     timelogs,
     invoices,
     candidates,
-    darkMode,
   } = useAppContext();
 
-  /** Počty pro badge u navigačních položek */
+  const navItems = getNavItemsForRole(role);
+  const approvalStatus = role === 'crewhead' ? 'pending_ch' : 'pending_coo';
+
   const badgeCounts: Record<string, number> = {
-    timelogs: timelogs.filter(t => t.status === 'pending_hoc' || t.status === 'pending_coo').length,
-    approvals: timelogs.filter(t => role === 'hoc' ? t.status === 'pending_hoc' : t.status === 'pending_coo').length,
-    invoices: invoices.filter(i => i.status === 'draft').length,
-    recruitment: candidates.filter(c => c.stage === 'new').length,
+    timelogs: timelogs.filter((t) => t.status === 'pending_ch' || t.status === 'pending_coo').length,
+    'my-timelogs': timelogs.filter((t) => t.cid === 1 && (t.status === 'draft' || t.status === 'pending_ch' || t.status === 'pending_coo' || t.status === 'rejected')).length,
+    approvals: role === 'crew' ? 0 : timelogs.filter((t) => t.status === approvalStatus).length,
+    invoices: invoices.filter((i) => i.status === 'sent' || i.status === 'disputed').length,
+    'my-invoices': invoices.filter((i) => i.cid === 1 && i.status !== 'paid').length,
+    recruitment: candidates.filter((c) => c.stage === 'new').length,
   };
 
-  /** Kliknutí na navigační položku — přepne tab a resetuje detaily */
   const handleNavClick = (tabId: string) => {
     setCurrentTab(tabId);
     setSelectedContractorId(null);
@@ -40,15 +38,18 @@ const Sidebar: React.FC = () => {
     setSelectedClientIdForStats(null);
   };
 
+  const openSettings = (section: 'menu' | 'profile' | 'appearance' = 'menu') => {
+    setSettingsSection(section);
+    handleNavClick('settings');
+  };
+
   return (
     <aside className="w-56 bg-gray-50 border-r border-gray-200 flex flex-col shrink-0">
-      {/* Logo */}
       <div className="p-4 border-b border-gray-200">
         <div className="text-base font-semibold text-gray-900 tracking-tight">CrewFlow</div>
         <div className="text-[11px] text-gray-500 mt-0.5">Crew management</div>
       </div>
 
-      {/* Vyhledávání */}
       <div className="p-3 border-b border-gray-200">
         <div className="relative">
           <Search className="absolute left-2.5 top-2.5 text-gray-400" size={14} />
@@ -62,38 +63,29 @@ const Sidebar: React.FC = () => {
         </div>
       </div>
 
-      {/* Přepínač rolí */}
       <div className="p-3 border-b border-gray-200">
         <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Zobrazuji jako</div>
-        <div className="flex bg-white border border-gray-200 rounded-lg p-0.5 gap-0.5">
-          <button
-            onClick={() => setRole('hoc')}
-            className={`flex-1 py-1 rounded-md text-[11px] font-medium transition-all ${role === 'hoc' ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
-          >
-            Head of Crew
-          </button>
-          <button
-            onClick={() => setRole('coo')}
-            className={`flex-1 py-1 rounded-md text-[11px] font-medium transition-all ${role === 'coo' ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
-          >
-            COO
-          </button>
+        <div className="grid grid-cols-3 bg-white border border-gray-200 rounded-lg p-0.5 gap-0.5">
+          {(['crew', 'crewhead', 'coo'] as const).map((roleOption) => (
+            <button
+              key={roleOption}
+              onClick={() => setRole(roleOption)}
+              className={`py-1 rounded-md text-[11px] font-medium transition-all ${role === roleOption ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+            >
+              {ROLE_SHORT_LABELS[roleOption]}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Navigace */}
       <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
-        {NAV_ITEMS.map(item => {
+        {navItems.map((item) => {
           const badge = badgeCounts[item.id] || 0;
           return (
             <button
               key={item.id}
               onClick={() => handleNavClick(item.id)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] transition-colors ${
-                currentTab === item.id
-                  ? 'bg-emerald-50 text-emerald-700 font-medium'
-                  : 'text-gray-600 hover:bg-white hover:text-gray-900'
-              }`}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] transition-colors ${currentTab === item.id ? 'bg-emerald-50 text-emerald-700 font-medium' : 'text-gray-600 hover:bg-white hover:text-gray-900'}`}
             >
               <item.icon size={16} />
               <span className="flex-1 text-left">{item.label}</span>
@@ -107,35 +99,29 @@ const Sidebar: React.FC = () => {
         })}
       </nav>
 
-      {/* Nastavení — oddělené pod navigací */}
       <div className="p-2 border-t border-gray-200">
         <button
-          onClick={() => handleNavClick('settings')}
-          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] transition-colors ${
-            currentTab === 'settings'
-              ? 'bg-emerald-50 text-emerald-700 font-medium'
-              : 'text-gray-600 hover:bg-white hover:text-gray-900'
-          }`}
+          onClick={() => openSettings('menu')}
+          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] transition-colors ${currentTab === 'settings' ? 'bg-emerald-50 text-emerald-700 font-medium' : 'text-gray-600 hover:bg-white hover:text-gray-900'}`}
         >
           <Settings size={16} />
           <span className="flex-1 text-left">Nastavení</span>
         </button>
       </div>
 
-      {/* Uživatelský profil */}
-      <div className="p-4 border-t border-gray-200">
+      <button onClick={() => openSettings('profile')} className="p-4 border-t border-gray-200 text-left hover:bg-white transition-colors">
         <div className="flex items-center gap-3">
           <div className="av w-8 h-8 bg-blue-50 text-blue-700 text-[10px]">TM</div>
           <div className="min-w-0">
             <div className="text-xs font-semibold text-gray-900 truncate">Petr Heitzer</div>
-            <div className="text-[10px] text-gray-500">Crew Head</div>
+            <div className="text-[10px] text-gray-500">{ROLE_LABELS[role]}</div>
           </div>
         </div>
         <div className="mt-3 flex items-center gap-1.5 text-[10px] text-gray-500">
           <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
           API ready · v2.0
         </div>
-      </div>
+      </button>
     </aside>
   );
 };

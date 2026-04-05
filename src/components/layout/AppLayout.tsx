@@ -53,16 +53,18 @@ const AppLayout: React.FC = () => {
     switch (currentTab) {
       case 'dashboard': return <DashboardView key="dashboard" />;
       case 'my-shifts': return <MyShiftsView key="my-shifts" />;
+      case 'my-timelogs': return <TimelogsView key="my-timelogs" scope="mine" />;
+      case 'my-invoices': return <InvoicesView key="my-invoices" scope="mine" />;
       case 'clients': return <ClientsView key="clients" />;
       case 'projects': return <ProjectsView key="projects" />;
       case 'events': return <EventsView key="events" />;
       case 'crew': return <CrewView key="crew" />;
-      case 'timelogs': return <TimelogsView key="timelogs" />;
+      case 'timelogs': return <TimelogsView key="timelogs" scope="all" />;
       case 'approvals': return <ApprovalsView key="approvals" />;
-      case 'invoices': return <InvoicesView key="invoices" />;
+      case 'invoices': return <InvoicesView key="invoices" scope="all" />;
       case 'recruitment': return <RecruitmentView key="recruitment" />;
       case 'settings': return <SettingsView key="settings" />;
-      default: return <DashboardView key="dashboard" />;
+      default: return <MyShiftsView key="my-shifts-default" />;
     }
   };
 

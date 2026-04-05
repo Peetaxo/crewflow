@@ -45,7 +45,7 @@ const CrewView = () => {
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1">
                       {c.tags.map(t => <StatusBadge key={t} status="bg" label={t} />)}
-                      {c.reliable ? <StatusBadge status="full" label="Spolehlivý" /> : <StatusBadge status="pending_hoc" label="Ověřit" />}
+                      {c.reliable ? <StatusBadge status="full" label="Spolehlivý" /> : <StatusBadge status="pending_ch" label="Ověřit" />}
                     </div>
                   </td>
                   <td className="px-4 py-3 text-xs font-semibold">{c.events}</td>

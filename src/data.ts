@@ -22,7 +22,7 @@ export const INITIAL_CLIENTS: Client[] = [
 ];
 
 export const INITIAL_CONTRACTORS: Contractor[] = [
-  { id: 1, name: 'Jan Novák', ii: 'JN', bg: '#E1F5EE', fg: '#0F6E56', tags: ['Řidič', 'Stage'], events: 24, rate: 250, phone: '603 111 222', email: 'jan.novak@email.cz', ico: '12345678', dic: 'CZ12345678', bank: '123456789/0800', city: 'Praha 5', reliable: true, note: 'Zkušený řidič, vždy dochvilný. Výborná komunikace se zákazníky.' },
+  { id: 1, name: 'Jan Novák', ii: 'JN', bg: '#E1F5EE', fg: '#0F6E56', tags: ['Řidič', 'Stage'], events: 24, rate: 250, phone: '603 111 222', email: 'jan.novak@email.cz', ico: '12345678', dic: 'CZ12345678', bank: '123456789/0800', city: 'Praha 5', billingName: 'Jan Novák', billingStreet: 'Kotevní 12', billingZip: '150 00', billingCity: 'Praha 5', billingCountry: 'Česká republika', reliable: true, note: 'Zkušený řidič, vždy dochvilný. Výborná komunikace se zákazníky.' },
   { id: 2, name: 'Petra Svobodová', ii: 'PS', bg: '#EEEDFE', fg: '#534AB7', tags: ['Technička', 'Zvuk'], events: 18, rate: 220, phone: '774 333 444', email: 'petra.svobodova@email.cz', ico: '87654321', dic: 'CZ87654321', bank: '987654321/2010', city: 'Praha 10', reliable: true, note: 'Spolehlivá a flexibilní. Preferuje víkendové akce.' },
   { id: 3, name: 'Martin Kovář', ii: 'MK', bg: '#E6F1FB', fg: '#185FA5', tags: ['Řidič', 'Světla'], events: 12, rate: 240, phone: '608 555 666', email: 'martin.kovar@email.cz', ico: '11223344', dic: 'CZ11223344', bank: '111222333/0300', city: 'Brno', reliable: false, note: 'Řidič s vlastním vozem. Občas pomalejší komunikace.' },
   { id: 4, name: 'Lucie Horáková', ii: 'LH', bg: '#FAEEDA', fg: '#854F0B', tags: ['Osvětlení'], events: 8, rate: 200, phone: '721 777 888', email: 'lucie.horakova@email.cz', ico: '55667788', dic: '', bank: '444555666/0600', city: 'Praha 2', reliable: true, note: 'Nová kontraktorka, orientuje se rychle.' },
@@ -35,7 +35,7 @@ export const INITIAL_TIMELOGS: Timelog[] = [
   { id: 3, eid: 2, cid: 5, days: [{ d: '2025-04-22', f: '23:00', t: '03:00', type: 'deinstal' }, { d: '2025-04-23', f: '09:00', t: '14:00', type: 'deinstal' }], km: 0, note: 'Odvoz po akci přes noc', status: 'approved' },
   { id: 4, eid: 3, cid: 3, days: [{ d: '2025-05-04', f: '09:00', t: '19:00', type: 'instal' }], km: 180, note: 'Přijíždím vlastním autem z Brna', status: 'draft' },
   { id: 5, eid: 1, cid: 4, days: [{ d: '2025-04-15', f: '12:00', t: '22:00', type: 'provoz' }], km: 0, note: '', status: 'approved' },
-  { id: 6, eid: 2, cid: 1, days: [{ d: '2025-04-22', f: '18:00', t: '02:00', type: 'provoz' }], km: 20, note: 'Noční směna', status: 'pending_hoc' },
+  { id: 6, eid: 2, cid: 1, days: [{ d: '2025-04-22', f: '18:00', t: '02:00', type: 'provoz' }], km: 20, note: 'Noční směna', status: 'pending_ch' },
   { id: 7, eid: 3, cid: 1, days: [{ d: '2025-05-05', f: '08:00', t: '16:00', type: 'provoz' }], km: 0, note: '', status: 'draft' },
   { id: 8, eid: 3, cid: 1, days: [{ d: '2025-01-15', f: '08:00', t: '18:00', type: 'provoz' }], km: 100, note: '', status: 'approved' },
   { id: 9, eid: 1, cid: 1, days: [{ d: '2025-02-10', f: '08:00', t: '20:00', type: 'instal' }, { d: '2025-02-11', f: '08:00', t: '20:00', type: 'provoz' }], km: 150, note: '', status: 'approved' },

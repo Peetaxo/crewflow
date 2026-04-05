@@ -9,6 +9,7 @@ import {
   INITIAL_INVOICES, INITIAL_CANDIDATES, INITIAL_PROJECTS,
   INITIAL_CLIENTS, KM_RATE
 } from '../data';
+import { NAV_BY_ROLE } from '../constants';
 import { calculateTotalHours } from '../utils';
 
 /* ============================================================
@@ -29,6 +30,8 @@ interface AppContextType {
   setRole: (r: Role) => void;
   currentTab: string;
   setCurrentTab: (tab: string) => void;
+  settingsSection: 'menu' | 'profile' | 'appearance';
+  setSettingsSection: (section: 'menu' | 'profile' | 'appearance') => void;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
 
@@ -97,7 +100,7 @@ interface AppContextType {
   findEvent: (id: number) => Event | null;
 
   /* Akce / handlery */
-  handleTimelogAction: (id: number, action: 'sub' | 'hoc' | 'coo' | 'rej') => void;
+  handleTimelogAction: (id: number, action: 'sub' | 'ch' | 'coo' | 'rej') => void;
   approveAllTimelogs: (eventId: number) => void;
   advanceCandidate: (id: number) => void;
   generateInvoices: () => void;
@@ -123,8 +126,9 @@ export function useAppContext(): AppContextType {
 export function AppProvider({ children }: { children: React.ReactNode }) {
   /* ---- Globální UI stav ---- */
   const [darkMode, setDarkMode] = useState(false);
-  const [role, setRole] = useState<Role>('hoc');
+  const [role, setRole] = useState<Role>('crewhead');
   const [currentTab, setCurrentTab] = useState('dashboard');
+  const [settingsSection, setSettingsSection] = useState<'menu' | 'profile' | 'appearance'>('menu');
   const [searchQuery, setSearchQuery] = useState('');
   const [timelogFilter, setTimelogFilter] = useState('all');
   const [projectFilter, setProjectFilter] = useState('all');
@@ -157,6 +161,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setSearchQuery('');
   }, [currentTab]);
+
+  useEffect(() => {
+    const allowedTabs = NAV_BY_ROLE[role];
+    if (currentTab !== 'settings' && !allowedTabs.includes(currentTab)) {
+      setCurrentTab(allowedTabs[0]);
+    }
+  }, [role, currentTab]);
 
   /* ---- Lookup funkce (bezpečné — vrací null) ---- */
   const findContractor = useCallback(
@@ -237,15 +248,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   /* ---- Handlery ---- */
 
-  /** Akce na výkaz: submit / approve HoC / approve COO / reject */
-  const handleTimelogAction = useCallback((id: number, action: 'sub' | 'hoc' | 'coo' | 'rej') => {
+  /** Akce na vykaz: submit / approve CH / approve COO / reject */
+  const handleTimelogAction = useCallback((id: number, action: 'sub' | 'ch' | 'coo' | 'rej') => {
     setTimelogs(prev => prev.map(t => {
       if (t.id !== id) return t;
       const statusMap: Record<string, TimelogStatus> = {
-        sub: 'pending_hoc',
-        hoc: 'pending_coo',
+        sub: 'pending_ch',
+        ch: 'pending_coo',
         coo: 'approved',
-        rej: 'draft',
+        rej: 'rejected',
       };
       return { ...t, status: statusMap[action] || t.status };
     }));
@@ -378,6 +389,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     darkMode, setDarkMode,
     role, setRole,
     currentTab, setCurrentTab,
+    settingsSection, setSettingsSection,
     searchQuery, setSearchQuery,
     timelogFilter, setTimelogFilter,
     projectFilter, setProjectFilter,

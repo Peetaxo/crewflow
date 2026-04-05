@@ -6,70 +6,65 @@ import { calculateTotalHours, formatCurrency, formatDateRange, getDatesBetween }
 import StatCard from '../components/shared/StatCard';
 import StatusBadge from '../components/shared/StatusBadge';
 
-/** Dashboard — hlavní přehled */
 const DashboardView = () => {
   const {
     role, filteredTimelogs, filteredInvoices, filteredEvents,
     findContractor, findEvent, setCurrentTab,
   } = useAppContext();
 
-  const pendingForMe = filteredTimelogs.filter(t =>
-    t.status === (role === 'hoc' ? 'pending_hoc' : 'pending_coo')
-  ).length;
+  const approvalStatus = role === 'crewhead' ? 'pending_ch' : 'pending_coo';
+  const roleLabel = role === 'crewhead' ? 'Pohled CrewHead' : 'Pohled COO';
+  const reviewLabel = role === 'crewhead' ? 'Ke kontrole (CH)' : 'Ke schvaleni (COO)';
 
-  const pendingInvoices = filteredInvoices.filter(i => i.status === 'draft').length;
-
+  const pendingForMe = filteredTimelogs.filter((t) => t.status === approvalStatus).length;
+  const pendingInvoices = filteredInvoices.filter((i) => i.status === 'sent' || i.status === 'disputed').length;
   const approvedHours = filteredTimelogs
-    .filter(t => t.status === 'approved' || t.status === 'invoiced')
+    .filter((t) => t.status === 'approved' || t.status === 'invoiced' || t.status === 'paid')
     .reduce((sum, t) => sum + calculateTotalHours(t.days), 0);
-
-  const needsFilling = filteredEvents.filter(e => e.filled < e.needed).length;
+  const needsFilling = filteredEvents.filter((e) => e.filled < e.needed).length;
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
       <div className="mb-5">
         <h1 className="text-lg font-semibold text-gray-900">Dashboard</h1>
-        <p className="text-xs text-gray-500 mt-0.5">
-          {role === 'hoc' ? 'Pohled Head of Crew' : 'Pohled COO'} · Duben 2025
-        </p>
+        <p className="text-xs text-gray-500 mt-0.5">{roleLabel} · Duben 2025</p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
         <StatCard
-          label="Výkazy čeká na mě"
+          label="Vykazy cekaji na me"
           value={pendingForMe}
-          sub={role === 'hoc' ? 'Ke kontrole (HoC)' : 'Ke schválení (COO)'}
+          sub={reviewLabel}
           cls={pendingForMe ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}
         />
         <StatCard
-          label="Faktury ke generování"
+          label="Faktury v procesu"
           value={pendingInvoices}
           sub="Self-billing"
           cls={pendingInvoices ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}
         />
         <StatCard
-          label="Schválené hodiny"
+          label="Schvalene hodiny"
           value={`${Math.round(approvedHours)}h`}
-          sub="Tento měsíc"
+          sub="Tento mesic"
           cls="bg-emerald-50 text-emerald-700"
         />
         <StatCard
-          label="Akce bez obsazení"
+          label="Akce bez obsazeni"
           value={needsFilling}
-          sub="Chybí crew"
+          sub="Chybi crew"
           cls={needsFilling ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}
         />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        {/* Timelogy ke zpracování */}
         <div className="lg:col-span-3 bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
-          <h2 className="text-[13px] font-semibold mb-3">Timelogy ke zpracování</h2>
+          <h2 className="text-[13px] font-semibold mb-3">Timelogy ke zpracovani</h2>
           <div className="space-y-1">
             {filteredTimelogs
-              .filter(t => t.status === (role === 'hoc' ? 'pending_hoc' : 'pending_coo'))
+              .filter((t) => t.status === approvalStatus)
               .slice(0, 4)
-              .map(t => {
+              .map((t) => {
                 const c = findContractor(t.cid);
                 const e = findEvent(t.eid);
                 if (!c || !e) return null;
@@ -91,17 +86,16 @@ const DashboardView = () => {
                   </div>
                 );
               })}
-            {filteredTimelogs.filter(t => t.status === (role === 'hoc' ? 'pending_hoc' : 'pending_coo')).length === 0 && (
-              <div className="text-center text-gray-400 py-8 text-sm">Žádné výkazy k akci</div>
+            {filteredTimelogs.filter((t) => t.status === approvalStatus).length === 0 && (
+              <div className="text-center text-gray-400 py-8 text-sm">Zadne vykazy k akci</div>
             )}
           </div>
         </div>
 
-        {/* Nadcházející akce */}
         <div className="lg:col-span-2 bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
-          <h2 className="text-[13px] font-semibold mb-3">Nadcházející akce</h2>
+          <h2 className="text-[13px] font-semibold mb-3">Nadchazejici akce</h2>
           <div className="space-y-3">
-            {filteredEvents.map(e => (
+            {filteredEvents.map((e) => (
               <div key={e.id} className="pb-3 border-b border-gray-50 last:border-0 last:pb-0">
                 <div className="flex items-center gap-2 mb-1.5">
                   <span className="jn">{e.job}</span>

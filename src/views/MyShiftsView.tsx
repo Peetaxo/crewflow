@@ -22,7 +22,7 @@ const MyShiftsView = () => {
 
   const categorized = useMemo(() => ({
     upcoming: myTimelogs.filter(t => t.status === 'draft'),
-    processing: myTimelogs.filter(t => t.status === 'pending_hoc' || t.status === 'pending_coo'),
+    processing: myTimelogs.filter(t => t.status === 'pending_ch' || t.status === 'pending_coo'),
     invoiced: myTimelogs.filter(t => t.status === 'approved' || t.status === 'invoiced' || t.status === 'paid'),
   }), [myTimelogs]);
 

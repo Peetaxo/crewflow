@@ -1,14 +1,14 @@
 import React from 'react';
 
-/** Stavový badge — mapuje status na barvu a český label */
 const StatusBadge = ({ status, label }: { status: string; label?: string }) => {
   const statusMap: Record<string, [string, string]> = {
     draft: ['bg-gray-100 text-gray-600', 'Koncept'],
-    pending_hoc: ['bg-amber-50 text-amber-700', 'Čeká HoC'],
+    pending_ch: ['bg-amber-50 text-amber-700', 'Čeká CH'],
     pending_coo: ['bg-blue-50 text-blue-700', 'Čeká COO'],
     approved: ['bg-emerald-50 text-emerald-700', 'Schváleno'],
     invoiced: ['bg-teal-50 text-teal-700', 'Fakturováno'],
     paid: ['bg-teal-50 text-teal-700', 'Zaplaceno'],
+    rejected: ['bg-red-50 text-red-700', 'Zamítnuto'],
     sent: ['bg-blue-50 text-blue-700', 'Odesláno'],
     disputed: ['bg-red-50 text-red-700', 'Rozporováno'],
     upcoming: ['bg-blue-50 text-blue-700', 'Nadcházející'],
@@ -18,7 +18,6 @@ const StatusBadge = ({ status, label }: { status: string; label?: string }) => {
     interview_scheduled: ['bg-amber-50 text-amber-700', 'Pohovor'],
     decision: ['bg-indigo-50 text-indigo-700', 'Rozhodnutí'],
     accepted: ['bg-emerald-50 text-emerald-700', 'Přijat'],
-    rejected: ['bg-red-50 text-red-700', 'Odmítnut'],
     instal: ['bg-blue-50 text-blue-700', 'Instal'],
     provoz: ['bg-emerald-50 text-emerald-700', 'Provoz'],
     deinstal: ['bg-amber-50 text-amber-700', 'Deinstal'],

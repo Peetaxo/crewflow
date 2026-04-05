@@ -23,7 +23,7 @@ const CrewDetailView = () => {
 
   const categorized = useMemo(() => ({
     upcoming: cTls.filter(t => t.status === 'draft'),
-    processing: cTls.filter(t => t.status === 'pending_hoc' || t.status === 'pending_coo'),
+    processing: cTls.filter(t => t.status === 'pending_ch' || t.status === 'pending_coo'),
     invoiced: cTls.filter(t => t.status === 'approved' || t.status === 'invoiced' || t.status === 'paid'),
   }), [cTls]);
 
@@ -82,7 +82,7 @@ const CrewDetailView = () => {
           </div>
           <div className="flex flex-wrap gap-1 mb-4">
             {c.tags.map(t => <StatusBadge key={t} status="bg" label={t} />)}
-            {c.reliable ? <StatusBadge status="full" label="Spolehlivý" /> : <StatusBadge status="pending_hoc" label="Ověřit" />}
+            {c.reliable ? <StatusBadge status="full" label="Spolehlivý" /> : <StatusBadge status="pending_ch" label="Ověřit" />}
           </div>
           <div className="space-y-2">
             {([['Telefon', c.phone], ['E-mail', c.email], ['IČO', c.ico], ['DIČ', c.dic || '—'], ['Č. účtu', c.bank], ['Sazba', c.rate + ' Kč/h'], ['Akcí', c.events + ' celkem']] as [string, string][]).map(([l, v]) => (

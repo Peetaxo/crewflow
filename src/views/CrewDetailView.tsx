@@ -102,7 +102,7 @@ const CrewDetailView = () => {
         ))}
       </div>
 
-      <div className="mb-6 grid grid-cols-1 gap-4 lg:h-[34rem] lg:grid-cols-3 lg:items-stretch">
+      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3 lg:items-stretch">
         <div className="flex h-full flex-col gap-4">
           <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
             <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-50">
@@ -166,7 +166,7 @@ const CrewDetailView = () => {
           </div>
         </div>
 
-        <div className="lg:col-span-2 flex h-full min-h-0 flex-col self-stretch rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+        <div className="lg:col-span-2 flex min-h-0 flex-col self-stretch rounded-xl border border-gray-100 bg-white p-5 shadow-sm lg:h-[34rem]">
           <div className="mb-4">
             <h3 className="text-sm font-semibold mb-3">Směny</h3>
             <div className="flex flex-wrap items-center gap-2 bg-white p-1 border border-gray-100 rounded-xl w-fit">

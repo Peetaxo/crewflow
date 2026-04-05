@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, Moon, Sun, UserRound, Palette } from 'lucide-react';
+import { ArrowLeft, Moon, Palette, Sun, UserRound } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAppContext } from '../context/AppContext';
 
@@ -25,6 +25,7 @@ const SettingsView = () => {
 
   useEffect(() => {
     if (!me) return;
+
     setProfileForm({
       name: me.name,
       city: me.city,
@@ -72,21 +73,21 @@ const SettingsView = () => {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      <h1 className="text-lg font-semibold mb-5">Nastavení</h1>
+      <h1 className="mb-5 text-lg font-semibold">Nastavení</h1>
 
       {settingsSection === 'menu' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl">
+        <div className="grid max-w-3xl grid-cols-1 gap-4 md:grid-cols-2">
           {settingsCards.map((card) => (
             <button
               key={card.id}
               onClick={() => openSection(card.id)}
-              className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm text-left hover:shadow-md hover:border-emerald-200 transition-all"
+              className="rounded-xl border border-gray-100 bg-white p-5 text-left shadow-sm transition-all hover:border-emerald-200 hover:shadow-md"
             >
-              <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 mb-4">
+              <div className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
                 <card.icon size={18} />
               </div>
               <div className="text-base font-semibold text-gray-900">{card.title}</div>
-              <div className="text-sm text-gray-500 mt-1">{card.description}</div>
+              <div className="mt-1 text-sm text-gray-500">{card.description}</div>
             </button>
           ))}
         </div>
@@ -107,16 +108,17 @@ const SettingsView = () => {
 
           {!isEditingProfile ? (
             <div className="space-y-5">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
-                <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm h-full">
-                  <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-50">
-                    <div className="av w-12 h-12 text-lg" style={{ backgroundColor: me.bg, color: me.fg }}>{me.ii}</div>
+              <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 lg:items-start">
+                <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+                  <div className="mb-4 flex items-center gap-3 border-b border-gray-50 pb-4">
+                    <div className="av h-12 w-12 text-lg" style={{ backgroundColor: me.bg, color: me.fg }}>{me.ii}</div>
                     <div>
                       <div className="text-base font-semibold">{profileForm.name}</div>
                       <div className="text-xs text-gray-500">{profileForm.city}</div>
                     </div>
                   </div>
-                  <h2 className="text-sm font-semibold mb-3">Osobní údaje</h2>
+
+                  <h2 className="mb-3 text-sm font-semibold">Osobní údaje</h2>
                   <div className="space-y-2">
                     {[
                       ['Telefon', profileForm.phone],
@@ -125,16 +127,20 @@ const SettingsView = () => {
                       ['DIČ', profileForm.dic || '—'],
                       ['Č. účtu', profileForm.bank],
                     ].map(([label, value]) => (
-                      <div key={label} className="flex justify-between py-1.5 border-b border-gray-50 last:border-0">
+                      <div key={label} className="flex justify-between gap-4 border-b border-gray-50 py-1.5 last:border-0">
                         <span className="text-xs text-gray-500">{label}</span>
-                        <span className="text-xs font-semibold text-right">{value}</span>
+                        <span className="text-right text-xs font-semibold">{value}</span>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm h-full">
-                  <h2 className="text-sm font-semibold mb-3">Fakturační adresa</h2>
+                <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+                  <div className="mb-4 border-b border-transparent pb-4">
+                    <div className="h-12" aria-hidden="true" />
+                  </div>
+
+                  <h2 className="mb-3 text-sm font-semibold">Fakturační adresa</h2>
                   <div className="space-y-2">
                     {[
                       ['Jméno / firma', profileForm.billingName],
@@ -143,9 +149,9 @@ const SettingsView = () => {
                       ['Město', profileForm.billingCity || '—'],
                       ['Stát', profileForm.billingCountry || '—'],
                     ].map(([label, value]) => (
-                      <div key={label} className="flex justify-between py-1.5 border-b border-gray-50 last:border-0">
+                      <div key={label} className="flex justify-between gap-4 border-b border-gray-50 py-1.5 last:border-0">
                         <span className="text-xs text-gray-500">{label}</span>
-                        <span className="text-xs font-semibold text-right">{value}</span>
+                        <span className="text-right text-xs font-semibold">{value}</span>
                       </div>
                     ))}
                   </div>
@@ -155,15 +161,15 @@ const SettingsView = () => {
               <div className="flex justify-end">
                 <button
                   onClick={() => setIsEditingProfile(true)}
-                  className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700"
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
                 >
                   Upravit
                 </button>
               </div>
             </div>
           ) : (
-            <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <label className="text-xs text-gray-600">Jméno
                   <input value={profileForm.name} onChange={(e) => setProfileForm((prev) => ({ ...prev, name: e.target.value }))} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" />
                 </label>
@@ -187,8 +193,8 @@ const SettingsView = () => {
                 </label>
               </div>
 
-              <h2 className="text-sm font-semibold mt-8 mb-4">Fakturační adresa</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <h2 className="mb-4 mt-8 text-sm font-semibold">Fakturační adresa</h2>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <label className="text-xs text-gray-600 md:col-span-2">Fakturační jméno / firma
                   <input value={profileForm.billingName} onChange={(e) => setProfileForm((prev) => ({ ...prev, billingName: e.target.value }))} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" />
                 </label>
@@ -209,13 +215,13 @@ const SettingsView = () => {
               <div className="mt-5 flex justify-end gap-3">
                 <button
                   onClick={() => setIsEditingProfile(false)}
-                  className="px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50"
+                  className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium hover:bg-gray-50"
                 >
                   Zrušit
                 </button>
                 <button
                   onClick={saveProfile}
-                  className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700"
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
                 >
                   Uložit
                 </button>
@@ -226,7 +232,7 @@ const SettingsView = () => {
       )}
 
       {settingsSection === 'appearance' && (
-        <div className="space-y-5 max-w-md">
+        <div className="max-w-md space-y-5">
           <button
             onClick={() => setSettingsSection('menu')}
             className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900"
@@ -235,15 +241,15 @@ const SettingsView = () => {
             Zpět do nastavení
           </button>
 
-          <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
+          <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm font-semibold text-gray-900">Tmavý režim</div>
-                <p className="text-xs text-gray-500 mt-0.5">Přepnout vzhled aplikace</p>
+                <p className="mt-0.5 text-xs text-gray-500">Přepnout vzhled aplikace</p>
               </div>
               <button
                 onClick={() => setDarkMode(!darkMode)}
-                className={`p-2 rounded-lg transition-colors ${darkMode ? 'bg-gray-800 text-amber-400' : 'bg-gray-100 text-gray-600'}`}
+                className={`rounded-lg p-2 transition-colors ${darkMode ? 'bg-gray-800 text-amber-400' : 'bg-gray-100 text-gray-600'}`}
               >
                 {darkMode ? <Sun size={18} /> : <Moon size={18} />}
               </button>

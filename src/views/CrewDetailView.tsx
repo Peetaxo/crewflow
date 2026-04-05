@@ -102,9 +102,9 @@ const CrewDetailView = () => {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6 items-stretch">
-        <div className="space-y-4">
-          <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm h-fit">
+      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3 lg:items-stretch">
+        <div className="flex h-full flex-col gap-4">
+          <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
             <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-50">
               <div className="av w-12 h-12 text-lg" style={{ backgroundColor: c.bg, color: c.fg }}>{c.ii}</div>
               <div>
@@ -130,7 +130,7 @@ const CrewDetailView = () => {
             </div>
           </div>
 
-          <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm h-fit">
+          <div className="flex-1 rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between mb-4 pb-4 border-b border-gray-50">
               <h3 className="text-sm font-semibold">Sazba a poznámka</h3>
               {!isEditingMeta ? (
@@ -166,7 +166,7 @@ const CrewDetailView = () => {
           </div>
         </div>
 
-        <div className="lg:col-span-2 bg-white border border-gray-100 rounded-xl p-5 shadow-sm flex flex-col self-stretch min-h-0">
+        <div className="lg:col-span-2 flex h-full min-h-0 flex-col self-stretch rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
           <div className="mb-4">
             <h3 className="text-sm font-semibold mb-3">Směny</h3>
             <div className="flex flex-wrap items-center gap-2 bg-white p-1 border border-gray-100 rounded-xl w-fit">

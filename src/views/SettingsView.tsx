@@ -16,7 +16,6 @@ const SettingsView = () => {
     ico: '',
     dic: '',
     bank: '',
-    note: '',
     billingName: '',
     billingStreet: '',
     billingZip: '',
@@ -34,7 +33,6 @@ const SettingsView = () => {
       ico: me.ico,
       dic: me.dic,
       bank: me.bank,
-      note: me.note,
       billingName: me.billingName ?? me.name,
       billingStreet: me.billingStreet ?? '',
       billingZip: me.billingZip ?? '',
@@ -109,8 +107,8 @@ const SettingsView = () => {
 
           {!isEditingProfile ? (
             <div className="space-y-5">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+                <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm h-full">
                   <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-50">
                     <div className="av w-12 h-12 text-lg" style={{ backgroundColor: me.bg, color: me.fg }}>{me.ii}</div>
                     <div>
@@ -133,15 +131,9 @@ const SettingsView = () => {
                       </div>
                     ))}
                   </div>
-                  {profileForm.note && (
-                    <div className="mt-4 pt-4 border-t border-gray-50">
-                      <div className="text-xs text-gray-500 mb-1">Poznámka</div>
-                      <div className="text-sm text-gray-700">{profileForm.note}</div>
-                    </div>
-                  )}
                 </div>
 
-                <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
+                <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm h-full">
                   <h2 className="text-sm font-semibold mb-3">Fakturační adresa</h2>
                   <div className="space-y-2">
                     {[
@@ -192,9 +184,6 @@ const SettingsView = () => {
                 </label>
                 <label className="text-xs text-gray-600 md:col-span-2">Číslo účtu
                   <input value={profileForm.bank} onChange={(e) => setProfileForm((prev) => ({ ...prev, bank: e.target.value }))} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" />
-                </label>
-                <label className="text-xs text-gray-600 md:col-span-2">Poznámka
-                  <textarea value={profileForm.note} onChange={(e) => setProfileForm((prev) => ({ ...prev, note: e.target.value }))} rows={4} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" />
                 </label>
               </div>
 

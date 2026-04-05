@@ -12,9 +12,17 @@ Tento soubor popisuje, jak na projektu pracujeme a jak se maji zachazet zmeny.
 ## Dohodnuty postup
 
 1. Udelat zmenu v aplikaci.
-2. Zkontrolovat ji v preview.
-3. Pokud je vysledek v poradku, vytvorit cesky pojmenovany commit.
-4. Po commitu udelat push na GitHub.
+2. Nahodit nebo obnovit preview server.
+3. Overit, ze preview skutecne bezi.
+4. Zkontrolovat ji v preview.
+5. Pokud je vysledek v poradku, vytvorit cesky pojmenovany commit.
+6. Po commitu udelat push na GitHub.
+
+## Preview
+
+- Po vetsi uprave je potreba znovu nahodit nebo overit dev server.
+- Na preview se neodkazuje, dokud neni overene, ze port opravdu odpovida.
+- Pokud preview spadne, ma se nejdriv znovu spustit a zkontrolovat.
 
 ## Pojmenovavani commitu
 

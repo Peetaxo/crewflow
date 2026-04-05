@@ -4,6 +4,19 @@ export type Role = 'crew' | 'crewhead' | 'coo';
 /** Status akce */
 export type EventStatus = 'upcoming' | 'full' | 'planning';
 
+/** Typ práce (fáze akce) */
+export type TimelogType = 'instal' | 'provoz' | 'deinstal';
+
+export interface EventPhaseTime {
+  from: string;
+  to: string;
+}
+
+export interface EventPhaseSlot extends EventPhaseTime {
+  id: string;
+  dates: string[];
+}
+
 /** Akce (event) — konkrétní realizace projektu */
 export interface Event {
   id: number;
@@ -12,6 +25,8 @@ export interface Event {
   job: string;
   startDate: string;
   endDate: string;
+  startTime?: string;
+  endTime?: string;
   city: string;
   /** Kolik crew členů je potřeba */
   needed: number;
@@ -25,8 +40,12 @@ export interface Event {
   meetingLocation?: string;
   /** Zobrazovat typy dnů (Instal/Provoz/Deinstal) */
   showDayTypes?: boolean;
-  /** Mapování datum → typ dne */
+  /** Mapování datum -> typ dne */
   dayTypes?: Record<string, TimelogType>;
+  /** Výchozí časy pro jednotlivé typy dnů */
+  phaseTimes?: Partial<Record<TimelogType, EventPhaseTime>>;
+  /** Konkrétní bloky časů pro jednotlivé typy dnů */
+  phaseSchedules?: Partial<Record<TimelogType, EventPhaseSlot[]>>;
 }
 
 /** Kontraktor — člen crew */
@@ -61,9 +80,6 @@ export interface Contractor {
 
 /** Status výkazu práce */
 export type TimelogStatus = 'draft' | 'pending_ch' | 'pending_coo' | 'approved' | 'invoiced' | 'paid' | 'rejected';
-
-/** Typ práce (fáze akce) */
-export type TimelogType = 'instal' | 'provoz' | 'deinstal';
 
 /** Jeden den ve výkazu práce */
 export interface TimelogDay {

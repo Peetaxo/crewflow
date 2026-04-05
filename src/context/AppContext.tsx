@@ -124,6 +124,33 @@ export function useAppContext(): AppContextType {
    ============================================================ */
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
+  const sortTimelogDays = useCallback((days: Timelog['days']) => (
+    [...days].sort((a, b) => `${a.d}${a.f}${a.type}`.localeCompare(`${b.d}${b.f}${b.type}`))
+  ), []);
+
+  const getScheduledEventDay = useCallback((event: Event, day: Timelog['days'][number]) => {
+    if (!event.showDayTypes) {
+      return {
+        ...day,
+        type: 'instal' as const,
+        f: event.startTime || day.f,
+        t: event.endTime || day.t,
+      };
+    }
+
+    const phaseSlot = event.phaseSchedules?.[day.type]?.find((slot) => slot.dates.includes(day.d));
+    const fallbackType = event.dayTypes?.[day.d];
+    const fallbackSlot = fallbackType ? event.phaseSchedules?.[fallbackType]?.find((slot) => slot.dates.includes(day.d)) : undefined;
+    const resolvedType = phaseSlot ? day.type : (fallbackType || day.type);
+    const resolvedSlot = phaseSlot || fallbackSlot;
+
+    return {
+      ...day,
+      type: resolvedType,
+      f: resolvedSlot?.from ?? event.phaseTimes?.[resolvedType]?.from ?? event.startTime ?? day.f,
+      t: resolvedSlot?.to ?? event.phaseTimes?.[resolvedType]?.to ?? event.endTime ?? day.t,
+    };
+  }, []);
   /* ---- Globální UI stav ---- */
   const [darkMode, setDarkMode] = useState(false);
   const [role, setRole] = useState<Role>('crewhead');
@@ -338,25 +365,65 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   /** Uložit upravený výkaz */
   const handleSaveTimelog = useCallback((updated: Timelog) => {
-    setTimelogs(prev => prev.map(t => t.id === updated.id ? updated : t));
+    const sortedTimelog = { ...updated, days: sortTimelogDays(updated.days) };
+    setTimelogs(prev => prev.map(t => t.id === updated.id ? sortedTimelog : t));
     setEditingTimelog(null);
-  }, []);
+  }, [sortTimelogDays]);
 
   /** Uložit upravenou / novou akci */
   const handleSaveEvent = useCallback((updated: Event) => {
-    const isJobTaken = events.some(e => e.job === updated.job && e.id !== updated.id);
+    const normalizedEvent = {
+      ...updated,
+      job: updated.job.trim().toUpperCase(),
+      name: updated.name.trim(),
+      client: updated.client.trim(),
+    };
+
+    const isJobTaken = events.some(e => e.job === normalizedEvent.job && e.id !== normalizedEvent.id);
     if (isJobTaken) {
-      toast.error(`Job Number ${updated.job} je již přiřazen k jiné akci.`);
+      toast.error(`Job Number ${normalizedEvent.job} je již přiřazen k jiné akci.`);
       return;
     }
+
+    if (!normalizedEvent.job) {
+      toast.error('Vyplňte Job Number.');
+      return;
+    }
+
     setEvents(prev => {
-      const exists = prev.some(e => e.id === updated.id);
+      const exists = prev.some(e => e.id === normalizedEvent.id);
       return exists
-        ? prev.map(e => e.id === updated.id ? updated : e)
-        : [...prev, updated];
+        ? prev.map(e => e.id === normalizedEvent.id ? normalizedEvent : e)
+        : [...prev, normalizedEvent];
     });
+
+    setProjects(prev => {
+      const exists = prev.some(project => project.id === normalizedEvent.job);
+      if (exists) return prev;
+
+      return [
+        ...prev,
+        {
+          id: normalizedEvent.job,
+          name: normalizedEvent.name || normalizedEvent.job,
+          client: normalizedEvent.client,
+          createdAt: new Date().toISOString().split('T')[0],
+          note: '',
+        },
+      ];
+    });
+
+    setTimelogs(prev => prev.map(timelog => {
+      if (timelog.eid !== normalizedEvent.id) return timelog;
+
+      return {
+        ...timelog,
+        days: sortTimelogDays(timelog.days.map(day => getScheduledEventDay(normalizedEvent, day))),
+      };
+    }));
+
     setEditingEvent(null);
-  }, [events]);
+  }, [events, getScheduledEventDay, sortTimelogDays]);
 
   /** Smazat entitu potvrzenou v delete modalu */
   const handleDelete = useCallback(() => {

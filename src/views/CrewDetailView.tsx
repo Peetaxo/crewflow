@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { ArrowLeft, BarChart3, Calendar, CheckCircle2, ChevronDown, Clock, FileText, Receipt } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, BarChart3, Calendar, CheckCircle2, ChevronDown, ChevronDownCircle, Clock, FileText, Receipt } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { format, parseISO } from 'date-fns';
@@ -34,6 +34,8 @@ const CrewDetailView = () => {
   const [profileTab, setProfileTab] = useState<'personal' | 'billing'>('personal');
   const [isEditingMeta, setIsEditingMeta] = useState(false);
   const [metaForm, setMetaForm] = useState({ rate: String(c.rate), note: c.note ?? '' });
+  const shiftsScrollRef = useRef<HTMLDivElement | null>(null);
+  const [showScrollCue, setShowScrollCue] = useState(false);
 
   const cTls = timelogs.filter((t) => t.cid === selectedContractorId);
   const cInvoices = invoices.filter((i) => i.cid === selectedContractorId);
@@ -108,6 +110,27 @@ const CrewDetailView = () => {
     ['Stát', c.billingCountry || 'Česká republika'],
   ];
 
+  useEffect(() => {
+    const container = shiftsScrollRef.current;
+    if (!container) return;
+
+    const updateScrollCue = () => {
+      const canScroll = container.scrollHeight > container.clientHeight + 8;
+      const nearBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 12;
+      setShowScrollCue(canScroll && !nearBottom);
+    };
+
+    const frame = requestAnimationFrame(updateScrollCue);
+    container.addEventListener('scroll', updateScrollCue);
+    window.addEventListener('resize', updateScrollCue);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      container.removeEventListener('scroll', updateScrollCue);
+      window.removeEventListener('resize', updateScrollCue);
+    };
+  }, [activeTab, categorized, cInvoices.length]);
+
   return (
     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
       <button
@@ -178,8 +201,9 @@ const CrewDetailView = () => {
         ))}
       </div>
 
-      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3 lg:grid-rows-[auto_auto]">
-        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm lg:col-start-1 lg:row-start-1">
+      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start">
+        <div className="space-y-4 lg:w-[32%] lg:flex-none">
+        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center gap-3 border-b border-gray-50 pb-4">
             <div className="av h-12 w-12 text-lg" style={{ backgroundColor: c.bg, color: c.fg }}>{c.ii}</div>
             <div>
@@ -218,7 +242,7 @@ const CrewDetailView = () => {
           </div>
         </div>
 
-        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm lg:col-start-1 lg:row-start-2">
+        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center justify-between border-b border-gray-50 pb-4">
             <h3 className="text-sm font-semibold">Sazba a poznámka</h3>
             {!isEditingMeta ? (
@@ -280,7 +304,9 @@ const CrewDetailView = () => {
           )}
         </div>
 
-        <div className="flex min-h-0 flex-col rounded-xl border border-gray-100 bg-white p-5 shadow-sm lg:col-span-2 lg:col-start-2 lg:row-span-2 lg:row-start-1">
+        </div>
+
+        <div className="relative flex min-h-0 flex-col rounded-xl border border-gray-100 bg-white p-5 shadow-sm lg:h-[41rem] lg:flex-1 lg:min-w-0">
           <div className="mb-4">
             <h3 className="mb-3 text-sm font-semibold">Směny</h3>
             <div className="flex w-fit flex-wrap items-center gap-2 rounded-xl border border-gray-100 bg-white p-1">
@@ -306,7 +332,10 @@ const CrewDetailView = () => {
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto pr-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+          <div
+            ref={shiftsScrollRef}
+            className="min-h-0 flex-1 overflow-y-auto pr-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+          >
             <AnimatePresence mode="wait">
               {activeTab !== 'invoices' ? (
                 <motion.div
@@ -362,6 +391,29 @@ const CrewDetailView = () => {
               )}
             </AnimatePresence>
           </div>
+
+          <AnimatePresence>
+            {showScrollCue && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 8 }}
+                className="pointer-events-none absolute inset-x-5 bottom-5 flex flex-col items-center justify-end"
+              >
+                <div className="absolute inset-x-0 bottom-0 h-20 rounded-b-xl bg-gradient-to-t from-white via-white/85 to-transparent dark:from-slate-900 dark:via-slate-900/85" />
+                <motion.div
+                  animate={{ y: [0, 6, 0] }}
+                  transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+                  className="relative z-10 rounded-full border border-emerald-100 bg-white/95 px-3 py-1.5 text-[11px] font-medium text-emerald-700 shadow-sm"
+                >
+                  <span className="flex items-center gap-1.5">
+                    Posunout níž
+                    <ChevronDownCircle size={14} />
+                  </span>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 

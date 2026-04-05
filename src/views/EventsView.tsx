@@ -38,7 +38,7 @@ const EventsView = () => {
           <button
             onClick={() => setEditingEvent({
               id: Math.max(0, ...events.map((e) => e.id)) + 1,
-              name: '', job: '', startDate: '', endDate: '', city: '',
+              name: '', job: '', startDate: '', endDate: '', startTime: '08:00', endTime: '17:00', city: '',
               needed: 1, filled: 0, status: 'planning', client: '', showDayTypes: false,
             })}
             className="px-3 py-1.5 bg-emerald-600 text-white rounded-md text-xs font-medium hover:bg-emerald-700 transition-colors"

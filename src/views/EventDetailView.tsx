@@ -1,13 +1,12 @@
 import React from 'react';
-import { ArrowLeft, Users, Clock, User, MapPin, Shirt, Trash2, FileText } from 'lucide-react';
+import { ArrowLeft, Clock, FileText, MapPin, Shirt, Trash2, User, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAppContext } from '../context/AppContext';
-import { calculateTotalHours, calculateDayHours, formatCurrency, formatDateRange, getDatesBetween } from '../utils';
 import { KM_RATE } from '../data';
 import { PHASE_CONFIG } from '../constants';
+import { calculateDayHours, calculateTotalHours, formatCurrency, formatDateRange, getDatesBetween } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';
 
-/** Detail jedné akce */
 const EventDetailView = () => {
   const {
     role,
@@ -18,37 +17,42 @@ const EventDetailView = () => {
     setEditingTimelog,
   } = useAppContext();
 
-  const event = events.find(x => x.id === selectedEventId);
+  const event = events.find((item) => item.id === selectedEventId);
   if (!event) return null;
 
-  const eventTimelogs = timelogs.filter(t => t.eid === event.id);
-  const totalHours = eventTimelogs.reduce((s, t) => s + calculateTotalHours(t.days), 0);
+  const eventTimelogs = timelogs.filter((timelog) => timelog.eid === event.id);
+  const totalHours = eventTimelogs.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
   const days = getDatesBetween(event.startDate, event.endDate);
-  const eventCrew = contractors.filter(c => eventTimelogs.some(t => t.cid === c.id));
+  const eventCrew = contractors.filter((contractor) => eventTimelogs.some((timelog) => timelog.cid === contractor.id));
   const canManageEvents = role !== 'crew';
 
-  /** Odebrat osobu z akce — smaže její timelog pro tuto akci */
+  const getPhasesForDate = (date: string) => (
+    event.showDayTypes
+      ? PHASE_CONFIG.filter((phase) => event.phaseSchedules?.[phase.type]?.some((slot) => slot.dates.includes(date)) || event.dayTypes?.[date] === phase.type)
+      : []
+  );
+
   const handleRemoveFromEvent = (contractorId: number) => {
-    setTimelogs(prev => prev.filter(t => !(t.eid === event.id && t.cid === contractorId)));
+    setTimelogs((prev) => prev.filter((timelog) => !(timelog.eid === event.id && timelog.cid === contractorId)));
   };
 
   return (
     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
-      <button onClick={() => setSelectedEventId(null)} className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-900 mb-4 transition-colors">
+      <button onClick={() => setSelectedEventId(null)} className="mb-4 flex items-center gap-1 text-xs text-gray-500 transition-colors hover:text-gray-900">
         <ArrowLeft size={14} /> Zpět na Akce
       </button>
 
-      <div className="bg-white border border-gray-100 rounded-2xl p-6 shadow-sm mb-6">
-        <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
+      <div className="mb-6 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+        <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="jn text-sm px-2 py-0.5">{event.job}</span>
+            <div className="mb-2 flex items-center gap-2">
+              <span className="jn px-2 py-0.5 text-sm">{event.job}</span>
               <StatusBadge status={event.status} />
             </div>
             <h1 className="text-2xl font-bold text-gray-900">{event.name}</h1>
-            <p className="text-sm text-gray-500 mt-1">{formatDateRange(event.startDate, event.endDate)} · {event.city} · {event.client}</p>
-            {event.description && <p className="text-xs text-gray-600 mt-3 max-w-2xl leading-relaxed">{event.description}</p>}
-            <div className="flex flex-wrap gap-x-6 gap-y-2 mt-4">
+            <p className="mt-1 text-sm text-gray-500">{formatDateRange(event.startDate, event.endDate)} · {event.city} · {event.client}</p>
+            {event.description && <p className="mt-3 max-w-2xl text-xs leading-relaxed text-gray-600">{event.description}</p>}
+            <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2">
               {event.contactPerson && (
                 <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
                   <User size={12} className="text-gray-400" />
@@ -69,40 +73,51 @@ const EventDetailView = () => {
               )}
             </div>
           </div>
+
           {canManageEvents && (
             <div className="flex gap-2">
-              <button onClick={() => setAssigningCrewToEvent(event)} className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-medium hover:bg-emerald-700 shadow-sm shadow-emerald-200">
+              <button onClick={() => setAssigningCrewToEvent(event)} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm shadow-emerald-200 hover:bg-emerald-700">
                 Obsadit crew
               </button>
-              <button onClick={() => setEditingEvent(event)} className="px-4 py-2 border border-gray-200 rounded-xl text-sm font-medium hover:bg-gray-50">
+              <button onClick={() => setEditingEvent(event)} className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium hover:bg-gray-50">
                 Upravit akci
               </button>
-              <button onClick={() => setDeleteConfirm({ type: 'event', id: event.id, name: event.name })} className="px-4 py-2 border border-red-100 text-red-600 rounded-xl text-sm font-medium hover:bg-red-50 transition-colors" title="Smazat akci">
+              <button
+                onClick={() => setDeleteConfirm({ type: 'event', id: event.id, name: event.name })}
+                className="rounded-xl border border-red-100 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+                title="Smazat akci"
+              >
                 <Trash2 size={18} />
               </button>
             </div>
           )}
         </div>
 
-        {/* Záložky dnů */}
-        <div className="flex gap-1 border-b border-gray-100 -mx-6 px-6">
+        <div className="-mx-6 flex gap-1 border-b border-gray-100 px-6">
           <button
             onClick={() => setEventTab('overview')}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-all ${eventTab === 'overview' ? 'border-emerald-500 text-emerald-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+            className={`border-b-2 px-4 py-2 text-sm font-medium transition-all ${eventTab === 'overview' ? 'border-emerald-500 text-emerald-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
           >
             Přehled
           </button>
-          {days.map(d => {
-            const dayType = event.showDayTypes ? event.dayTypes?.[d] : null;
-            const phase = dayType ? PHASE_CONFIG.find(p => p.type === dayType) : null;
+          {days.map((date) => {
+            const phasesForDay = getPhasesForDate(date);
             return (
-              <button key={d} onClick={() => setEventTab(d)} className={`px-4 py-2 text-sm font-medium border-b-2 transition-all ${eventTab === d ? 'border-emerald-500 text-emerald-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+              <button
+                key={date}
+                onClick={() => setEventTab(date)}
+                className={`border-b-2 px-4 py-2 text-sm font-medium transition-all ${eventTab === date ? 'border-emerald-500 text-emerald-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+              >
                 <div className="flex flex-col items-center">
-                  <span className="text-[10px] opacity-60 uppercase font-bold">{new Date(d).toLocaleDateString('cs-CZ', { weekday: 'short' })}</span>
-                  <span className="text-xs font-bold">{new Date(d).toLocaleDateString('cs-CZ', { day: 'numeric', month: 'numeric' })}</span>
-                  {phase && (
-                    <div title={phase.label} className={`mt-1 w-4 h-4 rounded flex items-center justify-center text-[8px] font-black border text-white shadow-sm ${phase.color}`}>
-                      {phase.id}
+                  <span className="text-[10px] font-bold uppercase opacity-60">{new Date(date).toLocaleDateString('cs-CZ', { weekday: 'short' })}</span>
+                  <span className="text-xs font-bold">{new Date(date).toLocaleDateString('cs-CZ', { day: 'numeric', month: 'numeric' })}</span>
+                  {phasesForDay.length > 0 && (
+                    <div className="mt-1 flex gap-1">
+                      {phasesForDay.map((phase) => (
+                        <div key={`${date}-${phase.id}`} title={phase.label} className={`flex h-4 w-4 items-center justify-center rounded border text-[8px] font-black text-white shadow-sm ${phase.color}`}>
+                          {phase.id}
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -113,43 +128,44 @@ const EventDetailView = () => {
 
         <div className="mt-6">
           {eventTab === 'overview' ? (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2 space-y-6">
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+              <div className="space-y-6 lg:col-span-2">
                 <div>
-                  <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                  <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold">
                     <Users size={16} className="text-gray-400" />
                     Přiřazená Crew ({eventCrew.length})
                   </h3>
-                  <div className="bg-gray-50 rounded-xl overflow-hidden border border-gray-100">
-                    <table className="w-full text-left border-collapse">
+                  <div className="overflow-hidden rounded-xl border border-gray-100 bg-gray-50">
+                    <table className="w-full border-collapse text-left">
                       <thead>
-                        <tr className="text-[10px] text-gray-400 uppercase tracking-wider border-b border-gray-100">
-                          <th className="px-4 py-3 font-medium text-left">Jméno</th>
-                          {event.showDayTypes && <th className="px-4 py-3 font-medium text-left">Fáze</th>}
-                          <th className="px-4 py-3 font-medium text-left">Hodiny</th>
-                          <th className="px-4 py-3 font-medium text-right">Celkem</th>
-                          <th className="px-4 py-3 font-medium text-right">Akce</th>
+                        <tr className="border-b border-gray-100 text-[10px] uppercase tracking-wider text-gray-400">
+                          <th className="px-4 py-3 text-left font-medium">Jméno</th>
+                          {event.showDayTypes && <th className="px-4 py-3 text-left font-medium">Fáze</th>}
+                          <th className="px-4 py-3 text-left font-medium">Hodiny</th>
+                          <th className="px-4 py-3 text-right font-medium">Celkem</th>
+                          <th className="px-4 py-3 text-right font-medium">Akce</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {eventCrew.map(c => {
-                          const tl = eventTimelogs.find(t => t.cid === c.id);
-                          const hours = tl ? calculateTotalHours(tl.days) : 0;
+                        {eventCrew.map((contractor) => {
+                          const timelog = eventTimelogs.find((item) => item.cid === contractor.id);
+                          const hours = timelog ? calculateTotalHours(timelog.days) : 0;
+
                           return (
-                            <tr key={c.id} className="bg-white hover:bg-gray-50 transition-colors">
+                            <tr key={contractor.id} className="bg-white transition-colors hover:bg-gray-50">
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-2">
-                                  <div className="av w-7 h-7 text-[10px]" style={{ backgroundColor: c.bg, color: c.fg }}>{c.ii}</div>
-                                  <span className="text-xs font-medium">{c.name}</span>
+                                  <div className="av h-7 w-7 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
+                                  <span className="text-xs font-medium">{contractor.name}</span>
                                 </div>
                               </td>
                               {event.showDayTypes && (
                                 <td className="px-4 py-3">
                                   <div className="flex gap-1">
-                                    {PHASE_CONFIG.map(phase => {
-                                      const isActive = tl?.days.some(td => td.type === phase.type);
+                                    {PHASE_CONFIG.map((phase) => {
+                                      const isActive = timelog?.days.some((day) => day.type === phase.type);
                                       return (
-                                        <div key={phase.id} className={`w-5 h-5 rounded flex items-center justify-center text-[8px] font-black border transition-all ${isActive ? `${phase.color} text-white shadow-sm` : 'bg-gray-100 border-gray-200 text-gray-300'}`} title={phase.label}>
+                                        <div key={phase.id} className={`flex h-5 w-5 items-center justify-center rounded border text-[8px] font-black transition-all ${isActive ? `${phase.color} text-white shadow-sm` : 'border-gray-200 bg-gray-100 text-gray-300'}`} title={phase.label}>
                                           {phase.id}
                                         </div>
                                       );
@@ -158,22 +174,22 @@ const EventDetailView = () => {
                                 </td>
                               )}
                               <td className="px-4 py-3 text-xs font-semibold">{hours.toFixed(1)}h</td>
-                              <td className="px-4 py-3 text-right text-xs font-bold text-gray-900">{formatCurrency(hours * c.rate)}</td>
+                              <td className="px-4 py-3 text-right text-xs font-bold text-gray-900">{formatCurrency(hours * contractor.rate)}</td>
                               <td className="px-4 py-3 text-right">
                                 {canManageEvents && (
                                   <div className="flex items-center justify-end gap-1">
-                                    {tl && (
+                                    {timelog && (
                                       <button
-                                        onClick={() => setEditingTimelog(tl)}
-                                        className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
+                                        onClick={() => setEditingTimelog(timelog)}
+                                        className="rounded-lg p-1.5 text-gray-400 transition-all hover:bg-emerald-50 hover:text-emerald-600"
                                         title="Upravit timelog"
                                       >
                                         <FileText size={14} />
                                       </button>
                                     )}
                                     <button
-                                      onClick={() => handleRemoveFromEvent(c.id)}
-                                      className="p-1.5 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                                      onClick={() => handleRemoveFromEvent(contractor.id)}
+                                      className="rounded-lg p-1.5 text-gray-300 transition-all hover:bg-red-50 hover:text-red-600"
                                       title="Odebrat z akce"
                                     >
                                       <Trash2 size={14} />
@@ -191,8 +207,8 @@ const EventDetailView = () => {
               </div>
 
               <div className="space-y-4">
-                <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-100">
-                  <h4 className="text-[10px] text-emerald-700 uppercase tracking-wider font-bold mb-3">Finanční souhrn</h4>
+                <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
+                  <h4 className="mb-3 text-[10px] font-bold uppercase tracking-wider text-emerald-700">Finanční souhrn</h4>
                   <div className="space-y-2">
                     <div className="flex justify-between text-xs">
                       <span className="text-emerald-600">Celkem hodiny</span>
@@ -201,47 +217,47 @@ const EventDetailView = () => {
                     <div className="flex justify-between text-xs">
                       <span className="text-emerald-600">Náklady na crew</span>
                       <span className="font-bold text-emerald-900">
-                        {formatCurrency(eventTimelogs.reduce((s, t) => {
-                          const c = findContractor(t.cid);
-                          return s + (c ? calculateTotalHours(t.days) * c.rate : 0);
+                        {formatCurrency(eventTimelogs.reduce((sum, timelog) => {
+                          const contractor = findContractor(timelog.cid);
+                          return sum + (contractor ? calculateTotalHours(timelog.days) * contractor.rate : 0);
                         }, 0))}
                       </span>
                     </div>
                     <div className="flex justify-between text-xs">
                       <span className="text-emerald-600">Cestovné</span>
-                      <span className="font-bold text-emerald-900">{formatCurrency(eventTimelogs.reduce((s, t) => s + t.km * KM_RATE, 0))}</span>
+                      <span className="font-bold text-emerald-900">{formatCurrency(eventTimelogs.reduce((sum, timelog) => sum + timelog.km * KM_RATE, 0))}</span>
                     </div>
-                    <div className="pt-2 mt-2 border-t border-emerald-200 flex justify-between text-sm">
+                    <div className="mt-2 flex justify-between border-t border-emerald-200 pt-2 text-sm">
                       <span className="font-bold text-emerald-700">Celkový rozpočet</span>
                       <span className="font-black text-emerald-900">
-                        {formatCurrency(eventTimelogs.reduce((s, t) => {
-                          const c = findContractor(t.cid);
-                          return s + (c ? calculateTotalHours(t.days) * c.rate : 0) + t.km * KM_RATE;
+                        {formatCurrency(eventTimelogs.reduce((sum, timelog) => {
+                          const contractor = findContractor(timelog.cid);
+                          return sum + (contractor ? calculateTotalHours(timelog.days) * contractor.rate : 0) + timelog.km * KM_RATE;
                         }, 0))}
                       </span>
                     </div>
                   </div>
                 </div>
 
-                <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-                  <h4 className="text-[10px] text-gray-500 uppercase tracking-wider font-bold mb-3">Statistiky akce</h4>
+                <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
+                  <h4 className="mb-3 text-[10px] font-bold uppercase tracking-wider text-gray-500">Statistiky akce</h4>
                   <div className="space-y-3">
                     <div>
-                      <div className="flex justify-between text-[11px] mb-1">
+                      <div className="mb-1 flex justify-between text-[11px]">
                         <span>Obsazenost</span>
                         <span className="font-semibold">{event.filled}/{event.needed}</span>
                       </div>
-                      <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
-                        <div className={`h-full rounded-full ${event.filled >= event.needed ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{ width: `${Math.min(100, Math.round(event.filled / event.needed * 100))}%` }} />
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
+                        <div className={`h-full rounded-full ${event.filled >= event.needed ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{ width: `${Math.min(100, Math.round((event.filled / event.needed) * 100))}%` }} />
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
-                      <div className="bg-white p-2 rounded-lg border border-gray-100 text-center">
-                        <div className="text-[9px] text-gray-400 uppercase">Dny</div>
+                      <div className="rounded-lg border border-gray-100 bg-white p-2 text-center">
+                        <div className="text-[9px] uppercase text-gray-400">Dny</div>
                         <div className="text-sm font-bold">{days.length}</div>
                       </div>
-                      <div className="bg-white p-2 rounded-lg border border-gray-100 text-center">
-                        <div className="text-[9px] text-gray-400 uppercase">Výkazy</div>
+                      <div className="rounded-lg border border-gray-100 bg-white p-2 text-center">
+                        <div className="text-[9px] uppercase text-gray-400">Výkazy</div>
                         <div className="text-sm font-bold">{eventTimelogs.length}</div>
                       </div>
                     </div>
@@ -250,59 +266,74 @@ const EventDetailView = () => {
               </div>
             </div>
           ) : (
-            /* Denní pohled */
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold flex items-center gap-2">
+                <h3 className="flex items-center gap-2 text-sm font-semibold">
                   <Clock size={16} className="text-gray-400" />
                   Crew pro den: {new Date(eventTab).toLocaleDateString('cs-CZ', { day: 'numeric', month: 'numeric', year: 'numeric' })}
-                  {(() => {
-                    if (!event.showDayTypes) return null;
-                    const dayType = event.dayTypes?.[eventTab];
-                    const phase = dayType ? PHASE_CONFIG.find(p => p.type === dayType) : null;
-                    return phase ? (
-                      <span className={`ml-2 px-2 py-0.5 rounded text-[10px] font-black text-white shadow-sm ${phase.color}`}>
-                        {phase.label.toUpperCase()}
-                      </span>
-                    ) : null;
-                  })()}
+                  {event.showDayTypes && (
+                    <span className="ml-2 flex gap-1">
+                      {getPhasesForDate(eventTab).map((phase) => (
+                        <span key={`${eventTab}-${phase.id}`} className={`rounded px-2 py-0.5 text-[10px] font-black text-white shadow-sm ${phase.color}`}>
+                          {phase.label.toUpperCase()}
+                        </span>
+                      ))}
+                    </span>
+                  )}
                 </h3>
-                <button className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200 transition-colors">
+                <button className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-200">
                   Exportovat Call Sheet
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                {eventTimelogs.filter(t => t.days.some(d => d.d === eventTab)).map(t => {
-                  const c = findContractor(t.cid);
-                  if (!c) return null;
-                  const day = t.days.find(d => d.d === eventTab)!;
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {eventTimelogs.filter((timelog) => timelog.days.some((day) => day.d === eventTab)).map((timelog) => {
+                  const contractor = findContractor(timelog.cid);
+                  if (!contractor) return null;
+                  const matchingDays = timelog.days.filter((day) => day.d === eventTab);
+
                   return (
-                    <div key={t.id} className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
-                      <div className="flex items-center gap-3 mb-3">
-                        <div className="av w-10 h-10 text-xs" style={{ backgroundColor: c.bg, color: c.fg }}>{c.ii}</div>
+                    <div key={timelog.id} className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
+                      <div className="mb-3 flex items-center gap-3">
+                        <div className="av h-10 w-10 text-xs" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
                         <div>
-                          <div className="text-sm font-bold">{c.name}</div>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="text-[10px] text-gray-500">{c.phone}</span>
+                          <div className="text-sm font-bold">{contractor.name}</div>
+                          <div className="mt-0.5 flex items-center gap-1.5">
+                            <span className="text-[10px] text-gray-500">{contractor.phone}</span>
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center justify-between bg-gray-50 rounded-lg p-2.5">
-                        <div className="flex flex-col">
-                          <span className="text-[9px] text-gray-400 uppercase font-bold">Čas</span>
-                          <span className="text-xs font-mono font-bold">{day.f} – {day.t}</span>
-                        </div>
-                        <div className="flex flex-col text-right">
-                          <span className="text-[9px] text-gray-400 uppercase font-bold">Hodiny</span>
-                          <span className="text-xs font-bold">{calculateDayHours(day.f, day.t).toFixed(1)}h</span>
-                        </div>
+
+                      <div className="space-y-2">
+                        {matchingDays.map((day, index) => {
+                          const phase = PHASE_CONFIG.find((item) => item.type === day.type);
+                          return (
+                            <div key={`${timelog.id}-${index}`} className="flex items-center justify-between rounded-lg bg-gray-50 p-2.5">
+                              <div className="flex flex-col">
+                                <span className="text-[9px] font-bold uppercase text-gray-400">Čas</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-mono font-bold">{day.f} – {day.t}</span>
+                                  {phase && (
+                                    <span className={`rounded px-1.5 py-0.5 text-[9px] font-black text-white ${phase.color}`}>
+                                      {phase.id}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex flex-col text-right">
+                                <span className="text-[9px] font-bold uppercase text-gray-400">Hodiny</span>
+                                <span className="text-xs font-bold">{calculateDayHours(day.f, day.t).toFixed(1)}h</span>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   );
                 })}
-                {eventTimelogs.filter(t => t.days.some(d => d.d === eventTab)).length === 0 && (
-                  <div className="col-span-full py-12 text-center bg-gray-50 rounded-2xl border border-dashed border-gray-200 text-gray-400 text-sm">
+
+                {eventTimelogs.filter((timelog) => timelog.days.some((day) => day.d === eventTab)).length === 0 && (
+                  <div className="col-span-full rounded-2xl border border-dashed border-gray-200 bg-gray-50 py-12 text-center text-sm text-gray-400">
                     Na tento den není nikdo naplánován.
                   </div>
                 )}

@@ -24,3 +24,54 @@ Muzes sem psat svoje napady a ja z nich pak muzu delat konkretni ukoly.
 
 - [ ] Navrhnout dalsi produktove priority
   Poznamka: hlavne obsazovani crew, schvalovani, finance a perzistence dat.
+
+- [ ] Zlepsit kalendar a zobrazeni akci
+  Poznamka: akce by mely byt v kalendari prehlednejsi a lepe citelne.
+
+- [ ] Pridat lokaci akce a zobrazeni na mape
+  Poznamka: u akci chceme videt misto i vizualne na mape.
+
+- [ ] Napojit aplikaci na backend
+  Poznamka: postupny prechod z lokalnich dat na realnou perzistenci.
+
+- [ ] Vytvorit export do tabulky
+  Poznamka: export dat pro dalsi zpracovani mimo aplikaci.
+
+- [ ] Projekty: opravit graf a vypocet hodin
+  Poznamka: zkontrolovat chyby v projektu, napriklad kdyz je jen instal nebo u Gala Brno.
+
+- [ ] Crew detail: upravit sekci nadchazejicich akci
+  Poznamka: mozna bude lepsi tabulkove zobrazeni.
+
+- [ ] Pridat uzivatelske ucty
+  Poznamka: priprava na vice uzivatelu a role.
+
+- [x] Pridat klienty
+  Poznamka: tato cast uz je v aplikaci dostupna.
+
+- [ ] Napojit faktury
+  Poznamka: dodelat realne navazani na fakturacni proces.
+
+- [ ] Napojit nabor
+  Poznamka: dodelat realne propojeni naborove pipeline.
+
+- [ ] Pridat zasouvaci sidebar
+  Poznamka: zlepseni ovladani hlavne na mensich displejich.
+
+- [ ] Zakomponovat firemni obleceni
+  Poznamka: doplnit do procesu nebo detailu crew / akce.
+
+- [ ] Hromadna zprava pres Job Number
+  Poznamka: idealne pres webhook nebo podobnou integraci.
+
+- [ ] Offline rezim
+  Poznamka: aplikace by mela byt aspon castecne pouzitelna bez internetu.
+
+- [ ] Hodnoceni crew
+  Poznamka: doplnit zpetnou vazbu a kvalitu spoluprace.
+
+- [ ] Hlidac kolizi pri prirazeni na akci
+  Poznamka: upozornit, pokud je clovek uz prirazeny na jinou akci.
+
+- [ ] System nahradniku
+  Poznamka: evidence zaloznich lidi pro pripad vypadku.

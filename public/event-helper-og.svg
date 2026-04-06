@@ -9,6 +9,6 @@
   <rect x="72" y="72" width="148" height="148" rx="36" fill="#0f766e"/>
   <path d="M112 104h68v18h-54v30h44v18h-44v54h-14V104z" fill="#ecfeff"/>
   <path d="M166 104h14v120h-14z" fill="#99f6e4"/>
-  <text x="72" y="340" fill="#f0fdfa" font-family="Arial, sans-serif" font-size="88" font-weight="700">CrewFlow</text>
+  <text x="72" y="340" fill="#f0fdfa" font-family="Arial, sans-serif" font-size="88" font-weight="700">Event Helper</text>
   <text x="72" y="408" fill="#99f6e4" font-family="Arial, sans-serif" font-size="32">Interni system pro rizeni externiho crew, akci a vykazu.</text>
 </svg>

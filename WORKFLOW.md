@@ -31,7 +31,7 @@ Tento soubor popisuje, jak na projektu pracujeme a jak se maji zachazet zmeny.
 
 ## Startovni fraze
 
-- Pokud uzivatel na zacatku napise `start crewflow`, bere se to jako signal, ze muze byt na jinem zarizeni nebo chce bezpecne navazat praci.
+- Pokud uzivatel na zacatku napise `start event helper`, bere se to jako signal, ze muze byt na jinem zarizeni nebo chce bezpecne navazat praci.
 - Po teto frazi se ma nejdriv zkontrolovat, v jake slozce projektu se pracuje.
 - Pak se ma zkontrolovat git stav a jestli je potreba synchronizace s GitHubem.
 - Pokud je to vhodne, ma se doporucit nebo spustit projekt pres `start-project.ps1` nebo `start-project.sh`.

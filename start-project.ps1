@@ -15,7 +15,7 @@ Ensure-Command node
 Ensure-Command npm
 
 Write-Host ""
-Write-Host "CrewFlow startup" -ForegroundColor Cyan
+Write-Host "Event Helper startup" -ForegroundColor Cyan
 Write-Host "Slozka: $PWD"
 
 $branch = (git branch --show-current).Trim()

@@ -1,6 +1,6 @@
-# CrewFlow
+# Event Helper
 
-CrewFlow je interni aplikace pro eventovou / produkcni firmu na rizeni externiho crew.
+Event Helper je interni aplikace pro eventovou / produkcni firmu na rizeni externiho crew.
 
 ## Jednotny workflow na vsech zarizenich
 
@@ -26,8 +26,8 @@ Nepouzivejte bezny postup pres stahovani `.zip`, protoze se tim ztraci historie,
 ### Windows
 
 ```powershell
-git clone https://github.com/Peetaxo/crewflow.git
-cd crewflow
+git clone <url-vaseho-repozitare> event-helper
+cd event-helper
 npm install
 npm run dev
 ```
@@ -35,8 +35,8 @@ npm run dev
 ### macOS
 
 ```bash
-git clone https://github.com/Peetaxo/crewflow.git
-cd crewflow
+git clone <url-vaseho-repozitare> event-helper
+cd event-helper
 npm install
 npm run dev
 ```

@@ -14,7 +14,7 @@ ensure_command node
 ensure_command npm
 
 echo
-echo "CrewFlow startup"
+echo "Event Helper startup"
 echo "Slozka: $(pwd)"
 
 branch="$(git branch --show-current)"

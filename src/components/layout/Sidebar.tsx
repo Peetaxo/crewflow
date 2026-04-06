@@ -46,8 +46,8 @@ const Sidebar: React.FC = () => {
   return (
     <aside className="w-56 bg-gray-50 border-r border-gray-200 flex flex-col shrink-0">
       <div className="p-4 border-b border-gray-200">
-        <div className="text-base font-semibold text-gray-900 tracking-tight">CrewFlow</div>
-        <div className="text-[11px] text-gray-500 mt-0.5">Crew management</div>
+        <div className="text-base font-semibold text-gray-900 tracking-tight">Event Helper</div>
+        <div className="text-[11px] text-gray-500 mt-0.5">Crew Managment</div>
       </div>
 
       <div className="p-3 border-b border-gray-200">

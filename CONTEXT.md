@@ -1,8 +1,8 @@
 # Kontext aplikace
 
-## Co je CrewFlow
+## Co je Event Helper
 
-CrewFlow je interní aplikace pro eventovou / produkcni firmu na rizeni externiho crew.
+Event Helper je interni aplikace pro eventovou / produkcni firmu na rizeni externiho crew.
 Slouzi jako provozni panel pro planovani akci, obsazovani lidi, kontrolu vykazu, schvalovani a navaznou fakturaci.
 
 Aktualni podoba aplikace odpovida interaktivnimu produktu / prototypu, ktery uz ma jasnou domenovou logiku a hlavni workflow.

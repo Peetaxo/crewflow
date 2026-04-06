@@ -1,4 +1,4 @@
-import { Event, Contractor, Timelog, Invoice, Candidate, Project, Client } from './types';
+import { Event, Contractor, Timelog, Invoice, Candidate, Project, Client, ReceiptItem } from './types';
 
 export const INITIAL_EVENTS: Event[] = [
   { id: 1, name: 'Corporate Event Praha', job: 'NEX151', startDate: '2025-04-14', endDate: '2025-04-15', city: 'Praha', needed: 6, filled: 4, status: 'upcoming', client: 'Next Level' },
@@ -45,15 +45,22 @@ export const INITIAL_TIMELOGS: Timelog[] = [
 ];
 
 export const INITIAL_INVOICES: Invoice[] = [
-  { id: 'FAK-2026-001', cid: 3, eid: 3, hours: 10, hAmt: 2400, km: 180, kAmt: 1008, total: 3408, job: 'NEX143', status: 'paid', sentAt: '2025-05-10T10:00:00Z' },
-  { id: 'FAK-2026-002', cid: 5, eid: 2, hours: 10, hAmt: 2300, km: 0, kAmt: 0, total: 2300, job: 'NEX148', status: 'paid', sentAt: '2025-04-25T10:00:00Z' },
-  { id: 'FAK-2026-003', cid: 1, eid: 1, hours: 26, hAmt: 6500, km: 0, kAmt: 0, total: 6500, job: 'NEX151', status: 'paid', sentAt: '2025-04-20T10:00:00Z' },
-  { id: 'FAK-2025-010', cid: 1, eid: 3, hours: 10, hAmt: 2500, km: 100, kAmt: 560, total: 3060, job: 'NEX143', status: 'paid', sentAt: '2025-01-20T10:00:00Z' },
-  { id: 'FAK-2025-011', cid: 1, eid: 1, hours: 24, hAmt: 6000, km: 150, kAmt: 840, total: 6840, job: 'NEX151', status: 'paid', sentAt: '2025-02-15T10:00:00Z' },
-  { id: 'FAK-2025-012', cid: 1, eid: 2, hours: 30, hAmt: 7500, km: 200, kAmt: 1120, total: 8620, job: 'NEX148', status: 'paid', sentAt: '2025-03-15T10:00:00Z' },
-  { id: 'FAK-2024-099', cid: 1, eid: 5, hours: 42, hAmt: 10500, km: 250, kAmt: 1400, total: 11900, job: 'MAJ25', status: 'paid', sentAt: '2024-12-20T10:00:00Z' },
-  { id: 'FAK-2024-098', cid: 1, eid: 4, hours: 8, hAmt: 2000, km: 120, kAmt: 672, total: 2672, job: 'NEX156', status: 'paid', sentAt: '2024-11-25T10:00:00Z' },
-  { id: 'FAK-2025-015', cid: 1, eid: 2, hours: 8, hAmt: 2000, km: 20, kAmt: 112, total: 2112, job: 'NEX148', status: 'sent', sentAt: '2025-04-28T10:00:00Z' },
+  { id: 'FAK-2026-001', cid: 3, eid: 3, hours: 10, hAmt: 2400, km: 180, kAmt: 1008, receiptAmt: 0, total: 3408, job: 'NEX143', status: 'paid', sentAt: '2025-05-10T10:00:00Z' },
+  { id: 'FAK-2026-002', cid: 5, eid: 2, hours: 10, hAmt: 2300, km: 0, kAmt: 0, receiptAmt: 0, total: 2300, job: 'NEX148', status: 'paid', sentAt: '2025-04-25T10:00:00Z' },
+  { id: 'FAK-2026-003', cid: 1, eid: 1, hours: 26, hAmt: 6500, km: 0, kAmt: 0, receiptAmt: 420, total: 6920, job: 'NEX151', status: 'paid', sentAt: '2025-04-20T10:00:00Z' },
+  { id: 'FAK-2025-010', cid: 1, eid: 3, hours: 10, hAmt: 2500, km: 100, kAmt: 560, receiptAmt: 0, total: 3060, job: 'NEX143', status: 'paid', sentAt: '2025-01-20T10:00:00Z' },
+  { id: 'FAK-2025-011', cid: 1, eid: 1, hours: 24, hAmt: 6000, km: 150, kAmt: 840, receiptAmt: 0, total: 6840, job: 'NEX151', status: 'paid', sentAt: '2025-02-15T10:00:00Z' },
+  { id: 'FAK-2025-012', cid: 1, eid: 2, hours: 30, hAmt: 7500, km: 200, kAmt: 1120, receiptAmt: 0, total: 8620, job: 'NEX148', status: 'paid', sentAt: '2025-03-15T10:00:00Z' },
+  { id: 'FAK-2024-099', cid: 1, eid: 5, hours: 42, hAmt: 10500, km: 250, kAmt: 1400, receiptAmt: 0, total: 11900, job: 'MAJ25', status: 'paid', sentAt: '2024-12-20T10:00:00Z' },
+  { id: 'FAK-2024-098', cid: 1, eid: 4, hours: 8, hAmt: 2000, km: 120, kAmt: 672, receiptAmt: 0, total: 2672, job: 'NEX156', status: 'paid', sentAt: '2024-11-25T10:00:00Z' },
+  { id: 'FAK-2025-015', cid: 1, eid: 2, hours: 8, hAmt: 2000, km: 20, kAmt: 112, receiptAmt: 0, total: 2112, job: 'NEX148', status: 'sent', sentAt: '2025-04-28T10:00:00Z' },
+];
+
+export const INITIAL_RECEIPTS: ReceiptItem[] = [
+  { id: 1, cid: 1, eid: 1, job: 'NEX151', title: 'Parkovne O2 universum', vendor: 'Mr. Parkit', amount: 420, paidAt: '2025-04-15', note: 'Parkovani dodavky pri vykladu.', status: 'reimbursed' },
+  { id: 2, cid: 2, eid: 1, job: 'NEX151', title: 'Material na stage tape', vendor: 'Hornbach', amount: 680, paidAt: '2025-04-14', note: 'Dokoupeni pasky a drobneho materialu.', status: 'approved' },
+  { id: 3, cid: 1, eid: 2, job: 'NEX148', title: 'Taxi po nocni smene', vendor: 'Bolt', amount: 315, paidAt: '2025-04-23', note: 'Presun po deinstalaci.', status: 'submitted' },
+  { id: 4, cid: 3, eid: 3, job: 'NEX143', title: 'Cerpaci stanice', vendor: 'Shell', amount: 1480, paidAt: '2025-05-04', note: 'Palivo na cestu do Ostravy.', status: 'draft' },
 ];
 
 export const INITIAL_CANDIDATES: Candidate[] = [

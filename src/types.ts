@@ -1,10 +1,10 @@
-/** Uživatelská role v systému */
+/** Uzivatelska role v systemu */
 export type Role = 'crew' | 'crewhead' | 'coo';
 
 /** Status akce */
 export type EventStatus = 'upcoming' | 'full' | 'past' | 'planning';
 
-/** Typ práce (fáze akce) */
+/** Typ prace (faze akce) */
 export type TimelogType = 'instal' | 'provoz' | 'deinstal';
 
 export interface EventPhaseTime {
@@ -17,20 +17,20 @@ export interface EventPhaseSlot extends EventPhaseTime {
   dates: string[];
 }
 
-/** Akce (event) — konkrétní realizace projektu */
+/** Akce (event) - konkretni realizace projektu */
 export interface Event {
   id: number;
   name: string;
-  /** Job Number — propojení s projektem */
+  /** Job Number - propojeni s projektem */
   job: string;
   startDate: string;
   endDate: string;
   startTime?: string;
   endTime?: string;
   city: string;
-  /** Kolik crew členů je potřeba */
+  /** Kolik crew clenu je potreba */
   needed: number;
-  /** Kolik crew členů je aktuálně obsazeno */
+  /** Kolik crew clenu je aktualne obsazeno */
   filled: number;
   status: EventStatus;
   client: string;
@@ -38,30 +38,30 @@ export interface Event {
   contactPerson?: string;
   dresscode?: string;
   meetingLocation?: string;
-  /** Zobrazovat typy dnů (Instal/Provoz/Deinstal) */
+  /** Zobrazovat typy dnu (Instal/Provoz/Deinstal) */
   showDayTypes?: boolean;
-  /** Mapování datum -> typ dne */
+  /** Mapovani datum -> typ dne */
   dayTypes?: Record<string, TimelogType>;
-  /** Výchozí časy pro jednotlivé typy dnů */
+  /** Vychozi casy pro jednotlive typy dnu */
   phaseTimes?: Partial<Record<TimelogType, EventPhaseTime>>;
-  /** Konkrétní bloky časů pro jednotlivé typy dnů */
+  /** Konkretni bloky casu pro jednotlive typy dnu */
   phaseSchedules?: Partial<Record<TimelogType, EventPhaseSlot[]>>;
 }
 
-/** Kontraktor — člen crew */
+/** Kontraktor - clen crew */
 export interface Contractor {
   id: number;
   name: string;
-  /** Iniciály pro avatar */
+  /** Inicialy pro avatar */
   ii: string;
-  /** Barva pozadí avataru */
+  /** Barva pozadi avataru */
   bg: string;
   /** Barva textu avataru */
   fg: string;
   tags: string[];
-  /** Počet akcí celkem */
+  /** Pocet akci celkem */
   events: number;
-  /** Hodinová sazba v Kč */
+  /** Hodinova sazba v Kc */
   rate: number;
   phone: string;
   email: string;
@@ -78,21 +78,21 @@ export interface Contractor {
   note: string;
 }
 
-/** Status výkazu práce */
+/** Status vykazu prace */
 export type TimelogStatus = 'draft' | 'pending_ch' | 'pending_coo' | 'approved' | 'invoiced' | 'paid' | 'rejected';
 
-/** Jeden den ve výkazu práce */
+/** Jeden den ve vykazu prace */
 export interface TimelogDay {
   /** Datum (YYYY-MM-DD) */
   d: string;
-  /** Čas od (HH:MM) */
+  /** Cas od (HH:MM) */
   f: string;
-  /** Čas do (HH:MM) */
+  /** Cas do (HH:MM) */
   t: string;
   type: TimelogType;
 }
 
-/** Výkaz práce (timelog) */
+/** Vykaz prace (timelog) */
 export interface Timelog {
   id: number;
   /** ID akce */
@@ -100,7 +100,7 @@ export interface Timelog {
   /** ID kontraktora */
   cid: number;
   days: TimelogDay[];
-  /** Cestovné v km */
+  /** Cestovne v km */
   km: number;
   note: string;
   status: TimelogStatus;
@@ -117,11 +117,13 @@ export interface Invoice {
   /** ID akce */
   eid: number;
   hours: number;
-  /** Částka za hodiny */
+  /** Castka za hodiny */
   hAmt: number;
   km: number;
-  /** Částka za km */
+  /** Castka za km */
   kAmt: number;
+  /** Castka za uctenky */
+  receiptAmt?: number;
   total: number;
   /** Job Number */
   job: string;
@@ -129,10 +131,27 @@ export interface Invoice {
   sentAt: string | null;
 }
 
-/** Fáze náboru */
+/** Status uctenky */
+export type ReceiptStatus = 'draft' | 'submitted' | 'approved' | 'attached' | 'reimbursed' | 'rejected';
+
+/** Uctenka / vydaj crew k akci */
+export interface ReceiptItem {
+  id: number;
+  cid: number;
+  eid: number;
+  job: string;
+  title: string;
+  vendor: string;
+  amount: number;
+  paidAt: string;
+  note: string;
+  status: ReceiptStatus;
+}
+
+/** Faze naboru */
 export type RecruitmentStage = 'new' | 'interview_scheduled' | 'decision' | 'accepted' | 'rejected';
 
-/** Kandidát v náboru */
+/** Kandidat v naboru */
 export interface Candidate {
   id: number;
   name: string;

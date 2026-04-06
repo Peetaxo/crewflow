@@ -8,7 +8,7 @@ import StatusBadge from '../components/shared/StatusBadge';
 
 const DashboardView = () => {
   const {
-    role, filteredTimelogs, filteredInvoices, filteredEvents,
+    role, filteredTimelogs, filteredInvoices, filteredEvents, filteredReceipts,
     findContractor, findEvent, setCurrentTab,
   } = useAppContext();
 
@@ -18,6 +18,7 @@ const DashboardView = () => {
 
   const pendingForMe = filteredTimelogs.filter((t) => t.status === approvalStatus).length;
   const pendingInvoices = filteredInvoices.filter((i) => i.status === 'sent' || i.status === 'disputed').length;
+  const pendingReceipts = filteredReceipts.filter((receipt) => receipt.status === 'submitted' || receipt.status === 'approved').length;
   const approvedHours = filteredTimelogs
     .filter((t) => t.status === 'approved' || t.status === 'invoiced' || t.status === 'paid')
     .reduce((sum, t) => sum + calculateTotalHours(t.days), 0);
@@ -30,7 +31,7 @@ const DashboardView = () => {
         <p className="text-xs text-gray-500 mt-0.5">{roleLabel} · Duben 2025</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
         <StatCard
           label="Vykazy cekaji na me"
           value={pendingForMe}
@@ -42,6 +43,12 @@ const DashboardView = () => {
           value={pendingInvoices}
           sub="Self-billing"
           cls={pendingInvoices ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}
+        />
+        <StatCard
+          label="Uctenky v procesu"
+          value={pendingReceipts}
+          sub="Cekaji na schvaleni"
+          cls={pendingReceipts ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}
         />
         <StatCard
           label="Schvalene hodiny"

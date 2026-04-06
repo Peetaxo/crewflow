@@ -9,7 +9,7 @@ import StatusBadge from '../components/shared/StatusBadge';
 import ShiftCard from '../components/shared/ShiftCard';
 
 const MyShiftsView = () => {
-  const { contractors, timelogs, invoices, events, projects, darkMode, searchQuery } = useAppContext();
+  const { contractors, timelogs, invoices, receipts, events, projects, darkMode, searchQuery } = useAppContext();
   const me = contractors[0];
   if (!me) return null;
 
@@ -18,6 +18,7 @@ const MyShiftsView = () => {
 
   const myTimelogs = timelogs.filter((t) => t.cid === me.id);
   const myInvoices = invoices.filter((i) => i.cid === me.id);
+  const myReceipts = receipts.filter((receipt) => receipt.cid === me.id);
 
   const categorized = useMemo(() => ({
     upcoming: myTimelogs.filter((t) => t.status === 'draft'),
@@ -28,9 +29,10 @@ const MyShiftsView = () => {
   const stats = useMemo(() => ({
     totalEarned: myInvoices.filter((i) => i.status === 'paid').reduce((s, i) => s + i.total, 0),
     toPay: myInvoices.filter((i) => i.status === 'sent').reduce((s, i) => s + i.total, 0),
+    receiptToPay: myReceipts.filter((receipt) => receipt.status === 'approved').reduce((s, receipt) => s + receipt.amount, 0),
     pendingHours: categorized.processing.reduce((s, t) => s + calculateTotalHours(t.days), 0),
     totalHours: categorized.invoiced.reduce((s, t) => s + calculateTotalHours(t.days), 0),
-  }), [myInvoices, categorized]);
+  }), [myInvoices, myReceipts, categorized]);
 
   const chartData = useMemo(() => {
     const data: Record<string, { total: number; date: Date }> = {};
@@ -102,10 +104,11 @@ const MyShiftsView = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         {[
           { label: 'Vydelano celkem', value: formatCurrency(stats.totalEarned), sub: 'Z proplacenych faktur', bg: 'bg-emerald-50 border-emerald-100', icon: Receipt, iconBg: 'bg-emerald-100 text-emerald-700', labelCls: 'text-emerald-700', valueCls: 'text-emerald-900', subCls: 'text-emerald-600' },
           { label: 'K vyplaceni', value: formatCurrency(stats.toPay), sub: 'Odeslane faktury', bg: 'bg-blue-50 border-blue-100', icon: Clock, iconBg: 'bg-blue-100 text-blue-700', labelCls: 'text-blue-700', valueCls: 'text-blue-900', subCls: 'text-blue-600' },
+          { label: 'Uctenky k proplaceni', value: formatCurrency(stats.receiptToPay), sub: 'Schvalene uctenky', bg: 'bg-amber-50 border-amber-100', icon: Receipt, iconBg: 'bg-amber-100 text-amber-700', labelCls: 'text-amber-700', valueCls: 'text-amber-900', subCls: 'text-amber-600' },
           { label: 'Ke schvaleni', value: `${stats.pendingHours.toFixed(1)} h`, sub: 'Ceka na schvaleni', bg: 'bg-amber-50 border-amber-100', icon: CheckCircle2, iconBg: 'bg-amber-100 text-amber-700', labelCls: 'text-amber-700', valueCls: 'text-amber-900', subCls: 'text-amber-600' },
           { label: 'Celkem odpracovano', value: `${stats.totalHours.toFixed(1)} h`, sub: 'Schvalene smeny', bg: 'bg-gray-50 border-gray-100', icon: Calendar, iconBg: 'bg-gray-200 text-gray-700', labelCls: 'text-gray-700', valueCls: 'text-gray-900', subCls: 'text-gray-500' },
         ].map((s) => (

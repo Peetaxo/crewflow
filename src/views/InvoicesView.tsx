@@ -57,7 +57,24 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
                     <span className="text-xs font-medium">{c.name}</span>
                     <span className="text-xs text-gray-500">· {e.name}</span>
                   </div>
-                  <div className="text-[11px] text-gray-500 mt-2">{inv.hours}h × {Math.round(inv.hAmt / inv.hours)} Kc/h = {formatCurrency(inv.hAmt)}{inv.km > 0 && ` · cestovne ${inv.km} km = ${formatCurrency(inv.kAmt)}`}</div>
+                  <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                    <div className="rounded-lg bg-gray-50 px-2.5 py-1.5 text-gray-600">
+                      <span className="font-semibold text-gray-800">Hodiny</span>
+                      <span>{` ${inv.hours}h x ${Math.round(inv.hAmt / Math.max(inv.hours, 1))} Kc/h = ${formatCurrency(inv.hAmt)}`}</span>
+                    </div>
+                    {(inv.receiptAmt || 0) > 0 && (
+                      <div className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-amber-700">
+                        <span className="font-semibold text-amber-900">Uctenky</span>
+                        <span>{` = ${formatCurrency(inv.receiptAmt || 0)}`}</span>
+                      </div>
+                    )}
+                    {inv.km > 0 && (
+                      <div className="rounded-lg bg-blue-50 px-2.5 py-1.5 text-blue-700">
+                        <span className="font-semibold text-blue-900">Cestovne</span>
+                        <span>{` ${inv.km} km = ${formatCurrency(inv.kAmt)}`}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="text-right shrink-0"><div className="text-xl font-semibold">{formatCurrency(inv.total)}</div><div className="text-[10px] text-gray-500 mt-1">{inv.sentAt ? formatShortDate(inv.sentAt) : 'Bez data'}</div></div>
               </div>

@@ -15,6 +15,7 @@ const Sidebar: React.FC = () => {
     setSelectedClientIdForStats,
     timelogs,
     invoices,
+    receipts,
     candidates,
   } = useAppContext();
 
@@ -27,6 +28,8 @@ const Sidebar: React.FC = () => {
     approvals: role === 'crew' ? 0 : timelogs.filter((t) => t.status === approvalStatus).length,
     invoices: invoices.filter((i) => i.status === 'sent' || i.status === 'disputed').length,
     'my-invoices': invoices.filter((i) => i.cid === 1 && i.status !== 'paid').length,
+    receipts: receipts.filter((r) => r.status === 'submitted' || r.status === 'approved').length,
+    'my-receipts': receipts.filter((r) => r.cid === 1 && r.status !== 'reimbursed').length,
     recruitment: candidates.filter((c) => c.stage === 'new').length,
   };
 

@@ -34,6 +34,9 @@ Muzes sem psat svoje napady a ja z nich pak muzu delat konkretni ukoly.
 - [ ] Napojit aplikaci na backend
   Poznamka: postupny prechod z lokalnich dat na realnou perzistenci.
 
+- [ ] Napojit aplikaci na toggl.com
+  Poznamka: casy nebo vybrane zaznamy z Togglu propojit tak, aby se promitaly do firemniho nastroje.
+
 - [ ] Vytvorit export do tabulky
   Poznamka: export dat pro dalsi zpracovani mimo aplikaci.
 
@@ -51,6 +54,9 @@ Muzes sem psat svoje napady a ja z nich pak muzu delat konkretni ukoly.
 
 - [ ] Napojit faktury
   Poznamka: dodelat realne navazani na fakturacni proces.
+
+- [ ] Sekce uctenky
+  Poznamka: clen crew muze pridat uctenku nebo fakturu za vydaj, ktery zaplatil, a priradit ji ke konkretni akci / projektu.
 
 - [ ] Napojit nabor
   Poznamka: dodelat realne propojeni naborove pipeline.

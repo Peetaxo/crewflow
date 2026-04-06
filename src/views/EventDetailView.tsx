@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeft, Clock, FileText, MapPin, Shirt, Trash2, User, Users } from 'lucide-react';
+import { ArrowLeft, Clock, FileText, MapPin, Receipt, Shirt, Trash2, User, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAppContext } from '../context/AppContext';
 import { KM_RATE } from '../data';
@@ -10,26 +10,46 @@ import StatusBadge from '../components/shared/StatusBadge';
 const EventDetailView = () => {
   const {
     role,
-    selectedEventId, setSelectedEventId,
-    events, timelogs, contractors, setTimelogs,
-    findContractor, eventTab, setEventTab,
-    setAssigningCrewToEvent, setEditingEvent, setDeleteConfirm,
+    selectedEventId,
+    setSelectedEventId,
+    events,
+    timelogs,
+    contractors,
+    receipts,
+    setTimelogs,
+    findContractor,
+    eventTab,
+    setEventTab,
+    setAssigningCrewToEvent,
+    setEditingEvent,
+    setEditingReceipt,
+    setDeleteConfirm,
     setEditingTimelog,
   } = useAppContext();
 
   const event = events.find((item) => item.id === selectedEventId);
   if (!event) return null;
-  const eventStatus = getEventStatus(event);
 
+  const eventStatus = getEventStatus(event);
   const eventTimelogs = timelogs.filter((timelog) => timelog.eid === event.id);
+  const eventReceipts = receipts.filter((receipt) => receipt.eid === event.id);
   const totalHours = eventTimelogs.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
+  const totalCrewCost = eventTimelogs.reduce((sum, timelog) => {
+    const contractor = findContractor(timelog.cid);
+    return sum + (contractor ? calculateTotalHours(timelog.days) * contractor.rate : 0);
+  }, 0);
+  const totalTravelCost = eventTimelogs.reduce((sum, timelog) => sum + timelog.km * KM_RATE, 0);
+  const totalReceiptCost = eventReceipts.reduce((sum, receipt) => sum + receipt.amount, 0);
   const days = getDatesBetween(event.startDate, event.endDate);
   const eventCrew = contractors.filter((contractor) => eventTimelogs.some((timelog) => timelog.cid === contractor.id));
   const canManageEvents = role !== 'crew';
 
   const getPhasesForDate = (date: string) => (
     event.showDayTypes
-      ? PHASE_CONFIG.filter((phase) => event.phaseSchedules?.[phase.type]?.some((slot) => slot.dates.includes(date)) || event.dayTypes?.[date] === phase.type)
+      ? PHASE_CONFIG.filter((phase) => (
+          event.phaseSchedules?.[phase.type]?.some((slot) => slot.dates.includes(date))
+          || event.dayTypes?.[date] === phase.type
+        ))
       : []
   );
 
@@ -40,7 +60,7 @@ const EventDetailView = () => {
   return (
     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
       <button onClick={() => setSelectedEventId(null)} className="mb-4 flex items-center gap-1 text-xs text-gray-500 transition-colors hover:text-gray-900">
-        <ArrowLeft size={14} /> Zpět na Akce
+        <ArrowLeft size={14} /> Zpet na Akce
       </button>
 
       <div className="mb-6 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
@@ -53,6 +73,7 @@ const EventDetailView = () => {
             <h1 className="text-2xl font-bold text-gray-900">{event.name}</h1>
             <p className="mt-1 text-sm text-gray-500">{formatDateRange(event.startDate, event.endDate)} · {event.city} · {event.client}</p>
             {event.description && <p className="mt-3 max-w-2xl text-xs leading-relaxed text-gray-600">{event.description}</p>}
+
             <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2">
               {event.contactPerson && (
                 <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
@@ -75,23 +96,43 @@ const EventDetailView = () => {
             </div>
           </div>
 
-          {canManageEvents && (
-            <div className="flex gap-2">
-              <button onClick={() => setAssigningCrewToEvent(event)} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm shadow-emerald-200 hover:bg-emerald-700">
-                Obsadit crew
-              </button>
-              <button onClick={() => setEditingEvent(event)} className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium hover:bg-gray-50">
-                Upravit akci
-              </button>
-              <button
-                onClick={() => setDeleteConfirm({ type: 'event', id: event.id, name: event.name })}
-                className="rounded-xl border border-red-100 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
-                title="Smazat akci"
-              >
-                <Trash2 size={18} />
-              </button>
-            </div>
-          )}
+          <div className="flex gap-2">
+            <button
+              onClick={() => setEditingReceipt({
+                id: Math.max(0, ...receipts.map((receipt) => receipt.id)) + 1,
+                cid: 1,
+                eid: event.id,
+                job: event.job,
+                title: '',
+                vendor: '',
+                amount: 0,
+                paidAt: event.startDate,
+                note: '',
+                status: 'draft',
+              })}
+              className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium hover:bg-gray-50"
+            >
+              Pridat uctenku
+            </button>
+
+            {canManageEvents && (
+              <>
+                <button onClick={() => setAssigningCrewToEvent(event)} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm shadow-emerald-200 hover:bg-emerald-700">
+                  Obsadit crew
+                </button>
+                <button onClick={() => setEditingEvent(event)} className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium hover:bg-gray-50">
+                  Upravit akci
+                </button>
+                <button
+                  onClick={() => setDeleteConfirm({ type: 'event', id: event.id, name: event.name })}
+                  className="rounded-xl border border-red-100 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+                  title="Smazat akci"
+                >
+                  <Trash2 size={18} />
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         <div className="-mx-6 flex gap-1 border-b border-gray-100 px-6">
@@ -99,7 +140,7 @@ const EventDetailView = () => {
             onClick={() => setEventTab('overview')}
             className={`border-b-2 px-4 py-2 text-sm font-medium transition-all ${eventTab === 'overview' ? 'border-emerald-500 text-emerald-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
           >
-            Přehled
+            Prehled
           </button>
           {days.map((date) => {
             const phasesForDay = getPhasesForDate(date);
@@ -134,14 +175,14 @@ const EventDetailView = () => {
                 <div>
                   <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold">
                     <Users size={16} className="text-gray-400" />
-                    Přiřazená Crew ({eventCrew.length})
+                    Prirazena Crew ({eventCrew.length})
                   </h3>
                   <div className="overflow-hidden rounded-xl border border-gray-100 bg-gray-50">
                     <table className="w-full border-collapse text-left">
                       <thead>
                         <tr className="border-b border-gray-100 text-[10px] uppercase tracking-wider text-gray-400">
-                          <th className="px-4 py-3 text-left font-medium">Jméno</th>
-                          {event.showDayTypes && <th className="px-4 py-3 text-left font-medium">Fáze</th>}
+                          <th className="px-4 py-3 text-left font-medium">Jmeno</th>
+                          {event.showDayTypes && <th className="px-4 py-3 text-left font-medium">Faze</th>}
                           <th className="px-4 py-3 text-left font-medium">Hodiny</th>
                           <th className="px-4 py-3 text-right font-medium">Celkem</th>
                           <th className="px-4 py-3 text-right font-medium">Akce</th>
@@ -209,33 +250,27 @@ const EventDetailView = () => {
 
               <div className="space-y-4">
                 <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
-                  <h4 className="mb-3 text-[10px] font-bold uppercase tracking-wider text-emerald-700">Finanční souhrn</h4>
+                  <h4 className="mb-3 text-[10px] font-bold uppercase tracking-wider text-emerald-700">Financni souhrn</h4>
                   <div className="space-y-2">
                     <div className="flex justify-between text-xs">
                       <span className="text-emerald-600">Celkem hodiny</span>
                       <span className="font-bold text-emerald-900">{totalHours.toFixed(1)}h</span>
                     </div>
                     <div className="flex justify-between text-xs">
-                      <span className="text-emerald-600">Náklady na crew</span>
-                      <span className="font-bold text-emerald-900">
-                        {formatCurrency(eventTimelogs.reduce((sum, timelog) => {
-                          const contractor = findContractor(timelog.cid);
-                          return sum + (contractor ? calculateTotalHours(timelog.days) * contractor.rate : 0);
-                        }, 0))}
-                      </span>
+                      <span className="text-emerald-600">Naklady na crew</span>
+                      <span className="font-bold text-emerald-900">{formatCurrency(totalCrewCost)}</span>
                     </div>
                     <div className="flex justify-between text-xs">
-                      <span className="text-emerald-600">Cestovné</span>
-                      <span className="font-bold text-emerald-900">{formatCurrency(eventTimelogs.reduce((sum, timelog) => sum + timelog.km * KM_RATE, 0))}</span>
+                      <span className="text-emerald-600">Cestovne</span>
+                      <span className="font-bold text-emerald-900">{formatCurrency(totalTravelCost)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-emerald-600">Uctenky</span>
+                      <span className="font-bold text-emerald-900">{formatCurrency(totalReceiptCost)}</span>
                     </div>
                     <div className="mt-2 flex justify-between border-t border-emerald-200 pt-2 text-sm">
-                      <span className="font-bold text-emerald-700">Celkový rozpočet</span>
-                      <span className="font-black text-emerald-900">
-                        {formatCurrency(eventTimelogs.reduce((sum, timelog) => {
-                          const contractor = findContractor(timelog.cid);
-                          return sum + (contractor ? calculateTotalHours(timelog.days) * contractor.rate : 0) + timelog.km * KM_RATE;
-                        }, 0))}
-                      </span>
+                      <span className="font-bold text-emerald-700">Celkovy rozpocet</span>
+                      <span className="font-black text-emerald-900">{formatCurrency(totalCrewCost + totalTravelCost + totalReceiptCost)}</span>
                     </div>
                   </div>
                 </div>
@@ -258,10 +293,41 @@ const EventDetailView = () => {
                         <div className="text-sm font-bold">{days.length}</div>
                       </div>
                       <div className="rounded-lg border border-gray-100 bg-white p-2 text-center">
-                        <div className="text-[9px] uppercase text-gray-400">Výkazy</div>
+                        <div className="text-[9px] uppercase text-gray-400">Vykazy</div>
                         <div className="text-sm font-bold">{eventTimelogs.length}</div>
                       </div>
                     </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
+                  <h4 className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                    <Receipt size={12} className="text-gray-400" />
+                    Uctenky ({eventReceipts.length})
+                  </h4>
+                  <div className="space-y-2">
+                    {eventReceipts.slice(0, 4).map((receipt) => {
+                      const contractor = findContractor(receipt.cid);
+                      return (
+                        <div key={receipt.id} className="rounded-lg border border-gray-100 bg-white p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="text-xs font-semibold text-gray-900">{receipt.title}</div>
+                              <div className="text-[10px] text-gray-500">{contractor?.name || '—'} · {receipt.vendor}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-xs font-bold text-gray-900">{formatCurrency(receipt.amount)}</div>
+                              <StatusBadge status={receipt.status} />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {eventReceipts.length === 0 && (
+                      <div className="rounded-lg border border-dashed border-gray-200 bg-white px-3 py-6 text-center text-xs text-gray-400">
+                        K teto akci zatim nejsou zadane zadne uctenky.
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -311,7 +377,7 @@ const EventDetailView = () => {
                           return (
                             <div key={`${timelog.id}-${index}`} className="flex items-center justify-between rounded-lg bg-gray-50 p-2.5">
                               <div className="flex flex-col">
-                                <span className="text-[9px] font-bold uppercase text-gray-400">Čas</span>
+                                <span className="text-[9px] font-bold uppercase text-gray-400">Cas</span>
                                 <div className="flex items-center gap-2">
                                   <span className="text-xs font-mono font-bold">{day.f} – {day.t}</span>
                                   {phase && (
@@ -335,7 +401,7 @@ const EventDetailView = () => {
 
                 {eventTimelogs.filter((timelog) => timelog.days.some((day) => day.d === eventTab)).length === 0 && (
                   <div className="col-span-full rounded-2xl border border-dashed border-gray-200 bg-gray-50 py-12 text-center text-sm text-gray-400">
-                    Na tento den není nikdo naplánován.
+                    Na tento den neni nikdo naplanovan.
                   </div>
                 )}
               </div>

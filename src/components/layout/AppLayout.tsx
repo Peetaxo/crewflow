@@ -17,6 +17,7 @@ import CrewDetailView from '../../views/CrewDetailView';
 import TimelogsView from '../../views/TimelogsView';
 import ApprovalsView from '../../views/ApprovalsView';
 import InvoicesView from '../../views/InvoicesView';
+import ReceiptsView from '../../views/ReceiptsView';
 import RecruitmentView from '../../views/RecruitmentView';
 import SettingsView from '../../views/SettingsView';
 
@@ -26,6 +27,7 @@ import EventEditModal from '../modals/EventEditModal';
 import ProjectEditModal from '../modals/ProjectEditModal';
 import ClientEditModal from '../modals/ClientEditModal';
 import ContractorEditModal from '../modals/ContractorEditModal';
+import ReceiptEditModal from '../modals/ReceiptEditModal';
 import AssignCrewModal from '../modals/AssignCrewModal';
 import DeleteConfirmModal from '../modals/DeleteConfirmModal';
 
@@ -56,6 +58,7 @@ const AppLayout: React.FC = () => {
       case 'my-shifts': return <MyShiftsView key="my-shifts" />;
       case 'my-timelogs': return <TimelogsView key="my-timelogs" scope="mine" />;
       case 'my-invoices': return <InvoicesView key="my-invoices" scope="mine" />;
+      case 'my-receipts': return <ReceiptsView key="my-receipts" scope="mine" />;
       case 'clients': return <ClientsView key="clients" />;
       case 'projects': return <ProjectsView key="projects" />;
       case 'events': return <EventsView key="events" />;
@@ -63,6 +66,7 @@ const AppLayout: React.FC = () => {
       case 'timelogs': return <TimelogsView key="timelogs" scope="all" />;
       case 'approvals': return <ApprovalsView key="approvals" />;
       case 'invoices': return <InvoicesView key="invoices" scope="all" />;
+      case 'receipts': return <ReceiptsView key="receipts" scope="all" />;
       case 'recruitment': return <RecruitmentView key="recruitment" />;
       case 'settings': return <SettingsView key="settings" />;
       default: return <MyShiftsView key="my-shifts-default" />;
@@ -86,6 +90,7 @@ const AppLayout: React.FC = () => {
       <TimelogEditModal />
       <EventEditModal />
       <ProjectEditModal />
+      <ReceiptEditModal />
       <ClientEditModal />
       <ContractorEditModal />
       <AssignCrewModal />

@@ -45,6 +45,31 @@ npm run dev
 
 ### Kdyz zacinam pracovat na zarizeni
 
+Nejjednodussi varianta je pouzit startovaci skript, ktery vas upozorni na lokalni zmeny a provede bezny start projektu.
+
+### Windows
+
+```powershell
+.\start-project.ps1
+```
+
+### macOS
+
+```bash
+chmod +x ./start-project.sh
+./start-project.sh
+```
+
+Skript:
+
+- zkontroluje `git`, `node` a `npm`
+- upozorni, pokud mate lokalni zmeny
+- kdyz je repo ciste, udela `git pull --ff-only`
+- spusti `npm install`
+- spusti `npm run dev`
+
+Pokud skript z nejakeho duvodu nechcete pouzit, plati stale rucni varianta:
+
 ```bash
 git pull
 npm run dev

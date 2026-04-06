@@ -27,6 +27,15 @@ Tento soubor popisuje, jak na projektu pracujeme a jak se maji zachazet zmeny.
 - Pred zacatkem prace na notebooku, PC nebo MacBooku vzdy udelat `git pull`.
 - Pokud jsou lokalni necommitnute zmeny, nejdriv je commitnout nebo odlozit, a az potom delat `git pull`.
 - Po dokonceni smysluplne zmeny udelat `git push`, aby se dalo plynule navazat na dalsim zarizeni.
+- Preferovany start projektu je pres `start-project.ps1` na Windows a `start-project.sh` na macOS.
+
+## Startovni fraze
+
+- Pokud uzivatel na zacatku napise `start crewflow`, bere se to jako signal, ze muze byt na jinem zarizeni nebo chce bezpecne navazat praci.
+- Po teto frazi se ma nejdriv zkontrolovat, v jake slozce projektu se pracuje.
+- Pak se ma zkontrolovat git stav a jestli je potreba synchronizace s GitHubem.
+- Pokud je to vhodne, ma se doporucit nebo spustit projekt pres `start-project.ps1` nebo `start-project.sh`.
+- Pred poslani preview odkazu se musi vzdy overit, ze dev server opravdu bezi a port odpovida.
 
 ### Shrnuty scenar
 

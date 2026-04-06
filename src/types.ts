@@ -2,7 +2,7 @@
 export type Role = 'crew' | 'crewhead' | 'coo';
 
 /** Status akce */
-export type EventStatus = 'upcoming' | 'full' | 'planning';
+export type EventStatus = 'upcoming' | 'full' | 'past' | 'planning';
 
 /** Typ práce (fáze akce) */
 export type TimelogType = 'instal' | 'provoz' | 'deinstal';

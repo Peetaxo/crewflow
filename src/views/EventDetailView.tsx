@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { useAppContext } from '../context/AppContext';
 import { KM_RATE } from '../data';
 import { PHASE_CONFIG } from '../constants';
-import { calculateDayHours, calculateTotalHours, formatCurrency, formatDateRange, getDatesBetween } from '../utils';
+import { calculateDayHours, calculateTotalHours, formatCurrency, formatDateRange, getDatesBetween, getEventStatus } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';
 
 const EventDetailView = () => {
@@ -19,6 +19,7 @@ const EventDetailView = () => {
 
   const event = events.find((item) => item.id === selectedEventId);
   if (!event) return null;
+  const eventStatus = getEventStatus(event);
 
   const eventTimelogs = timelogs.filter((timelog) => timelog.eid === event.id);
   const totalHours = eventTimelogs.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
@@ -47,7 +48,7 @@ const EventDetailView = () => {
           <div>
             <div className="mb-2 flex items-center gap-2">
               <span className="jn px-2 py-0.5 text-sm">{event.job}</span>
-              <StatusBadge status={event.status} />
+              <StatusBadge status={eventStatus} />
             </div>
             <h1 className="text-2xl font-bold text-gray-900">{event.name}</h1>
             <p className="mt-1 text-sm text-gray-500">{formatDateRange(event.startDate, event.endDate)} · {event.city} · {event.client}</p>

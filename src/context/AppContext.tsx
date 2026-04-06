@@ -382,12 +382,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       client: updated.client.trim(),
     };
 
-    const isJobTaken = events.some(e => e.job === normalizedEvent.job && e.id !== normalizedEvent.id);
-    if (isJobTaken) {
-      toast.error(`Job Number ${normalizedEvent.job} je již přiřazen k jiné akci.`);
-      return;
-    }
-
     if (!normalizedEvent.job) {
       toast.error('Vyplňte Job Number.');
       return;
@@ -426,7 +420,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
 
     setEditingEvent(null);
-  }, [events, getScheduledEventDay, sortTimelogDays]);
+  }, [getScheduledEventDay, sortTimelogDays]);
 
   /** Smazat entitu potvrzenou v delete modalu */
   const handleDelete = useCallback(() => {

@@ -1,27 +1,29 @@
+import { Event } from './types';
+
 /**
- * Formátuje datum do krátkého českého formátu (den. měsíc.)
- * @example formatShortDate('2025-04-14') → '14. 4.'
+ * Formatuje datum do kratkeho ceskeho formatu (den. mesic.)
+ * @example formatShortDate('2025-04-14') -> '14. 4.'
  */
 export function formatShortDate(dateString: string): string {
   return new Date(dateString).toLocaleDateString('cs-CZ', { day: 'numeric', month: 'numeric' });
 }
-/** Alias pro zpětnou kompatibilitu */
+/** Alias pro zpetnou kompatibilitu */
 export const fd = formatShortDate;
 
 /**
- * Formátuje rozsah dat do čitelného formátu
- * @example formatDateRange('2025-04-14', '2025-04-15') → '14. 4. – 15. 4. 2025'
+ * Formatuje rozsah dat do citelneho formatu
+ * @example formatDateRange('2025-04-14', '2025-04-15') -> '14. 4. - 15. 4. 2025'
  */
 export function formatDateRange(startDate: string, endDate: string): string {
   const sd = new Date(startDate);
   const ed = new Date(endDate);
-  if (startDate === endDate) return formatShortDate(startDate) + '. ' + sd.getFullYear();
-  return `${sd.getDate()}. ${sd.getMonth() + 1}. – ${ed.getDate()}. ${ed.getMonth() + 1}. ${ed.getFullYear()}`;
+  if (startDate === endDate) return `${formatShortDate(startDate)}. ${sd.getFullYear()}`;
+  return `${sd.getDate()}. ${sd.getMonth() + 1}. - ${ed.getDate()}. ${ed.getMonth() + 1}. ${ed.getFullYear()}`;
 }
 export const fdr = formatDateRange;
 
 /**
- * Vrátí pole dat (YYYY-MM-DD) mezi dvěma daty včetně
+ * Vrati pole dat (YYYY-MM-DD) mezi dvema daty vcetne.
  */
 export function getDatesBetween(startDate: string, endDate: string): string[] {
   const days: string[] = [];
@@ -36,29 +38,29 @@ export function getDatesBetween(startDate: string, endDate: string): string[] {
 export const getDays = getDatesBetween;
 
 /**
- * Formátuje částku v Kč (česky)
- * @example formatCurrency(2500) → '2 500 Kč'
+ * Formatuje castku v Kc (cesky).
+ * @example formatCurrency(2500) -> '2 500 Kc'
  */
 export function formatCurrency(amount: number): string {
-  return Math.round(amount).toLocaleString('cs-CZ') + ' Kč';
+  return `${Math.round(amount).toLocaleString('cs-CZ')} Kc`;
 }
 export const fc = formatCurrency;
 
 /**
- * Spočítá hodiny jednoho dne z času od–do
- * Podporuje přechod přes půlnoc (např. 22:00 – 06:00 = 8h)
+ * Spocita hodiny jednoho dne z casu od-do.
+ * Podporuje prechod pres pulnoc (napr. 22:00 - 06:00 = 8h).
  */
 export function calculateDayHours(from: string, to: string): number {
   const [fh, fm] = from.split(':').map(Number);
   const [th, tm] = to.split(':').map(Number);
   let minutes = (th * 60 + tm) - (fh * 60 + fm);
-  if (minutes < 0) minutes += 1440; // přechod přes půlnoc
+  if (minutes < 0) minutes += 1440;
   return minutes / 60;
 }
 export const calcDayH = calculateDayHours;
 
 /**
- * Spočítá celkové hodiny ze seznamu dnů
+ * Spocita celkove hodiny ze seznamu dnu.
  */
 export function calculateTotalHours(days: { f: string; t: string }[]): number {
   return days.reduce((sum, day) => sum + calculateDayHours(day.f, day.t), 0);
@@ -66,16 +68,33 @@ export function calculateTotalHours(days: { f: string; t: string }[]): number {
 export const calcH = calculateTotalHours;
 
 /**
- * Vrátí odpočet do vypršení 72h lhůty pro rozporování faktury
- * @returns null pokud sentAt je null, jinak objekt s textem a příznakem vypršení
+ * Vrati odpocet do vyprseni 72h lhuty pro rozporovani faktury.
  */
 export function getCountdown(sentAt: string | null): { text: string; exp: boolean } | null {
   if (!sentAt) return null;
   const remaining = new Date(sentAt).getTime() + 72 * 3600000 - Date.now();
-  if (remaining <= 0) return { text: 'Lhůta vypršela', exp: true };
+  if (remaining <= 0) return { text: 'Lhuta vyprsela', exp: true };
   return {
     text: `${Math.floor(remaining / 3600000)}h ${Math.floor((remaining % 3600000) / 60000)}m`,
-    exp: false
+    exp: false,
   };
 }
 export const countdown = getCountdown;
+
+/**
+ * Odvodi provozni stav akce z data a obsazenosti.
+ */
+export function getEventStatus(event: Pick<Event, 'endDate' | 'filled' | 'needed'>): 'upcoming' | 'full' | 'past' {
+  const today = new Date().toISOString().split('T')[0];
+
+  if (event.endDate < today) return 'past';
+  if (event.filled >= event.needed) return 'full';
+  return 'upcoming';
+}
+
+/**
+ * Vrati true, pokud akce zasahuje do konkretniho dne.
+ */
+export function eventOccursOnDate(event: Pick<Event, 'startDate' | 'endDate'>, date: string): boolean {
+  return event.startDate <= date && event.endDate >= date;
+}

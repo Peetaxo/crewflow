@@ -61,7 +61,7 @@ const syncDayTypesFromSchedules = (event: Event) => {
 const EventEditModal = () => {
   const {
     editingEvent, setEditingEvent, handleSaveEvent,
-    projects, clients, events,
+    projects, clients,
   } = useAppContext();
 
   const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
@@ -95,7 +95,7 @@ const EventEditModal = () => {
     updateEvent({
       ...editingEvent,
       job: project.id,
-      name: project.name,
+      name: editingEvent.name.trim() ? editingEvent.name : project.name,
       client: project.client || editingEvent.client,
     });
     setIsProjectMenuOpen(false);
@@ -186,21 +186,19 @@ const EventEditModal = () => {
                     <div className="absolute z-20 mt-2 max-h-56 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 shadow-lg">
                       {filteredProjects.length > 0 ? (
                         filteredProjects.map((project) => {
-                          const isTaken = events.some((event) => event.job === project.id && event.id !== editingEvent.id);
                           return (
                             <button
                               key={project.id}
                               type="button"
-                              onClick={() => !isTaken && selectProject(project.id)}
-                              disabled={isTaken}
-                              className={`flex w-full items-start justify-between rounded-lg px-3 py-2 text-left transition-colors ${isTaken ? 'cursor-not-allowed text-gray-300' : 'hover:bg-gray-50'}`}
+                              onClick={() => selectProject(project.id)}
+                              className="flex w-full items-start justify-between rounded-lg px-3 py-2 text-left transition-colors hover:bg-gray-50"
                             >
                               <div>
                                 <div className="text-sm font-semibold text-gray-900">{project.id}</div>
                                 <div className="text-xs text-gray-500">{project.name}</div>
                               </div>
                               <div className="pl-3 text-[10px] font-medium uppercase tracking-wider text-gray-400">
-                                {isTaken ? 'Obsazeno' : project.client}
+                                {project.client}
                               </div>
                             </button>
                           );

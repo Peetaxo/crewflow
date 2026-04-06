@@ -4,15 +4,65 @@ import { motion } from 'framer-motion';
 import { useAppContext } from '../context/AppContext';
 import StatusBadge from '../components/shared/StatusBadge';
 import CrewDetailView from './CrewDetailView';
+import { Contractor } from '../types';
+
+const AVATAR_PALETTE = [
+  { bg: '#E1F5EE', fg: '#0F6E56' },
+  { bg: '#EEEDFE', fg: '#534AB7' },
+  { bg: '#E6F1FB', fg: '#185FA5' },
+  { bg: '#FAEEDA', fg: '#854F0B' },
+  { bg: '#EAF3DE', fg: '#3B6D11' },
+];
+
+const createEmptyContractor = (nextId: number): Contractor => {
+  const palette = AVATAR_PALETTE[(nextId - 1) % AVATAR_PALETTE.length];
+
+  return {
+    id: nextId,
+    name: '',
+    ii: '',
+    bg: palette.bg,
+    fg: palette.fg,
+    tags: [],
+    events: 0,
+    rate: 200,
+    phone: '',
+    email: '',
+    ico: '',
+    dic: '',
+    bank: '',
+    city: '',
+    billingName: '',
+    billingStreet: '',
+    billingZip: '',
+    billingCity: '',
+    billingCountry: 'Česká republika',
+    reliable: false,
+    note: '',
+  };
+};
 
 const CrewView = () => {
-  const { selectedContractorId, setSelectedContractorId, filteredContractors, setDeleteConfirm } = useAppContext();
+  const {
+    selectedContractorId,
+    setSelectedContractorId,
+    filteredContractors,
+    setDeleteConfirm,
+    contractors,
+    setEditingContractor,
+  } = useAppContext();
   if (selectedContractorId) return <CrewDetailView />;
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <div className="flex justify-between items-center mb-5">
         <h1 className="text-lg font-semibold">Crew</h1>
+        <button
+          onClick={() => setEditingContractor(createEmptyContractor(Math.max(0, ...contractors.map((c) => c.id)) + 1))}
+          className="px-3 py-1.5 bg-emerald-600 text-white rounded-md text-xs font-medium hover:bg-emerald-700 transition-colors"
+        >
+          + Nový člen
+        </button>
       </div>
       <div className="bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm">
         <table className="w-full text-left border-collapse">

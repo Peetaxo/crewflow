@@ -25,6 +25,7 @@ import TimelogEditModal from '../modals/TimelogEditModal';
 import EventEditModal from '../modals/EventEditModal';
 import ProjectEditModal from '../modals/ProjectEditModal';
 import ClientEditModal from '../modals/ClientEditModal';
+import ContractorEditModal from '../modals/ContractorEditModal';
 import AssignCrewModal from '../modals/AssignCrewModal';
 import DeleteConfirmModal from '../modals/DeleteConfirmModal';
 
@@ -86,6 +87,7 @@ const AppLayout: React.FC = () => {
       <EventEditModal />
       <ProjectEditModal />
       <ClientEditModal />
+      <ContractorEditModal />
       <AssignCrewModal />
       <DeleteConfirmModal />
     </div>

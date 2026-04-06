@@ -62,6 +62,8 @@ interface AppContextType {
   setEditingProject: (p: Project | null) => void;
   editingClient: Client | null;
   setEditingClient: (c: Client | null) => void;
+  editingContractor: Contractor | null;
+  setEditingContractor: (c: Contractor | null) => void;
   assigningCrewToEvent: Event | null;
   setAssigningCrewToEvent: (e: Event | null) => void;
   deleteConfirm: DeleteConfirmData | null;
@@ -171,6 +173,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [editingContractor, setEditingContractor] = useState<Contractor | null>(null);
   const [assigningCrewToEvent, setAssigningCrewToEvent] = useState<Event | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmData | null>(null);
   const [eventTab, setEventTab] = useState<string>('overview');
@@ -468,6 +471,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     editingEvent, setEditingEvent,
     editingProject, setEditingProject,
     editingClient, setEditingClient,
+    editingContractor, setEditingContractor,
     assigningCrewToEvent, setAssigningCrewToEvent,
     deleteConfirm, setDeleteConfirm,
     eventTab, setEventTab,

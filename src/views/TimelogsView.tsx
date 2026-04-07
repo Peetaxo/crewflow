@@ -1,118 +1,414 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAppContext } from '../context/AppContext';
-import { calculateTotalHours, calculateDayHours, formatShortDate } from '../utils';
+import { KM_RATE } from '../data';
+import { calculateDayHours, calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';
 
 interface TimelogsViewProps {
   scope?: 'all' | 'mine';
 }
 
+type ViewMode = 'job' | 'people';
+
 const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
-  const { filteredTimelogs, findContractor, findEvent, handleTimelogAction, setEditingTimelog, role, timelogFilter, setTimelogFilter } = useAppContext();
-  const baseTimelogs = scope === 'mine' ? filteredTimelogs.filter((t) => t.cid === 1) : filteredTimelogs;
-  const filtered = timelogFilter === 'all' ? baseTimelogs : baseTimelogs.filter((t) => t.status === timelogFilter);
+  const {
+    filteredTimelogs,
+    findContractor,
+    findEvent,
+    handleTimelogAction,
+    setEditingTimelog,
+    role,
+    timelogFilter,
+    setTimelogFilter,
+  } = useAppContext();
+
+  const [viewMode, setViewMode] = useState<ViewMode>(scope === 'mine' ? 'people' : 'job');
+
+  const baseTimelogs = scope === 'mine' ? filteredTimelogs.filter((timelog) => timelog.cid === 1) : filteredTimelogs;
+  const filtered = timelogFilter === 'all' ? baseTimelogs : baseTimelogs.filter((timelog) => timelog.status === timelogFilter);
   const isCrew = role === 'crew';
   const title = scope === 'mine' ? 'Moje timelogy' : 'Timelogy';
+  const pendingStatusForRole = role === 'crewhead' ? 'pending_ch' : 'pending_coo';
 
   const filterOptions = useMemo(() => {
     const counts = {
       all: baseTimelogs.length,
-      draft: baseTimelogs.filter((t) => t.status === 'draft').length,
-      pending_ch: baseTimelogs.filter((t) => t.status === 'pending_ch').length,
-      pending_coo: baseTimelogs.filter((t) => t.status === 'pending_coo').length,
-      approved: baseTimelogs.filter((t) => t.status === 'approved').length,
-      invoiced: baseTimelogs.filter((t) => t.status === 'invoiced').length,
-      paid: baseTimelogs.filter((t) => t.status === 'paid').length,
-      rejected: baseTimelogs.filter((t) => t.status === 'rejected').length,
+      draft: baseTimelogs.filter((timelog) => timelog.status === 'draft').length,
+      pending_ch: baseTimelogs.filter((timelog) => timelog.status === 'pending_ch').length,
+      pending_coo: baseTimelogs.filter((timelog) => timelog.status === 'pending_coo').length,
+      approved: baseTimelogs.filter((timelog) => timelog.status === 'approved').length,
+      invoiced: baseTimelogs.filter((timelog) => timelog.status === 'invoiced').length,
+      paid: baseTimelogs.filter((timelog) => timelog.status === 'paid').length,
+      rejected: baseTimelogs.filter((timelog) => timelog.status === 'rejected').length,
     };
 
     return [
-      { id: 'all', label: 'Vše', count: counts.all },
+      { id: 'all', label: 'Vse', count: counts.all },
       { id: 'draft', label: 'Koncepty', count: counts.draft },
-      { id: 'pending_ch', label: 'Čeká CH', count: counts.pending_ch },
-      { id: 'pending_coo', label: 'Čeká COO', count: counts.pending_coo },
-      { id: 'approved', label: 'Schváleno', count: counts.approved },
-      { id: 'invoiced', label: 'Fakturováno', count: counts.invoiced },
+      { id: 'pending_ch', label: 'Ceka CH', count: counts.pending_ch },
+      { id: 'pending_coo', label: 'Ceka COO', count: counts.pending_coo },
+      { id: 'approved', label: 'Schvaleno', count: counts.approved },
+      { id: 'invoiced', label: 'Fakturovano', count: counts.invoiced },
       { id: 'paid', label: 'Zaplaceno', count: counts.paid },
-      { id: 'rejected', label: 'Zamítnuto', count: counts.rejected },
+      { id: 'rejected', label: 'Zamitnuto', count: counts.rejected },
     ];
   }, [baseTimelogs]);
 
+  const groupedByJob = useMemo(() => {
+    const groups = new Map<string, { job: string; eventName: string; city: string; timelogs: typeof filtered }>();
+
+    filtered.forEach((timelog) => {
+      const event = findEvent(timelog.eid);
+      if (!event) return;
+
+      const existing = groups.get(event.job) || {
+        job: event.job,
+        eventName: event.name,
+        city: event.city,
+        timelogs: [],
+      };
+
+      existing.timelogs.push(timelog);
+      groups.set(event.job, existing);
+    });
+
+    return Array.from(groups.values()).sort((a, b) => a.job.localeCompare(b.job));
+  }, [filtered, findEvent]);
+
+  const runBulkAction = (ids: number[], action: 'ch' | 'coo') => {
+    ids.forEach((id) => handleTimelogAction(id, action));
+  };
+
+  const getBulkActionMeta = (timelogsInGroup: typeof filtered) => {
+    const actionableIds = timelogsInGroup
+      .filter((timelog) => timelog.status === pendingStatusForRole)
+      .map((timelog) => timelog.id);
+
+    if (actionableIds.length === 0 || role === 'crew' || scope === 'mine') return null;
+
+    if (role === 'crewhead') {
+      return {
+        ids: actionableIds,
+        action: 'ch' as const,
+        label: `Schvalit vse a poslat COO (${actionableIds.length})`,
+      };
+    }
+
+    return {
+      ids: actionableIds,
+      action: 'coo' as const,
+      label: `Schvalit vse (${actionableIds.length})`,
+    };
+  };
+
+  const renderRowActions = (timelog: typeof filtered[number]) => (
+    <div className="flex gap-2">
+      {timelog.status === 'draft' && (
+        <button
+          onClick={() => handleTimelogAction(timelog.id, 'sub')}
+          className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
+        >
+          Odeslat ke kontrole CH
+        </button>
+      )}
+      {timelog.status === 'pending_ch' && role === 'crewhead' && (
+        <>
+          <button
+            onClick={() => handleTimelogAction(timelog.id, 'ch')}
+            className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
+          >
+            Schvalit a poslat COO
+          </button>
+          <button
+            onClick={() => handleTimelogAction(timelog.id, 'rej')}
+            className="px-3 py-1.5 rounded-md border border-red-100 text-[11px] text-red-600 hover:bg-red-50"
+          >
+            Zamitnout
+          </button>
+        </>
+      )}
+      {timelog.status === 'pending_coo' && role === 'coo' && (
+        <>
+          <button
+            onClick={() => handleTimelogAction(timelog.id, 'coo')}
+            className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
+          >
+            Schvalit
+          </button>
+          <button
+            onClick={() => handleTimelogAction(timelog.id, 'rej')}
+            className="px-3 py-1.5 rounded-md border border-red-100 text-[11px] text-red-600 hover:bg-red-50"
+          >
+            Zamitnout
+          </button>
+        </>
+      )}
+      {(scope === 'mine' || !isCrew) && (
+        <button
+          onClick={() => setEditingTimelog(timelog)}
+          className="ml-auto px-3 py-1.5 rounded-md border border-gray-200 text-[11px] hover:bg-gray-50"
+        >
+          Upravit
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      <div className="mb-4">
-        <h1 className="text-lg font-semibold mb-3">{title}</h1>
-        <div className="flex flex-wrap bg-white border border-gray-200 rounded-lg p-0.5 w-fit gap-1">
+      <div className="mb-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-lg font-semibold">{title}</h1>
+            {scope === 'all' && (
+              <p className="mt-0.5 text-xs text-gray-500">
+                Schvalovani i detail vykazu na jednom miste.
+              </p>
+            )}
+          </div>
+
+          {scope === 'all' && (
+            <div className="flex rounded-lg border border-gray-200 bg-white p-0.5">
+              <button
+                onClick={() => setViewMode('job')}
+                className={`px-3 py-1 text-[11px] font-medium rounded-md ${viewMode === 'job' ? 'bg-emerald-50 text-emerald-700' : 'text-gray-500 hover:text-gray-900'}`}
+              >
+                Po Job Number
+              </button>
+              <button
+                onClick={() => setViewMode('people')}
+                className={`px-3 py-1 text-[11px] font-medium rounded-md ${viewMode === 'people' ? 'bg-emerald-50 text-emerald-700' : 'text-gray-500 hover:text-gray-900'}`}
+              >
+                Po lidech
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-wrap gap-1 rounded-lg border border-gray-200 bg-white p-0.5 w-fit">
           {filterOptions.map((filter) => (
             <button
               key={filter.id}
               onClick={() => setTimelogFilter(filter.id)}
-              className={`px-3 py-1 rounded-md text-[11px] font-medium transition-all inline-flex items-center gap-2 ${timelogFilter === filter.id ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+              className={`inline-flex items-center gap-2 rounded-md px-3 py-1 text-[11px] font-medium transition-all ${timelogFilter === filter.id ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
             >
               <span>{filter.label}</span>
-              <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${timelogFilter === filter.id ? 'bg-emerald-100' : 'bg-gray-100 text-gray-600'}`}>
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${timelogFilter === filter.id ? 'bg-emerald-100' : 'bg-gray-100 text-gray-600'}`}>
                 {filter.count}
               </span>
             </button>
           ))}
         </div>
       </div>
-      <div className="space-y-3">
-        {filtered.map((t) => {
-          const c = findContractor(t.cid);
-          const e = findEvent(t.eid);
-          if (!c || !e) return null;
-          const h = calculateTotalHours(t.days);
-          return (
-            <div key={t.id} className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
-              <div className="flex items-center gap-3 mb-3 pb-3 border-b border-gray-50">
-                <div className="av w-8 h-8 text-[10px]" style={{ backgroundColor: c.bg, color: c.fg }}>{c.ii}</div>
-                <div className="flex-1">
-                  <div className="text-sm font-semibold">{c.name}</div>
-                  <div className="flex gap-1.5 items-center mt-0.5"><span className="jn">{e.job}</span><span className="text-xs text-gray-500">{e.name}</span></div>
-                </div>
-                <StatusBadge status={t.status} />
-                <div className="text-right"><div className="text-base font-semibold">{h.toFixed(1)}h</div>{t.km > 0 && <div className="text-[10px] text-gray-500">+ {t.km} km</div>}</div>
-              </div>
-              <div className="secdiv mb-3">
-                {t.days.map((d, idx) => (
-                  <div key={idx} className="flex items-center gap-4 text-xs py-1">
-                    <span className="text-gray-500 w-20">{formatShortDate(d.d)}</span>
-                    <span className="font-semibold font-mono">{d.f} - {d.t}</span>
-                    <StatusBadge status={d.type} />
-                    <span className="text-gray-500 ml-auto">{calculateDayHours(d.f, d.t).toFixed(1)}h</span>
+
+      {scope === 'all' && viewMode === 'job' ? (
+        <div className="space-y-4">
+          {groupedByJob.map((group) => {
+            const totalHours = group.timelogs.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
+            const totalAmount = group.timelogs.reduce((sum, timelog) => {
+              const contractor = findContractor(timelog.cid);
+              if (!contractor) return sum;
+              return sum + (calculateTotalHours(timelog.days) * contractor.rate) + (timelog.km * KM_RATE);
+            }, 0);
+            const bulkAction = getBulkActionMeta(group.timelogs);
+
+            return (
+              <div key={group.job} className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+                <div className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-gray-100 pb-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="jn px-2 py-1 text-sm">{group.job}</span>
+                      <span className="text-base font-semibold text-gray-900">{group.eventName}</span>
+                    </div>
+                    <div className="mt-1 text-xs text-gray-500">
+                      {group.city} · {group.timelogs.length} vykazu
+                    </div>
                   </div>
-                ))}
+
+                  <div className="text-right">
+                    <div className="text-xl font-semibold text-gray-900">{formatCurrency(totalAmount)}</div>
+                    <div className="text-xs text-gray-500">{totalHours.toFixed(1)}h celkem</div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {group.timelogs.map((timelog) => {
+                    const contractor = findContractor(timelog.cid);
+                    const event = findEvent(timelog.eid);
+                    if (!contractor || !event) return null;
+
+                    const hours = calculateTotalHours(timelog.days);
+                    const phases = Array.from(new Set(timelog.days.map((day) => day.type)));
+
+                    return (
+                      <div key={timelog.id} className="rounded-xl border border-gray-100 bg-gray-50 p-4">
+                        <div className="mb-3 flex flex-wrap items-center gap-3 border-b border-gray-100 pb-3">
+                          <div className="av w-8 h-8 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>
+                            {contractor.ii}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-semibold">{contractor.name}</div>
+                            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
+                              <span>{event.name}</span>
+                              {phases.map((phase) => <StatusBadge key={`${timelog.id}-${phase}`} status={phase} />)}
+                            </div>
+                          </div>
+                          <StatusBadge status={timelog.status} />
+                          <div className="text-right">
+                            <div className="text-sm font-semibold">{hours.toFixed(1)}h</div>
+                            <div className="text-[11px] text-gray-500">
+                              {formatCurrency(hours * contractor.rate)}
+                              {timelog.km > 0 ? ` + ${formatCurrency(timelog.km * KM_RATE)}` : ''}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mb-3 space-y-1">
+                          {timelog.days.map((day, index) => (
+                            <div key={`${timelog.id}-${index}`} className="flex items-center gap-4 py-1 text-xs">
+                              <span className="w-20 text-gray-500">{formatShortDate(day.d)}</span>
+                              <span className="font-mono font-semibold">{day.f} - {day.t}</span>
+                              <StatusBadge status={day.type} />
+                              <span className="ml-auto text-gray-500">{calculateDayHours(day.f, day.t).toFixed(1)}h</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="mb-3 flex items-center gap-3">
+                          {timelog.note && (
+                            <p className="min-w-0 flex-1 text-xs italic text-gray-500">"{timelog.note}"</p>
+                          )}
+                          {(scope === 'mine' || !isCrew) && (
+                            <button
+                              onClick={() => setEditingTimelog(timelog)}
+                              className="ml-auto rounded-md border border-gray-200 px-3 py-1.5 text-[11px] hover:bg-gray-50"
+                            >
+                              Upravit
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="flex gap-2">
+                          {timelog.status === 'draft' && (
+                            <button
+                              onClick={() => handleTimelogAction(timelog.id, 'sub')}
+                              className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
+                            >
+                              Odeslat ke kontrole CH
+                            </button>
+                          )}
+                          {timelog.status === 'pending_ch' && role === 'crewhead' && (
+                            <>
+                              <button
+                                onClick={() => handleTimelogAction(timelog.id, 'ch')}
+                                className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
+                              >
+                                Schvalit a poslat COO
+                              </button>
+                              <button
+                                onClick={() => handleTimelogAction(timelog.id, 'rej')}
+                                className="px-3 py-1.5 rounded-md border border-red-100 text-[11px] text-red-600 hover:bg-red-50"
+                              >
+                                Zamitnout
+                              </button>
+                            </>
+                          )}
+                          {timelog.status === 'pending_coo' && role === 'coo' && (
+                            <>
+                              <button
+                                onClick={() => handleTimelogAction(timelog.id, 'coo')}
+                                className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
+                              >
+                                Schvalit
+                              </button>
+                              <button
+                                onClick={() => handleTimelogAction(timelog.id, 'rej')}
+                                className="px-3 py-1.5 rounded-md border border-red-100 text-[11px] text-red-600 hover:bg-red-50"
+                              >
+                                Zamitnout
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {bulkAction && (
+                  <div className="mt-4 flex justify-end">
+                    <button
+                      onClick={() => runBulkAction(bulkAction.ids, bulkAction.action)}
+                      className="rounded-md bg-emerald-600 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-700"
+                    >
+                      {bulkAction.label}
+                    </button>
+                  </div>
+                )}
               </div>
-              {t.note && <p className="text-xs text-gray-500 mb-3 italic">"{t.note}"</p>}
-              <div className="flex gap-2">
-                {t.status === 'draft' && (
-                  <button onClick={() => handleTimelogAction(t.id, 'sub')} className="px-3 py-1.5 bg-emerald-600 text-white rounded-md text-[11px] hover:bg-emerald-700">
-                    Odeslat ke kontrole CH →
-                  </button>
-                )}
-                {t.status === 'pending_ch' && role === 'crewhead' && (
-                  <>
-                    <button onClick={() => handleTimelogAction(t.id, 'ch')} className="px-3 py-1.5 bg-emerald-600 text-white rounded-md text-[11px] hover:bg-emerald-700">Schválit a poslat COO →</button>
-                    <button onClick={() => handleTimelogAction(t.id, 'rej')} className="px-3 py-1.5 border border-red-100 text-red-600 rounded-md text-[11px] hover:bg-red-50">Zamítnout</button>
-                  </>
-                )}
-                {t.status === 'pending_coo' && role === 'coo' && (
-                  <>
-                    <button onClick={() => handleTimelogAction(t.id, 'coo')} className="px-3 py-1.5 bg-emerald-600 text-white rounded-md text-[11px] hover:bg-emerald-700">Schválit (COO) ✓</button>
-                    <button onClick={() => handleTimelogAction(t.id, 'rej')} className="px-3 py-1.5 border border-red-100 text-red-600 rounded-md text-[11px] hover:bg-red-50">Zamítnout</button>
-                  </>
-                )}
-                {(scope === 'mine' || !isCrew) && (
-                  <button className="ml-auto px-3 py-1.5 border border-gray-200 rounded-md text-[11px] hover:bg-gray-50" onClick={() => setEditingTimelog(t)}>Upravit</button>
-                )}
-              </div>
+            );
+          })}
+
+          {groupedByJob.length === 0 && (
+            <div className="rounded-xl border border-gray-100 bg-white p-10 text-center text-sm text-gray-400">
+              Zadne zaznamy pro tento filtr
             </div>
-          );
-        })}
-        {filtered.length === 0 && <div className="bg-white border border-gray-100 rounded-xl p-10 text-center text-gray-400 text-sm">Žádné záznamy pro tento filtr</div>}
-      </div>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((timelog) => {
+            const contractor = findContractor(timelog.cid);
+            const event = findEvent(timelog.eid);
+            if (!contractor || !event) return null;
+
+            const totalHours = calculateTotalHours(timelog.days);
+
+            return (
+              <div key={timelog.id} className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+                <div className="mb-3 flex items-center gap-3 border-b border-gray-50 pb-3">
+                  <div className="av w-8 h-8 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>
+                    {contractor.ii}
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-semibold">{contractor.name}</div>
+                    <div className="mt-0.5 flex items-center gap-1.5">
+                      <span className="jn">{event.job}</span>
+                      <span className="text-xs text-gray-500">{event.name}</span>
+                    </div>
+                  </div>
+                  <StatusBadge status={timelog.status} />
+                  <div className="text-right">
+                    <div className="text-base font-semibold">{totalHours.toFixed(1)}h</div>
+                    {timelog.km > 0 && <div className="text-[10px] text-gray-500">+ {timelog.km} km</div>}
+                  </div>
+                </div>
+
+                <div className="mb-3">
+                  {timelog.days.map((day, index) => (
+                    <div key={`${timelog.id}-${index}`} className="flex items-center gap-4 py-1 text-xs">
+                      <span className="w-20 text-gray-500">{formatShortDate(day.d)}</span>
+                      <span className="font-mono font-semibold">{day.f} - {day.t}</span>
+                      <StatusBadge status={day.type} />
+                      <span className="ml-auto text-gray-500">{calculateDayHours(day.f, day.t).toFixed(1)}h</span>
+                    </div>
+                  ))}
+                </div>
+
+                {timelog.note && <p className="mb-3 text-xs italic text-gray-500">"{timelog.note}"</p>}
+                {renderRowActions(timelog)}
+              </div>
+            );
+          })}
+
+          {filtered.length === 0 && (
+            <div className="rounded-xl border border-gray-100 bg-white p-10 text-center text-sm text-gray-400">
+              Zadne zaznamy pro tento filtr
+            </div>
+          )}
+        </div>
+      )}
     </motion.div>
   );
 };

@@ -20,12 +20,9 @@ const Sidebar: React.FC = () => {
   } = useAppContext();
 
   const navItems = getNavItemsForRole(role);
-  const approvalStatus = role === 'crewhead' ? 'pending_ch' : 'pending_coo';
-
   const badgeCounts: Record<string, number> = {
     timelogs: timelogs.filter((t) => t.status === 'pending_ch' || t.status === 'pending_coo').length,
     'my-timelogs': timelogs.filter((t) => t.cid === 1 && (t.status === 'draft' || t.status === 'pending_ch' || t.status === 'pending_coo' || t.status === 'rejected')).length,
-    approvals: role === 'crew' ? 0 : timelogs.filter((t) => t.status === approvalStatus).length,
     invoices: invoices.filter((i) => i.status === 'sent' || i.status === 'disputed').length,
     'my-invoices': invoices.filter((i) => i.cid === 1 && i.status !== 'paid').length,
     receipts: receipts.filter((r) => r.status === 'submitted' || r.status === 'approved').length,

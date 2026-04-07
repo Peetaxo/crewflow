@@ -9,7 +9,7 @@ import StatusBadge from '../components/shared/StatusBadge';
 const DashboardView = () => {
   const {
     role, filteredTimelogs, filteredInvoices, filteredEvents, filteredReceipts,
-    findContractor, findEvent, setCurrentTab,
+    findContractor, findEvent, setCurrentTab, setTimelogFilter,
   } = useAppContext();
 
   const approvalStatus = role === 'crewhead' ? 'pending_ch' : 'pending_coo';
@@ -87,7 +87,13 @@ const DashboardView = () => {
                       <div className="text-xs font-semibold">{hours.toFixed(1)}h</div>
                       <div className="text-[11px] text-gray-500">{formatCurrency(hours * c.rate)}</div>
                     </div>
-                    <button onClick={() => setCurrentTab('approvals')} className="p-1.5 hover:bg-gray-50 rounded-md text-emerald-600">
+                    <button
+                      onClick={() => {
+                        setTimelogFilter(approvalStatus);
+                        setCurrentTab('timelogs');
+                      }}
+                      className="p-1.5 hover:bg-gray-50 rounded-md text-emerald-600"
+                    >
                       <ChevronRight size={14} />
                     </button>
                   </div>

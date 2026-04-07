@@ -14,13 +14,6 @@ const getInitials = (name: string) => (
     .join('')
 );
 
-const normalizeTags = (tags: string) => (
-  tags
-    .split(',')
-    .map((tag) => tag.trim())
-    .filter(Boolean)
-);
-
 const ContractorEditModal = () => {
   const {
     editingContractor,
@@ -37,17 +30,17 @@ const ContractorEditModal = () => {
     const name = editingContractor.name.trim();
 
     if (!name) {
-      toast.error('Vyplňte jméno člena crew.');
+      toast.error('Vyplnte jmeno clena crew.');
       return;
     }
 
     if (!editingContractor.city.trim()) {
-      toast.error('Vyplňte město.');
+      toast.error('Vyplnte mesto.');
       return;
     }
 
     if (!editingContractor.phone.trim() && !editingContractor.email.trim()) {
-      toast.error('Vyplňte alespoň telefon nebo e-mail.');
+      toast.error('Vyplnte alespon telefon nebo e-mail.');
       return;
     }
 
@@ -65,9 +58,9 @@ const ContractorEditModal = () => {
       billingStreet: editingContractor.billingStreet?.trim() || '',
       billingZip: editingContractor.billingZip?.trim() || '',
       billingCity: editingContractor.billingCity?.trim() || editingContractor.city.trim(),
-      billingCountry: editingContractor.billingCountry?.trim() || 'Česká republika',
+      billingCountry: editingContractor.billingCountry?.trim() || 'Ceska republika',
       note: editingContractor.note.trim(),
-      tags: editingContractor.tags,
+      tags: editingContractor.tags.includes('Ridic') ? ['Ridic'] : [],
       rate: Number(editingContractor.rate) || 0,
     };
 
@@ -79,177 +72,181 @@ const ContractorEditModal = () => {
     });
 
     setEditingContractor(null);
-    toast.success(isExisting ? 'Člen crew upraven.' : 'Nový člen crew vytvořen.');
+    toast.success(isExisting ? 'Clen crew upraven.' : 'Novy clen crew vytvoren.');
   };
 
   return (
     <AnimatePresence>
       {editingContractor && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
           >
-            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+            <div className="flex items-center justify-between border-b border-gray-100 p-4">
               <h3 className="font-semibold text-gray-900">
-                {isExisting ? 'Upravit člena crew' : 'Nový člen crew'}
+                {isExisting ? 'Upravit clena crew' : 'Novy clen crew'}
               </h3>
-              <button onClick={() => setEditingContractor(null)} className="p-1 hover:bg-gray-100 rounded-full text-gray-400">
+              <button onClick={() => setEditingContractor(null)} className="rounded-full p-1 text-gray-400 hover:bg-gray-100">
                 <X size={20} />
               </button>
             </div>
 
-            <div className="p-5 space-y-4 overflow-y-auto">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-4 overflow-y-auto p-5">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Jméno</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Jmeno</label>
                   <input
                     type="text"
                     value={editingContractor.name}
                     onChange={(e) => setEditingContractor({ ...editingContractor, name: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
-                    placeholder="Jméno a příjmení"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                    placeholder="Jmeno a prijmeni"
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Město</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Mesto</label>
                   <input
                     type="text"
                     value={editingContractor.city}
                     onChange={(e) => setEditingContractor({ ...editingContractor, city: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                     placeholder="Praha"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Telefon</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Telefon</label>
                   <input
                     type="text"
                     value={editingContractor.phone}
                     onChange={(e) => setEditingContractor({ ...editingContractor, phone: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                     placeholder="777 123 456"
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">E-mail</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">E-mail</label>
                   <input
                     type="email"
                     value={editingContractor.email}
                     onChange={(e) => setEditingContractor({ ...editingContractor, email: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                     placeholder="jmeno@email.cz"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div>
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Sazba / hod</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Sazba / hod</label>
                   <input
                     type="number"
                     min="0"
                     value={editingContractor.rate}
                     onChange={(e) => setEditingContractor({ ...editingContractor, rate: Number(e.target.value) })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">IČO</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">ICO</label>
                   <input
                     type="text"
                     value={editingContractor.ico}
                     onChange={(e) => setEditingContractor({ ...editingContractor, ico: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">DIČ</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">DIC</label>
                   <input
                     type="text"
                     value={editingContractor.dic}
                     onChange={(e) => setEditingContractor({ ...editingContractor, dic: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Číslo účtu</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Cislo uctu</label>
                   <input
                     type="text"
                     value={editingContractor.bank}
                     onChange={(e) => setEditingContractor({ ...editingContractor, bank: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                     placeholder="123456789/0800"
                   />
                 </div>
-                <div>
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Tagy</label>
-                  <input
-                    type="text"
-                    value={editingContractor.tags.join(', ')}
-                    onChange={(e) => setEditingContractor({ ...editingContractor, tags: normalizeTags(e.target.value) })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
-                    placeholder="Řidič, Stage, Zvuk"
-                  />
+                <div className="flex items-end">
+                  <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={editingContractor.tags.includes('Ridic')}
+                      onChange={(e) => setEditingContractor({
+                        ...editingContractor,
+                        tags: e.target.checked ? ['Ridic'] : [],
+                      })}
+                      className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    Oznacit jako ridice
+                  </label>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Fakturační jméno</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Fakturacni jmeno</label>
                   <input
                     type="text"
                     value={editingContractor.billingName || ''}
                     onChange={(e) => setEditingContractor({ ...editingContractor, billingName: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
-                    placeholder="Jméno nebo firma"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                    placeholder="Jmeno nebo firma"
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Fakturační ulice</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Fakturacni ulice</label>
                   <input
                     type="text"
                     value={editingContractor.billingStreet || ''}
                     onChange={(e) => setEditingContractor({ ...editingContractor, billingStreet: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div>
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">PSČ</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">PSC</label>
                   <input
                     type="text"
                     value={editingContractor.billingZip || ''}
                     onChange={(e) => setEditingContractor({ ...editingContractor, billingZip: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Fakturační město</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Fakturacni mesto</label>
                   <input
                     type="text"
                     value={editingContractor.billingCity || ''}
                     onChange={(e) => setEditingContractor({ ...editingContractor, billingCity: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Stát</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Stat</label>
                   <input
                     type="text"
                     value={editingContractor.billingCountry || ''}
                     onChange={(e) => setEditingContractor({ ...editingContractor, billingCountry: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                   />
                 </div>
               </div>
@@ -262,33 +259,33 @@ const ContractorEditModal = () => {
                     onChange={(e) => setEditingContractor({ ...editingContractor, reliable: e.target.checked })}
                     className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
                   />
-                  Označit jako spolehlivého člena crew
+                  Oznacit jako spolehliveho clena crew
                 </label>
 
                 <div>
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Poznámka</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Poznamka</label>
                   <textarea
                     value={editingContractor.note}
                     onChange={(e) => setEditingContractor({ ...editingContractor, note: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none h-24 resize-none"
-                    placeholder="Interní poznámka k člověku, zkušenostem nebo dostupnosti"
+                    className="h-24 w-full resize-none rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                    placeholder="Interni poznamka k cloveku, zkusenostem nebo dostupnosti"
                   />
                 </div>
               </div>
             </div>
 
-            <div className="p-4 border-t border-gray-100 bg-gray-50 flex gap-3">
+            <div className="flex gap-3 border-t border-gray-100 bg-gray-50 p-4">
               <button
                 onClick={() => setEditingContractor(null)}
-                className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-white transition-all"
+                className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-700 transition-all hover:bg-white"
               >
-                Zrušit
+                Zrusit
               </button>
               <button
                 onClick={handleSave}
-                className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-medium hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all"
+                className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-sm font-medium text-white shadow-lg shadow-emerald-200 transition-all hover:bg-emerald-700"
               >
-                Uložit člena
+                Ulozit clena
               </button>
             </div>
           </motion.div>

@@ -3,7 +3,6 @@ import {
   Calendar,
   Users,
   FileText,
-  CheckCircle2,
   Receipt,
   UserPlus,
   Clock,
@@ -28,7 +27,6 @@ export const NAV_ITEMS = [
   { id: 'crew', label: 'Crew', icon: Users },
   { id: 'timelogs', label: 'Timelogy', icon: FileText },
   { id: 'my-timelogs', label: 'Moje timelogy', icon: FileText },
-  { id: 'approvals', label: 'Schvalovani', icon: CheckCircle2 },
   { id: 'invoices', label: 'Faktury', icon: Receipt },
   { id: 'my-invoices', label: 'Moje faktury', icon: Receipt },
   { id: 'receipts', label: 'Uctenky', icon: Receipt },
@@ -39,8 +37,8 @@ export const NAV_ITEMS = [
 
 export const NAV_BY_ROLE: Record<Role, string[]> = {
   crew: ['my-shifts', 'events', 'my-timelogs', 'my-invoices', 'my-receipts'],
-  crewhead: ['dashboard', 'my-shifts', 'clients', 'projects', 'events', 'crew', 'timelogs', 'approvals', 'invoices', 'receipts', 'recruitment'],
-  coo: ['dashboard', 'my-shifts', 'clients', 'projects', 'events', 'crew', 'timelogs', 'approvals', 'invoices', 'receipts'],
+  crewhead: ['dashboard', 'my-shifts', 'clients', 'projects', 'events', 'crew', 'timelogs', 'invoices', 'receipts', 'recruitment'],
+  coo: ['dashboard', 'my-shifts', 'clients', 'projects', 'events', 'crew', 'timelogs', 'invoices', 'receipts'],
 };
 
 export const ROLE_LABELS: Record<Role, string> = {

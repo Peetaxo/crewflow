@@ -15,7 +15,6 @@ import EventDetailView from '../../views/EventDetailView';
 import CrewView from '../../views/CrewView';
 import CrewDetailView from '../../views/CrewDetailView';
 import TimelogsView from '../../views/TimelogsView';
-import ApprovalsView from '../../views/ApprovalsView';
 import InvoicesView from '../../views/InvoicesView';
 import ReceiptsView from '../../views/ReceiptsView';
 import RecruitmentView from '../../views/RecruitmentView';
@@ -64,7 +63,7 @@ const AppLayout: React.FC = () => {
       case 'events': return <EventsView key="events" />;
       case 'crew': return <CrewView key="crew" />;
       case 'timelogs': return <TimelogsView key="timelogs" scope="all" />;
-      case 'approvals': return <ApprovalsView key="approvals" />;
+      case 'approvals': return <TimelogsView key="approvals-as-timelogs" scope="all" />;
       case 'invoices': return <InvoicesView key="invoices" scope="all" />;
       case 'receipts': return <ReceiptsView key="receipts" scope="all" />;
       case 'recruitment': return <RecruitmentView key="recruitment" />;

@@ -248,11 +248,14 @@ const AssignCrewModal = () => {
                         <div className="mt-0.5 flex items-center gap-2">
                           <span className="text-[10px] text-gray-500">{c.city}</span>
                           <div className="flex gap-1">
-                            {c.tags.slice(0, 2).map((tag) => (
-                              <span key={tag} className="rounded-[4px] bg-gray-100 px-1 py-0.5 text-[8px] font-bold uppercase text-gray-500">
-                                {tag}
+                            {c.tags.includes('Ridic') && (
+                              <span className="rounded-[4px] bg-gray-100 px-1 py-0.5 text-[8px] font-bold uppercase text-gray-500">
+                                Ridic
                               </span>
-                            ))}
+                            )}
+                            <span className={`rounded-[4px] px-1 py-0.5 text-[8px] font-bold uppercase ${c.reliable ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                              {c.reliable ? 'Spolehlivy' : 'Overit'}
+                            </span>
                           </div>
                         </div>
                       </div>

@@ -213,8 +213,8 @@ const CrewDetailView = () => {
           </div>
 
           <div className="mb-4 flex flex-wrap gap-1">
-            {c.tags.map((t) => <StatusBadge key={t} status="bg" label={t} />)}
-            {c.reliable ? <StatusBadge status="full" label="Spolehlivý" /> : <StatusBadge status="pending_ch" label="Ověřit" />}
+            {c.tags.includes('Ridic') && <StatusBadge status="bg" label="Ridic" />}
+            {c.reliable ? <StatusBadge status="full" label="Spolehlivy" /> : <StatusBadge status="pending_ch" label="Overit" />}
           </div>
 
           <div className="mb-4 flex gap-1 rounded-lg border border-gray-200 bg-white p-0.5">

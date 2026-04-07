@@ -132,13 +132,33 @@ const EventsView = () => {
     filteredEvents, timelogs,
     setEditingEvent, setAssigningCrewToEvent, setDeleteConfirm,
     setEventTab, events,
+    eventsViewMode, setEventsViewMode,
+    eventsCalendarMode, setEventsCalendarMode,
+    eventsFilter, setEventsFilter,
+    eventsCalendarDate, setEventsCalendarDate,
   } = useAppContext();
 
   const canManageEvents = role !== 'crew';
-  const [viewMode, setViewMode] = useState<EventsViewMode>('list');
-  const [calendarMode, setCalendarMode] = useState<CalendarMode>('month');
-  const [eventFilter, setEventFilter] = useState<EventFilter>('upcoming');
-  const [calendarDate, setCalendarDate] = useState<Date>(() => getReferenceDate(filteredEvents));
+  const [didInitCalendarDate, setDidInitCalendarDate] = useState(false);
+  const viewMode = eventsViewMode as EventsViewMode;
+  const calendarMode = eventsCalendarMode as CalendarMode;
+  const eventFilter = eventsFilter as EventFilter;
+  const calendarDate = useMemo(
+    () => (eventsCalendarDate ? parseISO(eventsCalendarDate) : getReferenceDate(filteredEvents)),
+    [eventsCalendarDate, filteredEvents],
+  );
+
+  React.useEffect(() => {
+    if (didInitCalendarDate) return;
+    if (eventsCalendarDate) {
+      setDidInitCalendarDate(true);
+      return;
+    }
+
+    const referenceDate = getReferenceDate(filteredEvents);
+    setEventsCalendarDate(format(referenceDate, 'yyyy-MM-dd'));
+    setDidInitCalendarDate(true);
+  }, [didInitCalendarDate, eventsCalendarDate, filteredEvents, setEventsCalendarDate]);
 
   const eventsWithDerivedStatus = useMemo(() => (
     filteredEvents.map((event) => ({
@@ -196,10 +216,11 @@ const EventsView = () => {
   };
 
   const moveCalendar = (direction: 'prev' | 'next') => {
-    setCalendarDate((prev) => {
-      if (calendarMode === 'month') return direction === 'next' ? addMonths(prev, 1) : subMonths(prev, 1);
-      return direction === 'next' ? addWeeks(prev, 1) : subWeeks(prev, 1);
-    });
+    const nextDate = calendarMode === 'month'
+      ? (direction === 'next' ? addMonths(calendarDate, 1) : subMonths(calendarDate, 1))
+      : (direction === 'next' ? addWeeks(calendarDate, 1) : subWeeks(calendarDate, 1));
+
+    setEventsCalendarDate(format(nextDate, 'yyyy-MM-dd'));
   };
 
   if (selectedEventId) {
@@ -219,7 +240,7 @@ const EventsView = () => {
               ].map((item) => (
                 <button
                   key={item.id}
-                  onClick={() => setViewMode(item.id)}
+                  onClick={() => setEventsViewMode(item.id)}
                   className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${viewMode === item.id ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
                 >
                   <item.icon size={14} />
@@ -237,7 +258,7 @@ const EventsView = () => {
             ].map((item) => (
               <button
                 key={item.id}
-                onClick={() => setEventFilter(item.id)}
+                onClick={() => setEventsFilter(item.id)}
                 className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-all ${
                   eventFilter === item.id
                     ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
@@ -263,7 +284,7 @@ const EventsView = () => {
                 ].map((item) => (
                   <button
                     key={item.id}
-                    onClick={() => setCalendarMode(item.id)}
+                    onClick={() => setEventsCalendarMode(item.id)}
                     className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${calendarMode === item.id ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
                   >
                     {item.label}

@@ -75,6 +75,14 @@ interface AppContextType {
   setDeleteConfirm: (d: DeleteConfirmData | null) => void;
   eventTab: string;
   setEventTab: (tab: string) => void;
+  eventsViewMode: 'list' | 'calendar';
+  setEventsViewMode: (mode: 'list' | 'calendar') => void;
+  eventsCalendarMode: 'month' | 'week';
+  setEventsCalendarMode: (mode: 'month' | 'week') => void;
+  eventsFilter: 'upcoming' | 'past' | 'all';
+  setEventsFilter: (filter: 'upcoming' | 'past' | 'all') => void;
+  eventsCalendarDate: string;
+  setEventsCalendarDate: (date: string) => void;
   events: Event[];
   setEvents: React.Dispatch<React.SetStateAction<Event[]>>;
   contractors: Contractor[];
@@ -171,6 +179,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [assigningCrewToEvent, setAssigningCrewToEvent] = useState<Event | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmData | null>(null);
   const [eventTab, setEventTab] = useState<string>('overview');
+  const [eventsViewMode, setEventsViewMode] = useState<'list' | 'calendar'>('list');
+  const [eventsCalendarMode, setEventsCalendarMode] = useState<'month' | 'week'>('month');
+  const [eventsFilter, setEventsFilter] = useState<'upcoming' | 'past' | 'all'>('upcoming');
+  const [eventsCalendarDate, setEventsCalendarDate] = useState<string>('');
 
   const [events, setEvents] = useState<Event[]>(INITIAL_EVENTS);
   const [contractors, setContractors] = useState<Contractor[]>(INITIAL_CONTRACTORS);
@@ -183,6 +195,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setSearchQuery('');
+  }, [currentTab]);
+
+  useEffect(() => {
+    if (currentTab !== 'crew') setSelectedContractorId(null);
+    if (currentTab !== 'events') {
+      setSelectedEventId(null);
+      setEventTab('overview');
+    }
+    if (currentTab !== 'projects') setSelectedProjectIdForStats(null);
+    if (currentTab !== 'clients') setSelectedClientIdForStats(null);
   }, [currentTab]);
 
   useEffect(() => {
@@ -556,6 +578,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     assigningCrewToEvent, setAssigningCrewToEvent,
     deleteConfirm, setDeleteConfirm,
     eventTab, setEventTab,
+    eventsViewMode, setEventsViewMode,
+    eventsCalendarMode, setEventsCalendarMode,
+    eventsFilter, setEventsFilter,
+    eventsCalendarDate, setEventsCalendarDate,
     events, setEvents,
     contractors, setContractors,
     timelogs, setTimelogs,

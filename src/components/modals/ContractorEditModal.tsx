@@ -30,17 +30,17 @@ const ContractorEditModal = () => {
     const name = editingContractor.name.trim();
 
     if (!name) {
-      toast.error('Vyplnte jmeno clena crew.');
+      toast.error('Vyplňte jméno člena crew.');
       return;
     }
 
     if (!editingContractor.city.trim()) {
-      toast.error('Vyplnte mesto.');
+      toast.error('Vyplňte město.');
       return;
     }
 
     if (!editingContractor.phone.trim() && !editingContractor.email.trim()) {
-      toast.error('Vyplnte alespon telefon nebo e-mail.');
+      toast.error('Vyplňte alespoň telefon nebo e-mail.');
       return;
     }
 
@@ -58,7 +58,7 @@ const ContractorEditModal = () => {
       billingStreet: editingContractor.billingStreet?.trim() || '',
       billingZip: editingContractor.billingZip?.trim() || '',
       billingCity: editingContractor.billingCity?.trim() || editingContractor.city.trim(),
-      billingCountry: editingContractor.billingCountry?.trim() || 'Ceska republika',
+      billingCountry: editingContractor.billingCountry?.trim() || 'Česká republika',
       note: editingContractor.note.trim(),
       tags: editingContractor.tags.includes('Ridic') ? ['Ridic'] : [],
       rate: Number(editingContractor.rate) || 0,
@@ -72,7 +72,7 @@ const ContractorEditModal = () => {
     });
 
     setEditingContractor(null);
-    toast.success(isExisting ? 'Clen crew upraven.' : 'Novy clen crew vytvoren.');
+    toast.success(isExisting ? 'Člen crew upraven.' : 'Nový člen crew vytvořen.');
   };
 
   return (
@@ -87,7 +87,7 @@ const ContractorEditModal = () => {
           >
             <div className="flex items-center justify-between border-b border-gray-100 p-4">
               <h3 className="font-semibold text-gray-900">
-                {isExisting ? 'Upravit clena crew' : 'Novy clen crew'}
+                {isExisting ? 'Upravit člena crew' : 'Nový člen crew'}
               </h3>
               <button onClick={() => setEditingContractor(null)} className="rounded-full p-1 text-gray-400 hover:bg-gray-100">
                 <X size={20} />
@@ -97,17 +97,17 @@ const ContractorEditModal = () => {
             <div className="space-y-4 overflow-y-auto p-5">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Jmeno</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Jméno</label>
                   <input
                     type="text"
                     value={editingContractor.name}
                     onChange={(e) => setEditingContractor({ ...editingContractor, name: e.target.value })}
                     className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
-                    placeholder="Jmeno a prijmeni"
+                    placeholder="Jméno a příjmení"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Mesto</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Město</label>
                   <input
                     type="text"
                     value={editingContractor.city}
@@ -174,7 +174,7 @@ const ContractorEditModal = () => {
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Cislo uctu</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Číslo účtu</label>
                   <input
                     type="text"
                     value={editingContractor.bank}
@@ -194,24 +194,24 @@ const ContractorEditModal = () => {
                       })}
                       className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
                     />
-                    Oznacit jako ridice
+                    Označit jako řidiče
                   </label>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Fakturacni jmeno</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Fakturační jméno</label>
                   <input
                     type="text"
                     value={editingContractor.billingName || ''}
                     onChange={(e) => setEditingContractor({ ...editingContractor, billingName: e.target.value })}
                     className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
-                    placeholder="Jmeno nebo firma"
+                    placeholder="Jméno nebo firma"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Fakturacni ulice</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Fakturační ulice</label>
                   <input
                     type="text"
                     value={editingContractor.billingStreet || ''}
@@ -232,7 +232,7 @@ const ContractorEditModal = () => {
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Fakturacni mesto</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Fakturační město</label>
                   <input
                     type="text"
                     value={editingContractor.billingCity || ''}
@@ -241,7 +241,7 @@ const ContractorEditModal = () => {
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Stat</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Stát</label>
                   <input
                     type="text"
                     value={editingContractor.billingCountry || ''}
@@ -259,16 +259,16 @@ const ContractorEditModal = () => {
                     onChange={(e) => setEditingContractor({ ...editingContractor, reliable: e.target.checked })}
                     className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
                   />
-                  Oznacit jako spolehliveho clena crew
+                  Označit jako spolehlivého člena crew
                 </label>
 
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Poznamka</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Poznámka</label>
                   <textarea
                     value={editingContractor.note}
                     onChange={(e) => setEditingContractor({ ...editingContractor, note: e.target.value })}
                     className="h-24 w-full resize-none rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
-                    placeholder="Interni poznamka k cloveku, zkusenostem nebo dostupnosti"
+                    placeholder="Interní poznámka k člověku, zkušenostem nebo dostupnosti"
                   />
                 </div>
               </div>
@@ -279,13 +279,13 @@ const ContractorEditModal = () => {
                 onClick={() => setEditingContractor(null)}
                 className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-700 transition-all hover:bg-white"
               >
-                Zrusit
+                Zrušit
               </button>
               <button
                 onClick={handleSave}
                 className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-sm font-medium text-white shadow-lg shadow-emerald-200 transition-all hover:bg-emerald-700"
               >
-                Ulozit clena
+                Uložit člena
               </button>
             </div>
           </motion.div>

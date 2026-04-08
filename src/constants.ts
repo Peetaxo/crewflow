@@ -20,7 +20,7 @@ export const PHASE_CONFIG = [
 
 export const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'my-shifts', label: 'Moje smeny', icon: Clock },
+  { id: 'my-shifts', label: 'Moje směny', icon: Clock },
   { id: 'clients', label: 'Klienti', icon: Building2 },
   { id: 'projects', label: 'Projekty', icon: FolderKanban },
   { id: 'events', label: 'Akce', icon: Calendar },
@@ -29,10 +29,10 @@ export const NAV_ITEMS = [
   { id: 'my-timelogs', label: 'Moje timelogy', icon: FileText },
   { id: 'invoices', label: 'Faktury', icon: Receipt },
   { id: 'my-invoices', label: 'Moje faktury', icon: Receipt },
-  { id: 'receipts', label: 'Uctenky', icon: Receipt },
-  { id: 'my-receipts', label: 'Moje uctenky', icon: Receipt },
-  { id: 'recruitment', label: 'Nabor', icon: UserPlus },
-  { id: 'settings', label: 'Nastaveni', icon: Settings },
+  { id: 'receipts', label: 'Účtenky', icon: Receipt },
+  { id: 'my-receipts', label: 'Moje účtenky', icon: Receipt },
+  { id: 'recruitment', label: 'Nábor', icon: UserPlus },
+  { id: 'settings', label: 'Nastavení', icon: Settings },
 ] as const;
 
 export const NAV_BY_ROLE: Record<Role, string[]> = {

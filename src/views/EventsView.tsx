@@ -236,7 +236,7 @@ const EventsView = () => {
             <div className="flex items-center rounded-lg border border-gray-200 bg-white p-0.5">
               {[
                 { id: 'list' as const, label: 'Seznam', icon: List },
-                { id: 'calendar' as const, label: 'Kalendar', icon: CalendarDays },
+                { id: 'calendar' as const, label: 'Kalendář', icon: CalendarDays },
               ].map((item) => (
                 <button
                   key={item.id}
@@ -252,9 +252,9 @@ const EventsView = () => {
 
           <div className="flex flex-wrap items-center gap-2">
             {[
-              { id: 'upcoming' as const, label: 'Nadchazejici' },
-              { id: 'past' as const, label: 'Uplynule' },
-              { id: 'all' as const, label: 'Vse' },
+              { id: 'upcoming' as const, label: 'Nadcházející' },
+              { id: 'past' as const, label: 'Uplynulé' },
+              { id: 'all' as const, label: 'Vše' },
             ].map((item) => (
               <button
                 key={item.id}
@@ -279,8 +279,8 @@ const EventsView = () => {
             <>
               <div className="flex items-center rounded-lg border border-gray-200 bg-white p-0.5">
                 {[
-                  { id: 'month' as const, label: 'Mesic' },
-                  { id: 'week' as const, label: 'Tyden' },
+                  { id: 'month' as const, label: 'Měsíc' },
+                  { id: 'week' as const, label: 'Týden' },
                 ].map((item) => (
                   <button
                     key={item.id}
@@ -326,7 +326,7 @@ const EventsView = () => {
               })}
               className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700"
             >
-              + Nova akce
+              + Nová akce
             </button>
           )}
         </div>
@@ -334,9 +334,9 @@ const EventsView = () => {
 
       {visibleEvents.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-6 py-12 text-center shadow-sm">
-          <div className="text-sm font-semibold text-gray-900">Pro tento filtr tu zatim nejsou zadne akce.</div>
+          <div className="text-sm font-semibold text-gray-900">Pro tento filtr tu zatím nejsou žádné akce.</div>
           <div className="mt-1 text-xs text-gray-500">
-            Zkuste prepnout filtr nebo vytvorit novou akci.
+            Zkuste přepnout filtr nebo vytvořit novou akci.
           </div>
         </div>
       ) : viewMode === 'list' ? (
@@ -385,7 +385,7 @@ const EventsView = () => {
                       </div>
                       <div className="flex items-center gap-5 px-4 py-3">
                         <div>
-                          <div className="mb-1 text-[10px] uppercase tracking-wider text-gray-500">Crew obsazeni</div>
+                          <div className="mb-1 text-[10px] uppercase tracking-wider text-gray-500">Crew obsazení</div>
                           <div className="flex items-center gap-2">
                             <div className="h-1 w-20 overflow-hidden rounded-full bg-gray-100">
                               <div

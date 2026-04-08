@@ -139,7 +139,7 @@ const ProjectStatsView = () => {
   return (
     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
       <button onClick={() => setSelectedProjectIdForStats(null)} className="mb-4 flex items-center gap-1 text-xs text-gray-500 transition-colors hover:text-gray-900">
-        <ArrowLeft size={14} /> Zpet na Projekty
+        <ArrowLeft size={14} /> Zpět na Projekty
       </button>
 
       <div className="mb-6 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
@@ -155,14 +155,14 @@ const ProjectStatsView = () => {
           <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
             <div className="mb-2 flex items-center gap-2">
               <Receipt size={14} className="text-emerald-600" />
-              <span className="text-[9px] font-bold uppercase text-emerald-700">Naklady Crew (faktury)</span>
+              <span className="text-[9px] font-bold uppercase text-emerald-700">Náklady Crew (faktury)</span>
             </div>
             <div className="text-lg font-bold text-emerald-900">{formatCurrency(totalCrewCost)}</div>
           </div>
           <div className="rounded-xl border border-amber-100 bg-amber-50 p-4">
             <div className="mb-2 flex items-center gap-2">
               <Receipt size={14} className="text-amber-600" />
-              <span className="text-[9px] font-bold uppercase text-amber-700">Uctenky</span>
+              <span className="text-[9px] font-bold uppercase text-amber-700">Účtenky</span>
             </div>
             <div className="text-lg font-bold text-amber-900">{formatCurrency(totalReceiptCost)}</div>
           </div>
@@ -191,7 +191,7 @@ const ProjectStatsView = () => {
 
         <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-            <h3 className="mb-4 text-xs font-bold uppercase tracking-wider text-gray-700">Rozdeleni nakladu</h3>
+            <h3 className="mb-4 text-xs font-bold uppercase tracking-wider text-gray-700">Rozdělení nákladů</h3>
             {costByPhase.length > 0 ? (
               <div className="h-[240px]">
                 <ResponsiveContainer width="100%" height="100%">
@@ -211,17 +211,17 @@ const ProjectStatsView = () => {
                         <Cell key={index} fill={entry.color} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(value: number) => [formatCurrency(value), 'Naklady']} />
+                    <Tooltip formatter={(value: number) => [formatCurrency(value), 'Náklady']} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
             ) : (
-              <div className="py-10 text-center text-xs text-gray-400">Zadna data</div>
+              <div className="py-10 text-center text-xs text-gray-400">Žádná data</div>
             )}
           </div>
 
           <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-            <h3 className="mb-4 text-xs font-bold uppercase tracking-wider text-gray-700">Proplacene hodiny</h3>
+            <h3 className="mb-4 text-xs font-bold uppercase tracking-wider text-gray-700">Proplacené hodiny</h3>
             {hoursByPhase.length > 0 ? (
               <div className="space-y-4">
                 {hoursByPhase.map((phase) => (
@@ -237,7 +237,7 @@ const ProjectStatsView = () => {
                 ))}
               </div>
             ) : (
-              <div className="py-10 text-center text-xs text-gray-400">Zadna data</div>
+              <div className="py-10 text-center text-xs text-gray-400">Žádná data</div>
             )}
           </div>
         </div>
@@ -309,14 +309,14 @@ const ProjectStatsView = () => {
                 })}
               </div>
             ) : (
-              <div className="py-8 text-center text-xs text-gray-400">K tomuto projektu zatim nejsou zadane zadne timelogy.</div>
+              <div className="py-8 text-center text-xs text-gray-400">K tomuto projektu zatím nejsou zadané žádné timelogy.</div>
             )
           )}
         </div>
 
         <div className="mb-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
           <button onClick={() => setIsReceiptsOpen((value) => !value)} className="flex w-full items-center justify-between text-left">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700">Uctenky projektu</h3>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700">Účtenky projektu</h3>
             {renderToggle(isReceiptsOpen)}
           </button>
           {isReceiptsOpen && (
@@ -325,11 +325,11 @@ const ProjectStatsView = () => {
                 <table className="w-full border-collapse text-left">
                   <thead>
                     <tr className="border-b border-gray-200 text-[10px] uppercase tracking-wider text-gray-400">
-                      <th className="px-4 py-3 font-medium">Nazev</th>
+                      <th className="px-4 py-3 font-medium">Název</th>
                       <th className="px-4 py-3 font-medium">Akce</th>
                       <th className="px-4 py-3 font-medium">Crew</th>
                       <th className="px-4 py-3 font-medium">Datum</th>
-                      <th className="px-4 py-3 font-medium text-right">Castka</th>
+                      <th className="px-4 py-3 font-medium text-right">Částka</th>
                       <th className="px-4 py-3 font-medium text-right">Stav</th>
                     </tr>
                   </thead>
@@ -355,14 +355,14 @@ const ProjectStatsView = () => {
                 </table>
               </div>
             ) : (
-              <div className="py-8 text-center text-xs text-gray-400">K tomuto projektu zatim nejsou zadane zadne uctenky.</div>
+              <div className="py-8 text-center text-xs text-gray-400">K tomuto projektu zatím nejsou zadané žádné účtenky.</div>
             )
           )}
         </div>
 
         <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
           <button onClick={() => setIsInvoicesOpen((value) => !value)} className="flex w-full items-center justify-between text-left">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700">Schvalene faktury</h3>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700">Schválené faktury</h3>
             {renderToggle(isInvoicesOpen)}
           </button>
           {isInvoicesOpen && (
@@ -371,11 +371,11 @@ const ProjectStatsView = () => {
                 <table className="w-full border-collapse text-left">
                   <thead>
                     <tr className="border-b border-gray-200 text-[10px] uppercase tracking-wider text-gray-400">
-                      <th className="px-4 py-3 font-medium">Cislo faktury</th>
+                      <th className="px-4 py-3 font-medium">Číslo faktury</th>
                       <th className="px-4 py-3 font-medium">Crew</th>
                       <th className="px-4 py-3 font-medium">Hodiny</th>
                       <th className="px-4 py-3 font-medium">Km</th>
-                      <th className="px-4 py-3 font-medium text-right">Castka</th>
+                      <th className="px-4 py-3 font-medium text-right">Částka</th>
                       <th className="px-4 py-3 font-medium text-right">Status</th>
                     </tr>
                   </thead>
@@ -402,7 +402,7 @@ const ProjectStatsView = () => {
                 </table>
               </div>
             ) : (
-              <div className="py-8 text-center text-xs text-gray-400">Zadne schvalene faktury</div>
+              <div className="py-8 text-center text-xs text-gray-400">Žádné schválené faktury</div>
             )
           )}
         </div>

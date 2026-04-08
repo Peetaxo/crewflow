@@ -99,18 +99,18 @@ const MyShiftsView = () => {
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Moje smeny</h1>
-          <p className="text-sm text-gray-500">Vitejte zpet, {me.name}</p>
+          <h1 className="text-xl font-bold text-gray-900">Moje směny</h1>
+          <p className="text-sm text-gray-500">Vítejte zpět, {me.name}</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         {[
-          { label: 'Vydelano celkem', value: formatCurrency(stats.totalEarned), sub: 'Z proplacenych faktur', bg: 'bg-emerald-50 border-emerald-100', icon: Receipt, iconBg: 'bg-emerald-100 text-emerald-700', labelCls: 'text-emerald-700', valueCls: 'text-emerald-900', subCls: 'text-emerald-600' },
-          { label: 'K vyplaceni', value: formatCurrency(stats.toPay), sub: 'Odeslane faktury', bg: 'bg-blue-50 border-blue-100', icon: Clock, iconBg: 'bg-blue-100 text-blue-700', labelCls: 'text-blue-700', valueCls: 'text-blue-900', subCls: 'text-blue-600' },
-          { label: 'Uctenky k proplaceni', value: formatCurrency(stats.receiptToPay), sub: 'Schvalene uctenky', bg: 'bg-amber-50 border-amber-100', icon: Receipt, iconBg: 'bg-amber-100 text-amber-700', labelCls: 'text-amber-700', valueCls: 'text-amber-900', subCls: 'text-amber-600' },
-          { label: 'Ke schvaleni', value: `${stats.pendingHours.toFixed(1)} h`, sub: 'Ceka na schvaleni', bg: 'bg-amber-50 border-amber-100', icon: CheckCircle2, iconBg: 'bg-amber-100 text-amber-700', labelCls: 'text-amber-700', valueCls: 'text-amber-900', subCls: 'text-amber-600' },
-          { label: 'Celkem odpracovano', value: `${stats.totalHours.toFixed(1)} h`, sub: 'Schvalene smeny', bg: 'bg-gray-50 border-gray-100', icon: Calendar, iconBg: 'bg-gray-200 text-gray-700', labelCls: 'text-gray-700', valueCls: 'text-gray-900', subCls: 'text-gray-500' },
+          { label: 'Vyděláno celkem', value: formatCurrency(stats.totalEarned), sub: 'Z proplacených faktur', bg: 'bg-emerald-50 border-emerald-100', icon: Receipt, iconBg: 'bg-emerald-100 text-emerald-700', labelCls: 'text-emerald-700', valueCls: 'text-emerald-900', subCls: 'text-emerald-600' },
+          { label: 'K vyplacení', value: formatCurrency(stats.toPay), sub: 'Odeslané faktury', bg: 'bg-blue-50 border-blue-100', icon: Clock, iconBg: 'bg-blue-100 text-blue-700', labelCls: 'text-blue-700', valueCls: 'text-blue-900', subCls: 'text-blue-600' },
+          { label: 'Účtenky k proplacení', value: formatCurrency(stats.receiptToPay), sub: 'Schválené účtenky', bg: 'bg-amber-50 border-amber-100', icon: Receipt, iconBg: 'bg-amber-100 text-amber-700', labelCls: 'text-amber-700', valueCls: 'text-amber-900', subCls: 'text-amber-600' },
+          { label: 'Ke schválení', value: `${stats.pendingHours.toFixed(1)} h`, sub: 'Čeká na schválení', bg: 'bg-amber-50 border-amber-100', icon: CheckCircle2, iconBg: 'bg-amber-100 text-amber-700', labelCls: 'text-amber-700', valueCls: 'text-amber-900', subCls: 'text-amber-600' },
+          { label: 'Celkem odpracováno', value: `${stats.totalHours.toFixed(1)} h`, sub: 'Schválené směny', bg: 'bg-gray-50 border-gray-100', icon: Calendar, iconBg: 'bg-gray-200 text-gray-700', labelCls: 'text-gray-700', valueCls: 'text-gray-900', subCls: 'text-gray-500' },
         ].map((s) => (
           <div key={s.label} className={`${s.bg} border rounded-2xl p-4`}>
             <div className="flex items-center gap-3 mb-2">
@@ -128,9 +128,9 @@ const MyShiftsView = () => {
       <div className="space-y-4 mb-6">
         <div className="flex items-center gap-2 bg-white p-1 border border-gray-100 rounded-xl w-fit">
           {[
-            { id: 'upcoming' as const, lbl: 'Nadchazejici', count: categorized.upcoming.length },
-            { id: 'processing' as const, lbl: 'Zpracovava se', count: categorized.processing.length },
-            { id: 'invoiced' as const, lbl: 'Vyuctovane', count: categorized.invoiced.length },
+            { id: 'upcoming' as const, lbl: 'Nadcházející', count: categorized.upcoming.length },
+            { id: 'processing' as const, lbl: 'Zpracovává se', count: categorized.processing.length },
+            { id: 'invoiced' as const, lbl: 'Vyúčtované', count: categorized.invoiced.length },
             { id: 'invoices' as const, lbl: 'Moje faktury', count: myInvoices.length },
           ].map((tab) => (
             <button
@@ -154,7 +154,7 @@ const MyShiftsView = () => {
               if (!ev || !pr) return null;
               return <ShiftCard key={t.id} timelog={t} event={ev} project={pr} />;
             })}
-            {filteredData[activeTab].length === 0 && <div className="col-span-full py-12 text-center bg-gray-50 rounded-2xl border border-dashed border-gray-200 text-sm text-gray-500">{searchQuery ? 'Nebyly nalezeny zadne vysledky' : 'Zadne zaznamy'}</div>}
+            {filteredData[activeTab].length === 0 && <div className="col-span-full py-12 text-center bg-gray-50 rounded-2xl border border-dashed border-gray-200 text-sm text-gray-500">{searchQuery ? 'Nebyly nalezeny žádné výsledky' : 'Žádné záznamy'}</div>}
           </motion.div>
         ) : (
           <motion.div key="invoices" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="space-y-3">
@@ -176,7 +176,7 @@ const MyShiftsView = () => {
                 </div>
               </div>
             ))}
-            {filteredData.invoices.length === 0 && <div className="py-12 text-center bg-gray-50 rounded-2xl border border-dashed border-gray-200 text-sm text-gray-500">{searchQuery ? 'Nebyly nalezeny zadne vysledky' : 'Zatim zadne faktury'}</div>}
+            {filteredData.invoices.length === 0 && <div className="py-12 text-center bg-gray-50 rounded-2xl border border-dashed border-gray-200 text-sm text-gray-500">{searchQuery ? 'Nebyly nalezeny žádné výsledky' : 'Zatím žádné faktury'}</div>}
           </motion.div>
         )}
       </AnimatePresence>
@@ -185,12 +185,12 @@ const MyShiftsView = () => {
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
           <div>
             <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Fakturace za dane obdobi</h2>
-            <p className="text-xs text-gray-500">Prehled vasich prijmu</p>
+            <p className="text-xs text-gray-500">Přehled vašich příjmů</p>
           </div>
           <div className="flex gap-1 bg-gray-50 p-1 rounded-lg border border-gray-100">
             {(['month', 'quarter', 'year'] as const).map((p) => (
               <button key={p} onClick={() => setChartPeriod(p)} className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all ${chartPeriod === p ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>
-                {p === 'month' ? 'Mesice' : p === 'quarter' ? 'Kvartaly' : 'Roky'}
+                {p === 'month' ? 'Měsíce' : p === 'quarter' ? 'Kvartály' : 'Roky'}
               </button>
             ))}
           </div>
@@ -201,7 +201,7 @@ const MyShiftsView = () => {
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={darkMode ? '#1f2937' : '#f3f4f6'} />
               <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9ca3af' }} dy={10} />
               <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9ca3af' }} tickFormatter={(v) => `${v / 1000}k`} />
-              <Tooltip cursor={{ fill: darkMode ? '#111827' : '#f9fafb' }} contentStyle={{ backgroundColor: darkMode ? '#111827' : '#fff', border: 'none', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '12px' }} formatter={(v: number) => [formatCurrency(v), 'Fakturovano']} />
+              <Tooltip cursor={{ fill: darkMode ? '#111827' : '#f9fafb' }} contentStyle={{ backgroundColor: darkMode ? '#111827' : '#fff', border: 'none', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '12px' }} formatter={(v: number) => [formatCurrency(v), 'Fakturováno']} />
               <Bar dataKey="total" fill="#10b981" radius={[4, 4, 0, 0]} barSize={40} />
             </BarChart>
           </ResponsiveContainer>

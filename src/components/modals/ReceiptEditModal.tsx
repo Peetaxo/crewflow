@@ -27,7 +27,7 @@ const ReceiptEditModal = () => {
           className="flex w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
         >
           <div className="flex items-center justify-between border-b border-gray-100 p-4">
-            <h3 className="font-semibold text-gray-900">{editingReceipt.title ? 'Upravit uctenku' : 'Nova uctenka'}</h3>
+            <h3 className="font-semibold text-gray-900">{editingReceipt.title ? 'Upravit účtenku' : 'Nová účtenka'}</h3>
             <button onClick={() => setEditingReceipt(null)} className="rounded-full p-1 text-gray-400 hover:bg-gray-100">
               <X size={20} />
             </button>
@@ -80,13 +80,13 @@ const ReceiptEditModal = () => {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Nazev</label>
+                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Název</label>
                 <input
                   type="text"
                   value={editingReceipt.title}
                   onChange={(e) => setEditingReceipt({ ...editingReceipt, title: e.target.value })}
                   className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                  placeholder="Napriklad parkovne"
+                  placeholder="Například parkovné"
                 />
               </div>
               <div>
@@ -103,7 +103,7 @@ const ReceiptEditModal = () => {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Castka</label>
+                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Částka</label>
                 <input
                   type="number"
                   min="0"
@@ -125,12 +125,12 @@ const ReceiptEditModal = () => {
             </div>
 
             <div>
-              <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Poznamka</label>
+              <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Poznámka</label>
               <textarea
                 value={editingReceipt.note}
                 onChange={(e) => setEditingReceipt({ ...editingReceipt, note: e.target.value })}
                 className="h-20 w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                placeholder="Co bylo zaplaceno a proc"
+                placeholder="Co bylo zaplaceno a proč"
               />
             </div>
           </div>
@@ -140,13 +140,13 @@ const ReceiptEditModal = () => {
               onClick={() => setEditingReceipt(null)}
               className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-white"
             >
-              Zrusit
+              Zrušit
             </button>
             <button
               onClick={() => handleSaveReceipt(editingReceipt)}
               className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-sm font-medium text-white hover:bg-emerald-700"
             >
-              Ulozit uctenku
+              Uložit účtenku
             </button>
           </div>
         </motion.div>

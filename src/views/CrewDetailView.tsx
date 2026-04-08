@@ -25,7 +25,6 @@ const CrewDetailView = () => {
   } = useAppContext();
 
   const c = contractors.find((x) => x.id === selectedContractorId);
-
   if (!c) return null;
 
   const [activeTab, setActiveTab] = useState<'upcoming' | 'processing' | 'invoiced' | 'invoices'>('upcoming');
@@ -94,11 +93,11 @@ const CrewDetailView = () => {
   };
 
   const personalRows: [string, string][] = [
-    ['Telefon', c.phone],
-    ['E-mail', c.email],
-    ['IČO', c.ico],
+    ['Telefon', c.phone || '—'],
+    ['E-mail', c.email || '—'],
+    ['IČO', c.ico || '—'],
     ['DIČ', c.dic || '—'],
-    ['Č. účtu', c.bank],
+    ['Č. účtu', c.bank || '—'],
     ['Akcí', `${c.events} celkem`],
   ];
 
@@ -203,107 +202,106 @@ const CrewDetailView = () => {
 
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start">
         <div className="space-y-4 lg:w-[32%] lg:flex-none">
-        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-center gap-3 border-b border-gray-50 pb-4">
-            <div className="av h-12 w-12 text-lg" style={{ backgroundColor: c.bg, color: c.fg }}>{c.ii}</div>
-            <div>
-              <div className="text-base font-semibold">{c.name}</div>
-              <div className="text-xs text-gray-500">{c.city}</div>
-            </div>
-          </div>
-
-          <div className="mb-4 flex flex-wrap gap-1">
-            {c.tags.includes('Ridic') && <StatusBadge status="bg" label="Ridic" />}
-            {c.reliable ? <StatusBadge status="full" label="Spolehlivy" /> : <StatusBadge status="pending_ch" label="Overit" />}
-          </div>
-
-          <div className="mb-4 flex gap-1 rounded-lg border border-gray-200 bg-white p-0.5">
-            <button
-              onClick={() => setProfileTab('personal')}
-              className={`flex-1 rounded-md py-2 text-[11px] font-medium transition-all ${profileTab === 'personal' ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
-            >
-              Osobní údaje
-            </button>
-            <button
-              onClick={() => setProfileTab('billing')}
-              className={`flex-1 rounded-md py-2 text-[11px] font-medium transition-all ${profileTab === 'billing' ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
-            >
-              Fakturační adresa
-            </button>
-          </div>
-
-          <div className="space-y-2">
-            {(profileTab === 'personal' ? personalRows : billingRows).map(([label, value]) => (
-              <div key={label} className="flex justify-between gap-4 border-b border-gray-50 py-1.5 last:border-0">
-                <span className="text-xs text-gray-500">{label}</span>
-                <span className="text-right text-xs font-semibold">{value}</span>
+          <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex items-center gap-3 border-b border-gray-50 pb-4">
+              <div className="av h-12 w-12 text-lg" style={{ backgroundColor: c.bg, color: c.fg }}>{c.ii}</div>
+              <div>
+                <div className="text-base font-semibold">{c.name}</div>
+                <div className="text-xs text-gray-500">{c.city || 'Bez města'}</div>
               </div>
-            ))}
-          </div>
-        </div>
+            </div>
 
-        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-center justify-between border-b border-gray-50 pb-4">
-            <h3 className="text-sm font-semibold">Sazba a poznámka</h3>
-            {!isEditingMeta ? (
+            <div className="mb-4 flex flex-wrap gap-1">
+              {c.tags.includes('Ridic') && <StatusBadge status="bg" label="Řidič" />}
+              {c.reliable ? <StatusBadge status="full" label="Spolehlivý" /> : <StatusBadge status="pending_ch" label="Ověřit" />}
+            </div>
+
+            <div className="mb-4 flex gap-1 rounded-lg border border-gray-200 bg-white p-0.5">
               <button
-                onClick={() => setIsEditingMeta(true)}
-                className="rounded-lg border border-gray-200 px-3 py-1.5 text-[11px] font-medium hover:bg-gray-50"
+                onClick={() => setProfileTab('personal')}
+                className={`flex-1 rounded-md py-2 text-[11px] font-medium transition-all ${profileTab === 'personal' ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
               >
-                Upravit
+                Osobní údaje
               </button>
-            ) : null}
+              <button
+                onClick={() => setProfileTab('billing')}
+                className={`flex-1 rounded-md py-2 text-[11px] font-medium transition-all ${profileTab === 'billing' ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+              >
+                Fakturační adresa
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {(profileTab === 'personal' ? personalRows : billingRows).map(([label, value]) => (
+                <div key={label} className="flex justify-between gap-4 border-b border-gray-50 py-1.5 last:border-0">
+                  <span className="text-xs text-gray-500">{label}</span>
+                  <span className="text-right text-xs font-semibold">{value}</span>
+                </div>
+              ))}
+            </div>
           </div>
 
-          {!isEditingMeta ? (
-            <div className="space-y-2">
-              <div className="flex justify-between border-b border-gray-50 py-1.5">
-                <span className="text-xs text-gray-500">Sazba</span>
-                <span className="text-xs font-semibold">{c.rate} Kč/h</span>
-              </div>
-              <div className="pt-2">
-                <div className="mb-1 text-xs text-gray-500">Poznámka</div>
-                <div className="min-h-10 text-sm text-gray-700">{c.note || '—'}</div>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <label className="block text-xs text-gray-600">Sazba
-                <input
-                  value={metaForm.rate}
-                  onChange={(e) => setMetaForm((prev) => ({ ...prev, rate: e.target.value }))}
-                  className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
-                />
-              </label>
-              <label className="block text-xs text-gray-600">Poznámka
-                <textarea
-                  value={metaForm.note}
-                  onChange={(e) => setMetaForm((prev) => ({ ...prev, note: e.target.value }))}
-                  rows={4}
-                  className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
-                />
-              </label>
-              <div className="flex justify-end gap-3">
+          <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex items-center justify-between border-b border-gray-50 pb-4">
+              <h3 className="text-sm font-semibold">Sazba a poznámka</h3>
+              {!isEditingMeta ? (
                 <button
-                  onClick={() => {
-                    setMetaForm({ rate: String(c.rate), note: c.note ?? '' });
-                    setIsEditingMeta(false);
-                  }}
-                  className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium hover:bg-gray-50"
+                  onClick={() => setIsEditingMeta(true)}
+                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-[11px] font-medium hover:bg-gray-50"
                 >
-                  Zrušit
+                  Upravit
                 </button>
-                <button
-                  onClick={saveMeta}
-                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-                >
-                  Uložit
-                </button>
-              </div>
+              ) : null}
             </div>
-          )}
-        </div>
 
+            {!isEditingMeta ? (
+              <div className="space-y-2">
+                <div className="flex justify-between border-b border-gray-50 py-1.5">
+                  <span className="text-xs text-gray-500">Sazba</span>
+                  <span className="text-xs font-semibold">{c.rate} Kč/h</span>
+                </div>
+                <div className="pt-2">
+                  <div className="mb-1 text-xs text-gray-500">Poznámka</div>
+                  <div className="min-h-10 text-sm text-gray-700">{c.note || '—'}</div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <label className="block text-xs text-gray-600">Sazba
+                  <input
+                    value={metaForm.rate}
+                    onChange={(e) => setMetaForm((prev) => ({ ...prev, rate: e.target.value }))}
+                    className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="block text-xs text-gray-600">Poznámka
+                  <textarea
+                    value={metaForm.note}
+                    onChange={(e) => setMetaForm((prev) => ({ ...prev, note: e.target.value }))}
+                    rows={4}
+                    className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                  />
+                </label>
+                <div className="flex justify-end gap-3">
+                  <button
+                    onClick={() => {
+                      setMetaForm({ rate: String(c.rate), note: c.note ?? '' });
+                      setIsEditingMeta(false);
+                    }}
+                    className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium hover:bg-gray-50"
+                  >
+                    Zrušit
+                  </button>
+                  <button
+                    onClick={saveMeta}
+                    className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                  >
+                    Uložit
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="relative flex min-h-0 flex-col rounded-xl border border-gray-100 bg-white p-5 shadow-sm lg:h-[41rem] lg:flex-1 lg:min-w-0">

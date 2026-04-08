@@ -44,14 +44,14 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
     };
 
     return [
-      { id: 'all', label: 'Vse', count: counts.all },
+      { id: 'all', label: 'Vše', count: counts.all },
       { id: 'draft', label: 'Koncepty', count: counts.draft },
-      { id: 'pending_ch', label: 'Ceka CH', count: counts.pending_ch },
-      { id: 'pending_coo', label: 'Ceka COO', count: counts.pending_coo },
-      { id: 'approved', label: 'Schvaleno', count: counts.approved },
+      { id: 'pending_ch', label: 'Čeká CH', count: counts.pending_ch },
+      { id: 'pending_coo', label: 'Čeká COO', count: counts.pending_coo },
+      { id: 'approved', label: 'Schváleno', count: counts.approved },
       { id: 'invoiced', label: 'Fakturovano', count: counts.invoiced },
       { id: 'paid', label: 'Zaplaceno', count: counts.paid },
-      { id: 'rejected', label: 'Zamitnuto', count: counts.rejected },
+      { id: 'rejected', label: 'Zamítnuto', count: counts.rejected },
     ];
   }, [baseTimelogs]);
 
@@ -91,14 +91,14 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
       return {
         ids: actionableIds,
         action: 'ch' as const,
-        label: `Schvalit vse a poslat COO (${actionableIds.length})`,
+        label: `Schválit vše a poslat COO (${actionableIds.length})`,
       };
     }
 
     return {
       ids: actionableIds,
       action: 'coo' as const,
-      label: `Schvalit vse (${actionableIds.length})`,
+      label: `Schválit vše (${actionableIds.length})`,
     };
   };
 
@@ -118,13 +118,13 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
             onClick={() => handleTimelogAction(timelog.id, 'ch')}
             className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
           >
-            Schvalit a poslat COO
+            Schválit a poslat COO
           </button>
           <button
             onClick={() => handleTimelogAction(timelog.id, 'rej')}
             className="px-3 py-1.5 rounded-md border border-red-100 text-[11px] text-red-600 hover:bg-red-50"
           >
-            Zamitnout
+            Zamítnout
           </button>
         </>
       )}
@@ -134,13 +134,13 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
             onClick={() => handleTimelogAction(timelog.id, 'coo')}
             className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
           >
-            Schvalit
+            Schválit
           </button>
           <button
             onClick={() => handleTimelogAction(timelog.id, 'rej')}
             className="px-3 py-1.5 rounded-md border border-red-100 text-[11px] text-red-600 hover:bg-red-50"
           >
-            Zamitnout
+            Zamítnout
           </button>
         </>
       )}
@@ -163,7 +163,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
             <h1 className="text-lg font-semibold">{title}</h1>
             {scope === 'all' && (
               <p className="mt-0.5 text-xs text-gray-500">
-                Schvalovani i detail vykazu na jednom miste.
+                Schvalování i detail výkazů na jednom místě.
               </p>
             )}
           </div>
@@ -304,13 +304,13 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                                 onClick={() => handleTimelogAction(timelog.id, 'ch')}
                                 className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
                               >
-                                Schvalit a poslat COO
+                                Schválit a poslat COO
                               </button>
                               <button
                                 onClick={() => handleTimelogAction(timelog.id, 'rej')}
                                 className="px-3 py-1.5 rounded-md border border-red-100 text-[11px] text-red-600 hover:bg-red-50"
                               >
-                                Zamitnout
+                                Zamítnout
                               </button>
                             </>
                           )}
@@ -320,13 +320,13 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                                 onClick={() => handleTimelogAction(timelog.id, 'coo')}
                                 className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
                               >
-                                Schvalit
+                                Schválit
                               </button>
                               <button
                                 onClick={() => handleTimelogAction(timelog.id, 'rej')}
                                 className="px-3 py-1.5 rounded-md border border-red-100 text-[11px] text-red-600 hover:bg-red-50"
                               >
-                                Zamitnout
+                                Zamítnout
                               </button>
                             </>
                           )}
@@ -352,7 +352,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
 
           {groupedByJob.length === 0 && (
             <div className="rounded-xl border border-gray-100 bg-white p-10 text-center text-sm text-gray-400">
-              Zadne zaznamy pro tento filtr
+              Žádné záznamy pro tento filtr
             </div>
           )}
         </div>
@@ -404,7 +404,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
 
           {filtered.length === 0 && (
             <div className="rounded-xl border border-gray-100 bg-white p-10 text-center text-sm text-gray-400">
-              Zadne zaznamy pro tento filtr
+              Žádné záznamy pro tento filtr
             </div>
           )}
         </div>

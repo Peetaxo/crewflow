@@ -66,15 +66,15 @@ const ProjectsView = () => {
       <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-lg font-semibold">Projekty</h1>
-          <p className="mt-1 text-xs text-gray-500">Job Number muze mit vice akci a tady je uvidite pohromade.</p>
+          <p className="mt-1 text-xs text-gray-500">Job Number může mít více akcí a tady je uvidíte pohromadě.</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex rounded-lg border border-gray-200 bg-white p-0.5">
             {[
-              { id: 'all', label: 'Vse' },
-              { id: 'upcoming', label: 'Nadchazejici' },
-              { id: 'past', label: 'Uplynule' },
+              { id: 'all', label: 'Vše' },
+              { id: 'upcoming', label: 'Nadcházející' },
+              { id: 'past', label: 'Uplynulé' },
             ].map((item) => (
               <button
                 key={item.id}
@@ -94,7 +94,7 @@ const ProjectsView = () => {
             onClick={() => setEditingProject({ id: '', name: '', client: '', createdAt: new Date().toISOString().split('T')[0] })}
             className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700"
           >
-            + Novy projekt
+            + Nový projekt
           </button>
         </div>
       </div>
@@ -104,11 +104,11 @@ const ProjectsView = () => {
           <thead>
             <tr className="border-b border-gray-100 text-[10px] uppercase tracking-wider text-gray-400">
               <th className="px-4 py-3 font-medium">Job Number</th>
-              <th className="px-4 py-3 font-medium">Nazev</th>
+              <th className="px-4 py-3 font-medium">Název</th>
               <th className="px-4 py-3 font-medium">Klient</th>
               <th className="px-4 py-3 font-medium">Stav</th>
-              <th className="px-4 py-3 font-medium">Pocet akci</th>
-              <th className="px-4 py-3 font-medium">Naklady Crew</th>
+              <th className="px-4 py-3 font-medium">Počet akcí</th>
+              <th className="px-4 py-3 font-medium">Náklady Crew</th>
               <th className="px-4 py-3 font-medium text-right">Akce</th>
             </tr>
           </thead>
@@ -133,7 +133,7 @@ const ProjectsView = () => {
                 <td className="px-4 py-3">
                   {project.status === 'empty' ? (
                     <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">
-                      Bez akci
+                      Bez akcí
                     </span>
                   ) : (
                     <StatusBadge status={project.status} />
@@ -178,7 +178,7 @@ const ProjectsView = () => {
 
         {projectRows.length === 0 && (
           <div className="px-6 py-12 text-center text-sm text-gray-400">
-            Pro zvoleny filtr tu zatim nejsou zadne projekty.
+            Pro zvolený filtr tu zatím nejsou žádné projekty.
           </div>
         )}
       </div>

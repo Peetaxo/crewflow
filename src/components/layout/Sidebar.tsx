@@ -1,10 +1,11 @@
 import React from 'react';
-import { Search, Settings } from 'lucide-react';
+import { ChevronsLeft, ChevronsRight, Search, Settings } from 'lucide-react';
 import { useAppContext } from '../../context/AppContext';
 import { getNavItemsForRole, ROLE_LABELS, ROLE_SHORT_LABELS } from '../../constants';
 
 const Sidebar: React.FC = () => {
   const {
+    sidebarCollapsed, setSidebarCollapsed,
     role, setRole,
     currentTab, setCurrentTab,
     setSettingsSection,
@@ -44,53 +45,104 @@ const Sidebar: React.FC = () => {
   };
 
   return (
-    <aside className="w-56 bg-gray-50 border-r border-gray-200 flex flex-col shrink-0">
-      <div className="p-4 border-b border-gray-200">
-        <div className="text-base font-semibold text-gray-900 tracking-tight">Event Helper</div>
-        <div className="text-[11px] text-gray-500 mt-0.5">Crew Managment</div>
-      </div>
+    <aside className={`flex shrink-0 flex-col border-r border-gray-200 bg-gray-50 transition-all duration-300 ${sidebarCollapsed ? 'w-20' : 'w-56'}`}>
+      <div className="border-b border-gray-200 p-4">
+        <div className={`flex items-start ${sidebarCollapsed ? 'justify-center' : 'justify-between gap-3'}`}>
+          {sidebarCollapsed ? (
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-50 text-sm font-bold text-emerald-700">
+              EH
+            </div>
+          ) : (
+            <div>
+              <div className="text-base font-semibold tracking-tight text-gray-900">Event Helper</div>
+              <div className="mt-0.5 text-[11px] text-gray-500">Crew Management</div>
+            </div>
+          )}
 
-      <div className="p-3 border-b border-gray-200">
-        <div className="relative">
-          <Search className="absolute left-2.5 top-2.5 text-gray-400" size={14} />
-          <input
-            type="text"
-            placeholder="Hledat akci, job nebo jméno..."
-            className="w-full pl-8 pr-3 py-2 bg-white border border-gray-200 rounded-lg text-[11px] focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-500 transition-colors hover:border-emerald-200 hover:text-emerald-700"
+            title={sidebarCollapsed ? 'Rozbalit panel' : 'Sbalit panel'}
+          >
+            {sidebarCollapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
+          </button>
         </div>
       </div>
 
-      <div className="p-3 border-b border-gray-200">
-        <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Zobrazuji jako</div>
-        <div className="grid grid-cols-3 bg-white border border-gray-200 rounded-lg p-0.5 gap-0.5">
-          {(['crew', 'crewhead', 'coo'] as const).map((roleOption) => (
-            <button
-              key={roleOption}
-              onClick={() => setRole(roleOption)}
-              className={`py-1 rounded-md text-[11px] font-medium transition-all ${role === roleOption ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
-            >
-              {ROLE_SHORT_LABELS[roleOption]}
-            </button>
-          ))}
+      {!sidebarCollapsed ? (
+        <div className="border-b border-gray-200 p-3">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 text-gray-400" size={14} />
+            <input
+              type="text"
+              placeholder="Hledat akci, job nebo jméno..."
+              className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-8 pr-3 text-[11px] transition-all focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
         </div>
+      ) : (
+        <div className="border-b border-gray-200 p-3">
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed(false)}
+            className="flex w-full items-center justify-center rounded-xl border border-gray-200 bg-white py-2 text-gray-500 transition-colors hover:border-emerald-200 hover:text-emerald-700"
+            title="Rozbalit a hledat"
+          >
+            <Search size={16} />
+          </button>
+        </div>
+      )}
+
+      <div className="border-b border-gray-200 p-3">
+        {!sidebarCollapsed ? (
+          <>
+            <div className="mb-2 text-[10px] uppercase tracking-wider text-gray-500">Zobrazuji jako</div>
+            <div className="grid grid-cols-3 gap-0.5 rounded-lg border border-gray-200 bg-white p-0.5">
+              {(['crew', 'crewhead', 'coo'] as const).map((roleOption) => (
+                <button
+                  key={roleOption}
+                  onClick={() => setRole(roleOption)}
+                  className={`rounded-md py-1 text-[11px] font-medium transition-all ${role === roleOption ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                >
+                  {ROLE_SHORT_LABELS[roleOption]}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="space-y-2">
+            {(['crew', 'crewhead', 'coo'] as const).map((roleOption) => (
+              <button
+                key={roleOption}
+                onClick={() => setRole(roleOption)}
+                className={`flex w-full items-center justify-center rounded-xl border px-2 py-2 text-[11px] font-semibold transition-all ${role === roleOption ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-white text-gray-500 hover:text-gray-900'}`}
+                title={ROLE_LABELS[roleOption]}
+              >
+                {ROLE_SHORT_LABELS[roleOption]}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
+      <nav className="flex-1 space-y-0.5 overflow-y-auto p-2">
         {navItems.map((item) => {
           const badge = badgeCounts[item.id] || 0;
+
           return (
             <button
               key={item.id}
               onClick={() => handleNavClick(item.id)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] transition-colors ${currentTab === item.id ? 'bg-emerald-50 text-emerald-700 font-medium' : 'text-gray-600 hover:bg-white hover:text-gray-900'}`}
+              className={`relative flex w-full items-center rounded-lg px-3 py-2 text-[13px] transition-colors ${sidebarCollapsed ? 'justify-center' : 'gap-2.5'} ${currentTab === item.id ? 'bg-emerald-50 font-medium text-emerald-700' : 'text-gray-600 hover:bg-white hover:text-gray-900'}`}
+              title={item.label}
             >
               <item.icon size={16} />
-              <span className="flex-1 text-left">{item.label}</span>
+              {!sidebarCollapsed && <span className="flex-1 text-left">{item.label}</span>}
               {badge > 0 && (
-                <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full text-[10px] font-bold">
+                <span className={`rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 ${sidebarCollapsed ? 'absolute right-1 top-1' : ''}`}>
                   {badge}
                 </span>
               )}
@@ -99,28 +151,37 @@ const Sidebar: React.FC = () => {
         })}
       </nav>
 
-      <div className="p-2 border-t border-gray-200">
+      <div className="border-t border-gray-200 p-2">
         <button
           onClick={() => openSettings('menu')}
-          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] transition-colors ${currentTab === 'settings' ? 'bg-emerald-50 text-emerald-700 font-medium' : 'text-gray-600 hover:bg-white hover:text-gray-900'}`}
+          className={`flex w-full items-center rounded-lg px-3 py-2 text-[13px] transition-colors ${sidebarCollapsed ? 'justify-center' : 'gap-2.5'} ${currentTab === 'settings' ? 'bg-emerald-50 font-medium text-emerald-700' : 'text-gray-600 hover:bg-white hover:text-gray-900'}`}
+          title="Nastavení"
         >
           <Settings size={16} />
-          <span className="flex-1 text-left">Nastavení</span>
+          {!sidebarCollapsed && <span className="flex-1 text-left">Nastavení</span>}
         </button>
       </div>
 
-      <button onClick={() => openSettings('profile')} className="p-4 border-t border-gray-200 text-left hover:bg-white transition-colors">
-        <div className="flex items-center gap-3">
-          <div className="av w-8 h-8 bg-blue-50 text-blue-700 text-[10px]">TM</div>
-          <div className="min-w-0">
-            <div className="text-xs font-semibold text-gray-900 truncate">Petr Heitzer</div>
-            <div className="text-[10px] text-gray-500">{ROLE_LABELS[role]}</div>
+      <button
+        onClick={() => openSettings('profile')}
+        className={`border-t border-gray-200 p-4 text-left transition-colors hover:bg-white ${sidebarCollapsed ? 'flex justify-center' : ''}`}
+        title="Profil"
+      >
+        <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
+          <div className="av h-8 w-8 bg-blue-50 text-[10px] text-blue-700">PH</div>
+          {!sidebarCollapsed && (
+            <div className="min-w-0">
+              <div className="truncate text-xs font-semibold text-gray-900">Petr Heitzer</div>
+              <div className="text-[10px] text-gray-500">{ROLE_LABELS[role]}</div>
+            </div>
+          )}
+        </div>
+        {!sidebarCollapsed && (
+          <div className="mt-3 flex items-center gap-1.5 text-[10px] text-gray-500">
+            <div className="h-1.5 w-1.5 rounded-full bg-emerald-500"></div>
+            API ready · v2.0
           </div>
-        </div>
-        <div className="mt-3 flex items-center gap-1.5 text-[10px] text-gray-500">
-          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
-          API ready · v2.0
-        </div>
+        )}
       </button>
     </aside>
   );

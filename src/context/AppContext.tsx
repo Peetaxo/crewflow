@@ -37,6 +37,8 @@ interface DeleteConfirmData {
 interface AppContextType {
   darkMode: boolean;
   setDarkMode: (v: boolean) => void;
+  sidebarCollapsed: boolean;
+  setSidebarCollapsed: (v: boolean) => void;
   role: Role;
   setRole: (r: Role) => void;
   currentTab: string;
@@ -124,7 +126,7 @@ const AppContext = createContext<AppContextType | null>(null);
 
 export function useAppContext(): AppContextType {
   const ctx = useContext(AppContext);
-  if (!ctx) throw new Error('useAppContext musi byt pouzit uvnitr AppProvider');
+  if (!ctx) throw new Error('useAppContext musí být použit uvnitř AppProvider');
   return ctx;
 }
 
@@ -158,6 +160,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const [darkMode, setDarkMode] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [role, setRole] = useState<Role>('crewhead');
   const [currentTab, setCurrentTab] = useState('dashboard');
   const [settingsSection, setSettingsSection] = useState<'menu' | 'profile' | 'appearance'>('menu');
@@ -357,7 +360,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const approvedReceipts = receipts.filter((receipt) => receipt.status === 'approved');
 
     if (approvedTimelogs.length === 0 && approvedReceipts.length === 0) {
-      toast.info('Zadne schvalene vykazy ani uctenky k fakturaci.');
+      toast.info('Žádné schválené výkazy ani účtenky k fakturaci.');
       return;
     }
 
@@ -415,7 +418,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       receipt.status === 'approved' ? { ...receipt, status: 'attached' } : receipt
     )));
     setCurrentTab('invoices');
-    toast.success(`Vygenerovano ${newInvoices.length} faktur.`);
+      toast.success(`Vygenerováno ${newInvoices.length} faktur.`);
   }, [timelogs, receipts, findContractor, findEvent]);
 
   const approveInvoice = useCallback((id: string) => {
@@ -460,7 +463,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
 
     if (!normalizedReceipt.eid || !normalizedReceipt.cid || !normalizedReceipt.title || normalizedReceipt.amount <= 0) {
-      toast.error('Vyplnte akci, nazev uctenky a castku.');
+      toast.error('Vyplňte akci, název účtenky a částku.');
       return;
     }
 
@@ -489,7 +492,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
 
     if (!normalizedEvent.job) {
-      toast.error('Vyplnte Job Number.');
+      toast.error('Vyplňte Job Number.');
       return;
     }
 
@@ -554,11 +557,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     setDeleteConfirm(null);
-    toast.success(`${deleteConfirm.name} smazano.`);
+    toast.success(`${deleteConfirm.name} smazáno.`);
   }, [deleteConfirm]);
 
   const value: AppContextType = {
     darkMode, setDarkMode,
+    sidebarCollapsed, setSidebarCollapsed,
     role, setRole,
     currentTab, setCurrentTab,
     settingsSection, setSettingsSection,

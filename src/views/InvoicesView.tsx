@@ -17,23 +17,23 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      <div className="flex justify-between items-center mb-4">
+      <div className="mb-4 flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold">{scope === 'mine' ? 'Moje faktury' : 'Faktury'}</h1>
-          <p className="text-xs text-gray-500 mt-0.5">Self-billing system</p>
+          <p className="mt-0.5 text-xs text-gray-500">Self-billing system</p>
         </div>
         {!isCrew && drafts.length > 0 ? (
-          <button onClick={generateInvoices} className="px-3 py-1.5 bg-emerald-600 text-white rounded-md text-xs font-medium hover:bg-emerald-700">
+          <button onClick={generateInvoices} className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">
             Generovat {drafts.length} faktur →
           </button>
         ) : (
-          <StatusBadge status="approved" label="Self-billing bezi" />
+          <StatusBadge status="approved" label="Self-billing běží" />
         )}
       </div>
 
-      <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-4">
-        <div className="flex items-center gap-2 text-blue-800 font-semibold text-xs mb-1"><Info size={14} /> Self-billing je aktivni</div>
-        <p className="text-[11px] text-blue-700 leading-relaxed">Po finalnim schvaleni dostane kontraktor fakturu e-mailem. Ma 72 hodin na namitku. Bez reakce se faktura uzavira a jde k proplaceni.</p>
+      <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50 p-4">
+        <div className="mb-1 flex items-center gap-2 text-xs font-semibold text-blue-800"><Info size={14} /> Self-billing je aktivní</div>
+        <p className="text-[11px] leading-relaxed text-blue-700">Po finálním schválení dostane kontraktor fakturu e-mailem. Má 72 hodin na námitku. Bez reakce se faktura uzavírá a jde k proplacení.</p>
       </div>
 
       <div className="space-y-2">
@@ -42,53 +42,69 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
           const e = findEvent(inv.eid);
           if (!c || !e) return null;
           const cd = inv.status === 'sent' ? getCountdown(inv.sentAt) : null;
+
           return (
-            <div key={inv.id} className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
+            <div key={inv.id} className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="flex flex-wrap items-center gap-2 mb-2">
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
                     <span className="font-mono text-xs font-semibold">{inv.id}</span>
                     <span className="jn">{inv.job}</span>
                     <StatusBadge status={inv.status} />
-                    {cd && <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${cd.exp ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}>⏱ {cd.text}</span>}
+                    {cd && (
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${cd.exp ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}>
+                        ⏱ {cd.text}
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <div className="av w-6 h-6 text-[9px]" style={{ backgroundColor: c.bg, color: c.fg }}>{c.ii}</div>
+                    <div className="av h-6 w-6 text-[9px]" style={{ backgroundColor: c.bg, color: c.fg }}>{c.ii}</div>
                     <span className="text-xs font-medium">{c.name}</span>
                     <span className="text-xs text-gray-500">· {e.name}</span>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
                     <div className="rounded-lg bg-gray-50 px-2.5 py-1.5 text-gray-600">
                       <span className="font-semibold text-gray-800">Hodiny</span>
-                      <span>{` ${inv.hours}h x ${Math.round(inv.hAmt / Math.max(inv.hours, 1))} Kc/h = ${formatCurrency(inv.hAmt)}`}</span>
+                      <span>{` ${inv.hours}h x ${Math.round(inv.hAmt / Math.max(inv.hours, 1))} Kč/h = ${formatCurrency(inv.hAmt)}`}</span>
                     </div>
                     {(inv.receiptAmt || 0) > 0 && (
                       <div className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-amber-700">
-                        <span className="font-semibold text-amber-900">Uctenky</span>
+                        <span className="font-semibold text-amber-900">Účtenky</span>
                         <span>{` = ${formatCurrency(inv.receiptAmt || 0)}`}</span>
                       </div>
                     )}
                     {inv.km > 0 && (
                       <div className="rounded-lg bg-blue-50 px-2.5 py-1.5 text-blue-700">
-                        <span className="font-semibold text-blue-900">Cestovne</span>
+                        <span className="font-semibold text-blue-900">Cestovné</span>
                         <span>{` ${inv.km} km = ${formatCurrency(inv.kAmt)}`}</span>
                       </div>
                     )}
                   </div>
                 </div>
-                <div className="text-right shrink-0"><div className="text-xl font-semibold">{formatCurrency(inv.total)}</div><div className="text-[10px] text-gray-500 mt-1">{inv.sentAt ? formatShortDate(inv.sentAt) : 'Bez data'}</div></div>
+                <div className="shrink-0 text-right">
+                  <div className="text-xl font-semibold">{formatCurrency(inv.total)}</div>
+                  <div className="mt-1 text-[10px] text-gray-500">{inv.sentAt ? formatShortDate(inv.sentAt) : 'Bez data'}</div>
+                </div>
               </div>
+
               {inv.status === 'sent' && (
                 <div className="mt-3 flex gap-2">
-                  <button className="px-3 py-1 border border-gray-200 rounded-md text-[11px] hover:bg-gray-50">PDF ke stazeni</button>
-                  <button className="px-3 py-1 border border-red-100 text-red-600 rounded-md text-[11px] hover:bg-red-50">Rozporovat</button>
-                  {!isCrew && cd && !cd.exp && <button onClick={() => approveInvoice(inv.id)} className="ml-auto px-3 py-1 bg-emerald-600 text-white rounded-md text-[11px] hover:bg-emerald-700">Uzavrit rucne →</button>}
+                  <button className="rounded-md border border-gray-200 px-3 py-1 text-[11px] hover:bg-gray-50">PDF ke stažení</button>
+                  <button className="rounded-md border border-red-100 px-3 py-1 text-[11px] text-red-600 hover:bg-red-50">Rozporovat</button>
+                  {!isCrew && cd && !cd.exp && (
+                    <button onClick={() => approveInvoice(inv.id)} className="ml-auto rounded-md bg-emerald-600 px-3 py-1 text-[11px] text-white hover:bg-emerald-700">
+                      Uzavřít ručně →
+                    </button>
+                  )}
                 </div>
               )}
             </div>
           );
         })}
-        {invoices.length === 0 && <div className="bg-white border border-gray-100 rounded-xl p-10 text-center text-gray-400 text-sm">Zatim zadne faktury</div>}
+
+        {invoices.length === 0 && (
+          <div className="rounded-xl border border-gray-100 bg-white p-10 text-center text-sm text-gray-400">Zatím žádné faktury</div>
+        )}
       </div>
     </motion.div>
   );

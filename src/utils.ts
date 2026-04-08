@@ -1,13 +1,13 @@
-import { Event } from './types';
+﻿import { Event } from './types';
 
 /**
- * Formatuje datum do kratkeho ceskeho formatu (den. mesic.)
+ * Formatuje datum do krátkého českého formátu (den. měsíc.)
  * @example formatShortDate('2025-04-14') -> '14. 4.'
  */
 export function formatShortDate(dateString: string): string {
   return new Date(dateString).toLocaleDateString('cs-CZ', { day: 'numeric', month: 'numeric' });
 }
-/** Alias pro zpetnou kompatibilitu */
+/** Alias pro zpětnou kompatibilitu */
 export const fd = formatShortDate;
 
 /**
@@ -68,7 +68,7 @@ export function calculateTotalHours(days: { f: string; t: string }[]): number {
 export const calcH = calculateTotalHours;
 
 /**
- * Vrati odpocet do vyprseni 72h lhuty pro rozporovani faktury.
+ * Vrátí odpočet do vypršení 72h lhůty pro rozporování faktury.
  */
 export function getCountdown(sentAt: string | null): { text: string; exp: boolean } | null {
   if (!sentAt) return null;
@@ -98,3 +98,4 @@ export function getEventStatus(event: Pick<Event, 'endDate' | 'filled' | 'needed
 export function eventOccursOnDate(event: Pick<Event, 'startDate' | 'endDate'>, date: string): boolean {
   return event.startDate <= date && event.endDate >= date;
 }
+

@@ -36,7 +36,7 @@ const createEmptyContractor = (nextId: number): Contractor => {
     billingStreet: '',
     billingZip: '',
     billingCity: '',
-    billingCountry: 'Ceska republika',
+    billingCountry: 'Česká republika',
     reliable: false,
     note: '',
   };
@@ -62,7 +62,7 @@ const CrewView = () => {
           onClick={() => setEditingContractor(createEmptyContractor(Math.max(0, ...contractors.map((contractor) => contractor.id)) + 1))}
           className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700"
         >
-          + Novy clen
+          + Nový člen
         </button>
       </div>
 
@@ -70,7 +70,7 @@ const CrewView = () => {
         <table className="w-full border-collapse text-left">
           <thead>
             <tr className="border-b border-gray-100 text-[10px] uppercase tracking-wider text-gray-400">
-              <th className="px-4 py-3 font-medium">Jmeno</th>
+              <th className="px-4 py-3 font-medium">Jméno</th>
               <th className="px-4 py-3 font-medium">Tagy</th>
               <th className="px-4 py-3 font-medium">Akci</th>
               <th className="px-4 py-3 font-medium">Sazba</th>
@@ -99,12 +99,12 @@ const CrewView = () => {
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex flex-wrap gap-1">
-                    {contractor.tags.includes('Ridic') && <StatusBadge status="bg" label="Ridic" />}
-                    {contractor.reliable ? <StatusBadge status="full" label="Spolehlivy" /> : <StatusBadge status="pending_ch" label="Overit" />}
+                    {contractor.tags.includes('Ridic') && <StatusBadge status="bg" label="Řidič" />}
+                    {contractor.reliable ? <StatusBadge status="full" label="Spolehlivý" /> : <StatusBadge status="pending_ch" label="Ověřit" />}
                   </div>
                 </td>
                 <td className="px-4 py-3 text-xs font-semibold">{contractor.events}</td>
-                <td className="px-4 py-3 text-xs font-semibold">{contractor.rate} Kc/h</td>
+                <td className="px-4 py-3 text-xs font-semibold">{contractor.rate} Kč/h</td>
                 <td className="px-4 py-3">
                   <div className="text-xs text-gray-700">{contractor.ico || '-'}</div>
                   <div className="text-[10px] text-gray-400">{contractor.dic || '-'}</div>
@@ -121,7 +121,7 @@ const CrewView = () => {
                         setDeleteConfirm({ type: 'crew', id: contractor.id, name: contractor.name });
                       }}
                       className="rounded-lg p-1.5 text-gray-300 transition-all hover:bg-red-50 hover:text-red-600"
-                      title="Smazat"
+              title="Smazat"
                     >
                       <Trash2 size={14} />
                     </button>
@@ -133,7 +133,7 @@ const CrewView = () => {
         </table>
 
         {filteredContractors.length === 0 && (
-          <div className="py-12 text-center text-sm text-gray-400">Zadni clenove crew</div>
+          <div className="py-12 text-center text-sm text-gray-400">Žádní členové crew</div>
         )}
       </div>
     </motion.div>

@@ -1,4 +1,4 @@
-/** Uzivatelska role v systemu */
+﻿/** Uzivatelska role v systemu */
 export type Role = 'crew' | 'crewhead' | 'coo';
 
 /** Status akce */
@@ -38,13 +38,13 @@ export interface Event {
   contactPerson?: string;
   dresscode?: string;
   meetingLocation?: string;
-  /** Zobrazovat typy dnu (Instal/Provoz/Deinstal) */
+  /** Zobrazovat typy dnů (Instal/Provoz/Deinstal) */
   showDayTypes?: boolean;
   /** Mapovani datum -> typ dne */
   dayTypes?: Record<string, TimelogType>;
-  /** Vychozi casy pro jednotlive typy dnu */
+  /** Vychozi casy pro jednotlive typy dnů */
   phaseTimes?: Partial<Record<TimelogType, EventPhaseTime>>;
-  /** Konkretni bloky casu pro jednotlive typy dnu */
+  /** Konkretni bloky casu pro jednotlive typy dnů */
   phaseSchedules?: Partial<Record<TimelogType, EventPhaseSlot[]>>;
 }
 
@@ -59,7 +59,7 @@ export interface Contractor {
   /** Barva textu avataru */
   fg: string;
   tags: string[];
-  /** Pocet akci celkem */
+  /** Počet akci celkem */
   events: number;
   /** Hodinova sazba v Kc */
   rate: number;
@@ -117,12 +117,12 @@ export interface Invoice {
   /** ID akce */
   eid: number;
   hours: number;
-  /** Castka za hodiny */
+  /** Částka za hodiny */
   hAmt: number;
   km: number;
-  /** Castka za km */
+  /** Částka za km */
   kAmt: number;
-  /** Castka za uctenky */
+  /** Částka za účtenky */
   receiptAmt?: number;
   total: number;
   /** Job Number */
@@ -131,10 +131,10 @@ export interface Invoice {
   sentAt: string | null;
 }
 
-/** Status uctenky */
+/** Status účtenky */
 export type ReceiptStatus = 'draft' | 'submitted' | 'approved' | 'attached' | 'reimbursed' | 'rejected';
 
-/** Uctenka / vydaj crew k akci */
+/** Účtenka / výdaj crew k akci */
 export interface ReceiptItem {
   id: number;
   cid: number;
@@ -188,3 +188,4 @@ export interface Client {
   country?: string;
   note?: string;
 }
+

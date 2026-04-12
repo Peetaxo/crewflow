@@ -10,11 +10,13 @@ import StatusBadge from '../components/shared/StatusBadge';
 import ShiftCard from '../components/shared/ShiftCard';
 import { getTimelogs, subscribeToTimelogChanges } from '../features/timelogs/services/timelogs.service';
 import { getReceipts, subscribeToReceiptChanges } from '../features/receipts/services/receipts.service';
+import { getProjects, subscribeToProjectChanges } from '../features/projects/services/projects.service';
 
 const MyShiftsView = () => {
-  const { contractors, invoices, events, projects, darkMode, searchQuery } = useAppContext();
+  const { contractors, invoices, events, darkMode, searchQuery } = useAppContext();
   const [timelogs, setTimelogs] = useState<Timelog[]>([]);
   const [receipts, setReceipts] = useState<ReceiptItem[]>([]);
+  const [projects, setProjects] = useState(() => getProjects());
   const me = contractors[0];
   if (!me) return null;
 
@@ -32,6 +34,7 @@ const MyShiftsView = () => {
 
   useEffect(() => subscribeToTimelogChanges(loadData), [loadData]);
   useEffect(() => subscribeToReceiptChanges(loadData), [loadData]);
+  useEffect(() => subscribeToProjectChanges(() => setProjects(getProjects())), []);
 
   const myTimelogs = timelogs.filter((timelog) => timelog.cid === me.id);
   const myInvoices = invoices.filter((invoice) => invoice.cid === me.id);

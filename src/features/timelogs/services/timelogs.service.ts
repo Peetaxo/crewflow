@@ -127,6 +127,48 @@ export const deleteTimelog = (id: number): { id: number } => {
   return { id };
 };
 
+export const markApprovedTimelogsAsInvoiced = (): Timelog[] => {
+  const updatedTimelogs: Timelog[] = [];
+
+  updateLocalAppState((snapshot) => ({
+    ...snapshot,
+    timelogs: snapshot.timelogs.map((timelog) => {
+      if (timelog.status !== 'approved') return timelog;
+
+      const updatedTimelog = {
+        ...timelog,
+        status: 'invoiced' as const,
+      };
+
+      updatedTimelogs.push(updatedTimelog);
+      return updatedTimelog;
+    }),
+  }));
+
+  return updatedTimelogs;
+};
+
+export const markTimelogsAsPaidForInvoice = (eventId: number, contractorId: number): Timelog[] => {
+  const updatedTimelogs: Timelog[] = [];
+
+  updateLocalAppState((snapshot) => ({
+    ...snapshot,
+    timelogs: snapshot.timelogs.map((timelog) => {
+      if (timelog.eid !== eventId || timelog.cid !== contractorId || timelog.status !== 'invoiced') return timelog;
+
+      const updatedTimelog = {
+        ...timelog,
+        status: 'paid' as const,
+      };
+
+      updatedTimelogs.push(updatedTimelog);
+      return updatedTimelog;
+    }),
+  }));
+
+  return updatedTimelogs;
+};
+
 export const subscribeToTimelogChanges = (listener: () => void): (() => void) => (
   subscribeToLocalAppState(() => listener())
 );

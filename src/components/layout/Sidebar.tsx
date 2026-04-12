@@ -1,7 +1,10 @@
-import React from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronsLeft, ChevronsRight, Search, Settings } from 'lucide-react';
 import { useAppContext } from '../../context/AppContext';
+import { ReceiptItem, Timelog } from '../../types';
 import { getNavItemsForRole, ROLE_LABELS, ROLE_SHORT_LABELS } from '../../constants';
+import { getTimelogs, subscribeToTimelogChanges } from '../../features/timelogs/services/timelogs.service';
+import { getReceipts, subscribeToReceiptChanges } from '../../features/receipts/services/receipts.service';
 
 const Sidebar: React.FC = () => {
   const {
@@ -14,14 +17,27 @@ const Sidebar: React.FC = () => {
     setSelectedEventId,
     setSelectedProjectIdForStats,
     setSelectedClientIdForStats,
-    timelogs,
     invoices,
-    receipts,
     candidates,
   } = useAppContext();
 
+  const [timelogs, setTimelogs] = useState<Timelog[]>([]);
+  const [receipts, setReceipts] = useState<ReceiptItem[]>([]);
+
+  const loadData = useCallback(() => {
+    setTimelogs(getTimelogs());
+    setReceipts(getReceipts());
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  useEffect(() => subscribeToTimelogChanges(loadData), [loadData]);
+  useEffect(() => subscribeToReceiptChanges(loadData), [loadData]);
+
   const navItems = getNavItemsForRole(role);
-  const badgeCounts: Record<string, number> = {
+  const badgeCounts: Record<string, number> = useMemo(() => ({
     timelogs: timelogs.filter((t) => t.status === 'pending_ch' || t.status === 'pending_coo').length,
     'my-timelogs': timelogs.filter((t) => t.cid === 1 && (t.status === 'draft' || t.status === 'pending_ch' || t.status === 'pending_coo' || t.status === 'rejected')).length,
     invoices: invoices.filter((i) => i.status === 'sent' || i.status === 'disputed').length,
@@ -29,7 +45,7 @@ const Sidebar: React.FC = () => {
     receipts: receipts.filter((r) => r.status === 'submitted' || r.status === 'approved').length,
     'my-receipts': receipts.filter((r) => r.cid === 1 && r.status !== 'reimbursed').length,
     recruitment: candidates.filter((c) => c.stage === 'new').length,
-  };
+  }), [timelogs, invoices, receipts, candidates]);
 
   const handleNavClick = (tabId: string) => {
     setCurrentTab(tabId);

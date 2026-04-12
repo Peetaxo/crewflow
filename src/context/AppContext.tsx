@@ -19,15 +19,18 @@ import { appDataSource } from '../lib/app-config';
 import { AppDataSnapshot, getLocalAppState, getSupabaseAppData, subscribeToLocalAppState, updateLocalAppState } from '../lib/app-data';
 import { deleteCrew } from '../features/crew/services/crew.service';
 import { deleteEvent } from '../features/events/services/events.service';
+import { deleteProject } from '../features/projects/services/projects.service';
+import { deleteClient } from '../features/clients/services/clients.service';
 import {
-  approveAllTimelogsForEvent,
-  saveTimelog as persistTimelog,
-  updateTimelogStatus,
+  getTimelogs,
+  markApprovedTimelogsAsInvoiced,
+  markTimelogsAsPaidForInvoice,
 } from '../features/timelogs/services/timelogs.service';
 import {
   deleteReceipt,
-  saveReceipt as persistReceipt,
-  updateReceiptStatus,
+  getReceipts,
+  markApprovedReceiptsAsAttached,
+  markReceiptsAsReimbursedForInvoice,
 } from '../features/receipts/services/receipts.service';
 
 interface DeleteConfirmData {
@@ -85,35 +88,18 @@ interface AppContextType {
   setEvents: React.Dispatch<React.SetStateAction<Event[]>>;
   contractors: Contractor[];
   setContractors: React.Dispatch<React.SetStateAction<Contractor[]>>;
-  timelogs: Timelog[];
-  setTimelogs: React.Dispatch<React.SetStateAction<Timelog[]>>;
   invoices: Invoice[];
   setInvoices: React.Dispatch<React.SetStateAction<Invoice[]>>;
-  receipts: ReceiptItem[];
-  setReceipts: React.Dispatch<React.SetStateAction<ReceiptItem[]>>;
   candidates: Candidate[];
   setCandidates: React.Dispatch<React.SetStateAction<Candidate[]>>;
-  projects: Project[];
-  setProjects: React.Dispatch<React.SetStateAction<Project[]>>;
-  clients: Client[];
-  setClients: React.Dispatch<React.SetStateAction<Client[]>>;
   filteredEvents: Event[];
-  filteredTimelogs: Timelog[];
   filteredInvoices: Invoice[];
-  filteredReceipts: ReceiptItem[];
   filteredContractors: Contractor[];
-  filteredProjects: Project[];
-  filteredClients: Client[];
   findContractor: (id: number) => Contractor | null;
   findEvent: (id: number) => Event | null;
-  handleTimelogAction: (id: number, action: 'sub' | 'ch' | 'coo' | 'rej') => void;
-  approveAllTimelogs: (eventId: number) => void;
   advanceCandidate: (id: number) => void;
   generateInvoices: () => void;
   approveInvoice: (id: string) => void;
-  handleReceiptAction: (id: number, action: 'submit' | 'approve' | 'reimburse' | 'reject') => void;
-  handleSaveReceipt: (updated: ReceiptItem) => void;
-  handleSaveTimelog: (updated: Timelog) => void;
   handleDelete: () => void;
 }
 
@@ -127,10 +113,6 @@ export function useAppContext(): AppContextType {
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const localData = getLocalAppState();
-
-  const sortTimelogDays = useCallback((days: Timelog['days']) => (
-    [...days].sort((a, b) => `${a.d}${a.f}${a.type}`.localeCompare(`${b.d}${b.f}${b.type}`))
-  ), []);
 
   const [darkMode, setDarkMode] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -159,22 +141,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const [events, setEventsState] = useState<Event[]>(localData.events);
   const [contractors, setContractorsState] = useState<Contractor[]>(localData.contractors);
-  const [timelogs, setTimelogsState] = useState<Timelog[]>(localData.timelogs);
   const [invoices, setInvoicesState] = useState<Invoice[]>(localData.invoices);
-  const [receipts, setReceiptsState] = useState<ReceiptItem[]>(localData.receipts);
   const [candidates, setCandidatesState] = useState<Candidate[]>(localData.candidates);
-  const [projects, setProjectsState] = useState<Project[]>(localData.projects);
-  const [clients, setClientsState] = useState<Client[]>(localData.clients);
-
   const syncSnapshotToState = useCallback((snapshot: AppDataSnapshot) => {
     setEventsState(snapshot.events);
     setContractorsState(snapshot.contractors);
-    setTimelogsState(snapshot.timelogs);
     setInvoicesState(snapshot.invoices);
-    setReceiptsState(snapshot.receipts);
     setCandidatesState(snapshot.candidates);
-    setProjectsState(snapshot.projects);
-    setClientsState(snapshot.clients);
   }, []);
 
   useEffect(() => subscribeToLocalAppState(syncSnapshotToState), [syncSnapshotToState]);
@@ -193,13 +166,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
-  const setTimelogs: React.Dispatch<React.SetStateAction<Timelog[]>> = useCallback((value) => {
-    updateLocalAppState((snapshot) => ({
-      ...snapshot,
-      timelogs: typeof value === 'function' ? value(snapshot.timelogs) : value,
-    }));
-  }, []);
-
   const setInvoices: React.Dispatch<React.SetStateAction<Invoice[]>> = useCallback((value) => {
     updateLocalAppState((snapshot) => ({
       ...snapshot,
@@ -207,31 +173,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
-  const setReceipts: React.Dispatch<React.SetStateAction<ReceiptItem[]>> = useCallback((value) => {
-    updateLocalAppState((snapshot) => ({
-      ...snapshot,
-      receipts: typeof value === 'function' ? value(snapshot.receipts) : value,
-    }));
-  }, []);
-
   const setCandidates: React.Dispatch<React.SetStateAction<Candidate[]>> = useCallback((value) => {
     updateLocalAppState((snapshot) => ({
       ...snapshot,
       candidates: typeof value === 'function' ? value(snapshot.candidates) : value,
-    }));
-  }, []);
-
-  const setProjects: React.Dispatch<React.SetStateAction<Project[]>> = useCallback((value) => {
-    updateLocalAppState((snapshot) => ({
-      ...snapshot,
-      projects: typeof value === 'function' ? value(snapshot.projects) : value,
-    }));
-  }, []);
-
-  const setClients: React.Dispatch<React.SetStateAction<Client[]>> = useCallback((value) => {
-    updateLocalAppState((snapshot) => ({
-      ...snapshot,
-      clients: typeof value === 'function' ? value(snapshot.clients) : value,
     }));
   }, []);
 
@@ -297,21 +242,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     ));
   }, [events, searchQuery]);
 
-  const filteredTimelogs = useMemo(() => {
-    if (!searchQuery) return timelogs;
-    const q = searchQuery.toLowerCase();
-    return timelogs.filter((timelog) => {
-      const event = findEvent(timelog.eid);
-      const contractor = findContractor(timelog.cid);
-      if (!event || !contractor) return false;
-      return (
-        event.name.toLowerCase().includes(q)
-        || event.job.toLowerCase().includes(q)
-        || contractor.name.toLowerCase().includes(q)
-      );
-    });
-  }, [timelogs, searchQuery, findEvent, findContractor]);
-
   const filteredInvoices = useMemo(() => {
     if (!searchQuery) return invoices;
     const q = searchQuery.toLowerCase();
@@ -328,23 +258,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, [invoices, searchQuery, findEvent, findContractor]);
 
-  const filteredReceipts = useMemo(() => {
-    if (!searchQuery) return receipts;
-    const q = searchQuery.toLowerCase();
-    return receipts.filter((receipt) => {
-      const event = findEvent(receipt.eid);
-      const contractor = findContractor(receipt.cid);
-      if (!event || !contractor) return false;
-      return (
-        receipt.title.toLowerCase().includes(q)
-        || receipt.vendor.toLowerCase().includes(q)
-        || receipt.job.toLowerCase().includes(q)
-        || event.name.toLowerCase().includes(q)
-        || contractor.name.toLowerCase().includes(q)
-      );
-    });
-  }, [receipts, searchQuery, findEvent, findContractor]);
-
   const filteredContractors = useMemo(() => {
     if (!searchQuery) return contractors;
     const q = searchQuery.toLowerCase();
@@ -354,43 +267,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       || contractor.tags.some((tag) => tag.toLowerCase().includes(q))
     ));
   }, [contractors, searchQuery]);
-
-  const filteredProjects = useMemo(() => {
-    let result = projects;
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter((project) => (
-        project.id.toLowerCase().includes(q)
-        || project.name.toLowerCase().includes(q)
-        || project.client.toLowerCase().includes(q)
-      ));
-    }
-    if (projectFilter !== 'all') {
-      const now = new Date().toISOString().split('T')[0];
-      result = result.filter((project) => {
-        const projectEvents = events.filter((event) => event.job === project.id);
-        const isUpcoming = projectEvents.some((event) => event.startDate >= now);
-        return projectFilter === 'upcoming' ? isUpcoming : !isUpcoming;
-      });
-    }
-    return result;
-  }, [projects, searchQuery, projectFilter, events]);
-
-  const filteredClients = useMemo(() => {
-    if (!searchQuery) return clients;
-    const q = searchQuery.toLowerCase();
-    return clients.filter((client) => (
-      client.name.toLowerCase().includes(q) || client.city?.toLowerCase().includes(q)
-    ));
-  }, [clients, searchQuery]);
-
-  const handleTimelogAction = useCallback((id: number, action: 'sub' | 'ch' | 'coo' | 'rej') => {
-    updateTimelogStatus(id, action);
-  }, []);
-
-  const approveAllTimelogs = useCallback((eventId: number) => {
-    approveAllTimelogsForEvent(eventId);
-  }, []);
 
   const advanceCandidate = useCallback((id: number) => {
     setCandidates((prev) => prev.map((candidate) => {
@@ -405,6 +281,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [setCandidates]);
 
   const generateInvoices = useCallback(() => {
+    const timelogs = getTimelogs();
+    const receipts = getReceipts();
     const approvedTimelogs = timelogs.filter((timelog) => timelog.status === 'approved');
     const approvedReceipts = receipts.filter((receipt) => receipt.status === 'approved');
 
@@ -460,50 +338,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       .filter((invoice): invoice is Invoice => invoice !== null);
 
     setInvoices((prev) => [...prev, ...newInvoices]);
-    setTimelogs((prev) => prev.map((timelog) => (
-      timelog.status === 'approved' ? { ...timelog, status: 'invoiced' } : timelog
-    )));
-    setReceipts((prev) => prev.map((receipt) => (
-      receipt.status === 'approved' ? { ...receipt, status: 'attached' } : receipt
-    )));
+    markApprovedTimelogsAsInvoiced();
+    markApprovedReceiptsAsAttached();
     setCurrentTab('invoices');
     toast.success(`Vygenerovano ${newInvoices.length} faktur.`);
-  }, [timelogs, receipts, findContractor, findEvent, setInvoices, setReceipts, setTimelogs]);
+  }, [findContractor, findEvent, setInvoices]);
 
   const approveInvoice = useCallback((id: string) => {
     const invoice = invoices.find((item) => item.id === id);
     if (!invoice) return;
 
     setInvoices((prev) => prev.map((item) => item.id === id ? { ...item, status: 'paid' } : item));
-    setTimelogs((prev) => prev.map((timelog) => (
-      timelog.eid === invoice.eid && timelog.cid === invoice.cid && timelog.status === 'invoiced'
-        ? { ...timelog, status: 'paid' }
-        : timelog
-    )));
-    setReceipts((prev) => prev.map((receipt) => (
-      receipt.eid === invoice.eid && receipt.cid === invoice.cid && receipt.status === 'attached'
-        ? { ...receipt, status: 'reimbursed' }
-        : receipt
-    )));
-  }, [invoices, setInvoices, setReceipts, setTimelogs]);
-
-  const handleReceiptAction = useCallback((id: number, action: 'submit' | 'approve' | 'reimburse' | 'reject') => {
-    updateReceiptStatus(id, action);
-  }, []);
-
-  const handleSaveReceipt = useCallback((updated: ReceiptItem) => {
-    try {
-      persistReceipt(updated);
-      setEditingReceipt(null);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Nepodarilo se ulozit uctenku.');
-    }
-  }, []);
-
-  const handleSaveTimelog = useCallback((updated: Timelog) => {
-    persistTimelog(updated);
-    setEditingTimelog(null);
-  }, []);
+    markTimelogsAsPaidForInvoice(invoice.eid, invoice.cid);
+    markReceiptsAsReimbursedForInvoice(invoice.eid, invoice.cid);
+  }, [invoices, setInvoices]);
 
   const handleDelete = useCallback(() => {
     if (!deleteConfirm) return;
@@ -511,10 +359,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     switch (type) {
       case 'client':
-        setClients((prev) => prev.filter((client) => client.id !== id));
+        deleteClient(Number(id));
         break;
       case 'project':
-        setProjects((prev) => prev.filter((project) => project.id !== id));
+        deleteProject(String(id));
         break;
       case 'event':
         deleteEvent(Number(id));
@@ -529,7 +377,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     setDeleteConfirm(null);
     toast.success(`${deleteConfirm.name} smazano.`);
-  }, [deleteConfirm, setClients, setProjects]);
+  }, [deleteConfirm]);
 
   const value: AppContextType = {
     darkMode, setDarkMode,
@@ -556,29 +404,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     eventsCalendarDate, setEventsCalendarDate,
     events, setEvents,
     contractors, setContractors,
-    timelogs, setTimelogs,
     invoices, setInvoices,
-    receipts, setReceipts,
     candidates, setCandidates,
-    projects, setProjects,
-    clients, setClients,
     filteredEvents,
-    filteredTimelogs,
     filteredInvoices,
-    filteredReceipts,
     filteredContractors,
-    filteredProjects,
-    filteredClients,
     findContractor,
     findEvent,
-    handleTimelogAction,
-    approveAllTimelogs,
     advanceCandidate,
     generateInvoices,
     approveInvoice,
-    handleReceiptAction,
-    handleSaveReceipt,
-    handleSaveTimelog,
     handleDelete,
   };
 

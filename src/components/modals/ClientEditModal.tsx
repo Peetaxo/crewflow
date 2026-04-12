@@ -2,20 +2,16 @@ import React from 'react';
 import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppContext } from '../../context/AppContext';
+import { getClients, saveClient } from '../../features/clients/services/clients.service';
 
-/** Modal pro úpravu / vytvoření klienta */
 const ClientEditModal = () => {
-  const { editingClient, setEditingClient, clients, setClients } = useAppContext();
+  const { editingClient, setEditingClient } = useAppContext();
+  const clients = getClients();
 
   if (!editingClient) return null;
 
   const handleSave = () => {
-    setClients(prev => {
-      const exists = prev.some(c => c.id === editingClient.id);
-      return exists
-        ? prev.map(c => c.id === editingClient.id ? editingClient : c)
-        : [...prev, editingClient];
-    });
+    saveClient(editingClient);
     setEditingClient(null);
   };
 
@@ -31,7 +27,7 @@ const ClientEditModal = () => {
           >
             <div className="p-4 border-b border-gray-100 flex items-center justify-between">
               <h3 className="font-semibold text-gray-900">
-                {clients.some(c => c.id === editingClient.id) ? 'Upravit klienta' : 'Nový klient'}
+                {clients.some((client) => client.id === editingClient.id) ? 'Upravit klienta' : 'Novy klient'}
               </h3>
               <button onClick={() => setEditingClient(null)} className="p-1 hover:bg-gray-100 rounded-full text-gray-400">
                 <X size={20} />
@@ -40,18 +36,18 @@ const ClientEditModal = () => {
 
             <div className="p-5 space-y-4">
               <div>
-                <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Název klienta</label>
+                <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Nazev klienta</label>
                 <input
                   type="text"
                   value={editingClient.name}
                   onChange={(e) => setEditingClient({ ...editingClient, name: e.target.value })}
                   className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
-                  placeholder="Název společnosti"
+                  placeholder="Nazev spolecnosti"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">IČO</label>
+                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">ICO</label>
                   <input
                     type="text"
                     value={editingClient.ico || ''}
@@ -60,7 +56,7 @@ const ClientEditModal = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">DIČ</label>
+                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">DIC</label>
                   <input
                     type="text"
                     value={editingClient.dic || ''}
@@ -70,7 +66,7 @@ const ClientEditModal = () => {
                 </div>
               </div>
               <div>
-                <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Ulice a č.p.</label>
+                <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Ulice a c.p.</label>
                 <input
                   type="text"
                   value={editingClient.street || ''}
@@ -81,7 +77,7 @@ const ClientEditModal = () => {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">PSČ</label>
+                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">PSC</label>
                   <input
                     type="text"
                     value={editingClient.zip || ''}
@@ -91,28 +87,28 @@ const ClientEditModal = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Město</label>
+                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Mesto</label>
                   <input
                     type="text"
                     value={editingClient.city || ''}
                     onChange={(e) => setEditingClient({ ...editingClient, city: e.target.value })}
                     className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
-                    placeholder="Město"
+                    placeholder="Mesto"
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Stát</label>
+                <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Stat</label>
                 <input
                   type="text"
                   value={editingClient.country || ''}
                   onChange={(e) => setEditingClient({ ...editingClient, country: e.target.value })}
                   className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
-                  placeholder="Česká republika"
+                  placeholder="Ceska republika"
                 />
               </div>
               <div>
-                <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Poznámka</label>
+                <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Poznamka</label>
                 <textarea
                   value={editingClient.note || ''}
                   onChange={(e) => setEditingClient({ ...editingClient, note: e.target.value })}
@@ -126,13 +122,13 @@ const ClientEditModal = () => {
                 onClick={() => setEditingClient(null)}
                 className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-white transition-all"
               >
-                Zrušit
+                Zrusit
               </button>
               <button
                 onClick={handleSave}
                 className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-medium hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all"
               >
-                Uložit klienta
+                Ulozit klienta
               </button>
             </div>
           </motion.div>

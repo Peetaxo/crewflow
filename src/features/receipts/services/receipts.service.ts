@@ -132,6 +132,48 @@ export const deleteReceipt = (id: number): { id: number } => {
   return { id };
 };
 
+export const markApprovedReceiptsAsAttached = (): ReceiptItem[] => {
+  const updatedReceipts: ReceiptItem[] = [];
+
+  updateLocalAppState((snapshot) => ({
+    ...snapshot,
+    receipts: snapshot.receipts.map((receipt) => {
+      if (receipt.status !== 'approved') return receipt;
+
+      const updatedReceipt = {
+        ...receipt,
+        status: 'attached' as const,
+      };
+
+      updatedReceipts.push(updatedReceipt);
+      return updatedReceipt;
+    }),
+  }));
+
+  return updatedReceipts;
+};
+
+export const markReceiptsAsReimbursedForInvoice = (eventId: number, contractorId: number): ReceiptItem[] => {
+  const updatedReceipts: ReceiptItem[] = [];
+
+  updateLocalAppState((snapshot) => ({
+    ...snapshot,
+    receipts: snapshot.receipts.map((receipt) => {
+      if (receipt.eid !== eventId || receipt.cid !== contractorId || receipt.status !== 'attached') return receipt;
+
+      const updatedReceipt = {
+        ...receipt,
+        status: 'reimbursed' as const,
+      };
+
+      updatedReceipts.push(updatedReceipt);
+      return updatedReceipt;
+    }),
+  }));
+
+  return updatedReceipts;
+};
+
 export const subscribeToReceiptChanges = (listener: () => void): (() => void) => (
   subscribeToLocalAppState(() => listener())
 );

@@ -1,9 +1,22 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Plus, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useAppContext } from '../../context/AppContext';
+import { toast } from 'sonner';
 import { getDatesBetween } from '../../utils';
 import { Event, EventPhaseSlot, TimelogType } from '../../types';
+import {
+  applyEventDraft,
+  createDefaultPhaseTimes,
+  getEventFormOptions,
+  normalizeEventSchedules,
+  saveEvent,
+} from '../../features/events/services/events.service';
+
+interface EventEditModalProps {
+  editingEvent: Event | null;
+  onClose: () => void;
+  onChange: (event: Event | null) => void;
+}
 
 const PHASES = [
   { id: 'I', type: 'instal' as const, color: 'bg-blue-500 border-blue-600', label: 'Instalace' },
@@ -13,63 +26,17 @@ const PHASES = [
 
 const createSlotId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
-const createDefaultPhaseTimes = (from: string, to: string) => ({
-  instal: { from, to },
-  provoz: { from, to },
-  deinstal: { from, to },
-});
-
-const createEmptySchedules = (from: string, to: string) => ({
-  instal: [{ id: createSlotId(), from, to, dates: [] }],
-  provoz: [{ id: createSlotId(), from, to, dates: [] }],
-  deinstal: [{ id: createSlotId(), from, to, dates: [] }],
-});
-
-const normalizeSchedules = (event: Event) => {
-  if (event.phaseSchedules) return event.phaseSchedules;
-
-  const phaseTimes = event.phaseTimes || createDefaultPhaseTimes(event.startTime || '08:00', event.endTime || '17:00');
-  const schedules = createEmptySchedules(event.startTime || '08:00', event.endTime || '17:00');
-  const dates = event.startDate && event.endDate ? getDatesBetween(event.startDate, event.endDate) : [];
-
-  PHASES.forEach((phase) => {
-    schedules[phase.type] = [{
-      id: createSlotId(),
-      from: phaseTimes[phase.type]?.from || event.startTime || '08:00',
-      to: phaseTimes[phase.type]?.to || event.endTime || '17:00',
-      dates: dates.filter((date) => event.dayTypes?.[date] === phase.type),
-    }];
-  });
-
-  return schedules;
-};
-
-const syncDayTypesFromSchedules = (event: Event) => {
-  const nextDayTypes: Record<string, TimelogType> = {};
-
-  PHASES.forEach((phase) => {
-    (event.phaseSchedules?.[phase.type] || []).forEach((slot) => {
-      slot.dates.forEach((date) => {
-        nextDayTypes[date] = nextDayTypes[date] || phase.type;
-      });
-    });
-  });
-
-  return nextDayTypes;
-};
-
-const EventEditModal = () => {
-  const {
-    editingEvent, setEditingEvent, handleSaveEvent,
-    projects, clients,
-  } = useAppContext();
-
+const EventEditModal = ({
+  editingEvent,
+  onClose,
+  onChange,
+}: EventEditModalProps) => {
   const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
   const projectMenuRef = useRef<HTMLDivElement | null>(null);
+  const { projects, clients } = useMemo(() => getEventFormOptions(), [editingEvent]);
 
   const filteredProjects = useMemo(() => {
     const query = editingEvent?.job.trim().toLowerCase() ?? '';
-
     if (!query) return projects;
 
     return projects.filter((project) => (
@@ -79,11 +46,8 @@ const EventEditModal = () => {
     ));
   }, [editingEvent?.job, projects]);
 
-  const updateEvent = (nextEvent: Event) => {
-    setEditingEvent({
-      ...nextEvent,
-      dayTypes: syncDayTypesFromSchedules(nextEvent),
-    });
+  const updateEventDraft = (nextEvent: Event) => {
+    onChange(applyEventDraft(nextEvent));
   };
 
   const selectProject = (projectId: string) => {
@@ -92,7 +56,7 @@ const EventEditModal = () => {
     const project = projects.find((item) => item.id === projectId);
     if (!project) return;
 
-    updateEvent({
+    updateEventDraft({
       ...editingEvent,
       job: project.id,
       name: editingEvent.name.trim() ? editingEvent.name : project.name,
@@ -117,13 +81,13 @@ const EventEditModal = () => {
   const allEventDates = editingEvent.startDate && editingEvent.endDate
     ? getDatesBetween(editingEvent.startDate, editingEvent.endDate)
     : [];
-  const phaseSchedules = normalizeSchedules(editingEvent);
+  const phaseSchedules = normalizeEventSchedules(editingEvent);
   const globalFrom = editingEvent.startTime || '08:00';
   const globalTo = editingEvent.endTime || '17:00';
 
   const patchPhaseSlots = (phaseType: TimelogType, updater: (slots: EventPhaseSlot[]) => EventPhaseSlot[]) => {
     const nextSlots = updater((phaseSchedules[phaseType] || []).map((slot) => ({ ...slot, dates: [...slot.dates] })));
-    updateEvent({
+    updateEventDraft({
       ...editingEvent,
       phaseSchedules: {
         ...phaseSchedules,
@@ -139,6 +103,15 @@ const EventEditModal = () => {
     });
   };
 
+  const handleSave = () => {
+    try {
+      saveEvent({ ...editingEvent, phaseSchedules });
+      onClose();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Nepodarilo se ulozit akci.');
+    }
+  };
+
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
@@ -150,7 +123,7 @@ const EventEditModal = () => {
         >
           <div className="flex items-center justify-between border-b border-gray-100 p-4">
             <h3 className="font-semibold text-gray-900">Upravit akci</h3>
-            <button onClick={() => setEditingEvent(null)} className="rounded-full p-1 text-gray-400 hover:bg-gray-100">
+            <button onClick={onClose} className="rounded-full p-1 text-gray-400 hover:bg-gray-100">
               <X size={20} />
             </button>
           </div>
@@ -165,11 +138,11 @@ const EventEditModal = () => {
                       type="text"
                       value={editingEvent.job}
                       onChange={(e) => {
-                        updateEvent({ ...editingEvent, job: e.target.value.toUpperCase() });
+                        updateEventDraft({ ...editingEvent, job: e.target.value.toUpperCase() });
                         setIsProjectMenuOpen(true);
                       }}
                       onFocus={() => setIsProjectMenuOpen(true)}
-                      placeholder="Např. NEX300"
+                      placeholder="Napr. NEX300"
                       className="w-full px-3 py-2 text-sm outline-none"
                     />
                     <button
@@ -185,27 +158,25 @@ const EventEditModal = () => {
                   {isProjectMenuOpen && (
                     <div className="absolute z-20 mt-2 max-h-56 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 shadow-lg">
                       {filteredProjects.length > 0 ? (
-                        filteredProjects.map((project) => {
-                          return (
-                            <button
-                              key={project.id}
-                              type="button"
-                              onClick={() => selectProject(project.id)}
-                              className="flex w-full items-start justify-between rounded-lg px-3 py-2 text-left transition-colors hover:bg-gray-50"
-                            >
-                              <div>
-                                <div className="text-sm font-semibold text-gray-900">{project.id}</div>
-                                <div className="text-xs text-gray-500">{project.name}</div>
-                              </div>
-                              <div className="pl-3 text-[10px] font-medium uppercase tracking-wider text-gray-400">
-                                {project.client}
-                              </div>
-                            </button>
-                          );
-                        })
+                        filteredProjects.map((project) => (
+                          <button
+                            key={project.id}
+                            type="button"
+                            onClick={() => selectProject(project.id)}
+                            className="flex w-full items-start justify-between rounded-lg px-3 py-2 text-left transition-colors hover:bg-gray-50"
+                          >
+                            <div>
+                              <div className="text-sm font-semibold text-gray-900">{project.id}</div>
+                              <div className="text-xs text-gray-500">{project.name}</div>
+                            </div>
+                            <div className="pl-3 text-[10px] font-medium uppercase tracking-wider text-gray-400">
+                              {project.client}
+                            </div>
+                          </button>
+                        ))
                       ) : (
                         <div className="px-3 py-2 text-xs text-gray-500">
-                          Žádný existující projekt. Akce vytvoří nový projekt automaticky.
+                          Zadny existujici projekt. Akce vytvori novy projekt automaticky.
                         </div>
                       )}
                     </div>
@@ -213,11 +184,11 @@ const EventEditModal = () => {
                 </div>
               </div>
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Název akce</label>
+                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Nazev akce</label>
                 <input
                   type="text"
                   value={editingEvent.name}
-                  onChange={(e) => updateEvent({ ...editingEvent, name: e.target.value })}
+                  onChange={(e) => updateEventDraft({ ...editingEvent, name: e.target.value })}
                   className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
                 />
               </div>
@@ -228,7 +199,7 @@ const EventEditModal = () => {
                 <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Klient / Firma</label>
                 <select
                   value={editingEvent.client}
-                  onChange={(e) => updateEvent({ ...editingEvent, client: e.target.value })}
+                  onChange={(e) => updateEventDraft({ ...editingEvent, client: e.target.value })}
                   className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                 >
                   <option value="">Vyberte klienta</option>
@@ -238,11 +209,11 @@ const EventEditModal = () => {
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Město</label>
+                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Mesto</label>
                 <input
                   type="text"
                   value={editingEvent.city}
-                  onChange={(e) => updateEvent({ ...editingEvent, city: e.target.value })}
+                  onChange={(e) => updateEventDraft({ ...editingEvent, city: e.target.value })}
                   className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
                 />
               </div>
@@ -250,11 +221,11 @@ const EventEditModal = () => {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Datum začátku</label>
+                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Datum zacatku</label>
                 <input
                   type="date"
                   value={editingEvent.startDate}
-                  onChange={(e) => updateEvent({ ...editingEvent, startDate: e.target.value })}
+                  onChange={(e) => updateEventDraft({ ...editingEvent, startDate: e.target.value })}
                   className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
                 />
               </div>
@@ -263,7 +234,7 @@ const EventEditModal = () => {
                 <input
                   type="date"
                   value={editingEvent.endDate}
-                  onChange={(e) => updateEvent({ ...editingEvent, endDate: e.target.value })}
+                  onChange={(e) => updateEventDraft({ ...editingEvent, endDate: e.target.value })}
                   className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
                 />
               </div>
@@ -275,7 +246,7 @@ const EventEditModal = () => {
                 <input
                   type="time"
                   value={globalFrom}
-                  onChange={(e) => updateEvent({
+                  onChange={(e) => updateEventDraft({
                     ...editingEvent,
                     startTime: e.target.value,
                     phaseTimes: editingEvent.showDayTypes ? createDefaultPhaseTimes(e.target.value, globalTo) : editingEvent.phaseTimes,
@@ -296,7 +267,7 @@ const EventEditModal = () => {
                 <input
                   type="time"
                   value={globalTo}
-                  onChange={(e) => updateEvent({
+                  onChange={(e) => updateEventDraft({
                     ...editingEvent,
                     endTime: e.target.value,
                     phaseTimes: editingEvent.showDayTypes ? createDefaultPhaseTimes(globalFrom, e.target.value) : editingEvent.phaseTimes,
@@ -318,18 +289,18 @@ const EventEditModal = () => {
               <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Popis akce</label>
               <textarea
                 value={editingEvent.description || ''}
-                onChange={(e) => updateEvent({ ...editingEvent, description: e.target.value })}
+                onChange={(e) => updateEventDraft({ ...editingEvent, description: e.target.value })}
                 className="h-16 w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
               />
             </div>
 
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Kontaktní osoba</label>
+                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Kontaktni osoba</label>
                 <input
                   type="text"
                   value={editingEvent.contactPerson || ''}
-                  onChange={(e) => updateEvent({ ...editingEvent, contactPerson: e.target.value })}
+                  onChange={(e) => updateEventDraft({ ...editingEvent, contactPerson: e.target.value })}
                   className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
                 />
               </div>
@@ -338,16 +309,16 @@ const EventEditModal = () => {
                 <input
                   type="text"
                   value={editingEvent.dresscode || ''}
-                  onChange={(e) => updateEvent({ ...editingEvent, dresscode: e.target.value })}
+                  onChange={(e) => updateEventDraft({ ...editingEvent, dresscode: e.target.value })}
                   className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Místo srazu</label>
+                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Misto srazu</label>
                 <input
                   type="text"
                   value={editingEvent.meetingLocation || ''}
-                  onChange={(e) => updateEvent({ ...editingEvent, meetingLocation: e.target.value })}
+                  onChange={(e) => updateEventDraft({ ...editingEvent, meetingLocation: e.target.value })}
                   className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
                 />
               </div>
@@ -355,11 +326,11 @@ const EventEditModal = () => {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Potřeba crew</label>
+                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Potreba crew</label>
                 <input
                   type="number"
                   value={editingEvent.needed}
-                  onChange={(e) => updateEvent({ ...editingEvent, needed: Number(e.target.value) })}
+                  onChange={(e) => updateEventDraft({ ...editingEvent, needed: Number(e.target.value) })}
                   className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
                 />
               </div>
@@ -370,30 +341,30 @@ const EventEditModal = () => {
                 type="checkbox"
                 id="showDayTypes"
                 checked={editingEvent.showDayTypes || false}
-                onChange={(e) => updateEvent({
+                onChange={(e) => updateEventDraft({
                   ...editingEvent,
                   showDayTypes: e.target.checked,
                   phaseTimes: e.target.checked
                     ? (editingEvent.phaseTimes || createDefaultPhaseTimes(globalFrom, globalTo))
                     : editingEvent.phaseTimes,
                   phaseSchedules: e.target.checked
-                    ? (editingEvent.phaseSchedules || normalizeSchedules(editingEvent))
+                    ? (editingEvent.phaseSchedules || normalizeEventSchedules(editingEvent))
                     : editingEvent.phaseSchedules,
                 })}
                 className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
               />
               <label htmlFor="showDayTypes" className="cursor-pointer select-none text-xs font-bold text-gray-700">
-                Zobrazovat typy dnů (I-P-D) na akci
+                Zobrazovat typy dnu (I-P-D) na akci
               </label>
             </div>
 
             {editingEvent.showDayTypes && editingEvent.startDate && editingEvent.endDate && (
               <div className="space-y-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Nastavení typů dnů (I-P-D)</h4>
+                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Nastaveni typu dnu (I-P-D)</h4>
                   <button
                     type="button"
-                    onClick={() => updateEvent({
+                    onClick={() => updateEventDraft({
                       ...editingEvent,
                       phaseSchedules: Object.fromEntries(
                         PHASES.map((phase) => [
@@ -404,7 +375,7 @@ const EventEditModal = () => {
                     })}
                     className="text-[9px] font-bold uppercase text-red-500 hover:text-red-600"
                   >
-                    Vymazat vše
+                    Vymazat vse
                   </button>
                 </div>
 
@@ -425,7 +396,7 @@ const EventEditModal = () => {
                         ])}
                         className="inline-flex items-center gap-1 text-[10px] font-bold uppercase text-emerald-600 hover:text-emerald-700"
                       >
-                        <Plus size={12} /> Přidat čas
+                        <Plus size={12} /> Pridat cas
                       </button>
                     </div>
 
@@ -443,7 +414,7 @@ const EventEditModal = () => {
                               ))}
                               className="text-[9px] font-bold uppercase text-emerald-600 hover:text-emerald-700"
                             >
-                              Všechny dny
+                              Vsechny dny
                             </button>
                             <button
                               type="button"
@@ -511,7 +482,7 @@ const EventEditModal = () => {
                                       ? `${phase.color} text-white shadow-sm`
                                       : 'border-gray-200 bg-white text-gray-400 hover:border-gray-300'
                                   }`}
-                                  title={`${new Date(date).toLocaleDateString('cs-CZ')} — ${phase.label}`}
+                                  title={`${new Date(date).toLocaleDateString('cs-CZ')} - ${phase.label}`}
                                 >
                                   {new Date(date).getDate()}
                                 </button>
@@ -529,16 +500,16 @@ const EventEditModal = () => {
 
           <div className="flex gap-3 border-t border-gray-100 bg-gray-50 p-4">
             <button
-              onClick={() => setEditingEvent(null)}
+              onClick={onClose}
               className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-700 transition-all hover:bg-white"
             >
-              Zrušit
+              Zrusit
             </button>
             <button
-              onClick={() => handleSaveEvent({ ...editingEvent, phaseSchedules })}
+              onClick={handleSave}
               className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-sm font-medium text-white shadow-lg shadow-emerald-200 transition-all hover:bg-emerald-700"
             >
-              Uložit akci
+              Ulozit akci
             </button>
           </div>
         </motion.div>

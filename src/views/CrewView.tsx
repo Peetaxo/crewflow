@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAppContext } from '../context/AppContext';
 import StatusBadge from '../components/shared/StatusBadge';
 import CrewDetailView from './CrewDetailView';
+import ContractorEditModal from '../components/modals/ContractorEditModal';
 import { Contractor } from '../types';
+import { getCrew, subscribeToCrewChanges } from '../features/crew/services/crew.service';
 
 const AVATAR_PALETTE = [
   { bg: '#E1F5EE', fg: '#0F6E56' },
@@ -36,8 +38,9 @@ const createEmptyContractor = (nextId: number): Contractor => {
     billingStreet: '',
     billingZip: '',
     billingCity: '',
-    billingCountry: 'Česká republika',
+    billingCountry: 'Ceska republika',
     reliable: false,
+    rating: null,
     note: '',
   };
 };
@@ -46,23 +49,44 @@ const CrewView = () => {
   const {
     selectedContractorId,
     setSelectedContractorId,
-    filteredContractors,
+    searchQuery,
     setDeleteConfirm,
-    contractors,
-    setEditingContractor,
   } = useAppContext();
+  const [editingContractor, setEditingContractor] = useState<Contractor | null>(null);
+  const [crew, setCrew] = useState<Contractor[]>([]);
 
-  if (selectedContractorId) return <CrewDetailView />;
+  const loadCrew = useCallback(() => {
+    setCrew(getCrew({ search: searchQuery }));
+  }, [searchQuery]);
+
+  useEffect(() => {
+    loadCrew();
+  }, [loadCrew]);
+
+  useEffect(() => subscribeToCrewChanges(loadCrew), [loadCrew]);
+
+  const nextContractorId = useMemo(
+    () => Math.max(0, ...getCrew().map((contractor) => contractor.id)) + 1,
+    [crew],
+  );
+
+  if (selectedContractorId) {
+    return <CrewDetailView />;
+  }
+
+  const formatRating = (rating?: number | null) => (
+    typeof rating === 'number' ? rating.toFixed(1).replace('.0', '') : 'Bez hodnoceni'
+  );
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <div className="mb-5 flex items-center justify-between">
         <h1 className="text-lg font-semibold">Crew</h1>
         <button
-          onClick={() => setEditingContractor(createEmptyContractor(Math.max(0, ...contractors.map((contractor) => contractor.id)) + 1))}
+          onClick={() => setEditingContractor(createEmptyContractor(nextContractorId))}
           className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700"
         >
-          + Nový člen
+          + Novy clen
         </button>
       </div>
 
@@ -70,7 +94,7 @@ const CrewView = () => {
         <table className="w-full border-collapse text-left">
           <thead>
             <tr className="border-b border-gray-100 text-[10px] uppercase tracking-wider text-gray-400">
-              <th className="px-4 py-3 font-medium">Jméno</th>
+              <th className="px-4 py-3 font-medium">Jmeno</th>
               <th className="px-4 py-3 font-medium">Tagy</th>
               <th className="px-4 py-3 font-medium">Akci</th>
               <th className="px-4 py-3 font-medium">Sazba</th>
@@ -80,7 +104,7 @@ const CrewView = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {filteredContractors.map((contractor) => (
+            {crew.map((contractor) => (
               <tr
                 key={contractor.id}
                 className="cursor-pointer transition-colors hover:bg-gray-50"
@@ -96,15 +120,18 @@ const CrewView = () => {
                       <div className="text-[10px] text-gray-500">{contractor.city}</div>
                     </div>
                   </div>
+                  <div className="mt-1 text-[10px] text-gray-500">
+                    Hodnoceni: {formatRating(contractor.rating)} / 5
+                  </div>
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex flex-wrap gap-1">
-                    {contractor.tags.includes('Ridic') && <StatusBadge status="bg" label="Řidič" />}
-                    {contractor.reliable ? <StatusBadge status="full" label="Spolehlivý" /> : <StatusBadge status="pending_ch" label="Ověřit" />}
+                    {contractor.tags.includes('Ridic') && <StatusBadge status="bg" label="Ridic" />}
+                    {contractor.reliable ? <StatusBadge status="full" label="Spolehlivy" /> : <StatusBadge status="pending_ch" label="Overit" />}
                   </div>
                 </td>
                 <td className="px-4 py-3 text-xs font-semibold">{contractor.events}</td>
-                <td className="px-4 py-3 text-xs font-semibold">{contractor.rate} Kč/h</td>
+                <td className="px-4 py-3 text-xs font-semibold">{contractor.rate} Kc/h</td>
                 <td className="px-4 py-3">
                   <div className="text-xs text-gray-700">{contractor.ico || '-'}</div>
                   <div className="text-[10px] text-gray-400">{contractor.dic || '-'}</div>
@@ -121,7 +148,7 @@ const CrewView = () => {
                         setDeleteConfirm({ type: 'crew', id: contractor.id, name: contractor.name });
                       }}
                       className="rounded-lg p-1.5 text-gray-300 transition-all hover:bg-red-50 hover:text-red-600"
-              title="Smazat"
+                      title="Smazat"
                     >
                       <Trash2 size={14} />
                     </button>
@@ -132,10 +159,16 @@ const CrewView = () => {
           </tbody>
         </table>
 
-        {filteredContractors.length === 0 && (
-          <div className="py-12 text-center text-sm text-gray-400">Žádní členové crew</div>
+        {crew.length === 0 && (
+          <div className="py-12 text-center text-sm text-gray-400">Zadni clenove crew</div>
         )}
       </div>
+
+      <ContractorEditModal
+        editingContractor={editingContractor}
+        onClose={() => setEditingContractor(null)}
+        onChange={setEditingContractor}
+      />
     </motion.div>
   );
 };

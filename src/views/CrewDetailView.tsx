@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, BarChart3, Calendar, CheckCircle2, ChevronDown, ChevronDownCircle, Clock, FileText, Receipt } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -8,36 +8,47 @@ import { KM_RATE } from '../data';
 import StatusBadge from '../components/shared/StatusBadge';
 import ShiftCard from '../components/shared/ShiftCard';
 import { calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
+import { getCrewDetailData, subscribeToCrewChanges, updateCrew } from '../features/crew/services/crew.service';
 
 const CrewDetailView = () => {
   const {
     selectedContractorId,
     setSelectedContractorId,
-    contractors,
-    setContractors,
-    timelogs,
-    invoices,
-    events,
-    projects,
-    findEvent,
     setEditingTimelog,
     darkMode,
   } = useAppContext();
+  const [detail, setDetail] = useState(() => getCrewDetailData(selectedContractorId));
 
-  const c = contractors.find((x) => x.id === selectedContractorId);
-  if (!c) return null;
+  const loadDetail = useCallback(() => {
+    setDetail(getCrewDetailData(selectedContractorId));
+  }, [selectedContractorId]);
+
+  useEffect(() => {
+    loadDetail();
+  }, [loadDetail]);
+
+  useEffect(() => subscribeToCrewChanges(loadDetail), [loadDetail]);
 
   const [activeTab, setActiveTab] = useState<'upcoming' | 'processing' | 'invoiced' | 'invoices'>('upcoming');
   const [chartPeriod, setChartPeriod] = useState<'month' | 'quarter' | 'year'>('month');
   const [isChartExpanded, setIsChartExpanded] = useState(false);
   const [profileTab, setProfileTab] = useState<'personal' | 'billing'>('personal');
   const [isEditingMeta, setIsEditingMeta] = useState(false);
-  const [metaForm, setMetaForm] = useState({ rate: String(c.rate), note: c.note ?? '' });
+  const [metaForm, setMetaForm] = useState({ rate: '', note: '' });
   const shiftsScrollRef = useRef<HTMLDivElement | null>(null);
   const [showScrollCue, setShowScrollCue] = useState(false);
 
-  const cTls = timelogs.filter((t) => t.cid === selectedContractorId);
-  const cInvoices = invoices.filter((i) => i.cid === selectedContractorId);
+  const c = detail.contractor;
+  const events = detail.events;
+  const projects = detail.projects;
+  const cTls = detail.timelogs;
+  const cInvoices = detail.invoices;
+
+  if (!c) return null;
+
+  useEffect(() => {
+    setMetaForm({ rate: String(c.rate), note: c.note ?? '' });
+  }, [c.id, c.rate, c.note]);
 
   const categorized = useMemo(() => ({
     upcoming: cTls.filter((t) => t.status === 'draft'),
@@ -57,7 +68,6 @@ const CrewDetailView = () => {
 
     cInvoices.forEach((inv) => {
       if (!inv.sentAt) return;
-
       const date = parseISO(inv.sentAt);
       let key: string;
       let sortDate: Date;
@@ -84,29 +94,29 @@ const CrewDetailView = () => {
   }, [cInvoices, chartPeriod]);
 
   const saveMeta = () => {
-    setContractors((prev) => prev.map((contractor) => (
-      contractor.id === c.id
-        ? { ...contractor, rate: Number(metaForm.rate) || contractor.rate, note: metaForm.note }
-        : contractor
-    )));
+    updateCrew({
+      ...c,
+      rate: Number(metaForm.rate) || c.rate,
+      note: metaForm.note,
+    });
     setIsEditingMeta(false);
   };
 
   const personalRows: [string, string][] = [
-    ['Telefon', c.phone || '—'],
-    ['E-mail', c.email || '—'],
-    ['IČO', c.ico || '—'],
-    ['DIČ', c.dic || '—'],
-    ['Č. účtu', c.bank || '—'],
-    ['Akcí', `${c.events} celkem`],
+    ['Telefon', c.phone || '-'],
+    ['E-mail', c.email || '-'],
+    ['ICO', c.ico || '-'],
+    ['DIC', c.dic || '-'],
+    ['C. uctu', c.bank || '-'],
+    ['Akci', `${c.events} celkem`],
   ];
 
   const billingRows: [string, string][] = [
-    ['Jméno / firma', c.billingName || c.name],
-    ['Ulice a číslo', c.billingStreet || '—'],
-    ['PSČ', c.billingZip || '—'],
-    ['Město', c.billingCity || c.city || '—'],
-    ['Stát', c.billingCountry || 'Česká republika'],
+    ['Jmeno / firma', c.billingName || c.name],
+    ['Ulice a cislo', c.billingStreet || '-'],
+    ['PSC', c.billingZip || '-'],
+    ['Mesto', c.billingCity || c.city || '-'],
+    ['Stat', c.billingCountry || 'Ceska republika'],
   ];
 
   useEffect(() => {
@@ -137,15 +147,15 @@ const CrewDetailView = () => {
         className="mb-4 flex items-center gap-1 text-xs text-gray-500 transition-colors hover:text-gray-900"
       >
         <ArrowLeft size={14} />
-        Zpět na Crew
+        Zpet na Crew
       </button>
 
       <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         {[
           {
-            label: 'Vyděláno celkem',
+            label: 'Vydelano celkem',
             value: formatCurrency(stats.totalEarned),
-            sub: 'Z proplacených faktur',
+            sub: 'Z proplacenych faktur',
             bg: 'bg-emerald-50 border-emerald-100',
             icon: Receipt,
             iconBg: 'bg-emerald-100 text-emerald-700',
@@ -154,9 +164,9 @@ const CrewDetailView = () => {
             subCls: 'text-emerald-600',
           },
           {
-            label: 'K vyplacení',
+            label: 'K vyplaceni',
             value: formatCurrency(stats.toPay),
-            sub: 'Odeslané faktury',
+            sub: 'Odeslane faktury',
             bg: 'bg-blue-50 border-blue-100',
             icon: Clock,
             iconBg: 'bg-blue-100 text-blue-700',
@@ -165,9 +175,9 @@ const CrewDetailView = () => {
             subCls: 'text-blue-600',
           },
           {
-            label: 'Ke schválení',
+            label: 'Ke schvaleni',
             value: `${stats.pendingHours.toFixed(1)} h`,
-            sub: 'Čeká na schválení',
+            sub: 'Ceka na schvaleni',
             bg: 'bg-amber-50 border-amber-100',
             icon: CheckCircle2,
             iconBg: 'bg-amber-100 text-amber-700',
@@ -176,9 +186,9 @@ const CrewDetailView = () => {
             subCls: 'text-amber-600',
           },
           {
-            label: 'Celkem odpracováno',
+            label: 'Celkem odpracovano',
             value: `${stats.totalHours.toFixed(1)} h`,
-            sub: 'Schválené směny',
+            sub: 'Schvalene smeny',
             bg: 'bg-gray-50 border-gray-100',
             icon: Calendar,
             iconBg: 'bg-gray-200 text-gray-700',
@@ -207,13 +217,20 @@ const CrewDetailView = () => {
               <div className="av h-12 w-12 text-lg" style={{ backgroundColor: c.bg, color: c.fg }}>{c.ii}</div>
               <div>
                 <div className="text-base font-semibold">{c.name}</div>
-                <div className="text-xs text-gray-500">{c.city || 'Bez města'}</div>
+                <div className="text-xs text-gray-500">{c.city || 'Bez mesta'}</div>
               </div>
             </div>
 
             <div className="mb-4 flex flex-wrap gap-1">
-              {c.tags.includes('Ridic') && <StatusBadge status="bg" label="Řidič" />}
-              {c.reliable ? <StatusBadge status="full" label="Spolehlivý" /> : <StatusBadge status="pending_ch" label="Ověřit" />}
+              {c.tags.includes('Ridic') && <StatusBadge status="bg" label="Ridic" />}
+              {c.reliable ? <StatusBadge status="full" label="Spolehlivy" /> : <StatusBadge status="pending_ch" label="Overit" />}
+            </div>
+
+            <div className="mb-4 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+              <div className="text-[10px] uppercase tracking-wider text-gray-500">Hodnoceni</div>
+              <div className="mt-1 text-sm font-semibold text-gray-900">
+                {typeof c.rating === 'number' ? `${c.rating.toFixed(1).replace('.0', '')} / 5` : 'Bez hodnoceni'}
+              </div>
             </div>
 
             <div className="mb-4 flex gap-1 rounded-lg border border-gray-200 bg-white p-0.5">
@@ -221,13 +238,13 @@ const CrewDetailView = () => {
                 onClick={() => setProfileTab('personal')}
                 className={`flex-1 rounded-md py-2 text-[11px] font-medium transition-all ${profileTab === 'personal' ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
               >
-                Osobní údaje
+                Osobni udaje
               </button>
               <button
                 onClick={() => setProfileTab('billing')}
                 className={`flex-1 rounded-md py-2 text-[11px] font-medium transition-all ${profileTab === 'billing' ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
               >
-                Fakturační adresa
+                Fakturacni adresa
               </button>
             </div>
 
@@ -243,7 +260,7 @@ const CrewDetailView = () => {
 
           <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center justify-between border-b border-gray-50 pb-4">
-              <h3 className="text-sm font-semibold">Sazba a poznámka</h3>
+              <h3 className="text-sm font-semibold">Sazba a poznamka</h3>
               {!isEditingMeta ? (
                 <button
                   onClick={() => setIsEditingMeta(true)}
@@ -258,11 +275,11 @@ const CrewDetailView = () => {
               <div className="space-y-2">
                 <div className="flex justify-between border-b border-gray-50 py-1.5">
                   <span className="text-xs text-gray-500">Sazba</span>
-                  <span className="text-xs font-semibold">{c.rate} Kč/h</span>
+                  <span className="text-xs font-semibold">{c.rate} Kc/h</span>
                 </div>
                 <div className="pt-2">
-                  <div className="mb-1 text-xs text-gray-500">Poznámka</div>
-                  <div className="min-h-10 text-sm text-gray-700">{c.note || '—'}</div>
+                  <div className="mb-1 text-xs text-gray-500">Poznamka</div>
+                  <div className="min-h-10 text-sm text-gray-700">{c.note || '-'}</div>
                 </div>
               </div>
             ) : (
@@ -274,7 +291,7 @@ const CrewDetailView = () => {
                     className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
                   />
                 </label>
-                <label className="block text-xs text-gray-600">Poznámka
+                <label className="block text-xs text-gray-600">Poznamka
                   <textarea
                     value={metaForm.note}
                     onChange={(e) => setMetaForm((prev) => ({ ...prev, note: e.target.value }))}
@@ -290,13 +307,13 @@ const CrewDetailView = () => {
                     }}
                     className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium hover:bg-gray-50"
                   >
-                    Zrušit
+                    Zrusit
                   </button>
                   <button
                     onClick={saveMeta}
                     className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
                   >
-                    Uložit
+                    Ulozit
                   </button>
                 </div>
               </div>
@@ -306,12 +323,12 @@ const CrewDetailView = () => {
 
         <div className="relative flex min-h-0 flex-col rounded-xl border border-gray-100 bg-white p-5 shadow-sm lg:h-[41rem] lg:flex-1 lg:min-w-0">
           <div className="mb-4">
-            <h3 className="mb-3 text-sm font-semibold">Směny</h3>
+            <h3 className="mb-3 text-sm font-semibold">Smeny</h3>
             <div className="flex w-fit flex-wrap items-center gap-2 rounded-xl border border-gray-100 bg-white p-1">
               {[
-                { id: 'upcoming' as const, lbl: 'Nadcházející', count: categorized.upcoming.length },
-                { id: 'processing' as const, lbl: 'Zpracovává se', count: categorized.processing.length },
-                { id: 'invoiced' as const, lbl: 'Vyúčtované', count: categorized.invoiced.length },
+                { id: 'upcoming' as const, lbl: 'Nadchazejici', count: categorized.upcoming.length },
+                { id: 'processing' as const, lbl: 'Zpracovava se', count: categorized.processing.length },
+                { id: 'invoiced' as const, lbl: 'Vyuctovane', count: categorized.invoiced.length },
                 { id: 'invoices' as const, lbl: 'Faktury', count: cInvoices.length },
               ].map((tab) => (
                 <button
@@ -351,7 +368,7 @@ const CrewDetailView = () => {
                   })}
                   {categorized[activeTab].length === 0 && (
                     <div className="col-span-full rounded-2xl border border-dashed border-gray-200 bg-gray-50 py-12 text-center text-sm text-gray-500">
-                      Žádné záznamy
+                      Zadne zaznamy
                     </div>
                   )}
                 </motion.div>
@@ -372,7 +389,7 @@ const CrewDetailView = () => {
                         <div>
                           <div className="text-xs font-bold text-gray-900">{inv.id}</div>
                           <div className="text-[10px] text-gray-500">
-                            {inv.job} • {inv.sentAt ? formatShortDate(inv.sentAt) : '—'}
+                            {inv.job} - {inv.sentAt ? formatShortDate(inv.sentAt) : '-'}
                           </div>
                         </div>
                       </div>
@@ -405,7 +422,7 @@ const CrewDetailView = () => {
                   className="relative z-10 rounded-full border border-emerald-100 bg-white/95 px-3 py-1.5 text-[11px] font-medium text-emerald-700 shadow-sm"
                 >
                   <span className="flex items-center gap-1.5">
-                    Posunout níž
+                    Posunout niz
                     <ChevronDownCircle size={14} />
                   </span>
                 </motion.div>
@@ -416,7 +433,7 @@ const CrewDetailView = () => {
       </div>
 
       <div className="mb-6 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
-        <div className="border-b border-gray-50 p-4 text-sm font-semibold">Historie timelogů</div>
+        <div className="border-b border-gray-50 p-4 text-sm font-semibold">Historie timelogu</div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -431,7 +448,7 @@ const CrewDetailView = () => {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {cTls.map((t) => {
-                const e = findEvent(t.eid);
+                const e = events.find((event) => event.id === t.eid);
                 if (!e) return null;
                 const hours = calculateTotalHours(t.days);
 
@@ -442,7 +459,7 @@ const CrewDetailView = () => {
                       <div className="font-mono text-[10px] text-gray-400">{e.job}</div>
                     </td>
                     <td className="px-4 py-3 text-xs font-semibold">{hours.toFixed(1)}h</td>
-                    <td className="px-4 py-3 text-xs text-gray-500">{t.km || '—'}</td>
+                    <td className="px-4 py-3 text-xs text-gray-500">{t.km || '-'}</td>
                     <td className="px-4 py-3 text-xs font-bold text-gray-900">{formatCurrency(hours * c.rate + t.km * KM_RATE)}</td>
                     <td className="px-4 py-3">
                       <StatusBadge status={t.status} />
@@ -467,7 +484,7 @@ const CrewDetailView = () => {
         >
           <div className="flex items-center gap-3">
             <BarChart3 size={18} className="text-emerald-600" />
-            <h2 className="text-sm font-bold uppercase tracking-wider text-gray-900">Fakturace za dané období</h2>
+            <h2 className="text-sm font-bold uppercase tracking-wider text-gray-900">Fakturace za dane obdobi</h2>
           </div>
           <ChevronDown size={16} className={`text-gray-400 transition-transform duration-300 ${isChartExpanded ? 'rotate-180' : ''}`} />
         </button>
@@ -489,7 +506,7 @@ const CrewDetailView = () => {
                         onClick={() => setChartPeriod(period)}
                         className={`rounded-md px-3 py-1.5 text-[10px] font-bold uppercase transition-all ${chartPeriod === period ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
                       >
-                        {period === 'month' ? 'Měsíce' : period === 'quarter' ? 'Kvartály' : 'Roky'}
+                        {period === 'month' ? 'Mesice' : period === 'quarter' ? 'Kvartaly' : 'Roky'}
                       </button>
                     ))}
                   </div>
@@ -510,7 +527,7 @@ const CrewDetailView = () => {
                           boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
                           fontSize: '12px',
                         }}
-                        formatter={(v: number) => [formatCurrency(v), 'Fakturováno']}
+                        formatter={(v: number) => [formatCurrency(v), 'Fakturovano']}
                       />
                       <Bar dataKey="total" fill="#10b981" radius={[4, 4, 0, 0]} barSize={40} />
                     </BarChart>

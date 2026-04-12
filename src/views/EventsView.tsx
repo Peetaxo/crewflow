@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, List, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import {
@@ -8,6 +8,7 @@ import {
   endOfMonth,
   endOfWeek,
   format,
+  isValid,
   isSameMonth,
   parseISO,
   startOfMonth,
@@ -17,14 +18,26 @@ import {
 } from 'date-fns';
 import { cs } from 'date-fns/locale';
 import { useAppContext } from '../context/AppContext';
-import { Event } from '../types';
-import { calculateTotalHours, eventOccursOnDate, formatDateRange, getDatesBetween, getEventStatus } from '../utils';
+import { Event, Timelog } from '../types';
+import { calculateTotalHours, eventOccursOnDate, formatDateRange, getDatesBetween } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';
 import EventDetailView from './EventDetailView';
+import EventEditModal from '../components/modals/EventEditModal';
+import AssignCrewModal from '../components/modals/AssignCrewModal';
+import {
+  createEmptyEvent,
+  getEventById,
+  filterEventsByStatus,
+  getEventDetailData,
+  getEvents,
+  getEventsWithDerivedStatus,
+  getReferenceDate,
+  subscribeToEventChanges,
+} from '../features/events/services/events.service';
+import { EventFilter } from '../features/events/types/events.types';
 
 type EventsViewMode = 'list' | 'calendar';
 type CalendarMode = 'month' | 'week';
-type EventFilter = 'upcoming' | 'past' | 'all';
 
 type CalendarEvent = Event & {
   derivedStatus: 'upcoming' | 'full' | 'past';
@@ -43,20 +56,6 @@ type EventColorStyle = {
   stripeColor: string;
   textColor: string;
   metaColor: string;
-};
-
-const getReferenceDate = (events: Event[]) => {
-  if (events.length === 0) return new Date();
-
-  const today = new Date().toISOString().split('T')[0];
-  const upcoming = [...events]
-    .filter((event) => event.endDate >= today)
-    .sort((a, b) => a.startDate.localeCompare(b.startDate));
-
-  if (upcoming.length > 0) return parseISO(upcoming[0].startDate);
-
-  const latestPast = [...events].sort((a, b) => b.startDate.localeCompare(a.startDate));
-  return parseISO(latestPast[0].startDate);
 };
 
 const buildWeekSegments = (weekDays: Date[], events: CalendarEvent[]): CalendarSegment[] => {
@@ -128,51 +127,76 @@ const getEventColorStyle = (index: number, status: CalendarEvent['derivedStatus'
 const EventsView = () => {
   const {
     role,
-    selectedEventId, setSelectedEventId,
-    filteredEvents, timelogs,
-    setEditingEvent, setAssigningCrewToEvent, setDeleteConfirm,
-    setEventTab, events,
-    eventsViewMode, setEventsViewMode,
-    eventsCalendarMode, setEventsCalendarMode,
-    eventsFilter, setEventsFilter,
-    eventsCalendarDate, setEventsCalendarDate,
+    selectedEventId,
+    setSelectedEventId,
+    searchQuery,
+    setDeleteConfirm,
+    setEventTab,
+    eventsViewMode,
+    setEventsViewMode,
+    eventsCalendarMode,
+    setEventsCalendarMode,
+    eventsFilter,
+    setEventsFilter,
+    eventsCalendarDate,
+    setEventsCalendarDate,
   } = useAppContext();
-
-  const canManageEvents = role !== 'crew';
   const [didInitCalendarDate, setDidInitCalendarDate] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<Event | null>(null);
+  const [assigningEvent, setAssigningEvent] = useState<Event | null>(null);
+  const [events, setEvents] = useState<Event[]>([]);
+  const canManageEvents = role !== 'crew';
   const viewMode = eventsViewMode as EventsViewMode;
   const calendarMode = eventsCalendarMode as CalendarMode;
   const eventFilter = eventsFilter as EventFilter;
-  const calendarDate = useMemo(
-    () => (eventsCalendarDate ? parseISO(eventsCalendarDate) : getReferenceDate(filteredEvents)),
-    [eventsCalendarDate, filteredEvents],
+  const selectedEvent = useMemo(
+    () => getEventById(selectedEventId),
+    [selectedEventId, events],
   );
 
-  React.useEffect(() => {
+  const loadEvents = useCallback(() => {
+    setEvents(getEvents(searchQuery));
+  }, [searchQuery]);
+
+  useEffect(() => {
+    loadEvents();
+  }, [loadEvents]);
+
+  useEffect(() => subscribeToEventChanges(loadEvents), [loadEvents]);
+
+  useEffect(() => {
+    if (selectedEventId && !selectedEvent) {
+      setSelectedEventId(null);
+    }
+  }, [selectedEventId, selectedEvent, setSelectedEventId]);
+
+  const calendarDate = useMemo(() => {
+    if (!eventsCalendarDate) {
+      return getReferenceDate(events);
+    }
+
+    const parsedCalendarDate = parseISO(eventsCalendarDate);
+    return isValid(parsedCalendarDate) ? parsedCalendarDate : getReferenceDate(events);
+  }, [eventsCalendarDate, events]);
+
+  useEffect(() => {
     if (didInitCalendarDate) return;
     if (eventsCalendarDate) {
       setDidInitCalendarDate(true);
       return;
     }
 
-    const referenceDate = getReferenceDate(filteredEvents);
+    const referenceDate = getReferenceDate(events);
     setEventsCalendarDate(format(referenceDate, 'yyyy-MM-dd'));
     setDidInitCalendarDate(true);
-  }, [didInitCalendarDate, eventsCalendarDate, filteredEvents, setEventsCalendarDate]);
+  }, [didInitCalendarDate, eventsCalendarDate, events, setEventsCalendarDate]);
 
   const eventsWithDerivedStatus = useMemo(() => (
-    filteredEvents.map((event) => ({
-      ...event,
-      derivedStatus: getEventStatus(event),
-    }))
-  ), [filteredEvents]);
+    getEventsWithDerivedStatus(events)
+  ), [events]);
 
   const visibleEvents = useMemo(() => (
-    eventsWithDerivedStatus.filter((event) => {
-      if (eventFilter === 'all') return true;
-      if (eventFilter === 'past') return event.derivedStatus === 'past';
-      return event.derivedStatus !== 'past';
-    })
+    filterEventsByStatus(eventsWithDerivedStatus, eventFilter)
   ), [eventFilter, eventsWithDerivedStatus]);
 
   const eventColorMap = useMemo(() => (
@@ -223,7 +247,7 @@ const EventsView = () => {
     setEventsCalendarDate(format(nextDate, 'yyyy-MM-dd'));
   };
 
-  if (selectedEventId) {
+  if (selectedEventId && selectedEvent) {
     return <EventDetailView />;
   }
 
@@ -236,7 +260,7 @@ const EventsView = () => {
             <div className="flex items-center rounded-lg border border-gray-200 bg-white p-0.5">
               {[
                 { id: 'list' as const, label: 'Seznam', icon: List },
-                { id: 'calendar' as const, label: 'Kalendář', icon: CalendarDays },
+                { id: 'calendar' as const, label: 'Kalendar', icon: CalendarDays },
               ].map((item) => (
                 <button
                   key={item.id}
@@ -252,9 +276,9 @@ const EventsView = () => {
 
           <div className="flex flex-wrap items-center gap-2">
             {[
-              { id: 'upcoming' as const, label: 'Nadcházející' },
-              { id: 'past' as const, label: 'Uplynulé' },
-              { id: 'all' as const, label: 'Vše' },
+              { id: 'upcoming' as const, label: 'Nadchazejici' },
+              { id: 'past' as const, label: 'Uplynule' },
+              { id: 'all' as const, label: 'Vse' },
             ].map((item) => (
               <button
                 key={item.id}
@@ -279,8 +303,8 @@ const EventsView = () => {
             <>
               <div className="flex items-center rounded-lg border border-gray-200 bg-white p-0.5">
                 {[
-                  { id: 'month' as const, label: 'Měsíc' },
-                  { id: 'week' as const, label: 'Týden' },
+                  { id: 'month' as const, label: 'Mesic' },
+                  { id: 'week' as const, label: 'Tyden' },
                 ].map((item) => (
                   <button
                     key={item.id}
@@ -309,24 +333,10 @@ const EventsView = () => {
 
           {canManageEvents && (
             <button
-              onClick={() => setEditingEvent({
-                id: Math.max(0, ...events.map((event) => event.id)) + 1,
-                name: '',
-                job: '',
-                startDate: '',
-                endDate: '',
-                startTime: '08:00',
-                endTime: '17:00',
-                city: '',
-                needed: 1,
-                filled: 0,
-                status: 'upcoming',
-                client: '',
-                showDayTypes: false,
-              })}
+              onClick={() => setEditingEvent(createEmptyEvent())}
               className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700"
             >
-              + Nová akce
+              + Nova akce
             </button>
           )}
         </div>
@@ -334,9 +344,9 @@ const EventsView = () => {
 
       {visibleEvents.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-6 py-12 text-center shadow-sm">
-          <div className="text-sm font-semibold text-gray-900">Pro tento filtr tu zatím nejsou žádné akce.</div>
+          <div className="text-sm font-semibold text-gray-900">Pro tento filtr tu zatim nejsou zadne akce.</div>
           <div className="mt-1 text-xs text-gray-500">
-            Zkuste přepnout filtr nebo vytvořit novou akci.
+            Zkuste prepnout filtr nebo vytvorit novou akci.
           </div>
         </div>
       ) : viewMode === 'list' ? (
@@ -353,7 +363,7 @@ const EventsView = () => {
 
               <div className="grid grid-cols-1 gap-3">
                 {groupedEvents[date].map((event) => {
-                  const eventTimelogs = timelogs.filter((timelog) => timelog.eid === event.id);
+                  const eventTimelogs: Timelog[] = getEventDetailData(event.id).timelogs;
                   const totalHours = eventTimelogs.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
                   const daysCount = getDatesBetween(event.startDate, event.endDate).length;
 
@@ -375,7 +385,7 @@ const EventsView = () => {
                         </div>
                         <h3 className="text-base font-semibold text-gray-900">{event.name}</h3>
                         <div className="mt-1 flex items-center gap-1.5 text-xs text-gray-500">
-                          {formatDateRange(event.startDate, event.endDate)} · {event.city} · {event.client}
+                          {formatDateRange(event.startDate, event.endDate)} - {event.city} - {event.client}
                           {daysCount > 1 && (
                             <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-tighter text-gray-600">
                               {daysCount} dny
@@ -385,7 +395,7 @@ const EventsView = () => {
                       </div>
                       <div className="flex items-center gap-5 px-4 py-3">
                         <div>
-                          <div className="mb-1 text-[10px] uppercase tracking-wider text-gray-500">Crew obsazení</div>
+                          <div className="mb-1 text-[10px] uppercase tracking-wider text-gray-500">Crew obsazeni</div>
                           <div className="flex items-center gap-2">
                             <div className="h-1 w-20 overflow-hidden rounded-full bg-gray-100">
                               <div
@@ -398,15 +408,15 @@ const EventsView = () => {
                         </div>
                         <div>
                           <div className="mb-1 text-[10px] uppercase tracking-wider text-gray-500">Timelogy</div>
-                          <div className="text-xs font-semibold">{eventTimelogs.length} zaz. · {totalHours.toFixed(1)}h</div>
+                          <div className="text-xs font-semibold">{eventTimelogs.length} zaz. - {totalHours.toFixed(1)}h</div>
                         </div>
                         <div className="ml-auto flex gap-2">
                           {canManageEvents && (
                             <button
-                              onClick={() => setAssigningCrewToEvent(event)}
+                              onClick={() => setAssigningEvent(event)}
                               className="rounded-md border border-gray-200 px-3 py-1 text-[11px] hover:bg-gray-50"
                             >
-                              Obsadit crew →
+                              Obsadit crew {'->'}
                             </button>
                           )}
                           <button
@@ -475,7 +485,7 @@ const EventsView = () => {
                         <button
                           key={`${segment.event.id}-${segment.startIndex}-${segment.endIndex}`}
                           onClick={() => openEventDetail(segment.event.id)}
-                          className="pointer-events-auto absolute h-12 rounded-lg border text-left transition-all hover:shadow-sm overflow-hidden"
+                          className="pointer-events-auto absolute h-12 overflow-hidden rounded-lg border text-left transition-all hover:shadow-sm"
                           style={{
                             left: `calc(${left}% + 6px)`,
                             width: `calc(${width}% - 12px)`,
@@ -501,16 +511,10 @@ const EventsView = () => {
                                   style={{ backgroundColor: eventColor.stripeColor }}
                                 />
                                 <div className="min-w-0">
-                                  <div
-                                    className="truncate text-[11px] font-bold leading-tight"
-                                    style={{ color: eventColor.textColor }}
-                                  >
+                                  <div className="truncate text-[11px] font-bold leading-tight" style={{ color: eventColor.textColor }}>
                                     {segment.event.name}
                                   </div>
-                                  <div
-                                    className="mt-0.5 flex items-center gap-2 text-[10px] font-medium"
-                                    style={{ color: eventColor.metaColor }}
-                                  >
+                                  <div className="mt-0.5 flex items-center gap-2 text-[10px] font-medium" style={{ color: eventColor.metaColor }}>
                                     <span>{segment.event.job}</span>
                                     <span className="font-semibold">{segment.event.filled}/{segment.event.needed}</span>
                                   </div>
@@ -528,6 +532,16 @@ const EventsView = () => {
           </div>
         </div>
       )}
+
+      <EventEditModal
+        editingEvent={editingEvent}
+        onClose={() => setEditingEvent(null)}
+        onChange={setEditingEvent}
+      />
+      <AssignCrewModal
+        event={assigningEvent}
+        onClose={() => setAssigningEvent(null)}
+      />
     </motion.div>
   );
 };

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Clock, FileText, MapPin, Receipt, Shirt, Trash2, User, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAppContext } from '../context/AppContext';
@@ -6,43 +6,63 @@ import { KM_RATE } from '../data';
 import { PHASE_CONFIG } from '../constants';
 import { calculateDayHours, calculateTotalHours, formatCurrency, formatDateRange, getDatesBetween, getEventStatus } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';
+import EventEditModal from '../components/modals/EventEditModal';
+import AssignCrewModal from '../components/modals/AssignCrewModal';
+import { Event } from '../types';
+import {
+  getEventCrew,
+  getEventDetailData,
+  removeContractorFromEvent,
+  subscribeToEventChanges,
+} from '../features/events/services/events.service';
 
 const EventDetailView = () => {
   const {
     role,
     selectedEventId,
     setSelectedEventId,
-    events,
-    timelogs,
-    contractors,
-    receipts,
-    setTimelogs,
-    setEvents,
-    findContractor,
     eventTab,
     setEventTab,
-    setAssigningCrewToEvent,
-    setEditingEvent,
     setEditingReceipt,
     setDeleteConfirm,
     setEditingTimelog,
   } = useAppContext();
+  const [detail, setDetail] = useState(() => getEventDetailData(selectedEventId));
+  const [editingEvent, setEditingEvent] = useState<Event | null>(null);
+  const [assigningEvent, setAssigningEvent] = useState<Event | null>(null);
 
-  const event = events.find((item) => item.id === selectedEventId);
+  const loadDetail = useCallback(() => {
+    setDetail(getEventDetailData(selectedEventId));
+  }, [selectedEventId]);
+
+  useEffect(() => {
+    loadDetail();
+  }, [loadDetail]);
+
+  useEffect(() => subscribeToEventChanges(loadDetail), [loadDetail]);
+
+  useEffect(() => {
+    if (selectedEventId && !detail.event) {
+      setSelectedEventId(null);
+    }
+  }, [detail.event, selectedEventId, setSelectedEventId]);
+
+  const event = detail.event;
   if (!event) return null;
 
   const eventStatus = getEventStatus(event);
-  const eventTimelogs = timelogs.filter((timelog) => timelog.eid === event.id);
-  const eventReceipts = receipts.filter((receipt) => receipt.eid === event.id);
+  const eventTimelogs = detail.timelogs;
+  const eventReceipts = detail.receipts;
+  const contractors = detail.contractors;
   const totalHours = eventTimelogs.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
   const totalCrewCost = eventTimelogs.reduce((sum, timelog) => {
-    const contractor = findContractor(timelog.cid);
+    const contractor = contractors.find((item) => item.id === timelog.cid);
     return sum + (contractor ? calculateTotalHours(timelog.days) * contractor.rate : 0);
   }, 0);
   const totalTravelCost = eventTimelogs.reduce((sum, timelog) => sum + timelog.km * KM_RATE, 0);
   const totalReceiptCost = eventReceipts.reduce((sum, receipt) => sum + receipt.amount, 0);
   const days = getDatesBetween(event.startDate, event.endDate);
-  const eventCrew = contractors.filter((contractor) => eventTimelogs.some((timelog) => timelog.cid === contractor.id));
+  const eventCrew = getEventCrew(event.id);
   const canManageEvents = role !== 'crew';
 
   const getPhasesForDate = (date: string) => (
@@ -55,18 +75,13 @@ const EventDetailView = () => {
   );
 
   const handleRemoveFromEvent = (contractorId: number) => {
-    setTimelogs((prev) => prev.filter((timelog) => !(timelog.eid === event.id && timelog.cid === contractorId)));
-    setEvents((prev) => prev.map((item) => (
-      item.id === event.id
-        ? { ...item, filled: Math.max(0, item.filled - 1) }
-        : item
-    )));
+    removeContractorFromEvent(event.id, contractorId);
   };
 
   return (
     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
       <button onClick={() => setSelectedEventId(null)} className="mb-4 flex items-center gap-1 text-xs text-gray-500 transition-colors hover:text-gray-900">
-        <ArrowLeft size={14} /> Zpět na Akce
+        <ArrowLeft size={14} /> Zpet na Akce
       </button>
 
       <div className="mb-6 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
@@ -77,7 +92,7 @@ const EventDetailView = () => {
               <StatusBadge status={eventStatus} />
             </div>
             <h1 className="text-2xl font-bold text-gray-900">{event.name}</h1>
-            <p className="mt-1 text-sm text-gray-500">{formatDateRange(event.startDate, event.endDate)} · {event.city} · {event.client}</p>
+            <p className="mt-1 text-sm text-gray-500">{formatDateRange(event.startDate, event.endDate)} - {event.city} - {event.client}</p>
             {event.description && <p className="mt-3 max-w-2xl text-xs leading-relaxed text-gray-600">{event.description}</p>}
 
             <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2">
@@ -105,7 +120,7 @@ const EventDetailView = () => {
           <div className="flex gap-2">
             <button
               onClick={() => setEditingReceipt({
-                id: Math.max(0, ...receipts.map((receipt) => receipt.id)) + 1,
+                id: Math.max(0, ...eventReceipts.map((receipt) => receipt.id)) + 1,
                 cid: 1,
                 eid: event.id,
                 job: event.job,
@@ -118,12 +133,12 @@ const EventDetailView = () => {
               })}
               className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium hover:bg-gray-50"
             >
-              Přidat účtenku
+              Pridat uctenku
             </button>
 
             {canManageEvents && (
               <>
-                <button onClick={() => setAssigningCrewToEvent(event)} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm shadow-emerald-200 hover:bg-emerald-700">
+                <button onClick={() => setAssigningEvent(event)} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm shadow-emerald-200 hover:bg-emerald-700">
                   Obsadit crew
                 </button>
                 <button onClick={() => setEditingEvent(event)} className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium hover:bg-gray-50">
@@ -146,7 +161,7 @@ const EventDetailView = () => {
             onClick={() => setEventTab('overview')}
             className={`border-b-2 px-4 py-2 text-sm font-medium transition-all ${eventTab === 'overview' ? 'border-emerald-500 text-emerald-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
           >
-            Přehled
+            Prehled
           </button>
           {days.map((date) => {
             const phasesForDay = getPhasesForDate(date);
@@ -181,14 +196,14 @@ const EventDetailView = () => {
                 <div>
                   <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold">
                     <Users size={16} className="text-gray-400" />
-                    Přiřazená Crew ({eventCrew.length})
+                    Prirazena Crew ({eventCrew.length})
                   </h3>
                   <div className="overflow-hidden rounded-xl border border-gray-100 bg-gray-50">
                     <table className="w-full border-collapse text-left">
                       <thead>
                         <tr className="border-b border-gray-100 text-[10px] uppercase tracking-wider text-gray-400">
-                          <th className="px-4 py-3 text-left font-medium">Jméno</th>
-                          {event.showDayTypes && <th className="px-4 py-3 text-left font-medium">Fáze</th>}
+                          <th className="px-4 py-3 text-left font-medium">Jmeno</th>
+                          {event.showDayTypes && <th className="px-4 py-3 text-left font-medium">Faze</th>}
                           <th className="px-4 py-3 text-left font-medium">Hodiny</th>
                           <th className="px-4 py-3 text-right font-medium">Celkem</th>
                           <th className="px-4 py-3 text-right font-medium">Akce</th>
@@ -256,26 +271,26 @@ const EventDetailView = () => {
 
               <div className="space-y-4">
                 <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
-                  <h4 className="mb-3 text-[10px] font-bold uppercase tracking-wider text-emerald-700">Finanční souhrn</h4>
+                  <h4 className="mb-3 text-[10px] font-bold uppercase tracking-wider text-emerald-700">Financni souhrn</h4>
                   <div className="space-y-2">
                     <div className="flex justify-between text-xs">
                       <span className="text-emerald-600">Celkem hodiny</span>
                       <span className="font-bold text-emerald-900">{totalHours.toFixed(1)}h</span>
                     </div>
                     <div className="flex justify-between text-xs">
-                      <span className="text-emerald-600">Náklady na crew</span>
+                      <span className="text-emerald-600">Naklady na crew</span>
                       <span className="font-bold text-emerald-900">{formatCurrency(totalCrewCost)}</span>
                     </div>
                     <div className="flex justify-between text-xs">
-                      <span className="text-emerald-600">Cestovné</span>
+                      <span className="text-emerald-600">Cestovne</span>
                       <span className="font-bold text-emerald-900">{formatCurrency(totalTravelCost)}</span>
                     </div>
                     <div className="flex justify-between text-xs">
-                      <span className="text-emerald-600">Účtenky</span>
+                      <span className="text-emerald-600">Uctenky</span>
                       <span className="font-bold text-emerald-900">{formatCurrency(totalReceiptCost)}</span>
                     </div>
                     <div className="mt-2 flex justify-between border-t border-emerald-200 pt-2 text-sm">
-                      <span className="font-bold text-emerald-700">Celkový rozpočet</span>
+                      <span className="font-bold text-emerald-700">Celkovy rozpocet</span>
                       <span className="font-black text-emerald-900">{formatCurrency(totalCrewCost + totalTravelCost + totalReceiptCost)}</span>
                     </div>
                   </div>
@@ -309,17 +324,17 @@ const EventDetailView = () => {
                 <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
                   <h4 className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-gray-500">
                     <Receipt size={12} className="text-gray-400" />
-                    Účtenky ({eventReceipts.length})
+                    Uctenky ({eventReceipts.length})
                   </h4>
                   <div className="space-y-2">
                     {eventReceipts.slice(0, 4).map((receipt) => {
-                      const contractor = findContractor(receipt.cid);
+                      const contractor = contractors.find((item) => item.id === receipt.cid);
                       return (
                         <div key={receipt.id} className="rounded-lg border border-gray-100 bg-white p-3">
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <div className="text-xs font-semibold text-gray-900">{receipt.title}</div>
-                              <div className="text-[10px] text-gray-500">{contractor?.name || '—'} · {receipt.vendor}</div>
+                              <div className="text-[10px] text-gray-500">{contractor?.name || '-'} - {receipt.vendor}</div>
                             </div>
                             <div className="text-right">
                               <div className="text-xs font-bold text-gray-900">{formatCurrency(receipt.amount)}</div>
@@ -331,7 +346,7 @@ const EventDetailView = () => {
                     })}
                     {eventReceipts.length === 0 && (
                       <div className="rounded-lg border border-dashed border-gray-200 bg-white px-3 py-6 text-center text-xs text-gray-400">
-                        K této akci zatím nejsou zadané žádné účtenky.
+                        K teto akci zatim nejsou zadane zadne uctenky.
                       </div>
                     )}
                   </div>
@@ -361,7 +376,7 @@ const EventDetailView = () => {
 
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {eventTimelogs.filter((timelog) => timelog.days.some((day) => day.d === eventTab)).map((timelog) => {
-                  const contractor = findContractor(timelog.cid);
+                  const contractor = contractors.find((item) => item.id === timelog.cid);
                   if (!contractor) return null;
                   const matchingDays = timelog.days.filter((day) => day.d === eventTab);
 
@@ -385,7 +400,7 @@ const EventDetailView = () => {
                               <div className="flex flex-col">
                                 <span className="text-[9px] font-bold uppercase text-gray-400">Cas</span>
                                 <div className="flex items-center gap-2">
-                                  <span className="text-xs font-mono font-bold">{day.f} – {day.t}</span>
+                                  <span className="text-xs font-mono font-bold">{day.f} - {day.t}</span>
                                   {phase && (
                                     <span className={`rounded px-1.5 py-0.5 text-[9px] font-black text-white ${phase.color}`}>
                                       {phase.id}
@@ -407,7 +422,7 @@ const EventDetailView = () => {
 
                 {eventTimelogs.filter((timelog) => timelog.days.some((day) => day.d === eventTab)).length === 0 && (
                   <div className="col-span-full rounded-2xl border border-dashed border-gray-200 bg-gray-50 py-12 text-center text-sm text-gray-400">
-                    Na tento den není nikdo naplánován.
+                    Na tento den neni nikdo naplanovan.
                   </div>
                 )}
               </div>
@@ -415,6 +430,16 @@ const EventDetailView = () => {
           )}
         </div>
       </div>
+
+      <EventEditModal
+        editingEvent={editingEvent}
+        onClose={() => setEditingEvent(null)}
+        onChange={setEditingEvent}
+      />
+      <AssignCrewModal
+        event={assigningEvent}
+        onClose={() => setAssigningEvent(null)}
+      />
     </motion.div>
   );
 };

@@ -16,12 +16,9 @@ import RecruitmentView from '../../views/RecruitmentView';
 import SettingsView from '../../views/SettingsView';
 
 import TimelogEditModal from '../modals/TimelogEditModal';
-import EventEditModal from '../modals/EventEditModal';
 import ProjectEditModal from '../modals/ProjectEditModal';
 import ClientEditModal from '../modals/ClientEditModal';
-import ContractorEditModal from '../modals/ContractorEditModal';
 import ReceiptEditModal from '../modals/ReceiptEditModal';
-import AssignCrewModal from '../modals/AssignCrewModal';
 import DeleteConfirmModal from '../modals/DeleteConfirmModal';
 
 const AppLayout: React.FC = () => {
@@ -77,12 +74,9 @@ const AppLayout: React.FC = () => {
       </main>
 
       <TimelogEditModal />
-      <EventEditModal />
       <ProjectEditModal />
       <ReceiptEditModal />
       <ClientEditModal />
-      <ContractorEditModal />
-      <AssignCrewModal />
       <DeleteConfirmModal />
     </div>
   );

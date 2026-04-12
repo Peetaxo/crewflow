@@ -2,150 +2,42 @@ import React, { useMemo, useState } from 'react';
 import { AlertTriangle, Plus, Search, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { useAppContext } from '../../context/AppContext';
 import { PHASE_CONFIG } from '../../constants';
-import { EventPhaseSlot, Timelog, TimelogType } from '../../types';
-import { formatDateRange, getDatesBetween } from '../../utils';
+import { Event, TimelogType } from '../../types';
+import { formatDateRange } from '../../utils';
+import { getCrew } from '../../features/crew/services/crew.service';
+import { assignCrewToEvent, getContractorConflictsForEvent, getEventDetailData } from '../../features/events/services/events.service';
 
-const AssignCrewModal = () => {
-  const {
-    assigningCrewToEvent,
-    setAssigningCrewToEvent,
-    filteredContractors,
-    timelogs,
-    setTimelogs,
-    setEvents,
-    searchQuery,
-    setSearchQuery,
-    findEvent,
-  } = useAppContext();
+interface AssignCrewModalProps {
+  event: Event | null;
+  onClose: () => void;
+}
 
+const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
   const [pendingContractorId, setPendingContractorId] = useState<number | null>(null);
   const [selectedPhaseOptions, setSelectedPhaseOptions] = useState<Array<TimelogType | 'all'>>([]);
+  const [search, setSearch] = useState('');
 
+  const contractors = useMemo(() => getCrew({ search }), [search]);
   const pendingContractor = useMemo(
-    () => filteredContractors.find((contractor) => contractor.id === pendingContractorId) ?? null,
-    [filteredContractors, pendingContractorId],
+    () => contractors.find((contractor) => contractor.id === pendingContractorId) ?? null,
+    [contractors, pendingContractorId],
   );
 
-  if (!assigningCrewToEvent) return null;
+  if (!event) return null;
 
-  const eventDates = getDatesBetween(assigningCrewToEvent.startDate, assigningCrewToEvent.endDate);
-  const eventDateSet = new Set(eventDates);
-  const defaultFrom = assigningCrewToEvent.startTime || '08:00';
-  const defaultTo = assigningCrewToEvent.endTime || '17:00';
-  const phaseSchedules = assigningCrewToEvent.phaseSchedules || {};
-
-  const contractorConflicts = new Map(
-    filteredContractors.map((contractor) => {
-      const overlappingTimelogs = timelogs.filter((timelog) => (
-        timelog.cid === contractor.id
-        && timelog.eid !== assigningCrewToEvent.id
-        && timelog.days.some((day) => eventDateSet.has(day.d))
-      ));
-
-      const conflictDetails = overlappingTimelogs.map((timelog) => {
-        const relatedEvent = findEvent(timelog.eid);
-        const overlappingDates = [...new Set(
-          timelog.days
-            .map((day) => day.d)
-            .filter((date) => eventDateSet.has(date)),
-        )].sort();
-
-        return {
-          eventName: relatedEvent?.name || `Akce #${timelog.eid}`,
-          eventJob: relatedEvent?.job || '',
-          startDate: overlappingDates[0],
-          endDate: overlappingDates[overlappingDates.length - 1],
-        };
-      });
-
-      return [contractor.id, conflictDetails] as const;
-    }),
-  );
-
-  const buildTimelogDays = (phaseChoices?: Array<TimelogType | 'all'>): Timelog['days'] => {
-    if (!assigningCrewToEvent.showDayTypes) {
-      return eventDates.map((date) => ({
-        d: date,
-        f: defaultFrom,
-        t: defaultTo,
-        type: 'instal' as TimelogType,
-      }));
-    }
-
-    const dayTypes = assigningCrewToEvent.dayTypes || {};
-    if (!phaseChoices || phaseChoices.length === 0) return [];
-
-    const includesAll = phaseChoices.includes('all');
-    const selectedTypes = phaseChoices.filter((choice): choice is TimelogType => choice !== 'all');
-    const activeTypes = includesAll ? PHASE_CONFIG.map((phase) => phase.type) : selectedTypes;
-
-    const scheduledDays = activeTypes.flatMap((phaseType) => {
-      const slots = phaseSchedules[phaseType] || [];
-
-      if (slots.length === 0) {
-        return eventDates
-          .filter((date) => dayTypes[date] === phaseType)
-          .map((date) => ({
-            d: date,
-            f: assigningCrewToEvent.phaseTimes?.[phaseType]?.from || defaultFrom,
-            t: assigningCrewToEvent.phaseTimes?.[phaseType]?.to || defaultTo,
-            type: phaseType,
-          }));
-      }
-
-      return slots.flatMap((slot: EventPhaseSlot) => slot.dates.map((date) => ({
-        d: date,
-        f: slot.from || defaultFrom,
-        t: slot.to || defaultTo,
-        type: phaseType,
-      })));
-    });
-
-    return scheduledDays
-      .filter((day) => eventDates.includes(day.d))
-      .sort((a, b) => `${a.d}${a.f}${a.type}`.localeCompare(`${b.d}${b.f}${b.type}`));
-  };
+  const contractorConflicts = getContractorConflictsForEvent(event, contractors);
+  const assignedContractorIds = new Set(getEventDetailData(event.id).timelogs.map((timelog) => timelog.cid));
 
   const assignContractor = (contractorId: number, phaseChoices?: Array<TimelogType | 'all'>) => {
-    const initialDays = buildTimelogDays(phaseChoices);
-
-    if (initialDays.length === 0) {
-      toast.error('Pro vybranou fázi nejsou na akci žádné dny.');
-      return;
+    try {
+      assignCrewToEvent(event.id, contractorId, phaseChoices);
+      setPendingContractorId(null);
+      setSelectedPhaseOptions([]);
+      toast.success('Clen crew byl prirazen bez kolize.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Nepodarilo se priradit clena crew.');
     }
-
-    const hasCollision = timelogs.some((timelog) => (
-      timelog.cid === contractorId
-      && timelog.eid !== assigningCrewToEvent.id
-      && timelog.days.some((day) => initialDays.some((newDay) => newDay.d === day.d))
-    ));
-
-    if (hasCollision) {
-      toast.error('Tento člen crew má ve stejném termínu jinou akci.');
-      return;
-    }
-
-    const newTimelog: Timelog = {
-      id: Math.max(0, ...timelogs.map((t) => t.id)) + 1,
-      eid: assigningCrewToEvent.id,
-      cid: contractorId,
-      days: initialDays,
-      km: 0,
-      note: '',
-      status: 'draft',
-    };
-
-    setTimelogs((prev) => [...prev, newTimelog]);
-    setEvents((prev) => prev.map((event) => (
-      event.id === assigningCrewToEvent.id
-        ? { ...event, filled: Math.min(event.needed, event.filled + 1) }
-        : event
-    )));
-    setPendingContractorId(null);
-    setSelectedPhaseOptions([]);
-    toast.success('Člen crew byl přiřazen bez kolize.');
   };
 
   const assignmentOptions = [
@@ -155,12 +47,19 @@ const AssignCrewModal = () => {
       description: phase.label,
       activeClass: phase.color,
     })),
-    { id: 'all' as const, label: 'Vše', description: 'Všechny typy dnů', activeClass: 'bg-slate-700 border-slate-800 shadow-slate-100' },
+    { id: 'all' as const, label: 'Vse', description: 'Vsechny typy dnu', activeClass: 'bg-slate-700 border-slate-800 shadow-slate-100' },
   ];
 
   const isOptionSelected = (optionId: TimelogType | 'all') => {
     if (optionId === 'all') return selectedPhaseOptions.includes('all');
     return selectedPhaseOptions.includes(optionId) || selectedPhaseOptions.includes('all');
+  };
+
+  const handleClose = () => {
+    setPendingContractorId(null);
+    setSelectedPhaseOptions([]);
+    setSearch('');
+    onClose();
   };
 
   return (
@@ -176,17 +75,10 @@ const AssignCrewModal = () => {
             <div>
               <h3 className="font-semibold text-gray-900">Obsadit crew</h3>
               <p className="mt-0.5 text-[10px] uppercase tracking-wider text-gray-500">
-                {assigningCrewToEvent.name} · {assigningCrewToEvent.job}
+                {event.name} - {event.job}
               </p>
             </div>
-            <button
-              onClick={() => {
-                setPendingContractorId(null);
-                setSelectedPhaseOptions([]);
-                setAssigningCrewToEvent(null);
-              }}
-              className="rounded-full p-1 text-gray-400 hover:bg-gray-100"
-            >
+            <button onClick={handleClose} className="rounded-full p-1 text-gray-400 hover:bg-gray-100">
               <X size={20} />
             </button>
           </div>
@@ -198,16 +90,16 @@ const AssignCrewModal = () => {
                 type="text"
                 placeholder="Hledat v crew..."
                 className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
-                onChange={(e) => setSearchQuery(e.target.value)}
-                value={searchQuery}
+                onChange={(e) => setSearch(e.target.value)}
+                value={search}
               />
             </div>
           </div>
 
-          {assigningCrewToEvent.showDayTypes && pendingContractor && (
+          {event.showDayTypes && pendingContractor && (
             <div className="border-b border-emerald-100 bg-emerald-50 p-4">
               <div className="mb-3 text-xs font-semibold text-emerald-900">
-                Kam přiřadit {pendingContractor.name}?
+                Kam priradit {pendingContractor.name}?
               </div>
               <div className="grid grid-cols-4 gap-2">
                 {assignmentOptions.map((option) => (
@@ -255,7 +147,7 @@ const AssignCrewModal = () => {
                   }}
                   className="text-[11px] font-medium text-gray-500 hover:text-gray-700"
                 >
-                  Zrušit výběr fáze
+                  Zrusit vyber faze
                 </button>
                 <button
                   type="button"
@@ -263,15 +155,15 @@ const AssignCrewModal = () => {
                   disabled={selectedPhaseOptions.length === 0}
                   className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-gray-300"
                 >
-                  Potvrdit přiřazení
+                  Potvrdit prirazeni
                 </button>
               </div>
             </div>
           )}
 
           <div className="flex-1 space-y-1 overflow-y-auto p-2">
-            {filteredContractors.map((contractor) => {
-              const isAlreadyAssigned = timelogs.some((timelog) => timelog.eid === assigningCrewToEvent.id && timelog.cid === contractor.id);
+            {contractors.map((contractor) => {
+              const isAlreadyAssigned = assignedContractorIds.has(contractor.id);
               const conflicts = contractorConflicts.get(contractor.id) || [];
               const hasConflict = conflicts.length > 0;
 
@@ -281,11 +173,11 @@ const AssignCrewModal = () => {
                   disabled={isAlreadyAssigned || hasConflict}
                   onClick={() => {
                     if (hasConflict) {
-                      toast.error('Tento člen crew má ve stejném termínu jinou akci.');
+                      toast.error('Tento clen crew ma ve stejnem terminu jinou akci.');
                       return;
                     }
 
-                    if (assigningCrewToEvent.showDayTypes) {
+                    if (event.showDayTypes) {
                       setPendingContractorId(contractor.id);
                       setSelectedPhaseOptions([]);
                       return;
@@ -308,11 +200,11 @@ const AssignCrewModal = () => {
                         <div className="flex gap-1">
                           {contractor.tags.includes('Ridic') && (
                             <span className="rounded-[4px] bg-gray-100 px-1 py-0.5 text-[8px] font-bold uppercase text-gray-500">
-                              Řidič
+                              Ridic
                             </span>
                           )}
                           <span className={`rounded-[4px] px-1 py-0.5 text-[8px] font-bold uppercase ${contractor.reliable ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-                            {contractor.reliable ? 'Spolehlivý' : 'Ověřit'}
+                            {contractor.reliable ? 'Spolehlivy' : 'Overit'}
                           </span>
                         </div>
                       </div>
@@ -321,15 +213,15 @@ const AssignCrewModal = () => {
                         <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-800">
                           <div className="flex items-center gap-1 font-semibold">
                             <AlertTriangle size={12} />
-                            Kolize termínu
+                            Kolize terminu
                           </div>
                           <div className="mt-1 space-y-1">
                             {conflicts.map((conflict, index) => (
                               <div key={`${contractor.id}-${conflict.eventJob}-${index}`}>
-                                {conflict.eventJob ? `${conflict.eventJob} · ` : ''}
+                                {conflict.eventJob ? `${conflict.eventJob} - ` : ''}
                                 {conflict.eventName}
                                 {conflict.startDate && conflict.endDate && (
-                                  <span className="text-amber-700"> · {formatDateRange(conflict.startDate, conflict.endDate)}</span>
+                                  <span className="text-amber-700"> - {formatDateRange(conflict.startDate, conflict.endDate)}</span>
                                 )}
                               </div>
                             ))}
@@ -344,7 +236,7 @@ const AssignCrewModal = () => {
                       </div>
                     ) : (
                       <div className={`text-[10px] font-bold uppercase tracking-wider ${hasConflict ? 'text-amber-700' : 'text-emerald-600'}`}>
-                        {hasConflict ? 'Kolize' : 'Přiřazen'}
+                        {hasConflict ? 'Kolize' : 'Prirazen'}
                       </div>
                     )}
                   </div>
@@ -355,11 +247,7 @@ const AssignCrewModal = () => {
 
           <div className="border-t border-gray-100 bg-gray-50 p-4">
             <button
-              onClick={() => {
-                setPendingContractorId(null);
-                setSelectedPhaseOptions([]);
-                setAssigningCrewToEvent(null);
-              }}
+              onClick={handleClose}
               className="w-full rounded-xl bg-gray-900 py-2.5 text-sm font-medium text-white shadow-lg shadow-gray-200 transition-all hover:bg-gray-800"
             >
               Hotovo

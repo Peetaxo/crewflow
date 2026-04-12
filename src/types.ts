@@ -75,6 +75,7 @@ export interface Contractor {
   billingCity?: string;
   billingCountry?: string;
   reliable: boolean;
+  rating?: number | null;
   note: string;
 }
 

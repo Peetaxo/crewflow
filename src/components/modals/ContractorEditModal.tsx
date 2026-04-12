@@ -2,77 +2,37 @@ import React from 'react';
 import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import { useAppContext } from '../../context/AppContext';
+import { Contractor } from '../../types';
+import { createCrew, getCrew, updateCrew } from '../../features/crew/services/crew.service';
 
-const getInitials = (name: string) => (
-  name
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('')
-);
+interface ContractorEditModalProps {
+  editingContractor: Contractor | null;
+  onClose: () => void;
+  onChange: (contractor: Contractor | null) => void;
+}
 
-const ContractorEditModal = () => {
-  const {
-    editingContractor,
-    setEditingContractor,
-    contractors,
-    setContractors,
-  } = useAppContext();
-
+const ContractorEditModal = ({
+  editingContractor,
+  onClose,
+  onChange,
+}: ContractorEditModalProps) => {
   if (!editingContractor) return null;
 
-  const isExisting = contractors.some((contractor) => contractor.id === editingContractor.id);
+  const isExisting = getCrew().some((contractor) => contractor.id === editingContractor.id);
 
   const handleSave = () => {
-    const name = editingContractor.name.trim();
+    try {
+      if (isExisting) {
+        updateCrew(editingContractor);
+      } else {
+        createCrew(editingContractor);
+      }
 
-    if (!name) {
-      toast.error('Vyplňte jméno člena crew.');
-      return;
+      onClose();
+      toast.success(isExisting ? 'Clen crew upraven.' : 'Novy clen crew vytvoren.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Nepodarilo se ulozit clena crew.');
     }
-
-    if (!editingContractor.city.trim()) {
-      toast.error('Vyplňte město.');
-      return;
-    }
-
-    if (!editingContractor.phone.trim() && !editingContractor.email.trim()) {
-      toast.error('Vyplňte alespoň telefon nebo e-mail.');
-      return;
-    }
-
-    const normalizedContractor = {
-      ...editingContractor,
-      name,
-      ii: getInitials(name),
-      city: editingContractor.city.trim(),
-      phone: editingContractor.phone.trim(),
-      email: editingContractor.email.trim(),
-      ico: editingContractor.ico.trim(),
-      dic: editingContractor.dic.trim(),
-      bank: editingContractor.bank.trim(),
-      billingName: editingContractor.billingName?.trim() || name,
-      billingStreet: editingContractor.billingStreet?.trim() || '',
-      billingZip: editingContractor.billingZip?.trim() || '',
-      billingCity: editingContractor.billingCity?.trim() || editingContractor.city.trim(),
-      billingCountry: editingContractor.billingCountry?.trim() || 'Česká republika',
-      note: editingContractor.note.trim(),
-      tags: editingContractor.tags.includes('Ridic') ? ['Ridic'] : [],
-      rate: Number(editingContractor.rate) || 0,
-    };
-
-    setContractors((prev) => {
-      const exists = prev.some((contractor) => contractor.id === normalizedContractor.id);
-      return exists
-        ? prev.map((contractor) => contractor.id === normalizedContractor.id ? normalizedContractor : contractor)
-        : [...prev, normalizedContractor];
-    });
-
-    setEditingContractor(null);
-    toast.success(isExisting ? 'Člen crew upraven.' : 'Nový člen crew vytvořen.');
   };
 
   return (
@@ -87,9 +47,9 @@ const ContractorEditModal = () => {
           >
             <div className="flex items-center justify-between border-b border-gray-100 p-4">
               <h3 className="font-semibold text-gray-900">
-                {isExisting ? 'Upravit člena crew' : 'Nový člen crew'}
+                {isExisting ? 'Upravit clena crew' : 'Novy clen crew'}
               </h3>
-              <button onClick={() => setEditingContractor(null)} className="rounded-full p-1 text-gray-400 hover:bg-gray-100">
+              <button onClick={onClose} className="rounded-full p-1 text-gray-400 hover:bg-gray-100">
                 <X size={20} />
               </button>
             </div>
@@ -97,21 +57,21 @@ const ContractorEditModal = () => {
             <div className="space-y-4 overflow-y-auto p-5">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Jméno</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Jmeno</label>
                   <input
                     type="text"
                     value={editingContractor.name}
-                    onChange={(e) => setEditingContractor({ ...editingContractor, name: e.target.value })}
+                    onChange={(e) => onChange({ ...editingContractor, name: e.target.value })}
                     className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
-                    placeholder="Jméno a příjmení"
+                    placeholder="Jmeno a prijmeni"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Město</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Mesto</label>
                   <input
                     type="text"
                     value={editingContractor.city}
-                    onChange={(e) => setEditingContractor({ ...editingContractor, city: e.target.value })}
+                    onChange={(e) => onChange({ ...editingContractor, city: e.target.value })}
                     className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                     placeholder="Praha"
                   />
@@ -124,7 +84,7 @@ const ContractorEditModal = () => {
                   <input
                     type="text"
                     value={editingContractor.phone}
-                    onChange={(e) => setEditingContractor({ ...editingContractor, phone: e.target.value })}
+                    onChange={(e) => onChange({ ...editingContractor, phone: e.target.value })}
                     className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                     placeholder="777 123 456"
                   />
@@ -134,7 +94,7 @@ const ContractorEditModal = () => {
                   <input
                     type="email"
                     value={editingContractor.email}
-                    onChange={(e) => setEditingContractor({ ...editingContractor, email: e.target.value })}
+                    onChange={(e) => onChange({ ...editingContractor, email: e.target.value })}
                     className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                     placeholder="jmeno@email.cz"
                   />
@@ -148,7 +108,7 @@ const ContractorEditModal = () => {
                     type="number"
                     min="0"
                     value={editingContractor.rate}
-                    onChange={(e) => setEditingContractor({ ...editingContractor, rate: Number(e.target.value) })}
+                    onChange={(e) => onChange({ ...editingContractor, rate: Number(e.target.value) })}
                     className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                   />
                 </div>
@@ -157,7 +117,7 @@ const ContractorEditModal = () => {
                   <input
                     type="text"
                     value={editingContractor.ico}
-                    onChange={(e) => setEditingContractor({ ...editingContractor, ico: e.target.value })}
+                    onChange={(e) => onChange({ ...editingContractor, ico: e.target.value })}
                     className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                   />
                 </div>
@@ -166,7 +126,7 @@ const ContractorEditModal = () => {
                   <input
                     type="text"
                     value={editingContractor.dic}
-                    onChange={(e) => setEditingContractor({ ...editingContractor, dic: e.target.value })}
+                    onChange={(e) => onChange({ ...editingContractor, dic: e.target.value })}
                     className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                   />
                 </div>
@@ -174,11 +134,11 @@ const ContractorEditModal = () => {
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Číslo účtu</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Cislo uctu</label>
                   <input
                     type="text"
                     value={editingContractor.bank}
-                    onChange={(e) => setEditingContractor({ ...editingContractor, bank: e.target.value })}
+                    onChange={(e) => onChange({ ...editingContractor, bank: e.target.value })}
                     className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                     placeholder="123456789/0800"
                   />
@@ -188,34 +148,34 @@ const ContractorEditModal = () => {
                     <input
                       type="checkbox"
                       checked={editingContractor.tags.includes('Ridic')}
-                      onChange={(e) => setEditingContractor({
+                      onChange={(e) => onChange({
                         ...editingContractor,
                         tags: e.target.checked ? ['Ridic'] : [],
                       })}
                       className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
                     />
-                    Označit jako řidiče
+                    Oznacit jako ridice
                   </label>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Fakturační jméno</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Fakturacni jmeno</label>
                   <input
                     type="text"
                     value={editingContractor.billingName || ''}
-                    onChange={(e) => setEditingContractor({ ...editingContractor, billingName: e.target.value })}
+                    onChange={(e) => onChange({ ...editingContractor, billingName: e.target.value })}
                     className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
-                    placeholder="Jméno nebo firma"
+                    placeholder="Jmeno nebo firma"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Fakturační ulice</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Fakturacni ulice</label>
                   <input
                     type="text"
                     value={editingContractor.billingStreet || ''}
-                    onChange={(e) => setEditingContractor({ ...editingContractor, billingStreet: e.target.value })}
+                    onChange={(e) => onChange({ ...editingContractor, billingStreet: e.target.value })}
                     className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                   />
                 </div>
@@ -227,25 +187,25 @@ const ContractorEditModal = () => {
                   <input
                     type="text"
                     value={editingContractor.billingZip || ''}
-                    onChange={(e) => setEditingContractor({ ...editingContractor, billingZip: e.target.value })}
+                    onChange={(e) => onChange({ ...editingContractor, billingZip: e.target.value })}
                     className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Fakturační město</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Fakturacni mesto</label>
                   <input
                     type="text"
                     value={editingContractor.billingCity || ''}
-                    onChange={(e) => setEditingContractor({ ...editingContractor, billingCity: e.target.value })}
+                    onChange={(e) => onChange({ ...editingContractor, billingCity: e.target.value })}
                     className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Stát</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Stat</label>
                   <input
                     type="text"
                     value={editingContractor.billingCountry || ''}
-                    onChange={(e) => setEditingContractor({ ...editingContractor, billingCountry: e.target.value })}
+                    onChange={(e) => onChange({ ...editingContractor, billingCountry: e.target.value })}
                     className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                   />
                 </div>
@@ -256,19 +216,33 @@ const ContractorEditModal = () => {
                   <input
                     type="checkbox"
                     checked={editingContractor.reliable}
-                    onChange={(e) => setEditingContractor({ ...editingContractor, reliable: e.target.checked })}
+                    onChange={(e) => onChange({ ...editingContractor, reliable: e.target.checked })}
                     className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
                   />
-                  Označit jako spolehlivého člena crew
+                  Oznacit jako spolehliveho clena crew
                 </label>
 
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Poznámka</label>
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Hodnoceni 1-5</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="5"
+                    step="0.5"
+                    value={editingContractor.rating ?? ''}
+                    onChange={(e) => onChange({
+                      ...editingContractor,
+                      rating: e.target.value === '' ? null : Number(e.target.value),
+                    })}
+                    className="mb-4 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                    placeholder="napr. 4.5"
+                  />
+                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Poznamka</label>
                   <textarea
                     value={editingContractor.note}
-                    onChange={(e) => setEditingContractor({ ...editingContractor, note: e.target.value })}
+                    onChange={(e) => onChange({ ...editingContractor, note: e.target.value })}
                     className="h-24 w-full resize-none rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
-                    placeholder="Interní poznámka k člověku, zkušenostem nebo dostupnosti"
+                    placeholder="Interni poznamka k cloveku, zkusenostem nebo dostupnosti"
                   />
                 </div>
               </div>
@@ -276,16 +250,16 @@ const ContractorEditModal = () => {
 
             <div className="flex gap-3 border-t border-gray-100 bg-gray-50 p-4">
               <button
-                onClick={() => setEditingContractor(null)}
+                onClick={onClose}
                 className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-700 transition-all hover:bg-white"
               >
-                Zrušit
+                Zrusit
               </button>
               <button
                 onClick={handleSave}
                 className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-sm font-medium text-white shadow-lg shadow-emerald-200 transition-all hover:bg-emerald-700"
               >
-                Uložit člena
+                Ulozit clena
               </button>
             </div>
           </motion.div>

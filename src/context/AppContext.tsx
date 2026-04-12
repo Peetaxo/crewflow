@@ -8,25 +8,27 @@ import {
   Invoice,
   Project,
   ReceiptItem,
-  ReceiptStatus,
   RecruitmentStage,
   Role,
   Timelog,
-  TimelogStatus,
 } from '../types';
-import {
-  INITIAL_CANDIDATES,
-  INITIAL_CLIENTS,
-  INITIAL_CONTRACTORS,
-  INITIAL_EVENTS,
-  INITIAL_INVOICES,
-  INITIAL_PROJECTS,
-  INITIAL_RECEIPTS,
-  INITIAL_TIMELOGS,
-  KM_RATE,
-} from '../data';
+import { KM_RATE } from '../data';
 import { NAV_BY_ROLE } from '../constants';
 import { calculateTotalHours } from '../utils';
+import { appDataSource } from '../lib/app-config';
+import { AppDataSnapshot, getLocalAppState, getSupabaseAppData, subscribeToLocalAppState, updateLocalAppState } from '../lib/app-data';
+import { deleteCrew } from '../features/crew/services/crew.service';
+import { deleteEvent } from '../features/events/services/events.service';
+import {
+  approveAllTimelogsForEvent,
+  saveTimelog as persistTimelog,
+  updateTimelogStatus,
+} from '../features/timelogs/services/timelogs.service';
+import {
+  deleteReceipt,
+  saveReceipt as persistReceipt,
+  updateReceiptStatus,
+} from '../features/receipts/services/receipts.service';
 
 interface DeleteConfirmData {
   type: 'client' | 'project' | 'event' | 'crew' | 'receipt';
@@ -61,18 +63,12 @@ interface AppContextType {
   setSelectedClientIdForStats: (id: number | null) => void;
   editingTimelog: Timelog | null;
   setEditingTimelog: (t: Timelog | null) => void;
-  editingEvent: Event | null;
-  setEditingEvent: (e: Event | null) => void;
   editingProject: Project | null;
   setEditingProject: (p: Project | null) => void;
   editingReceipt: ReceiptItem | null;
   setEditingReceipt: (r: ReceiptItem | null) => void;
   editingClient: Client | null;
   setEditingClient: (c: Client | null) => void;
-  editingContractor: Contractor | null;
-  setEditingContractor: (c: Contractor | null) => void;
-  assigningCrewToEvent: Event | null;
-  setAssigningCrewToEvent: (e: Event | null) => void;
   deleteConfirm: DeleteConfirmData | null;
   setDeleteConfirm: (d: DeleteConfirmData | null) => void;
   eventTab: string;
@@ -118,7 +114,6 @@ interface AppContextType {
   handleReceiptAction: (id: number, action: 'submit' | 'approve' | 'reimburse' | 'reject') => void;
   handleSaveReceipt: (updated: ReceiptItem) => void;
   handleSaveTimelog: (updated: Timelog) => void;
-  handleSaveEvent: (updated: Event) => void;
   handleDelete: () => void;
 }
 
@@ -126,38 +121,16 @@ const AppContext = createContext<AppContextType | null>(null);
 
 export function useAppContext(): AppContextType {
   const ctx = useContext(AppContext);
-  if (!ctx) throw new Error('useAppContext musí být použit uvnitř AppProvider');
+  if (!ctx) throw new Error('useAppContext musi byt pouzit uvnitr AppProvider');
   return ctx;
 }
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
+  const localData = getLocalAppState();
+
   const sortTimelogDays = useCallback((days: Timelog['days']) => (
     [...days].sort((a, b) => `${a.d}${a.f}${a.type}`.localeCompare(`${b.d}${b.f}${b.type}`))
   ), []);
-
-  const getScheduledEventDay = useCallback((event: Event, day: Timelog['days'][number]) => {
-    if (!event.showDayTypes) {
-      return {
-        ...day,
-        type: 'instal' as const,
-        f: event.startTime || day.f,
-        t: event.endTime || day.t,
-      };
-    }
-
-    const phaseSlot = event.phaseSchedules?.[day.type]?.find((slot) => slot.dates.includes(day.d));
-    const fallbackType = event.dayTypes?.[day.d];
-    const fallbackSlot = fallbackType ? event.phaseSchedules?.[fallbackType]?.find((slot) => slot.dates.includes(day.d)) : undefined;
-    const resolvedType = phaseSlot ? day.type : (fallbackType || day.type);
-    const resolvedSlot = phaseSlot || fallbackSlot;
-
-    return {
-      ...day,
-      type: resolvedType,
-      f: resolvedSlot?.from ?? event.phaseTimes?.[resolvedType]?.from ?? event.startTime ?? day.f,
-      t: resolvedSlot?.to ?? event.phaseTimes?.[resolvedType]?.to ?? event.endTime ?? day.t,
-    };
-  }, []);
 
   const [darkMode, setDarkMode] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -174,12 +147,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [selectedClientIdForStats, setSelectedClientIdForStats] = useState<number | null>(null);
 
   const [editingTimelog, setEditingTimelog] = useState<Timelog | null>(null);
-  const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [editingReceipt, setEditingReceipt] = useState<ReceiptItem | null>(null);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
-  const [editingContractor, setEditingContractor] = useState<Contractor | null>(null);
-  const [assigningCrewToEvent, setAssigningCrewToEvent] = useState<Event | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmData | null>(null);
   const [eventTab, setEventTab] = useState<string>('overview');
   const [eventsViewMode, setEventsViewMode] = useState<'list' | 'calendar'>('list');
@@ -187,18 +157,110 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [eventsFilter, setEventsFilter] = useState<'upcoming' | 'past' | 'all'>('upcoming');
   const [eventsCalendarDate, setEventsCalendarDate] = useState<string>('');
 
-  const [events, setEvents] = useState<Event[]>(INITIAL_EVENTS);
-  const [contractors, setContractors] = useState<Contractor[]>(INITIAL_CONTRACTORS);
-  const [timelogs, setTimelogs] = useState<Timelog[]>(INITIAL_TIMELOGS);
-  const [invoices, setInvoices] = useState<Invoice[]>(INITIAL_INVOICES);
-  const [receipts, setReceipts] = useState<ReceiptItem[]>(INITIAL_RECEIPTS);
-  const [candidates, setCandidates] = useState<Candidate[]>(INITIAL_CANDIDATES);
-  const [projects, setProjects] = useState<Project[]>(INITIAL_PROJECTS);
-  const [clients, setClients] = useState<Client[]>(INITIAL_CLIENTS);
+  const [events, setEventsState] = useState<Event[]>(localData.events);
+  const [contractors, setContractorsState] = useState<Contractor[]>(localData.contractors);
+  const [timelogs, setTimelogsState] = useState<Timelog[]>(localData.timelogs);
+  const [invoices, setInvoicesState] = useState<Invoice[]>(localData.invoices);
+  const [receipts, setReceiptsState] = useState<ReceiptItem[]>(localData.receipts);
+  const [candidates, setCandidatesState] = useState<Candidate[]>(localData.candidates);
+  const [projects, setProjectsState] = useState<Project[]>(localData.projects);
+  const [clients, setClientsState] = useState<Client[]>(localData.clients);
+
+  const syncSnapshotToState = useCallback((snapshot: AppDataSnapshot) => {
+    setEventsState(snapshot.events);
+    setContractorsState(snapshot.contractors);
+    setTimelogsState(snapshot.timelogs);
+    setInvoicesState(snapshot.invoices);
+    setReceiptsState(snapshot.receipts);
+    setCandidatesState(snapshot.candidates);
+    setProjectsState(snapshot.projects);
+    setClientsState(snapshot.clients);
+  }, []);
+
+  useEffect(() => subscribeToLocalAppState(syncSnapshotToState), [syncSnapshotToState]);
+
+  const setEvents: React.Dispatch<React.SetStateAction<Event[]>> = useCallback((value) => {
+    updateLocalAppState((snapshot) => ({
+      ...snapshot,
+      events: typeof value === 'function' ? value(snapshot.events) : value,
+    }));
+  }, []);
+
+  const setContractors: React.Dispatch<React.SetStateAction<Contractor[]>> = useCallback((value) => {
+    updateLocalAppState((snapshot) => ({
+      ...snapshot,
+      contractors: typeof value === 'function' ? value(snapshot.contractors) : value,
+    }));
+  }, []);
+
+  const setTimelogs: React.Dispatch<React.SetStateAction<Timelog[]>> = useCallback((value) => {
+    updateLocalAppState((snapshot) => ({
+      ...snapshot,
+      timelogs: typeof value === 'function' ? value(snapshot.timelogs) : value,
+    }));
+  }, []);
+
+  const setInvoices: React.Dispatch<React.SetStateAction<Invoice[]>> = useCallback((value) => {
+    updateLocalAppState((snapshot) => ({
+      ...snapshot,
+      invoices: typeof value === 'function' ? value(snapshot.invoices) : value,
+    }));
+  }, []);
+
+  const setReceipts: React.Dispatch<React.SetStateAction<ReceiptItem[]>> = useCallback((value) => {
+    updateLocalAppState((snapshot) => ({
+      ...snapshot,
+      receipts: typeof value === 'function' ? value(snapshot.receipts) : value,
+    }));
+  }, []);
+
+  const setCandidates: React.Dispatch<React.SetStateAction<Candidate[]>> = useCallback((value) => {
+    updateLocalAppState((snapshot) => ({
+      ...snapshot,
+      candidates: typeof value === 'function' ? value(snapshot.candidates) : value,
+    }));
+  }, []);
+
+  const setProjects: React.Dispatch<React.SetStateAction<Project[]>> = useCallback((value) => {
+    updateLocalAppState((snapshot) => ({
+      ...snapshot,
+      projects: typeof value === 'function' ? value(snapshot.projects) : value,
+    }));
+  }, []);
+
+  const setClients: React.Dispatch<React.SetStateAction<Client[]>> = useCallback((value) => {
+    updateLocalAppState((snapshot) => ({
+      ...snapshot,
+      clients: typeof value === 'function' ? value(snapshot.clients) : value,
+    }));
+  }, []);
 
   useEffect(() => {
     setSearchQuery('');
   }, [currentTab]);
+
+  useEffect(() => {
+    if (appDataSource !== 'supabase') return;
+
+    let isCancelled = false;
+
+    void (async () => {
+      try {
+        const snapshot = await getSupabaseAppData();
+        if (isCancelled) return;
+        updateLocalAppState(() => snapshot);
+        toast.success('Aplikace nacetla data ze Supabase.');
+      } catch (error) {
+        if (isCancelled) return;
+        const message = error instanceof Error ? error.message : 'Nepodarilo se nacist data ze Supabase.';
+        toast.warning(`Supabase data se nepodarilo nacist: ${message}`);
+      }
+    })();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (currentTab !== 'crew') setSelectedContractorId(null);
@@ -323,24 +385,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [clients, searchQuery]);
 
   const handleTimelogAction = useCallback((id: number, action: 'sub' | 'ch' | 'coo' | 'rej') => {
-    setTimelogs((prev) => prev.map((timelog) => {
-      if (timelog.id !== id) return timelog;
-      const statusMap: Record<string, TimelogStatus> = {
-        sub: 'pending_ch',
-        ch: 'pending_coo',
-        coo: 'approved',
-        rej: 'rejected',
-      };
-      return { ...timelog, status: statusMap[action] || timelog.status };
-    }));
+    updateTimelogStatus(id, action);
   }, []);
 
   const approveAllTimelogs = useCallback((eventId: number) => {
-    setTimelogs((prev) => prev.map((timelog) => (
-      timelog.eid === eventId && timelog.status === 'pending_coo'
-        ? { ...timelog, status: 'approved' }
-        : timelog
-    )));
+    approveAllTimelogsForEvent(eventId);
   }, []);
 
   const advanceCandidate = useCallback((id: number) => {
@@ -353,14 +402,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       return candidate;
     }));
-  }, []);
+  }, [setCandidates]);
 
   const generateInvoices = useCallback(() => {
     const approvedTimelogs = timelogs.filter((timelog) => timelog.status === 'approved');
     const approvedReceipts = receipts.filter((receipt) => receipt.status === 'approved');
 
     if (approvedTimelogs.length === 0 && approvedReceipts.length === 0) {
-      toast.info('Žádné schválené výkazy ani účtenky k fakturaci.');
+      toast.info('Zadne schvalene vykazy ani uctenky k fakturaci.');
       return;
     }
 
@@ -418,8 +467,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       receipt.status === 'approved' ? { ...receipt, status: 'attached' } : receipt
     )));
     setCurrentTab('invoices');
-      toast.success(`Vygenerováno ${newInvoices.length} faktur.`);
-  }, [timelogs, receipts, findContractor, findEvent]);
+    toast.success(`Vygenerovano ${newInvoices.length} faktur.`);
+  }, [timelogs, receipts, findContractor, findEvent, setInvoices, setReceipts, setTimelogs]);
 
   const approveInvoice = useCallback((id: string) => {
     const invoice = invoices.find((item) => item.id === id);
@@ -436,99 +485,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ? { ...receipt, status: 'reimbursed' }
         : receipt
     )));
-  }, [invoices]);
+  }, [invoices, setInvoices, setReceipts, setTimelogs]);
 
   const handleReceiptAction = useCallback((id: number, action: 'submit' | 'approve' | 'reimburse' | 'reject') => {
-    const statusMap: Record<'submit' | 'approve' | 'reimburse' | 'reject', ReceiptStatus> = {
-      submit: 'submitted',
-      approve: 'approved',
-      reimburse: 'reimbursed',
-      reject: 'rejected',
-    };
-
-    setReceipts((prev) => prev.map((receipt) => (
-      receipt.id === id
-        ? { ...receipt, status: statusMap[action] }
-        : receipt
-    )));
+    updateReceiptStatus(id, action);
   }, []);
 
   const handleSaveReceipt = useCallback((updated: ReceiptItem) => {
-    const normalizedReceipt = {
-      ...updated,
-      job: updated.job.trim().toUpperCase(),
-      title: updated.title.trim(),
-      vendor: updated.vendor.trim(),
-      note: updated.note.trim(),
-    };
-
-    if (!normalizedReceipt.eid || !normalizedReceipt.cid || !normalizedReceipt.title || normalizedReceipt.amount <= 0) {
-      toast.error('Vyplňte akci, název účtenky a částku.');
-      return;
+    try {
+      persistReceipt(updated);
+      setEditingReceipt(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Nepodarilo se ulozit uctenku.');
     }
-
-    setReceipts((prev) => {
-      const exists = prev.some((receipt) => receipt.id === normalizedReceipt.id);
-      return exists
-        ? prev.map((receipt) => receipt.id === normalizedReceipt.id ? normalizedReceipt : receipt)
-        : [...prev, normalizedReceipt];
-    });
-
-    setEditingReceipt(null);
   }, []);
 
   const handleSaveTimelog = useCallback((updated: Timelog) => {
-    const sortedTimelog = { ...updated, days: sortTimelogDays(updated.days) };
-    setTimelogs((prev) => prev.map((timelog) => timelog.id === updated.id ? sortedTimelog : timelog));
+    persistTimelog(updated);
     setEditingTimelog(null);
-  }, [sortTimelogDays]);
-
-  const handleSaveEvent = useCallback((updated: Event) => {
-    const normalizedEvent = {
-      ...updated,
-      job: updated.job.trim().toUpperCase(),
-      name: updated.name.trim(),
-      client: updated.client.trim(),
-    };
-
-    if (!normalizedEvent.job) {
-      toast.error('Vyplňte Job Number.');
-      return;
-    }
-
-    setEvents((prev) => {
-      const exists = prev.some((event) => event.id === normalizedEvent.id);
-      return exists
-        ? prev.map((event) => event.id === normalizedEvent.id ? normalizedEvent : event)
-        : [...prev, normalizedEvent];
-    });
-
-    setProjects((prev) => {
-      const exists = prev.some((project) => project.id === normalizedEvent.job);
-      if (exists) return prev;
-
-      return [
-        ...prev,
-        {
-          id: normalizedEvent.job,
-          name: normalizedEvent.name || normalizedEvent.job,
-          client: normalizedEvent.client,
-          createdAt: new Date().toISOString().split('T')[0],
-          note: '',
-        },
-      ];
-    });
-
-    setTimelogs((prev) => prev.map((timelog) => {
-      if (timelog.eid !== normalizedEvent.id) return timelog;
-      return {
-        ...timelog,
-        days: sortTimelogDays(timelog.days.map((day) => getScheduledEventDay(normalizedEvent, day))),
-      };
-    }));
-
-    setEditingEvent(null);
-  }, [getScheduledEventDay, sortTimelogDays]);
+  }, []);
 
   const handleDelete = useCallback(() => {
     if (!deleteConfirm) return;
@@ -542,23 +517,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setProjects((prev) => prev.filter((project) => project.id !== id));
         break;
       case 'event':
-        setEvents((prev) => prev.filter((event) => event.id !== id));
-        setTimelogs((prev) => prev.filter((timelog) => timelog.eid !== id));
-        setReceipts((prev) => prev.filter((receipt) => receipt.eid !== id));
+        deleteEvent(Number(id));
         break;
       case 'crew':
-        setContractors((prev) => prev.filter((contractor) => contractor.id !== id));
-        setTimelogs((prev) => prev.filter((timelog) => timelog.cid !== id));
-        setReceipts((prev) => prev.filter((receipt) => receipt.cid !== id));
+        deleteCrew(Number(id));
         break;
       case 'receipt':
-        setReceipts((prev) => prev.filter((receipt) => receipt.id !== id));
+        deleteReceipt(Number(id));
         break;
     }
 
     setDeleteConfirm(null);
-    toast.success(`${deleteConfirm.name} smazáno.`);
-  }, [deleteConfirm]);
+    toast.success(`${deleteConfirm.name} smazano.`);
+  }, [deleteConfirm, setClients, setProjects]);
 
   const value: AppContextType = {
     darkMode, setDarkMode,
@@ -574,12 +545,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     selectedProjectIdForStats, setSelectedProjectIdForStats,
     selectedClientIdForStats, setSelectedClientIdForStats,
     editingTimelog, setEditingTimelog,
-    editingEvent, setEditingEvent,
     editingProject, setEditingProject,
     editingReceipt, setEditingReceipt,
     editingClient, setEditingClient,
-    editingContractor, setEditingContractor,
-    assigningCrewToEvent, setAssigningCrewToEvent,
     deleteConfirm, setDeleteConfirm,
     eventTab, setEventTab,
     eventsViewMode, setEventsViewMode,
@@ -611,7 +579,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     handleReceiptAction,
     handleSaveReceipt,
     handleSaveTimelog,
-    handleSaveEvent,
     handleDelete,
   };
 

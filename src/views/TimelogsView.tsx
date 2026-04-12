@@ -1,9 +1,16 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAppContext } from '../context/AppContext';
 import { KM_RATE } from '../data';
+import { Contractor, Event, Timelog } from '../types';
 import { calculateDayHours, calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';
+import {
+  getTimelogDependencies,
+  getTimelogs,
+  subscribeToTimelogChanges,
+  updateTimelogStatus,
+} from '../features/timelogs/services/timelogs.service';
 
 interface TimelogsViewProps {
   scope?: 'all' | 'mine';
@@ -13,19 +20,41 @@ type ViewMode = 'job' | 'people';
 
 const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
   const {
-    filteredTimelogs,
-    findContractor,
-    findEvent,
-    handleTimelogAction,
     setEditingTimelog,
     role,
+    searchQuery,
     timelogFilter,
     setTimelogFilter,
   } = useAppContext();
 
   const [viewMode, setViewMode] = useState<ViewMode>(scope === 'mine' ? 'people' : 'job');
+  const [timelogs, setTimelogs] = useState<Timelog[]>([]);
+  const [contractors, setContractors] = useState<Contractor[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
 
-  const baseTimelogs = scope === 'mine' ? filteredTimelogs.filter((timelog) => timelog.cid === 1) : filteredTimelogs;
+  const loadData = useCallback(() => {
+    setTimelogs(getTimelogs(searchQuery));
+
+    const dependencies = getTimelogDependencies();
+    setContractors(dependencies.contractors);
+    setEvents(dependencies.events);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  useEffect(() => subscribeToTimelogChanges(loadData), [loadData]);
+
+  const findContractor = useCallback((id: number) => (
+    contractors.find((contractor) => contractor.id === id) ?? null
+  ), [contractors]);
+
+  const findEvent = useCallback((id: number) => (
+    events.find((event) => event.id === id) ?? null
+  ), [events]);
+
+  const baseTimelogs = scope === 'mine' ? timelogs.filter((timelog) => timelog.cid === 1) : timelogs;
   const filtered = timelogFilter === 'all' ? baseTimelogs : baseTimelogs.filter((timelog) => timelog.status === timelogFilter);
   const isCrew = role === 'crew';
   const title = scope === 'mine' ? 'Moje timelogy' : 'Timelogy';
@@ -44,14 +73,14 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
     };
 
     return [
-      { id: 'all', label: 'Vše', count: counts.all },
+      { id: 'all', label: 'VĹˇe', count: counts.all },
       { id: 'draft', label: 'Koncepty', count: counts.draft },
-      { id: 'pending_ch', label: 'Čeká CH', count: counts.pending_ch },
-      { id: 'pending_coo', label: 'Čeká COO', count: counts.pending_coo },
-      { id: 'approved', label: 'Schváleno', count: counts.approved },
+      { id: 'pending_ch', label: 'ÄŚekĂˇ CH', count: counts.pending_ch },
+      { id: 'pending_coo', label: 'ÄŚekĂˇ COO', count: counts.pending_coo },
+      { id: 'approved', label: 'SchvĂˇleno', count: counts.approved },
       { id: 'invoiced', label: 'Fakturovano', count: counts.invoiced },
       { id: 'paid', label: 'Zaplaceno', count: counts.paid },
-      { id: 'rejected', label: 'Zamítnuto', count: counts.rejected },
+      { id: 'rejected', label: 'ZamĂ­tnuto', count: counts.rejected },
     ];
   }, [baseTimelogs]);
 
@@ -77,7 +106,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
   }, [filtered, findEvent]);
 
   const runBulkAction = (ids: number[], action: 'ch' | 'coo') => {
-    ids.forEach((id) => handleTimelogAction(id, action));
+    ids.forEach((id) => updateTimelogStatus(id, action));
   };
 
   const getBulkActionMeta = (timelogsInGroup: typeof filtered) => {
@@ -91,14 +120,14 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
       return {
         ids: actionableIds,
         action: 'ch' as const,
-        label: `Schválit vše a poslat COO (${actionableIds.length})`,
+        label: `SchvĂˇlit vĹˇe a poslat COO (${actionableIds.length})`,
       };
     }
 
     return {
       ids: actionableIds,
       action: 'coo' as const,
-      label: `Schválit vše (${actionableIds.length})`,
+      label: `SchvĂˇlit vĹˇe (${actionableIds.length})`,
     };
   };
 
@@ -106,7 +135,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
     <div className="flex gap-2">
       {timelog.status === 'draft' && (
         <button
-          onClick={() => handleTimelogAction(timelog.id, 'sub')}
+          onClick={() => updateTimelogStatus(timelog.id, 'sub')}
           className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
         >
           Odeslat ke kontrole CH
@@ -115,32 +144,32 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
       {timelog.status === 'pending_ch' && role === 'crewhead' && (
         <>
           <button
-            onClick={() => handleTimelogAction(timelog.id, 'ch')}
+            onClick={() => updateTimelogStatus(timelog.id, 'ch')}
             className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
           >
-            Schválit a poslat COO
+            SchvĂˇlit a poslat COO
           </button>
           <button
-            onClick={() => handleTimelogAction(timelog.id, 'rej')}
+            onClick={() => updateTimelogStatus(timelog.id, 'rej')}
             className="px-3 py-1.5 rounded-md border border-red-100 text-[11px] text-red-600 hover:bg-red-50"
           >
-            Zamítnout
+            ZamĂ­tnout
           </button>
         </>
       )}
       {timelog.status === 'pending_coo' && role === 'coo' && (
         <>
           <button
-            onClick={() => handleTimelogAction(timelog.id, 'coo')}
+            onClick={() => updateTimelogStatus(timelog.id, 'coo')}
             className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
           >
-            Schválit
+            SchvĂˇlit
           </button>
           <button
-            onClick={() => handleTimelogAction(timelog.id, 'rej')}
+            onClick={() => updateTimelogStatus(timelog.id, 'rej')}
             className="px-3 py-1.5 rounded-md border border-red-100 text-[11px] text-red-600 hover:bg-red-50"
           >
-            Zamítnout
+            ZamĂ­tnout
           </button>
         </>
       )}
@@ -163,7 +192,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
             <h1 className="text-lg font-semibold">{title}</h1>
             {scope === 'all' && (
               <p className="mt-0.5 text-xs text-gray-500">
-                Schvalování i detail výkazů na jednom místě.
+                SchvalovĂˇnĂ­ i detail vĂ˝kazĹŻ na jednom mĂ­stÄ›.
               </p>
             )}
           </div>
@@ -222,7 +251,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                       <span className="text-base font-semibold text-gray-900">{group.eventName}</span>
                     </div>
                     <div className="mt-1 text-xs text-gray-500">
-                      {group.city} · {group.timelogs.length} vykazu
+                      {group.city} Â· {group.timelogs.length} vykazu
                     </div>
                   </div>
 
@@ -292,7 +321,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                         <div className="flex gap-2">
                           {timelog.status === 'draft' && (
                             <button
-                              onClick={() => handleTimelogAction(timelog.id, 'sub')}
+                              onClick={() => updateTimelogStatus(timelog.id, 'sub')}
                               className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
                             >
                               Odeslat ke kontrole CH
@@ -301,32 +330,32 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                           {timelog.status === 'pending_ch' && role === 'crewhead' && (
                             <>
                               <button
-                                onClick={() => handleTimelogAction(timelog.id, 'ch')}
+                                onClick={() => updateTimelogStatus(timelog.id, 'ch')}
                                 className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
                               >
-                                Schválit a poslat COO
+                                SchvĂˇlit a poslat COO
                               </button>
                               <button
-                                onClick={() => handleTimelogAction(timelog.id, 'rej')}
+                                onClick={() => updateTimelogStatus(timelog.id, 'rej')}
                                 className="px-3 py-1.5 rounded-md border border-red-100 text-[11px] text-red-600 hover:bg-red-50"
                               >
-                                Zamítnout
+                                ZamĂ­tnout
                               </button>
                             </>
                           )}
                           {timelog.status === 'pending_coo' && role === 'coo' && (
                             <>
                               <button
-                                onClick={() => handleTimelogAction(timelog.id, 'coo')}
+                                onClick={() => updateTimelogStatus(timelog.id, 'coo')}
                                 className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
                               >
-                                Schválit
+                                SchvĂˇlit
                               </button>
                               <button
-                                onClick={() => handleTimelogAction(timelog.id, 'rej')}
+                                onClick={() => updateTimelogStatus(timelog.id, 'rej')}
                                 className="px-3 py-1.5 rounded-md border border-red-100 text-[11px] text-red-600 hover:bg-red-50"
                               >
-                                Zamítnout
+                                ZamĂ­tnout
                               </button>
                             </>
                           )}
@@ -352,7 +381,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
 
           {groupedByJob.length === 0 && (
             <div className="rounded-xl border border-gray-100 bg-white p-10 text-center text-sm text-gray-400">
-              Žádné záznamy pro tento filtr
+              Ĺ˝ĂˇdnĂ© zĂˇznamy pro tento filtr
             </div>
           )}
         </div>
@@ -404,7 +433,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
 
           {filtered.length === 0 && (
             <div className="rounded-xl border border-gray-100 bg-white p-10 text-center text-sm text-gray-400">
-              Žádné záznamy pro tento filtr
+              Ĺ˝ĂˇdnĂ© zĂˇznamy pro tento filtr
             </div>
           )}
         </div>

@@ -1,34 +1,73 @@
-import React from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAppContext } from '../context/AppContext';
+import { Contractor, Event, ReceiptItem, Timelog } from '../types';
 import { calculateTotalHours, formatCurrency, formatDateRange, getDatesBetween, getEventStatus } from '../utils';
 import StatCard from '../components/shared/StatCard';
 import StatusBadge from '../components/shared/StatusBadge';
+import {
+  getTimelogDependencies,
+  getTimelogs,
+  subscribeToTimelogChanges,
+} from '../features/timelogs/services/timelogs.service';
+import {
+  getReceipts,
+  subscribeToReceiptChanges,
+} from '../features/receipts/services/receipts.service';
 
 const DashboardView = () => {
   const {
     role,
-    filteredTimelogs,
     filteredInvoices,
     filteredEvents,
-    filteredReceipts,
-    findContractor,
-    findEvent,
+    searchQuery,
     setCurrentTab,
     setTimelogFilter,
     setSelectedEventId,
     setEventTab,
   } = useAppContext();
 
+  const [timelogs, setTimelogs] = useState<Timelog[]>([]);
+  const [receipts, setReceipts] = useState<ReceiptItem[]>([]);
+  const [contractors, setContractors] = useState<Contractor[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
+
+  const loadData = useCallback(() => {
+    setTimelogs(getTimelogs(searchQuery));
+    setReceipts(getReceipts(searchQuery));
+
+    const dependencies = getTimelogDependencies();
+    setContractors(dependencies.contractors);
+    setEvents(dependencies.events);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  useEffect(() => subscribeToTimelogChanges(loadData), [loadData]);
+  useEffect(() => subscribeToReceiptChanges(loadData), [loadData]);
+
+  const findContractor = useCallback((id: number) => (
+    contractors.find((contractor) => contractor.id === id) ?? null
+  ), [contractors]);
+
+  const findEvent = useCallback((id: number) => (
+    events.find((event) => event.id === id) ?? null
+  ), [events]);
+
   const approvalStatus = role === 'crewhead' ? 'pending_ch' : 'pending_coo';
   const roleLabel = role === 'crewhead' ? 'Pohled CrewHead' : 'Pohled COO';
-  const reviewLabel = role === 'crewhead' ? 'Ke kontrole (CH)' : 'Ke schválení (COO)';
+  const reviewLabel = role === 'crewhead' ? 'Ke kontrole (CH)' : 'Ke schvaleni (COO)';
 
-  const pendingForMe = filteredTimelogs.filter((timelog) => timelog.status === approvalStatus).length;
+  const timelogQueue = useMemo(() => (
+    timelogs.filter((timelog) => timelog.status === approvalStatus)
+  ), [approvalStatus, timelogs]);
+  const pendingForMe = timelogQueue.length;
   const pendingInvoices = filteredInvoices.filter((invoice) => invoice.status === 'sent' || invoice.status === 'disputed').length;
-  const pendingReceipts = filteredReceipts.filter((receipt) => receipt.status === 'submitted' || receipt.status === 'approved').length;
-  const approvedHours = filteredTimelogs
+  const pendingReceipts = receipts.filter((receipt) => receipt.status === 'submitted' || receipt.status === 'approved').length;
+  const approvedHours = timelogs
     .filter((timelog) => timelog.status === 'approved' || timelog.status === 'invoiced' || timelog.status === 'paid')
     .reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
   const needsFilling = filteredEvents.filter((event) => event.filled < event.needed).length;
@@ -57,7 +96,7 @@ const DashboardView = () => {
 
       <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard
-          label="Výkazy čekají na mě"
+          label="Vykazy cekaji na me"
           value={pendingForMe}
           sub={reviewLabel}
           cls={pendingForMe ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}
@@ -69,31 +108,30 @@ const DashboardView = () => {
           cls={pendingInvoices ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}
         />
         <StatCard
-          label="Účtenky v procesu"
+          label="Uctenky v procesu"
           value={pendingReceipts}
-          sub="Čekají na schválení"
+          sub="Cekaji na schvaleni"
           cls={pendingReceipts ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}
         />
         <StatCard
-          label="Schválené hodiny"
+          label="Schvalene hodiny"
           value={`${Math.round(approvedHours)}h`}
-          sub="Tento měsíc"
+          sub="Tento mesic"
           cls="bg-emerald-50 text-emerald-700"
         />
         <StatCard
-          label="Akce bez obsazení"
+          label="Akce bez obsazeni"
           value={needsFilling}
-          sub="Chybí crew"
+          sub="Chybi crew"
           cls={needsFilling ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}
         />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
         <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm lg:col-span-3">
-          <h2 className="mb-3 text-[13px] font-semibold">Timelogy ke zpracování</h2>
+          <h2 className="mb-3 text-[13px] font-semibold">Timelogy ke zpracovani</h2>
           <div className="space-y-1">
-            {filteredTimelogs
-              .filter((timelog) => timelog.status === approvalStatus)
+            {timelogQueue
               .slice(0, 4)
               .map((timelog) => {
                 const contractor = findContractor(timelog.cid);
@@ -128,14 +166,14 @@ const DashboardView = () => {
                 );
               })}
 
-            {filteredTimelogs.filter((timelog) => timelog.status === approvalStatus).length === 0 && (
-              <div className="py-8 text-center text-sm text-gray-400">Žádné výkazy k akci</div>
+            {timelogQueue.length === 0 && (
+              <div className="py-8 text-center text-sm text-gray-400">Zadne vykazy k akci</div>
             )}
           </div>
         </div>
 
         <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm lg:col-span-2">
-          <h2 className="mb-3 text-[13px] font-semibold">Nadcházející akce</h2>
+          <h2 className="mb-3 text-[13px] font-semibold">Nadchazejici akce</h2>
           <div className="space-y-3">
             {upcomingEvents.map((event) => (
               <button
@@ -167,7 +205,7 @@ const DashboardView = () => {
             ))}
 
             {upcomingEvents.length === 0 && (
-              <div className="py-8 text-center text-sm text-gray-400">Žádné nadcházející akce</div>
+              <div className="py-8 text-center text-sm text-gray-400">Zadne nadchazejici akce</div>
             )}
           </div>
         </div>

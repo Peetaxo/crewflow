@@ -52,7 +52,7 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
 
   const isCrew = role === 'crew';
   const baseReceipts = scope === 'mine' ? receipts.filter((receipt) => receipt.cid === 1) : receipts;
-  const title = scope === 'mine' ? 'Moje ĂşÄŤtenky' : 'ĂšÄŤtenky';
+  const title = scope === 'mine' ? 'Moje účtenky' : 'Účtenky';
 
   const stats = useMemo(() => ({
     total: baseReceipts.reduce((sum, receipt) => sum + receipt.amount, 0),
@@ -67,7 +67,7 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
         <div>
           <h1 className="text-lg font-semibold">{title}</h1>
           <p className="mt-1 text-xs text-gray-500">
-            VĂ˝daje crew pĹ™iĹ™azenĂ© ke konkrĂ©tnĂ­ akci a projektu.
+            Výdaje crew přiřazené ke konkrétní akci a projektu.
           </p>
         </div>
 
@@ -77,7 +77,7 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
         >
           <span className="inline-flex items-center gap-1.5">
             <Plus size={14} />
-            NovĂˇ ĂşÄŤtenka
+            Nová účtenka
           </span>
         </button>
       </div>
@@ -85,9 +85,9 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
       <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-4">
         {[
           { label: 'Celkem', value: formatCurrency(stats.total), tone: 'bg-emerald-50 border-emerald-100 text-emerald-900' },
-          { label: 'Ke schvĂˇlenĂ­', value: stats.submitted, tone: 'bg-amber-50 border-amber-100 text-amber-900' },
-          { label: 'SchvĂˇlenĂ©', value: stats.approved, tone: 'bg-blue-50 border-blue-100 text-blue-900' },
-          { label: 'ProplacenĂ©', value: stats.reimbursed, tone: 'bg-teal-50 border-teal-100 text-teal-900' },
+          { label: 'Ke schválení', value: stats.submitted, tone: 'bg-amber-50 border-amber-100 text-amber-900' },
+          { label: 'Schválené', value: stats.approved, tone: 'bg-blue-50 border-blue-100 text-blue-900' },
+          { label: 'Proplacené', value: stats.reimbursed, tone: 'bg-teal-50 border-teal-100 text-teal-900' },
         ].map((item) => (
           <div key={item.label} className={`rounded-xl border p-4 ${item.tone}`}>
             <div className="text-[10px] uppercase tracking-wider opacity-70">{item.label}</div>
@@ -100,11 +100,11 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
         <table className="w-full border-collapse text-left">
           <thead>
             <tr className="border-b border-gray-100 text-[10px] uppercase tracking-wider text-gray-400">
-              <th className="px-4 py-3 font-medium">ĂšÄŤtenka</th>
+              <th className="px-4 py-3 font-medium">Účtenka</th>
               <th className="px-4 py-3 font-medium">Akce</th>
               <th className="px-4 py-3 font-medium">Crew</th>
               <th className="px-4 py-3 font-medium">Datum</th>
-              <th className="px-4 py-3 font-medium">ÄŚĂˇstka</th>
+              <th className="px-4 py-3 font-medium">Částka</th>
               <th className="px-4 py-3 font-medium">Stav</th>
               <th className="px-4 py-3 font-medium text-right">Akce</th>
             </tr>
@@ -125,7 +125,7 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
                     <div className="text-[10px] text-gray-500">{receipt.job}</div>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="text-xs text-gray-700">{contractor?.name || 'â€”'}</div>
+                    <div className="text-xs text-gray-700">{contractor?.name || '—'}</div>
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-700">{formatShortDate(receipt.paidAt)}</td>
                   <td className="px-4 py-3 text-xs font-semibold text-gray-900">{formatCurrency(receipt.amount)}</td>
@@ -157,13 +157,13 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
                             onClick={() => updateReceiptStatus(receipt.id, 'approve')}
                             className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-emerald-700"
                           >
-                            SchvĂˇlit
+                            Schválit
                           </button>
                           <button
                             onClick={() => updateReceiptStatus(receipt.id, 'reject')}
                             className="rounded-lg border border-red-100 px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50"
                           >
-                            ZamĂ­tnout
+                            Zamítnout
                           </button>
                         </>
                       )}
@@ -180,7 +180,7 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
                       <button
                         onClick={() => setDeleteConfirm({ type: 'receipt', id: receipt.id, name: receipt.title })}
                         className="rounded-lg p-1.5 text-gray-300 transition-all hover:bg-red-50 hover:text-red-600"
-                        title="Smazat ĂşÄŤtenku"
+                        title="Smazat účtenku"
                       >
                         <Trash2 size={14} />
                       </button>
@@ -194,7 +194,7 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
 
         {baseReceipts.length === 0 && (
           <div className="px-6 py-12 text-center text-sm text-gray-400">
-            ZatĂ­m tu nejsou ĹľĂˇdnĂ© ĂşÄŤtenky.
+            Zatím tu nejsou žádné účtenky.
           </div>
         )}
       </div>

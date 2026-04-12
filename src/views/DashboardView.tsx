@@ -7,6 +7,14 @@ import { calculateTotalHours, formatCurrency, formatDateRange, getDatesBetween, 
 import StatCard from '../components/shared/StatCard';
 import StatusBadge from '../components/shared/StatusBadge';
 import {
+  getEvents,
+  subscribeToEventChanges,
+} from '../features/events/services/events.service';
+import {
+  getInvoices,
+  subscribeToInvoiceChanges,
+} from '../features/invoices/services/invoices.service';
+import {
   getTimelogDependencies,
   getTimelogs,
   subscribeToTimelogChanges,
@@ -19,8 +27,6 @@ import {
 const DashboardView = () => {
   const {
     role,
-    filteredInvoices,
-    filteredEvents,
     searchQuery,
     setCurrentTab,
     setTimelogFilter,
@@ -32,10 +38,14 @@ const DashboardView = () => {
   const [receipts, setReceipts] = useState<ReceiptItem[]>([]);
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
+  const [filteredEvents, setFilteredEvents] = useState<Event[]>([]);
+  const [filteredInvoices, setFilteredInvoices] = useState(getInvoices(searchQuery));
 
   const loadData = useCallback(() => {
     setTimelogs(getTimelogs(searchQuery));
     setReceipts(getReceipts(searchQuery));
+    setFilteredEvents(getEvents(searchQuery));
+    setFilteredInvoices(getInvoices(searchQuery));
 
     const dependencies = getTimelogDependencies();
     setContractors(dependencies.contractors);
@@ -48,6 +58,8 @@ const DashboardView = () => {
 
   useEffect(() => subscribeToTimelogChanges(loadData), [loadData]);
   useEffect(() => subscribeToReceiptChanges(loadData), [loadData]);
+  useEffect(() => subscribeToEventChanges(loadData), [loadData]);
+  useEffect(() => subscribeToInvoiceChanges(loadData), [loadData]);
 
   const findContractor = useCallback((id: number) => (
     contractors.find((contractor) => contractor.id === id) ?? null

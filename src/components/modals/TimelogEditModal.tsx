@@ -51,9 +51,9 @@ const TimelogEditModal = () => {
         >
           <div className="flex items-center justify-between border-b border-gray-100 p-4">
             <div>
-              <h3 className="font-semibold text-gray-900">Upravit vĂ˝kaz</h3>
+              <h3 className="font-semibold text-gray-900">Upravit výkaz</h3>
               <p className="mt-0.5 text-[10px] uppercase tracking-wider text-gray-500">
-                {contractor.name} Â· {event.name}
+                {contractor.name} · {event.name}
               </p>
             </div>
             <button onClick={() => setEditingTimelog(null)} className="rounded-full p-1 text-gray-400 hover:bg-gray-100">
@@ -68,14 +68,14 @@ const TimelogEditModal = () => {
                 <div className="text-xl font-bold text-emerald-900">{totalHours.toFixed(1)}h</div>
               </div>
               <div className="mt-1 flex items-center justify-between">
-                <div className="text-xs text-emerald-600">OdmÄ›na</div>
+                <div className="text-xs text-emerald-600">Odměna</div>
                 <div className="text-sm font-semibold text-emerald-800">
                   {formatCurrency(totalHours * contractor.rate)}
                 </div>
               </div>
               {editingTimelog.km > 0 && (
                 <div className="mt-1 flex items-center justify-between">
-                  <div className="text-xs text-emerald-600">CestovnĂ©</div>
+                  <div className="text-xs text-emerald-600">Cestovné</div>
                   <div className="text-sm font-semibold text-emerald-800">
                     {formatCurrency(editingTimelog.km * KM_RATE)}
                   </div>
@@ -183,14 +183,14 @@ const TimelogEditModal = () => {
                   }}
                   className="flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-gray-300 py-2 text-xs text-gray-500 hover:bg-gray-50"
                 >
-                  <Plus size={14} /> PĹ™idat den
+                  <Plus size={14} /> Přidat den
                 </button>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">CestovnĂ© (km)</label>
+                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Cestovné (km)</label>
                 <input
                   type="number"
                   value={editingTimelog.km}
@@ -201,12 +201,12 @@ const TimelogEditModal = () => {
             </div>
 
             <div>
-              <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">PoznĂˇmka</label>
+              <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Poznámka</label>
               <textarea
                 value={editingTimelog.note}
                 onChange={(e) => setEditingTimelog({ ...editingTimelog, note: e.target.value })}
                 className="h-20 w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                placeholder="DoplĹte detaily..."
+                placeholder="Doplňte detaily..."
               />
             </div>
           </div>
@@ -216,7 +216,7 @@ const TimelogEditModal = () => {
               onClick={() => setEditingTimelog(null)}
               className="flex-1 rounded-xl border border-gray-200 py-2 text-sm font-medium hover:bg-white"
             >
-              ZruĹˇit
+              Zrušit
             </button>
             <button
               onClick={() => {
@@ -225,7 +225,7 @@ const TimelogEditModal = () => {
               }}
               className="flex-1 rounded-xl bg-emerald-600 py-2 text-sm font-medium text-white shadow-sm shadow-emerald-200 hover:bg-emerald-700"
             >
-              UloĹľit zmÄ›ny
+              Uložit změny
             </button>
           </div>
         </motion.div>

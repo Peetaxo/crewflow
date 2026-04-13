@@ -1,4 +1,7 @@
+import { appDataSource } from '../../../lib/app-config';
 import { getLocalAppState, subscribeToLocalAppState, updateLocalAppState } from '../../../lib/app-data';
+import { mapClient, mapProject } from '../../../lib/supabase-mappers';
+import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { Client, Event, Invoice, Project } from '../../../types';
 import { getEventStatus } from '../../../utils';
 
@@ -12,9 +15,60 @@ const normalizeProject = (project: Project): Project => ({
   note: project.note?.trim() || '',
 });
 
+let projectsHydrationPromise: Promise<void> | null = null;
+
+const hydrateProjectsFromSupabase = async (): Promise<void> => {
+  if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
+    return;
+  }
+
+  const [projectsResult, clientsResult] = await Promise.all([
+    supabase.from('projects').select('*').order('job_number'),
+    supabase.from('clients').select('*').order('name'),
+  ]);
+
+  const firstError = projectsResult.error ?? clientsResult.error;
+  if (firstError) {
+    throw new Error(firstError.message);
+  }
+
+  const clientRows = clientsResult.data ?? [];
+  const clientsByUuid = new Map(
+    clientRows.map((row, index) => [row.id, { ...mapClient(row), id: index + 1 }]),
+  );
+
+  const supabaseProjects = (projectsResult.data ?? []).map((row) => normalizeProject(
+    mapProject(row, row.client_id ? clientsByUuid.get(row.client_id)?.name : ''),
+  ));
+
+  updateLocalAppState((snapshot) => ({
+    ...snapshot,
+    projects: supabaseProjects,
+  }));
+};
+
+const ensureSupabaseProjectsLoaded = () => {
+  if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
+    return;
+  }
+
+  if (projectsHydrationPromise) {
+    return;
+  }
+
+  projectsHydrationPromise = hydrateProjectsFromSupabase()
+    .catch((error) => {
+      console.warn('Nepodarilo se nacist projekty ze Supabase, zustavam na lokalnich datech.', error);
+    })
+    .finally(() => {
+      projectsHydrationPromise = null;
+    });
+};
+
 export const getProjects = (search = '', filter: ProjectFilter = 'all'): Project[] => {
+  ensureSupabaseProjectsLoaded();
   const snapshot = getLocalAppState();
-  let projects = snapshot.projects;
+  let projects = snapshot.projects ?? [];
 
   const query = search.trim().toLowerCase();
   if (query) {
@@ -38,16 +92,18 @@ export const getProjects = (search = '', filter: ProjectFilter = 'all'): Project
 };
 
 export const getProjectById = (id: string | null): Project | null => {
+  ensureSupabaseProjectsLoaded();
   if (!id) return null;
-  return getLocalAppState().projects.find((project) => project.id === id) ?? null;
+  return (getLocalAppState().projects ?? []).find((project) => project.id === id) ?? null;
 };
 
 export const getProjectDependencies = (): { events: Event[]; invoices: Invoice[]; clients: Client[] } => {
+  ensureSupabaseProjectsLoaded();
   const snapshot = getLocalAppState();
   return {
-    events: snapshot.events,
-    invoices: snapshot.invoices,
-    clients: snapshot.clients,
+    events: snapshot.events ?? [],
+    invoices: snapshot.invoices ?? [],
+    clients: snapshot.clients ?? [],
   };
 };
 
@@ -88,13 +144,16 @@ export const deleteProject = (id: string): { id: string } => {
 };
 
 export const getProjectRows = (search = '', filter: ProjectFilter = 'all') => {
+  ensureSupabaseProjectsLoaded();
   const snapshot = getLocalAppState();
   const projects = getProjects(search, filter);
+  const events = snapshot.events ?? [];
+  const invoices = snapshot.invoices ?? [];
 
   return projects
     .map((project) => {
-      const projectEvents = snapshot.events.filter((event) => event.job === project.id);
-      const projectInvoices = snapshot.invoices.filter((invoice) => invoice.job === project.id);
+      const projectEvents = events.filter((event) => event.job === project.id);
+      const projectInvoices = invoices.filter((invoice) => invoice.job === project.id);
 
       const status: 'upcoming' | 'full' | 'past' | 'empty' = projectEvents.length === 0
         ? 'empty'
@@ -123,6 +182,7 @@ export const getProjectRows = (search = '', filter: ProjectFilter = 'all') => {
     });
 };
 
-export const subscribeToProjectChanges = (listener: () => void): (() => void) => (
-  subscribeToLocalAppState(() => listener())
-);
+export const subscribeToProjectChanges = (listener: () => void): (() => void) => {
+  ensureSupabaseProjectsLoaded();
+  return subscribeToLocalAppState(() => listener());
+};

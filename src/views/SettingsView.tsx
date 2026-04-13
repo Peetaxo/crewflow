@@ -1,11 +1,17 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, Moon, Palette, Sun, UserRound } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAppContext } from '../context/AppContext';
+import type { Contractor } from '../types';
+import {
+  getContractors,
+  subscribeToCrewChanges,
+  updateContractor,
+} from '../features/crew/services/crew.service';
 
 const SettingsView = () => {
-  const { darkMode, setDarkMode, contractors, setContractors, settingsSection, setSettingsSection } = useAppContext();
-  const me = contractors[0];
+  const { darkMode, setDarkMode, settingsSection, setSettingsSection } = useAppContext();
+  const [contractors, setContractors] = useState<Contractor[]>([]);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
 
   const [profileForm, setProfileForm] = useState({
@@ -22,6 +28,19 @@ const SettingsView = () => {
     billingCity: '',
     billingCountry: '',
   });
+
+  const loadData = useCallback(() => {
+    setContractors(getContractors() ?? []);
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  useEffect(() => subscribeToCrewChanges(loadData), [loadData]);
+
+  const safeContractors = contractors ?? [];
+  const me = safeContractors[0] ?? null;
 
   useEffect(() => {
     if (!me) return;
@@ -50,9 +69,10 @@ const SettingsView = () => {
   };
 
   const saveProfile = () => {
-    setContractors((prev) => prev.map((contractor, index) => (
-      index === 0 ? { ...contractor, ...profileForm } : contractor
-    )));
+    updateContractor({
+      ...me,
+      ...profileForm,
+    });
     setIsEditingProfile(false);
   };
 

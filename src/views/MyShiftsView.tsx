@@ -4,41 +4,57 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { format, parseISO } from 'date-fns';
 import { useAppContext } from '../context/AppContext';
-import { ReceiptItem, Timelog } from '../types';
+import { Contractor, Event, Invoice, ReceiptItem, Timelog } from '../types';
 import { calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';
 import ShiftCard from '../components/shared/ShiftCard';
 import { getTimelogs, subscribeToTimelogChanges } from '../features/timelogs/services/timelogs.service';
 import { getReceipts, subscribeToReceiptChanges } from '../features/receipts/services/receipts.service';
 import { getProjects, subscribeToProjectChanges } from '../features/projects/services/projects.service';
+import { getContractors, subscribeToCrewChanges } from '../features/crew/services/crew.service';
+import { getEvents, subscribeToEventChanges } from '../features/events/services/events.service';
+import { getInvoices, subscribeToInvoiceChanges } from '../features/invoices/services/invoices.service';
 
 const MyShiftsView = () => {
-  const { contractors, invoices, events, darkMode, searchQuery } = useAppContext();
+  const { darkMode, searchQuery } = useAppContext();
+  const [contractors, setContractors] = useState<Contractor[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [timelogs, setTimelogs] = useState<Timelog[]>([]);
   const [receipts, setReceipts] = useState<ReceiptItem[]>([]);
-  const [projects, setProjects] = useState(() => getProjects());
+  const [projects, setProjects] = useState(() => getProjects() ?? []);
   const me = contractors[0];
-  if (!me) return null;
-
   const [activeTab, setActiveTab] = useState<'upcoming' | 'processing' | 'invoiced' | 'invoices'>('upcoming');
   const [chartPeriod, setChartPeriod] = useState<'month' | 'quarter' | 'year'>('month');
 
   const loadData = useCallback(() => {
-    setTimelogs(getTimelogs());
-    setReceipts(getReceipts());
+    setContractors(getContractors() ?? []);
+    setEvents(getEvents() ?? []);
+    setInvoices(getInvoices() ?? []);
+    setTimelogs(getTimelogs() ?? []);
+    setReceipts(getReceipts() ?? []);
   }, []);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
+  useEffect(() => subscribeToCrewChanges(loadData), [loadData]);
+  useEffect(() => subscribeToEventChanges(loadData), [loadData]);
+  useEffect(() => subscribeToInvoiceChanges(loadData), [loadData]);
   useEffect(() => subscribeToTimelogChanges(loadData), [loadData]);
   useEffect(() => subscribeToReceiptChanges(loadData), [loadData]);
-  useEffect(() => subscribeToProjectChanges(() => setProjects(getProjects())), []);
+  useEffect(() => subscribeToProjectChanges(() => setProjects(getProjects() ?? [])), []);
+  const meId = me?.id ?? null;
+  const safeEvents = events ?? [];
+  const safeInvoices = invoices ?? [];
+  const safeTimelogs = timelogs ?? [];
+  const safeReceipts = receipts ?? [];
+  const safeProjects = projects ?? [];
 
-  const myTimelogs = timelogs.filter((timelog) => timelog.cid === me.id);
-  const myInvoices = invoices.filter((invoice) => invoice.cid === me.id);
-  const myReceipts = receipts.filter((receipt) => receipt.cid === me.id);
+  const myTimelogs = safeTimelogs.filter((timelog) => timelog.cid === meId);
+  const myInvoices = safeInvoices.filter((invoice) => invoice.cid === meId);
+  const myReceipts = safeReceipts.filter((receipt) => receipt.cid === meId);
 
   const categorized = useMemo(() => ({
     upcoming: myTimelogs.filter((timelog) => timelog.status === 'draft'),
@@ -98,8 +114,8 @@ const MyShiftsView = () => {
     const query = searchQuery.toLowerCase();
 
     const filterShifts = (list: typeof myTimelogs) => list.filter((timelog) => {
-      const event = events.find((item) => item.id === timelog.eid);
-      const project = projects.find((item) => item.id === event?.job);
+      const event = safeEvents.find((item) => item.id === timelog.eid);
+      const project = safeProjects.find((item) => item.id === event?.job);
       return (
         event?.name.toLowerCase().includes(query)
         || project?.id.toLowerCase().includes(query)
@@ -113,18 +129,20 @@ const MyShiftsView = () => {
       invoiced: filterShifts(categorized.invoiced),
       invoices: myInvoices.filter((invoice) => invoice.id.toLowerCase().includes(query) || invoice.job.toLowerCase().includes(query)),
     };
-  }, [searchQuery, categorized, myInvoices, events, projects, myTimelogs]);
+  }, [searchQuery, categorized, myInvoices, safeEvents, safeProjects, myTimelogs]);
+
+  if (!me) return null;
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+      <div className="mb-8 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Moje smeny</h1>
           <p className="text-sm text-gray-500">Vitejte zpet, {me.name}</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+      <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-5">
         {[
           { label: 'Vydelano celkem', value: formatCurrency(stats.totalEarned), sub: 'Z proplacenych faktur', bg: 'bg-emerald-50 border-emerald-100', icon: Receipt, iconBg: 'bg-emerald-100 text-emerald-700', labelCls: 'text-emerald-700', valueCls: 'text-emerald-900', subCls: 'text-emerald-600' },
           { label: 'K vyplaceni', value: formatCurrency(stats.toPay), sub: 'Odeslane faktury', bg: 'bg-blue-50 border-blue-100', icon: Clock, iconBg: 'bg-blue-100 text-blue-700', labelCls: 'text-blue-700', valueCls: 'text-blue-900', subCls: 'text-blue-600' },
@@ -132,21 +150,21 @@ const MyShiftsView = () => {
           { label: 'Ke schvaleni', value: `${stats.pendingHours.toFixed(1)} h`, sub: 'Ceka na schvaleni', bg: 'bg-amber-50 border-amber-100', icon: CheckCircle2, iconBg: 'bg-amber-100 text-amber-700', labelCls: 'text-amber-700', valueCls: 'text-amber-900', subCls: 'text-amber-600' },
           { label: 'Celkem odpracovano', value: `${stats.totalHours.toFixed(1)} h`, sub: 'Schvalene smeny', bg: 'bg-gray-50 border-gray-100', icon: Calendar, iconBg: 'bg-gray-200 text-gray-700', labelCls: 'text-gray-700', valueCls: 'text-gray-900', subCls: 'text-gray-500' },
         ].map((stat) => (
-          <div key={stat.label} className={`${stat.bg} border rounded-2xl p-4`}>
-            <div className="flex items-center gap-3 mb-2">
-              <div className={`p-2 rounded-lg ${stat.iconBg}`}>
+          <div key={stat.label} className={`${stat.bg} rounded-2xl border p-4`}>
+            <div className="mb-2 flex items-center gap-3">
+              <div className={`rounded-lg p-2 ${stat.iconBg}`}>
                 <stat.icon size={18} />
               </div>
               <span className={`text-[10px] font-bold uppercase tracking-wider ${stat.labelCls}`}>{stat.label}</span>
             </div>
             <div className={`text-2xl font-bold ${stat.valueCls}`}>{stat.value}</div>
-            <p className={`text-[10px] mt-1 ${stat.subCls}`}>{stat.sub}</p>
+            <p className={`mt-1 text-[10px] ${stat.subCls}`}>{stat.sub}</p>
           </div>
         ))}
       </div>
 
-      <div className="space-y-4 mb-6">
-        <div className="flex items-center gap-2 bg-white p-1 border border-gray-100 rounded-xl w-fit">
+      <div className="mb-6 space-y-4">
+        <div className="flex w-fit flex-nowrap items-center gap-1 overflow-x-auto rounded-xl border border-gray-100 bg-white p-1">
           {[
             { id: 'upcoming' as const, lbl: 'Nadchazejici', count: categorized.upcoming.length },
             { id: 'processing' as const, lbl: 'Zpracovava se', count: categorized.processing.length },
@@ -156,10 +174,10 @@ const MyShiftsView = () => {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTab === tab.id ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}
+              className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-all ${activeTab === tab.id ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}
             >
               {tab.lbl}
-              {tab.count > 0 && <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeTab === tab.id ? 'bg-emerald-100' : 'bg-gray-100'}`}>{tab.count}</span>}
+              {tab.count > 0 && <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${activeTab === tab.id ? 'bg-emerald-100' : 'bg-gray-100'}`}>{tab.count}</span>}
             </button>
           ))}
         </div>
@@ -167,24 +185,24 @@ const MyShiftsView = () => {
 
       <AnimatePresence mode="wait">
         {activeTab !== 'invoices' ? (
-          <motion.div key={activeTab} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <motion.div key={activeTab} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {filteredData[activeTab].map((timelog) => {
-              const event = events.find((item) => item.id === timelog.eid);
-              const project = projects.find((item) => item.id === event?.job);
+              const event = safeEvents.find((item) => item.id === timelog.eid);
+              const project = safeProjects.find((item) => item.id === event?.job);
               if (!event || !project) return null;
               return <ShiftCard key={timelog.id} timelog={timelog} event={event} project={project} />;
             })}
-            {filteredData[activeTab].length === 0 && <div className="col-span-full py-12 text-center bg-gray-50 rounded-2xl border border-dashed border-gray-200 text-sm text-gray-500">{searchQuery ? 'Nebyly nalezeny zadne vysledky' : 'Zadne zaznamy'}</div>}
+            {filteredData[activeTab].length === 0 && <div className="col-span-full rounded-2xl border border-dashed border-gray-200 bg-gray-50 py-12 text-center text-sm text-gray-500">{searchQuery ? 'Nebyly nalezeny zadne vysledky' : 'Zadne zaznamy'}</div>}
           </motion.div>
         ) : (
           <motion.div key="invoices" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="space-y-3">
             {filteredData.invoices.map((invoice) => (
-              <div key={invoice.id} className="bg-white border border-gray-100 rounded-xl p-4 flex items-center justify-between shadow-sm hover:shadow-md transition-shadow">
+              <div key={invoice.id} className="flex items-center justify-between rounded-xl border border-gray-100 bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
                 <div className="flex items-center gap-4">
-                  <div className="p-2 bg-emerald-50 rounded-lg text-emerald-600"><Receipt size={20} /></div>
+                  <div className="rounded-lg bg-emerald-50 p-2 text-emerald-600"><Receipt size={20} /></div>
                   <div>
                     <div className="text-xs font-bold text-gray-900">{invoice.id}</div>
-                    <div className="text-[10px] text-gray-500">{invoice.job} • {invoice.sentAt ? formatShortDate(invoice.sentAt) : '—'}</div>
+                    <div className="text-[10px] text-gray-500">{invoice.job} â€˘ {invoice.sentAt ? formatShortDate(invoice.sentAt) : 'â€”'}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-6">
@@ -196,20 +214,20 @@ const MyShiftsView = () => {
                 </div>
               </div>
             ))}
-            {filteredData.invoices.length === 0 && <div className="py-12 text-center bg-gray-50 rounded-2xl border border-dashed border-gray-200 text-sm text-gray-500">{searchQuery ? 'Nebyly nalezeny zadne vysledky' : 'Zatim zadne faktury'}</div>}
+            {filteredData.invoices.length === 0 && <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 py-12 text-center text-sm text-gray-500">{searchQuery ? 'Nebyly nalezeny zadne vysledky' : 'Zatim zadne faktury'}</div>}
           </motion.div>
         )}
       </AnimatePresence>
 
-      <div className="bg-white border border-gray-100 rounded-2xl p-6 mt-8 shadow-sm">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+      <div className="mt-8 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+        <div className="mb-6 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
           <div>
-            <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Fakturace za dane obdobi</h2>
+            <h2 className="text-sm font-bold uppercase tracking-wider text-gray-900">Fakturace za dane obdobi</h2>
             <p className="text-xs text-gray-500">Prehled vasich prijmu</p>
           </div>
-          <div className="flex gap-1 bg-gray-50 p-1 rounded-lg border border-gray-100">
+          <div className="flex gap-1 rounded-lg border border-gray-100 bg-gray-50 p-1">
             {(['month', 'quarter', 'year'] as const).map((period) => (
-              <button key={period} onClick={() => setChartPeriod(period)} className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all ${chartPeriod === period ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>
+              <button key={period} onClick={() => setChartPeriod(period)} className={`rounded-md px-3 py-1.5 text-[10px] font-bold uppercase transition-all ${chartPeriod === period ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>
                 {period === 'month' ? 'Mesice' : period === 'quarter' ? 'Kvartaly' : 'Roky'}
               </button>
             ))}

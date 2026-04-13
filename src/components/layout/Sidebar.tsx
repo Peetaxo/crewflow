@@ -5,6 +5,8 @@ import { ReceiptItem, Timelog } from '../../types';
 import { getNavItemsForRole, ROLE_LABELS, ROLE_SHORT_LABELS } from '../../constants';
 import { getTimelogs, subscribeToTimelogChanges } from '../../features/timelogs/services/timelogs.service';
 import { getReceipts, subscribeToReceiptChanges } from '../../features/receipts/services/receipts.service';
+import { getInvoices, subscribeToInvoiceChanges } from '../../features/invoices/services/invoices.service';
+import { getCandidates, subscribeToCandidateChanges } from '../../features/recruitment/services/candidates.service';
 
 const Sidebar: React.FC = () => {
   const {
@@ -17,16 +19,18 @@ const Sidebar: React.FC = () => {
     setSelectedEventId,
     setSelectedProjectIdForStats,
     setSelectedClientIdForStats,
-    invoices,
-    candidates,
   } = useAppContext();
 
   const [timelogs, setTimelogs] = useState<Timelog[]>([]);
   const [receipts, setReceipts] = useState<ReceiptItem[]>([]);
+  const [invoices, setInvoices] = useState(() => getInvoices() ?? []);
+  const [candidates, setCandidates] = useState(() => getCandidates() ?? []);
 
   const loadData = useCallback(() => {
-    setTimelogs(getTimelogs());
-    setReceipts(getReceipts());
+    setTimelogs(getTimelogs() ?? []);
+    setReceipts(getReceipts() ?? []);
+    setInvoices(getInvoices() ?? []);
+    setCandidates(getCandidates() ?? []);
   }, []);
 
   useEffect(() => {
@@ -35,17 +39,24 @@ const Sidebar: React.FC = () => {
 
   useEffect(() => subscribeToTimelogChanges(loadData), [loadData]);
   useEffect(() => subscribeToReceiptChanges(loadData), [loadData]);
+  useEffect(() => subscribeToInvoiceChanges(loadData), [loadData]);
+  useEffect(() => subscribeToCandidateChanges(loadData), [loadData]);
+
+  const safeTimelogs = timelogs ?? [];
+  const safeReceipts = receipts ?? [];
+  const safeInvoices = invoices ?? [];
+  const safeCandidates = candidates ?? [];
 
   const navItems = getNavItemsForRole(role);
   const badgeCounts: Record<string, number> = useMemo(() => ({
-    timelogs: timelogs.filter((t) => t.status === 'pending_ch' || t.status === 'pending_coo').length,
-    'my-timelogs': timelogs.filter((t) => t.cid === 1 && (t.status === 'draft' || t.status === 'pending_ch' || t.status === 'pending_coo' || t.status === 'rejected')).length,
-    invoices: invoices.filter((i) => i.status === 'sent' || i.status === 'disputed').length,
-    'my-invoices': invoices.filter((i) => i.cid === 1 && i.status !== 'paid').length,
-    receipts: receipts.filter((r) => r.status === 'submitted' || r.status === 'approved').length,
-    'my-receipts': receipts.filter((r) => r.cid === 1 && r.status !== 'reimbursed').length,
-    recruitment: candidates.filter((c) => c.stage === 'new').length,
-  }), [timelogs, invoices, receipts, candidates]);
+    timelogs: safeTimelogs.filter((t) => t.status === 'pending_ch' || t.status === 'pending_coo').length,
+    'my-timelogs': safeTimelogs.filter((t) => t.cid === 1 && (t.status === 'draft' || t.status === 'pending_ch' || t.status === 'pending_coo' || t.status === 'rejected')).length,
+    invoices: safeInvoices.filter((i) => i.status === 'sent' || i.status === 'disputed').length,
+    'my-invoices': safeInvoices.filter((i) => i.cid === 1 && i.status !== 'paid').length,
+    receipts: safeReceipts.filter((r) => r.status === 'submitted' || r.status === 'approved').length,
+    'my-receipts': safeReceipts.filter((r) => r.cid === 1 && r.status !== 'reimbursed').length,
+    recruitment: safeCandidates.filter((c) => c.stage === 'new').length,
+  }), [safeTimelogs, safeInvoices, safeReceipts, safeCandidates]);
 
   const handleNavClick = (tabId: string) => {
     setCurrentTab(tabId);

@@ -1,4 +1,5 @@
 import { AppProvider } from '../context/AppContext';
+import AppDataBootstrap from '../app/providers/AppDataBootstrap';
 import AppLayout from '../components/layout/AppLayout';
 
 /**
@@ -7,6 +8,7 @@ import AppLayout from '../components/layout/AppLayout';
  */
 const Index = () => (
   <AppProvider>
+    <AppDataBootstrap />
     <AppLayout />
   </AppProvider>
 );

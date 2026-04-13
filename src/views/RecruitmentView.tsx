@@ -12,7 +12,7 @@ const RecruitmentView = () => {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
 
   const loadData = useCallback(() => {
-    setCandidates(getCandidates());
+    setCandidates(getCandidates() ?? []);
   }, []);
 
   useEffect(() => {
@@ -20,6 +20,7 @@ const RecruitmentView = () => {
   }, [loadData]);
 
   useEffect(() => subscribeToCandidateChanges(loadData), [loadData]);
+  const safeCandidates = candidates ?? [];
 
   const cols = [
     { id: 'new', lbl: 'Nový zájemce', sub: 'Příchozí z Tally.so' },
@@ -46,7 +47,7 @@ const RecruitmentView = () => {
       </div>
       <div className="grid grid-cols-1 items-start gap-3 md:grid-cols-2 lg:grid-cols-4">
         {cols.map((col) => {
-          const cc = candidates.filter((candidate) => candidate.stage === col.id);
+          const cc = safeCandidates.filter((candidate) => candidate.stage === col.id);
           return (
             <div key={col.id} className="min-w-0">
               <div className="mb-3">

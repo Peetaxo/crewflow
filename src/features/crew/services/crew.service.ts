@@ -101,6 +101,8 @@ export const getCrew = (filters: CrewListFilters = {}): CrewMember[] => {
   });
 };
 
+export const getContractors = (): Contractor[] => getCrew();
+
 export const getCrewById = (id: number | null): CrewMember | null => {
   if (id == null) return null;
   return getLocalAppState().contractors.find((member) => member.id === id) ?? null;
@@ -184,6 +186,10 @@ export const updateCrew = (input: UpdateCrewInput): CrewMember => {
 
   return updatedContractor as CrewMember;
 };
+
+export const updateContractor = (contractor: Contractor): Contractor => (
+  updateCrew(contractor as UpdateCrewInput)
+);
 
 export const deleteCrew = (id: number): DeleteCrewResult => {
   let existing: Contractor | null = null;

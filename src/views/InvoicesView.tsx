@@ -24,10 +24,10 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
   const [events, setEvents] = useState<Event[]>([]);
 
   const loadData = useCallback(() => {
-    setInvoices(getInvoices(searchQuery));
+    setInvoices(getInvoices(searchQuery) ?? []);
     const dependencies = getInvoiceDependencies();
-    setContractors(dependencies.contractors);
-    setEvents(dependencies.events);
+    setContractors(dependencies.contractors ?? []);
+    setEvents(dependencies.events ?? []);
   }, [searchQuery]);
 
   useEffect(() => {
@@ -35,16 +35,19 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
   }, [loadData]);
 
   useEffect(() => subscribeToInvoiceChanges(loadData), [loadData]);
+  const safeInvoices = invoices ?? [];
+  const safeContractors = contractors ?? [];
+  const safeEvents = events ?? [];
 
   const findContractor = useCallback((id: number) => (
-    contractors.find((contractor) => contractor.id === id) ?? null
-  ), [contractors]);
+    safeContractors.find((contractor) => contractor.id === id) ?? null
+  ), [safeContractors]);
 
   const findEvent = useCallback((id: number) => (
-    events.find((event) => event.id === id) ?? null
-  ), [events]);
+    safeEvents.find((event) => event.id === id) ?? null
+  ), [safeEvents]);
 
-  const visibleInvoices = scope === 'mine' ? invoices.filter((invoice) => invoice.cid === 1) : invoices;
+  const visibleInvoices = scope === 'mine' ? safeInvoices.filter((invoice) => invoice.cid === 1) : safeInvoices;
   const drafts = visibleInvoices.filter((invoice) => invoice.status === 'draft');
   const isCrew = role === 'crew';
 

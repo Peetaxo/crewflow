@@ -39,17 +39,17 @@ const DashboardView = () => {
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [filteredEvents, setFilteredEvents] = useState<Event[]>([]);
-  const [filteredInvoices, setFilteredInvoices] = useState(getInvoices(searchQuery));
+  const [filteredInvoices, setFilteredInvoices] = useState(getInvoices(searchQuery) ?? []);
 
   const loadData = useCallback(() => {
-    setTimelogs(getTimelogs(searchQuery));
-    setReceipts(getReceipts(searchQuery));
-    setFilteredEvents(getEvents(searchQuery));
-    setFilteredInvoices(getInvoices(searchQuery));
+    setTimelogs(getTimelogs(searchQuery) ?? []);
+    setReceipts(getReceipts(searchQuery) ?? []);
+    setFilteredEvents(getEvents(searchQuery) ?? []);
+    setFilteredInvoices(getInvoices(searchQuery) ?? []);
 
     const dependencies = getTimelogDependencies();
-    setContractors(dependencies.contractors);
-    setEvents(dependencies.events);
+    setContractors(dependencies.contractors ?? []);
+    setEvents(dependencies.events ?? []);
   }, [searchQuery]);
 
   useEffect(() => {
@@ -60,30 +60,36 @@ const DashboardView = () => {
   useEffect(() => subscribeToReceiptChanges(loadData), [loadData]);
   useEffect(() => subscribeToEventChanges(loadData), [loadData]);
   useEffect(() => subscribeToInvoiceChanges(loadData), [loadData]);
+  const safeTimelogs = timelogs ?? [];
+  const safeReceipts = receipts ?? [];
+  const safeContractors = contractors ?? [];
+  const safeEvents = events ?? [];
+  const safeFilteredEvents = filteredEvents ?? [];
+  const safeFilteredInvoices = filteredInvoices ?? [];
 
   const findContractor = useCallback((id: number) => (
-    contractors.find((contractor) => contractor.id === id) ?? null
-  ), [contractors]);
+    safeContractors.find((contractor) => contractor.id === id) ?? null
+  ), [safeContractors]);
 
   const findEvent = useCallback((id: number) => (
-    events.find((event) => event.id === id) ?? null
-  ), [events]);
+    safeEvents.find((event) => event.id === id) ?? null
+  ), [safeEvents]);
 
   const approvalStatus = role === 'crewhead' ? 'pending_ch' : 'pending_coo';
   const roleLabel = role === 'crewhead' ? 'Pohled CrewHead' : 'Pohled COO';
   const reviewLabel = role === 'crewhead' ? 'Ke kontrole (CH)' : 'Ke schvaleni (COO)';
 
   const timelogQueue = useMemo(() => (
-    timelogs.filter((timelog) => timelog.status === approvalStatus)
-  ), [approvalStatus, timelogs]);
+    safeTimelogs.filter((timelog) => timelog.status === approvalStatus)
+  ), [approvalStatus, safeTimelogs]);
   const pendingForMe = timelogQueue.length;
-  const pendingInvoices = filteredInvoices.filter((invoice) => invoice.status === 'sent' || invoice.status === 'disputed').length;
-  const pendingReceipts = receipts.filter((receipt) => receipt.status === 'submitted' || receipt.status === 'approved').length;
-  const approvedHours = timelogs
+  const pendingInvoices = safeFilteredInvoices.filter((invoice) => invoice.status === 'sent' || invoice.status === 'disputed').length;
+  const pendingReceipts = safeReceipts.filter((receipt) => receipt.status === 'submitted' || receipt.status === 'approved').length;
+  const approvedHours = safeTimelogs
     .filter((timelog) => timelog.status === 'approved' || timelog.status === 'invoiced' || timelog.status === 'paid')
     .reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
-  const needsFilling = filteredEvents.filter((event) => event.filled < event.needed).length;
-  const upcomingEvents = filteredEvents
+  const needsFilling = safeFilteredEvents.filter((event) => event.filled < event.needed).length;
+  const upcomingEvents = safeFilteredEvents
     .filter((event) => getEventStatus(event) !== 'past')
     .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.endDate.localeCompare(b.endDate) || a.name.localeCompare(b.name))
     .slice(0, 10);

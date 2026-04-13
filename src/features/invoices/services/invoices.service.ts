@@ -1,10 +1,14 @@
 import { toast } from 'sonner';
+import { appDataSource } from '../../../lib/app-config';
 import { KM_RATE } from '../../../data';
 import { getLocalAppState, subscribeToLocalAppState, updateLocalAppState } from '../../../lib/app-data';
+import { mapInvoice } from '../../../lib/supabase-mappers';
+import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import type { Contractor, Event, Invoice, ReceiptItem, Timelog } from '../../../types';
 import { calculateTotalHours } from '../../../utils';
 import { getTimelogs, markApprovedTimelogsAsInvoiced, markTimelogsAsPaidForInvoice } from '../../timelogs/services/timelogs.service';
 import { getReceipts, markApprovedReceiptsAsAttached, markReceiptsAsReimbursedForInvoice } from '../../receipts/services/receipts.service';
+let invoicesHydrationPromise: Promise<void> | null = null;
 
 const findContractor = (contractors: Contractor[], id: number): Contractor | null => (
   contractors.find((contractor) => contractor.id === id) ?? null
@@ -14,17 +18,74 @@ const findEvent = (events: Event[], id: number): Event | null => (
   events.find((event) => event.id === id) ?? null
 );
 
-export const getInvoices = (search = ''): Invoice[] => {
-  const snapshot = getLocalAppState();
-  const query = search.trim().toLowerCase();
-
-  if (!query) {
-    return snapshot.invoices;
+const hydrateInvoicesFromSupabase = async (): Promise<void> => {
+  if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
+    return;
   }
 
-  return snapshot.invoices.filter((invoice) => {
-    const event = findEvent(snapshot.events, invoice.eid);
-    const contractor = findContractor(snapshot.contractors, invoice.cid);
+  const [invoicesResult, profilesResult, eventsResult] = await Promise.all([
+    supabase.from('invoices').select('*').order('created_at'),
+    supabase.from('profiles').select('id').order('last_name').order('first_name'),
+    supabase.from('events').select('id').order('date_from').order('name'),
+  ]);
+
+  const firstError = invoicesResult.error ?? profilesResult.error ?? eventsResult.error;
+  if (firstError) {
+    throw new Error(firstError.message);
+  }
+
+  const profileIdMap = new Map(
+    (profilesResult.data ?? []).map((row, index) => [row.id, index + 1]),
+  );
+  const eventIdMap = new Map(
+    (eventsResult.data ?? []).map((row, index) => [row.id, index + 1]),
+  );
+
+  const supabaseInvoices = (invoicesResult.data ?? []).map((row) => ({
+    ...mapInvoice(row),
+    cid: profileIdMap.get(row.contractor_id) ?? Number.NaN,
+    eid: row.event_id ? (eventIdMap.get(row.event_id) ?? Number.NaN) : 0,
+  }));
+
+  updateLocalAppState((snapshot) => ({
+    ...snapshot,
+    invoices: supabaseInvoices,
+  }));
+};
+
+const ensureSupabaseInvoicesLoaded = () => {
+  if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
+    return;
+  }
+
+  if (invoicesHydrationPromise) {
+    return;
+  }
+
+  invoicesHydrationPromise = hydrateInvoicesFromSupabase()
+    .catch((error) => {
+      console.warn('Nepodarilo se nacist faktury ze Supabase, zustavam na lokalnich datech.', error);
+    })
+    .finally(() => {
+      invoicesHydrationPromise = null;
+    });
+};
+
+export const getInvoices = (search = ''): Invoice[] => {
+  ensureSupabaseInvoicesLoaded();
+  const snapshot = getLocalAppState();
+  const query = search.trim().toLowerCase();
+  const safeInvoices = snapshot.invoices ?? [];
+  const safeEvents = snapshot.events ?? [];
+  const safeContractors = snapshot.contractors ?? [];
+
+  if (!query) {
+    return safeInvoices;
+  }
+
+  return safeInvoices.filter((invoice) => {
+    const event = findEvent(safeEvents, invoice.eid);
+    const contractor = findContractor(safeContractors, invoice.cid);
 
     if (!event || !contractor) return false;
 
@@ -38,11 +99,12 @@ export const getInvoices = (search = ''): Invoice[] => {
 };
 
 export const getInvoiceDependencies = (): { events: Event[]; contractors: Contractor[] } => {
+  ensureSupabaseInvoicesLoaded();
   const snapshot = getLocalAppState();
 
   return {
-    events: snapshot.events,
-    contractors: snapshot.contractors,
+    events: snapshot.events ?? [],
+    contractors: snapshot.contractors ?? [],
   };
 };
 
@@ -140,6 +202,7 @@ export const approveInvoice = (id: string): Invoice | null => {
   };
 };
 
-export const subscribeToInvoiceChanges = (listener: () => void): (() => void) => (
-  subscribeToLocalAppState(() => listener())
-);
+export const subscribeToInvoiceChanges = (listener: () => void): (() => void) => {
+  ensureSupabaseInvoicesLoaded();
+  return subscribeToLocalAppState(() => listener());
+};

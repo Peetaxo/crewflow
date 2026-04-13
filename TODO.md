@@ -81,3 +81,9 @@ Muzes sem psat svoje napady a ja z nich pak muzu delat konkretni ukoly.
 
 - [ ] System nahradniku
   Poznamka: evidence zaloznich lidi pro pripad vypadku.
+
+- [ ] Sekce sklad
+  Poznamka: evidence vybaveni, materialu a dostupnosti veci pro akce.
+
+- [ ] Sekce flotila
+  Poznamka: sprava aut, voziku a dalsi techniky vcetne prirazeni na akce.

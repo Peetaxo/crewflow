@@ -1,7 +1,11 @@
+import { appDataSource } from '../../../lib/app-config';
 import { getLocalAppState, subscribeToLocalAppState, updateLocalAppState } from '../../../lib/app-data';
+import { mapReceipt } from '../../../lib/supabase-mappers';
+import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { Contractor, Event, ReceiptItem, ReceiptStatus } from '../../../types';
 
 type ReceiptAction = 'submit' | 'approve' | 'reimburse' | 'reject';
+let receiptsHydrationPromise: Promise<void> | null = null;
 
 const normalizeReceipt = (receipt: ReceiptItem): ReceiptItem => ({
   ...receipt,
@@ -32,27 +36,87 @@ const matchesSearch = (
   );
 };
 
+const hydrateReceiptsFromSupabase = async (): Promise<void> => {
+  if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
+    return;
+  }
+
+  const [receiptsResult, profilesResult, eventsResult] = await Promise.all([
+    supabase.from('receipts').select('*').order('created_at'),
+    supabase.from('profiles').select('id').order('last_name').order('first_name'),
+    supabase.from('events').select('id').order('date_from').order('name'),
+  ]);
+
+  const firstError = receiptsResult.error ?? profilesResult.error ?? eventsResult.error;
+  if (firstError) {
+    throw new Error(firstError.message);
+  }
+
+  const profileIdMap = new Map(
+    (profilesResult.data ?? []).map((row, index) => [row.id, index + 1]),
+  );
+  const eventIdMap = new Map(
+    (eventsResult.data ?? []).map((row, index) => [row.id, index + 1]),
+  );
+
+  const supabaseReceipts = (receiptsResult.data ?? []).map((row, index) => ({
+    ...mapReceipt(row),
+    id: index + 1,
+    cid: profileIdMap.get(row.contractor_id) ?? Number.NaN,
+    eid: row.event_id ? (eventIdMap.get(row.event_id) ?? Number.NaN) : 0,
+  }));
+
+  updateLocalAppState((snapshot) => ({
+    ...snapshot,
+    receipts: supabaseReceipts,
+  }));
+};
+
+const ensureSupabaseReceiptsLoaded = () => {
+  if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
+    return;
+  }
+
+  if (receiptsHydrationPromise) {
+    return;
+  }
+
+  receiptsHydrationPromise = hydrateReceiptsFromSupabase()
+    .catch((error) => {
+      console.warn('Nepodarilo se nacist uctenky ze Supabase, zustavam na lokalnich datech.', error);
+    })
+    .finally(() => {
+      receiptsHydrationPromise = null;
+    });
+};
+
 export const getReceipts = (search = ''): ReceiptItem[] => {
+  ensureSupabaseReceiptsLoaded();
   const snapshot = getLocalAppState();
   const query = search.trim().toLowerCase();
+  const safeReceipts = snapshot.receipts ?? [];
+  const safeContractors = snapshot.contractors ?? [];
+  const safeEvents = snapshot.events ?? [];
 
-  if (!query) return snapshot.receipts;
+  if (!query) return safeReceipts;
 
-  return snapshot.receipts.filter((receipt) => (
-    matchesSearch(receipt, query, snapshot.contractors, snapshot.events)
+  return safeReceipts.filter((receipt) => (
+    matchesSearch(receipt, query, safeContractors, safeEvents)
   ));
 };
 
 export const getReceiptById = (id: number | null): ReceiptItem | null => {
+  ensureSupabaseReceiptsLoaded();
   if (id == null) return null;
-  return getLocalAppState().receipts.find((receipt) => receipt.id === id) ?? null;
+  return (getLocalAppState().receipts ?? []).find((receipt) => receipt.id === id) ?? null;
 };
 
 export const getReceiptDependencies = (): { events: Event[]; contractors: Contractor[] } => {
+  ensureSupabaseReceiptsLoaded();
   const snapshot = getLocalAppState();
   return {
-    events: snapshot.events,
-    contractors: snapshot.contractors,
+    events: snapshot.events ?? [],
+    contractors: snapshot.contractors ?? [],
   };
 };
 
@@ -174,6 +238,7 @@ export const markReceiptsAsReimbursedForInvoice = (eventId: number, contractorId
   return updatedReceipts;
 };
 
-export const subscribeToReceiptChanges = (listener: () => void): (() => void) => (
-  subscribeToLocalAppState(() => listener())
-);
+export const subscribeToReceiptChanges = (listener: () => void): (() => void) => {
+  ensureSupabaseReceiptsLoaded();
+  return subscribeToLocalAppState(() => listener());
+};

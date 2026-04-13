@@ -1,5 +1,8 @@
+import { appDataSource } from '../../../lib/app-config';
 import { Contractor, Event, Invoice, Project, ReceiptItem, Timelog } from '../../../types';
 import { getLocalAppState, subscribeToLocalAppState, updateLocalAppState } from '../../../lib/app-data';
+import { mapContractor } from '../../../lib/supabase-mappers';
+import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import {
   CreateCrewInput,
   CrewListFilters,
@@ -9,6 +12,7 @@ import {
 } from '../types/crew.types';
 
 const DEFAULT_BILLING_COUNTRY = 'Ceska republika';
+let crewHydrationPromise: Promise<void> | null = null;
 
 const getInitials = (name: string) => (
   name
@@ -88,10 +92,73 @@ const matchesSearch = (member: CrewMember, search: string) => {
   );
 };
 
-export const getCrew = (filters: CrewListFilters = {}): CrewMember[] => {
-  const { contractors } = getLocalAppState();
+const hydrateCrewFromSupabase = async (): Promise<void> => {
+  if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
+    return;
+  }
 
-  return contractors.filter((member) => {
+  const [profilesResult, timelogsResult] = await Promise.all([
+    supabase.from('profiles').select('*').order('last_name').order('first_name'),
+    supabase.from('timelogs').select('contractor_id, event_id'),
+  ]);
+
+  const firstError = profilesResult.error ?? timelogsResult.error;
+  if (firstError) {
+    throw new Error(firstError.message);
+  }
+
+  const timelogRows = timelogsResult.data ?? [];
+  const eventCountsByProfileId = new Map<string, number>();
+
+  for (const row of timelogRows) {
+    if (!row.contractor_id || !row.event_id) continue;
+    const key = `${row.contractor_id}:${row.event_id}`;
+    if (eventCountsByProfileId.has(key)) continue;
+    eventCountsByProfileId.set(key, 1);
+  }
+
+  const countsByProfile = new Map<string, number>();
+  for (const compositeKey of eventCountsByProfileId.keys()) {
+    const profileId = compositeKey.split(':', 1)[0];
+    countsByProfile.set(profileId, (countsByProfile.get(profileId) ?? 0) + 1);
+  }
+
+  const supabaseCrew = (profilesResult.data ?? []).map((row, index) => ({
+    ...mapContractor(row),
+    id: index + 1,
+    events: countsByProfile.get(row.id) ?? 0,
+  }));
+
+  updateLocalAppState((snapshot) => ({
+    ...snapshot,
+    contractors: supabaseCrew,
+  }));
+};
+
+const ensureSupabaseCrewLoaded = () => {
+  if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
+    return;
+  }
+
+  if (crewHydrationPromise) {
+    return;
+  }
+
+  crewHydrationPromise = hydrateCrewFromSupabase()
+    .catch((error) => {
+      console.warn('Nepodarilo se nacist crew ze Supabase, zustavam na lokalnich datech.', error);
+    })
+    .finally(() => {
+      crewHydrationPromise = null;
+    });
+};
+
+export const getCrew = (filters: CrewListFilters = {}): CrewMember[] => {
+  ensureSupabaseCrewLoaded();
+  const { contractors } = getLocalAppState();
+  const safeContractors = contractors ?? [];
+
+  return safeContractors.filter((member) => {
     if (!matchesSearch(member, filters.search?.trim() ?? '')) return false;
     if (filters.city && member.city.toLowerCase() !== filters.city.toLowerCase()) return false;
     if (typeof filters.reliable === 'boolean' && member.reliable !== filters.reliable) return false;
@@ -104,8 +171,9 @@ export const getCrew = (filters: CrewListFilters = {}): CrewMember[] => {
 export const getContractors = (): Contractor[] => getCrew();
 
 export const getCrewById = (id: number | null): CrewMember | null => {
+  ensureSupabaseCrewLoaded();
   if (id == null) return null;
-  return getLocalAppState().contractors.find((member) => member.id === id) ?? null;
+  return (getLocalAppState().contractors ?? []).find((member) => member.id === id) ?? null;
 };
 
 export const getCrewByExternalId = (_externalId: string): CrewMember | null => null;
@@ -117,27 +185,28 @@ export const getCrewDetailData = (contractorId: number | null): {
   events: Event[];
   projects: Project[];
 } => {
+  ensureSupabaseCrewLoaded();
   const snapshot = getLocalAppState();
   const contractor = contractorId == null
     ? null
-    : snapshot.contractors.find((member) => member.id === contractorId) ?? null;
+    : (snapshot.contractors ?? []).find((member) => member.id === contractorId) ?? null;
 
   if (!contractor) {
     return {
       contractor: null,
       timelogs: [],
       invoices: [],
-      events: snapshot.events,
-      projects: snapshot.projects,
+      events: snapshot.events ?? [],
+      projects: snapshot.projects ?? [],
     };
   }
 
   return {
     contractor,
-    timelogs: snapshot.timelogs.filter((timelog) => timelog.cid === contractor.id),
-    invoices: snapshot.invoices.filter((invoice) => invoice.cid === contractor.id),
-    events: snapshot.events,
-    projects: snapshot.projects,
+    timelogs: (snapshot.timelogs ?? []).filter((timelog) => timelog.cid === contractor.id),
+    invoices: (snapshot.invoices ?? []).filter((invoice) => invoice.cid === contractor.id),
+    events: snapshot.events ?? [],
+    projects: snapshot.projects ?? [],
   };
 };
 
@@ -212,9 +281,10 @@ export const deleteCrew = (id: number): DeleteCrewResult => {
 };
 
 export const getCrewReceipts = (contractorId: number): ReceiptItem[] => (
-  getLocalAppState().receipts.filter((receipt) => receipt.cid === contractorId)
+  (ensureSupabaseCrewLoaded(), (getLocalAppState().receipts ?? []).filter((receipt) => receipt.cid === contractorId))
 );
 
-export const subscribeToCrewChanges = (listener: () => void): (() => void) => (
-  subscribeToLocalAppState(() => listener())
-);
+export const subscribeToCrewChanges = (listener: () => void): (() => void) => {
+  ensureSupabaseCrewLoaded();
+  return subscribeToLocalAppState(() => listener());
+};

@@ -1,4 +1,7 @@
+import { appDataSource } from '../../../lib/app-config';
 import { getLocalAppState, subscribeToLocalAppState, updateLocalAppState } from '../../../lib/app-data';
+import { mapClient, mapEvent } from '../../../lib/supabase-mappers';
+import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { getDatesBetween, getEventStatus } from '../../../utils';
 import { Client, Contractor, Event, EventPhaseSlot, Project, ReceiptItem, Timelog, TimelogType } from '../../../types';
 import { EventAssignmentResult, EventConflictDetail, EventFilter, EventWithDerivedStatus } from '../types/events.types';
@@ -9,20 +12,86 @@ const EVENT_PHASE_TYPES: TimelogType[] = ['instal', 'provoz', 'deinstal'];
 
 const createSlotId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
+let eventsHydrationPromise: Promise<void> | null = null;
+
+const hydrateEventsFromSupabase = async (): Promise<void> => {
+  if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
+    return;
+  }
+
+  const [eventsResult, projectsResult, clientsResult] = await Promise.all([
+    supabase.from('events').select('*').order('date_from').order('name'),
+    supabase.from('projects').select('*').order('job_number'),
+    supabase.from('clients').select('*').order('name'),
+  ]);
+
+  const firstError = eventsResult.error ?? projectsResult.error ?? clientsResult.error;
+  if (firstError) {
+    throw new Error(firstError.message);
+  }
+
+  const clientRows = clientsResult.data ?? [];
+  const projectRows = projectsResult.data ?? [];
+  const eventRows = eventsResult.data ?? [];
+
+  const clientsByUuid = new Map(
+    clientRows.map((row, index) => [row.id, { ...mapClient(row), id: index + 1 }]),
+  );
+  const projectRowsByUuid = new Map(projectRows.map((row) => [row.id, row]));
+
+  const supabaseEvents = eventRows.map((row, index) => {
+    const project = row.project_id ? projectRowsByUuid.get(row.project_id) : undefined;
+    const client = project?.client_id ? clientsByUuid.get(project.client_id) : undefined;
+
+    return {
+      ...mapEvent(row),
+      id: index + 1,
+      job: row.job_number ?? project?.job_number ?? '',
+      client: row.client_name ?? client?.name ?? '',
+    };
+  });
+
+  updateLocalAppState((snapshot) => ({
+    ...snapshot,
+    events: supabaseEvents,
+  }));
+};
+
+const ensureSupabaseEventsLoaded = () => {
+  if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
+    return;
+  }
+
+  if (eventsHydrationPromise) {
+    return;
+  }
+
+  eventsHydrationPromise = hydrateEventsFromSupabase()
+    .catch((error) => {
+      console.warn('Nepodarilo se nacist akce ze Supabase, zustavam na lokalnich datech.', error);
+    })
+    .finally(() => {
+      eventsHydrationPromise = null;
+    });
+};
+
 export const getEvents = (search = ''): Event[] => {
+  ensureSupabaseEventsLoaded();
   const { events } = getLocalAppState();
   const query = search.trim().toLowerCase();
+  const safeEvents = events ?? [];
 
-  if (!query) return events;
+  if (!query) return safeEvents;
 
-  return events.filter((event) => (
+  return safeEvents.filter((event) => (
     event.name.toLowerCase().includes(query) || event.job.toLowerCase().includes(query)
   ));
 };
 
 export const getEventById = (id: number | null): Event | null => {
+  ensureSupabaseEventsLoaded();
   if (id == null) return null;
-  return getLocalAppState().events.find((event) => event.id === id) ?? null;
+  return (getLocalAppState().events ?? []).find((event) => event.id === id) ?? null;
 };
 
 export const getEventDetailData = (eventId: number | null): {
@@ -31,31 +100,33 @@ export const getEventDetailData = (eventId: number | null): {
   contractors: Contractor[];
   receipts: ReceiptItem[];
 } => {
+  ensureSupabaseEventsLoaded();
   const snapshot = getLocalAppState();
-  const event = eventId == null ? null : snapshot.events.find((item) => item.id === eventId) ?? null;
+  const event = eventId == null ? null : (snapshot.events ?? []).find((item) => item.id === eventId) ?? null;
 
   if (!event) {
     return {
       event: null,
       timelogs: [],
-      contractors: snapshot.contractors,
+      contractors: snapshot.contractors ?? [],
       receipts: [],
     };
   }
 
   return {
     event,
-    timelogs: snapshot.timelogs.filter((timelog) => timelog.eid === event.id),
-    contractors: snapshot.contractors,
-    receipts: snapshot.receipts.filter((receipt) => receipt.eid === event.id),
+    timelogs: (snapshot.timelogs ?? []).filter((timelog) => timelog.eid === event.id),
+    contractors: snapshot.contractors ?? [],
+    receipts: (snapshot.receipts ?? []).filter((receipt) => receipt.eid === event.id),
   };
 };
 
 export const getEventFormOptions = (): { projects: Project[]; clients: Client[] } => {
+  ensureSupabaseEventsLoaded();
   const snapshot = getLocalAppState();
   return {
-    projects: snapshot.projects,
-    clients: snapshot.clients,
+    projects: snapshot.projects ?? [],
+    clients: snapshot.clients ?? [],
   };
 };
 
@@ -263,9 +334,10 @@ export const deleteEvent = (eventId: number): { id: number } => {
 };
 
 export const getEventCrew = (eventId: number): Contractor[] => {
+  ensureSupabaseEventsLoaded();
   const snapshot = getLocalAppState();
-  return snapshot.contractors.filter((contractor) => (
-    snapshot.timelogs.some((timelog) => timelog.eid === eventId && timelog.cid === contractor.id)
+  return (snapshot.contractors ?? []).filter((contractor) => (
+    (snapshot.timelogs ?? []).some((timelog) => timelog.eid === eventId && timelog.cid === contractor.id)
   ));
 };
 
@@ -437,5 +509,5 @@ export const assignCrewToEvent = (
 };
 
 export const subscribeToEventChanges = (listener: () => void): (() => void) => (
-  subscribeToLocalAppState(() => listener())
+  (ensureSupabaseEventsLoaded(), subscribeToLocalAppState(() => listener()))
 );

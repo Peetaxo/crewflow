@@ -1,7 +1,11 @@
+import { appDataSource } from '../../../lib/app-config';
 import { getLocalAppState, subscribeToLocalAppState, updateLocalAppState } from '../../../lib/app-data';
+import { mapTimelog } from '../../../lib/supabase-mappers';
+import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { Contractor, Event, Timelog, TimelogStatus } from '../../../types';
 
 type TimelogAction = 'sub' | 'ch' | 'coo' | 'rej';
+let timelogsHydrationPromise: Promise<void> | null = null;
 
 const sortTimelogDays = (days: Timelog['days']) => (
   [...days].sort((a, b) => `${a.d}${a.f}${a.type}`.localeCompare(`${b.d}${b.f}${b.type}`))
@@ -26,27 +30,96 @@ const matchesSearch = (
   );
 };
 
+const hydrateTimelogsFromSupabase = async (): Promise<void> => {
+  if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
+    return;
+  }
+
+  const [timelogsResult, timelogDaysResult, profilesResult, eventsResult] = await Promise.all([
+    supabase.from('timelogs').select('*').order('created_at'),
+    supabase.from('timelog_days').select('*').order('date'),
+    supabase.from('profiles').select('id').order('last_name').order('first_name'),
+    supabase.from('events').select('id').order('date_from').order('name'),
+  ]);
+
+  const firstError =
+    timelogsResult.error ?? timelogDaysResult.error ?? profilesResult.error ?? eventsResult.error;
+  if (firstError) {
+    throw new Error(firstError.message);
+  }
+
+  const profileIdMap = new Map(
+    (profilesResult.data ?? []).map((row, index) => [row.id, index + 1]),
+  );
+  const eventIdMap = new Map(
+    (eventsResult.data ?? []).map((row, index) => [row.id, index + 1]),
+  );
+
+  const timelogDayRowsByTimelogId = new Map<string, typeof timelogDaysResult.data>();
+  for (const dayRow of timelogDaysResult.data ?? []) {
+    const current = timelogDayRowsByTimelogId.get(dayRow.timelog_id) ?? [];
+    current.push(dayRow);
+    timelogDayRowsByTimelogId.set(dayRow.timelog_id, current);
+  }
+
+  const supabaseTimelogs = (timelogsResult.data ?? []).map((row, index) => ({
+    ...mapTimelog(row, timelogDayRowsByTimelogId.get(row.id) ?? []),
+    id: index + 1,
+    eid: eventIdMap.get(row.event_id) ?? Number.NaN,
+    cid: profileIdMap.get(row.contractor_id) ?? Number.NaN,
+  }));
+
+  updateLocalAppState((snapshot) => ({
+    ...snapshot,
+    timelogs: supabaseTimelogs,
+  }));
+};
+
+const ensureSupabaseTimelogsLoaded = () => {
+  if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
+    return;
+  }
+
+  if (timelogsHydrationPromise) {
+    return;
+  }
+
+  timelogsHydrationPromise = hydrateTimelogsFromSupabase()
+    .catch((error) => {
+      console.warn('Nepodarilo se nacist timelogy ze Supabase, zustavam na lokalnich datech.', error);
+    })
+    .finally(() => {
+      timelogsHydrationPromise = null;
+    });
+};
+
 export const getTimelogs = (search = ''): Timelog[] => {
+  ensureSupabaseTimelogsLoaded();
   const snapshot = getLocalAppState();
   const query = search.trim().toLowerCase();
+  const safeTimelogs = snapshot.timelogs ?? [];
+  const safeContractors = snapshot.contractors ?? [];
+  const safeEvents = snapshot.events ?? [];
 
-  if (!query) return snapshot.timelogs;
+  if (!query) return safeTimelogs;
 
-  return snapshot.timelogs.filter((timelog) => (
-    matchesSearch(timelog, query, snapshot.contractors, snapshot.events)
+  return safeTimelogs.filter((timelog) => (
+    matchesSearch(timelog, query, safeContractors, safeEvents)
   ));
 };
 
 export const getTimelogById = (id: number | null): Timelog | null => {
+  ensureSupabaseTimelogsLoaded();
   if (id == null) return null;
-  return getLocalAppState().timelogs.find((timelog) => timelog.id === id) ?? null;
+  return (getLocalAppState().timelogs ?? []).find((timelog) => timelog.id === id) ?? null;
 };
 
 export const getTimelogDependencies = (): { contractors: Contractor[]; events: Event[] } => {
+  ensureSupabaseTimelogsLoaded();
   const snapshot = getLocalAppState();
   return {
-    contractors: snapshot.contractors,
-    events: snapshot.events,
+    contractors: snapshot.contractors ?? [],
+    events: snapshot.events ?? [],
   };
 };
 
@@ -169,6 +242,7 @@ export const markTimelogsAsPaidForInvoice = (eventId: number, contractorId: numb
   return updatedTimelogs;
 };
 
-export const subscribeToTimelogChanges = (listener: () => void): (() => void) => (
-  subscribeToLocalAppState(() => listener())
-);
+export const subscribeToTimelogChanges = (listener: () => void): (() => void) => {
+  ensureSupabaseTimelogsLoaded();
+  return subscribeToLocalAppState(() => listener());
+};

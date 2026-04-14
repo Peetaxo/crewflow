@@ -1,0 +1,147 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Timelog } from '../../../types';
+
+const createSnapshot = (timelogs: Timelog[]) => ({
+  events: [],
+  contractors: [],
+  timelogs,
+  invoices: [],
+  receipts: [],
+  candidates: [],
+  projects: [],
+  clients: [],
+});
+
+describe('timelogs.service write flow', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+  });
+
+  it('updates timelog status in Supabase using the mapped row id', async () => {
+    let snapshot = createSnapshot([
+      { id: 1, eid: 1, cid: 1, days: [], km: 0, note: '', status: 'draft' },
+    ]);
+
+    const updateEq = vi.fn().mockResolvedValue({ error: null });
+    const updateMock = vi.fn(() => ({ eq: updateEq }));
+    const selectMock = vi.fn(() => ({
+      order: vi.fn(() => Promise.resolve({
+        data: [{ id: 'timelog-uuid-1' }],
+        error: null,
+      })),
+    }));
+
+    const fromMock = vi.fn((table: string) => {
+      if (table !== 'timelogs') {
+        throw new Error(`Unexpected table ${table}`);
+      }
+
+      return {
+        select: selectMock,
+        update: updateMock,
+      };
+    });
+
+    vi.doMock('../../../lib/app-config', () => ({
+      appDataSource: 'supabase',
+    }));
+
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: fromMock,
+      },
+    }));
+
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapTimelog: vi.fn(),
+    }));
+
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    const { updateTimelogStatus } = await import('./timelogs.service');
+
+    const result = await updateTimelogStatus(1, 'sub');
+
+    expect(selectMock).toHaveBeenCalledWith('id');
+    expect(updateMock).toHaveBeenCalledWith({ status: 'pending_ch' });
+    expect(updateEq).toHaveBeenCalledWith('id', 'timelog-uuid-1');
+    expect(result.status).toBe('pending_ch');
+    expect(snapshot.timelogs[0].status).toBe('pending_ch');
+  });
+
+  it('approves all matching event timelogs in Supabase and updates local state', async () => {
+    let snapshot = createSnapshot([
+      { id: 1, eid: 7, cid: 1, days: [], km: 0, note: '', status: 'pending_coo' },
+      { id: 2, eid: 7, cid: 2, days: [], km: 0, note: '', status: 'pending_coo' },
+      { id: 3, eid: 8, cid: 3, days: [], km: 0, note: '', status: 'pending_coo' },
+    ]);
+
+    const eqCalls: Array<[string, string]> = [];
+    const updateMock = vi.fn(() => ({
+      eq: vi.fn((field: string, value: string) => {
+        eqCalls.push([field, value]);
+        return Promise.resolve({ error: null });
+      }),
+    }));
+    const selectMock = vi.fn(() => ({
+      order: vi.fn(() => Promise.resolve({
+        data: [
+          { id: 'timelog-uuid-1' },
+          { id: 'timelog-uuid-2' },
+          { id: 'timelog-uuid-3' },
+        ],
+        error: null,
+      })),
+    }));
+
+    vi.doMock('../../../lib/app-config', () => ({
+      appDataSource: 'supabase',
+    }));
+
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: vi.fn(() => ({
+          select: selectMock,
+          update: updateMock,
+        })),
+      },
+    }));
+
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapTimelog: vi.fn(),
+    }));
+
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    const { approveAllTimelogsForEvent } = await import('./timelogs.service');
+
+    const approved = await approveAllTimelogsForEvent(7);
+
+    expect(updateMock).toHaveBeenCalledWith({ status: 'approved' });
+    expect(eqCalls).toEqual([
+      ['id', 'timelog-uuid-1'],
+      ['id', 'timelog-uuid-2'],
+    ]);
+    expect(approved).toHaveLength(2);
+    expect(snapshot.timelogs[0].status).toBe('approved');
+    expect(snapshot.timelogs[1].status).toBe('approved');
+    expect(snapshot.timelogs[2].status).toBe('pending_coo');
+  });
+});

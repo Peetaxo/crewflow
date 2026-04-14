@@ -78,3 +78,32 @@ Tento soubor popisuje, jak na projektu pracujeme a jak se maji zachazet zmeny.
 - Kontext aplikace je ulozen v souboru CONTEXT.md.
 - Napady a budoucni ukoly jsou v souboru TODO.md.
 - Pokud se domluvime na dalsich pravidlech, maji se doplnit sem.
+
+## Dohodnute architektonicke smerovani
+
+- Array state v aplikaci nesmi byt `undefined`.
+- Seznamove stavy maji mit vzdy bezpecny default `[]`.
+- Pri praci se seznamy se ma pouzivat ochrana typu `value ?? []`, pokud data mohou prijit asynchronne.
+
+- `AppContext` slouzi jen pro UI, navigaci a modal state.
+- Data se ctou a zapisuji pres service vrstvu.
+- Supabase bootstrap patri mimo `AppContext`.
+
+- U `crew` je aktualni ciselne `id` v UI jen prechodove.
+- Pozdeji udelame samostatny refaktor na UUID jako primarni identitu napric aplikaci.
+- Do te doby je potreba davat pozor na mapovani mezi lokalnim `id` a backend UUID.
+
+- Timelog statusy zustavaji oddelene:
+  - `approved` = schvaleno k fakturaci
+  - `invoiced` = zarazeno do konkretni faktury
+  - `paid` = faktura je uhrazena
+
+- Fakturace nema byt modelovana jako `1 invoice = 1 timelog`.
+- Cileny model je:
+  - `1 invoice = contractor + billing batch`
+  - jedna faktura muze obsahovat vice `job_number`
+  - jedna faktura muze obsahovat vice schvalenych timelogu
+  - uvnitr faktury maji byt polozky seskupene podle `job_number`
+
+- COO schvaleni timelogu nema automaticky znamenat finalni vyfakturovani.
+- Timelog po COO schvaleni ma zustat `approved`, dokud neni zarazen do konkretni faktury.

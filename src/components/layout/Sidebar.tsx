@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronsLeft, ChevronsRight, Search, Settings } from 'lucide-react';
+import { ChevronsLeft, ChevronsRight, LogOut, Search, Settings } from 'lucide-react';
+import { toast } from 'sonner';
+import { useAuth } from '../../app/providers/AuthProvider';
 import { useAppContext } from '../../context/AppContext';
 import { ReceiptItem, Timelog } from '../../types';
 import { getNavItemsForRole, ROLE_LABELS, ROLE_SHORT_LABELS } from '../../constants';
@@ -9,6 +11,7 @@ import { getInvoices, subscribeToInvoiceChanges } from '../../features/invoices/
 import { getCandidates, subscribeToCandidateChanges } from '../../features/recruitment/services/candidates.service';
 
 const Sidebar: React.FC = () => {
+  const { isAuthRequired, profile, role: authRole, signOut } = useAuth();
   const {
     sidebarCollapsed, setSidebarCollapsed,
     role, setRole,
@@ -48,6 +51,9 @@ const Sidebar: React.FC = () => {
   const safeCandidates = candidates ?? [];
 
   const navItems = getNavItemsForRole(role);
+  const effectiveRole = authRole ?? role;
+  const profileName = profile ? `${profile.firstName} ${profile.lastName}`.trim() || profile.email : 'Petr Heitzer';
+
   const badgeCounts: Record<string, number> = useMemo(() => ({
     timelogs: safeTimelogs.filter((t) => t.status === 'pending_ch' || t.status === 'pending_coo').length,
     'my-timelogs': safeTimelogs.filter((t) => t.cid === 1 && (t.status === 'draft' || t.status === 'pending_ch' || t.status === 'pending_coo' || t.status === 'rejected')).length,
@@ -69,6 +75,16 @@ const Sidebar: React.FC = () => {
   const openSettings = (section: 'menu' | 'profile' | 'appearance' = 'menu') => {
     setSettingsSection(section);
     handleNavClick('settings');
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      toast.success('Byl jsi odhlasen.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Odhlaseni se nepodarilo.';
+      toast.error(message);
+    }
   };
 
   return (
@@ -103,10 +119,10 @@ const Sidebar: React.FC = () => {
             <Search className="absolute left-2.5 top-2.5 text-gray-400" size={14} />
             <input
               type="text"
-              placeholder="Hledat akci, job nebo jméno..."
+              placeholder="Hledat akci, job nebo jmeno..."
               className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-8 pr-3 text-[11px] transition-all focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(event) => setSearchQuery(event.target.value)}
             />
           </div>
         </div>
@@ -126,32 +142,46 @@ const Sidebar: React.FC = () => {
       <div className="border-b border-gray-200 p-3">
         {!sidebarCollapsed ? (
           <>
-            <div className="mb-2 text-[10px] uppercase tracking-wider text-gray-500">Zobrazuji jako</div>
-            <div className="grid grid-cols-3 gap-0.5 rounded-lg border border-gray-200 bg-white p-0.5">
+            <div className="mb-2 text-[10px] uppercase tracking-wider text-gray-500">
+              {isAuthRequired ? 'Prihlasena role' : 'Zobrazuji jako'}
+            </div>
+            {isAuthRequired ? (
+              <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-[11px] font-semibold text-emerald-700">
+                {ROLE_LABELS[effectiveRole]}
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-0.5 rounded-lg border border-gray-200 bg-white p-0.5">
+                {(['crew', 'crewhead', 'coo'] as const).map((roleOption) => (
+                  <button
+                    key={roleOption}
+                    onClick={() => setRole(roleOption)}
+                    className={`rounded-md py-1 text-[11px] font-medium transition-all ${role === roleOption ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                  >
+                    {ROLE_SHORT_LABELS[roleOption]}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          isAuthRequired ? (
+            <div className="flex items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 px-2 py-2 text-[11px] font-semibold text-emerald-700">
+              {ROLE_SHORT_LABELS[effectiveRole]}
+            </div>
+          ) : (
+            <div className="space-y-2">
               {(['crew', 'crewhead', 'coo'] as const).map((roleOption) => (
                 <button
                   key={roleOption}
                   onClick={() => setRole(roleOption)}
-                  className={`rounded-md py-1 text-[11px] font-medium transition-all ${role === roleOption ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                  className={`flex w-full items-center justify-center rounded-xl border px-2 py-2 text-[11px] font-semibold transition-all ${role === roleOption ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-white text-gray-500 hover:text-gray-900'}`}
+                  title={ROLE_LABELS[roleOption]}
                 >
                   {ROLE_SHORT_LABELS[roleOption]}
                 </button>
               ))}
             </div>
-          </>
-        ) : (
-          <div className="space-y-2">
-            {(['crew', 'crewhead', 'coo'] as const).map((roleOption) => (
-              <button
-                key={roleOption}
-                onClick={() => setRole(roleOption)}
-                className={`flex w-full items-center justify-center rounded-xl border px-2 py-2 text-[11px] font-semibold transition-all ${role === roleOption ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-white text-gray-500 hover:text-gray-900'}`}
-                title={ROLE_LABELS[roleOption]}
-              >
-                {ROLE_SHORT_LABELS[roleOption]}
-              </button>
-            ))}
-          </div>
+          )
         )}
       </div>
 
@@ -182,10 +212,10 @@ const Sidebar: React.FC = () => {
         <button
           onClick={() => openSettings('menu')}
           className={`flex w-full items-center rounded-lg px-3 py-2 text-[13px] transition-colors ${sidebarCollapsed ? 'justify-center' : 'gap-2.5'} ${currentTab === 'settings' ? 'bg-emerald-50 font-medium text-emerald-700' : 'text-gray-600 hover:bg-white hover:text-gray-900'}`}
-          title="Nastavení"
+          title="Nastaveni"
         >
           <Settings size={16} />
-          {!sidebarCollapsed && <span className="flex-1 text-left">Nastavení</span>}
+          {!sidebarCollapsed && <span className="flex-1 text-left">Nastaveni</span>}
         </button>
       </div>
 
@@ -195,21 +225,36 @@ const Sidebar: React.FC = () => {
         title="Profil"
       >
         <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
-          <div className="av h-8 w-8 bg-blue-50 text-[10px] text-blue-700">PH</div>
+          <div className="av h-8 w-8 bg-blue-50 text-[10px] text-blue-700">
+            {profileName.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'PH'}
+          </div>
           {!sidebarCollapsed && (
             <div className="min-w-0">
-              <div className="truncate text-xs font-semibold text-gray-900">Petr Heitzer</div>
-              <div className="text-[10px] text-gray-500">{ROLE_LABELS[role]}</div>
+              <div className="truncate text-xs font-semibold text-gray-900">{profileName}</div>
+              <div className="text-[10px] text-gray-500">{ROLE_LABELS[effectiveRole]}</div>
             </div>
           )}
         </div>
         {!sidebarCollapsed && (
           <div className="mt-3 flex items-center gap-1.5 text-[10px] text-gray-500">
             <div className="h-1.5 w-1.5 rounded-full bg-emerald-500"></div>
-            API ready · v2.0
+            {profile?.email || 'API ready · v2.0'}
           </div>
         )}
       </button>
+
+      {isAuthRequired && (
+        <div className="border-t border-gray-200 p-2">
+          <button
+            onClick={handleSignOut}
+            className={`flex w-full items-center rounded-lg px-3 py-2 text-[13px] text-gray-600 transition-colors hover:bg-white hover:text-gray-900 ${sidebarCollapsed ? 'justify-center' : 'gap-2.5'}`}
+            title="Odhlasit se"
+          >
+            <LogOut size={16} />
+            {!sidebarCollapsed && <span className="flex-1 text-left">Odhlasit se</span>}
+          </button>
+        </div>
+      )}
     </aside>
   );
 };

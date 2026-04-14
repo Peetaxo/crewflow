@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { toast } from 'sonner';
+import { useAuth } from '../app/providers/AuthProvider';
 import {
   Client,
   Project,
@@ -77,6 +78,7 @@ export function useAppContext(): AppContextType {
 }
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
+  const { isAuthRequired, role: authRole } = useAuth();
   const [darkMode, setDarkMode] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [role, setRole] = useState<Role>('crewhead');
@@ -122,6 +124,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setCurrentTab(allowedTabs[0]);
     }
   }, [role, currentTab]);
+
+  useEffect(() => {
+    if (isAuthRequired && authRole && authRole !== role) {
+      setRole(authRole);
+    }
+  }, [authRole, isAuthRequired, role]);
 
   const handleDelete = useCallback(() => {
     if (!deleteConfirm) return;

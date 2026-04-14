@@ -1,11 +1,19 @@
 import { useEffect } from 'react';
 import { toast } from 'sonner';
 import { appDataSource } from '../../lib/app-config';
-import { getSupabaseAppData, updateLocalAppState } from '../../lib/app-data';
+import { getLocalAppData, getSupabaseAppData, updateLocalAppState } from '../../lib/app-data';
+import { useAuth } from './AuthProvider';
 
 const AppDataBootstrap = () => {
+  const { isAuthRequired, isAuthenticated, user } = useAuth();
+
   useEffect(() => {
     if (appDataSource !== 'supabase') return;
+
+    if (isAuthRequired && !isAuthenticated) {
+      updateLocalAppState(() => getLocalAppData());
+      return;
+    }
 
     let isCancelled = false;
 
@@ -25,7 +33,7 @@ const AppDataBootstrap = () => {
     return () => {
       isCancelled = true;
     };
-  }, []);
+  }, [isAuthRequired, isAuthenticated, user?.id]);
 
   return null;
 };

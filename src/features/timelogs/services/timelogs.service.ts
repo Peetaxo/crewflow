@@ -6,6 +6,12 @@ import { Contractor, Event, Timelog, TimelogStatus } from '../../../types';
 
 type TimelogAction = 'sub' | 'ch' | 'coo' | 'rej';
 let timelogsHydrationPromise: Promise<void> | null = null;
+const statusMap: Record<TimelogAction, TimelogStatus> = {
+  sub: 'pending_ch',
+  ch: 'pending_coo',
+  coo: 'approved',
+  rej: 'rejected',
+};
 
 const sortTimelogDays = (days: Timelog['days']) => (
   [...days].sort((a, b) => `${a.d}${a.f}${a.type}`.localeCompare(`${b.d}${b.f}${b.type}`))
@@ -93,6 +99,52 @@ const ensureSupabaseTimelogsLoaded = () => {
     });
 };
 
+const getSupabaseTimelogRowIds = async (): Promise<string[]> => {
+  if (!supabase) {
+    throw new Error('Supabase klient neni dostupny.');
+  }
+
+  const result = await supabase
+    .from('timelogs')
+    .select('id')
+    .order('created_at');
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+
+  return (result.data ?? []).map((row) => row.id);
+};
+
+const persistSupabaseTimelogStatus = async (
+  localTimelogIds: number[],
+  nextStatus: TimelogStatus,
+): Promise<void> => {
+  if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
+    return;
+  }
+
+  const timelogRowIds = await getSupabaseTimelogRowIds();
+  const rowIds = Array.from(new Set(localTimelogIds.map((localId) => {
+    const rowId = timelogRowIds[localId - 1];
+    if (!rowId) {
+      throw new Error('Nepodarilo se sparovat vykaz s databazovym zaznamem.');
+    }
+    return rowId;
+  })));
+
+  await Promise.all(rowIds.map(async (rowId) => {
+    const result = await supabase
+      .from('timelogs')
+      .update({ status: nextStatus })
+      .eq('id', rowId);
+
+    if (result.error) {
+      throw new Error(result.error.message);
+    }
+  }));
+};
+
 export const getTimelogs = (search = ''): Timelog[] => {
   ensureSupabaseTimelogsLoaded();
   const snapshot = getLocalAppState();
@@ -123,24 +175,19 @@ export const getTimelogDependencies = (): { contractors: Contractor[]; events: E
   };
 };
 
-export const updateTimelogStatus = (id: number, action: TimelogAction): Timelog => {
-  const statusMap: Record<TimelogAction, TimelogStatus> = {
-    sub: 'pending_ch',
-    ch: 'pending_coo',
-    coo: 'approved',
-    rej: 'rejected',
-  };
-
+export const updateTimelogStatus = async (id: number, action: TimelogAction): Promise<Timelog> => {
+  const nextStatus = statusMap[action];
+  await persistSupabaseTimelogStatus([id], nextStatus);
   let updatedTimelog: Timelog | null = null;
 
   updateLocalAppState((snapshot) => ({
     ...snapshot,
-    timelogs: snapshot.timelogs.map((timelog) => {
+    timelogs: (snapshot.timelogs ?? []).map((timelog) => {
       if (timelog.id !== id) return timelog;
 
       updatedTimelog = {
         ...timelog,
-        status: statusMap[action],
+        status: nextStatus,
       };
 
       return updatedTimelog;
@@ -154,12 +201,22 @@ export const updateTimelogStatus = (id: number, action: TimelogAction): Timelog 
   return updatedTimelog;
 };
 
-export const approveAllTimelogsForEvent = (eventId: number): Timelog[] => {
+export const approveAllTimelogsForEvent = async (eventId: number): Promise<Timelog[]> => {
   const approvedTimelogs: Timelog[] = [];
+  const safeTimelogs = getLocalAppState().timelogs ?? [];
+  const localTimelogIds = safeTimelogs
+    .filter((timelog) => timelog.eid === eventId && timelog.status === 'pending_coo')
+    .map((timelog) => timelog.id);
+
+  if (localTimelogIds.length === 0) {
+    return approvedTimelogs;
+  }
+
+  await persistSupabaseTimelogStatus(localTimelogIds, 'approved');
 
   updateLocalAppState((snapshot) => ({
     ...snapshot,
-    timelogs: snapshot.timelogs.map((timelog) => {
+    timelogs: (snapshot.timelogs ?? []).map((timelog) => {
       if (timelog.eid !== eventId || timelog.status !== 'pending_coo') return timelog;
 
       const approvedTimelog = {

@@ -55,6 +55,15 @@ Muzes sem psat svoje napady a ja z nich pak muzu delat konkretni ukoly.
 - [ ] Napojit faktury
   Poznamka: dodelat realne navazani na fakturacni proces.
 
+- [ ] Prepracovat model fakturace na billing batch
+  Poznamka: jedna faktura ma umet obsahovat vice schvalenych timelogu a vice job number pro jednoho kontraktora.
+
+- [ ] Navrhnout a zavest invoice_items a vazbu invoice_timelogs
+  Poznamka: faktura nema byt 1:1 na timelog; polozky se maji seskupovat podle job number a timelogy se maji vazat pres spojovaci vrstvu.
+
+- [ ] Dodelat write flow pro fakturaci do Supabase
+  Poznamka: po vyberu schvalenych timelogu vytvorit fakturu, polozky faktury a teprve potom prepnout timelogy na invoiced.
+
 - [ ] Sekce uctenky
   Poznamka: clen crew muze pridat uctenku nebo fakturu za vydaj, ktery zaplatil, a priradit ji ke konkretni akci / projektu.
 
@@ -75,6 +84,9 @@ Muzes sem psat svoje napady a ja z nich pak muzu delat konkretni ukoly.
 
 - [ ] Hodnoceni crew
   Poznamka: doplnit zpetnou vazbu a kvalitu spoluprace.
+
+- [ ] Refaktor identity na UUID
+  Poznamka: odstranit zavislost na contractors[0] a lokalnich ciselnych id, prejit na skutecnou auth / profile identitu.
 
 - [ ] Hlidac kolizi pri prirazeni na akci
   Poznamka: upozornit, pokud je clovek uz prirazeny na jinou akci.

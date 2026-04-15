@@ -108,7 +108,7 @@ export interface Timelog {
 }
 
 /** Status faktury */
-export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'disputed';
+export type InvoiceStatus = 'draft' | 'sent' | 'paid';
 
 /** Faktura */
 export interface Invoice {
@@ -128,6 +128,14 @@ export interface Invoice {
   total: number;
   /** Job Number */
   job: string;
+  /** Vsechny job number zahrnute do billing batch faktury */
+  jobNumbers?: string[];
+  /** Navazane timelogy zahrnute do faktury */
+  timelogIds?: number[];
+  /** Navazane uctenky zahrnute do faktury */
+  receiptIds?: number[];
+  /** Vsechny navazane akce zahrnute do faktury */
+  eventIds?: number[];
   status: InvoiceStatus;
   sentAt: string | null;
 }

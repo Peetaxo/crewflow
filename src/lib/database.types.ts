@@ -10,7 +10,7 @@ export type AppRole = 'crew' | 'crewhead' | 'coo';
 export type EventStatus = 'planning' | 'upcoming' | 'full' | 'past';
 export type TimelogType = 'instal' | 'provoz' | 'deinstal';
 export type TimelogStatus = 'draft' | 'pending_ch' | 'pending_coo' | 'approved' | 'invoiced' | 'paid' | 'rejected';
-export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'disputed';
+export type InvoiceStatus = 'draft' | 'sent' | 'paid';
 export type ReceiptStatus = 'draft' | 'submitted' | 'approved' | 'attached' | 'reimbursed' | 'rejected';
 export type RecruitmentStage = 'new' | 'interview_scheduled' | 'decision' | 'accepted' | 'rejected';
 
@@ -104,6 +104,37 @@ export interface Database {
           paid_at: string | null;
           created_at: string;
           updated_at: string;
+        };
+      };
+      invoice_items: {
+        Row: {
+          id: string;
+          invoice_id: string;
+          job_number: string;
+          event_id: string | null;
+          hours: number;
+          amount_hours: number;
+          km: number;
+          amount_km: number;
+          amount_receipts: number;
+          total_amount: number;
+          created_at: string;
+        };
+      };
+      invoice_timelogs: {
+        Row: {
+          id: string;
+          invoice_id: string;
+          timelog_id: string;
+          created_at: string;
+        };
+      };
+      invoice_receipts: {
+        Row: {
+          id: string;
+          invoice_id: string;
+          receipt_id: string;
+          created_at: string;
         };
       };
       profiles: {

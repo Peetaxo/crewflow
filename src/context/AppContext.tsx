@@ -2,6 +2,16 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { toast } from 'sonner';
 import { useAuth } from '../app/providers/AuthProvider';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../components/ui/alert-dialog';
+import {
   Client,
   Project,
   ReceiptItem,
@@ -30,6 +40,7 @@ interface AppContextType {
   setRole: (r: Role) => void;
   currentTab: string;
   setCurrentTab: (tab: string) => void;
+  setNavigationGuardMessage: (message: string | null) => void;
   settingsSection: 'menu' | 'profile' | 'appearance';
   setSettingsSection: (section: 'menu' | 'profile' | 'appearance') => void;
   searchQuery: string;
@@ -82,7 +93,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [darkMode, setDarkMode] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [role, setRole] = useState<Role>('crewhead');
-  const [currentTab, setCurrentTab] = useState('dashboard');
+  const [currentTab, setCurrentTabState] = useState('dashboard');
+  const [navigationGuardMessage, setNavigationGuardMessage] = useState<string | null>(null);
+  const [pendingTab, setPendingTab] = useState<string | null>(null);
   const [settingsSection, setSettingsSection] = useState<'menu' | 'profile' | 'appearance'>('menu');
   const [searchQuery, setSearchQuery] = useState('');
   const [timelogFilter, setTimelogFilter] = useState('all');
@@ -104,6 +117,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [eventsFilter, setEventsFilter] = useState<'upcoming' | 'past' | 'all'>('upcoming');
   const [eventsCalendarDate, setEventsCalendarDate] = useState<string>('');
 
+  const setCurrentTab = useCallback((tab: string) => {
+    if (navigationGuardMessage && tab !== currentTab) {
+      setPendingTab(tab);
+      return;
+    }
+
+    setCurrentTabState(tab);
+  }, [currentTab, navigationGuardMessage]);
+
   useEffect(() => {
     setSearchQuery('');
   }, [currentTab]);
@@ -121,7 +143,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const allowedTabs = NAV_BY_ROLE[role];
     if (currentTab !== 'settings' && !allowedTabs.includes(currentTab)) {
-      setCurrentTab(allowedTabs[0]);
+      setCurrentTabState(allowedTabs[0]);
     }
   }, [role, currentTab]);
 
@@ -162,6 +184,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     sidebarCollapsed, setSidebarCollapsed,
     role, setRole,
     currentTab, setCurrentTab,
+    setNavigationGuardMessage,
     settingsSection, setSettingsSection,
     searchQuery, setSearchQuery,
     timelogFilter, setTimelogFilter,
@@ -183,5 +206,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     handleDelete,
   };
 
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+  return (
+    <AppContext.Provider value={value}>
+      {children}
+      <AlertDialog open={pendingTab !== null} onOpenChange={(open) => { if (!open) setPendingTab(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Rozpracovane zmeny se neulozi</AlertDialogTitle>
+            <AlertDialogDescription>
+              {navigationGuardMessage ?? 'Pokud ted odejdes, neulozene zmeny se ztrati.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Zustat</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingTab) {
+                  setNavigationGuardMessage(null);
+                  setCurrentTabState(pendingTab);
+                }
+                setPendingTab(null);
+              }}
+            >
+              Odejit bez ulozeni
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </AppContext.Provider>
+  );
 }

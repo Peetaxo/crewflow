@@ -217,6 +217,28 @@ export const markApprovedReceiptsAsAttached = (): ReceiptItem[] => {
   return updatedReceipts;
 };
 
+export const markReceiptsAsAttached = (receiptIds: number[]): ReceiptItem[] => {
+  const idSet = new Set(receiptIds);
+  const updatedReceipts: ReceiptItem[] = [];
+
+  updateLocalAppState((snapshot) => ({
+    ...snapshot,
+    receipts: snapshot.receipts.map((receipt) => {
+      if (!idSet.has(receipt.id)) return receipt;
+
+      const updatedReceipt = {
+        ...receipt,
+        status: 'attached' as const,
+      };
+
+      updatedReceipts.push(updatedReceipt);
+      return updatedReceipt;
+    }),
+  }));
+
+  return updatedReceipts;
+};
+
 export const markReceiptsAsReimbursedForInvoice = (eventId: number, contractorId: number): ReceiptItem[] => {
   const updatedReceipts: ReceiptItem[] = [];
 
@@ -224,6 +246,28 @@ export const markReceiptsAsReimbursedForInvoice = (eventId: number, contractorId
     ...snapshot,
     receipts: snapshot.receipts.map((receipt) => {
       if (receipt.eid !== eventId || receipt.cid !== contractorId || receipt.status !== 'attached') return receipt;
+
+      const updatedReceipt = {
+        ...receipt,
+        status: 'reimbursed' as const,
+      };
+
+      updatedReceipts.push(updatedReceipt);
+      return updatedReceipt;
+    }),
+  }));
+
+  return updatedReceipts;
+};
+
+export const markReceiptsAsReimbursed = (receiptIds: number[]): ReceiptItem[] => {
+  const idSet = new Set(receiptIds);
+  const updatedReceipts: ReceiptItem[] = [];
+
+  updateLocalAppState((snapshot) => ({
+    ...snapshot,
+    receipts: snapshot.receipts.map((receipt) => {
+      if (!idSet.has(receipt.id)) return receipt;
 
       const updatedReceipt = {
         ...receipt,

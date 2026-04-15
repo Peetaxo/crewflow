@@ -10,7 +10,6 @@ const StatusBadge = ({ status, label }: { status: string; label?: string }) => {
     paid: ['bg-teal-50 text-teal-700', 'Zaplaceno'],
     rejected: ['bg-red-50 text-red-700', 'Zamítnuto'],
     sent: ['bg-blue-50 text-blue-700', 'Odesláno'],
-    disputed: ['bg-red-50 text-red-700', 'Rozporovano'],
     submitted: ['bg-amber-50 text-amber-700', 'Čeká na schválení'],
     attached: ['bg-cyan-50 text-cyan-700', 'Ve faktuře'],
     reimbursed: ['bg-teal-50 text-teal-700', 'Proplaceno'],

@@ -57,7 +57,7 @@ const Sidebar: React.FC = () => {
   const badgeCounts: Record<string, number> = useMemo(() => ({
     timelogs: safeTimelogs.filter((t) => t.status === 'pending_ch' || t.status === 'pending_coo').length,
     'my-timelogs': safeTimelogs.filter((t) => t.cid === 1 && (t.status === 'draft' || t.status === 'pending_ch' || t.status === 'pending_coo' || t.status === 'rejected')).length,
-    invoices: safeInvoices.filter((i) => i.status === 'sent' || i.status === 'disputed').length,
+    invoices: safeInvoices.filter((i) => i.status === 'sent').length,
     'my-invoices': safeInvoices.filter((i) => i.cid === 1 && i.status !== 'paid').length,
     receipts: safeReceipts.filter((r) => r.status === 'submitted' || r.status === 'approved').length,
     'my-receipts': safeReceipts.filter((r) => r.cid === 1 && r.status !== 'reimbursed').length,

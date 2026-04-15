@@ -278,6 +278,28 @@ export const markApprovedTimelogsAsInvoiced = (): Timelog[] => {
   return updatedTimelogs;
 };
 
+export const markTimelogsAsInvoiced = (timelogIds: number[]): Timelog[] => {
+  const idSet = new Set(timelogIds);
+  const updatedTimelogs: Timelog[] = [];
+
+  updateLocalAppState((snapshot) => ({
+    ...snapshot,
+    timelogs: snapshot.timelogs.map((timelog) => {
+      if (!idSet.has(timelog.id)) return timelog;
+
+      const updatedTimelog = {
+        ...timelog,
+        status: 'invoiced' as const,
+      };
+
+      updatedTimelogs.push(updatedTimelog);
+      return updatedTimelog;
+    }),
+  }));
+
+  return updatedTimelogs;
+};
+
 export const markTimelogsAsPaidForInvoice = (eventId: number, contractorId: number): Timelog[] => {
   const updatedTimelogs: Timelog[] = [];
 
@@ -285,6 +307,28 @@ export const markTimelogsAsPaidForInvoice = (eventId: number, contractorId: numb
     ...snapshot,
     timelogs: snapshot.timelogs.map((timelog) => {
       if (timelog.eid !== eventId || timelog.cid !== contractorId || timelog.status !== 'invoiced') return timelog;
+
+      const updatedTimelog = {
+        ...timelog,
+        status: 'paid' as const,
+      };
+
+      updatedTimelogs.push(updatedTimelog);
+      return updatedTimelog;
+    }),
+  }));
+
+  return updatedTimelogs;
+};
+
+export const markTimelogsAsPaid = (timelogIds: number[]): Timelog[] => {
+  const idSet = new Set(timelogIds);
+  const updatedTimelogs: Timelog[] = [];
+
+  updateLocalAppState((snapshot) => ({
+    ...snapshot,
+    timelogs: snapshot.timelogs.map((timelog) => {
+      if (!idSet.has(timelog.id)) return timelog;
 
       const updatedTimelog = {
         ...timelog,

@@ -83,7 +83,7 @@ const DashboardView = () => {
     safeTimelogs.filter((timelog) => timelog.status === approvalStatus)
   ), [approvalStatus, safeTimelogs]);
   const pendingForMe = timelogQueue.length;
-  const pendingInvoices = safeFilteredInvoices.filter((invoice) => invoice.status === 'sent' || invoice.status === 'disputed').length;
+  const pendingInvoices = safeFilteredInvoices.filter((invoice) => invoice.status === 'sent').length;
   const pendingReceipts = safeReceipts.filter((receipt) => receipt.status === 'submitted' || receipt.status === 'approved').length;
   const approvedHours = safeTimelogs
     .filter((timelog) => timelog.status === 'approved' || timelog.status === 'invoiced' || timelog.status === 'paid')

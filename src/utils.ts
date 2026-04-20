@@ -27,7 +27,7 @@ export const fdr = formatDateRange;
  */
 export function getDatesBetween(startDate: string, endDate: string): string[] {
   const days: string[] = [];
-  let cur = new Date(startDate);
+  const cur = new Date(startDate);
   const end = new Date(endDate);
   while (cur <= end) {
     days.push(new Date(cur).toISOString().split('T')[0]);
@@ -98,4 +98,3 @@ export function getEventStatus(event: Pick<Event, 'endDate' | 'filled' | 'needed
 export function eventOccursOnDate(event: Pick<Event, 'startDate' | 'endDate'>, date: string): boolean {
   return event.startDate <= date && event.endDate >= date;
 }
-

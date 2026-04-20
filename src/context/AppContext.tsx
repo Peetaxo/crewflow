@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { useAuth } from '../app/providers/AuthProvider';

@@ -151,7 +151,7 @@ const EventsView = () => {
   const eventFilter = eventsFilter as EventFilter;
   const selectedEvent = useMemo(
     () => getEventById(selectedEventId),
-    [selectedEventId, events],
+    [selectedEventId],
   );
 
   const loadEvents = useCallback(() => {

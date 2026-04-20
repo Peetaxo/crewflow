@@ -44,13 +44,23 @@ const ProjectStatsView = () => {
   const findContractor = useCallback((id: number) => (
     contractors.find((contractor) => contractor.id === id) ?? null
   ), [contractors]);
-
-  if (!project) return null;
-
-  const projectEvents = events.filter((event) => event.job === project.id);
-  const projectTimelogs = timelogs.filter((timelog) => projectEvents.some((event) => event.id === timelog.eid));
-  const projectInvoices = invoices.filter((invoice) => invoice.job === project.id);
-  const projectReceipts = receipts.filter((receipt) => receipt.job === project.id);
+  const projectId = project?.id ?? null;
+  const projectEvents = useMemo(
+    () => (projectId ? events.filter((event) => event.job === projectId) : []),
+    [events, projectId],
+  );
+  const projectTimelogs = useMemo(
+    () => (projectId ? timelogs.filter((timelog) => projectEvents.some((event) => event.id === timelog.eid)) : []),
+    [projectEvents, projectId, timelogs],
+  );
+  const projectInvoices = useMemo(
+    () => (projectId ? invoices.filter((invoice) => invoice.job === projectId) : []),
+    [invoices, projectId],
+  );
+  const projectReceipts = useMemo(
+    () => (projectId ? receipts.filter((receipt) => receipt.job === projectId) : []),
+    [receipts, projectId],
+  );
 
   const totalHours = projectTimelogs.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
   const totalKm = projectTimelogs.reduce((sum, timelog) => sum + timelog.km, 0);
@@ -157,6 +167,8 @@ const ProjectStatsView = () => {
       </g>
     );
   };
+
+  if (!project) return null;
 
   return (
     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>

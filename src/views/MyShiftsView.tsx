@@ -46,15 +46,9 @@ const MyShiftsView = () => {
   useEffect(() => subscribeToReceiptChanges(loadData), [loadData]);
   useEffect(() => subscribeToProjectChanges(() => setProjects(getProjects() ?? [])), []);
   const meId = me?.id ?? null;
-  const safeEvents = events ?? [];
-  const safeInvoices = invoices ?? [];
-  const safeTimelogs = timelogs ?? [];
-  const safeReceipts = receipts ?? [];
-  const safeProjects = projects ?? [];
-
-  const myTimelogs = safeTimelogs.filter((timelog) => timelog.cid === meId);
-  const myInvoices = safeInvoices.filter((invoice) => invoice.cid === meId);
-  const myReceipts = safeReceipts.filter((receipt) => receipt.cid === meId);
+  const myTimelogs = timelogs.filter((timelog) => timelog.cid === meId);
+  const myInvoices = invoices.filter((invoice) => invoice.cid === meId);
+  const myReceipts = receipts.filter((receipt) => receipt.cid === meId);
 
   const categorized = useMemo(() => ({
     upcoming: myTimelogs.filter((timelog) => timelog.status === 'draft'),
@@ -114,8 +108,8 @@ const MyShiftsView = () => {
     const query = searchQuery.toLowerCase();
 
     const filterShifts = (list: typeof myTimelogs) => list.filter((timelog) => {
-      const event = safeEvents.find((item) => item.id === timelog.eid);
-      const project = safeProjects.find((item) => item.id === event?.job);
+      const event = events.find((item) => item.id === timelog.eid);
+      const project = projects.find((item) => item.id === event?.job);
       return (
         event?.name.toLowerCase().includes(query)
         || project?.id.toLowerCase().includes(query)
@@ -129,7 +123,7 @@ const MyShiftsView = () => {
       invoiced: filterShifts(categorized.invoiced),
       invoices: myInvoices.filter((invoice) => invoice.id.toLowerCase().includes(query) || invoice.job.toLowerCase().includes(query)),
     };
-  }, [searchQuery, categorized, myInvoices, safeEvents, safeProjects, myTimelogs]);
+  }, [searchQuery, categorized, myInvoices, events, projects]);
 
   if (!me) return null;
 
@@ -187,8 +181,8 @@ const MyShiftsView = () => {
         {activeTab !== 'invoices' ? (
           <motion.div key={activeTab} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {filteredData[activeTab].map((timelog) => {
-              const event = safeEvents.find((item) => item.id === timelog.eid);
-              const project = safeProjects.find((item) => item.id === event?.job);
+              const event = events.find((item) => item.id === timelog.eid);
+              const project = projects.find((item) => item.id === event?.job);
               if (!event || !project) return null;
               return <ShiftCard key={timelog.id} timelog={timelog} event={event} project={project} />;
             })}

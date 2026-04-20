@@ -60,36 +60,29 @@ const DashboardView = () => {
   useEffect(() => subscribeToReceiptChanges(loadData), [loadData]);
   useEffect(() => subscribeToEventChanges(loadData), [loadData]);
   useEffect(() => subscribeToInvoiceChanges(loadData), [loadData]);
-  const safeTimelogs = timelogs ?? [];
-  const safeReceipts = receipts ?? [];
-  const safeContractors = contractors ?? [];
-  const safeEvents = events ?? [];
-  const safeFilteredEvents = filteredEvents ?? [];
-  const safeFilteredInvoices = filteredInvoices ?? [];
-
   const findContractor = useCallback((id: number) => (
-    safeContractors.find((contractor) => contractor.id === id) ?? null
-  ), [safeContractors]);
+    contractors.find((contractor) => contractor.id === id) ?? null
+  ), [contractors]);
 
   const findEvent = useCallback((id: number) => (
-    safeEvents.find((event) => event.id === id) ?? null
-  ), [safeEvents]);
+    events.find((event) => event.id === id) ?? null
+  ), [events]);
 
   const approvalStatus = role === 'crewhead' ? 'pending_ch' : 'pending_coo';
   const roleLabel = role === 'crewhead' ? 'Pohled CrewHead' : 'Pohled COO';
   const reviewLabel = role === 'crewhead' ? 'Ke kontrole (CH)' : 'Ke schvaleni (COO)';
 
   const timelogQueue = useMemo(() => (
-    safeTimelogs.filter((timelog) => timelog.status === approvalStatus)
-  ), [approvalStatus, safeTimelogs]);
+    timelogs.filter((timelog) => timelog.status === approvalStatus)
+  ), [approvalStatus, timelogs]);
   const pendingForMe = timelogQueue.length;
-  const pendingInvoices = safeFilteredInvoices.filter((invoice) => invoice.status === 'sent').length;
-  const pendingReceipts = safeReceipts.filter((receipt) => receipt.status === 'submitted' || receipt.status === 'approved').length;
-  const approvedHours = safeTimelogs
+  const pendingInvoices = filteredInvoices.filter((invoice) => invoice.status === 'sent').length;
+  const pendingReceipts = receipts.filter((receipt) => receipt.status === 'submitted' || receipt.status === 'approved').length;
+  const approvedHours = timelogs
     .filter((timelog) => timelog.status === 'approved' || timelog.status === 'invoiced' || timelog.status === 'paid')
     .reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
-  const needsFilling = safeFilteredEvents.filter((event) => event.filled < event.needed).length;
-  const upcomingEvents = safeFilteredEvents
+  const needsFilling = filteredEvents.filter((event) => event.filled < event.needed).length;
+  const upcomingEvents = filteredEvents
     .filter((event) => getEventStatus(event) !== 'past')
     .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.endDate.localeCompare(b.endDate) || a.name.localeCompare(b.name))
     .slice(0, 10);

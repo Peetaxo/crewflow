@@ -66,7 +66,7 @@ const CrewView = () => {
   useEffect(() => subscribeToCrewChanges(loadCrew), [loadCrew]);
 
   const nextContractorId = useMemo(
-    () => Math.max(0, ...getCrew().map((contractor) => contractor.id)) + 1,
+    () => Math.max(0, ...crew.map((contractor) => contractor.id)) + 1,
     [crew],
   );
 

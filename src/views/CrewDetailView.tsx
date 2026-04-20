@@ -44,11 +44,10 @@ const CrewDetailView = () => {
   const cTls = detail.timelogs;
   const cInvoices = detail.invoices;
 
-  if (!c) return null;
-
   useEffect(() => {
+    if (!c) return;
     setMetaForm({ rate: String(c.rate), note: c.note ?? '' });
-  }, [c.id, c.rate, c.note]);
+  }, [c]);
 
   const categorized = useMemo(() => ({
     upcoming: cTls.filter((t) => t.status === 'draft'),
@@ -94,6 +93,7 @@ const CrewDetailView = () => {
   }, [cInvoices, chartPeriod]);
 
   const saveMeta = () => {
+    if (!c) return;
     updateCrew({
       ...c,
       rate: Number(metaForm.rate) || c.rate,
@@ -139,6 +139,8 @@ const CrewDetailView = () => {
       window.removeEventListener('resize', updateScrollCue);
     };
   }, [activeTab, categorized, cInvoices.length]);
+
+  if (!c) return null;
 
   return (
     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>

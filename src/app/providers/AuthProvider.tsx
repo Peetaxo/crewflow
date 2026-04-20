@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { appDataSource } from '../../lib/app-config';
@@ -15,12 +16,15 @@ type AuthProfile = {
 
 type DevLoginOption = {
   id: number;
+  profileId: string | null;
   name: string;
   email: string;
 };
 
 type StoredDevSession = {
   id: number;
+  profileId: string | null;
+  userId: string | null;
   name: string;
   email: string;
   role: Role;
@@ -35,6 +39,9 @@ interface AuthContextType {
   user: User | null;
   role: Role | null;
   profile: AuthProfile | null;
+  currentProfileId: string | null;
+  currentUserId: string | null;
+  currentContractorId: number | null;
   devLoginOptions: DevLoginOption[];
   signIn: (email: string, password: string) => Promise<void>;
   signInAsDevUser: (contractorId: number, role: Role) => void;
@@ -59,9 +66,15 @@ const splitName = (name: string) => {
 
 const toDevLoginOption = (contractor: Contractor): DevLoginOption => ({
   id: contractor.id,
+  profileId: contractor.profileId ?? null,
   name: contractor.name,
   email: contractor.email || '',
 });
+
+const getContractorIdByProfileId = (profileId: string | null): number | null => {
+  if (!profileId) return null;
+  return (getContractors() ?? []).find((item) => item.profileId === profileId)?.id ?? null;
+};
 
 const readStoredDevSession = (): StoredDevSession | null => {
   if (typeof window === 'undefined') return null;
@@ -101,6 +114,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<Role | null>(null);
   const [profile, setProfile] = useState<AuthProfile | null>(null);
+  const [currentProfileId, setCurrentProfileId] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentContractorId, setCurrentContractorId] = useState<number | null>(null);
   const [isDevSession, setIsDevSession] = useState(false);
   const [devLoginOptions, setDevLoginOptions] = useState<DevLoginOption[]>([]);
 
@@ -125,6 +141,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setUser(null);
       setRole(null);
       setProfile(null);
+      setCurrentProfileId(null);
+      setCurrentUserId(null);
+      setCurrentContractorId(null);
       setIsDevSession(false);
       return;
     }
@@ -138,11 +157,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setUser(nextSession?.user ?? null);
 
       if (!nextSession?.user) {
+        setCurrentUserId(null);
         const storedDevSession = readStoredDevSession();
         if (storedDevSession) {
           const { firstName, lastName } = splitName(storedDevSession.name);
           setIsDevSession(true);
           setRole(storedDevSession.role);
+          setCurrentProfileId(storedDevSession.profileId);
+          setCurrentUserId(storedDevSession.userId);
+          setCurrentContractorId(storedDevSession.id);
           setProfile({
             firstName,
             lastName,
@@ -155,6 +178,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setIsDevSession(false);
         setRole(null);
         setProfile(null);
+        setCurrentProfileId(null);
+        setCurrentContractorId(null);
         setIsLoading(false);
         return;
       }
@@ -162,11 +187,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       writeStoredDevSession(null);
       setIsDevSession(false);
       setIsLoading(true);
+      setCurrentUserId(nextSession.user.id);
 
       const [profileResult, rolesResult] = await Promise.all([
         supabase
           .from('profiles')
-          .select('first_name, last_name, email')
+          .select('id, first_name, last_name, email')
           .eq('user_id', nextSession.user.id)
           .maybeSingle(),
         supabase
@@ -197,8 +223,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             email: nextSession.user.email ?? '',
           };
 
+      const nextProfileId = profileResult.data?.id ?? null;
       setProfile(nextProfile);
       setRole(pickPrimaryRole((rolesResult.data ?? []).map((item) => item.role as Role)));
+      setCurrentProfileId(nextProfileId);
+      setCurrentContractorId(getContractorIdByProfileId(nextProfileId));
       setIsLoading(false);
     };
 
@@ -216,6 +245,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
   }, [isAuthRequired]);
 
+  useEffect(() => {
+    if (!isAuthRequired || !currentProfileId) {
+      if (!currentProfileId) {
+        setCurrentContractorId((prev) => (prev == null ? prev : null));
+      }
+      return;
+    }
+
+    const syncCurrentContractorId = () => {
+      setCurrentContractorId(getContractorIdByProfileId(currentProfileId));
+    };
+
+    syncCurrentContractorId();
+    return subscribeToCrewChanges(syncCurrentContractorId);
+  }, [currentProfileId, isAuthRequired]);
+
   const value = useMemo<AuthContextType>(() => ({
     isAuthRequired,
     isAuthenticated: !isAuthRequired || Boolean(session?.user) || isDevSession,
@@ -225,6 +270,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     user,
     role,
     profile,
+    currentProfileId,
+    currentUserId,
+    currentContractorId,
     devLoginOptions,
     signIn: async (email: string, password: string) => {
       if (!supabase) {
@@ -245,6 +293,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const { firstName, lastName } = splitName(contractor.name);
       const storedSession: StoredDevSession = {
         id: contractor.id,
+        profileId: contractor.profileId ?? null,
+        userId: contractor.userId ?? null,
         name: contractor.name,
         email: contractor.email || '',
         role: nextRole,
@@ -255,6 +305,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setUser(null);
       setIsDevSession(true);
       setRole(nextRole);
+      setCurrentProfileId(storedSession.profileId);
+      setCurrentUserId(storedSession.userId);
+      setCurrentContractorId(storedSession.id);
       setProfile({
         firstName,
         lastName,
@@ -265,6 +318,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     signOut: async () => {
       writeStoredDevSession(null);
       setIsDevSession(false);
+      setCurrentProfileId(null);
+      setCurrentUserId(null);
+      setCurrentContractorId(null);
 
       if (!supabase) return;
 
@@ -273,7 +329,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         throw new Error(error.message);
       }
     },
-  }), [devLoginOptions, isAuthRequired, isDevSession, isLoading, profile, role, session, user]);
+  }), [currentContractorId, currentProfileId, currentUserId, devLoginOptions, isAuthRequired, isDevSession, isLoading, profile, role, session, user]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

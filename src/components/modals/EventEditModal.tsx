@@ -33,7 +33,7 @@ const EventEditModal = ({
 }: EventEditModalProps) => {
   const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
   const projectMenuRef = useRef<HTMLDivElement | null>(null);
-  const { projects, clients } = useMemo(() => getEventFormOptions(), [editingEvent]);
+  const { projects, clients } = useMemo(() => getEventFormOptions(), []);
 
   const filteredProjects = useMemo(() => {
     const query = editingEvent?.job.trim().toLowerCase() ?? '';

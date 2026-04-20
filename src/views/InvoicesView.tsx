@@ -67,21 +67,17 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
     };
   }, [hasUnsavedCreate, isCreateMode, setNavigationGuardMessage]);
 
-  const safeInvoices = invoices ?? [];
-  const safeContractors = contractors ?? [];
-  const safeEvents = events ?? [];
-
   const findContractor = useCallback((id: number) => (
-    safeContractors.find((contractor) => contractor.id === id) ?? null
-  ), [safeContractors]);
+    contractors.find((contractor) => contractor.id === id) ?? null
+  ), [contractors]);
 
   const findEvent = useCallback((id: number) => (
-    safeEvents.find((event) => event.id === id) ?? null
-  ), [safeEvents]);
+    events.find((event) => event.id === id) ?? null
+  ), [events]);
 
   const visibleInvoices = scope === 'mine'
-    ? safeInvoices.filter((invoice) => invoice.cid === 1)
-    : safeInvoices;
+    ? invoices.filter((invoice) => invoice.cid === 1)
+    : invoices;
   const isCrew = role === 'crew';
 
   const handleSendInvoice = async (invoiceId: string) => {

@@ -46,8 +46,8 @@ const ClientStatsView = () => {
   const [chartMode, setChartMode] = useState<'time' | 'project'>('time');
   const [chartPeriod, setChartPeriod] = useState<'month' | 'quarter' | 'year'>('month');
 
-  const now = new Date();
   const rangeStart = useMemo(() => {
+    const now = new Date();
     if (dateRange === '1M') return subMonths(now, 1);
     if (dateRange === '3M') return subMonths(now, 3);
     if (dateRange === '6M') return subMonths(now, 6);

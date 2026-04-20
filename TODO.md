@@ -34,6 +34,9 @@ Muzes sem psat svoje napady a ja z nich pak muzu delat konkretni ukoly.
 - [ ] Napojit aplikaci na backend
   Poznamka: postupny prechod z lokalnich dat na realnou perzistenci.
 
+- [ ] Migrovat datovou vrstvu na TanStack Query + Supabase Realtime
+  Poznamka: po stabilizaci soucasne service vrstvy odstranit rucni hydration guardy a prejit na query-based caching, invalidaci a realtime synchronizaci po domenach.
+
 - [ ] Napojit aplikaci na toggl.com
   Poznamka: casy nebo vybrane zaznamy z Togglu propojit tak, aby se promitaly do firemniho nastroje.
 

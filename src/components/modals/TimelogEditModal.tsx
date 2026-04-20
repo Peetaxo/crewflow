@@ -1,6 +1,7 @@
 import React from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { toast } from 'sonner';
 import { useAppContext } from '../../context/AppContext';
 import { KM_RATE } from '../../data';
 import { calculateTotalHours, formatCurrency } from '../../utils';
@@ -219,9 +220,13 @@ const TimelogEditModal = () => {
               Zrušit
             </button>
             <button
-              onClick={() => {
-                saveTimelog(editingTimelog);
-                setEditingTimelog(null);
+              onClick={async () => {
+                try {
+                  await saveTimelog(editingTimelog);
+                  setEditingTimelog(null);
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : 'Nepodařilo se uložit výkaz.');
+                }
               }}
               className="flex-1 rounded-xl bg-emerald-600 py-2 text-sm font-medium text-white shadow-sm shadow-emerald-200 hover:bg-emerald-700"
             >

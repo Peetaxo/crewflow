@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
+import { toast } from 'sonner';
 import { useAuth } from '../app/providers/AuthProvider';
 import { useAppContext } from '../context/AppContext';
 import { KM_RATE } from '../data';
@@ -123,8 +124,16 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
     return Array.from(groups.values()).sort((a, b) => a.job.localeCompare(b.job));
   }, [filtered, findEvent]);
 
+  const handleTimelogAction = useCallback((id: number, action: 'sub' | 'ch' | 'coo' | 'rej') => {
+    void updateTimelogStatus(id, action).catch((error) => {
+      toast.error(error instanceof Error ? error.message : 'Nepodařilo se aktualizovat výkaz.');
+    });
+  }, []);
+
   const runBulkAction = (ids: number[], action: 'ch' | 'coo') => {
-    ids.forEach((id) => updateTimelogStatus(id, action));
+    void Promise.all(ids.map((id) => updateTimelogStatus(id, action))).catch((error) => {
+      toast.error(error instanceof Error ? error.message : 'Nepodařilo se aktualizovat výkazy.');
+    });
   };
 
   const getBulkActionMeta = (timelogsInGroup: typeof filtered) => {
@@ -153,7 +162,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
     <div className="flex gap-2">
       {timelog.status === 'draft' && (
         <button
-          onClick={() => updateTimelogStatus(timelog.id, 'sub')}
+          onClick={() => handleTimelogAction(timelog.id, 'sub')}
           className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
         >
           Odeslat ke kontrole CH
@@ -162,13 +171,13 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
       {timelog.status === 'pending_ch' && role === 'crewhead' && (
         <>
           <button
-            onClick={() => updateTimelogStatus(timelog.id, 'ch')}
+            onClick={() => handleTimelogAction(timelog.id, 'ch')}
             className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
           >
             Schválit a poslat COO
           </button>
           <button
-            onClick={() => updateTimelogStatus(timelog.id, 'rej')}
+            onClick={() => handleTimelogAction(timelog.id, 'rej')}
             className="px-3 py-1.5 rounded-md border border-red-100 text-[11px] text-red-600 hover:bg-red-50"
           >
             Zamítnout
@@ -178,13 +187,13 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
       {timelog.status === 'pending_coo' && role === 'coo' && (
         <>
           <button
-            onClick={() => updateTimelogStatus(timelog.id, 'coo')}
+            onClick={() => handleTimelogAction(timelog.id, 'coo')}
             className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
           >
             Schválit
           </button>
           <button
-            onClick={() => updateTimelogStatus(timelog.id, 'rej')}
+            onClick={() => handleTimelogAction(timelog.id, 'rej')}
             className="px-3 py-1.5 rounded-md border border-red-100 text-[11px] text-red-600 hover:bg-red-50"
           >
             Zamítnout
@@ -339,7 +348,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                         <div className="flex gap-2">
                           {timelog.status === 'draft' && (
                             <button
-                              onClick={() => updateTimelogStatus(timelog.id, 'sub')}
+                              onClick={() => handleTimelogAction(timelog.id, 'sub')}
                               className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
                             >
                               Odeslat ke kontrole CH
@@ -348,13 +357,13 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                           {timelog.status === 'pending_ch' && role === 'crewhead' && (
                             <>
                               <button
-                                onClick={() => updateTimelogStatus(timelog.id, 'ch')}
+                                onClick={() => handleTimelogAction(timelog.id, 'ch')}
                                 className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
                               >
                                 Schválit a poslat COO
                               </button>
                               <button
-                                onClick={() => updateTimelogStatus(timelog.id, 'rej')}
+                                onClick={() => handleTimelogAction(timelog.id, 'rej')}
                                 className="px-3 py-1.5 rounded-md border border-red-100 text-[11px] text-red-600 hover:bg-red-50"
                               >
                                 Zamítnout
@@ -364,13 +373,13 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                           {timelog.status === 'pending_coo' && role === 'coo' && (
                             <>
                               <button
-                                onClick={() => updateTimelogStatus(timelog.id, 'coo')}
+                                onClick={() => handleTimelogAction(timelog.id, 'coo')}
                                 className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
                               >
                                 Schválit
                               </button>
                               <button
-                                onClick={() => updateTimelogStatus(timelog.id, 'rej')}
+                                onClick={() => handleTimelogAction(timelog.id, 'rej')}
                                 className="px-3 py-1.5 rounded-md border border-red-100 text-[11px] text-red-600 hover:bg-red-50"
                               >
                                 Zamítnout

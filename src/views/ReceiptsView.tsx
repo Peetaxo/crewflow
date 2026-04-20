@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { toast } from 'sonner';
 import { useAuth } from '../app/providers/AuthProvider';
 import { useAppContext } from '../context/AppContext';
 import { Contractor, Event, ReceiptItem } from '../types';
@@ -80,6 +81,12 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
     approved: baseReceipts.filter((receipt) => receipt.status === 'approved').length,
     reimbursed: baseReceipts.filter((receipt) => receipt.status === 'reimbursed').length,
   }), [baseReceipts]);
+
+  const handleReceiptAction = useCallback((receiptId: number, action: 'submit' | 'approve' | 'reimburse' | 'reject') => {
+    void updateReceiptStatus(receiptId, action).catch((error) => {
+      toast.error(error instanceof Error ? error.message : 'Nepodařilo se aktualizovat účtenku.');
+    });
+  }, []);
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -163,7 +170,7 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
                             Upravit
                           </button>
                           <button
-                            onClick={() => updateReceiptStatus(receipt.id, 'submit')}
+                            onClick={() => handleReceiptAction(receipt.id, 'submit')}
                             className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-emerald-700"
                           >
                             Odeslat
@@ -174,13 +181,13 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
                       {!isCrew && scope === 'all' && receipt.status === 'submitted' && (
                         <>
                           <button
-                            onClick={() => updateReceiptStatus(receipt.id, 'approve')}
+                            onClick={() => handleReceiptAction(receipt.id, 'approve')}
                             className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-emerald-700"
                           >
                             Schválit
                           </button>
                           <button
-                            onClick={() => updateReceiptStatus(receipt.id, 'reject')}
+                            onClick={() => handleReceiptAction(receipt.id, 'reject')}
                             className="rounded-lg border border-red-100 px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50"
                           >
                             Zamítnout
@@ -190,7 +197,7 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
 
                       {!isCrew && scope === 'all' && receipt.status === 'approved' && (
                         <button
-                          onClick={() => updateReceiptStatus(receipt.id, 'reimburse')}
+                          onClick={() => handleReceiptAction(receipt.id, 'reimburse')}
                           className="rounded-lg bg-teal-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-teal-700"
                         >
                           Proplatit

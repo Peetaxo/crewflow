@@ -8,10 +8,12 @@ import {
   getInvoiceCreateCandidates,
   getInvoiceCreatePreview,
   sendInvoice,
-  subscribeToInvoiceChanges,
   type InvoiceCreateCandidate,
   type InvoiceCreatePreview,
 } from '../../features/invoices/services/invoices.service';
+import { useInvoicesQuery } from '../../features/invoices/queries/useInvoicesQuery';
+import { useTimelogsQuery } from '../../features/timelogs/queries/useTimelogsQuery';
+import { useReceiptsQuery } from '../../features/receipts/queries/useReceiptsQuery';
 
 interface InvoiceCreateModalProps {
   onClose: () => void;
@@ -19,27 +21,22 @@ interface InvoiceCreateModalProps {
 }
 
 const InvoiceCreateModal = ({ onClose, onDirtyChange }: InvoiceCreateModalProps) => {
-  const [candidates, setCandidates] = useState<InvoiceCreateCandidate[]>([]);
+  const invoicesQuery = useInvoicesQuery();
+  const timelogsQuery = useTimelogsQuery();
+  const receiptsQuery = useReceiptsQuery();
   const [selectedContractorId, setSelectedContractorId] = useState<number | null>(null);
-  const [preview, setPreview] = useState<InvoiceCreatePreview | null>(null);
   const [selectedTimelogIds, setSelectedTimelogIds] = useState<number[]>([]);
   const [selectedReceiptIds, setSelectedReceiptIds] = useState<number[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const loadCandidates = useCallback(() => {
-    setCandidates(getInvoiceCreateCandidates());
-  }, []);
-
   const loadPreview = useCallback((contractorId: number | null, resetSelection = true) => {
     if (contractorId == null) {
-      setPreview(null);
       setSelectedTimelogIds([]);
       setSelectedReceiptIds([]);
       return;
     }
 
     const nextPreview = getInvoiceCreatePreview(contractorId);
-    setPreview(nextPreview);
     const nextTimelogIds = nextPreview?.timelogIds ?? [];
     const nextReceiptIds = nextPreview?.receiptIds ?? [];
 
@@ -52,19 +49,34 @@ const InvoiceCreateModal = ({ onClose, onDirtyChange }: InvoiceCreateModalProps)
       resetSelection
         ? nextReceiptIds
         : current.filter((id) => nextReceiptIds.includes(id))
-    ));
+      ));
   }, []);
 
-  useEffect(() => {
-    loadCandidates();
-  }, [loadCandidates]);
+  const candidates = useMemo<InvoiceCreateCandidate[]>(
+    () => {
+      void invoicesQuery.data;
+      void receiptsQuery.data;
+      void timelogsQuery.data;
+      return getInvoiceCreateCandidates();
+    },
+    [invoicesQuery.data, receiptsQuery.data, timelogsQuery.data],
+  );
 
-  useEffect(() => subscribeToInvoiceChanges(() => {
-    loadCandidates();
+  const preview = useMemo<InvoiceCreatePreview | null>(
+    () => {
+      void invoicesQuery.data;
+      void receiptsQuery.data;
+      void timelogsQuery.data;
+      return selectedContractorId == null ? null : getInvoiceCreatePreview(selectedContractorId);
+    },
+    [invoicesQuery.data, receiptsQuery.data, selectedContractorId, timelogsQuery.data],
+  );
+
+  useEffect(() => {
     if (selectedContractorId != null) {
       loadPreview(selectedContractorId, false);
     }
-  }), [loadCandidates, loadPreview, selectedContractorId]);
+  }, [loadPreview, preview, selectedContractorId]);
 
   const isDirty = selectedContractorId !== null;
 

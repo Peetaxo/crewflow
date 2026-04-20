@@ -143,9 +143,9 @@ const ReceiptEditModal = () => {
               Zrušit
             </button>
             <button
-              onClick={() => {
+              onClick={async () => {
                 try {
-                  saveReceipt(editingReceipt);
+                  await saveReceipt(editingReceipt);
                   setEditingReceipt(null);
                 } catch (error) {
                   toast.error(error instanceof Error ? error.message : 'Nepodařilo se uložit účtenku.');

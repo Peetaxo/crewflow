@@ -1,5 +1,7 @@
 import { appDataSource } from '../../../lib/app-config';
 import { getLocalAppState, subscribeToLocalAppState, updateLocalAppState } from '../../../lib/app-data';
+import { queryClient } from '../../../lib/query-client';
+import { queryKeys } from '../../../lib/query-keys';
 import { mapTimelog } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { Contractor, Event, Timelog, TimelogStatus } from '../../../types';
@@ -125,6 +127,46 @@ const ensureSupabaseTimelogsLoaded = () => {
     });
 };
 
+const invalidateTimelogQueries = () => {
+  void queryClient.invalidateQueries({ queryKey: queryKeys.timelogs.all });
+};
+
+const getSupabaseProfileIdMap = async (): Promise<Map<number, string>> => {
+  if (!supabase) {
+    throw new Error('Supabase klient neni dostupny.');
+  }
+
+  const result = await supabase
+    .from('profiles')
+    .select('id')
+    .order('last_name')
+    .order('first_name');
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+
+  return new Map((result.data ?? []).map((row, index) => [index + 1, row.id]));
+};
+
+const getSupabaseEventIdMap = async (): Promise<Map<number, string>> => {
+  if (!supabase) {
+    throw new Error('Supabase klient neni dostupny.');
+  }
+
+  const result = await supabase
+    .from('events')
+    .select('id')
+    .order('date_from')
+    .order('name');
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+
+  return new Map((result.data ?? []).map((row, index) => [index + 1, row.id]));
+};
+
 const getSupabaseTimelogRowIds = async (): Promise<string[]> => {
   if (!supabase) {
     throw new Error('Supabase klient neni dostupny.');
@@ -140,6 +182,17 @@ const getSupabaseTimelogRowIds = async (): Promise<string[]> => {
   }
 
   return (result.data ?? []).map((row) => row.id);
+};
+
+const getSupabaseTimelogRowId = async (localTimelogId: number): Promise<string> => {
+  const timelogRowIds = await getSupabaseTimelogRowIds();
+  const rowId = timelogRowIds[localTimelogId - 1];
+
+  if (!rowId) {
+    throw new Error('Nepodarilo se sparovat vykaz s databazovym zaznamem.');
+  }
+
+  return rowId;
 };
 
 const persistSupabaseTimelogStatus = async (
@@ -224,6 +277,7 @@ export const updateTimelogStatus = async (id: number, action: TimelogAction): Pr
     throw new Error('Vykaz nebyl nalezen.');
   }
 
+  invalidateTimelogQueries();
   return updatedTimelog;
 };
 
@@ -255,14 +309,69 @@ export const approveAllTimelogsForEvent = async (eventId: number): Promise<Timel
     }),
   }));
 
+  invalidateTimelogQueries();
   return approvedTimelogs;
 };
 
-export const saveTimelog = (updated: Timelog): Timelog => {
+export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
   const normalizedTimelog = {
     ...updated,
     days: sortTimelogDays(updated.days),
   };
+
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    const [timelogRowId, profileIdMap, eventIdMap] = await Promise.all([
+      getSupabaseTimelogRowId(updated.id),
+      getSupabaseProfileIdMap(),
+      getSupabaseEventIdMap(),
+    ]);
+    const contractorRowId = normalizedTimelog.contractorProfileId ?? profileIdMap.get(normalizedTimelog.cid);
+    const eventRowId = eventIdMap.get(normalizedTimelog.eid);
+
+    if (!contractorRowId || !eventRowId) {
+      throw new Error('Nepodarilo se sparovat vykaz s databazovym zaznamem.');
+    }
+
+    const timelogUpdate = await supabase
+      .from('timelogs')
+      .update({
+        event_id: eventRowId,
+        contractor_id: contractorRowId,
+        km: normalizedTimelog.km,
+        note: normalizedTimelog.note,
+        status: normalizedTimelog.status,
+      })
+      .eq('id', timelogRowId);
+
+    if (timelogUpdate.error) {
+      throw new Error(timelogUpdate.error.message);
+    }
+
+    const timelogDaysDelete = await supabase
+      .from('timelog_days')
+      .delete()
+      .eq('timelog_id', timelogRowId);
+
+    if (timelogDaysDelete.error) {
+      throw new Error(timelogDaysDelete.error.message);
+    }
+
+    if (normalizedTimelog.days.length > 0) {
+      const timelogDaysInsert = await supabase
+        .from('timelog_days')
+        .insert(normalizedTimelog.days.map((day) => ({
+          timelog_id: timelogRowId,
+          date: day.d,
+          time_from: day.f,
+          time_to: day.t,
+          day_type: day.type,
+        })));
+
+      if (timelogDaysInsert.error) {
+        throw new Error(timelogDaysInsert.error.message);
+      }
+    }
+  }
 
   updateLocalAppState((snapshot) => ({
     ...snapshot,
@@ -271,20 +380,51 @@ export const saveTimelog = (updated: Timelog): Timelog => {
     )),
   }));
 
+  invalidateTimelogQueries();
   return normalizedTimelog;
 };
 
-export const deleteTimelog = (id: number): { id: number } => {
+export const deleteTimelog = async (id: number): Promise<{ id: number }> => {
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    const timelogRowId = await getSupabaseTimelogRowId(id);
+
+    const timelogDaysDelete = await supabase
+      .from('timelog_days')
+      .delete()
+      .eq('timelog_id', timelogRowId);
+
+    if (timelogDaysDelete.error) {
+      throw new Error(timelogDaysDelete.error.message);
+    }
+
+    const timelogDelete = await supabase
+      .from('timelogs')
+      .delete()
+      .eq('id', timelogRowId);
+
+    if (timelogDelete.error) {
+      throw new Error(timelogDelete.error.message);
+    }
+  }
+
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     timelogs: snapshot.timelogs.filter((timelog) => timelog.id !== id),
   }));
 
+  invalidateTimelogQueries();
   return { id };
 };
 
-export const markApprovedTimelogsAsInvoiced = (): Timelog[] => {
+export const markApprovedTimelogsAsInvoiced = async (): Promise<Timelog[]> => {
   const updatedTimelogs: Timelog[] = [];
+  const localTimelogIds = (getLocalAppState().timelogs ?? [])
+    .filter((timelog) => timelog.status === 'approved')
+    .map((timelog) => timelog.id);
+
+  if (localTimelogIds.length > 0) {
+    await persistSupabaseTimelogStatus(localTimelogIds, 'invoiced');
+  }
 
   updateLocalAppState((snapshot) => ({
     ...snapshot,
@@ -301,12 +441,17 @@ export const markApprovedTimelogsAsInvoiced = (): Timelog[] => {
     }),
   }));
 
+  invalidateTimelogQueries();
   return updatedTimelogs;
 };
 
-export const markTimelogsAsInvoiced = (timelogIds: number[]): Timelog[] => {
+export const markTimelogsAsInvoiced = async (timelogIds: number[]): Promise<Timelog[]> => {
   const idSet = new Set(timelogIds);
   const updatedTimelogs: Timelog[] = [];
+
+  if (timelogIds.length > 0) {
+    await persistSupabaseTimelogStatus(timelogIds, 'invoiced');
+  }
 
   updateLocalAppState((snapshot) => ({
     ...snapshot,
@@ -323,11 +468,22 @@ export const markTimelogsAsInvoiced = (timelogIds: number[]): Timelog[] => {
     }),
   }));
 
+  invalidateTimelogQueries();
   return updatedTimelogs;
 };
 
-export const markTimelogsAsPaidForInvoice = (eventId: number, contractorId: number): Timelog[] => {
+export const markTimelogsAsPaidForInvoice = async (
+  eventId: number,
+  contractorId: number,
+): Promise<Timelog[]> => {
   const updatedTimelogs: Timelog[] = [];
+  const localTimelogIds = (getLocalAppState().timelogs ?? [])
+    .filter((timelog) => timelog.eid === eventId && timelog.cid === contractorId && timelog.status === 'invoiced')
+    .map((timelog) => timelog.id);
+
+  if (localTimelogIds.length > 0) {
+    await persistSupabaseTimelogStatus(localTimelogIds, 'paid');
+  }
 
   updateLocalAppState((snapshot) => ({
     ...snapshot,
@@ -344,12 +500,17 @@ export const markTimelogsAsPaidForInvoice = (eventId: number, contractorId: numb
     }),
   }));
 
+  invalidateTimelogQueries();
   return updatedTimelogs;
 };
 
-export const markTimelogsAsPaid = (timelogIds: number[]): Timelog[] => {
+export const markTimelogsAsPaid = async (timelogIds: number[]): Promise<Timelog[]> => {
   const idSet = new Set(timelogIds);
   const updatedTimelogs: Timelog[] = [];
+
+  if (timelogIds.length > 0) {
+    await persistSupabaseTimelogStatus(timelogIds, 'paid');
+  }
 
   updateLocalAppState((snapshot) => ({
     ...snapshot,
@@ -366,6 +527,7 @@ export const markTimelogsAsPaid = (timelogIds: number[]): Timelog[] => {
     }),
   }));
 
+  invalidateTimelogQueries();
   return updatedTimelogs;
 };
 

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
+import { toast } from 'sonner';
 import { useAppContext } from '../context/AppContext';
 import { KM_RATE } from '../data';
 import { Contractor, Event, Timelog } from '../types';
@@ -76,6 +77,18 @@ const ApprovalsView = () => {
     }, [] as { event: typeof filteredEvents[number]; tls: typeof mine }[]);
   }, [filteredEvents, isCrewHead, mine]);
 
+  const handleTimelogAction = useCallback((timelogId: number, action: 'ch' | 'rej') => {
+    void updateTimelogStatus(timelogId, action).catch((error) => {
+      toast.error(error instanceof Error ? error.message : 'Nepodařilo se aktualizovat výkaz.');
+    });
+  }, []);
+
+  const handleApproveAll = useCallback((eventId: number) => {
+    void approveAllTimelogsForEvent(eventId).catch((error) => {
+      toast.error(error instanceof Error ? error.message : 'Nepodařilo se schválit výkazy.');
+    });
+  }, []);
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <div className="mb-5 flex items-center justify-between">
@@ -130,8 +143,8 @@ const ApprovalsView = () => {
                   ))}
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => updateTimelogStatus(timelog.id, 'ch')} className="rounded-md bg-emerald-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">Schvalit a poslat COO</button>
-                  <button onClick={() => updateTimelogStatus(timelog.id, 'rej')} className="rounded-md border border-red-100 px-4 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50">Zamitnout</button>
+                  <button onClick={() => handleTimelogAction(timelog.id, 'ch')} className="rounded-md bg-emerald-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">Schvalit a poslat COO</button>
+                  <button onClick={() => handleTimelogAction(timelog.id, 'rej')} className="rounded-md border border-red-100 px-4 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50">Zamitnout</button>
                   <button onClick={() => setEditingTimelog(timelog)} className="ml-auto rounded-md border border-gray-200 px-4 py-1.5 text-xs font-medium hover:bg-gray-50">Upravit</button>
                 </div>
               </div>
@@ -174,7 +187,7 @@ const ApprovalsView = () => {
                   })}
                 </div>
                 <div className="mt-4 flex gap-2">
-                  <button onClick={() => approveAllTimelogsForEvent(group.event.id)} className="rounded-md bg-emerald-600 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-700">Schvalit vse - {group.event.job} ({formatCurrency(totalAmount)})</button>
+                  <button onClick={() => handleApproveAll(group.event.id)} className="rounded-md bg-emerald-600 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-700">Schvalit vse - {group.event.job} ({formatCurrency(totalAmount)})</button>
                 </div>
               </div>
             );

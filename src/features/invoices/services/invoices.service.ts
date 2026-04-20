@@ -956,10 +956,10 @@ export const createInvoiceFromSelection = async (
   }));
 
   if ((invoice.timelogIds ?? []).length > 0) {
-    markTimelogsAsInvoiced(invoice.timelogIds ?? []);
+    await markTimelogsAsInvoiced(invoice.timelogIds ?? []);
   }
   if ((invoice.receiptIds ?? []).length > 0) {
-    markReceiptsAsAttached(invoice.receiptIds ?? []);
+    await markReceiptsAsAttached(invoice.receiptIds ?? []);
   }
 
   toast.success('Faktura byla vytvorena.');
@@ -1026,14 +1026,14 @@ export const approveInvoice = async (id: string): Promise<Invoice | null> => {
   }));
 
   if ((invoice.timelogIds ?? []).length > 0) {
-    markTimelogsAsPaid(invoice.timelogIds ?? []);
+    await markTimelogsAsPaid(invoice.timelogIds ?? []);
   } else {
-    markTimelogsAsPaidForInvoice(invoice.eid, invoice.cid);
+    await markTimelogsAsPaidForInvoice(invoice.eid, invoice.cid);
   }
   if ((invoice.receiptIds ?? []).length > 0) {
-    markReceiptsAsReimbursed(invoice.receiptIds ?? []);
+    await markReceiptsAsReimbursed(invoice.receiptIds ?? []);
   } else {
-    markReceiptsAsReimbursedForInvoice(invoice.eid, invoice.cid);
+    await markReceiptsAsReimbursedForInvoice(invoice.eid, invoice.cid);
   }
 
   return {

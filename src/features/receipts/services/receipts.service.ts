@@ -1,5 +1,7 @@
 import { appDataSource } from '../../../lib/app-config';
 import { getLocalAppState, subscribeToLocalAppState, updateLocalAppState } from '../../../lib/app-data';
+import { queryClient } from '../../../lib/query-client';
+import { queryKeys } from '../../../lib/query-keys';
 import { mapReceipt } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { Contractor, Event, ReceiptItem, ReceiptStatus } from '../../../types';
@@ -114,6 +116,103 @@ const ensureSupabaseReceiptsLoaded = () => {
     });
 };
 
+const invalidateReceiptQueries = () => {
+  void queryClient.invalidateQueries({ queryKey: queryKeys.receipts.all });
+};
+
+const getSupabaseProfileIdMap = async (): Promise<Map<number, string>> => {
+  if (!supabase) {
+    throw new Error('Supabase klient neni dostupny.');
+  }
+
+  const result = await supabase
+    .from('profiles')
+    .select('id')
+    .order('last_name')
+    .order('first_name');
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+
+  return new Map((result.data ?? []).map((row, index) => [index + 1, row.id]));
+};
+
+const getSupabaseEventIdMap = async (): Promise<Map<number, string>> => {
+  if (!supabase) {
+    throw new Error('Supabase klient neni dostupny.');
+  }
+
+  const result = await supabase
+    .from('events')
+    .select('id')
+    .order('date_from')
+    .order('name');
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+
+  return new Map((result.data ?? []).map((row, index) => [index + 1, row.id]));
+};
+
+const getSupabaseReceiptRowIds = async (): Promise<string[]> => {
+  if (!supabase) {
+    throw new Error('Supabase klient neni dostupny.');
+  }
+
+  const result = await supabase
+    .from('receipts')
+    .select('id')
+    .order('created_at');
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+
+  return (result.data ?? []).map((row) => row.id);
+};
+
+const getSupabaseReceiptRowId = async (localReceiptId: number): Promise<string> => {
+  const receiptRowIds = await getSupabaseReceiptRowIds();
+  const rowId = receiptRowIds[localReceiptId - 1];
+
+  if (!rowId) {
+    throw new Error('Nepodarilo se sparovat uctenku s databazovym zaznamem.');
+  }
+
+  return rowId;
+};
+
+const persistSupabaseReceiptStatus = async (
+  localReceiptIds: number[],
+  nextStatus: ReceiptStatus,
+): Promise<void> => {
+  if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
+    return;
+  }
+
+  const receiptRowIds = await getSupabaseReceiptRowIds();
+  const rowIds = Array.from(new Set(localReceiptIds.map((localId) => {
+    const rowId = receiptRowIds[localId - 1];
+    if (!rowId) {
+      throw new Error('Nepodarilo se sparovat uctenku s databazovym zaznamem.');
+    }
+    return rowId;
+  })));
+
+  await Promise.all(rowIds.map(async (rowId) => {
+    const result = await supabase
+      .from('receipts')
+      .update({ status: nextStatus })
+      .eq('id', rowId);
+
+    if (result.error) {
+      throw new Error(result.error.message);
+    }
+  }));
+};
+
 export const getReceipts = (search = ''): ReceiptItem[] => {
   ensureSupabaseReceiptsLoaded();
   const snapshot = getLocalAppState();
@@ -157,13 +256,16 @@ export const createEmptyReceipt = (contractorId: number): ReceiptItem => ({
   status: 'draft',
 });
 
-export const updateReceiptStatus = (id: number, action: ReceiptAction): ReceiptItem => {
+export const updateReceiptStatus = async (id: number, action: ReceiptAction): Promise<ReceiptItem> => {
   const statusMap: Record<ReceiptAction, ReceiptStatus> = {
     submit: 'submitted',
     approve: 'approved',
     reimburse: 'reimbursed',
     reject: 'rejected',
   };
+  const nextStatus = statusMap[action];
+
+  await persistSupabaseReceiptStatus([id], nextStatus);
 
   let updatedReceipt: ReceiptItem | null = null;
 
@@ -174,7 +276,7 @@ export const updateReceiptStatus = (id: number, action: ReceiptAction): ReceiptI
 
       updatedReceipt = {
         ...receipt,
-        status: statusMap[action],
+        status: nextStatus,
       };
 
       return updatedReceipt;
@@ -185,14 +287,61 @@ export const updateReceiptStatus = (id: number, action: ReceiptAction): ReceiptI
     throw new Error('Uctenka nebyla nalezena.');
   }
 
+  invalidateReceiptQueries();
   return updatedReceipt;
 };
 
-export const saveReceipt = (updated: ReceiptItem): ReceiptItem => {
+export const saveReceipt = async (updated: ReceiptItem): Promise<ReceiptItem> => {
   const normalizedReceipt = normalizeReceipt(updated);
 
   if (!normalizedReceipt.eid || !normalizedReceipt.cid || !normalizedReceipt.title || normalizedReceipt.amount <= 0) {
     throw new Error('Vyplnte akci, nazev uctenky a castku.');
+  }
+
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    const existing = (getLocalAppState().receipts ?? []).some((receipt) => receipt.id === normalizedReceipt.id);
+    const [profileIdMap, eventIdMap] = await Promise.all([
+      getSupabaseProfileIdMap(),
+      getSupabaseEventIdMap(),
+    ]);
+    const contractorRowId = normalizedReceipt.contractorProfileId ?? profileIdMap.get(normalizedReceipt.cid);
+    const eventRowId = eventIdMap.get(normalizedReceipt.eid);
+
+    if (!contractorRowId || !eventRowId) {
+      throw new Error('Nepodarilo se sparovat uctenku s databazovym zaznamem.');
+    }
+
+    const payload = {
+      contractor_id: contractorRowId,
+      event_id: eventRowId,
+      job_number: normalizedReceipt.job,
+      name: normalizedReceipt.title,
+      supplier: normalizedReceipt.vendor,
+      amount: normalizedReceipt.amount,
+      paid_at: normalizedReceipt.paidAt,
+      note: normalizedReceipt.note,
+      status: normalizedReceipt.status,
+    };
+
+    if (existing) {
+      const receiptRowId = await getSupabaseReceiptRowId(normalizedReceipt.id);
+      const receiptUpdate = await supabase
+        .from('receipts')
+        .update(payload)
+        .eq('id', receiptRowId);
+
+      if (receiptUpdate.error) {
+        throw new Error(receiptUpdate.error.message);
+      }
+    } else {
+      const receiptInsert = await supabase
+        .from('receipts')
+        .insert(payload);
+
+      if (receiptInsert.error) {
+        throw new Error(receiptInsert.error.message);
+      }
+    }
   }
 
   updateLocalAppState((snapshot) => {
@@ -208,20 +357,41 @@ export const saveReceipt = (updated: ReceiptItem): ReceiptItem => {
     };
   });
 
+  invalidateReceiptQueries();
   return normalizedReceipt;
 };
 
-export const deleteReceipt = (id: number): { id: number } => {
+export const deleteReceipt = async (id: number): Promise<{ id: number }> => {
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    const receiptRowId = await getSupabaseReceiptRowId(id);
+    const receiptDelete = await supabase
+      .from('receipts')
+      .delete()
+      .eq('id', receiptRowId);
+
+    if (receiptDelete.error) {
+      throw new Error(receiptDelete.error.message);
+    }
+  }
+
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     receipts: snapshot.receipts.filter((receipt) => receipt.id !== id),
   }));
 
+  invalidateReceiptQueries();
   return { id };
 };
 
-export const markApprovedReceiptsAsAttached = (): ReceiptItem[] => {
+export const markApprovedReceiptsAsAttached = async (): Promise<ReceiptItem[]> => {
   const updatedReceipts: ReceiptItem[] = [];
+  const localReceiptIds = (getLocalAppState().receipts ?? [])
+    .filter((receipt) => receipt.status === 'approved')
+    .map((receipt) => receipt.id);
+
+  if (localReceiptIds.length > 0) {
+    await persistSupabaseReceiptStatus(localReceiptIds, 'attached');
+  }
 
   updateLocalAppState((snapshot) => ({
     ...snapshot,
@@ -238,12 +408,17 @@ export const markApprovedReceiptsAsAttached = (): ReceiptItem[] => {
     }),
   }));
 
+  invalidateReceiptQueries();
   return updatedReceipts;
 };
 
-export const markReceiptsAsAttached = (receiptIds: number[]): ReceiptItem[] => {
+export const markReceiptsAsAttached = async (receiptIds: number[]): Promise<ReceiptItem[]> => {
   const idSet = new Set(receiptIds);
   const updatedReceipts: ReceiptItem[] = [];
+
+  if (receiptIds.length > 0) {
+    await persistSupabaseReceiptStatus(receiptIds, 'attached');
+  }
 
   updateLocalAppState((snapshot) => ({
     ...snapshot,
@@ -260,11 +435,22 @@ export const markReceiptsAsAttached = (receiptIds: number[]): ReceiptItem[] => {
     }),
   }));
 
+  invalidateReceiptQueries();
   return updatedReceipts;
 };
 
-export const markReceiptsAsReimbursedForInvoice = (eventId: number, contractorId: number): ReceiptItem[] => {
+export const markReceiptsAsReimbursedForInvoice = async (
+  eventId: number,
+  contractorId: number,
+): Promise<ReceiptItem[]> => {
   const updatedReceipts: ReceiptItem[] = [];
+  const localReceiptIds = (getLocalAppState().receipts ?? [])
+    .filter((receipt) => receipt.eid === eventId && receipt.cid === contractorId && receipt.status === 'attached')
+    .map((receipt) => receipt.id);
+
+  if (localReceiptIds.length > 0) {
+    await persistSupabaseReceiptStatus(localReceiptIds, 'reimbursed');
+  }
 
   updateLocalAppState((snapshot) => ({
     ...snapshot,
@@ -281,12 +467,17 @@ export const markReceiptsAsReimbursedForInvoice = (eventId: number, contractorId
     }),
   }));
 
+  invalidateReceiptQueries();
   return updatedReceipts;
 };
 
-export const markReceiptsAsReimbursed = (receiptIds: number[]): ReceiptItem[] => {
+export const markReceiptsAsReimbursed = async (receiptIds: number[]): Promise<ReceiptItem[]> => {
   const idSet = new Set(receiptIds);
   const updatedReceipts: ReceiptItem[] = [];
+
+  if (receiptIds.length > 0) {
+    await persistSupabaseReceiptStatus(receiptIds, 'reimbursed');
+  }
 
   updateLocalAppState((snapshot) => ({
     ...snapshot,
@@ -303,6 +494,7 @@ export const markReceiptsAsReimbursed = (receiptIds: number[]): ReceiptItem[] =>
     }),
   }));
 
+  invalidateReceiptQueries();
   return updatedReceipts;
 };
 

@@ -78,7 +78,7 @@ interface AppContextType {
   setEventsFilter: (filter: 'upcoming' | 'past' | 'all') => void;
   eventsCalendarDate: string;
   setEventsCalendarDate: (date: string) => void;
-  handleDelete: () => void;
+  handleDelete: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -154,30 +154,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [authRole, isAuthRequired, role]);
 
-  const handleDelete = useCallback(() => {
+  const handleDelete = useCallback(async () => {
     if (!deleteConfirm) return;
     const { type, id } = deleteConfirm;
 
-    switch (type) {
-      case 'client':
-        deleteClient(Number(id));
-        break;
-      case 'project':
-        deleteProject(String(id));
-        break;
-      case 'event':
-        deleteEvent(Number(id));
-        break;
-      case 'crew':
-        deleteCrew(Number(id));
-        break;
-      case 'receipt':
-        deleteReceipt(Number(id));
-        break;
-    }
+    try {
+      switch (type) {
+        case 'client':
+          deleteClient(Number(id));
+          break;
+        case 'project':
+          deleteProject(String(id));
+          break;
+        case 'event':
+          deleteEvent(Number(id));
+          break;
+        case 'crew':
+          deleteCrew(Number(id));
+          break;
+        case 'receipt':
+          await deleteReceipt(Number(id));
+          break;
+      }
 
-    setDeleteConfirm(null);
-    toast.success(`${deleteConfirm.name} smazano.`);
+      setDeleteConfirm(null);
+      toast.success(`${deleteConfirm.name} smazano.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Nepodarilo se polozku smazat.');
+    }
   }, [deleteConfirm]);
 
   const value: AppContextType = {

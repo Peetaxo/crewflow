@@ -11,7 +11,7 @@ import { getInvoices, subscribeToInvoiceChanges } from '../../features/invoices/
 import { getCandidates, subscribeToCandidateChanges } from '../../features/recruitment/services/candidates.service';
 
 const Sidebar: React.FC = () => {
-  const { isAuthRequired, profile, role: authRole, signOut } = useAuth();
+  const { currentProfileId, isAuthRequired, profile, role: authRole, signOut } = useAuth();
   const {
     sidebarCollapsed, setSidebarCollapsed,
     role, setRole,
@@ -51,13 +51,13 @@ const Sidebar: React.FC = () => {
 
   const badgeCounts: Record<string, number> = useMemo(() => ({
     timelogs: timelogs.filter((t) => t.status === 'pending_ch' || t.status === 'pending_coo').length,
-    'my-timelogs': timelogs.filter((t) => t.cid === 1 && (t.status === 'draft' || t.status === 'pending_ch' || t.status === 'pending_coo' || t.status === 'rejected')).length,
+    'my-timelogs': timelogs.filter((t) => t.contractorProfileId === currentProfileId && (t.status === 'draft' || t.status === 'pending_ch' || t.status === 'pending_coo' || t.status === 'rejected')).length,
     invoices: invoices.filter((i) => i.status === 'sent').length,
-    'my-invoices': invoices.filter((i) => i.cid === 1 && i.status !== 'paid').length,
+    'my-invoices': invoices.filter((i) => i.contractorProfileId === currentProfileId && i.status !== 'paid').length,
     receipts: receipts.filter((r) => r.status === 'submitted' || r.status === 'approved').length,
-    'my-receipts': receipts.filter((r) => r.cid === 1 && r.status !== 'reimbursed').length,
+    'my-receipts': receipts.filter((r) => r.contractorProfileId === currentProfileId && r.status !== 'reimbursed').length,
     recruitment: candidates.filter((c) => c.stage === 'new').length,
-  }), [timelogs, invoices, receipts, candidates]);
+  }), [candidates, currentProfileId, invoices, receipts, timelogs]);
 
   const handleNavClick = (tabId: string) => {
     setCurrentTab(tabId);

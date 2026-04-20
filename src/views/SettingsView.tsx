@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, Moon, Palette, Sun, UserRound } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useAuth } from '../app/providers/AuthProvider';
 import { useAppContext } from '../context/AppContext';
 import type { Contractor } from '../types';
 import {
@@ -11,6 +12,7 @@ import {
 
 const SettingsView = () => {
   const { darkMode, setDarkMode, settingsSection, setSettingsSection } = useAppContext();
+  const { currentProfileId } = useAuth();
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
 
@@ -39,8 +41,7 @@ const SettingsView = () => {
 
   useEffect(() => subscribeToCrewChanges(loadData), [loadData]);
 
-  const safeContractors = contractors ?? [];
-  const me = safeContractors[0] ?? null;
+  const me = contractors.find((item) => item.profileId === currentProfileId) ?? null;
 
   useEffect(() => {
     if (!me) return;

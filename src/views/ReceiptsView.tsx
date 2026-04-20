@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useAuth } from '../app/providers/AuthProvider';
 import { useAppContext } from '../context/AppContext';
 import { Contractor, Event, ReceiptItem } from '../types';
 import { formatCurrency, formatShortDate } from '../utils';
@@ -24,6 +25,7 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
     setEditingReceipt,
     setDeleteConfirm,
   } = useAppContext();
+  const { currentContractorId, currentProfileId } = useAuth();
   const [receipts, setReceipts] = useState<ReceiptItem[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [contractors, setContractors] = useState<Contractor[]>([]);
@@ -51,7 +53,9 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
   ), [contractors]);
 
   const isCrew = role === 'crew';
-  const baseReceipts = scope === 'mine' ? receipts.filter((receipt) => receipt.cid === 1) : receipts;
+  const baseReceipts = scope === 'mine'
+    ? receipts.filter((receipt) => receipt.contractorProfileId === currentProfileId)
+    : receipts;
   const title = scope === 'mine' ? 'Moje účtenky' : 'Účtenky';
 
   const stats = useMemo(() => ({
@@ -72,7 +76,7 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
         </div>
 
         <button
-          onClick={() => setEditingReceipt(createEmptyReceipt(isCrew ? 1 : contractors[0]?.id || 1))}
+          onClick={() => setEditingReceipt(createEmptyReceipt(currentContractorId ?? (isCrew ? 1 : contractors[0]?.id || 1)))}
           className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700"
         >
           <span className="inline-flex items-center gap-1.5">

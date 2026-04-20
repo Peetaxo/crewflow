@@ -3,6 +3,7 @@ import { Calendar, Clock, CheckCircle2, Receipt } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { format, parseISO } from 'date-fns';
+import { useAuth } from '../app/providers/AuthProvider';
 import { useAppContext } from '../context/AppContext';
 import { Contractor, Event, Invoice, ReceiptItem, Timelog } from '../types';
 import { calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
@@ -17,13 +18,14 @@ import { getInvoices, subscribeToInvoiceChanges } from '../features/invoices/ser
 
 const MyShiftsView = () => {
   const { darkMode, searchQuery } = useAppContext();
+  const { currentProfileId } = useAuth();
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [timelogs, setTimelogs] = useState<Timelog[]>([]);
   const [receipts, setReceipts] = useState<ReceiptItem[]>([]);
   const [projects, setProjects] = useState(() => getProjects() ?? []);
-  const me = contractors[0];
+  const me = contractors.find((item) => item.profileId === currentProfileId) ?? null;
   const [activeTab, setActiveTab] = useState<'upcoming' | 'processing' | 'invoiced' | 'invoices'>('upcoming');
   const [chartPeriod, setChartPeriod] = useState<'month' | 'quarter' | 'year'>('month');
 
@@ -45,10 +47,10 @@ const MyShiftsView = () => {
   useEffect(() => subscribeToTimelogChanges(loadData), [loadData]);
   useEffect(() => subscribeToReceiptChanges(loadData), [loadData]);
   useEffect(() => subscribeToProjectChanges(() => setProjects(getProjects() ?? [])), []);
-  const meId = me?.id ?? null;
-  const myTimelogs = timelogs.filter((timelog) => timelog.cid === meId);
-  const myInvoices = invoices.filter((invoice) => invoice.cid === meId);
-  const myReceipts = receipts.filter((receipt) => receipt.cid === meId);
+  const meProfileId = me?.profileId ?? null;
+  const myTimelogs = timelogs.filter((timelog) => timelog.contractorProfileId === meProfileId);
+  const myInvoices = invoices.filter((invoice) => invoice.contractorProfileId === meProfileId);
+  const myReceipts = receipts.filter((receipt) => receipt.contractorProfileId === meProfileId);
 
   const categorized = useMemo(() => ({
     upcoming: myTimelogs.filter((timelog) => timelog.status === 'draft'),

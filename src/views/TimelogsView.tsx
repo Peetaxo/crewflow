@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
+import { useAuth } from '../app/providers/AuthProvider';
 import { useAppContext } from '../context/AppContext';
 import { KM_RATE } from '../data';
 import { Contractor, Event, Timelog } from '../types';
@@ -26,6 +27,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
     timelogFilter,
     setTimelogFilter,
   } = useAppContext();
+  const { currentProfileId } = useAuth();
 
   const [viewMode, setViewMode] = useState<ViewMode>(scope === 'mine' ? 'people' : 'job');
   const [timelogs, setTimelogs] = useState<Timelog[]>([]);
@@ -54,7 +56,9 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
     events.find((event) => event.id === id) ?? null
   ), [events]);
 
-  const baseTimelogs = scope === 'mine' ? timelogs.filter((timelog) => timelog.cid === 1) : timelogs;
+  const baseTimelogs = scope === 'mine'
+    ? timelogs.filter((timelog) => timelog.contractorProfileId === currentProfileId)
+    : timelogs;
   const filtered = timelogFilter === 'all' ? baseTimelogs : baseTimelogs.filter((timelog) => timelog.status === timelogFilter);
   const isCrew = role === 'crew';
   const title = scope === 'mine' ? 'Moje timelogy' : 'Timelogy';

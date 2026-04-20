@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, Info } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
+import { useAuth } from '../app/providers/AuthProvider';
 import { useAppContext } from '../context/AppContext';
 import { Contractor, Event, Invoice } from '../types';
 import { formatCurrency, formatShortDate, getCountdown } from '../utils';
@@ -32,6 +33,7 @@ interface InvoicesViewProps {
 }
 
 const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
+  const { currentProfileId } = useAuth();
   const { role, searchQuery, setNavigationGuardMessage } = useAppContext();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [contractors, setContractors] = useState<Contractor[]>([]);
@@ -76,7 +78,7 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
   ), [events]);
 
   const visibleInvoices = scope === 'mine'
-    ? invoices.filter((invoice) => invoice.cid === 1)
+    ? invoices.filter((invoice) => invoice.contractorProfileId === currentProfileId)
     : invoices;
   const isCrew = role === 'crew';
 

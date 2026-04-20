@@ -1,15 +1,21 @@
 # MacBook Handoff
 
-Tento soubor je určený jako rychlý start pro přesun vývoje na nový MacBook.
+Tento soubor je určený jako rychlý start pro pokračování vývoje na novém zařízení.
 
-## Co je to za repo
+## Důležitý princip
 
-- Repo: `crewflow`
-- Aktivní větev: `main`
-- Poslední pracovní kopie na Windows byla:
-  - `C:\Users\HelpO\Downloads\crewflow-main\_git_seed`
+**Source of truth je GitHub repo, ne původní lokální složka na Windows.**
 
-Pokud pokračuješ na MacBooku, ber tuhle kopii v repu jako **source of truth**.
+To znamená:
+- na MacBooku neřešíš původní cestu na disku
+- prostě naklonuješ aktuální repo z GitHubu
+- a pokračuješ z nejnovějšího commitu na větvi `main`
+
+## Co znamená `main`
+
+- `main` je hlavní aktuální větev projektu
+- po klonu se ti standardně stáhne právě tato větev
+- je to nejnovější pracovní stav aplikace
 
 ## Co udělat po klonu na MacBooku
 
@@ -17,7 +23,7 @@ Pokud pokračuješ na MacBooku, ber tuhle kopii v repu jako **source of truth**.
    - `git`
    - `Node.js` LTS
    - `npm`
-   - `Codex` pokud chceš pokračovat stejným AI workflow
+   - `Codex`, pokud chceš pokračovat stejným AI workflow
 
 2. Naklonovat repo:
 
@@ -48,14 +54,24 @@ VITE_APP_DATA_SOURCE=supabase
 npm run dev
 ```
 
-## Důležité
+## Co se přenese z GitHubu automaticky
 
-`.env.local` není v repu, takže se po klonu nepřenese.  
-Stejně tak se nepřenese lokální konfigurace Codexu ani lokálně instalované skills.
+- celý zdrojový kód
+- `WORKFLOW.md`
+- `TODO.md`
+- `docs/...` plány a specy
+- `supabase/...` SQL drafty
 
-## Pokud chceš stejný Codex workflow jako na Windows
+## Co se z GitHubu nepřenese
 
-Na novém MacBooku bude potřeba:
+- `.env.local`
+- lokální preview logy
+- lokální konfigurace Codexu
+- lokálně nainstalované skills v `~/.codex/...`
+
+## Pokud chceš stejný Codex workflow jako na předchozím stroji
+
+Na MacBooku bude potřeba:
 
 1. nainstalovat Codex
 2. znovu nainstalovat `superpowers`
@@ -65,10 +81,11 @@ Plány, specy a workflow poznámky už v repu jsou, takže ty se po klonu přene
 
 ## Co si má nový Codex přečíst jako první
 
-1. `WORKFLOW.md`
-2. `TODO.md`
-3. `docs/superpowers/specs/2026-04-15-invoice-workflow-design.md`
-4. `docs/superpowers/plans/2026-04-15-uuid-identity-migration.md`
+1. `MACBOOK-HANDOFF.md`
+2. `WORKFLOW.md`
+3. `TODO.md`
+4. `docs/superpowers/specs/2026-04-15-invoice-workflow-design.md`
+5. `docs/superpowers/plans/2026-04-15-uuid-identity-migration.md`
 
 ## Aktuální stav projektu
 
@@ -155,9 +172,9 @@ K tomu existuje spec:
 
 - `docs/superpowers/specs/2026-04-15-invoice-workflow-design.md`
 
-## Doporučení pro nový stroj
+## Doporučení pro přechod
 
 Jakmile vše funguje na MacBooku:
 
-- přestaň používat Windows kopii
+- přestaň používat starou Windows kopii
 - ať nevzniknou dvě paralelní pracovní verze projektu

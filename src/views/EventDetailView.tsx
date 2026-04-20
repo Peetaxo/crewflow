@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Clock, FileText, MapPin, Receipt, Shirt, Trash2, User, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { toast } from 'sonner';
 import { useAppContext } from '../context/AppContext';
 import { KM_RATE } from '../data';
 import { PHASE_CONFIG } from '../constants';
@@ -75,7 +76,9 @@ const EventDetailView = () => {
   );
 
   const handleRemoveFromEvent = (contractorId: number) => {
-    removeContractorFromEvent(event.id, contractorId);
+    void removeContractorFromEvent(event.id, contractorId).catch((error) => {
+      toast.error(error instanceof Error ? error.message : 'Nepodařilo se odebrat člena crew.');
+    });
   };
 
   return (

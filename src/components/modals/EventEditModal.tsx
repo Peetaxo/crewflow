@@ -103,9 +103,9 @@ const EventEditModal = ({
     });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     try {
-      saveEvent({ ...editingEvent, phaseSchedules });
+      await saveEvent({ ...editingEvent, phaseSchedules });
       onClose();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Nepodarilo se ulozit akci.');

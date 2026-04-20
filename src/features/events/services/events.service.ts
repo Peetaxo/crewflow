@@ -1,5 +1,7 @@
 import { appDataSource } from '../../../lib/app-config';
 import { getLocalAppState, subscribeToLocalAppState, updateLocalAppState } from '../../../lib/app-data';
+import { queryClient } from '../../../lib/query-client';
+import { queryKeys } from '../../../lib/query-keys';
 import { mapClient, mapEvent } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { getDatesBetween, getEventStatus } from '../../../utils';
@@ -14,6 +16,7 @@ const createSlotId = () => `${Date.now().toString(36)}-${Math.random().toString(
 
 let eventsHydrationPromise: Promise<void> | null = null;
 let eventsLoaded = false;
+const eventRowIdByLocalId = new Map<number, string>();
 
 export const fetchEventsSnapshot = async (): Promise<Event[]> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
@@ -52,6 +55,11 @@ export const fetchEventsSnapshot = async (): Promise<Event[]> => {
     };
   });
 
+  eventRowIdByLocalId.clear();
+  eventRows.forEach((row, index) => {
+    eventRowIdByLocalId.set(index + 1, row.id);
+  });
+
   return supabaseEvents;
 };
 
@@ -87,6 +95,161 @@ const ensureSupabaseEventsLoaded = () => {
       eventsHydrationPromise = null;
     });
 };
+
+const invalidateEventQueries = () => {
+  void queryClient.invalidateQueries({ queryKey: queryKeys.events.all });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.timelogs.all });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.receipts.all });
+};
+
+const getSupabaseClientRows = async (): Promise<Array<{ id: string; name: string }>> => {
+  if (!supabase) {
+    throw new Error('Supabase klient neni dostupny.');
+  }
+
+  const result = await supabase
+    .from('clients')
+    .select('id,name')
+    .order('name');
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+
+  return result.data ?? [];
+};
+
+const getSupabaseProjectRows = async (): Promise<Array<{ id: string; job_number: string; client_id: string | null }>> => {
+  if (!supabase) {
+    throw new Error('Supabase klient neni dostupny.');
+  }
+
+  const result = await supabase
+    .from('projects')
+    .select('id,job_number,client_id')
+    .order('job_number');
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+
+  return result.data ?? [];
+};
+
+const getSupabaseEventRows = async (): Promise<Array<{ id: string; date_from: string | null; name: string }>> => {
+  if (!supabase) {
+    throw new Error('Supabase klient neni dostupny.');
+  }
+
+  const result = await supabase
+    .from('events')
+    .select('id,date_from,name')
+    .order('date_from')
+    .order('name');
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+
+  return result.data ?? [];
+};
+
+const getSupabaseProfileRows = async (): Promise<Array<{ id: string }>> => {
+  if (!supabase) {
+    throw new Error('Supabase klient neni dostupny.');
+  }
+
+  const result = await supabase
+    .from('profiles')
+    .select('id')
+    .order('last_name')
+    .order('first_name');
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+
+  return result.data ?? [];
+};
+
+const getSupabaseEventRowId = async (localEventId: number): Promise<string> => {
+  const mapped = eventRowIdByLocalId.get(localEventId);
+  if (mapped) {
+    return mapped;
+  }
+
+  const eventRows = await getSupabaseEventRows();
+  eventRows.forEach((row, index) => {
+    eventRowIdByLocalId.set(index + 1, row.id);
+  });
+
+  const rowId = eventRowIdByLocalId.get(localEventId);
+  if (!rowId) {
+    throw new Error('Nepodarilo se sparovat akci s databazovym zaznamem.');
+  }
+
+  return rowId;
+};
+
+const getSupabaseProfileIdMap = async (): Promise<Map<number, string>> => (
+  new Map((await getSupabaseProfileRows()).map((row, index) => [index + 1, row.id]))
+);
+
+const ensureSupabaseProjectRowId = async (event: Event): Promise<string | null> => {
+  if (!supabase) {
+    throw new Error('Supabase klient neni dostupny.');
+  }
+
+  const [projectRows, clientRows] = await Promise.all([
+    getSupabaseProjectRows(),
+    getSupabaseClientRows(),
+  ]);
+  const existingProject = projectRows.find((project) => project.job_number === event.job);
+  if (existingProject) {
+    return existingProject.id;
+  }
+
+  const matchingClient = clientRows.find((client) => client.name === event.client);
+  const projectInsert = await supabase
+    .from('projects')
+    .insert({
+      job_number: event.job,
+      name: event.name || event.job,
+      client_id: matchingClient?.id ?? null,
+      note: '',
+    })
+    .select('id')
+    .single();
+
+  if (projectInsert.error) {
+    throw new Error(projectInsert.error.message);
+  }
+
+  return projectInsert.data?.id ?? null;
+};
+
+const toSupabaseEventPayload = async (event: Event) => ({
+  name: event.name,
+  project_id: await ensureSupabaseProjectRowId(event),
+  job_number: event.job,
+  client_name: event.client,
+  date_from: event.startDate,
+  date_to: event.endDate,
+  time_from: event.startTime ?? null,
+  time_to: event.endTime ?? null,
+  city: event.city,
+  crew_needed: event.needed,
+  crew_filled: event.filled,
+  status: event.status,
+  description: event.description ?? null,
+  contact_person: event.contactPerson ?? null,
+  dresscode: event.dresscode ?? null,
+  meeting_point: event.meetingLocation ?? null,
+  show_day_types: event.showDayTypes ?? false,
+  day_types: event.dayTypes ?? null,
+  phase_times: event.phaseTimes ?? null,
+  phase_schedules: event.phaseSchedules ?? null,
+});
 
 export const getEvents = (search = ''): Event[] => {
   ensureSupabaseEventsLoaded();
@@ -314,9 +477,40 @@ export const syncEventTimelogs = (timelogs: Timelog[], event: Event): Timelog[] 
   })
 );
 
-export const saveEvent = (event: Event): Event => {
+export const saveEvent = async (event: Event): Promise<Event> => {
   const normalized = normalizeEvent(event);
   validateEvent(normalized);
+
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    const exists = (getLocalAppState().events ?? []).some((item) => item.id === normalized.id);
+    const payload = await toSupabaseEventPayload(normalized);
+
+    if (exists) {
+      const eventRowId = await getSupabaseEventRowId(normalized.id);
+      const eventUpdate = await supabase
+        .from('events')
+        .update(payload)
+        .eq('id', eventRowId);
+
+      if (eventUpdate.error) {
+        throw new Error(eventUpdate.error.message);
+      }
+    } else {
+      const eventInsert = await supabase
+        .from('events')
+        .insert(payload)
+        .select('id')
+        .single();
+
+      if (eventInsert.error) {
+        throw new Error(eventInsert.error.message);
+      }
+
+      if (eventInsert.data?.id) {
+        eventRowIdByLocalId.set(normalized.id, eventInsert.data.id);
+      }
+    }
+  }
 
   updateLocalAppState((snapshot) => {
     const exists = snapshot.events.some((item) => item.id === normalized.id);
@@ -332,10 +526,65 @@ export const saveEvent = (event: Event): Event => {
     };
   });
 
+  invalidateEventQueries();
   return normalized;
 };
 
-export const deleteEvent = (eventId: number): { id: number } => {
+export const deleteEvent = async (eventId: number): Promise<{ id: number }> => {
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    const eventRowId = await getSupabaseEventRowId(eventId);
+    const eventTimelogs = await supabase
+      .from('timelogs')
+      .select('id')
+      .eq('event_id', eventRowId);
+
+    if (eventTimelogs.error) {
+      throw new Error(eventTimelogs.error.message);
+    }
+
+    const timelogRowIds = (eventTimelogs.data ?? []).map((row) => row.id);
+
+    if (timelogRowIds.length > 0) {
+      const timelogDaysDelete = await supabase
+        .from('timelog_days')
+        .delete()
+        .in('timelog_id', timelogRowIds);
+
+      if (timelogDaysDelete.error) {
+        throw new Error(timelogDaysDelete.error.message);
+      }
+
+      const timelogDelete = await supabase
+        .from('timelogs')
+        .delete()
+        .in('id', timelogRowIds);
+
+      if (timelogDelete.error) {
+        throw new Error(timelogDelete.error.message);
+      }
+    }
+
+    const receiptDelete = await supabase
+      .from('receipts')
+      .delete()
+      .eq('event_id', eventRowId);
+
+    if (receiptDelete.error) {
+      throw new Error(receiptDelete.error.message);
+    }
+
+    const eventDelete = await supabase
+      .from('events')
+      .delete()
+      .eq('id', eventRowId);
+
+    if (eventDelete.error) {
+      throw new Error(eventDelete.error.message);
+    }
+
+    eventRowIdByLocalId.delete(eventId);
+  }
+
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     events: snapshot.events.filter((event) => event.id !== eventId),
@@ -343,6 +592,7 @@ export const deleteEvent = (eventId: number): { id: number } => {
     receipts: snapshot.receipts.filter((receipt) => receipt.eid !== eventId),
   }));
 
+  invalidateEventQueries();
   return { id: eventId };
 };
 
@@ -354,9 +604,53 @@ export const getEventCrew = (eventId: number): Contractor[] => {
   ));
 };
 
-export const removeContractorFromEvent = (eventId: number, contractorId: number) => {
+export const removeContractorFromEvent = async (eventId: number, contractorId: number) => {
   let nextEvent: Event | null = null;
   let nextTimelogs: Timelog[] = [];
+
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    const [eventRowId, profileIdMap] = await Promise.all([
+      getSupabaseEventRowId(eventId),
+      getSupabaseProfileIdMap(),
+    ]);
+    const profileRowId = profileIdMap.get(contractorId);
+
+    if (!profileRowId) {
+      throw new Error('Nepodarilo se sparovat clena crew s databazovym zaznamem.');
+    }
+
+    const timelogRows = await supabase
+      .from('timelogs')
+      .select('id')
+      .eq('event_id', eventRowId)
+      .eq('contractor_id', profileRowId);
+
+    if (timelogRows.error) {
+      throw new Error(timelogRows.error.message);
+    }
+
+    const timelogRowIds = (timelogRows.data ?? []).map((row) => row.id);
+
+    if (timelogRowIds.length > 0) {
+      const timelogDaysDelete = await supabase
+        .from('timelog_days')
+        .delete()
+        .in('timelog_id', timelogRowIds);
+
+      if (timelogDaysDelete.error) {
+        throw new Error(timelogDaysDelete.error.message);
+      }
+
+      const timelogDelete = await supabase
+        .from('timelogs')
+        .delete()
+        .in('id', timelogRowIds);
+
+      if (timelogDelete.error) {
+        throw new Error(timelogDelete.error.message);
+      }
+    }
+  }
 
   updateLocalAppState((snapshot) => {
     const event = snapshot.events.find((item) => item.id === eventId);
@@ -377,6 +671,19 @@ export const removeContractorFromEvent = (eventId: number, contractorId: number)
     };
   });
 
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured && nextEvent) {
+    const eventRowId = await getSupabaseEventRowId(eventId);
+    const eventUpdate = await supabase
+      .from('events')
+      .update({ crew_filled: nextEvent.filled })
+      .eq('id', eventRowId);
+
+    if (eventUpdate.error) {
+      throw new Error(eventUpdate.error.message);
+    }
+  }
+
+  invalidateEventQueries();
   return {
     event: nextEvent as Event,
     timelogs: nextTimelogs,
@@ -469,11 +776,11 @@ export const buildTimelogDaysForEvent = (
     .sort((a, b) => `${a.d}${a.f}${a.type}`.localeCompare(`${b.d}${b.f}${b.type}`));
 };
 
-export const assignCrewToEvent = (
+export const assignCrewToEvent = async (
   eventId: number,
   contractorId: number,
   phaseChoices?: Array<TimelogType | 'all'>,
-): EventAssignmentResult => {
+): Promise<EventAssignmentResult> => {
   const snapshot = getLocalAppState();
   const event = snapshot.events.find((item) => item.id === eventId);
 
@@ -512,12 +819,69 @@ export const assignCrewToEvent = (
     },
   };
 
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    const [eventRowId, profileIdMap] = await Promise.all([
+      getSupabaseEventRowId(event.id),
+      getSupabaseProfileIdMap(),
+    ]);
+    const profileRowId = profileIdMap.get(contractorId);
+
+    if (!profileRowId) {
+      throw new Error('Nepodarilo se sparovat clena crew s databazovym zaznamem.');
+    }
+
+    const timelogInsert = await supabase
+      .from('timelogs')
+      .insert({
+        event_id: eventRowId,
+        contractor_id: profileRowId,
+        km: 0,
+        note: '',
+        status: 'draft',
+      })
+      .select('id')
+      .single();
+
+    if (timelogInsert.error) {
+      throw new Error(timelogInsert.error.message);
+    }
+
+    const timelogRowId = timelogInsert.data?.id;
+    if (!timelogRowId) {
+      throw new Error('Nepodarilo se vytvorit vykaz pro prirazeni crew.');
+    }
+
+    const timelogDaysInsert = await supabase
+      .from('timelog_days')
+      .insert(assignment.timelog.days.map((day) => ({
+        timelog_id: timelogRowId,
+        date: day.d,
+        time_from: day.f,
+        time_to: day.t,
+        day_type: day.type,
+      })));
+
+    if (timelogDaysInsert.error) {
+      throw new Error(timelogDaysInsert.error.message);
+    }
+
+    const eventUpdate = await supabase
+      .from('events')
+      .update({ crew_filled: assignment.event.filled })
+      .eq('id', eventRowId);
+
+    if (eventUpdate.error) {
+      throw new Error(eventUpdate.error.message);
+    }
+  }
+
   updateLocalAppState((currentSnapshot) => ({
     ...currentSnapshot,
     events: currentSnapshot.events.map((item) => item.id === eventId ? assignment.event : item),
     timelogs: [...currentSnapshot.timelogs, assignment.timelog],
   }));
 
+  invalidateEventQueries();
   return assignment;
 };
 

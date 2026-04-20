@@ -167,7 +167,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           deleteProject(String(id));
           break;
         case 'event':
-          deleteEvent(Number(id));
+          await deleteEvent(Number(id));
           break;
         case 'crew':
           deleteCrew(Number(id));

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Event, Timelog } from '../../../types';
 
 describe('events.service fetch snapshot', () => {
   beforeEach(() => {
@@ -134,5 +135,260 @@ describe('events.service fetch snapshot', () => {
         client: 'Klient A',
       },
     ]);
+  });
+});
+
+const createSnapshot = (overrides?: Partial<{
+  events: Event[];
+  projects: Array<{ id: string; name: string; client: string; createdAt: string; note: string }>;
+  clients: Array<{ id: number; name: string }>;
+  contractors: Array<{ id: number; profileId?: string; name: string; ii: string; bg: string; fg: string; tags: string[]; events: number; rate: number; phone: string; email: string; ico: string; dic: string; bank: string; city: string; reliable: boolean; note: string }>;
+  timelogs: Timelog[];
+  receipts: Array<{ id: number; eid: number }>;
+}>) => ({
+  events: [],
+  projects: [
+    { id: 'AK001', name: 'Projekt 1', client: 'Klient A', createdAt: '2026-04-10', note: '' },
+  ],
+  clients: [
+    { id: 1, name: 'Klient A' },
+  ],
+  contractors: [
+    {
+      id: 1,
+      profileId: 'profile-uuid-1',
+      name: 'Test User',
+      ii: 'TU',
+      bg: '#000',
+      fg: '#fff',
+      tags: [],
+      events: 0,
+      rate: 250,
+      phone: '',
+      email: '',
+      ico: '',
+      dic: '',
+      bank: '',
+      city: 'Praha',
+      reliable: true,
+      note: '',
+    },
+  ],
+  timelogs: [],
+  receipts: [],
+  invoices: [],
+  candidates: [],
+  ...overrides,
+});
+
+describe('events.service write flow', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+  });
+
+  it('persists a new event to Supabase with the mapped project row id', async () => {
+    let snapshot = createSnapshot();
+
+    const projectsSelect = vi.fn(() => ({
+      order: vi.fn().mockResolvedValue({
+        data: [{ id: 'project-row-1', job_number: 'AK001', client_id: 'client-row-1' }],
+        error: null,
+      }),
+    }));
+    const clientsSelect = vi.fn(() => ({
+      order: vi.fn().mockResolvedValue({
+        data: [{ id: 'client-row-1', name: 'Klient A' }],
+        error: null,
+      }),
+    }));
+    const eventsInsertSingle = vi.fn().mockResolvedValue({ data: { id: 'event-row-1' }, error: null });
+    const eventsInsertSelect = vi.fn(() => ({ single: eventsInsertSingle }));
+    const eventsInsert = vi.fn(() => ({ select: eventsInsertSelect }));
+
+    vi.doMock('../../../lib/app-config', () => ({
+      appDataSource: 'supabase',
+    }));
+
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: vi.fn((table: string) => {
+          if (table === 'projects') return { select: projectsSelect };
+          if (table === 'clients') return { select: clientsSelect };
+          if (table === 'events') return { insert: eventsInsert };
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    }));
+
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapClient: vi.fn(),
+      mapEvent: vi.fn(),
+    }));
+
+    const { saveEvent } = await import('./events.service');
+
+    const saved = await saveEvent({
+      id: 1,
+      name: ' Akce 1 ',
+      job: ' ak001 ',
+      startDate: '2026-04-20',
+      endDate: '2026-04-21',
+      startTime: '08:00',
+      endTime: '17:00',
+      city: 'Praha',
+      needed: 2,
+      filled: 0,
+      status: 'upcoming',
+      client: ' Klient A ',
+      showDayTypes: false,
+    });
+
+    expect(eventsInsert).toHaveBeenCalledWith({
+      name: 'Akce 1',
+      project_id: 'project-row-1',
+      job_number: 'AK001',
+      client_name: 'Klient A',
+      date_from: '2026-04-20',
+      date_to: '2026-04-21',
+      time_from: '08:00',
+      time_to: '17:00',
+      city: 'Praha',
+      crew_needed: 2,
+      crew_filled: 0,
+      status: 'upcoming',
+      description: null,
+      contact_person: null,
+      dresscode: null,
+      meeting_point: null,
+      show_day_types: false,
+      day_types: null,
+      phase_times: null,
+      phase_schedules: null,
+    });
+    expect(saved.job).toBe('AK001');
+    expect(saved.client).toBe('Klient A');
+    expect(snapshot.events).toHaveLength(1);
+  });
+
+  it('assigns crew by creating Supabase timelog and timelog day rows', async () => {
+    let snapshot = createSnapshot({
+      events: [
+        {
+          id: 1,
+          name: 'Akce 1',
+          job: 'AK001',
+          startDate: '2026-04-20',
+          endDate: '2026-04-21',
+          startTime: '08:00',
+          endTime: '17:00',
+          city: 'Praha',
+          needed: 2,
+          filled: 0,
+          status: 'upcoming',
+          client: 'Klient A',
+          showDayTypes: false,
+        },
+      ],
+    });
+
+    const eventsSelect = vi.fn(() => ({
+      order: vi.fn(() => ({
+        order: vi.fn().mockResolvedValue({
+          data: [{ id: 'event-row-1' }],
+          error: null,
+        }),
+      })),
+    }));
+    const profilesSelect = vi.fn(() => ({
+      order: vi.fn(() => ({
+        order: vi.fn().mockResolvedValue({
+          data: [{ id: 'profile-uuid-1' }],
+          error: null,
+        }),
+      })),
+    }));
+    const timelogsInsertSingle = vi.fn().mockResolvedValue({
+      data: { id: 'timelog-row-1' },
+      error: null,
+    });
+    const timelogsInsertSelect = vi.fn(() => ({ single: timelogsInsertSingle }));
+    const timelogsInsert = vi.fn(() => ({ select: timelogsInsertSelect }));
+    const timelogDaysInsert = vi.fn().mockResolvedValue({ error: null });
+    const eventsUpdateEq = vi.fn().mockResolvedValue({ error: null });
+    const eventsUpdate = vi.fn(() => ({ eq: eventsUpdateEq }));
+
+    vi.doMock('../../../lib/app-config', () => ({
+      appDataSource: 'supabase',
+    }));
+
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: vi.fn((table: string) => {
+          if (table === 'events') return { select: eventsSelect, update: eventsUpdate };
+          if (table === 'profiles') return { select: profilesSelect };
+          if (table === 'timelogs') return { insert: timelogsInsert };
+          if (table === 'timelog_days') return { insert: timelogDaysInsert };
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    }));
+
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapClient: vi.fn(),
+      mapEvent: vi.fn(),
+    }));
+
+    const { assignCrewToEvent } = await import('./events.service');
+
+    const assignment = await assignCrewToEvent(1, 1);
+
+    expect(timelogsInsert).toHaveBeenCalledWith({
+      event_id: 'event-row-1',
+      contractor_id: 'profile-uuid-1',
+      km: 0,
+      note: '',
+      status: 'draft',
+    });
+    expect(timelogDaysInsert).toHaveBeenCalledWith([
+      {
+        timelog_id: 'timelog-row-1',
+        date: '2026-04-20',
+        time_from: '08:00',
+        time_to: '17:00',
+        day_type: 'instal',
+      },
+      {
+        timelog_id: 'timelog-row-1',
+        date: '2026-04-21',
+        time_from: '08:00',
+        time_to: '17:00',
+        day_type: 'instal',
+      },
+    ]);
+    expect(eventsUpdate).toHaveBeenCalledWith({ crew_filled: 1 });
+    expect(eventsUpdateEq).toHaveBeenCalledWith('id', 'event-row-1');
+    expect(assignment.event.filled).toBe(1);
+    expect(snapshot.timelogs).toHaveLength(1);
   });
 });

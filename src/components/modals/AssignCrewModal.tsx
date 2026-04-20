@@ -29,9 +29,9 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
   const contractorConflicts = getContractorConflictsForEvent(event, contractors);
   const assignedContractorIds = new Set(getEventDetailData(event.id).timelogs.map((timelog) => timelog.cid));
 
-  const assignContractor = (contractorId: number, phaseChoices?: Array<TimelogType | 'all'>) => {
+  const assignContractor = async (contractorId: number, phaseChoices?: Array<TimelogType | 'all'>) => {
     try {
-      assignCrewToEvent(event.id, contractorId, phaseChoices);
+      await assignCrewToEvent(event.id, contractorId, phaseChoices);
       setPendingContractorId(null);
       setSelectedPhaseOptions([]);
       toast.success('Clen crew byl prirazen bez kolize.');
@@ -151,7 +151,7 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => assignContractor(pendingContractor.id, selectedPhaseOptions)}
+                  onClick={() => void assignContractor(pendingContractor.id, selectedPhaseOptions)}
                   disabled={selectedPhaseOptions.length === 0}
                   className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-gray-300"
                 >
@@ -183,7 +183,7 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
                       return;
                     }
 
-                    assignContractor(contractor.id);
+                    void assignContractor(contractor.id);
                   }}
                   className={`w-full rounded-xl p-3 text-left transition-all ${
                     isAlreadyAssigned || hasConflict

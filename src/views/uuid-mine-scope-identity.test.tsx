@@ -242,6 +242,10 @@ vi.mock('../features/invoices/services/invoices.service', () => ({
   sendInvoice: vi.fn(),
 }));
 
+vi.mock('../features/invoices/queries/useInvoicesQuery', () => ({
+  useInvoicesQuery: () => ({ data: invoices, isLoading: false, error: null }),
+}));
+
 vi.mock('../features/projects/services/projects.service', () => ({
   getProjects: () => projects,
   subscribeToProjectChanges: () => () => undefined,

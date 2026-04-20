@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Info } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -22,11 +22,10 @@ import {
   approveInvoice,
   deleteInvoice,
   getInvoiceDependencies,
-  getInvoices,
   getPendingInvoiceBatchCount,
   sendInvoice,
-  subscribeToInvoiceChanges,
 } from '../features/invoices/services/invoices.service';
+import { useInvoicesQuery } from '../features/invoices/queries/useInvoicesQuery';
 
 interface InvoicesViewProps {
   scope?: 'all' | 'mine';
@@ -35,7 +34,7 @@ interface InvoicesViewProps {
 const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
   const { currentProfileId } = useAuth();
   const { role, searchQuery, setNavigationGuardMessage } = useAppContext();
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const invoicesQuery = useInvoicesQuery();
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [pendingBatchCount, setPendingBatchCount] = useState(0);
@@ -43,19 +42,16 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
   const [hasUnsavedCreate, setHasUnsavedCreate] = useState(false);
   const [showDiscardDialog, setShowDiscardDialog] = useState(false);
 
-  const loadData = useCallback(() => {
-    setInvoices(getInvoices(searchQuery) ?? []);
+  const loadDependencies = useCallback(() => {
     const dependencies = getInvoiceDependencies();
     setContractors(dependencies.contractors ?? []);
     setEvents(dependencies.events ?? []);
     setPendingBatchCount(getPendingInvoiceBatchCount());
-  }, [searchQuery]);
+  }, []);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  useEffect(() => subscribeToInvoiceChanges(loadData), [loadData]);
+    loadDependencies();
+  }, [invoicesQuery.data, loadDependencies]);
 
   useEffect(() => {
     setNavigationGuardMessage(
@@ -76,6 +72,27 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
   const findEvent = useCallback((id: number) => (
     events.find((event) => event.id === id) ?? null
   ), [events]);
+
+  const invoices = useMemo(() => {
+    const safeInvoices = invoicesQuery.data ?? [];
+    const query = searchQuery.trim().toLowerCase();
+
+    if (!query) return safeInvoices;
+
+    return safeInvoices.filter((invoice) => {
+      const event = invoice.eid ? findEvent(invoice.eid) : null;
+      const contractor = findContractor(invoice.cid);
+
+      return (
+        invoice.id.toLowerCase().includes(query)
+        || invoice.job.toLowerCase().includes(query)
+        || contractor?.name.toLowerCase().includes(query)
+        || event?.name.toLowerCase().includes(query)
+        || event?.job.toLowerCase().includes(query)
+        || false
+      );
+    });
+  }, [findContractor, findEvent, invoicesQuery.data, searchQuery]);
 
   const visibleInvoices = scope === 'mine'
     ? invoices.filter((invoice) => invoice.contractorProfileId === currentProfileId)

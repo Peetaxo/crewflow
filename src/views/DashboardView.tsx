@@ -11,14 +11,13 @@ import {
   subscribeToEventChanges,
 } from '../features/events/services/events.service';
 import {
-  getInvoices,
-  subscribeToInvoiceChanges,
 } from '../features/invoices/services/invoices.service';
 import {
   getTimelogDependencies,
 } from '../features/timelogs/services/timelogs.service';
 import { useTimelogsQuery } from '../features/timelogs/queries/useTimelogsQuery';
 import { useReceiptsQuery } from '../features/receipts/queries/useReceiptsQuery';
+import { useInvoicesQuery } from '../features/invoices/queries/useInvoicesQuery';
 
 const DashboardView = () => {
   const {
@@ -31,15 +30,14 @@ const DashboardView = () => {
   } = useAppContext();
   const timelogsQuery = useTimelogsQuery();
   const receiptsQuery = useReceiptsQuery();
+  const invoicesQuery = useInvoicesQuery();
 
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [filteredEvents, setFilteredEvents] = useState<Event[]>([]);
-  const [filteredInvoices, setFilteredInvoices] = useState(getInvoices(searchQuery) ?? []);
 
   const loadData = useCallback(() => {
     setFilteredEvents(getEvents(searchQuery) ?? []);
-    setFilteredInvoices(getInvoices(searchQuery) ?? []);
 
     const dependencies = getTimelogDependencies();
     setContractors(dependencies.contractors ?? []);
@@ -48,10 +46,9 @@ const DashboardView = () => {
 
   useEffect(() => {
     loadData();
-  }, [loadData, timelogsQuery.data, receiptsQuery.data]);
+  }, [invoicesQuery.data, loadData, timelogsQuery.data, receiptsQuery.data]);
 
   useEffect(() => subscribeToEventChanges(loadData), [loadData]);
-  useEffect(() => subscribeToInvoiceChanges(loadData), [loadData]);
 
   const timelogs = useMemo(() => {
     const safeTimelogs = timelogsQuery.data ?? [];
@@ -92,6 +89,27 @@ const DashboardView = () => {
       );
     });
   }, [contractors, events, receiptsQuery.data, searchQuery]);
+
+  const filteredInvoices = useMemo(() => {
+    const safeInvoices = invoicesQuery.data ?? [];
+    const query = searchQuery.trim().toLowerCase();
+
+    if (!query) return safeInvoices;
+
+    return safeInvoices.filter((invoice) => {
+      const event = invoice.eid ? events.find((item) => item.id === invoice.eid) : null;
+      const contractor = contractors.find((item) => item.id === invoice.cid);
+
+      return (
+        invoice.id.toLowerCase().includes(query)
+        || invoice.job.toLowerCase().includes(query)
+        || contractor?.name.toLowerCase().includes(query)
+        || event?.name.toLowerCase().includes(query)
+        || event?.job.toLowerCase().includes(query)
+        || false
+      );
+    });
+  }, [contractors, events, invoicesQuery.data, searchQuery]);
   const findContractor = useCallback((id: number) => (
     contractors.find((contractor) => contractor.id === id) ?? null
   ), [contractors]);

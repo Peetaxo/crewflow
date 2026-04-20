@@ -4,15 +4,16 @@ import { toast } from 'sonner';
 import { useAuth } from '../../app/providers/AuthProvider';
 import { useAppContext } from '../../context/AppContext';
 import { getNavItemsForRole, ROLE_LABELS, ROLE_SHORT_LABELS } from '../../constants';
-import { getInvoices, subscribeToInvoiceChanges } from '../../features/invoices/services/invoices.service';
 import { getCandidates, subscribeToCandidateChanges } from '../../features/recruitment/services/candidates.service';
 import { useTimelogsQuery } from '../../features/timelogs/queries/useTimelogsQuery';
 import { useReceiptsQuery } from '../../features/receipts/queries/useReceiptsQuery';
+import { useInvoicesQuery } from '../../features/invoices/queries/useInvoicesQuery';
 
 const Sidebar: React.FC = () => {
   const { currentProfileId, isAuthRequired, profile, role: authRole, signOut } = useAuth();
   const timelogsQuery = useTimelogsQuery();
   const receiptsQuery = useReceiptsQuery();
+  const invoicesQuery = useInvoicesQuery();
   const {
     sidebarCollapsed, setSidebarCollapsed,
     role, setRole,
@@ -25,11 +26,9 @@ const Sidebar: React.FC = () => {
     setSelectedClientIdForStats,
   } = useAppContext();
 
-  const [invoices, setInvoices] = useState(() => getInvoices() ?? []);
   const [candidates, setCandidates] = useState(() => getCandidates() ?? []);
 
   const loadData = useCallback(() => {
-    setInvoices(getInvoices() ?? []);
     setCandidates(getCandidates() ?? []);
   }, []);
 
@@ -37,10 +36,10 @@ const Sidebar: React.FC = () => {
     loadData();
   }, [loadData]);
 
-  useEffect(() => subscribeToInvoiceChanges(loadData), [loadData]);
   useEffect(() => subscribeToCandidateChanges(loadData), [loadData]);
   const timelogs = useMemo(() => timelogsQuery.data ?? [], [timelogsQuery.data]);
   const receipts = useMemo(() => receiptsQuery.data ?? [], [receiptsQuery.data]);
+  const invoices = useMemo(() => invoicesQuery.data ?? [], [invoicesQuery.data]);
 
   const navItems = getNavItemsForRole(role);
   const effectiveRole = authRole ?? role;

@@ -515,41 +515,21 @@ const buildBatchFromSelection = (
   return batch;
 };
 
-const hydrateInvoicesFromSupabase = async (): Promise<void> => {
-  if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
-    return;
-  }
-
-  const [
-    invoicesResult,
-    profilesResult,
-    eventsResult,
-    invoiceItems,
-    invoiceTimelogs,
-    invoiceReceipts,
-    timelogRows,
-    receiptRows,
-  ] = await Promise.all([
-    supabase.from('invoices').select('*').order('created_at'),
-    supabase.from('profiles').select('id').order('last_name').order('first_name'),
-    supabase.from('events').select('id').order('date_from').order('name'),
-    safeSelect<InvoiceItemRow>('invoice_items', '*', 'created_at'),
-    safeSelect<InvoiceTimelogRow>('invoice_timelogs', '*', 'created_at'),
-    safeSelect<InvoiceReceiptRow>('invoice_receipts', '*', 'created_at'),
-    getSupabaseIdRows('timelogs', 'created_at'),
-    getSupabaseIdRows('receipts', 'created_at'),
-  ]);
-
-  const firstError = invoicesResult.error ?? profilesResult.error ?? eventsResult.error;
-  if (firstError) {
-    throw new Error(firstError.message);
-  }
-
+const mapSupabaseInvoices = (
+  invoiceRows: InvoiceItemRow[] | Array<Record<string, unknown>>,
+  profileRows: Array<{ id: string }>,
+  eventRows: Array<{ id: string }>,
+  invoiceItems: InvoiceItemRow[],
+  invoiceTimelogs: InvoiceTimelogRow[],
+  invoiceReceipts: InvoiceReceiptRow[],
+  timelogRows: Array<{ id: string }>,
+  receiptRows: Array<{ id: string }>,
+): Invoice[] => {
   const profileIdMap = new Map(
-    (profilesResult.data ?? []).map((row, index) => [row.id, index + 1]),
+    profileRows.map((row, index) => [row.id, index + 1]),
   );
   const eventIdMap = new Map(
-    (eventsResult.data ?? []).map((row, index) => [row.id, index + 1]),
+    eventRows.map((row, index) => [row.id, index + 1]),
   );
   const timelogIdMap = new Map(timelogRows.map((row, index) => [row.id, index + 1]));
   const receiptIdMap = new Map(receiptRows.map((row, index) => [row.id, index + 1]));
@@ -578,7 +558,7 @@ const hydrateInvoicesFromSupabase = async (): Promise<void> => {
   const currentInvoices = getLocalAppState().invoices ?? [];
   const localInvoicesById = new Map(currentInvoices.map((invoice) => [invoice.id, invoice]));
 
-  const supabaseInvoices = (invoicesResult.data ?? []).map((row) => {
+  return invoiceRows.map((row) => {
     const localInvoice = localInvoicesById.get(row.id);
     const items = invoiceItemsByInvoiceId.get(row.id) ?? [];
     const jobNumbers = uniqueSortedStrings([
@@ -618,7 +598,52 @@ const hydrateInvoicesFromSupabase = async (): Promise<void> => {
       eventIds,
     };
   });
+};
 
+export const fetchInvoicesSnapshot = async (): Promise<Invoice[]> => {
+  if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
+    return getLocalAppState().invoices ?? [];
+  }
+
+  const [
+    invoicesResult,
+    profilesResult,
+    eventsResult,
+    invoiceItems,
+    invoiceTimelogs,
+    invoiceReceipts,
+    timelogRows,
+    receiptRows,
+  ] = await Promise.all([
+    supabase.from('invoices').select('*').order('created_at'),
+    supabase.from('profiles').select('id').order('last_name').order('first_name'),
+    supabase.from('events').select('id').order('date_from').order('name'),
+    safeSelect<InvoiceItemRow>('invoice_items', '*', 'created_at'),
+    safeSelect<InvoiceTimelogRow>('invoice_timelogs', '*', 'created_at'),
+    safeSelect<InvoiceReceiptRow>('invoice_receipts', '*', 'created_at'),
+    getSupabaseIdRows('timelogs', 'created_at'),
+    getSupabaseIdRows('receipts', 'created_at'),
+  ]);
+
+  const firstError = invoicesResult.error ?? profilesResult.error ?? eventsResult.error;
+  if (firstError) {
+    throw new Error(firstError.message);
+  }
+
+  return mapSupabaseInvoices(
+    (invoicesResult.data ?? []) as Array<Record<string, unknown>>,
+    profilesResult.data ?? [],
+    eventsResult.data ?? [],
+    invoiceItems,
+    invoiceTimelogs,
+    invoiceReceipts,
+    timelogRows,
+    receiptRows,
+  );
+};
+
+const hydrateInvoicesFromSupabase = async (): Promise<void> => {
+  const supabaseInvoices = await fetchInvoicesSnapshot();
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     invoices: supabaseInvoices,

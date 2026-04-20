@@ -14,16 +14,16 @@ import { useReceiptsQuery } from '../features/receipts/queries/useReceiptsQuery'
 import { getProjects, subscribeToProjectChanges } from '../features/projects/services/projects.service';
 import { getContractors, subscribeToCrewChanges } from '../features/crew/services/crew.service';
 import { getEvents, subscribeToEventChanges } from '../features/events/services/events.service';
-import { getInvoices, subscribeToInvoiceChanges } from '../features/invoices/services/invoices.service';
+import { useInvoicesQuery } from '../features/invoices/queries/useInvoicesQuery';
 
 const MyShiftsView = () => {
   const { darkMode, searchQuery } = useAppContext();
   const { currentProfileId } = useAuth();
   const timelogsQuery = useTimelogsQuery();
   const receiptsQuery = useReceiptsQuery();
+  const invoicesQuery = useInvoicesQuery();
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [projects, setProjects] = useState(() => getProjects() ?? []);
   const me = contractors.find((item) => item.profileId === currentProfileId) ?? null;
   const [activeTab, setActiveTab] = useState<'upcoming' | 'processing' | 'invoiced' | 'invoices'>('upcoming');
@@ -32,19 +32,18 @@ const MyShiftsView = () => {
   const loadData = useCallback(() => {
     setContractors(getContractors() ?? []);
     setEvents(getEvents() ?? []);
-    setInvoices(getInvoices() ?? []);
   }, []);
 
   useEffect(() => {
     loadData();
-  }, [loadData, timelogsQuery.data, receiptsQuery.data]);
+  }, [invoicesQuery.data, loadData, timelogsQuery.data, receiptsQuery.data]);
 
   useEffect(() => subscribeToCrewChanges(loadData), [loadData]);
   useEffect(() => subscribeToEventChanges(loadData), [loadData]);
-  useEffect(() => subscribeToInvoiceChanges(loadData), [loadData]);
   useEffect(() => subscribeToProjectChanges(() => setProjects(getProjects() ?? [])), []);
   const timelogs = timelogsQuery.data ?? [];
   const receipts = receiptsQuery.data ?? [];
+  const invoices = invoicesQuery.data ?? [];
   const meProfileId = me?.profileId ?? null;
   const myTimelogs = timelogs.filter((timelog) => timelog.contractorProfileId === meProfileId);
   const myInvoices = invoices.filter((invoice) => invoice.contractorProfileId === meProfileId);

@@ -62,6 +62,8 @@ export function mapContractor(row: ProfileRow): Contractor {
 
   return {
     id: Number.NaN,
+    profileId: row.id,
+    userId: row.user_id,
     name: `${firstName} ${lastName}`.trim(),
     ii: initials(firstName, lastName),
     bg: row.avatar_bg ?? '#E0E7FF',
@@ -125,6 +127,7 @@ export function mapTimelog(row: TimelogRow, days: TimelogDayRow[] = []): Timelog
     id: Number.NaN,
     eid: Number.NaN,
     cid: Number.NaN,
+    contractorProfileId: row.contractor_id,
     days: days.map(mapTimelogDay),
     km: Number(row.km ?? 0),
     note: row.note ?? '',
@@ -136,6 +139,7 @@ export function mapInvoice(row: InvoiceRow): Invoice {
   return {
     id: row.id,
     cid: Number.NaN,
+    contractorProfileId: row.contractor_id,
     eid: Number.NaN,
     hours: Number(row.total_hours ?? 0),
     hAmt: Number(row.amount_hours ?? 0),
@@ -153,6 +157,7 @@ export function mapReceipt(row: ReceiptRow): ReceiptItem {
   return {
     id: Number.NaN,
     cid: Number.NaN,
+    contractorProfileId: row.contractor_id,
     eid: Number.NaN,
     job: row.job_number ?? '',
     title: row.name,

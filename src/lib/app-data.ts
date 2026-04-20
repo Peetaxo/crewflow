@@ -157,6 +157,8 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
   const contractors = profileRows.map((row) => ({
     ...mapContractor(row),
     id: profileIdMap.get(row.id) ?? Number.NaN,
+    profileId: row.id,
+    userId: row.user_id,
   }));
 
   const eventIdMap = indexById(eventRows);
@@ -184,11 +186,13 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     id: timelogIdMap.get(row.id) ?? Number.NaN,
     eid: eventIdMap.get(row.event_id) ?? Number.NaN,
     cid: profileIdMap.get(row.contractor_id) ?? Number.NaN,
+    contractorProfileId: row.contractor_id,
   }));
 
   const invoices = invoiceRows.map((row) => ({
     ...mapInvoice(row),
     cid: profileIdMap.get(row.contractor_id) ?? Number.NaN,
+    contractorProfileId: row.contractor_id,
     eid: row.event_id ? (eventIdMap.get(row.event_id) ?? Number.NaN) : Number.NaN,
   }));
 
@@ -197,6 +201,7 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     ...mapReceipt(row),
     id: receiptIdMap.get(row.id) ?? Number.NaN,
     cid: profileIdMap.get(row.contractor_id) ?? Number.NaN,
+    contractorProfileId: row.contractor_id,
     eid: row.event_id ? (eventIdMap.get(row.event_id) ?? Number.NaN) : Number.NaN,
   }));
 

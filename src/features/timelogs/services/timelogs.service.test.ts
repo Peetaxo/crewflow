@@ -20,7 +20,7 @@ describe('timelogs.service write flow', () => {
 
   it('updates timelog status in Supabase using the mapped row id', async () => {
     let snapshot = createSnapshot([
-      { id: 1, eid: 1, cid: 1, days: [], km: 0, note: '', status: 'draft' },
+      { id: 1, eid: 1, cid: 1, contractorProfileId: 'profile-uuid-1', days: [], km: 0, note: '', status: 'draft' },
     ]);
 
     const updateEq = vi.fn().mockResolvedValue({ error: null });
@@ -75,14 +75,15 @@ describe('timelogs.service write flow', () => {
     expect(updateMock).toHaveBeenCalledWith({ status: 'pending_ch' });
     expect(updateEq).toHaveBeenCalledWith('id', 'timelog-uuid-1');
     expect(result.status).toBe('pending_ch');
+    expect(snapshot.timelogs[0].contractorProfileId).toBe('profile-uuid-1');
     expect(snapshot.timelogs[0].status).toBe('pending_ch');
   });
 
   it('approves all matching event timelogs in Supabase and updates local state', async () => {
     let snapshot = createSnapshot([
-      { id: 1, eid: 7, cid: 1, days: [], km: 0, note: '', status: 'pending_coo' },
-      { id: 2, eid: 7, cid: 2, days: [], km: 0, note: '', status: 'pending_coo' },
-      { id: 3, eid: 8, cid: 3, days: [], km: 0, note: '', status: 'pending_coo' },
+      { id: 1, eid: 7, cid: 1, contractorProfileId: 'profile-uuid-1', days: [], km: 0, note: '', status: 'pending_coo' },
+      { id: 2, eid: 7, cid: 2, contractorProfileId: 'profile-uuid-2', days: [], km: 0, note: '', status: 'pending_coo' },
+      { id: 3, eid: 8, cid: 3, contractorProfileId: 'profile-uuid-3', days: [], km: 0, note: '', status: 'pending_coo' },
     ]);
 
     const eqCalls: Array<[string, string]> = [];
@@ -140,8 +141,120 @@ describe('timelogs.service write flow', () => {
       ['id', 'timelog-uuid-2'],
     ]);
     expect(approved).toHaveLength(2);
+    expect(snapshot.timelogs[0].contractorProfileId).toBe('profile-uuid-1');
     expect(snapshot.timelogs[0].status).toBe('approved');
     expect(snapshot.timelogs[1].status).toBe('approved');
     expect(snapshot.timelogs[2].status).toBe('pending_coo');
+  });
+
+  it('preserves contractor profile UUIDs during Supabase hydration', async () => {
+    let snapshot = createSnapshot([]);
+    const createDoubleOrderMock = <T,>(data: T[]) => {
+      const secondOrder = vi.fn().mockResolvedValue({ data, error: null });
+      const firstOrder = vi.fn(() => ({ order: secondOrder }));
+      return { order: firstOrder };
+    };
+
+    vi.doMock('../../../lib/app-config', () => ({
+      appDataSource: 'supabase',
+    }));
+
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: vi.fn((table: string) => {
+          if (table === 'timelogs') {
+            return {
+              select: vi.fn(() => ({
+                order: vi.fn().mockResolvedValue({
+                  data: [
+                    {
+                      id: 'timelog-row-1',
+                      event_id: 'event-row-1',
+                      contractor_id: 'profile-uuid-1',
+                      km: 12,
+                      note: 'Hydrated timelog',
+                      status: 'approved',
+                    },
+                  ],
+                  error: null,
+                }),
+              })),
+            };
+          }
+
+          if (table === 'timelog_days') {
+            return {
+              select: vi.fn(() => ({
+                order: vi.fn().mockResolvedValue({
+                  data: [
+                    {
+                      id: 'day-row-1',
+                      timelog_id: 'timelog-row-1',
+                      date: '2026-04-10',
+                      time_from: '08:00',
+                      time_to: '16:00',
+                      day_type: 'instal',
+                    },
+                  ],
+                  error: null,
+                }),
+              })),
+            };
+          }
+
+          if (table === 'profiles') {
+            return {
+              select: vi.fn(() => createDoubleOrderMock([
+                { id: 'profile-uuid-1' },
+              ])),
+            };
+          }
+
+          if (table === 'events') {
+            return {
+              select: vi.fn(() => createDoubleOrderMock([
+                { id: 'event-row-1' },
+              ])),
+            };
+          }
+
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    }));
+
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapTimelog: vi.fn(() => ({
+        id: Number.NaN,
+        eid: Number.NaN,
+        cid: Number.NaN,
+        contractorProfileId: 'profile-uuid-1',
+        days: [],
+        km: 0,
+        note: '',
+        status: 'draft',
+      })),
+    }));
+
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    const { getTimelogs } = await import('./timelogs.service');
+
+    getTimelogs();
+    await Promise.resolve();
+    await Promise.resolve();
+    const timelogs = getTimelogs();
+
+    expect(timelogs[0].contractorProfileId).toBe('profile-uuid-1');
+    expect(timelogs[0].cid).toBe(1);
+    expect(timelogs[0].eid).toBe(1);
   });
 });

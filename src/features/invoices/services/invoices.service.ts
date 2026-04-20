@@ -299,6 +299,8 @@ const buildInvoiceFromBatch = (
   batch: BillingBatch,
   index: number,
 ): Invoice => {
+  const contractors = getLocalAppState().contractors ?? [];
+  const contractor = findContractor(contractors, batch.cid);
   const itemList = Array.from(batch.items.values());
   const jobNumbers = uniqueSortedStrings(itemList.map((item) => item.jobNumber));
   const hours = round2(itemList.reduce((sum, item) => sum + item.hours, 0));
@@ -312,6 +314,7 @@ const buildInvoiceFromBatch = (
   return {
     id: uniqueId,
     cid: batch.cid,
+    contractorProfileId: contractor?.profileId,
     eid: primaryEventId,
     hours,
     hAmt,
@@ -605,6 +608,7 @@ const hydrateInvoicesFromSupabase = async (): Promise<void> => {
     return {
       ...mapInvoice(row),
       cid: profileIdMap.get(row.contractor_id) ?? Number.NaN,
+      contractorProfileId: row.contractor_id,
       eid: eventIds[0] ?? (row.event_id ? (eventIdMap.get(row.event_id) ?? Number.NaN) : 0),
       job: jobNumbers.join(', ') || localInvoice?.job || row.job_number || '',
       jobNumbers,

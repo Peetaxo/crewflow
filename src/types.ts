@@ -51,6 +51,8 @@ export interface Event {
 /** Kontraktor - clen crew */
 export interface Contractor {
   id: number;
+  profileId?: string;
+  userId?: string | null;
   name: string;
   /** Inicialy pro avatar */
   ii: string;
@@ -100,6 +102,7 @@ export interface Timelog {
   eid: number;
   /** ID kontraktora */
   cid: number;
+  contractorProfileId?: string;
   days: TimelogDay[];
   /** Cestovne v km */
   km: number;
@@ -115,6 +118,7 @@ export interface Invoice {
   id: string;
   /** ID kontraktora */
   cid: number;
+  contractorProfileId?: string;
   /** ID akce */
   eid: number;
   hours: number;
@@ -147,6 +151,7 @@ export type ReceiptStatus = 'draft' | 'submitted' | 'approved' | 'attached' | 'r
 export interface ReceiptItem {
   id: number;
   cid: number;
+  contractorProfileId?: string;
   eid: number;
   job: string;
   title: string;

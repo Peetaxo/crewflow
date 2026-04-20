@@ -126,6 +126,8 @@ const hydrateCrewFromSupabase = async (): Promise<void> => {
   const supabaseCrew = (profilesResult.data ?? []).map((row, index) => ({
     ...mapContractor(row),
     id: index + 1,
+    profileId: row.id,
+    userId: row.user_id,
     events: countsByProfile.get(row.id) ?? 0,
   }));
 

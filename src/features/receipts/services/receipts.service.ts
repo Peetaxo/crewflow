@@ -37,9 +37,30 @@ const matchesSearch = (
   );
 };
 
-const hydrateReceiptsFromSupabase = async (): Promise<void> => {
+const mapSupabaseReceipts = (
+  receiptRows: NonNullable<Awaited<ReturnType<typeof supabase.from<'receipts'>>>['data']>,
+  profileRows: NonNullable<Awaited<ReturnType<typeof supabase.from<'profiles'>>>['data']>,
+  eventRows: NonNullable<Awaited<ReturnType<typeof supabase.from<'events'>>>['data']>,
+) => {
+  const profileIdMap = new Map(
+    profileRows.map((row, index) => [row.id, index + 1]),
+  );
+  const eventIdMap = new Map(
+    eventRows.map((row, index) => [row.id, index + 1]),
+  );
+
+  return receiptRows.map((row, index) => ({
+    ...mapReceipt(row),
+    id: index + 1,
+    cid: profileIdMap.get(row.contractor_id) ?? Number.NaN,
+    contractorProfileId: row.contractor_id,
+    eid: row.event_id ? (eventIdMap.get(row.event_id) ?? Number.NaN) : 0,
+  }));
+};
+
+export const fetchReceiptsSnapshot = async (): Promise<ReceiptItem[]> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
-    return;
+    return getLocalAppState().receipts ?? [];
   }
 
   const [receiptsResult, profilesResult, eventsResult] = await Promise.all([
@@ -53,21 +74,15 @@ const hydrateReceiptsFromSupabase = async (): Promise<void> => {
     throw new Error(firstError.message);
   }
 
-  const profileIdMap = new Map(
-    (profilesResult.data ?? []).map((row, index) => [row.id, index + 1]),
+  return mapSupabaseReceipts(
+    receiptsResult.data ?? [],
+    profilesResult.data ?? [],
+    eventsResult.data ?? [],
   );
-  const eventIdMap = new Map(
-    (eventsResult.data ?? []).map((row, index) => [row.id, index + 1]),
-  );
+};
 
-  const supabaseReceipts = (receiptsResult.data ?? []).map((row, index) => ({
-    ...mapReceipt(row),
-    id: index + 1,
-    cid: profileIdMap.get(row.contractor_id) ?? Number.NaN,
-    contractorProfileId: row.contractor_id,
-    eid: row.event_id ? (eventIdMap.get(row.event_id) ?? Number.NaN) : 0,
-  }));
-
+const hydrateReceiptsFromSupabase = async (): Promise<void> => {
+  const supabaseReceipts = await fetchReceiptsSnapshot();
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     receipts: supabaseReceipts,

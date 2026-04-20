@@ -3,15 +3,16 @@ import { ChevronsLeft, ChevronsRight, LogOut, Search, Settings } from 'lucide-re
 import { toast } from 'sonner';
 import { useAuth } from '../../app/providers/AuthProvider';
 import { useAppContext } from '../../context/AppContext';
-import { ReceiptItem, Timelog } from '../../types';
 import { getNavItemsForRole, ROLE_LABELS, ROLE_SHORT_LABELS } from '../../constants';
-import { getTimelogs, subscribeToTimelogChanges } from '../../features/timelogs/services/timelogs.service';
-import { getReceipts, subscribeToReceiptChanges } from '../../features/receipts/services/receipts.service';
 import { getInvoices, subscribeToInvoiceChanges } from '../../features/invoices/services/invoices.service';
 import { getCandidates, subscribeToCandidateChanges } from '../../features/recruitment/services/candidates.service';
+import { useTimelogsQuery } from '../../features/timelogs/queries/useTimelogsQuery';
+import { useReceiptsQuery } from '../../features/receipts/queries/useReceiptsQuery';
 
 const Sidebar: React.FC = () => {
   const { currentProfileId, isAuthRequired, profile, role: authRole, signOut } = useAuth();
+  const timelogsQuery = useTimelogsQuery();
+  const receiptsQuery = useReceiptsQuery();
   const {
     sidebarCollapsed, setSidebarCollapsed,
     role, setRole,
@@ -24,14 +25,10 @@ const Sidebar: React.FC = () => {
     setSelectedClientIdForStats,
   } = useAppContext();
 
-  const [timelogs, setTimelogs] = useState<Timelog[]>([]);
-  const [receipts, setReceipts] = useState<ReceiptItem[]>([]);
   const [invoices, setInvoices] = useState(() => getInvoices() ?? []);
   const [candidates, setCandidates] = useState(() => getCandidates() ?? []);
 
   const loadData = useCallback(() => {
-    setTimelogs(getTimelogs() ?? []);
-    setReceipts(getReceipts() ?? []);
     setInvoices(getInvoices() ?? []);
     setCandidates(getCandidates() ?? []);
   }, []);
@@ -40,10 +37,10 @@ const Sidebar: React.FC = () => {
     loadData();
   }, [loadData]);
 
-  useEffect(() => subscribeToTimelogChanges(loadData), [loadData]);
-  useEffect(() => subscribeToReceiptChanges(loadData), [loadData]);
   useEffect(() => subscribeToInvoiceChanges(loadData), [loadData]);
   useEffect(() => subscribeToCandidateChanges(loadData), [loadData]);
+  const timelogs = useMemo(() => timelogsQuery.data ?? [], [timelogsQuery.data]);
+  const receipts = useMemo(() => receiptsQuery.data ?? [], [receiptsQuery.data]);
 
   const navItems = getNavItemsForRole(role);
   const effectiveRole = authRole ?? role;

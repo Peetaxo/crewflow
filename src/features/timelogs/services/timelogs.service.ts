@@ -37,9 +37,38 @@ const matchesSearch = (
   );
 };
 
-const hydrateTimelogsFromSupabase = async (): Promise<void> => {
+const mapSupabaseTimelogs = (
+  timelogRows: NonNullable<Awaited<ReturnType<typeof supabase.from<'timelogs'>>>['data']>,
+  timelogDayRows: NonNullable<Awaited<ReturnType<typeof supabase.from<'timelog_days'>>>['data']>,
+  profileRows: NonNullable<Awaited<ReturnType<typeof supabase.from<'profiles'>>>['data']>,
+  eventRows: NonNullable<Awaited<ReturnType<typeof supabase.from<'events'>>>['data']>,
+) => {
+  const profileIdMap = new Map(
+    profileRows.map((row, index) => [row.id, index + 1]),
+  );
+  const eventIdMap = new Map(
+    eventRows.map((row, index) => [row.id, index + 1]),
+  );
+
+  const timelogDayRowsByTimelogId = new Map<string, typeof timelogDayRows>();
+  for (const dayRow of timelogDayRows) {
+    const current = timelogDayRowsByTimelogId.get(dayRow.timelog_id) ?? [];
+    current.push(dayRow);
+    timelogDayRowsByTimelogId.set(dayRow.timelog_id, current);
+  }
+
+  return timelogRows.map((row, index) => ({
+    ...mapTimelog(row, timelogDayRowsByTimelogId.get(row.id) ?? []),
+    id: index + 1,
+    eid: eventIdMap.get(row.event_id) ?? Number.NaN,
+    cid: profileIdMap.get(row.contractor_id) ?? Number.NaN,
+    contractorProfileId: row.contractor_id,
+  }));
+};
+
+export const fetchTimelogsSnapshot = async (): Promise<Timelog[]> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
-    return;
+    return getLocalAppState().timelogs ?? [];
   }
 
   const [timelogsResult, timelogDaysResult, profilesResult, eventsResult] = await Promise.all([
@@ -55,28 +84,16 @@ const hydrateTimelogsFromSupabase = async (): Promise<void> => {
     throw new Error(firstError.message);
   }
 
-  const profileIdMap = new Map(
-    (profilesResult.data ?? []).map((row, index) => [row.id, index + 1]),
+  return mapSupabaseTimelogs(
+    timelogsResult.data ?? [],
+    timelogDaysResult.data ?? [],
+    profilesResult.data ?? [],
+    eventsResult.data ?? [],
   );
-  const eventIdMap = new Map(
-    (eventsResult.data ?? []).map((row, index) => [row.id, index + 1]),
-  );
+};
 
-  const timelogDayRowsByTimelogId = new Map<string, typeof timelogDaysResult.data>();
-  for (const dayRow of timelogDaysResult.data ?? []) {
-    const current = timelogDayRowsByTimelogId.get(dayRow.timelog_id) ?? [];
-    current.push(dayRow);
-    timelogDayRowsByTimelogId.set(dayRow.timelog_id, current);
-  }
-
-  const supabaseTimelogs = (timelogsResult.data ?? []).map((row, index) => ({
-    ...mapTimelog(row, timelogDayRowsByTimelogId.get(row.id) ?? []),
-    id: index + 1,
-    eid: eventIdMap.get(row.event_id) ?? Number.NaN,
-    cid: profileIdMap.get(row.contractor_id) ?? Number.NaN,
-    contractorProfileId: row.contractor_id,
-  }));
-
+const hydrateTimelogsFromSupabase = async (): Promise<void> => {
+  const supabaseTimelogs = await fetchTimelogsSnapshot();
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     timelogs: supabaseTimelogs,

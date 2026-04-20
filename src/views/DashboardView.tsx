@@ -16,13 +16,9 @@ import {
 } from '../features/invoices/services/invoices.service';
 import {
   getTimelogDependencies,
-  getTimelogs,
-  subscribeToTimelogChanges,
 } from '../features/timelogs/services/timelogs.service';
-import {
-  getReceipts,
-  subscribeToReceiptChanges,
-} from '../features/receipts/services/receipts.service';
+import { useTimelogsQuery } from '../features/timelogs/queries/useTimelogsQuery';
+import { useReceiptsQuery } from '../features/receipts/queries/useReceiptsQuery';
 
 const DashboardView = () => {
   const {
@@ -33,17 +29,15 @@ const DashboardView = () => {
     setSelectedEventId,
     setEventTab,
   } = useAppContext();
+  const timelogsQuery = useTimelogsQuery();
+  const receiptsQuery = useReceiptsQuery();
 
-  const [timelogs, setTimelogs] = useState<Timelog[]>([]);
-  const [receipts, setReceipts] = useState<ReceiptItem[]>([]);
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [filteredEvents, setFilteredEvents] = useState<Event[]>([]);
   const [filteredInvoices, setFilteredInvoices] = useState(getInvoices(searchQuery) ?? []);
 
   const loadData = useCallback(() => {
-    setTimelogs(getTimelogs(searchQuery) ?? []);
-    setReceipts(getReceipts(searchQuery) ?? []);
     setFilteredEvents(getEvents(searchQuery) ?? []);
     setFilteredInvoices(getInvoices(searchQuery) ?? []);
 
@@ -54,12 +48,50 @@ const DashboardView = () => {
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+  }, [loadData, timelogsQuery.data, receiptsQuery.data]);
 
-  useEffect(() => subscribeToTimelogChanges(loadData), [loadData]);
-  useEffect(() => subscribeToReceiptChanges(loadData), [loadData]);
   useEffect(() => subscribeToEventChanges(loadData), [loadData]);
   useEffect(() => subscribeToInvoiceChanges(loadData), [loadData]);
+
+  const timelogs = useMemo(() => {
+    const safeTimelogs = timelogsQuery.data ?? [];
+    const query = searchQuery.trim().toLowerCase();
+
+    if (!query) return safeTimelogs;
+
+    return safeTimelogs.filter((timelog) => {
+      const event = events.find((item) => item.id === timelog.eid);
+      const contractor = contractors.find((item) => item.id === timelog.cid);
+      if (!event || !contractor) return false;
+
+      return (
+        event.name.toLowerCase().includes(query)
+        || event.job.toLowerCase().includes(query)
+        || contractor.name.toLowerCase().includes(query)
+      );
+    });
+  }, [contractors, events, searchQuery, timelogsQuery.data]);
+
+  const receipts = useMemo(() => {
+    const safeReceipts = receiptsQuery.data ?? [];
+    const query = searchQuery.trim().toLowerCase();
+
+    if (!query) return safeReceipts;
+
+    return safeReceipts.filter((receipt) => {
+      const event = events.find((item) => item.id === receipt.eid);
+      const contractor = contractors.find((item) => item.id === receipt.cid);
+      if (!event || !contractor) return false;
+
+      return (
+        receipt.title.toLowerCase().includes(query)
+        || receipt.vendor.toLowerCase().includes(query)
+        || receipt.job.toLowerCase().includes(query)
+        || event.name.toLowerCase().includes(query)
+        || contractor.name.toLowerCase().includes(query)
+      );
+    });
+  }, [contractors, events, receiptsQuery.data, searchQuery]);
   const findContractor = useCallback((id: number) => (
     contractors.find((contractor) => contractor.id === id) ?? null
   ), [contractors]);

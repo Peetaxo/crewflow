@@ -249,8 +249,7 @@ describe('timelogs.service write flow', () => {
     const { getTimelogs } = await import('./timelogs.service');
 
     getTimelogs();
-    await Promise.resolve();
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     const timelogs = getTimelogs();
 
     expect(timelogs[0].contractorProfileId).toBe('profile-uuid-1');

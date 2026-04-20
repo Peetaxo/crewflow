@@ -216,12 +216,20 @@ vi.mock('../features/timelogs/services/timelogs.service', () => ({
   updateTimelogStatus: vi.fn(),
 }));
 
+vi.mock('../features/timelogs/queries/useTimelogsQuery', () => ({
+  useTimelogsQuery: () => ({ data: timelogs, isLoading: false, error: null }),
+}));
+
 vi.mock('../features/receipts/services/receipts.service', () => ({
   getReceipts: () => receipts,
   subscribeToReceiptChanges: () => () => undefined,
   getReceiptDependencies: () => ({ contractors, events }),
   updateReceiptStatus: vi.fn(),
   createEmptyReceipt,
+}));
+
+vi.mock('../features/receipts/queries/useReceiptsQuery', () => ({
+  useReceiptsQuery: () => ({ data: receipts, isLoading: false, error: null }),
 }));
 
 vi.mock('../features/invoices/services/invoices.service', () => ({

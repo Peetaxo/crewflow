@@ -9,10 +9,9 @@ import StatusBadge from '../components/shared/StatusBadge';
 import {
   createEmptyReceipt,
   getReceiptDependencies,
-  getReceipts,
-  subscribeToReceiptChanges,
   updateReceiptStatus,
 } from '../features/receipts/services/receipts.service';
+import { useReceiptsQuery } from '../features/receipts/queries/useReceiptsQuery';
 
 interface ReceiptsViewProps {
   scope?: 'all' | 'mine';
@@ -26,23 +25,19 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
     setDeleteConfirm,
   } = useAppContext();
   const { currentContractorId, currentProfileId } = useAuth();
-  const [receipts, setReceipts] = useState<ReceiptItem[]>([]);
+  const receiptsQuery = useReceiptsQuery();
   const [events, setEvents] = useState<Event[]>([]);
   const [contractors, setContractors] = useState<Contractor[]>([]);
 
-  const loadData = useCallback(() => {
-    setReceipts(getReceipts(searchQuery));
-
+  const loadDependencies = useCallback(() => {
     const dependencies = getReceiptDependencies();
     setEvents(dependencies.events);
     setContractors(dependencies.contractors);
-  }, [searchQuery]);
+  }, []);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  useEffect(() => subscribeToReceiptChanges(loadData), [loadData]);
+    loadDependencies();
+  }, [loadDependencies, receiptsQuery.data]);
 
   const findEvent = useCallback((id: number) => (
     events.find((event) => event.id === id) ?? null
@@ -51,6 +46,27 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
   const findContractor = useCallback((id: number) => (
     contractors.find((contractor) => contractor.id === id) ?? null
   ), [contractors]);
+
+  const receipts = useMemo(() => {
+    const safeReceipts = receiptsQuery.data ?? [];
+    const query = searchQuery.trim().toLowerCase();
+
+    if (!query) return safeReceipts;
+
+    return safeReceipts.filter((receipt) => {
+      const event = events.find((item) => item.id === receipt.eid);
+      const contractor = contractors.find((item) => item.id === receipt.cid);
+      if (!event || !contractor) return false;
+
+      return (
+        receipt.title.toLowerCase().includes(query)
+        || receipt.vendor.toLowerCase().includes(query)
+        || receipt.job.toLowerCase().includes(query)
+        || event.name.toLowerCase().includes(query)
+        || contractor.name.toLowerCase().includes(query)
+      );
+    });
+  }, [contractors, events, receiptsQuery.data, searchQuery]);
 
   const isCrew = role === 'crew';
   const baseReceipts = scope === 'mine'

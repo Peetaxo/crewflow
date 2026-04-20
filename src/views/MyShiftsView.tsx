@@ -9,8 +9,8 @@ import { Contractor, Event, Invoice, ReceiptItem, Timelog } from '../types';
 import { calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';
 import ShiftCard from '../components/shared/ShiftCard';
-import { getTimelogs, subscribeToTimelogChanges } from '../features/timelogs/services/timelogs.service';
-import { getReceipts, subscribeToReceiptChanges } from '../features/receipts/services/receipts.service';
+import { useTimelogsQuery } from '../features/timelogs/queries/useTimelogsQuery';
+import { useReceiptsQuery } from '../features/receipts/queries/useReceiptsQuery';
 import { getProjects, subscribeToProjectChanges } from '../features/projects/services/projects.service';
 import { getContractors, subscribeToCrewChanges } from '../features/crew/services/crew.service';
 import { getEvents, subscribeToEventChanges } from '../features/events/services/events.service';
@@ -19,11 +19,11 @@ import { getInvoices, subscribeToInvoiceChanges } from '../features/invoices/ser
 const MyShiftsView = () => {
   const { darkMode, searchQuery } = useAppContext();
   const { currentProfileId } = useAuth();
+  const timelogsQuery = useTimelogsQuery();
+  const receiptsQuery = useReceiptsQuery();
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [timelogs, setTimelogs] = useState<Timelog[]>([]);
-  const [receipts, setReceipts] = useState<ReceiptItem[]>([]);
   const [projects, setProjects] = useState(() => getProjects() ?? []);
   const me = contractors.find((item) => item.profileId === currentProfileId) ?? null;
   const [activeTab, setActiveTab] = useState<'upcoming' | 'processing' | 'invoiced' | 'invoices'>('upcoming');
@@ -33,20 +33,18 @@ const MyShiftsView = () => {
     setContractors(getContractors() ?? []);
     setEvents(getEvents() ?? []);
     setInvoices(getInvoices() ?? []);
-    setTimelogs(getTimelogs() ?? []);
-    setReceipts(getReceipts() ?? []);
   }, []);
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+  }, [loadData, timelogsQuery.data, receiptsQuery.data]);
 
   useEffect(() => subscribeToCrewChanges(loadData), [loadData]);
   useEffect(() => subscribeToEventChanges(loadData), [loadData]);
   useEffect(() => subscribeToInvoiceChanges(loadData), [loadData]);
-  useEffect(() => subscribeToTimelogChanges(loadData), [loadData]);
-  useEffect(() => subscribeToReceiptChanges(loadData), [loadData]);
   useEffect(() => subscribeToProjectChanges(() => setProjects(getProjects() ?? [])), []);
+  const timelogs = timelogsQuery.data ?? [];
+  const receipts = receiptsQuery.data ?? [];
   const meProfileId = me?.profileId ?? null;
   const myTimelogs = timelogs.filter((timelog) => timelog.contractorProfileId === meProfileId);
   const myInvoices = invoices.filter((invoice) => invoice.contractorProfileId === meProfileId);

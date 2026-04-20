@@ -8,10 +8,9 @@ import StatusBadge from '../components/shared/StatusBadge';
 import {
   approveAllTimelogsForEvent,
   getTimelogDependencies,
-  getTimelogs,
-  subscribeToTimelogChanges,
   updateTimelogStatus,
 } from '../features/timelogs/services/timelogs.service';
+import { useTimelogsQuery } from '../features/timelogs/queries/useTimelogsQuery';
 
 const ApprovalsView = () => {
   const {
@@ -20,24 +19,20 @@ const ApprovalsView = () => {
     searchQuery,
     setEditingTimelog,
   } = useAppContext();
+  const timelogsQuery = useTimelogsQuery();
 
-  const [timelogs, setTimelogs] = useState<Timelog[]>([]);
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
 
-  const loadData = useCallback(() => {
-    setTimelogs(getTimelogs(searchQuery));
-
+  const loadDependencies = useCallback(() => {
     const dependencies = getTimelogDependencies();
     setContractors(dependencies.contractors);
     setEvents(dependencies.events);
-  }, [searchQuery]);
+  }, []);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  useEffect(() => subscribeToTimelogChanges(loadData), [loadData]);
+    loadDependencies();
+  }, [loadDependencies, timelogsQuery.data]);
 
   const findContractor = useCallback((id: number) => (
     contractors.find((contractor) => contractor.id === id) ?? null
@@ -46,6 +41,25 @@ const ApprovalsView = () => {
   const findEvent = useCallback((id: number) => (
     events.find((event) => event.id === id) ?? null
   ), [events]);
+
+  const timelogs = useMemo(() => {
+    const safeTimelogs = timelogsQuery.data ?? [];
+    const query = searchQuery.trim().toLowerCase();
+
+    if (!query) return safeTimelogs;
+
+    return safeTimelogs.filter((timelog) => {
+      const event = events.find((item) => item.id === timelog.eid);
+      const contractor = contractors.find((item) => item.id === timelog.cid);
+      if (!event || !contractor) return false;
+
+      return (
+        event.name.toLowerCase().includes(query)
+        || event.job.toLowerCase().includes(query)
+        || contractor.name.toLowerCase().includes(query)
+      );
+    });
+  }, [contractors, events, searchQuery, timelogsQuery.data]);
 
   const isCrewHead = role === 'crewhead';
   const mine = useMemo(() => (

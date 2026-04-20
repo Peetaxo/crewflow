@@ -16,6 +16,7 @@ const normalizeProject = (project: Project): Project => ({
 });
 
 let projectsHydrationPromise: Promise<void> | null = null;
+let projectsLoaded = false;
 
 const hydrateProjectsFromSupabase = async (): Promise<void> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
@@ -52,11 +53,18 @@ const ensureSupabaseProjectsLoaded = () => {
     return;
   }
 
+  if (projectsLoaded) {
+    return;
+  }
+
   if (projectsHydrationPromise) {
     return;
   }
 
   projectsHydrationPromise = hydrateProjectsFromSupabase()
+    .then(() => {
+      projectsLoaded = true;
+    })
     .catch((error) => {
       console.warn('Nepodarilo se nacist projekty ze Supabase, zustavam na lokalnich datech.', error);
     })
@@ -185,4 +193,9 @@ export const getProjectRows = (search = '', filter: ProjectFilter = 'all') => {
 export const subscribeToProjectChanges = (listener: () => void): (() => void) => {
   ensureSupabaseProjectsLoaded();
   return subscribeToLocalAppState(() => listener());
+};
+
+export const resetSupabaseProjectsHydration = () => {
+  projectsHydrationPromise = null;
+  projectsLoaded = false;
 };

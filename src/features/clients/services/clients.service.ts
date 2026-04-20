@@ -17,6 +17,7 @@ const normalizeClient = (client: Client): Client => ({
 });
 
 let clientsHydrationPromise: Promise<void> | null = null;
+let clientsLoaded = false;
 
 const hydrateClientsFromSupabase = async (): Promise<void> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
@@ -48,11 +49,18 @@ const ensureSupabaseClientsLoaded = () => {
     return;
   }
 
+  if (clientsLoaded) {
+    return;
+  }
+
   if (clientsHydrationPromise) {
     return;
   }
 
   clientsHydrationPromise = hydrateClientsFromSupabase()
+    .then(() => {
+      clientsLoaded = true;
+    })
     .catch((error) => {
       console.warn('Nepodarilo se nacist klienty ze Supabase, zustavam na lokalnich datech.', error);
     })
@@ -137,4 +145,9 @@ export const getClientCards = (search = '') => {
 export const subscribeToClientChanges = (listener: () => void): (() => void) => {
   ensureSupabaseClientsLoaded();
   return subscribeToLocalAppState(() => listener());
+};
+
+export const resetSupabaseClientsHydration = () => {
+  clientsHydrationPromise = null;
+  clientsLoaded = false;
 };

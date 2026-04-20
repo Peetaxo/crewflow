@@ -1,39 +1,38 @@
 import { useEffect } from 'react';
-import { toast } from 'sonner';
 import { appDataSource } from '../../lib/app-config';
-import { getLocalAppData, getSupabaseAppData, updateLocalAppState } from '../../lib/app-data';
+import { getLocalAppData, updateLocalAppState } from '../../lib/app-data';
+import { resetSupabaseClientsHydration } from '../../features/clients/services/clients.service';
+import { resetSupabaseCrewHydration } from '../../features/crew/services/crew.service';
+import { resetSupabaseEventsHydration } from '../../features/events/services/events.service';
+import { resetSupabaseInvoicesHydration } from '../../features/invoices/services/invoices.service';
+import { resetSupabaseProjectsHydration } from '../../features/projects/services/projects.service';
+import { resetSupabaseReceiptsHydration } from '../../features/receipts/services/receipts.service';
+import { resetSupabaseCandidatesHydration } from '../../features/recruitment/services/candidates.service';
+import { resetSupabaseTimelogsHydration } from '../../features/timelogs/services/timelogs.service';
 import { useAuth } from './AuthProvider';
 
+const resetSupabaseHydrationState = () => {
+  resetSupabaseClientsHydration();
+  resetSupabaseProjectsHydration();
+  resetSupabaseEventsHydration();
+  resetSupabaseCrewHydration();
+  resetSupabaseReceiptsHydration();
+  resetSupabaseTimelogsHydration();
+  resetSupabaseInvoicesHydration();
+  resetSupabaseCandidatesHydration();
+};
+
 const AppDataBootstrap = () => {
-  const { isAuthRequired, isAuthenticated, user } = useAuth();
+  const { isAuthRequired, isAuthenticated } = useAuth();
 
   useEffect(() => {
     if (appDataSource !== 'supabase') return;
 
     if (isAuthRequired && !isAuthenticated) {
+      resetSupabaseHydrationState();
       updateLocalAppState(() => getLocalAppData());
-      return;
     }
-
-    let isCancelled = false;
-
-    void (async () => {
-      try {
-        const snapshot = await getSupabaseAppData();
-        if (isCancelled) return;
-        updateLocalAppState(() => snapshot);
-        toast.success('Aplikace nacetla data ze Supabase.');
-      } catch (error) {
-        if (isCancelled) return;
-        const message = error instanceof Error ? error.message : 'Nepodarilo se nacist data ze Supabase.';
-        toast.warning(`Supabase data se nepodarilo nacist: ${message}`);
-      }
-    })();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [isAuthRequired, isAuthenticated, user?.id]);
+  }, [isAuthRequired, isAuthenticated]);
 
   return null;
 };

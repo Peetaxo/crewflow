@@ -6,6 +6,7 @@ import { Contractor, Event, ReceiptItem, ReceiptStatus } from '../../../types';
 
 type ReceiptAction = 'submit' | 'approve' | 'reimburse' | 'reject';
 let receiptsHydrationPromise: Promise<void> | null = null;
+let receiptsLoaded = false;
 
 const normalizeReceipt = (receipt: ReceiptItem): ReceiptItem => ({
   ...receipt,
@@ -78,11 +79,18 @@ const ensureSupabaseReceiptsLoaded = () => {
     return;
   }
 
+  if (receiptsLoaded) {
+    return;
+  }
+
   if (receiptsHydrationPromise) {
     return;
   }
 
   receiptsHydrationPromise = hydrateReceiptsFromSupabase()
+    .then(() => {
+      receiptsLoaded = true;
+    })
     .catch((error) => {
       console.warn('Nepodarilo se nacist uctenky ze Supabase, zustavam na lokalnich datech.', error);
     })
@@ -286,4 +294,9 @@ export const markReceiptsAsReimbursed = (receiptIds: number[]): ReceiptItem[] =>
 export const subscribeToReceiptChanges = (listener: () => void): (() => void) => {
   ensureSupabaseReceiptsLoaded();
   return subscribeToLocalAppState(() => listener());
+};
+
+export const resetSupabaseReceiptsHydration = () => {
+  receiptsHydrationPromise = null;
+  receiptsLoaded = false;
 };

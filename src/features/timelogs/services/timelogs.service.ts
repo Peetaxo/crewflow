@@ -6,6 +6,7 @@ import { Contractor, Event, Timelog, TimelogStatus } from '../../../types';
 
 type TimelogAction = 'sub' | 'ch' | 'coo' | 'rej';
 let timelogsHydrationPromise: Promise<void> | null = null;
+let timelogsLoaded = false;
 const statusMap: Record<TimelogAction, TimelogStatus> = {
   sub: 'pending_ch',
   ch: 'pending_coo',
@@ -87,11 +88,18 @@ const ensureSupabaseTimelogsLoaded = () => {
     return;
   }
 
+  if (timelogsLoaded) {
+    return;
+  }
+
   if (timelogsHydrationPromise) {
     return;
   }
 
   timelogsHydrationPromise = hydrateTimelogsFromSupabase()
+    .then(() => {
+      timelogsLoaded = true;
+    })
     .catch((error) => {
       console.warn('Nepodarilo se nacist timelogy ze Supabase, zustavam na lokalnich datech.', error);
     })
@@ -347,4 +355,9 @@ export const markTimelogsAsPaid = (timelogIds: number[]): Timelog[] => {
 export const subscribeToTimelogChanges = (listener: () => void): (() => void) => {
   ensureSupabaseTimelogsLoaded();
   return subscribeToLocalAppState(() => listener());
+};
+
+export const resetSupabaseTimelogsHydration = () => {
+  timelogsHydrationPromise = null;
+  timelogsLoaded = false;
 };

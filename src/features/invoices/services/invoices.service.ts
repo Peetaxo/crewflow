@@ -116,6 +116,7 @@ type InvoiceReceiptRow = {
 };
 
 let invoicesHydrationPromise: Promise<void> | null = null;
+let invoicesLoaded = false;
 
 const findContractor = (contractors: Contractor[], id: number): Contractor | null => (
   contractors.find((contractor) => contractor.id === id) ?? null
@@ -629,11 +630,18 @@ const ensureSupabaseInvoicesLoaded = () => {
     return;
   }
 
+  if (invoicesLoaded) {
+    return;
+  }
+
   if (invoicesHydrationPromise) {
     return;
   }
 
   invoicesHydrationPromise = hydrateInvoicesFromSupabase()
+    .then(() => {
+      invoicesLoaded = true;
+    })
     .catch((error) => {
       console.warn('Nepodarilo se nacist faktury ze Supabase, zustavam na lokalnich datech.', error);
     })
@@ -1125,4 +1133,9 @@ export const deleteInvoice = async (id: string): Promise<boolean> => {
 export const subscribeToInvoiceChanges = (listener: () => void): (() => void) => {
   ensureSupabaseInvoicesLoaded();
   return subscribeToLocalAppState(() => listener());
+};
+
+export const resetSupabaseInvoicesHydration = () => {
+  invoicesHydrationPromise = null;
+  invoicesLoaded = false;
 };

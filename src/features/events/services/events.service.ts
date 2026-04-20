@@ -13,6 +13,7 @@ const EVENT_PHASE_TYPES: TimelogType[] = ['instal', 'provoz', 'deinstal'];
 const createSlotId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
 let eventsHydrationPromise: Promise<void> | null = null;
+let eventsLoaded = false;
 
 const hydrateEventsFromSupabase = async (): Promise<void> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
@@ -62,11 +63,18 @@ const ensureSupabaseEventsLoaded = () => {
     return;
   }
 
+  if (eventsLoaded) {
+    return;
+  }
+
   if (eventsHydrationPromise) {
     return;
   }
 
   eventsHydrationPromise = hydrateEventsFromSupabase()
+    .then(() => {
+      eventsLoaded = true;
+    })
     .catch((error) => {
       console.warn('Nepodarilo se nacist akce ze Supabase, zustavam na lokalnich datech.', error);
     })
@@ -511,3 +519,8 @@ export const assignCrewToEvent = (
 export const subscribeToEventChanges = (listener: () => void): (() => void) => (
   (ensureSupabaseEventsLoaded(), subscribeToLocalAppState(() => listener()))
 );
+
+export const resetSupabaseEventsHydration = () => {
+  eventsHydrationPromise = null;
+  eventsLoaded = false;
+};

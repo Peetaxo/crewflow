@@ -13,6 +13,7 @@ import {
 
 const DEFAULT_BILLING_COUNTRY = 'Ceska republika';
 let crewHydrationPromise: Promise<void> | null = null;
+let crewLoaded = false;
 
 const getInitials = (name: string) => (
   name
@@ -142,11 +143,18 @@ const ensureSupabaseCrewLoaded = () => {
     return;
   }
 
+  if (crewLoaded) {
+    return;
+  }
+
   if (crewHydrationPromise) {
     return;
   }
 
   crewHydrationPromise = hydrateCrewFromSupabase()
+    .then(() => {
+      crewLoaded = true;
+    })
     .catch((error) => {
       console.warn('Nepodarilo se nacist crew ze Supabase, zustavam na lokalnich datech.', error);
     })
@@ -289,4 +297,9 @@ export const getCrewReceipts = (contractorId: number): ReceiptItem[] => (
 export const subscribeToCrewChanges = (listener: () => void): (() => void) => {
   ensureSupabaseCrewLoaded();
   return subscribeToLocalAppState(() => listener());
+};
+
+export const resetSupabaseCrewHydration = () => {
+  crewHydrationPromise = null;
+  crewLoaded = false;
 };

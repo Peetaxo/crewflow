@@ -5,6 +5,7 @@ import { mapCandidate } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 
 let candidatesHydrationPromise: Promise<void> | null = null;
+let candidatesLoaded = false;
 
 const hydrateCandidatesFromSupabase = async (): Promise<void> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
@@ -36,11 +37,18 @@ const ensureSupabaseCandidatesLoaded = () => {
     return;
   }
 
+  if (candidatesLoaded) {
+    return;
+  }
+
   if (candidatesHydrationPromise) {
     return;
   }
 
   candidatesHydrationPromise = hydrateCandidatesFromSupabase()
+    .then(() => {
+      candidatesLoaded = true;
+    })
     .catch((error) => {
       console.warn('Nepodarilo se nacist kandidaty ze Supabase, zustavam na lokalnich datech.', error);
     })
@@ -84,3 +92,8 @@ export const advanceCandidate = (id: number): Candidate | null => {
 export const subscribeToCandidateChanges = (listener: () => void): (() => void) => (
   (ensureSupabaseCandidatesLoaded(), subscribeToLocalAppState(() => listener()))
 );
+
+export const resetSupabaseCandidatesHydration = () => {
+  candidatesHydrationPromise = null;
+  candidatesLoaded = false;
+};

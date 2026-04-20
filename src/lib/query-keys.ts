@@ -1,4 +1,8 @@
 export const queryKeys = {
+  events: {
+    all: ['events'] as const,
+    list: (search = '') => ['events', 'list', search] as const,
+  },
   timelogs: {
     all: ['timelogs'] as const,
     list: (search = '') => ['timelogs', 'list', search] as const,

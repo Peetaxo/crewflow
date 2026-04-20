@@ -259,7 +259,12 @@ vi.mock('../features/crew/services/crew.service', () => ({
 
 vi.mock('../features/events/services/events.service', () => ({
   getEvents: () => events,
+  fetchEventsSnapshot: async () => events,
   subscribeToEventChanges: () => () => undefined,
+}));
+
+vi.mock('../features/events/queries/useEventsQuery', () => ({
+  useEventsQuery: () => ({ data: events, isLoading: false, error: null }),
 }));
 
 vi.mock('../features/recruitment/services/candidates.service', () => ({

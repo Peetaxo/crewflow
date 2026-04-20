@@ -8,22 +8,22 @@ import { useAppContext } from '../context/AppContext';
 import { Contractor, Event, Invoice, ReceiptItem, Timelog } from '../types';
 import { calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';
+import { useEventsQuery } from '../features/events/queries/useEventsQuery';
 import ShiftCard from '../components/shared/ShiftCard';
 import { useTimelogsQuery } from '../features/timelogs/queries/useTimelogsQuery';
 import { useReceiptsQuery } from '../features/receipts/queries/useReceiptsQuery';
 import { getProjects, subscribeToProjectChanges } from '../features/projects/services/projects.service';
 import { getContractors, subscribeToCrewChanges } from '../features/crew/services/crew.service';
-import { getEvents, subscribeToEventChanges } from '../features/events/services/events.service';
 import { useInvoicesQuery } from '../features/invoices/queries/useInvoicesQuery';
 
 const MyShiftsView = () => {
   const { darkMode, searchQuery } = useAppContext();
   const { currentProfileId } = useAuth();
+  const eventsQuery = useEventsQuery();
   const timelogsQuery = useTimelogsQuery();
   const receiptsQuery = useReceiptsQuery();
   const invoicesQuery = useInvoicesQuery();
   const [contractors, setContractors] = useState<Contractor[]>([]);
-  const [events, setEvents] = useState<Event[]>([]);
   const [projects, setProjects] = useState(() => getProjects() ?? []);
   const me = contractors.find((item) => item.profileId === currentProfileId) ?? null;
   const [activeTab, setActiveTab] = useState<'upcoming' | 'processing' | 'invoiced' | 'invoices'>('upcoming');
@@ -31,16 +31,15 @@ const MyShiftsView = () => {
 
   const loadData = useCallback(() => {
     setContractors(getContractors() ?? []);
-    setEvents(getEvents() ?? []);
   }, []);
 
   useEffect(() => {
     loadData();
-  }, [invoicesQuery.data, loadData, timelogsQuery.data, receiptsQuery.data]);
+  }, [eventsQuery.data, invoicesQuery.data, loadData, timelogsQuery.data, receiptsQuery.data]);
 
   useEffect(() => subscribeToCrewChanges(loadData), [loadData]);
-  useEffect(() => subscribeToEventChanges(loadData), [loadData]);
   useEffect(() => subscribeToProjectChanges(() => setProjects(getProjects() ?? [])), []);
+  const events = useMemo(() => eventsQuery.data ?? [], [eventsQuery.data]);
   const timelogs = timelogsQuery.data ?? [];
   const receipts = receiptsQuery.data ?? [];
   const invoices = invoicesQuery.data ?? [];

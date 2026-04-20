@@ -7,14 +7,11 @@ import { calculateTotalHours, formatCurrency, formatDateRange, getDatesBetween, 
 import StatCard from '../components/shared/StatCard';
 import StatusBadge from '../components/shared/StatusBadge';
 import {
-  getEvents,
-  subscribeToEventChanges,
-} from '../features/events/services/events.service';
-import {
 } from '../features/invoices/services/invoices.service';
 import {
   getTimelogDependencies,
 } from '../features/timelogs/services/timelogs.service';
+import { useEventsQuery } from '../features/events/queries/useEventsQuery';
 import { useTimelogsQuery } from '../features/timelogs/queries/useTimelogsQuery';
 import { useReceiptsQuery } from '../features/receipts/queries/useReceiptsQuery';
 import { useInvoicesQuery } from '../features/invoices/queries/useInvoicesQuery';
@@ -28,27 +25,34 @@ const DashboardView = () => {
     setSelectedEventId,
     setEventTab,
   } = useAppContext();
+  const eventsQuery = useEventsQuery();
   const timelogsQuery = useTimelogsQuery();
   const receiptsQuery = useReceiptsQuery();
   const invoicesQuery = useInvoicesQuery();
 
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
-  const [filteredEvents, setFilteredEvents] = useState<Event[]>([]);
 
   const loadData = useCallback(() => {
-    setFilteredEvents(getEvents(searchQuery) ?? []);
-
     const dependencies = getTimelogDependencies();
     setContractors(dependencies.contractors ?? []);
-    setEvents(dependencies.events ?? []);
-  }, [searchQuery]);
+    setEvents(eventsQuery.data ?? []);
+  }, [eventsQuery.data]);
 
   useEffect(() => {
     loadData();
-  }, [invoicesQuery.data, loadData, timelogsQuery.data, receiptsQuery.data]);
+  }, [eventsQuery.data, invoicesQuery.data, loadData, timelogsQuery.data, receiptsQuery.data]);
 
-  useEffect(() => subscribeToEventChanges(loadData), [loadData]);
+  const filteredEvents = useMemo(() => {
+    const safeEvents = eventsQuery.data ?? [];
+    const query = searchQuery.trim().toLowerCase();
+
+    if (!query) return safeEvents;
+
+    return safeEvents.filter((event) => (
+      event.name.toLowerCase().includes(query) || event.job.toLowerCase().includes(query)
+    ));
+  }, [eventsQuery.data, searchQuery]);
 
   const timelogs = useMemo(() => {
     const safeTimelogs = timelogsQuery.data ?? [];

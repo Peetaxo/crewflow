@@ -15,9 +15,9 @@ const createSlotId = () => `${Date.now().toString(36)}-${Math.random().toString(
 let eventsHydrationPromise: Promise<void> | null = null;
 let eventsLoaded = false;
 
-const hydrateEventsFromSupabase = async (): Promise<void> => {
+export const fetchEventsSnapshot = async (): Promise<Event[]> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
-    return;
+    return getLocalAppState().events ?? [];
   }
 
   const [eventsResult, projectsResult, clientsResult] = await Promise.all([
@@ -52,6 +52,11 @@ const hydrateEventsFromSupabase = async (): Promise<void> => {
     };
   });
 
+  return supabaseEvents;
+};
+
+const hydrateEventsFromSupabase = async (): Promise<void> => {
+  const supabaseEvents = await fetchEventsSnapshot();
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     events: supabaseEvents,

@@ -24,15 +24,12 @@ import StatusBadge from '../components/shared/StatusBadge';
 import EventDetailView from './EventDetailView';
 import EventEditModal from '../components/modals/EventEditModal';
 import AssignCrewModal from '../components/modals/AssignCrewModal';
+import { useEventsQuery } from '../features/events/queries/useEventsQuery';
 import {
   createEmptyEvent,
-  getEventById,
   filterEventsByStatus,
-  getEventDetailData,
-  getEvents,
   getEventsWithDerivedStatus,
   getReferenceDate,
-  subscribeToEventChanges,
 } from '../features/events/services/events.service';
 import { EventFilter } from '../features/events/types/events.types';
 
@@ -141,28 +138,28 @@ const EventsView = () => {
     eventsCalendarDate,
     setEventsCalendarDate,
   } = useAppContext();
+  const eventsQuery = useEventsQuery();
   const [didInitCalendarDate, setDidInitCalendarDate] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const [assigningEvent, setAssigningEvent] = useState<Event | null>(null);
-  const [events, setEvents] = useState<Event[]>([]);
   const canManageEvents = role !== 'crew';
   const viewMode = eventsViewMode as EventsViewMode;
   const calendarMode = eventsCalendarMode as CalendarMode;
   const eventFilter = eventsFilter as EventFilter;
   const selectedEvent = useMemo(
-    () => getEventById(selectedEventId),
-    [selectedEventId],
+    () => (eventsQuery.data ?? []).find((event) => event.id === selectedEventId) ?? null,
+    [eventsQuery.data, selectedEventId],
   );
+  const events = useMemo(() => {
+    const safeEvents = eventsQuery.data ?? [];
+    const query = searchQuery.trim().toLowerCase();
 
-  const loadEvents = useCallback(() => {
-    setEvents(getEvents(searchQuery));
-  }, [searchQuery]);
+    if (!query) return safeEvents;
 
-  useEffect(() => {
-    loadEvents();
-  }, [loadEvents]);
-
-  useEffect(() => subscribeToEventChanges(loadEvents), [loadEvents]);
+    return safeEvents.filter((event) => (
+      event.name.toLowerCase().includes(query) || event.job.toLowerCase().includes(query)
+    ));
+  }, [eventsQuery.data, searchQuery]);
 
   useEffect(() => {
     if (selectedEventId && !selectedEvent) {

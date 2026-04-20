@@ -17,6 +17,18 @@ To znamená:
 - po klonu se ti standardně stáhne právě tato větev
 - je to nejnovější pracovní stav aplikace
 
+## Než začneš s repem
+
+Pokud chceš, aby nový Codex na MacBooku fungoval co nejpodobněji jako na původním stroji, udělej nejdřív tohle:
+
+1. nainstaluj `Codex`
+2. nainstaluj `superpowers` skills
+3. ověř, že nový Codex skills opravdu vidí
+4. teprve potom pokračuj klonem repa a vývojem
+
+Repo samotné nestačí pro stejný AI workflow.  
+Repo přenese kód, plány a specy, ale **nepřenese lokálně instalované skills ani lokální Codex konfiguraci**.
+
 ## Co udělat po klonu na MacBooku
 
 1. Nainstalovat:
@@ -75,7 +87,8 @@ Na MacBooku bude potřeba:
 
 1. nainstalovat Codex
 2. znovu nainstalovat `superpowers`
-3. otevřít tohle repo
+3. ověřit, že skills jsou dostupné
+4. otevřít tohle repo
 
 Plány, specy a workflow poznámky už v repu jsou, takže ty se po klonu přenesou automaticky.
 

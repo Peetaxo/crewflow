@@ -124,24 +124,6 @@ const getContractorProfileIdFromLocalState = (contractorId: number): string | un
   (getLocalAppState().contractors ?? []).find((contractor) => contractor.id === contractorId)?.profileId
 );
 
-const getSupabaseProfileIdMap = async (): Promise<Map<number, string>> => {
-  if (!supabase) {
-    throw new Error('Supabase klient neni dostupny.');
-  }
-
-  const result = await supabase
-    .from('profiles')
-    .select('id')
-    .order('last_name')
-    .order('first_name');
-
-  if (result.error) {
-    throw new Error(result.error.message);
-  }
-
-  return new Map((result.data ?? []).map((row, index) => [index + 1, row.id]));
-};
-
 const getSupabaseEventIdMap = async (): Promise<Map<number, string>> => {
   if (!supabase) {
     throw new Error('Supabase klient neni dostupny.');
@@ -308,11 +290,8 @@ export const saveReceipt = async (updated: ReceiptItem): Promise<ReceiptItem> =>
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
     const existing = (getLocalAppState().receipts ?? []).some((receipt) => receipt.id === normalizedReceipt.id);
-    const [eventIdMap, profileIdMap] = await Promise.all([
-      getSupabaseEventIdMap(),
-      normalizedReceipt.contractorProfileId ? Promise.resolve(null) : getSupabaseProfileIdMap(),
-    ]);
-    const contractorRowId = normalizedReceipt.contractorProfileId ?? profileIdMap?.get(normalizedReceipt.cid);
+    const eventIdMap = await getSupabaseEventIdMap();
+    const contractorRowId = normalizedReceipt.contractorProfileId;
     const eventRowId = eventIdMap.get(normalizedReceipt.eid);
 
     if (!contractorRowId || !eventRowId) {

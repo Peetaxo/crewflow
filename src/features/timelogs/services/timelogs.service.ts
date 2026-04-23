@@ -135,24 +135,6 @@ const getContractorProfileIdFromLocalState = (contractorId: number): string | un
   (getLocalAppState().contractors ?? []).find((contractor) => contractor.id === contractorId)?.profileId
 );
 
-const getSupabaseProfileIdMap = async (): Promise<Map<number, string>> => {
-  if (!supabase) {
-    throw new Error('Supabase klient neni dostupny.');
-  }
-
-  const result = await supabase
-    .from('profiles')
-    .select('id')
-    .order('last_name')
-    .order('first_name');
-
-  if (result.error) {
-    throw new Error(result.error.message);
-  }
-
-  return new Map((result.data ?? []).map((row, index) => [index + 1, row.id]));
-};
-
 const getSupabaseEventIdMap = async (): Promise<Map<number, string>> => {
   if (!supabase) {
     throw new Error('Supabase klient neni dostupny.');
@@ -325,12 +307,11 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
   };
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
-    const [timelogRowId, eventIdMap, profileIdMap] = await Promise.all([
+    const [timelogRowId, eventIdMap] = await Promise.all([
       getSupabaseTimelogRowId(updated.id),
       getSupabaseEventIdMap(),
-      normalizedTimelog.contractorProfileId ? Promise.resolve(null) : getSupabaseProfileIdMap(),
     ]);
-    const contractorRowId = normalizedTimelog.contractorProfileId ?? profileIdMap?.get(normalizedTimelog.cid);
+    const contractorRowId = normalizedTimelog.contractorProfileId;
     const eventRowId = eventIdMap.get(normalizedTimelog.eid);
 
     if (!contractorRowId || !eventRowId) {

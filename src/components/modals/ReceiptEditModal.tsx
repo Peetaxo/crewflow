@@ -16,6 +16,7 @@ const ReceiptEditModal = () => {
 
   const { events, contractors } = getReceiptDependencies();
   const selectedEvent = events.find((event) => event.id === editingReceipt.eid);
+  const selectedContractorValue = editingReceipt.contractorProfileId ?? String(editingReceipt.cid);
 
   return (
     <AnimatePresence>
@@ -38,12 +39,29 @@ const ReceiptEditModal = () => {
               <div>
                 <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Crew</label>
                 <select
-                  value={editingReceipt.cid}
-                  onChange={(e) => setEditingReceipt({ ...editingReceipt, cid: Number(e.target.value) })}
+                  aria-label="Crew"
+                  value={selectedContractorValue}
+                  onChange={(e) => {
+                    const contractor = contractors.find((item) => (
+                      item.profileId === e.target.value || String(item.id) === e.target.value
+                    ));
+                    if (!contractor) return;
+
+                    setEditingReceipt({
+                      ...editingReceipt,
+                      cid: contractor.id,
+                      contractorProfileId: contractor.profileId,
+                    });
+                  }}
                   className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
                 >
                   {contractors.map((contractor) => (
-                    <option key={contractor.id} value={contractor.id}>{contractor.name}</option>
+                    <option
+                      key={contractor.id}
+                      value={contractor.profileId ?? String(contractor.id)}
+                    >
+                      {contractor.name}
+                    </option>
                   ))}
                 </select>
               </div>

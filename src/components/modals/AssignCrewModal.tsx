@@ -13,26 +13,32 @@ interface AssignCrewModalProps {
   onClose: () => void;
 }
 
+const getContractorSelectionValue = (contractor: { id: number; profileId?: string }) => (
+  contractor.profileId ?? `legacy:${contractor.id}`
+);
+
 const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
-  const [pendingContractorId, setPendingContractorId] = useState<number | null>(null);
+  const [pendingContractorSelection, setPendingContractorSelection] = useState<string | null>(null);
   const [selectedPhaseOptions, setSelectedPhaseOptions] = useState<Array<TimelogType | 'all'>>([]);
   const [search, setSearch] = useState('');
 
   const contractors = useMemo(() => getCrew({ search }), [search]);
   const pendingContractor = useMemo(
-    () => contractors.find((contractor) => contractor.id === pendingContractorId) ?? null,
-    [contractors, pendingContractorId],
+    () => contractors.find((contractor) => getContractorSelectionValue(contractor) === pendingContractorSelection) ?? null,
+    [contractors, pendingContractorSelection],
   );
 
   if (!event) return null;
 
   const contractorConflicts = getContractorConflictsForEvent(event, contractors);
-  const assignedContractorIds = new Set(getEventDetailData(event.id).timelogs.map((timelog) => timelog.cid));
+  const assignedContractorIds = new Set(getEventDetailData(event.id).timelogs.map((timelog) => (
+    timelog.contractorProfileId ?? `legacy:${timelog.cid}`
+  )));
 
   const assignContractor = async (contractorId: number, phaseChoices?: Array<TimelogType | 'all'>) => {
     try {
       await assignCrewToEvent(event.id, contractorId, phaseChoices);
-      setPendingContractorId(null);
+      setPendingContractorSelection(null);
       setSelectedPhaseOptions([]);
       toast.success('Clen crew byl prirazen bez kolize.');
     } catch (error) {
@@ -56,7 +62,7 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
   };
 
   const handleClose = () => {
-    setPendingContractorId(null);
+    setPendingContractorSelection(null);
     setSelectedPhaseOptions([]);
     setSearch('');
     onClose();
@@ -142,7 +148,7 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
                 <button
                   type="button"
                   onClick={() => {
-                    setPendingContractorId(null);
+                    setPendingContractorSelection(null);
                     setSelectedPhaseOptions([]);
                   }}
                   className="text-[11px] font-medium text-gray-500 hover:text-gray-700"
@@ -163,7 +169,8 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
 
           <div className="flex-1 space-y-1 overflow-y-auto p-2">
             {contractors.map((contractor) => {
-              const isAlreadyAssigned = assignedContractorIds.has(contractor.id);
+              const contractorSelectionValue = getContractorSelectionValue(contractor);
+              const isAlreadyAssigned = assignedContractorIds.has(contractorSelectionValue);
               const conflicts = contractorConflicts.get(contractor.id) || [];
               const hasConflict = conflicts.length > 0;
 
@@ -178,7 +185,7 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
                     }
 
                     if (event.showDayTypes) {
-                      setPendingContractorId(contractor.id);
+                      setPendingContractorSelection(contractorSelectionValue);
                       setSelectedPhaseOptions([]);
                       return;
                     }

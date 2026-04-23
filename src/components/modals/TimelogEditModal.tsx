@@ -16,7 +16,9 @@ const TimelogEditModal = () => {
   if (!editingTimelog) return null;
 
   const { contractors, events } = getTimelogDependencies();
-  const contractor = contractors.find((item) => item.id === editingTimelog.cid) ?? null;
+  const contractor = contractors.find((item) => item.profileId === editingTimelog.contractorProfileId)
+    ?? contractors.find((item) => item.id === editingTimelog.cid)
+    ?? null;
   const event = events.find((item) => item.id === editingTimelog.eid) ?? null;
   if (!contractor || !event) return null;
 

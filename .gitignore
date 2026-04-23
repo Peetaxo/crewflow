@@ -24,3 +24,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Claude Code metadata (worktrees, plans, launch configs)
+.claude/

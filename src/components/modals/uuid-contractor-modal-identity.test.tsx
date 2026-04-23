@@ -224,4 +224,42 @@ describe('modal contractor identity handling', () => {
     expect(screen.getByText('Prirazen')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Assigned Contractor/i })).toBeDisabled();
   });
+
+  it('assigns crew through contractorProfileId', () => {
+    mockCrew = [
+      {
+        id: 2,
+        profileId: 'profile-uuid-2',
+        name: 'Free Contractor',
+        ii: 'FC',
+        bg: '#111',
+        fg: '#fff',
+        tags: [],
+        reliable: true,
+        city: 'Brno',
+      },
+    ];
+
+    render(
+      <AssignCrewModal
+        event={{
+          id: 1,
+          name: 'Test Event',
+          job: 'JOB-1',
+          startDate: '2026-04-24',
+          endDate: '2026-04-24',
+          city: 'Praha',
+          needed: 1,
+          filled: 0,
+          status: 'upcoming',
+          client: 'Client',
+        }}
+        onClose={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Free Contractor/i }));
+
+    expect(assignCrewToEvent).toHaveBeenCalledWith(1, 'profile-uuid-2', undefined);
+  });
 });

@@ -57,7 +57,8 @@ const EventDetailView = () => {
   const contractors = detail.contractors;
   const totalHours = eventTimelogs.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
   const totalCrewCost = eventTimelogs.reduce((sum, timelog) => {
-    const contractor = contractors.find((item) => item.id === timelog.cid);
+    const contractor = contractors.find((item) => item.profileId === timelog.contractorProfileId)
+      ?? contractors.find((item) => item.id === timelog.cid);
     return sum + (contractor ? calculateTotalHours(timelog.days) * contractor.rate : 0);
   }, 0);
   const totalTravelCost = eventTimelogs.reduce((sum, timelog) => sum + timelog.km * KM_RATE, 0);
@@ -75,8 +76,13 @@ const EventDetailView = () => {
       : []
   );
 
-  const handleRemoveFromEvent = (contractorId: number) => {
-    void removeContractorFromEvent(event.id, contractorId).catch((error) => {
+  const handleRemoveFromEvent = (contractorProfileId: string | undefined) => {
+    if (!contractorProfileId) {
+      toast.error('Nepodařilo se dohledat UUID identitu člena crew.');
+      return;
+    }
+
+    void removeContractorFromEvent(event.id, contractorProfileId).catch((error) => {
       toast.error(error instanceof Error ? error.message : 'Nepodařilo se odebrat člena crew.');
     });
   };
@@ -124,7 +130,8 @@ const EventDetailView = () => {
             <button
               onClick={() => setEditingReceipt({
                 id: Math.max(0, ...eventReceipts.map((receipt) => receipt.id)) + 1,
-                cid: 1,
+                cid: 0,
+                contractorProfileId: undefined,
                 eid: event.id,
                 job: event.job,
                 title: '',
@@ -214,7 +221,8 @@ const EventDetailView = () => {
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {eventCrew.map((contractor) => {
-                          const timelog = eventTimelogs.find((item) => item.cid === contractor.id);
+                          const timelog = eventTimelogs.find((item) => item.contractorProfileId === contractor.profileId)
+                            ?? eventTimelogs.find((item) => item.cid === contractor.id);
                           const hours = timelog ? calculateTotalHours(timelog.days) : 0;
 
                           return (
@@ -254,7 +262,7 @@ const EventDetailView = () => {
                                       </button>
                                     )}
                                     <button
-                                      onClick={() => handleRemoveFromEvent(contractor.id)}
+                                      onClick={() => handleRemoveFromEvent(contractor.profileId)}
                                       className="rounded-lg p-1.5 text-gray-300 transition-all hover:bg-red-50 hover:text-red-600"
                                       title="Odebrat z akce"
                                     >
@@ -331,7 +339,8 @@ const EventDetailView = () => {
                   </h4>
                   <div className="space-y-2">
                     {eventReceipts.slice(0, 4).map((receipt) => {
-                      const contractor = contractors.find((item) => item.id === receipt.cid);
+                      const contractor = contractors.find((item) => item.profileId === receipt.contractorProfileId)
+                        ?? contractors.find((item) => item.id === receipt.cid);
                       return (
                         <div key={receipt.id} className="rounded-lg border border-gray-100 bg-white p-3">
                           <div className="flex items-start justify-between gap-3">
@@ -379,7 +388,8 @@ const EventDetailView = () => {
 
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {eventTimelogs.filter((timelog) => timelog.days.some((day) => day.d === eventTab)).map((timelog) => {
-                  const contractor = contractors.find((item) => item.id === timelog.cid);
+                  const contractor = contractors.find((item) => item.profileId === timelog.contractorProfileId)
+                    ?? contractors.find((item) => item.id === timelog.cid);
                   if (!contractor) return null;
                   const matchingDays = timelog.days.filter((day) => day.d === eventTab);
 

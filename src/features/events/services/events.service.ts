@@ -154,24 +154,6 @@ const getSupabaseEventRows = async (): Promise<Array<{ id: string; date_from: st
   return result.data ?? [];
 };
 
-const getSupabaseProfileRows = async (): Promise<Array<{ id: string }>> => {
-  if (!supabase) {
-    throw new Error('Supabase klient neni dostupny.');
-  }
-
-  const result = await supabase
-    .from('profiles')
-    .select('id')
-    .order('last_name')
-    .order('first_name');
-
-  if (result.error) {
-    throw new Error(result.error.message);
-  }
-
-  return result.data ?? [];
-};
-
 const getSupabaseEventRowId = async (localEventId: number): Promise<string> => {
   const mapped = eventRowIdByLocalId.get(localEventId);
   if (mapped) {
@@ -191,8 +173,8 @@ const getSupabaseEventRowId = async (localEventId: number): Promise<string> => {
   return rowId;
 };
 
-const getSupabaseProfileIdMap = async (): Promise<Map<number, string>> => (
-  new Map((await getSupabaseProfileRows()).map((row, index) => [index + 1, row.id]))
+const getContractorByProfileId = (profileId: string): Contractor | null => (
+  (getLocalAppState().contractors ?? []).find((contractor) => contractor.profileId === profileId) ?? null
 );
 
 const ensureSupabaseProjectRowId = async (event: Event): Promise<string | null> => {
@@ -600,30 +582,26 @@ export const getEventCrew = (eventId: number): Contractor[] => {
   ensureSupabaseEventsLoaded();
   const snapshot = getLocalAppState();
   return (snapshot.contractors ?? []).filter((contractor) => (
-    (snapshot.timelogs ?? []).some((timelog) => timelog.eid === eventId && timelog.cid === contractor.id)
+    (snapshot.timelogs ?? []).some((timelog) => (
+      timelog.eid === eventId
+      && (timelog.contractorProfileId === contractor.profileId || timelog.cid === contractor.id)
+    ))
   ));
 };
 
-export const removeContractorFromEvent = async (eventId: number, contractorId: number) => {
+export const removeContractorFromEvent = async (eventId: number, contractorProfileId: string) => {
   let nextEvent: Event | null = null;
   let nextTimelogs: Timelog[] = [];
+  const contractor = getContractorByProfileId(contractorProfileId);
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
-    const [eventRowId, profileIdMap] = await Promise.all([
-      getSupabaseEventRowId(eventId),
-      getSupabaseProfileIdMap(),
-    ]);
-    const profileRowId = profileIdMap.get(contractorId);
-
-    if (!profileRowId) {
-      throw new Error('Nepodarilo se sparovat clena crew s databazovym zaznamem.');
-    }
+    const eventRowId = await getSupabaseEventRowId(eventId);
 
     const timelogRows = await supabase
       .from('timelogs')
       .select('id')
       .eq('event_id', eventRowId)
-      .eq('contractor_id', profileRowId);
+      .eq('contractor_id', contractorProfileId);
 
     if (timelogRows.error) {
       throw new Error(timelogRows.error.message);
@@ -662,7 +640,10 @@ export const removeContractorFromEvent = async (eventId: number, contractorId: n
       ...event,
       filled: Math.max(0, event.filled - 1),
     };
-    nextTimelogs = snapshot.timelogs.filter((timelog) => !(timelog.eid === eventId && timelog.cid === contractorId));
+    nextTimelogs = snapshot.timelogs.filter((timelog) => !(
+      timelog.eid === eventId
+      && (timelog.contractorProfileId === contractorProfileId || (contractor && timelog.cid === contractor.id))
+    ));
 
     return {
       ...snapshot,
@@ -701,7 +682,7 @@ export const getContractorConflictsForEvent = (
   return new Map<number, EventConflictDetail[]>(
     contractors.map((contractor) => {
       const overlappingTimelogs = snapshot.timelogs.filter((timelog) => (
-        timelog.cid === contractor.id
+        (timelog.contractorProfileId === contractor.profileId || timelog.cid === contractor.id)
         && timelog.eid !== event.id
         && timelog.days.some((day) => eventDateSet.has(day.d))
       ));
@@ -778,14 +759,19 @@ export const buildTimelogDaysForEvent = (
 
 export const assignCrewToEvent = async (
   eventId: number,
-  contractorId: number,
+  contractorProfileId: string,
   phaseChoices?: Array<TimelogType | 'all'>,
 ): Promise<EventAssignmentResult> => {
   const snapshot = getLocalAppState();
   const event = snapshot.events.find((item) => item.id === eventId);
+  const contractor = getContractorByProfileId(contractorProfileId);
 
   if (!event) {
     throw new Error('Akce nebyla nalezena.');
+  }
+
+  if (!contractor) {
+    throw new Error('Clen crew nebyl nalezen.');
   }
 
   const initialDays = buildTimelogDaysForEvent(event, phaseChoices);
@@ -794,7 +780,7 @@ export const assignCrewToEvent = async (
   }
 
   const hasCollision = snapshot.timelogs.some((timelog) => (
-    timelog.cid === contractorId
+    (timelog.contractorProfileId === contractorProfileId || timelog.cid === contractor.id)
     && timelog.eid !== event.id
     && timelog.days.some((day) => initialDays.some((newDay) => newDay.d === day.d))
   ));
@@ -811,7 +797,8 @@ export const assignCrewToEvent = async (
     timelog: {
       id: Math.max(0, ...snapshot.timelogs.map((timelog) => timelog.id)) + 1,
       eid: event.id,
-      cid: contractorId,
+      cid: contractor.id,
+      contractorProfileId,
       days: initialDays,
       km: 0,
       note: '',
@@ -820,21 +807,13 @@ export const assignCrewToEvent = async (
   };
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
-    const [eventRowId, profileIdMap] = await Promise.all([
-      getSupabaseEventRowId(event.id),
-      getSupabaseProfileIdMap(),
-    ]);
-    const profileRowId = profileIdMap.get(contractorId);
-
-    if (!profileRowId) {
-      throw new Error('Nepodarilo se sparovat clena crew s databazovym zaznamem.');
-    }
+    const eventRowId = await getSupabaseEventRowId(event.id);
 
     const timelogInsert = await supabase
       .from('timelogs')
       .insert({
         event_id: eventRowId,
-        contractor_id: profileRowId,
+        contractor_id: contractorProfileId,
         km: 0,
         note: '',
         status: 'draft',

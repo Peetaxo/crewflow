@@ -20,7 +20,7 @@ const Sidebar: React.FC = () => {
     currentTab, setCurrentTab,
     setSettingsSection,
     searchQuery, setSearchQuery,
-    setSelectedContractorId,
+    setSelectedContractorProfileId,
     setSelectedEventId,
     setSelectedProjectIdForStats,
     setSelectedClientIdForStats,
@@ -57,7 +57,7 @@ const Sidebar: React.FC = () => {
 
   const handleNavClick = (tabId: string) => {
     setCurrentTab(tabId);
-    setSelectedContractorId(null);
+    setSelectedContractorProfileId(null);
     setSelectedEventId(null);
     setSelectedProjectIdForStats(null);
     setSelectedClientIdForStats(null);

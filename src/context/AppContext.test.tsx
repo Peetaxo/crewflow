@@ -122,7 +122,7 @@ describe('AppProvider UI session restore', () => {
       searchQuery: 'rozdelane',
       timelogFilter: 'draft',
       projectFilter: 'active',
-      selectedContractorId: null,
+      selectedContractorProfileId: null,
       selectedEventId: 12,
       selectedProjectIdForStats: null,
       selectedClientIdForStats: null,
@@ -156,7 +156,7 @@ describe('AppProvider UI session restore', () => {
       searchQuery: 'rozdelane',
       timelogFilter: 'draft',
       projectFilter: 'active',
-      selectedContractorId: null,
+      selectedContractorProfileId: null,
       selectedEventId: 12,
       selectedProjectIdForStats: null,
       selectedClientIdForStats: null,
@@ -207,7 +207,7 @@ describe('AppProvider UI session restore', () => {
       });
     });
 
-    const rawSnapshot = window.sessionStorage.getItem('crewflow.ui-session.v1');
+    const rawSnapshot = window.sessionStorage.getItem('crewflow.ui-session.v2');
     expect(rawSnapshot).not.toBeNull();
 
     const parsedSnapshot = JSON.parse(rawSnapshot!);
@@ -220,7 +220,7 @@ describe('AppProvider UI session restore', () => {
       searchQuery: 'rozdelane',
       timelogFilter: 'draft',
       projectFilter: 'active',
-      selectedContractorId: null,
+      selectedContractorProfileId: null,
       selectedEventId: 12,
       selectedProjectIdForStats: null,
       selectedClientIdForStats: null,
@@ -254,7 +254,7 @@ describe('AppProvider UI session restore', () => {
       searchQuery: 'rozdelane',
       timelogFilter: 'draft',
       projectFilter: 'active',
-      selectedContractorId: null,
+      selectedContractorProfileId: null,
       selectedEventId: 12,
       selectedProjectIdForStats: null,
       selectedClientIdForStats: null,
@@ -292,7 +292,7 @@ describe('AppProvider UI session restore', () => {
       searchQuery: 'rozdelane',
       timelogFilter: 'draft',
       projectFilter: 'active',
-      selectedContractorId: null,
+      selectedContractorProfileId: null,
       selectedEventId: null,
       selectedProjectIdForStats: null,
       selectedClientIdForStats: 3,
@@ -330,7 +330,7 @@ describe('AppProvider UI session restore', () => {
       searchQuery: 'rozdelane',
       timelogFilter: 'draft',
       projectFilter: 'active',
-      selectedContractorId: null,
+      selectedContractorProfileId: null,
       selectedEventId: null,
       selectedProjectIdForStats: null,
       selectedClientIdForStats: 3,

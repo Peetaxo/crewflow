@@ -188,7 +188,7 @@ export const getCrewById = (id: number | null): CrewMember | null => {
 
 export const getCrewByExternalId = (_externalId: string): CrewMember | null => null;
 
-export const getCrewDetailData = (contractorId: number | null): {
+export const getCrewDetailData = (profileId: string | null): {
   contractor: CrewMember | null;
   timelogs: Timelog[];
   invoices: Invoice[];
@@ -197,9 +197,9 @@ export const getCrewDetailData = (contractorId: number | null): {
 } => {
   ensureSupabaseCrewLoaded();
   const snapshot = getLocalAppState();
-  const contractor = contractorId == null
+  const contractor = profileId == null
     ? null
-    : (snapshot.contractors ?? []).find((member) => member.id === contractorId) ?? null;
+    : (snapshot.contractors ?? []).find((member) => member.profileId === profileId) ?? null;
 
   if (!contractor) {
     return {

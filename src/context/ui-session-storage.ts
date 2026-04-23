@@ -1,13 +1,13 @@
 import type { Client, Project, ReceiptItem, Timelog } from '../types';
 
-const UI_SESSION_STORAGE_KEY = 'crewflow.ui-session.v1';
+const UI_SESSION_STORAGE_KEY = 'crewflow.ui-session.v2';
 
 export type PersistedUiSessionState = {
   currentTab: string;
   searchQuery: string;
   timelogFilter: string;
   projectFilter: string;
-  selectedContractorId: number | null;
+  selectedContractorProfileId: string | null;
   selectedEventId: number | null;
   selectedProjectIdForStats: string | null;
   selectedClientIdForStats: number | null;
@@ -23,7 +23,7 @@ export type PersistedUiSessionState = {
 };
 
 type PersistedUiSessionPayload = {
-  version: 1;
+  version: 2;
   state: PersistedUiSessionState;
 };
 
@@ -98,7 +98,7 @@ const isPersistedUiSessionState = (value: unknown): value is PersistedUiSessionS
   isString(value.searchQuery) &&
   isString(value.timelogFilter) &&
   isString(value.projectFilter) &&
-  isNullableNumber(value.selectedContractorId) &&
+  (value.selectedContractorProfileId === null || isString(value.selectedContractorProfileId)) &&
   isNullableNumber(value.selectedEventId) &&
   (value.selectedProjectIdForStats === null || isString(value.selectedProjectIdForStats)) &&
   isNullableNumber(value.selectedClientIdForStats) &&
@@ -132,7 +132,7 @@ export const loadPersistedUiSession = (): PersistedUiSessionState | null => {
     }
 
     const parsed = JSON.parse(raw) as Partial<PersistedUiSessionPayload>;
-    if (parsed.version !== 1 || !isPersistedUiSessionState(parsed.state)) {
+    if (parsed.version !== 2 || !isPersistedUiSessionState(parsed.state)) {
       safelyRemovePersistedUiSession();
       return null;
     }
@@ -150,7 +150,7 @@ export const savePersistedUiSession = (state: PersistedUiSessionState) => {
   }
 
   const payload: PersistedUiSessionPayload = {
-    version: 1,
+    version: 2,
     state,
   };
 

@@ -5,14 +5,14 @@ import {
   savePersistedUiSession,
 } from './ui-session-storage';
 
-const STORAGE_KEY = 'crewflow.ui-session.v1';
+const STORAGE_KEY = 'crewflow.ui-session.v2';
 
 const snapshot = {
   currentTab: 'events',
   searchQuery: 'akce',
   timelogFilter: 'all',
   projectFilter: 'all',
-  selectedContractorId: 3,
+  selectedContractorProfileId: 'abc-uuid-1',
   selectedEventId: 11,
   selectedProjectIdForStats: 'AK001',
   selectedClientIdForStats: 4,
@@ -52,7 +52,7 @@ describe('ui session storage', () => {
   it('clears and returns null for wrong version', () => {
     window.sessionStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ version: 2, state: snapshot }),
+      JSON.stringify({ version: 3, state: snapshot }),
     );
 
     expect(loadPersistedUiSession()).toBeNull();
@@ -60,7 +60,7 @@ describe('ui session storage', () => {
   });
 
   it('clears and returns null for missing or invalid state', () => {
-    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 1 }));
+    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2 }));
 
     expect(loadPersistedUiSession()).toBeNull();
     expect(window.sessionStorage.getItem(STORAGE_KEY)).toBeNull();
@@ -68,7 +68,7 @@ describe('ui session storage', () => {
     window.sessionStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
-        version: 1,
+        version: 2,
         state: {
           ...snapshot,
           selectedEventId: '11',

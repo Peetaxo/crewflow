@@ -52,8 +52,8 @@ interface AppContextType {
   setTimelogFilter: (f: string) => void;
   projectFilter: string;
   setProjectFilter: (f: string) => void;
-  selectedContractorId: number | null;
-  setSelectedContractorId: (id: number | null) => void;
+  selectedContractorProfileId: string | null;
+  setSelectedContractorProfileId: (id: string | null) => void;
   selectedEventId: number | null;
   setSelectedEventId: (id: number | null) => void;
   selectedProjectIdForStats: string | null;
@@ -99,7 +99,7 @@ const normalizeUiSessionState = (
   }
 
   if (normalizedState.currentTab !== 'crew') {
-    normalizedState.selectedContractorId = null;
+    normalizedState.selectedContractorProfileId = null;
   }
 
   if (normalizedState.currentTab !== 'events') {
@@ -148,7 +148,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [timelogFilter, setTimelogFilter] = useState(initialUiSession?.timelogFilter ?? 'all');
   const [projectFilter, setProjectFilter] = useState(initialUiSession?.projectFilter ?? 'all');
 
-  const [selectedContractorId, setSelectedContractorId] = useState<number | null>(initialUiSession?.selectedContractorId ?? null);
+  const [selectedContractorProfileId, setSelectedContractorProfileId] = useState<string | null>(initialUiSession?.selectedContractorProfileId ?? null);
   const [selectedEventId, setSelectedEventId] = useState<number | null>(initialUiSession?.selectedEventId ?? null);
   const [selectedProjectIdForStats, setSelectedProjectIdForStats] = useState<string | null>(initialUiSession?.selectedProjectIdForStats ?? null);
   const [selectedClientIdForStats, setSelectedClientIdForStats] = useState<number | null>(initialUiSession?.selectedClientIdForStats ?? null);
@@ -182,7 +182,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [currentTab]);
 
   useEffect(() => {
-    if (currentTab !== 'crew') setSelectedContractorId(null);
+    if (currentTab !== 'crew') setSelectedContractorProfileId(null);
     if (currentTab !== 'events') {
       setSelectedEventId(null);
       setEventTab('overview');
@@ -220,7 +220,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setSearchQuery(restoredState.searchQuery);
       setTimelogFilter(restoredState.timelogFilter);
       setProjectFilter(restoredState.projectFilter);
-      setSelectedContractorId(restoredState.selectedContractorId);
+      setSelectedContractorProfileId(restoredState.selectedContractorProfileId);
       setSelectedEventId(restoredState.selectedEventId);
       setSelectedProjectIdForStats(restoredState.selectedProjectIdForStats);
       setSelectedClientIdForStats(restoredState.selectedClientIdForStats);
@@ -255,7 +255,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       searchQuery,
       timelogFilter,
       projectFilter,
-      selectedContractorId,
+      selectedContractorProfileId,
       selectedEventId,
       selectedProjectIdForStats,
       selectedClientIdForStats,
@@ -275,7 +275,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     searchQuery,
     timelogFilter,
     projectFilter,
-    selectedContractorId,
+    selectedContractorProfileId,
     selectedEventId,
     selectedProjectIdForStats,
     selectedClientIdForStats,
@@ -333,7 +333,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     searchQuery, setSearchQuery,
     timelogFilter, setTimelogFilter,
     projectFilter, setProjectFilter,
-    selectedContractorId, setSelectedContractorId,
+    selectedContractorProfileId, setSelectedContractorProfileId,
     selectedEventId, setSelectedEventId,
     selectedProjectIdForStats, setSelectedProjectIdForStats,
     selectedClientIdForStats, setSelectedClientIdForStats,

@@ -47,8 +47,8 @@ const createEmptyContractor = (nextId: number): Contractor => {
 
 const CrewView = () => {
   const {
-    selectedContractorId,
-    setSelectedContractorId,
+    selectedContractorProfileId,
+    setSelectedContractorProfileId,
     searchQuery,
     setDeleteConfirm,
   } = useAppContext();
@@ -70,7 +70,7 @@ const CrewView = () => {
     [crew],
   );
 
-  if (selectedContractorId) {
+  if (selectedContractorProfileId) {
     return <CrewDetailView />;
   }
 
@@ -108,7 +108,7 @@ const CrewView = () => {
               <tr
                 key={contractor.id}
                 className="cursor-pointer transition-colors hover:bg-gray-50"
-                onClick={() => setSelectedContractorId(contractor.id)}
+                onClick={() => setSelectedContractorProfileId(contractor.profileId ?? null)}
               >
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">

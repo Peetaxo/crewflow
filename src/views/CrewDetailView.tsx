@@ -12,16 +12,16 @@ import { getCrewDetailData, subscribeToCrewChanges, updateCrew } from '../featur
 
 const CrewDetailView = () => {
   const {
-    selectedContractorId,
-    setSelectedContractorId,
+    selectedContractorProfileId,
+    setSelectedContractorProfileId,
     setEditingTimelog,
     darkMode,
   } = useAppContext();
-  const [detail, setDetail] = useState(() => getCrewDetailData(selectedContractorId));
+  const [detail, setDetail] = useState(() => getCrewDetailData(selectedContractorProfileId));
 
   const loadDetail = useCallback(() => {
-    setDetail(getCrewDetailData(selectedContractorId));
-  }, [selectedContractorId]);
+    setDetail(getCrewDetailData(selectedContractorProfileId));
+  }, [selectedContractorProfileId]);
 
   useEffect(() => {
     loadDetail();
@@ -145,7 +145,7 @@ const CrewDetailView = () => {
   return (
     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
       <button
-        onClick={() => setSelectedContractorId(null)}
+        onClick={() => setSelectedContractorProfileId(null)}
         className="mb-4 flex items-center gap-1 text-xs text-gray-500 transition-colors hover:text-gray-900"
       >
         <ArrowLeft size={14} />

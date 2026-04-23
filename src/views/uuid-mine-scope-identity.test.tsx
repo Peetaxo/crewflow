@@ -30,7 +30,7 @@ const setRole = vi.fn();
 const setCurrentTab = vi.fn();
 const setSettingsSection = vi.fn();
 const setSearchQuery = vi.fn();
-const setSelectedContractorId = vi.fn();
+const setSelectedContractorProfileId = vi.fn();
 const setSelectedEventId = vi.fn();
 const setSelectedProjectIdForStats = vi.fn();
 const setSelectedClientIdForStats = vi.fn();
@@ -53,7 +53,7 @@ let mockAppContext = {
   settingsSection: 'menu' as const,
   setSettingsSection,
   setSearchQuery,
-  setSelectedContractorId,
+  setSelectedContractorProfileId,
   setSelectedEventId,
   setSelectedProjectIdForStats,
   setSelectedClientIdForStats,

@@ -27,7 +27,8 @@ const matchesSearch = (
   if (!query) return true;
 
   const event = events.find((item) => item.id === receipt.eid);
-  const contractor = contractors.find((item) => item.id === receipt.cid);
+  const contractor = contractors.find((item) => item.profileId === receipt.contractorProfileId)
+    ?? contractors.find((item) => item.id === receipt.cid);
   if (!event || !contractor) return false;
 
   return (
@@ -428,11 +429,11 @@ export const markReceiptsAsAttached = async (receiptIds: number[]): Promise<Rece
 
 export const markReceiptsAsReimbursedForInvoice = async (
   eventId: number,
-  contractorId: number,
+  contractorProfileId: string,
 ): Promise<ReceiptItem[]> => {
   const updatedReceipts: ReceiptItem[] = [];
   const localReceiptIds = (getLocalAppState().receipts ?? [])
-    .filter((receipt) => receipt.eid === eventId && receipt.cid === contractorId && receipt.status === 'attached')
+    .filter((receipt) => receipt.eid === eventId && receipt.contractorProfileId === contractorProfileId && receipt.status === 'attached')
     .map((receipt) => receipt.id);
 
   if (localReceiptIds.length > 0) {
@@ -442,7 +443,7 @@ export const markReceiptsAsReimbursedForInvoice = async (
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     receipts: snapshot.receipts.map((receipt) => {
-      if (receipt.eid !== eventId || receipt.cid !== contractorId || receipt.status !== 'attached') return receipt;
+      if (receipt.eid !== eventId || receipt.contractorProfileId !== contractorProfileId || receipt.status !== 'attached') return receipt;
 
       const updatedReceipt = {
         ...receipt,

@@ -29,7 +29,8 @@ const matchesSearch = (
   if (!query) return true;
 
   const event = events.find((item) => item.id === timelog.eid);
-  const contractor = contractors.find((item) => item.id === timelog.cid);
+  const contractor = contractors.find((item) => item.profileId === timelog.contractorProfileId)
+    ?? contractors.find((item) => item.id === timelog.cid);
   if (!event || !contractor) return false;
 
   return (
@@ -460,11 +461,11 @@ export const markTimelogsAsInvoiced = async (timelogIds: number[]): Promise<Time
 
 export const markTimelogsAsPaidForInvoice = async (
   eventId: number,
-  contractorId: number,
+  contractorProfileId: string,
 ): Promise<Timelog[]> => {
   const updatedTimelogs: Timelog[] = [];
   const localTimelogIds = (getLocalAppState().timelogs ?? [])
-    .filter((timelog) => timelog.eid === eventId && timelog.cid === contractorId && timelog.status === 'invoiced')
+    .filter((timelog) => timelog.eid === eventId && timelog.contractorProfileId === contractorProfileId && timelog.status === 'invoiced')
     .map((timelog) => timelog.id);
 
   if (localTimelogIds.length > 0) {
@@ -474,7 +475,7 @@ export const markTimelogsAsPaidForInvoice = async (
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     timelogs: snapshot.timelogs.map((timelog) => {
-      if (timelog.eid !== eventId || timelog.cid !== contractorId || timelog.status !== 'invoiced') return timelog;
+      if (timelog.eid !== eventId || timelog.contractorProfileId !== contractorProfileId || timelog.status !== 'invoiced') return timelog;
 
       const updatedTimelog = {
         ...timelog,

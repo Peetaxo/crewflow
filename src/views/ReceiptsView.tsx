@@ -44,9 +44,20 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
     events.find((event) => event.id === id) ?? null
   ), [events]);
 
-  const findContractor = useCallback((id: number) => (
-    contractors.find((contractor) => contractor.id === id) ?? null
-  ), [contractors]);
+  const findContractor = useCallback((contractorProfileId?: string, contractorId?: number) => {
+    if (contractorProfileId) {
+      const contractorByProfileId = contractors.find((contractor) => contractor.profileId === contractorProfileId);
+      if (contractorByProfileId) {
+        return contractorByProfileId;
+      }
+    }
+
+    if (contractorId == null) {
+      return null;
+    }
+
+    return contractors.find((contractor) => contractor.id === contractorId) ?? null;
+  }, [contractors]);
 
   const receipts = useMemo(() => {
     const safeReceipts = receiptsQuery.data ?? [];
@@ -56,7 +67,7 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
 
     return safeReceipts.filter((receipt) => {
       const event = events.find((item) => item.id === receipt.eid);
-      const contractor = contractors.find((item) => item.id === receipt.cid);
+      const contractor = findContractor(receipt.contractorProfileId, receipt.cid);
       if (!event || !contractor) return false;
 
       return (
@@ -67,7 +78,7 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
         || contractor.name.toLowerCase().includes(query)
       );
     });
-  }, [contractors, events, receiptsQuery.data, searchQuery]);
+  }, [events, findContractor, receiptsQuery.data, searchQuery]);
 
   const isCrew = role === 'crew';
   const baseReceipts = scope === 'mine'
@@ -139,7 +150,7 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
           <tbody className="divide-y divide-gray-50">
             {baseReceipts.map((receipt) => {
               const event = findEvent(receipt.eid);
-              const contractor = findContractor(receipt.cid);
+              const contractor = findContractor(receipt.contractorProfileId, receipt.cid);
 
               return (
                 <tr key={receipt.id} className="transition-colors hover:bg-gray-50">

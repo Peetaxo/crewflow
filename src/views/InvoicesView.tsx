@@ -65,9 +65,20 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
     };
   }, [hasUnsavedCreate, isCreateMode, setNavigationGuardMessage]);
 
-  const findContractor = useCallback((id: number) => (
-    contractors.find((contractor) => contractor.id === id) ?? null
-  ), [contractors]);
+  const findContractor = useCallback((contractorProfileId?: string, contractorId?: number) => {
+    if (contractorProfileId) {
+      const contractorByProfileId = contractors.find((contractor) => contractor.profileId === contractorProfileId);
+      if (contractorByProfileId) {
+        return contractorByProfileId;
+      }
+    }
+
+    if (contractorId == null) {
+      return null;
+    }
+
+    return contractors.find((contractor) => contractor.id === contractorId) ?? null;
+  }, [contractors]);
 
   const findEvent = useCallback((id: number) => (
     events.find((event) => event.id === id) ?? null
@@ -81,7 +92,7 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
 
     return safeInvoices.filter((invoice) => {
       const event = invoice.eid ? findEvent(invoice.eid) : null;
-      const contractor = findContractor(invoice.cid);
+      const contractor = findContractor(invoice.contractorProfileId, invoice.cid);
 
       return (
         invoice.id.toLowerCase().includes(query)
@@ -218,7 +229,7 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
 
       <div className="space-y-2">
         {visibleInvoices.map((invoice) => {
-          const contractor = findContractor(invoice.cid);
+          const contractor = findContractor(invoice.contractorProfileId, invoice.cid);
           const event = invoice.eid ? findEvent(invoice.eid) : null;
           if (!contractor) return null;
           const countdown = invoice.status === 'sent' ? getCountdown(invoice.sentAt) : null;

@@ -35,9 +35,20 @@ const ApprovalsView = () => {
     loadDependencies();
   }, [loadDependencies, timelogsQuery.data]);
 
-  const findContractor = useCallback((id: number) => (
-    contractors.find((contractor) => contractor.id === id) ?? null
-  ), [contractors]);
+  const findContractor = useCallback((contractorProfileId?: string, contractorId?: number) => {
+    if (contractorProfileId) {
+      const contractorByProfileId = contractors.find((contractor) => contractor.profileId === contractorProfileId);
+      if (contractorByProfileId) {
+        return contractorByProfileId;
+      }
+    }
+
+    if (contractorId == null) {
+      return null;
+    }
+
+    return contractors.find((contractor) => contractor.id === contractorId) ?? null;
+  }, [contractors]);
 
   const findEvent = useCallback((id: number) => (
     events.find((event) => event.id === id) ?? null
@@ -51,7 +62,7 @@ const ApprovalsView = () => {
 
     return safeTimelogs.filter((timelog) => {
       const event = events.find((item) => item.id === timelog.eid);
-      const contractor = contractors.find((item) => item.id === timelog.cid);
+      const contractor = findContractor(timelog.contractorProfileId, timelog.cid);
       if (!event || !contractor) return false;
 
       return (
@@ -60,7 +71,7 @@ const ApprovalsView = () => {
         || contractor.name.toLowerCase().includes(query)
       );
     });
-  }, [contractors, events, searchQuery, timelogsQuery.data]);
+  }, [events, findContractor, searchQuery, timelogsQuery.data]);
 
   const isCrewHead = role === 'crewhead';
   const mine = useMemo(() => (
@@ -110,7 +121,7 @@ const ApprovalsView = () => {
       ) : isCrewHead ? (
         <div className="space-y-3">
           {mine.map((timelog) => {
-            const contractor = findContractor(timelog.cid);
+            const contractor = findContractor(timelog.contractorProfileId, timelog.cid);
             const event = findEvent(timelog.eid);
             if (!contractor || !event) return null;
 
@@ -156,7 +167,7 @@ const ApprovalsView = () => {
           {grouped?.map((group) => {
             const totalHours = group.tls.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
             const totalAmount = group.tls.reduce((sum, timelog) => {
-              const contractor = findContractor(timelog.cid);
+              const contractor = findContractor(timelog.contractorProfileId, timelog.cid);
               return sum + (contractor ? calculateTotalHours(timelog.days) * contractor.rate + timelog.km * KM_RATE : 0);
             }, 0);
 
@@ -171,7 +182,7 @@ const ApprovalsView = () => {
                 </div>
                 <div className="space-y-1">
                   {group.tls.map((timelog) => {
-                    const contractor = findContractor(timelog.cid);
+                    const contractor = findContractor(timelog.contractorProfileId, timelog.cid);
                     if (!contractor) return null;
                     const hours = calculateTotalHours(timelog.days);
 

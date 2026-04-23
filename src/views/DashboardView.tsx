@@ -43,6 +43,21 @@ const DashboardView = () => {
     loadData();
   }, [eventsQuery.data, invoicesQuery.data, loadData, timelogsQuery.data, receiptsQuery.data]);
 
+  const findContractor = useCallback((contractorProfileId?: string, contractorId?: number) => {
+    if (contractorProfileId) {
+      const contractorByProfileId = contractors.find((contractor) => contractor.profileId === contractorProfileId);
+      if (contractorByProfileId) {
+        return contractorByProfileId;
+      }
+    }
+
+    if (contractorId == null) {
+      return null;
+    }
+
+    return contractors.find((contractor) => contractor.id === contractorId) ?? null;
+  }, [contractors]);
+
   const filteredEvents = useMemo(() => {
     const safeEvents = eventsQuery.data ?? [];
     const query = searchQuery.trim().toLowerCase();
@@ -62,7 +77,7 @@ const DashboardView = () => {
 
     return safeTimelogs.filter((timelog) => {
       const event = events.find((item) => item.id === timelog.eid);
-      const contractor = contractors.find((item) => item.id === timelog.cid);
+      const contractor = findContractor(timelog.contractorProfileId, timelog.cid);
       if (!event || !contractor) return false;
 
       return (
@@ -71,7 +86,7 @@ const DashboardView = () => {
         || contractor.name.toLowerCase().includes(query)
       );
     });
-  }, [contractors, events, searchQuery, timelogsQuery.data]);
+  }, [events, findContractor, searchQuery, timelogsQuery.data]);
 
   const receipts = useMemo(() => {
     const safeReceipts = receiptsQuery.data ?? [];
@@ -81,7 +96,7 @@ const DashboardView = () => {
 
     return safeReceipts.filter((receipt) => {
       const event = events.find((item) => item.id === receipt.eid);
-      const contractor = contractors.find((item) => item.id === receipt.cid);
+      const contractor = findContractor(receipt.contractorProfileId, receipt.cid);
       if (!event || !contractor) return false;
 
       return (
@@ -92,7 +107,7 @@ const DashboardView = () => {
         || contractor.name.toLowerCase().includes(query)
       );
     });
-  }, [contractors, events, receiptsQuery.data, searchQuery]);
+  }, [events, findContractor, receiptsQuery.data, searchQuery]);
 
   const filteredInvoices = useMemo(() => {
     const safeInvoices = invoicesQuery.data ?? [];
@@ -102,7 +117,7 @@ const DashboardView = () => {
 
     return safeInvoices.filter((invoice) => {
       const event = invoice.eid ? events.find((item) => item.id === invoice.eid) : null;
-      const contractor = contractors.find((item) => item.id === invoice.cid);
+      const contractor = findContractor(invoice.contractorProfileId, invoice.cid);
 
       return (
         invoice.id.toLowerCase().includes(query)
@@ -113,10 +128,7 @@ const DashboardView = () => {
         || false
       );
     });
-  }, [contractors, events, invoicesQuery.data, searchQuery]);
-  const findContractor = useCallback((id: number) => (
-    contractors.find((contractor) => contractor.id === id) ?? null
-  ), [contractors]);
+  }, [events, findContractor, invoicesQuery.data, searchQuery]);
 
   const findEvent = useCallback((id: number) => (
     events.find((event) => event.id === id) ?? null
@@ -199,7 +211,7 @@ const DashboardView = () => {
             {timelogQueue
               .slice(0, 4)
               .map((timelog) => {
-                const contractor = findContractor(timelog.cid);
+                const contractor = findContractor(timelog.contractorProfileId, timelog.cid);
                 const event = findEvent(timelog.eid);
                 if (!contractor || !event) return null;
 

@@ -41,9 +41,20 @@ const ProjectStatsView = () => {
   useEffect(() => subscribeToTimelogChanges(loadData), [loadData]);
   useEffect(() => subscribeToReceiptChanges(loadData), [loadData]);
 
-  const findContractor = useCallback((id: number) => (
-    contractors.find((contractor) => contractor.id === id) ?? null
-  ), [contractors]);
+  const findContractor = useCallback((contractorProfileId?: string, contractorId?: number) => {
+    if (contractorProfileId) {
+      const contractorByProfileId = contractors.find((contractor) => contractor.profileId === contractorProfileId);
+      if (contractorByProfileId) {
+        return contractorByProfileId;
+      }
+    }
+
+    if (contractorId == null) {
+      return null;
+    }
+
+    return contractors.find((contractor) => contractor.id === contractorId) ?? null;
+  }, [contractors]);
   const projectId = project?.id ?? null;
   const projectEvents = useMemo(
     () => (projectId ? events.filter((event) => event.job === projectId) : []),
@@ -66,13 +77,13 @@ const ProjectStatsView = () => {
   const totalKm = projectTimelogs.reduce((sum, timelog) => sum + timelog.km, 0);
   const totalCrewCost = projectInvoices.reduce((sum, invoice) => sum + invoice.total, 0);
   const totalReceiptCost = projectReceipts.reduce((sum, receipt) => sum + receipt.amount, 0);
-  const crewIds = [...new Set(projectTimelogs.map((timelog) => timelog.cid))];
+  const crewIds = [...new Set(projectTimelogs.map((timelog) => timelog.contractorProfileId ?? `legacy:${timelog.cid ?? 'missing'}`))];
 
   const costByPhase = useMemo(() => {
     const phaseMap: Record<string, number> = {};
 
     projectTimelogs.forEach((timelog) => {
-      const contractor = findContractor(timelog.cid);
+      const contractor = findContractor(timelog.contractorProfileId, timelog.cid);
       if (!contractor) return;
 
       timelog.days.forEach((day) => {
@@ -285,7 +296,7 @@ const ProjectStatsView = () => {
             projectTimelogs.length > 0 ? (
               <div className="mt-4 space-y-3">
                 {projectTimelogs.map((timelog) => {
-                  const contractor = findContractor(timelog.cid);
+                  const contractor = findContractor(timelog.contractorProfileId, timelog.cid);
                   const event = projectEvents.find((item) => item.id === timelog.eid);
                   if (!contractor || !event) return null;
 
@@ -369,7 +380,7 @@ const ProjectStatsView = () => {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {projectReceipts.map((receipt) => {
-                      const contractor = findContractor(receipt.cid);
+                      const contractor = findContractor(receipt.contractorProfileId, receipt.cid);
                       const event = projectEvents.find((item) => item.id === receipt.eid);
                       return (
                         <tr key={receipt.id} className="bg-white transition-colors hover:bg-gray-50">
@@ -415,7 +426,7 @@ const ProjectStatsView = () => {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {approvedInvoices.map((invoice) => {
-                      const contractor = findContractor(invoice.cid);
+                      const contractor = findContractor(invoice.contractorProfileId, invoice.cid);
                       return (
                         <tr key={invoice.id} className="bg-white transition-colors hover:bg-gray-50">
                           <td className="px-4 py-3 text-xs font-mono font-medium text-gray-900">{invoice.id}</td>

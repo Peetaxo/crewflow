@@ -213,8 +213,12 @@ export const getCrewDetailData = (profileId: string | null): {
 
   return {
     contractor,
-    timelogs: (snapshot.timelogs ?? []).filter((timelog) => timelog.cid === contractor.id),
-    invoices: (snapshot.invoices ?? []).filter((invoice) => invoice.cid === contractor.id),
+    timelogs: (snapshot.timelogs ?? []).filter((timelog) => (
+      timelog.contractorProfileId === contractor.profileId || timelog.cid === contractor.id
+    )),
+    invoices: (snapshot.invoices ?? []).filter((invoice) => (
+      invoice.contractorProfileId === contractor.profileId || invoice.cid === contractor.id
+    )),
     events: snapshot.events ?? [],
     projects: snapshot.projects ?? [],
   };
@@ -290,8 +294,10 @@ export const deleteCrew = (id: number): DeleteCrewResult => {
   return { id };
 };
 
-export const getCrewReceipts = (contractorId: number): ReceiptItem[] => (
-  (ensureSupabaseCrewLoaded(), (getLocalAppState().receipts ?? []).filter((receipt) => receipt.cid === contractorId))
+export const getCrewReceipts = (contractorProfileId: string): ReceiptItem[] => (
+  (ensureSupabaseCrewLoaded(), (getLocalAppState().receipts ?? []).filter((receipt) => (
+    receipt.contractorProfileId === contractorProfileId
+  )))
 );
 
 export const subscribeToCrewChanges = (listener: () => void): (() => void) => {

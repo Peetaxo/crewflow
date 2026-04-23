@@ -28,6 +28,7 @@ import { useEventsQuery } from '../features/events/queries/useEventsQuery';
 import {
   createEmptyEvent,
   filterEventsByStatus,
+  getEventDetailData,
   getEventsWithDerivedStatus,
   getReferenceDate,
 } from '../features/events/services/events.service';

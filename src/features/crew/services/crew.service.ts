@@ -213,12 +213,8 @@ export const getCrewDetailData = (profileId: string | null): {
 
   return {
     contractor,
-    timelogs: (snapshot.timelogs ?? []).filter((timelog) => (
-      timelog.contractorProfileId === contractor.profileId || timelog.cid === contractor.id
-    )),
-    invoices: (snapshot.invoices ?? []).filter((invoice) => (
-      invoice.contractorProfileId === contractor.profileId || invoice.cid === contractor.id
-    )),
+    timelogs: (snapshot.timelogs ?? []).filter((timelog) => timelog.contractorProfileId === contractor.profileId),
+    invoices: (snapshot.invoices ?? []).filter((invoice) => invoice.contractorProfileId === contractor.profileId),
     events: snapshot.events ?? [],
     projects: snapshot.projects ?? [],
   };
@@ -286,8 +282,8 @@ export const deleteCrew = (id: number): DeleteCrewResult => {
     return {
       ...snapshot,
       contractors: snapshot.contractors.filter((member) => member.id !== id),
-      timelogs: snapshot.timelogs.filter((timelog) => timelog.cid !== id),
-      receipts: snapshot.receipts.filter((receipt) => receipt.cid !== id),
+      timelogs: snapshot.timelogs.filter((timelog) => timelog.contractorProfileId !== existing?.profileId),
+      receipts: snapshot.receipts.filter((receipt) => receipt.contractorProfileId !== existing?.profileId),
     };
   });
 

@@ -584,7 +584,7 @@ export const getEventCrew = (eventId: number): Contractor[] => {
   return (snapshot.contractors ?? []).filter((contractor) => (
     (snapshot.timelogs ?? []).some((timelog) => (
       timelog.eid === eventId
-      && (timelog.contractorProfileId === contractor.profileId || timelog.cid === contractor.id)
+      && timelog.contractorProfileId === contractor.profileId
     ))
   ));
 };
@@ -642,7 +642,7 @@ export const removeContractorFromEvent = async (eventId: number, contractorProfi
     };
     nextTimelogs = snapshot.timelogs.filter((timelog) => !(
       timelog.eid === eventId
-      && (timelog.contractorProfileId === contractorProfileId || (contractor && timelog.cid === contractor.id))
+      && timelog.contractorProfileId === contractorProfileId
     ));
 
     return {
@@ -682,7 +682,7 @@ export const getContractorConflictsForEvent = (
   return new Map<number, EventConflictDetail[]>(
     contractors.map((contractor) => {
       const overlappingTimelogs = snapshot.timelogs.filter((timelog) => (
-        (timelog.contractorProfileId === contractor.profileId || timelog.cid === contractor.id)
+        timelog.contractorProfileId === contractor.profileId
         && timelog.eid !== event.id
         && timelog.days.some((day) => eventDateSet.has(day.d))
       ));
@@ -780,7 +780,7 @@ export const assignCrewToEvent = async (
   }
 
   const hasCollision = snapshot.timelogs.some((timelog) => (
-    (timelog.contractorProfileId === contractorProfileId || timelog.cid === contractor.id)
+    timelog.contractorProfileId === contractorProfileId
     && timelog.eid !== event.id
     && timelog.days.some((day) => initialDays.some((newDay) => newDay.d === day.d))
   ));

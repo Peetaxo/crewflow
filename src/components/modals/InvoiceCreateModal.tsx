@@ -24,19 +24,19 @@ const InvoiceCreateModal = ({ onClose, onDirtyChange }: InvoiceCreateModalProps)
   const invoicesQuery = useInvoicesQuery();
   const timelogsQuery = useTimelogsQuery();
   const receiptsQuery = useReceiptsQuery();
-  const [selectedContractorId, setSelectedContractorId] = useState<number | null>(null);
+  const [selectedContractorKey, setSelectedContractorKey] = useState<string | null>(null);
   const [selectedTimelogIds, setSelectedTimelogIds] = useState<number[]>([]);
   const [selectedReceiptIds, setSelectedReceiptIds] = useState<number[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const loadPreview = useCallback((contractorId: number | null, resetSelection = true) => {
-    if (contractorId == null) {
+  const loadPreview = useCallback((contractorKey: string | null, resetSelection = true) => {
+    if (contractorKey == null) {
       setSelectedTimelogIds([]);
       setSelectedReceiptIds([]);
       return;
     }
 
-    const nextPreview = getInvoiceCreatePreview(contractorId);
+    const nextPreview = getInvoiceCreatePreview(contractorKey);
     const nextTimelogIds = nextPreview?.timelogIds ?? [];
     const nextReceiptIds = nextPreview?.receiptIds ?? [];
 
@@ -67,18 +67,18 @@ const InvoiceCreateModal = ({ onClose, onDirtyChange }: InvoiceCreateModalProps)
       void invoicesQuery.data;
       void receiptsQuery.data;
       void timelogsQuery.data;
-      return selectedContractorId == null ? null : getInvoiceCreatePreview(selectedContractorId);
+      return selectedContractorKey == null ? null : getInvoiceCreatePreview(selectedContractorKey);
     },
-    [invoicesQuery.data, receiptsQuery.data, selectedContractorId, timelogsQuery.data],
+    [invoicesQuery.data, receiptsQuery.data, selectedContractorKey, timelogsQuery.data],
   );
 
   useEffect(() => {
-    if (selectedContractorId != null) {
-      loadPreview(selectedContractorId, false);
+    if (selectedContractorKey != null) {
+      loadPreview(selectedContractorKey, false);
     }
-  }, [loadPreview, preview, selectedContractorId]);
+  }, [loadPreview, preview, selectedContractorKey]);
 
-  const isDirty = selectedContractorId !== null;
+  const isDirty = selectedContractorKey !== null;
 
   useEffect(() => {
     onDirtyChange?.(isDirty);
@@ -122,12 +122,12 @@ const InvoiceCreateModal = ({ onClose, onDirtyChange }: InvoiceCreateModalProps)
   };
 
   const handleCreate = async (sendImmediately: boolean) => {
-    if (selectedContractorId == null) return;
+    if (selectedContractorKey == null) return;
 
     try {
       setIsSubmitting(true);
       const created = await createInvoiceFromSelection(
-        selectedContractorId,
+        selectedContractorKey,
         selectedTimelogIds,
         selectedReceiptIds,
       );
@@ -152,16 +152,16 @@ const InvoiceCreateModal = ({ onClose, onDirtyChange }: InvoiceCreateModalProps)
         <div>
           <h2 className="text-lg font-semibold text-gray-900">Vytvorit fakturu</h2>
           <p className="mt-0.5 text-xs text-gray-500">
-            {selectedContractorId == null
+            {selectedContractorKey == null
               ? 'Vyber kontraktora pripraveneho k fakturaci.'
               : 'Zkontroluj a pripadne uprav vyber polozek pred vytvorenim faktury.'}
           </p>
         </div>
-        {selectedContractorId != null && (
+        {selectedContractorKey != null && (
           <button
             type="button"
             onClick={() => {
-              setSelectedContractorId(null);
+              setSelectedContractorKey(null);
               loadPreview(null);
             }}
             className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-white"
@@ -172,7 +172,7 @@ const InvoiceCreateModal = ({ onClose, onDirtyChange }: InvoiceCreateModalProps)
       </div>
 
       <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-        {selectedContractorId == null ? (
+        {selectedContractorKey == null ? (
           <div className="space-y-3">
             {candidates.length === 0 ? (
               <div className="rounded-xl border border-gray-100 bg-gray-50 p-10 text-center text-sm text-gray-500">
@@ -184,8 +184,9 @@ const InvoiceCreateModal = ({ onClose, onDirtyChange }: InvoiceCreateModalProps)
                   key={candidate.contractorId}
                   type="button"
                   onClick={() => {
-                    setSelectedContractorId(candidate.contractorId);
-                    loadPreview(candidate.contractorId, true);
+                    const contractorKey = candidate.contractorProfileId ?? `legacy:${candidate.contractorId}`;
+                    setSelectedContractorKey(contractorKey);
+                    loadPreview(contractorKey, true);
                   }}
                   className="flex w-full items-center justify-between rounded-xl border border-gray-100 bg-white p-4 text-left shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50"
                 >
@@ -323,7 +324,7 @@ const InvoiceCreateModal = ({ onClose, onDirtyChange }: InvoiceCreateModalProps)
               <button
                 type="button"
                 onClick={() => handleCreate(false)}
-                disabled={selectedContractorId == null || isSubmitting || (selectedTimelogIds.length === 0 && selectedReceiptIds.length === 0)}
+                disabled={selectedContractorKey == null || isSubmitting || (selectedTimelogIds.length === 0 && selectedReceiptIds.length === 0)}
                 className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 py-2 text-sm font-medium text-emerald-700 shadow-sm hover:bg-emerald-50 disabled:cursor-not-allowed disabled:border-emerald-100 disabled:text-emerald-300"
               >
                 <FilePlus2 size={16} />
@@ -332,7 +333,7 @@ const InvoiceCreateModal = ({ onClose, onDirtyChange }: InvoiceCreateModalProps)
               <button
                 type="button"
                 onClick={() => handleCreate(true)}
-                disabled={selectedContractorId == null || isSubmitting || (selectedTimelogIds.length === 0 && selectedReceiptIds.length === 0)}
+                disabled={selectedContractorKey == null || isSubmitting || (selectedTimelogIds.length === 0 && selectedReceiptIds.length === 0)}
                 className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm shadow-emerald-200 hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-300"
               >
                 <FilePlus2 size={16} />

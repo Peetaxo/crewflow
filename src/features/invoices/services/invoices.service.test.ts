@@ -265,6 +265,7 @@ describe('invoices.service billing batches', () => {
     expect(getInvoiceCreateCandidates()).toEqual([
       {
         contractorId: 1,
+        contractorProfileId: 'profile-uuid-1',
         contractorName: 'Test User',
         timelogCount: 2,
         receiptCount: 1,
@@ -311,9 +312,10 @@ describe('invoices.service billing batches', () => {
 
     const { getInvoiceCreatePreview } = await import('./invoices.service');
 
-    const preview = getInvoiceCreatePreview(1);
+    const preview = getInvoiceCreatePreview('profile-uuid-1');
 
     expect(preview?.contractorName).toBe('Test User');
+    expect(preview?.contractorProfileId).toBe('profile-uuid-1');
     expect(preview?.items).toHaveLength(2);
     expect(preview?.items[0]).toMatchObject({
       jobNumber: 'AK001',
@@ -393,6 +395,7 @@ describe('invoices.service billing batches', () => {
     expect(getInvoiceCreateCandidates()).toEqual([
       {
         contractorId: 1,
+        contractorProfileId: 'profile-uuid-1',
         contractorName: 'Test User',
         timelogCount: 1,
         receiptCount: 1,
@@ -400,7 +403,7 @@ describe('invoices.service billing batches', () => {
       },
     ]);
 
-    const preview = getInvoiceCreatePreview(1);
+    const preview = getInvoiceCreatePreview('profile-uuid-1');
     expect(preview?.timelogIds).toEqual([2]);
     expect(preview?.receiptIds).toEqual([11]);
     expect(preview?.items).toHaveLength(1);
@@ -426,7 +429,6 @@ describe('invoices.service billing batches', () => {
       if (table === 'invoice_receipts') return { insert: invoiceReceiptsInsert };
       if (table === 'timelogs') return { select: vi.fn(() => ({ order: vi.fn().mockResolvedValue({ data: [{ id: 'timelog-uuid-1' }, { id: 'timelog-uuid-2' }], error: null }) })), update: vi.fn(() => ({ in: timelogsUpdateIn })) };
       if (table === 'receipts') return { select: vi.fn(() => ({ order: vi.fn().mockResolvedValue({ data: [{ id: 'receipt-uuid-11' }], error: null }) })), update: vi.fn(() => ({ in: receiptsUpdateIn })) };
-      if (table === 'profiles') return { select: vi.fn(() => ({ order: vi.fn().mockResolvedValue({ data: [{ id: 'profile-uuid-1', last_name: 'User', first_name: 'Test' }], error: null }) })) };
       if (table === 'events') return { select: vi.fn(() => ({ order: vi.fn().mockResolvedValue({ data: [{ id: 'event-uuid-1', date_from: '2026-04-10', name: 'Akce 1' }, { id: 'event-uuid-2', date_from: '2026-04-11', name: 'Akce 2' }], error: null }) })) };
       throw new Error(`Unexpected table ${table}`);
     });
@@ -466,7 +468,7 @@ describe('invoices.service billing batches', () => {
 
     const { createInvoiceFromSelection } = await import('./invoices.service');
 
-    const created = await createInvoiceFromSelection(1, [2], [11]);
+    const created = await createInvoiceFromSelection('profile-uuid-1', [2], [11]);
 
     expect(created?.jobNumbers).toEqual(['AK002']);
     expect(created?.timelogIds).toEqual([2]);

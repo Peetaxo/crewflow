@@ -33,6 +33,7 @@ type BillingItem = {
 
 type BillingBatch = {
   cid: number;
+  contractorProfileId?: string;
   items: Map<string, BillingItem>;
   eventIds: Set<number>;
   timelogIds: number[];
@@ -41,6 +42,7 @@ type BillingBatch = {
 
 export type InvoiceCreateCandidate = {
   contractorId: number;
+  contractorProfileId?: string;
   contractorName: string;
   timelogCount: number;
   receiptCount: number;
@@ -75,6 +77,7 @@ export type InvoiceCreatePreviewItem = {
 
 export type InvoiceCreatePreview = {
   contractorId: number;
+  contractorProfileId?: string;
   contractorName: string;
   items: InvoiceCreatePreviewItem[];
   timelogIds: number[];
@@ -121,6 +124,21 @@ let invoicesLoaded = false;
 const findContractor = (contractors: Contractor[], id: number): Contractor | null => (
   contractors.find((contractor) => contractor.id === id) ?? null
 );
+
+const findContractorByIdentity = (
+  contractors: Contractor[],
+  contractorProfileId: string | undefined,
+  contractorId: number,
+): Contractor | null => {
+  if (contractorProfileId) {
+    const contractorByProfileId = contractors.find((contractor) => contractor.profileId === contractorProfileId);
+    if (contractorByProfileId) {
+      return contractorByProfileId;
+    }
+  }
+
+  return findContractor(contractors, contractorId);
+};
 
 const findEvent = (events: Event[], id: number): Event | null => (
   events.find((event) => event.id === id) ?? null
@@ -172,18 +190,6 @@ const getSupabaseReceiptIdMap = async (): Promise<Map<number, string>> => {
   return new Map(rows.map((row, index) => [localIds[index], row.id]).filter(([localId]) => localId != null));
 };
 
-const getSupabaseProfileIdMap = async (): Promise<Map<number, string>> => {
-  const rows = await safeSelect<{ id: string; last_name: string | null; first_name: string | null }>(
-    'profiles',
-    'id,last_name,first_name',
-    'last_name',
-  );
-  const sortedRows = [...rows].sort((a, b) => (
-    `${a.last_name ?? ''}|${a.first_name ?? ''}`.localeCompare(`${b.last_name ?? ''}|${b.first_name ?? ''}`)
-  ));
-  return new Map(sortedRows.map((row, index) => [index + 1, row.id]));
-};
-
 const getSupabaseEventIdMap = async (): Promise<Map<number, string>> => {
   const rows = await safeSelect<{ id: string; date_from: string | null; name: string }>(
     'events',
@@ -215,20 +221,26 @@ const buildBillingBatches = (): BillingBatch[] => {
     receipt.status === 'approved' && !existingInvoiceReceiptIds.has(receipt.id)
   ));
 
-  const grouped = new Map<number, BillingBatch>();
+  const grouped = new Map<string, BillingBatch>();
 
-  const getBatch = (cid: number): BillingBatch => {
-    const existing = grouped.get(cid);
+  const getBatchKey = (contractor: Contractor | null, fallbackContractorId: number): string => (
+    contractor?.profileId ?? `legacy:${fallbackContractorId}`
+  );
+
+  const getBatch = (contractor: Contractor | null, fallbackContractorId: number): BillingBatch => {
+    const key = getBatchKey(contractor, fallbackContractorId);
+    const existing = grouped.get(key);
     if (existing) return existing;
 
     const created: BillingBatch = {
-      cid,
+      cid: contractor?.id ?? fallbackContractorId,
+      contractorProfileId: contractor?.profileId,
       items: new Map<string, BillingItem>(),
       eventIds: new Set<number>(),
       timelogIds: [],
       receiptIds: [],
     };
-    grouped.set(cid, created);
+    grouped.set(key, created);
     return created;
   };
 
@@ -252,11 +264,11 @@ const buildBillingBatches = (): BillingBatch[] => {
   };
 
   approvedTimelogs.forEach((timelog) => {
-    const contractor = findContractor(contractors, timelog.cid);
+    const contractor = findContractorByIdentity(contractors, timelog.contractorProfileId, timelog.cid);
     const event = findEvent(events, timelog.eid);
     if (!contractor || !event) return;
 
-    const batch = getBatch(timelog.cid);
+    const batch = getBatch(contractor, timelog.cid);
     const jobNumber = normalizeJobNumber(event.job);
     const item = getItem(batch, jobNumber);
     const hours = round2(calculateTotalHours(timelog.days));
@@ -275,11 +287,11 @@ const buildBillingBatches = (): BillingBatch[] => {
   });
 
   approvedReceipts.forEach((receipt) => {
-    const contractor = findContractor(contractors, receipt.cid);
+    const contractor = findContractorByIdentity(contractors, receipt.contractorProfileId, receipt.cid);
     const event = findEvent(events, receipt.eid);
     if (!contractor) return;
 
-    const batch = getBatch(receipt.cid);
+    const batch = getBatch(contractor, receipt.cid);
     const jobNumber = normalizeJobNumber(receipt.job || event?.job);
     const item = getItem(batch, jobNumber);
 
@@ -396,6 +408,7 @@ const batchToPreview = (
 
   return {
     contractorId: batch.cid,
+    contractorProfileId: contractor?.profileId,
     contractorName: contractor?.name ?? '',
     items,
     timelogIds: uniqueSortedNumbers(batch.timelogIds),
@@ -409,8 +422,12 @@ const batchToPreview = (
   };
 };
 
+const getContractorSelectionKey = (contractor: Pick<Contractor, 'id' | 'profileId'>): string => (
+  contractor.profileId ?? `legacy:${contractor.id}`
+);
+
 const buildBatchFromSelection = (
-  contractorId: number,
+  contractorSelectionKey: string,
   selectedTimelogIds: number[],
   selectedReceiptIds: number[],
 ): BillingBatch | null => {
@@ -419,7 +436,7 @@ const buildBatchFromSelection = (
   const events = snapshot.events ?? [];
   const timelogs = getTimelogs() ?? [];
   const receipts = getReceipts() ?? [];
-  const contractor = findContractor(contractors, contractorId);
+  const contractor = contractors.find((item) => getContractorSelectionKey(item) === contractorSelectionKey) ?? null;
 
   if (!contractor) {
     throw new Error('Kontraktor pro fakturaci nebyl nalezen.');
@@ -433,8 +450,12 @@ const buildBatchFromSelection = (
   const existingInvoiceReceiptIds = new Set(
     (snapshot.invoices ?? []).flatMap((invoice) => invoice.receiptIds ?? []),
   );
-  const selectedTimelogs = timelogs.filter((timelog) => timelog.cid === contractorId && timelog.status === 'approved' && timelogIdSet.has(timelog.id));
-  const selectedReceipts = receipts.filter((receipt) => receipt.cid === contractorId && receipt.status === 'approved' && receiptIdSet.has(receipt.id));
+  const selectedTimelogs = timelogs.filter((timelog) => (
+    timelog.cid === contractor.id && timelog.status === 'approved' && timelogIdSet.has(timelog.id)
+  ));
+  const selectedReceipts = receipts.filter((receipt) => (
+    receipt.cid === contractor.id && receipt.status === 'approved' && receiptIdSet.has(receipt.id)
+  ));
 
   const duplicatedTimelog = selectedTimelogs.find((timelog) => existingInvoiceTimelogIds.has(timelog.id));
   if (duplicatedTimelog) {
@@ -451,7 +472,8 @@ const buildBatchFromSelection = (
   }
 
   const batch: BillingBatch = {
-    cid: contractorId,
+    cid: contractor.id,
+    contractorProfileId: contractor.profileId,
     items: new Map<string, BillingItem>(),
     eventIds: new Set<number>(),
     timelogIds: [],
@@ -680,14 +702,14 @@ const persistSupabaseGeneratedInvoice = async (invoice: Invoice): Promise<string
     return null;
   }
 
-  const [profileIdMap, eventIdMap, timelogIdMap, receiptIdMap] = await Promise.all([
-    getSupabaseProfileIdMap(),
+  const [eventIdMap, timelogIdMap, receiptIdMap] = await Promise.all([
     getSupabaseEventIdMap(),
     getSupabaseTimelogIdMap(),
     getSupabaseReceiptIdMap(),
   ]);
 
-  const contractorRowId = profileIdMap.get(invoice.cid);
+  const contractorRowId = invoice.contractorProfileId
+    ?? findContractor(getLocalAppState().contractors ?? [], invoice.cid)?.profileId;
   if (!contractorRowId) {
     throw new Error('Nepodarilo se sparovat kontraktora pro fakturaci.');
   }
@@ -885,6 +907,7 @@ export const getInvoiceCreateCandidates = (): InvoiceCreateCandidate[] => {
 
       return {
         contractorId: batch.cid,
+        contractorProfileId: batch.contractorProfileId,
         contractorName: contractor?.name ?? '',
         timelogCount: batch.timelogIds.length,
         receiptCount: batch.receiptIds.length,
@@ -894,10 +917,12 @@ export const getInvoiceCreateCandidates = (): InvoiceCreateCandidate[] => {
     .sort((a, b) => a.contractorName.localeCompare(b.contractorName));
 };
 
-export const getInvoiceCreatePreview = (contractorId: number): InvoiceCreatePreview | null => {
+export const getInvoiceCreatePreview = (contractorSelectionKey: string): InvoiceCreatePreview | null => {
   const snapshot = getLocalAppState();
   const contractors = snapshot.contractors ?? [];
-  const batch = buildBillingBatches().find((item) => item.cid === contractorId);
+  const batch = buildBillingBatches().find((item) => (
+    getContractorSelectionKey({ id: item.cid, profileId: item.contractorProfileId }) === contractorSelectionKey
+  ));
   if (!batch) return null;
   return batchToPreview(batch, contractors);
 };
@@ -923,7 +948,7 @@ export const generateInvoices = async (): Promise<Invoice[]> => {
   const newInvoices: Invoice[] = [];
   for (const batch of batches) {
     const created = await createInvoiceFromSelection(
-      batch.cid,
+      getContractorSelectionKey({ id: batch.cid, profileId: batch.contractorProfileId }),
       uniqueSortedNumbers(batch.timelogIds),
       uniqueSortedNumbers(batch.receiptIds),
     );
@@ -936,11 +961,11 @@ export const generateInvoices = async (): Promise<Invoice[]> => {
 };
 
 export const createInvoiceFromSelection = async (
-  contractorId: number,
+  contractorSelectionKey: string,
   selectedTimelogIds: number[],
   selectedReceiptIds: number[],
 ): Promise<Invoice | null> => {
-  const batch = buildBatchFromSelection(contractorId, selectedTimelogIds, selectedReceiptIds);
+  const batch = buildBatchFromSelection(contractorSelectionKey, selectedTimelogIds, selectedReceiptIds);
   if (!batch) {
     toast.info('Neni co fakturovat.');
     return null;

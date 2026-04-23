@@ -185,13 +185,11 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     ...mapTimelog(row, timelogDayRowsByTimelogId.get(row.id) ?? []),
     id: timelogIdMap.get(row.id) ?? Number.NaN,
     eid: eventIdMap.get(row.event_id) ?? Number.NaN,
-    cid: profileIdMap.get(row.contractor_id) ?? Number.NaN,
     contractorProfileId: row.contractor_id,
   }));
 
   const invoices = invoiceRows.map((row) => ({
     ...mapInvoice(row),
-    cid: profileIdMap.get(row.contractor_id) ?? Number.NaN,
     contractorProfileId: row.contractor_id,
     eid: row.event_id ? (eventIdMap.get(row.event_id) ?? Number.NaN) : Number.NaN,
   }));
@@ -200,7 +198,6 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
   const receipts = receiptRows.map((row) => ({
     ...mapReceipt(row),
     id: receiptIdMap.get(row.id) ?? Number.NaN,
-    cid: profileIdMap.get(row.contractor_id) ?? Number.NaN,
     contractorProfileId: row.contractor_id,
     eid: row.event_id ? (eventIdMap.get(row.event_id) ?? Number.NaN) : Number.NaN,
   }));

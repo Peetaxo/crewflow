@@ -614,7 +614,6 @@ const mapSupabaseInvoices = (
 
     return {
       ...mapInvoice(row),
-      cid: profileIdMap.get(row.contractor_id) ?? Number.NaN,
       contractorProfileId: row.contractor_id,
       eid: eventIds[0] ?? (row.event_id ? (eventIdMap.get(row.event_id) ?? Number.NaN) : 0),
       job: jobNumbers.join(', ') || localInvoice?.job || row.job_number || '',

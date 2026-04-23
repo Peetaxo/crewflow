@@ -55,7 +55,6 @@ const mapSupabaseReceipts = (
   return receiptRows.map((row, index) => ({
     ...mapReceipt(row),
     id: index + 1,
-    cid: profileIdMap.get(row.contractor_id) ?? Number.NaN,
     contractorProfileId: row.contractor_id,
     eid: row.event_id ? (eventIdMap.get(row.event_id) ?? Number.NaN) : 0,
   }));

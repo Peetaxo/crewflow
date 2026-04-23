@@ -126,7 +126,6 @@ export function mapTimelog(row: TimelogRow, days: TimelogDayRow[] = []): Timelog
   return {
     id: Number.NaN,
     eid: Number.NaN,
-    cid: Number.NaN,
     contractorProfileId: row.contractor_id,
     days: days.map(mapTimelogDay),
     km: Number(row.km ?? 0),
@@ -138,7 +137,6 @@ export function mapTimelog(row: TimelogRow, days: TimelogDayRow[] = []): Timelog
 export function mapInvoice(row: InvoiceRow): Invoice {
   return {
     id: row.id,
-    cid: Number.NaN,
     contractorProfileId: row.contractor_id,
     eid: Number.NaN,
     hours: Number(row.total_hours ?? 0),
@@ -156,7 +154,6 @@ export function mapInvoice(row: InvoiceRow): Invoice {
 export function mapReceipt(row: ReceiptRow): ReceiptItem {
   return {
     id: Number.NaN,
-    cid: Number.NaN,
     contractorProfileId: row.contractor_id,
     eid: Number.NaN,
     job: row.job_number ?? '',

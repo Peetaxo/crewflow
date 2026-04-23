@@ -64,7 +64,6 @@ const mapSupabaseTimelogs = (
     ...mapTimelog(row, timelogDayRowsByTimelogId.get(row.id) ?? []),
     id: index + 1,
     eid: eventIdMap.get(row.event_id) ?? Number.NaN,
-    cid: profileIdMap.get(row.contractor_id) ?? Number.NaN,
     contractorProfileId: row.contractor_id,
   }));
 };

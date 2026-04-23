@@ -572,7 +572,6 @@ describe('invoices.service billing batches', () => {
     vi.doMock('../../../lib/supabase-mappers', () => ({
       mapInvoice: vi.fn(() => ({
         id: 'invoice-row-1',
-        cid: Number.NaN,
         contractorProfileId: 'profile-uuid-1',
         eid: Number.NaN,
         hours: 8,
@@ -606,7 +605,7 @@ describe('invoices.service billing batches', () => {
     const invoices = getInvoices();
 
     expect(invoices[0].contractorProfileId).toBe('profile-uuid-1');
-    expect(invoices[0].cid).toBe(1);
+    expect(invoices[0].cid).toBeUndefined();
     expect(invoices[0].eid).toBe(1);
   });
 });

@@ -228,7 +228,6 @@ describe('timelogs.service write flow', () => {
       mapTimelog: vi.fn(() => ({
         id: Number.NaN,
         eid: Number.NaN,
-        cid: Number.NaN,
         contractorProfileId: 'profile-uuid-1',
         days: [],
         km: 0,
@@ -253,7 +252,7 @@ describe('timelogs.service write flow', () => {
     const timelogs = getTimelogs();
 
     expect(timelogs[0].contractorProfileId).toBe('profile-uuid-1');
-    expect(timelogs[0].cid).toBe(1);
+    expect(timelogs[0].cid).toBeUndefined();
     expect(timelogs[0].eid).toBe(1);
   });
 

@@ -26,6 +26,7 @@ import { deleteProject } from '../features/projects/services/projects.service';
 import { deleteClient } from '../features/clients/services/clients.service';
 import { deleteReceipt } from '../features/receipts/services/receipts.service';
 import { loadPersistedUiSession, savePersistedUiSession, type PersistedUiSessionState } from './ui-session-storage';
+import { loadUiPreferences, saveUiPreferences } from './ui-preferences-storage';
 
 interface DeleteConfirmData {
   type: 'client' | 'project' | 'event' | 'crew' | 'receipt';
@@ -125,6 +126,7 @@ export function useAppContext(): AppContextType {
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const { isAuthRequired, isLoading: isAuthLoading, role: authRole } = useAuth();
+  const initialUiPreferences = useMemo(() => loadUiPreferences(), []);
   const persistedUiSession = useMemo(() => loadPersistedUiSession(), []);
   const shouldDeferUiRestore = isAuthRequired && isAuthLoading && Boolean(persistedUiSession);
   const pendingDeferredUiSession = useRef<PersistedUiSessionState | null>(shouldDeferUiRestore ? persistedUiSession : null);
@@ -135,8 +137,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [authRole, persistedUiSession, shouldDeferUiRestore],
   );
   const skipInitialSearchReset = useRef(Boolean(initialUiSession));
-  const [darkMode, setDarkMode] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [darkMode, setDarkMode] = useState(initialUiPreferences?.darkMode ?? false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(initialUiPreferences?.sidebarCollapsed ?? false);
   const [role, setRole] = useState<Role>(authRole ?? 'crewhead');
   const [currentTab, setCurrentTabState] = useState(initialUiSession?.currentTab ?? 'dashboard');
   const [navigationGuardMessage, setNavigationGuardMessage] = useState<string | null>(null);
@@ -234,6 +236,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       pendingDeferredUiSession.current = null;
     }
   }, [authRole, isAuthLoading, isAuthRequired, role]);
+
+  useEffect(() => {
+    saveUiPreferences({ darkMode, sidebarCollapsed });
+  }, [darkMode, sidebarCollapsed]);
 
   useEffect(() => {
     if (

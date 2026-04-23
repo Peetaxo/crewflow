@@ -5,6 +5,7 @@ import { appDataSource } from '../../lib/app-config';
 import { getContractors, subscribeToCrewChanges } from '../../features/crew/services/crew.service';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import type { Contractor, Role } from '../../types';
+import { clearPersistedUiSession } from '../../context/ui-session-storage';
 
 const DEV_SESSION_STORAGE_KEY = 'event-helper-dev-session';
 
@@ -176,6 +177,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
 
         setIsDevSession(false);
+        clearPersistedUiSession();
         setRole(null);
         setProfile(null);
         setCurrentProfileId(null);
@@ -317,6 +319,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     },
     signOut: async () => {
       writeStoredDevSession(null);
+      clearPersistedUiSession();
       setIsDevSession(false);
       setCurrentProfileId(null);
       setCurrentUserId(null);

@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { useAuth } from '../app/providers/AuthProvider';
 import {
@@ -25,6 +25,7 @@ import { deleteEvent } from '../features/events/services/events.service';
 import { deleteProject } from '../features/projects/services/projects.service';
 import { deleteClient } from '../features/clients/services/clients.service';
 import { deleteReceipt } from '../features/receipts/services/receipts.service';
+import { loadPersistedUiSession, savePersistedUiSession, type PersistedUiSessionState } from './ui-session-storage';
 
 interface DeleteConfirmData {
   type: 'client' | 'project' | 'event' | 'crew' | 'receipt';
@@ -83,6 +84,39 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | null>(null);
 
+const normalizeUiSessionState = (
+  state: PersistedUiSessionState,
+  role: Role | null,
+): PersistedUiSessionState => {
+  const normalizedState: PersistedUiSessionState = { ...state };
+
+  if (role) {
+    const allowedTabs = NAV_BY_ROLE[role];
+    if (normalizedState.currentTab !== 'settings' && !allowedTabs.includes(normalizedState.currentTab)) {
+      normalizedState.currentTab = allowedTabs[0];
+    }
+  }
+
+  if (normalizedState.currentTab !== 'crew') {
+    normalizedState.selectedContractorId = null;
+  }
+
+  if (normalizedState.currentTab !== 'events') {
+    normalizedState.selectedEventId = null;
+    normalizedState.eventTab = 'overview';
+  }
+
+  if (normalizedState.currentTab !== 'projects') {
+    normalizedState.selectedProjectIdForStats = null;
+  }
+
+  if (normalizedState.currentTab !== 'clients') {
+    normalizedState.selectedClientIdForStats = null;
+  }
+
+  return normalizedState;
+};
+
 export function useAppContext(): AppContextType {
   const ctx = useContext(AppContext);
   if (!ctx) throw new Error('useAppContext musi byt pouzit uvnitr AppProvider');
@@ -90,33 +124,43 @@ export function useAppContext(): AppContextType {
 }
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const { isAuthRequired, role: authRole } = useAuth();
+  const { isAuthRequired, isLoading: isAuthLoading, role: authRole } = useAuth();
+  const persistedUiSession = useMemo(() => loadPersistedUiSession(), []);
+  const shouldDeferUiRestore = isAuthRequired && isAuthLoading && Boolean(persistedUiSession);
+  const pendingDeferredUiSession = useRef<PersistedUiSessionState | null>(shouldDeferUiRestore ? persistedUiSession : null);
+  const initialUiSession = useMemo(
+    () => (shouldDeferUiRestore
+      ? null
+      : (persistedUiSession ? normalizeUiSessionState(persistedUiSession, authRole ?? null) : null)),
+    [authRole, persistedUiSession, shouldDeferUiRestore],
+  );
+  const skipInitialSearchReset = useRef(Boolean(initialUiSession));
   const [darkMode, setDarkMode] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [role, setRole] = useState<Role>('crewhead');
-  const [currentTab, setCurrentTabState] = useState('dashboard');
+  const [role, setRole] = useState<Role>(authRole ?? 'crewhead');
+  const [currentTab, setCurrentTabState] = useState(initialUiSession?.currentTab ?? 'dashboard');
   const [navigationGuardMessage, setNavigationGuardMessage] = useState<string | null>(null);
   const [pendingTab, setPendingTab] = useState<string | null>(null);
   const [settingsSection, setSettingsSection] = useState<'menu' | 'profile' | 'appearance'>('menu');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [timelogFilter, setTimelogFilter] = useState('all');
-  const [projectFilter, setProjectFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState(initialUiSession?.searchQuery ?? '');
+  const [timelogFilter, setTimelogFilter] = useState(initialUiSession?.timelogFilter ?? 'all');
+  const [projectFilter, setProjectFilter] = useState(initialUiSession?.projectFilter ?? 'all');
 
-  const [selectedContractorId, setSelectedContractorId] = useState<number | null>(null);
-  const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
-  const [selectedProjectIdForStats, setSelectedProjectIdForStats] = useState<string | null>(null);
-  const [selectedClientIdForStats, setSelectedClientIdForStats] = useState<number | null>(null);
+  const [selectedContractorId, setSelectedContractorId] = useState<number | null>(initialUiSession?.selectedContractorId ?? null);
+  const [selectedEventId, setSelectedEventId] = useState<number | null>(initialUiSession?.selectedEventId ?? null);
+  const [selectedProjectIdForStats, setSelectedProjectIdForStats] = useState<string | null>(initialUiSession?.selectedProjectIdForStats ?? null);
+  const [selectedClientIdForStats, setSelectedClientIdForStats] = useState<number | null>(initialUiSession?.selectedClientIdForStats ?? null);
 
-  const [editingTimelog, setEditingTimelog] = useState<Timelog | null>(null);
-  const [editingProject, setEditingProject] = useState<Project | null>(null);
-  const [editingReceipt, setEditingReceipt] = useState<ReceiptItem | null>(null);
-  const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [editingTimelog, setEditingTimelog] = useState<Timelog | null>(initialUiSession?.editingTimelog ?? null);
+  const [editingProject, setEditingProject] = useState<Project | null>(initialUiSession?.editingProject ?? null);
+  const [editingReceipt, setEditingReceipt] = useState<ReceiptItem | null>(initialUiSession?.editingReceipt ?? null);
+  const [editingClient, setEditingClient] = useState<Client | null>(initialUiSession?.editingClient ?? null);
   const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmData | null>(null);
-  const [eventTab, setEventTab] = useState<string>('overview');
-  const [eventsViewMode, setEventsViewMode] = useState<'list' | 'calendar'>('list');
-  const [eventsCalendarMode, setEventsCalendarMode] = useState<'month' | 'week'>('month');
-  const [eventsFilter, setEventsFilter] = useState<'upcoming' | 'past' | 'all'>('upcoming');
-  const [eventsCalendarDate, setEventsCalendarDate] = useState<string>('');
+  const [eventTab, setEventTab] = useState<string>(initialUiSession?.eventTab ?? 'overview');
+  const [eventsViewMode, setEventsViewMode] = useState<'list' | 'calendar'>(initialUiSession?.eventsViewMode ?? 'list');
+  const [eventsCalendarMode, setEventsCalendarMode] = useState<'month' | 'week'>(initialUiSession?.eventsCalendarMode ?? 'month');
+  const [eventsFilter, setEventsFilter] = useState<'upcoming' | 'past' | 'all'>(initialUiSession?.eventsFilter ?? 'upcoming');
+  const [eventsCalendarDate, setEventsCalendarDate] = useState<string>(initialUiSession?.eventsCalendarDate ?? '');
 
   const setCurrentTab = useCallback((tab: string) => {
     if (navigationGuardMessage && tab !== currentTab) {
@@ -128,6 +172,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [currentTab, navigationGuardMessage]);
 
   useEffect(() => {
+    if (skipInitialSearchReset.current) {
+      skipInitialSearchReset.current = false;
+      return;
+    }
     setSearchQuery('');
   }, [currentTab]);
 
@@ -142,17 +190,102 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [currentTab]);
 
   useEffect(() => {
+    if (isAuthRequired && isAuthLoading) {
+      return;
+    }
+
     const allowedTabs = NAV_BY_ROLE[role];
     if (currentTab !== 'settings' && !allowedTabs.includes(currentTab)) {
       setCurrentTabState(allowedTabs[0]);
     }
-  }, [role, currentTab]);
+  }, [currentTab, isAuthLoading, isAuthRequired, role]);
 
   useEffect(() => {
     if (isAuthRequired && authRole && authRole !== role) {
       setRole(authRole);
     }
   }, [authRole, isAuthRequired, role]);
+
+  useEffect(() => {
+    if (pendingDeferredUiSession.current && (!isAuthRequired || !isAuthLoading)) {
+      const restoredState = normalizeUiSessionState(
+        pendingDeferredUiSession.current,
+        authRole ?? role ?? null,
+      );
+
+      skipInitialSearchReset.current = true;
+      setCurrentTabState(restoredState.currentTab);
+      setSearchQuery(restoredState.searchQuery);
+      setTimelogFilter(restoredState.timelogFilter);
+      setProjectFilter(restoredState.projectFilter);
+      setSelectedContractorId(restoredState.selectedContractorId);
+      setSelectedEventId(restoredState.selectedEventId);
+      setSelectedProjectIdForStats(restoredState.selectedProjectIdForStats);
+      setSelectedClientIdForStats(restoredState.selectedClientIdForStats);
+      setEventTab(restoredState.eventTab);
+      setEventsViewMode(restoredState.eventsViewMode);
+      setEventsCalendarMode(restoredState.eventsCalendarMode);
+      setEventsFilter(restoredState.eventsFilter);
+      setEventsCalendarDate(restoredState.eventsCalendarDate);
+      setEditingTimelog(restoredState.editingTimelog);
+      setEditingReceipt(restoredState.editingReceipt);
+      setEditingProject(restoredState.editingProject);
+      setEditingClient(restoredState.editingClient);
+      pendingDeferredUiSession.current = null;
+    }
+  }, [authRole, isAuthLoading, isAuthRequired, role]);
+
+  useEffect(() => {
+    if (
+      pendingDeferredUiSession.current
+      || (isAuthRequired && isAuthLoading)
+      || (isAuthRequired && authRole && authRole !== role)
+    ) {
+      return;
+    }
+
+    savePersistedUiSession(normalizeUiSessionState({
+      currentTab,
+      searchQuery,
+      timelogFilter,
+      projectFilter,
+      selectedContractorId,
+      selectedEventId,
+      selectedProjectIdForStats,
+      selectedClientIdForStats,
+      eventTab,
+      eventsViewMode,
+      eventsCalendarMode,
+      eventsFilter,
+      eventsCalendarDate,
+      editingTimelog,
+      editingReceipt,
+      editingProject,
+      editingClient,
+    }, role));
+  }, [
+    authRole,
+    currentTab,
+    searchQuery,
+    timelogFilter,
+    projectFilter,
+    selectedContractorId,
+    selectedEventId,
+    selectedProjectIdForStats,
+    selectedClientIdForStats,
+    eventTab,
+    eventsViewMode,
+    eventsCalendarMode,
+    eventsFilter,
+    eventsCalendarDate,
+    editingTimelog,
+    editingReceipt,
+    editingProject,
+    editingClient,
+    isAuthLoading,
+    isAuthRequired,
+    role,
+  ]);
 
   const handleDelete = useCallback(async () => {
     if (!deleteConfirm) return;

@@ -18,7 +18,7 @@ import { useInvoicesQuery } from '../features/invoices/queries/useInvoicesQuery'
 
 const MyShiftsView = () => {
   const { darkMode, searchQuery } = useAppContext();
-  const { currentProfileId } = useAuth();
+  const { currentProfileId, profile } = useAuth();
   const eventsQuery = useEventsQuery();
   const timelogsQuery = useTimelogsQuery();
   const receiptsQuery = useReceiptsQuery();
@@ -43,7 +43,8 @@ const MyShiftsView = () => {
   const timelogs = timelogsQuery.data ?? [];
   const receipts = receiptsQuery.data ?? [];
   const invoices = invoicesQuery.data ?? [];
-  const meProfileId = me?.profileId ?? null;
+  const meProfileId = currentProfileId ?? me?.profileId ?? null;
+  const displayName = me?.name || [profile?.firstName, profile?.lastName].filter(Boolean).join(' ') || 'Crew';
   const myTimelogs = timelogs.filter((timelog) => timelog.contractorProfileId === meProfileId);
   const myInvoices = invoices.filter((invoice) => invoice.contractorProfileId === meProfileId);
   const myReceipts = receipts.filter((receipt) => receipt.contractorProfileId === meProfileId);
@@ -123,14 +124,12 @@ const MyShiftsView = () => {
     };
   }, [searchQuery, categorized, myInvoices, events, projects]);
 
-  if (!me) return null;
-
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <div className="mb-8 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Moje smeny</h1>
-          <p className="text-sm text-gray-500">Vitejte zpet, {me.name}</p>
+          <p className="text-sm text-gray-500">Vitejte zpet, {displayName}</p>
         </div>
       </div>
 

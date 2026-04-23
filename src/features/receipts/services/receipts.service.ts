@@ -120,6 +120,10 @@ const invalidateReceiptQueries = () => {
   void queryClient.invalidateQueries({ queryKey: queryKeys.receipts.all });
 };
 
+const getContractorProfileIdFromLocalState = (contractorId: number): string | undefined => (
+  (getLocalAppState().contractors ?? []).find((contractor) => contractor.id === contractorId)?.profileId
+);
+
 const getSupabaseProfileIdMap = async (): Promise<Map<number, string>> => {
   if (!supabase) {
     throw new Error('Supabase klient neni dostupny.');
@@ -246,6 +250,7 @@ export const getReceiptDependencies = (): { events: Event[]; contractors: Contra
 export const createEmptyReceipt = (contractorId: number): ReceiptItem => ({
   id: Math.max(0, ...getLocalAppState().receipts.map((receipt) => receipt.id)) + 1,
   cid: contractorId,
+  contractorProfileId: getContractorProfileIdFromLocalState(contractorId),
   eid: 0,
   job: '',
   title: '',
@@ -292,7 +297,10 @@ export const updateReceiptStatus = async (id: number, action: ReceiptAction): Pr
 };
 
 export const saveReceipt = async (updated: ReceiptItem): Promise<ReceiptItem> => {
-  const normalizedReceipt = normalizeReceipt(updated);
+  const normalizedReceipt = normalizeReceipt({
+    ...updated,
+    contractorProfileId: updated.contractorProfileId ?? getContractorProfileIdFromLocalState(updated.cid),
+  });
 
   if (!normalizedReceipt.eid || !normalizedReceipt.cid || !normalizedReceipt.title || normalizedReceipt.amount <= 0) {
     throw new Error('Vyplnte akci, nazev uctenky a castku.');
@@ -300,11 +308,11 @@ export const saveReceipt = async (updated: ReceiptItem): Promise<ReceiptItem> =>
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
     const existing = (getLocalAppState().receipts ?? []).some((receipt) => receipt.id === normalizedReceipt.id);
-    const [profileIdMap, eventIdMap] = await Promise.all([
-      getSupabaseProfileIdMap(),
+    const [eventIdMap, profileIdMap] = await Promise.all([
       getSupabaseEventIdMap(),
+      normalizedReceipt.contractorProfileId ? Promise.resolve(null) : getSupabaseProfileIdMap(),
     ]);
-    const contractorRowId = normalizedReceipt.contractorProfileId ?? profileIdMap.get(normalizedReceipt.cid);
+    const contractorRowId = normalizedReceipt.contractorProfileId ?? profileIdMap?.get(normalizedReceipt.cid);
     const eventRowId = eventIdMap.get(normalizedReceipt.eid);
 
     if (!contractorRowId || !eventRowId) {

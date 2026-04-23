@@ -131,6 +131,10 @@ const invalidateTimelogQueries = () => {
   void queryClient.invalidateQueries({ queryKey: queryKeys.timelogs.all });
 };
 
+const getContractorProfileIdFromLocalState = (contractorId: number): string | undefined => (
+  (getLocalAppState().contractors ?? []).find((contractor) => contractor.id === contractorId)?.profileId
+);
+
 const getSupabaseProfileIdMap = async (): Promise<Map<number, string>> => {
   if (!supabase) {
     throw new Error('Supabase klient neni dostupny.');
@@ -317,15 +321,16 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
   const normalizedTimelog = {
     ...updated,
     days: sortTimelogDays(updated.days),
+    contractorProfileId: updated.contractorProfileId ?? getContractorProfileIdFromLocalState(updated.cid),
   };
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
-    const [timelogRowId, profileIdMap, eventIdMap] = await Promise.all([
+    const [timelogRowId, eventIdMap, profileIdMap] = await Promise.all([
       getSupabaseTimelogRowId(updated.id),
-      getSupabaseProfileIdMap(),
       getSupabaseEventIdMap(),
+      normalizedTimelog.contractorProfileId ? Promise.resolve(null) : getSupabaseProfileIdMap(),
     ]);
-    const contractorRowId = normalizedTimelog.contractorProfileId ?? profileIdMap.get(normalizedTimelog.cid);
+    const contractorRowId = normalizedTimelog.contractorProfileId ?? profileIdMap?.get(normalizedTimelog.cid);
     const eventRowId = eventIdMap.get(normalizedTimelog.eid);
 
     if (!contractorRowId || !eventRowId) {

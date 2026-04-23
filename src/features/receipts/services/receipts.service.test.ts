@@ -238,4 +238,80 @@ describe('receipts.service write flow', () => {
     expect(snapshot.receipts).toHaveLength(1);
     expect(snapshot.receipts[0].title).toBe('Parkovne');
   });
+
+  it('derives contractorProfileId from local contractor data for new receipts created from numeric selection', async () => {
+    let snapshot = createSnapshot({
+      receipts: [],
+    });
+
+    const receiptsInsert = vi.fn().mockResolvedValue({
+      data: [{ id: 'receipt-row-2' }],
+      error: null,
+    });
+    const eventsSelect = vi.fn(() => ({
+      order: vi.fn(() => ({
+        order: vi.fn().mockResolvedValue({
+          data: [{ id: 'event-row-1' }],
+          error: null,
+        }),
+      })),
+    }));
+
+    vi.doMock('../../../lib/app-config', () => ({
+      appDataSource: 'supabase',
+    }));
+
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: vi.fn((table: string) => {
+          if (table === 'receipts') {
+            return {
+              insert: receiptsInsert,
+            };
+          }
+
+          if (table === 'events') {
+            return {
+              select: eventsSelect,
+            };
+          }
+
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    }));
+
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapReceipt: vi.fn(),
+    }));
+
+    const { createEmptyReceipt, saveReceipt } = await import('./receipts.service');
+
+    const createdDraft = createEmptyReceipt(1);
+    const created = await saveReceipt({
+      ...createdDraft,
+      eid: 1,
+      job: ' AK001 ',
+      title: ' Taxi ',
+      vendor: ' Bolt ',
+      amount: 300,
+      note: ' Poznamka ',
+    });
+
+    expect(receiptsInsert).toHaveBeenCalledWith(expect.objectContaining({
+      contractor_id: 'profile-uuid-1',
+    }));
+    expect(created.contractorProfileId).toBe('profile-uuid-1');
+    expect(snapshot.receipts[0].contractorProfileId).toBe('profile-uuid-1');
+  });
 });

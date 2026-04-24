@@ -357,6 +357,8 @@ describe('UUID mine-scope identity', () => {
 
     expect(screen.getByAltText('Nodu')).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/Hledat akci, job nebo jmeno/i)).toHaveClass('nodu-sidebar-search');
+    expect(screen.getAllByText('Crew')[0]).toHaveClass('nodu-sidebar-surface');
+    expect(screen.getByTitle('Profil')).toHaveClass('nodu-sidebar-hover-surface');
     expect(screen.getByRole('button', { name: /Moje timelogy/i })).toHaveClass('nodu-nav-active');
     expect(screen.getByRole('button', { name: /Moje timelogy/i })).toHaveTextContent('1');
     expect(screen.getByRole('button', { name: /Moje faktury/i })).toHaveTextContent('1');

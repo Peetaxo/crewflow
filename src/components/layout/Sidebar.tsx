@@ -153,11 +153,11 @@ const Sidebar: React.FC = () => {
               {isAuthRequired ? 'Prihlasena role' : 'Zobrazuji jako'}
             </div>
             {isAuthRequired ? (
-              <div className="rounded-xl border border-[color:var(--nodu-border)] bg-white/75 px-3 py-2 text-[11px] font-semibold text-[color:var(--nodu-accent)]">
+              <div className="nodu-sidebar-surface rounded-xl border border-[color:var(--nodu-border)] px-3 py-2 text-[11px] font-semibold text-[color:var(--nodu-accent)]">
                 {ROLE_LABELS[effectiveRole]}
               </div>
             ) : (
-              <div className="grid grid-cols-3 gap-1 rounded-xl border border-[color:var(--nodu-border)] bg-white/75 p-1">
+              <div className="nodu-sidebar-surface grid grid-cols-3 gap-1 rounded-xl border border-[color:var(--nodu-border)] p-1">
                 {(['crew', 'crewhead', 'coo'] as const).map((roleOption) => (
                   <button
                     key={roleOption}
@@ -172,7 +172,7 @@ const Sidebar: React.FC = () => {
           </>
         ) : (
           isAuthRequired ? (
-            <div className="flex items-center justify-center rounded-xl border border-[color:var(--nodu-border)] bg-white/75 px-2 py-2 text-[11px] font-semibold text-[color:var(--nodu-accent)]">
+            <div className="nodu-sidebar-surface flex items-center justify-center rounded-xl border border-[color:var(--nodu-border)] px-2 py-2 text-[11px] font-semibold text-[color:var(--nodu-accent)]">
               {ROLE_SHORT_LABELS[effectiveRole]}
             </div>
           ) : (
@@ -181,7 +181,7 @@ const Sidebar: React.FC = () => {
                 <button
                   key={roleOption}
                   onClick={() => setRole(roleOption)}
-                  className={`flex w-full items-center justify-center rounded-xl border px-2 py-2 text-[11px] font-semibold transition-all ${role === roleOption ? 'border-[color:var(--nodu-accent)] bg-[color:var(--nodu-accent-soft)] text-[color:var(--nodu-accent)]' : 'border-[color:var(--nodu-border)] bg-white/75 text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
+                  className={`flex w-full items-center justify-center rounded-xl border px-2 py-2 text-[11px] font-semibold transition-all ${role === roleOption ? 'border-[color:var(--nodu-accent)] bg-[color:var(--nodu-accent-soft)] text-[color:var(--nodu-accent)]' : 'nodu-sidebar-surface border-[color:var(--nodu-border)] text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
                   title={ROLE_LABELS[roleOption]}
                 >
                   {ROLE_SHORT_LABELS[roleOption]}
@@ -229,7 +229,7 @@ const Sidebar: React.FC = () => {
 
       <button
         onClick={() => openSettings('profile')}
-        className={`nodu-sidebar-divider p-4 text-left transition-colors hover:bg-white/70 ${sidebarCollapsed ? 'flex justify-center' : ''}`}
+        className={`nodu-sidebar-divider nodu-sidebar-hover-surface p-4 text-left transition-colors ${sidebarCollapsed ? 'flex justify-center' : ''}`}
         title="Profil"
       >
         <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3'}`}>

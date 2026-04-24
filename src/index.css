@@ -547,9 +547,14 @@ tbody tr:hover td {
   color: var(--nodu-text-soft) !important;
 }
 
-.dark .jn.nodu-job-badge,
-.dark .nodu-event-meta-badge {
+.dark .jn.nodu-job-badge {
   background: rgb(var(--nodu-accent-rgb) / 0.14) !important;
   border-color: rgb(var(--nodu-accent-rgb) / 0.22) !important;
   color: var(--nodu-accent) !important;
+}
+
+.dark .nodu-event-meta-badge {
+  background: rgb(var(--nodu-surface-muted-rgb) / 0.9) !important;
+  border-color: var(--nodu-border) !important;
+  color: var(--nodu-text-soft) !important;
 }

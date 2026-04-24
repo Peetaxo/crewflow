@@ -246,6 +246,52 @@
   @apply inline-flex items-center rounded-full border border-gray-200 bg-gray-100 px-2.5 py-1 text-[10px] font-medium text-gray-600;
 }
 
+.nodu-dashboard-shell {
+  color: var(--nodu-text);
+}
+
+.nodu-dashboard-kicker {
+  @apply text-[11px] font-semibold uppercase tracking-[0.26em];
+  color: var(--nodu-text-soft);
+}
+
+.nodu-dashboard-lead {
+  @apply mt-1 max-w-2xl text-sm leading-6;
+  color: var(--nodu-text-soft);
+}
+
+.nodu-dashboard-panel {
+  background: linear-gradient(180deg, rgba(255, 250, 244, 0.98) 0%, rgba(252, 244, 234, 0.96) 100%);
+  border: 1px solid var(--nodu-border);
+  box-shadow: 0 18px 42px rgba(86, 60, 35, 0.08);
+}
+
+.nodu-dashboard-panel-title {
+  @apply text-[13px] font-semibold tracking-[0.08em] uppercase;
+  color: var(--nodu-text);
+}
+
+.nodu-dashboard-row {
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.nodu-dashboard-row:hover {
+  background: rgba(255, 251, 246, 0.92);
+  border-color: rgba(180, 106, 53, 0.12);
+}
+
+.nodu-job-badge {
+  background: rgba(180, 106, 53, 0.14);
+  border: 1px solid rgba(180, 106, 53, 0.22);
+  color: var(--nodu-accent);
+}
+
+.nodu-event-meta-badge {
+  background: rgba(47, 38, 31, 0.05);
+  color: var(--nodu-text-soft);
+}
+
 /* ========================================
    Globální tabulkové styly
    ======================================== */

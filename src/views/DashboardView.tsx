@@ -165,10 +165,13 @@ const DashboardView = () => {
   };
 
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-      <div className="mb-5">
-        <h1 className="text-lg font-semibold text-gray-900">Dashboard</h1>
-        <p className="mt-0.5 text-xs text-gray-500">{roleLabel} · Duben 2026</p>
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="nodu-dashboard-shell">
+      <div className="mb-6">
+        <p className="nodu-dashboard-kicker">Pilot overview</p>
+        <h1 className="mt-2 text-[32px] font-semibold leading-none tracking-[-0.04em] text-gray-900">Dashboard</h1>
+        <p className="nodu-dashboard-lead">
+          {roleLabel} · Duben 2026
+        </p>
       </div>
 
       <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -205,8 +208,8 @@ const DashboardView = () => {
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm lg:col-span-3">
-          <h2 className="mb-3 text-[13px] font-semibold">Timelogy ke zpracovani</h2>
+        <div className="nodu-dashboard-panel rounded-[28px] p-5 lg:col-span-3">
+          <h2 className="nodu-dashboard-panel-title mb-3">Timelogy ke zpracovani</h2>
           <div className="space-y-1">
             {timelogQueue
               .slice(0, 4)
@@ -221,22 +224,23 @@ const DashboardView = () => {
                   <button
                     key={timelog.id}
                     onClick={openTimelogs}
-                    className="flex w-full items-center gap-3 rounded-lg border-b border-gray-50 py-2 text-left transition-colors hover:bg-gray-50 last:border-0"
+                    className="nodu-dashboard-row flex w-full items-center gap-3 rounded-[20px] border-b border-[#f1e4d6] px-3 py-3 text-left transition-colors last:border-0"
                   >
                     <div className="av h-8 w-8 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>
                       {contractor.ii}
                     </div>
                     <div className="min-width-0 flex-1">
-                      <div className="truncate text-xs font-semibold">{contractor.name}</div>
-                      <div className="text-[11px] text-gray-500">
-                        {event.name} <span className="jn">{event.job}</span>
+                      <div className="truncate text-xs font-semibold text-gray-900">{contractor.name}</div>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
+                        <span>{event.name}</span>
+                        <span className="jn nodu-job-badge">{event.job}</span>
                       </div>
                     </div>
                     <div className="shrink-0 text-right">
-                      <div className="text-xs font-semibold">{hours.toFixed(1)}h</div>
+                      <div className="text-xs font-semibold text-gray-900">{hours.toFixed(1)}h</div>
                       <div className="text-[11px] text-gray-500">{formatCurrency(hours * contractor.rate)}</div>
                     </div>
-                    <div className="rounded-md p-1.5 text-emerald-600">
+                    <div className="rounded-full bg-white/80 p-2 text-[#9b5d2e] shadow-sm">
                       <ChevronRight size={14} />
                     </div>
                   </button>
@@ -249,29 +253,29 @@ const DashboardView = () => {
           </div>
         </div>
 
-        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm lg:col-span-2">
-          <h2 className="mb-3 text-[13px] font-semibold">Nadchazejici akce</h2>
+        <div className="nodu-dashboard-panel rounded-[28px] p-5 lg:col-span-2">
+          <h2 className="nodu-dashboard-panel-title mb-3">Nadchazejici akce</h2>
           <div className="space-y-3">
             {upcomingEvents.map((event) => (
               <button
                 key={event.id}
                 onClick={() => openEventDetail(event.id)}
-                className="block w-full border-b border-gray-50 pb-3 text-left transition-colors hover:bg-gray-50 last:border-0 last:pb-0"
+                className="nodu-dashboard-row block w-full rounded-[22px] border border-[#f1e4d6] px-3 pb-3 pt-3 text-left transition-colors last:pb-3"
               >
                 <div className="mb-1.5 flex items-center gap-2">
-                  <span className="jn">{event.job}</span>
+                  <span className="jn nodu-job-badge">{event.job}</span>
                   <StatusBadge status={getEventStatus(event)} />
                 </div>
-                <div className="truncate text-xs font-semibold">{event.name}</div>
+                <div className="truncate text-xs font-semibold text-gray-900">{event.name}</div>
                 <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-gray-500">
                   {formatDateRange(event.startDate, event.endDate)} · {event.city}
                   {event.startDate !== event.endDate && (
-                    <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-tighter text-gray-600">
+                    <span className="nodu-event-meta-badge rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em]">
                       {getDatesBetween(event.startDate, event.endDate).length} dny
                     </span>
                   )}
                 </div>
-                <div className="mt-2 h-1 overflow-hidden rounded-full bg-gray-100">
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#f0e2d5]">
                   <div
                     className={`h-full rounded-full ${event.filled >= event.needed ? 'bg-emerald-500' : 'bg-amber-500'}`}
                     style={{ width: `${Math.min(100, Math.round((event.filled / event.needed) * 100))}%` }}

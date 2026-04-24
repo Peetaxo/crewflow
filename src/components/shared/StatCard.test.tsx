@@ -10,7 +10,7 @@ describe('StatCard', () => {
     );
 
     expect(screen.getByText('Faktury v procesu')).toHaveClass('text-[10px]');
-    expect(screen.getByText('3')).toHaveClass('text-gray-950');
+    expect(screen.getByText('3')).toHaveClass('text-gray-900');
     expect(screen.getByText('Self-billing')).toHaveClass('nodu-stat-chip');
     expect(container.querySelector('[data-testid="stat-accent-dot"]')).toBeNull();
   });

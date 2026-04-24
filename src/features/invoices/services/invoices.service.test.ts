@@ -58,7 +58,6 @@ const createSnapshot = (overrides?: Partial<{
     {
       id: 1,
       eid: 1,
-      cid: 1,
       contractorProfileId: 'profile-uuid-1',
       days: [{ d: '2026-04-10', f: '08:00', t: '18:00', type: 'instal' as const }],
       km: 10,
@@ -68,7 +67,6 @@ const createSnapshot = (overrides?: Partial<{
     {
       id: 2,
       eid: 2,
-      cid: 1,
       contractorProfileId: 'profile-uuid-1',
       days: [{ d: '2026-04-11', f: '09:00', t: '16:00', type: 'provoz' as const }],
       km: 0,
@@ -79,7 +77,6 @@ const createSnapshot = (overrides?: Partial<{
   receipts: [
     {
       id: 11,
-      cid: 1,
       contractorProfileId: 'profile-uuid-1',
       eid: 2,
       job: 'AK002',
@@ -173,7 +170,6 @@ describe('invoices.service billing batches', () => {
     const created = await generateInvoices();
 
     expect(created).toHaveLength(1);
-    expect(created[0].cid).toBe(1);
     expect(created[0].contractorProfileId).toBe('profile-uuid-1');
     expect(created[0].jobNumbers).toEqual(['AK001', 'AK002']);
     expect(created[0].job).toBe('AK001, AK002');
@@ -217,7 +213,6 @@ describe('invoices.service billing batches', () => {
         {
           id: 3,
           eid: 1,
-          cid: 2,
           contractorProfileId: 'profile-uuid-2',
           days: [{ d: '2026-04-12', f: '08:00', t: '10:00', type: 'instal' as const }],
           km: 0,
@@ -264,7 +259,6 @@ describe('invoices.service billing batches', () => {
 
     expect(getInvoiceCreateCandidates()).toEqual([
       {
-        contractorId: 1,
         contractorProfileId: 'profile-uuid-1',
         contractorName: 'Test User',
         timelogCount: 2,
@@ -337,7 +331,6 @@ describe('invoices.service billing batches', () => {
       invoices: [
         {
           id: 'FAK-EXIST-001',
-          cid: 1,
           contractorProfileId: 'profile-uuid-1',
           eid: 1,
           hours: 10,
@@ -394,7 +387,6 @@ describe('invoices.service billing batches', () => {
 
     expect(getInvoiceCreateCandidates()).toEqual([
       {
-        contractorId: 1,
         contractorProfileId: 'profile-uuid-1',
         contractorName: 'Test User',
         timelogCount: 1,
@@ -605,7 +597,6 @@ describe('invoices.service billing batches', () => {
     const invoices = getInvoices();
 
     expect(invoices[0].contractorProfileId).toBe('profile-uuid-1');
-    expect(invoices[0].cid).toBeUndefined();
     expect(invoices[0].eid).toBe(1);
   });
 });

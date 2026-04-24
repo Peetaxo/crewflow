@@ -66,7 +66,7 @@ vi.mock('sonner', () => ({
   },
 }));
 
-vi.mock('../../context/AppContext', () => ({
+vi.mock('../../context/useAppContext', () => ({
   useAppContext: () => mockAppContext,
 }));
 
@@ -115,7 +115,6 @@ describe('modal contractor identity handling', () => {
     mockAppContext.editingTimelog = {
       id: 1,
       eid: 1,
-      cid: 999,
       contractorProfileId: 'profile-uuid-1',
       days: [{ d: '2026-04-24', f: '08:00', t: '16:00', type: 'instal' }],
       km: 0,
@@ -145,7 +144,6 @@ describe('modal contractor identity handling', () => {
   it('updates receipt contractor using contractorProfileId from the selected crew member', () => {
     mockAppContext.editingReceipt = {
       id: 1,
-      cid: 1,
       contractorProfileId: 'profile-uuid-1',
       eid: 1,
       job: 'JOB-1',
@@ -169,7 +167,6 @@ describe('modal contractor identity handling', () => {
     fireEvent.change(screen.getByLabelText('Crew'), { target: { value: 'profile-uuid-2' } });
 
     expect(setEditingReceipt).toHaveBeenCalledWith(expect.objectContaining({
-      cid: 2,
       contractorProfileId: 'profile-uuid-2',
     }));
   });
@@ -200,7 +197,7 @@ describe('modal contractor identity handling', () => {
       },
     ];
     getEventDetailData.mockReturnValue({
-      timelogs: [{ cid: 999, contractorProfileId: 'profile-uuid-1' }],
+      timelogs: [{ contractorProfileId: 'profile-uuid-1' }],
     });
 
     render(

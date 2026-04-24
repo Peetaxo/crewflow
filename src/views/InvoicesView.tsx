@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Info } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { useAuth } from '../app/providers/AuthProvider';
-import { useAppContext } from '../context/AppContext';
+import { useAuth } from '../app/providers/useAuth';
+import { useAppContext } from '../context/useAppContext';
 import { Contractor, Event, Invoice } from '../types';
 import { formatCurrency, formatShortDate, getCountdown } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';
@@ -65,20 +65,11 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
     };
   }, [hasUnsavedCreate, isCreateMode, setNavigationGuardMessage]);
 
-  const findContractor = useCallback((contractorProfileId?: string, contractorId?: number) => {
-    if (contractorProfileId) {
-      const contractorByProfileId = contractors.find((contractor) => contractor.profileId === contractorProfileId);
-      if (contractorByProfileId) {
-        return contractorByProfileId;
-      }
-    }
-
-    if (contractorId == null) {
-      return null;
-    }
-
-    return contractors.find((contractor) => contractor.id === contractorId) ?? null;
-  }, [contractors]);
+  const findContractor = useCallback((contractorProfileId?: string) => (
+    contractorProfileId
+      ? contractors.find((contractor) => contractor.profileId === contractorProfileId) ?? null
+      : null
+  ), [contractors]);
 
   const findEvent = useCallback((id: number) => (
     events.find((event) => event.id === id) ?? null
@@ -92,7 +83,7 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
 
     return safeInvoices.filter((invoice) => {
       const event = invoice.eid ? findEvent(invoice.eid) : null;
-      const contractor = findContractor(invoice.contractorProfileId, invoice.cid);
+      const contractor = findContractor(invoice.contractorProfileId);
 
       return (
         invoice.id.toLowerCase().includes(query)
@@ -229,7 +220,7 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
 
       <div className="space-y-2">
         {visibleInvoices.map((invoice) => {
-          const contractor = findContractor(invoice.contractorProfileId, invoice.cid);
+          const contractor = findContractor(invoice.contractorProfileId);
           const event = invoice.eid ? findEvent(invoice.eid) : null;
           if (!contractor) return null;
           const countdown = invoice.status === 'sent' ? getCountdown(invoice.sentAt) : null;

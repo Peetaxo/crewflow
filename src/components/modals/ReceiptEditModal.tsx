@@ -2,7 +2,7 @@ import React from 'react';
 import { X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { useAppContext } from '../../context/AppContext';
+import { useAppContext } from '../../context/useAppContext';
 import { getReceiptDependencies, saveReceipt } from '../../features/receipts/services/receipts.service';
 
 const ReceiptEditModal = () => {
@@ -16,7 +16,7 @@ const ReceiptEditModal = () => {
 
   const { events, contractors } = getReceiptDependencies();
   const selectedEvent = events.find((event) => event.id === editingReceipt.eid);
-  const selectedContractorValue = editingReceipt.contractorProfileId ?? String(editingReceipt.cid);
+  const selectedContractorValue = editingReceipt.contractorProfileId ?? '';
 
   return (
     <AnimatePresence>
@@ -42,14 +42,11 @@ const ReceiptEditModal = () => {
                   aria-label="Crew"
                   value={selectedContractorValue}
                   onChange={(e) => {
-                    const contractor = contractors.find((item) => (
-                      item.profileId === e.target.value || String(item.id) === e.target.value
-                    ));
+                    const contractor = contractors.find((item) => item.profileId === e.target.value);
                     if (!contractor) return;
 
                     setEditingReceipt({
                       ...editingReceipt,
-                      cid: contractor.id,
                       contractorProfileId: contractor.profileId,
                     });
                   }}
@@ -58,7 +55,8 @@ const ReceiptEditModal = () => {
                   {contractors.map((contractor) => (
                     <option
                       key={contractor.id}
-                      value={contractor.profileId ?? String(contractor.id)}
+                      value={contractor.profileId ?? ''}
+                      disabled={!contractor.profileId}
                     >
                       {contractor.name}
                     </option>

@@ -53,7 +53,7 @@ const createSnapshot = (): Snapshot => ({
     {
       id: 1,
       eid: 1,
-      cid: 1,
+      contractorProfileId: 'profile-uuid-1',
       days: [{ d: '2026-04-10', f: '08:00', t: '16:00', type: 'instal' }],
       km: 12,
       note: '',
@@ -238,7 +238,7 @@ describe('UUID write flows integration', () => {
       note: 'UUID first timelog',
     });
 
-    const receiptDraft = createEmptyReceipt(1);
+    const receiptDraft = createEmptyReceipt('profile-uuid-1');
     const savedReceipt = await saveReceipt({
       ...receiptDraft,
       eid: 1,
@@ -258,7 +258,6 @@ describe('UUID write flows integration', () => {
     expect(savedReceipt.contractorProfileId).toBe('profile-uuid-1');
     expect(candidates).toEqual([
       expect.objectContaining({
-        contractorId: 1,
         contractorProfileId: 'profile-uuid-1',
       }),
     ]);

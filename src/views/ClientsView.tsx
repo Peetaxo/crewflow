@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useAppContext } from '../context/AppContext';
+import { useAppContext } from '../context/useAppContext';
 import { createEmptyClient, getClientCards, subscribeToClientChanges } from '../features/clients/services/clients.service';
 import ClientStatsView from './ClientStatsView';
 

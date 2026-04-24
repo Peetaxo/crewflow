@@ -29,8 +29,7 @@ const matchesSearch = (
   if (!query) return true;
 
   const event = events.find((item) => item.id === timelog.eid);
-  const contractor = contractors.find((item) => item.profileId === timelog.contractorProfileId)
-    ?? contractors.find((item) => item.id === timelog.cid);
+  const contractor = contractors.find((item) => item.profileId === timelog.contractorProfileId);
   if (!event || !contractor) return false;
 
   return (
@@ -130,10 +129,6 @@ const ensureSupabaseTimelogsLoaded = () => {
 const invalidateTimelogQueries = () => {
   void queryClient.invalidateQueries({ queryKey: queryKeys.timelogs.all });
 };
-
-const getContractorProfileIdFromLocalState = (contractorId: number): string | undefined => (
-  (getLocalAppState().contractors ?? []).find((contractor) => contractor.id === contractorId)?.profileId
-);
 
 const getSupabaseEventIdMap = async (): Promise<Map<number, string>> => {
   if (!supabase) {
@@ -303,8 +298,11 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
   const normalizedTimelog = {
     ...updated,
     days: sortTimelogDays(updated.days),
-    contractorProfileId: updated.contractorProfileId ?? getContractorProfileIdFromLocalState(updated.cid),
   };
+
+  if (!normalizedTimelog.contractorProfileId) {
+    throw new Error('Nepodarilo se dohledat UUID identitu clena crew.');
+  }
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
     const [timelogRowId, eventIdMap] = await Promise.all([

@@ -797,7 +797,6 @@ export const assignCrewToEvent = async (
     timelog: {
       id: Math.max(0, ...snapshot.timelogs.map((timelog) => timelog.id)) + 1,
       eid: event.id,
-      cid: contractor.id,
       contractorProfileId,
       days: initialDays,
       km: 0,

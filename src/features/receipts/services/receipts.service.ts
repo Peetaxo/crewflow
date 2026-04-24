@@ -27,8 +27,7 @@ const matchesSearch = (
   if (!query) return true;
 
   const event = events.find((item) => item.id === receipt.eid);
-  const contractor = contractors.find((item) => item.profileId === receipt.contractorProfileId)
-    ?? contractors.find((item) => item.id === receipt.cid);
+  const contractor = contractors.find((item) => item.profileId === receipt.contractorProfileId);
   if (!event || !contractor) return false;
 
   return (
@@ -119,10 +118,6 @@ const ensureSupabaseReceiptsLoaded = () => {
 const invalidateReceiptQueries = () => {
   void queryClient.invalidateQueries({ queryKey: queryKeys.receipts.all });
 };
-
-const getContractorProfileIdFromLocalState = (contractorId: number): string | undefined => (
-  (getLocalAppState().contractors ?? []).find((contractor) => contractor.id === contractorId)?.profileId
-);
 
 const getSupabaseEventIdMap = async (): Promise<Map<number, string>> => {
   if (!supabase) {
@@ -229,19 +224,22 @@ export const getReceiptDependencies = (): { events: Event[]; contractors: Contra
   };
 };
 
-export const createEmptyReceipt = (contractorId: number): ReceiptItem => ({
-  id: Math.max(0, ...getLocalAppState().receipts.map((receipt) => receipt.id)) + 1,
-  cid: contractorId,
-  contractorProfileId: getContractorProfileIdFromLocalState(contractorId),
-  eid: 0,
-  job: '',
-  title: '',
-  vendor: '',
-  amount: 0,
-  paidAt: new Date().toISOString().split('T')[0],
-  note: '',
-  status: 'draft',
-});
+export const createEmptyReceipt = (
+  contractorProfileId?: string,
+): ReceiptItem => {
+  return ({
+    id: Math.max(0, ...getLocalAppState().receipts.map((receipt) => receipt.id)) + 1,
+    contractorProfileId,
+    eid: 0,
+    job: '',
+    title: '',
+    vendor: '',
+    amount: 0,
+    paidAt: new Date().toISOString().split('T')[0],
+    note: '',
+    status: 'draft',
+  });
+};
 
 export const updateReceiptStatus = async (id: number, action: ReceiptAction): Promise<ReceiptItem> => {
   const statusMap: Record<ReceiptAction, ReceiptStatus> = {
@@ -281,10 +279,9 @@ export const updateReceiptStatus = async (id: number, action: ReceiptAction): Pr
 export const saveReceipt = async (updated: ReceiptItem): Promise<ReceiptItem> => {
   const normalizedReceipt = normalizeReceipt({
     ...updated,
-    contractorProfileId: updated.contractorProfileId ?? getContractorProfileIdFromLocalState(updated.cid),
   });
 
-  if (!normalizedReceipt.eid || !normalizedReceipt.cid || !normalizedReceipt.title || normalizedReceipt.amount <= 0) {
+  if (!normalizedReceipt.eid || !normalizedReceipt.contractorProfileId || !normalizedReceipt.title || normalizedReceipt.amount <= 0) {
     throw new Error('Vyplnte akci, nazev uctenky a castku.');
   }
 

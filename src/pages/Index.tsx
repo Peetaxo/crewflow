@@ -1,4 +1,5 @@
-import { AuthProvider, useAuth } from '../app/providers/AuthProvider';
+import { AuthProvider } from '../app/providers/AuthProvider';
+import { useAuth } from '../app/providers/useAuth';
 import AppDataBootstrap from '../app/providers/AppDataBootstrap';
 import AppLayout from '../components/layout/AppLayout';
 import { AppProvider } from '../context/AppContext';

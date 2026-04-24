@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { useAuth } from '../app/providers/AuthProvider';
+import { useAuth } from '../app/providers/useAuth';
 import type { Role } from '../types';
 
 const LoginView = () => {
@@ -13,14 +13,14 @@ const LoginView = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedDevUserId, setSelectedDevUserId] = useState<number | null>(devLoginOptions[0]?.id ?? null);
+  const [selectedDevProfileId, setSelectedDevProfileId] = useState<string | null>(devLoginOptions[0]?.profileId ?? null);
   const [selectedDevRole, setSelectedDevRole] = useState<Role>('crewhead');
 
   useEffect(() => {
-    if (!selectedDevUserId && devLoginOptions.length > 0) {
-      setSelectedDevUserId(devLoginOptions[0].id);
+    if (!selectedDevProfileId && devLoginOptions.length > 0) {
+      setSelectedDevProfileId(devLoginOptions[0].profileId);
     }
-  }, [devLoginOptions, selectedDevUserId]);
+  }, [devLoginOptions, selectedDevProfileId]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -40,7 +40,7 @@ const LoginView = () => {
   };
 
   const handleDevLogin = () => {
-    if (!selectedDevUserId) {
+    if (!selectedDevProfileId) {
       setError('Vyber testovaci profil.');
       return;
     }
@@ -48,7 +48,7 @@ const LoginView = () => {
     setError('');
 
     try {
-      signInAsDevUser(selectedDevUserId, selectedDevRole);
+      signInAsDevUser(selectedDevProfileId, selectedDevRole);
       toast.success('Testovaci prihlaseni probehlo uspesne.');
     } catch (devError) {
       const message = devError instanceof Error ? devError.message : 'Testovaci prihlaseni selhalo.';
@@ -137,15 +137,15 @@ const LoginView = () => {
               <label className="block space-y-1.5">
                 <span className="text-xs font-medium text-slate-700">Profil</span>
                 <select
-                  value={selectedDevUserId ?? ''}
-                  onChange={(event) => setSelectedDevUserId(Number(event.target.value))}
+                  value={selectedDevProfileId ?? ''}
+                  onChange={(event) => setSelectedDevProfileId(event.target.value || null)}
                   className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900"
                 >
                   {devLoginOptions.length === 0 ? (
                     <option value="">Zadne profily k vyberu</option>
                   ) : (
                     devLoginOptions.map((option) => (
-                      <option key={option.id} value={option.id}>
+                      <option key={option.id} value={option.profileId ?? ''} disabled={!option.profileId}>
                         {option.name}{option.email ? ` (${option.email})` : ''}
                       </option>
                     ))

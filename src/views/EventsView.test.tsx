@@ -41,7 +41,7 @@ describe('EventsView', () => {
   });
 
   it('renders event list without crashing when events query is active', async () => {
-    vi.doMock('../context/AppContext', () => ({
+    vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => mockAppContext,
     }));
 

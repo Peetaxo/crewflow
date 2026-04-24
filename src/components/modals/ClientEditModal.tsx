@@ -1,7 +1,7 @@
 import React from 'react';
 import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAppContext } from '../../context/AppContext';
+import { useAppContext } from '../../context/useAppContext';
 import { getClients, saveClient } from '../../features/clients/services/clients.service';
 
 const ClientEditModal = () => {

@@ -1,7 +1,6 @@
-/* eslint-disable react-refresh/only-export-components */
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { useAuth } from '../app/providers/AuthProvider';
+import { useAuth } from '../app/providers/useAuth';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -12,13 +11,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '../components/ui/alert-dialog';
-import {
-  Client,
-  Project,
-  ReceiptItem,
-  Role,
-  Timelog,
-} from '../types';
+import { Client, Project, ReceiptItem, Role, Timelog } from '../types';
 import { NAV_BY_ROLE } from '../constants';
 import { deleteCrew } from '../features/crew/services/crew.service';
 import { deleteEvent } from '../features/events/services/events.service';
@@ -27,63 +20,7 @@ import { deleteClient } from '../features/clients/services/clients.service';
 import { deleteReceipt } from '../features/receipts/services/receipts.service';
 import { loadPersistedUiSession, savePersistedUiSession, type PersistedUiSessionState } from './ui-session-storage';
 import { loadUiPreferences, saveUiPreferences } from './ui-preferences-storage';
-
-interface DeleteConfirmData {
-  type: 'client' | 'project' | 'event' | 'crew' | 'receipt';
-  id: number | string;
-  name: string;
-}
-
-interface AppContextType {
-  darkMode: boolean;
-  setDarkMode: (v: boolean) => void;
-  sidebarCollapsed: boolean;
-  setSidebarCollapsed: (v: boolean) => void;
-  role: Role;
-  setRole: (r: Role) => void;
-  currentTab: string;
-  setCurrentTab: (tab: string) => void;
-  setNavigationGuardMessage: (message: string | null) => void;
-  settingsSection: 'menu' | 'profile' | 'appearance';
-  setSettingsSection: (section: 'menu' | 'profile' | 'appearance') => void;
-  searchQuery: string;
-  setSearchQuery: (q: string) => void;
-  timelogFilter: string;
-  setTimelogFilter: (f: string) => void;
-  projectFilter: string;
-  setProjectFilter: (f: string) => void;
-  selectedContractorProfileId: string | null;
-  setSelectedContractorProfileId: (id: string | null) => void;
-  selectedEventId: number | null;
-  setSelectedEventId: (id: number | null) => void;
-  selectedProjectIdForStats: string | null;
-  setSelectedProjectIdForStats: (id: string | null) => void;
-  selectedClientIdForStats: number | null;
-  setSelectedClientIdForStats: (id: number | null) => void;
-  editingTimelog: Timelog | null;
-  setEditingTimelog: (t: Timelog | null) => void;
-  editingProject: Project | null;
-  setEditingProject: (p: Project | null) => void;
-  editingReceipt: ReceiptItem | null;
-  setEditingReceipt: (r: ReceiptItem | null) => void;
-  editingClient: Client | null;
-  setEditingClient: (c: Client | null) => void;
-  deleteConfirm: DeleteConfirmData | null;
-  setDeleteConfirm: (d: DeleteConfirmData | null) => void;
-  eventTab: string;
-  setEventTab: (tab: string) => void;
-  eventsViewMode: 'list' | 'calendar';
-  setEventsViewMode: (mode: 'list' | 'calendar') => void;
-  eventsCalendarMode: 'month' | 'week';
-  setEventsCalendarMode: (mode: 'month' | 'week') => void;
-  eventsFilter: 'upcoming' | 'past' | 'all';
-  setEventsFilter: (filter: 'upcoming' | 'past' | 'all') => void;
-  eventsCalendarDate: string;
-  setEventsCalendarDate: (date: string) => void;
-  handleDelete: () => Promise<void>;
-}
-
-const AppContext = createContext<AppContextType | null>(null);
+import { AppContext, type AppContextType, type DeleteConfirmData } from './app-context';
 
 const normalizeUiSessionState = (
   state: PersistedUiSessionState,
@@ -117,12 +54,6 @@ const normalizeUiSessionState = (
 
   return normalizedState;
 };
-
-export function useAppContext(): AppContextType {
-  const ctx = useContext(AppContext);
-  if (!ctx) throw new Error('useAppContext musi byt pouzit uvnitr AppProvider');
-  return ctx;
-}
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const { isAuthRequired, isLoading: isAuthLoading, role: authRole } = useAuth();

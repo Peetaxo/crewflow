@@ -1,7 +1,7 @@
 import React from 'react';
 import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAppContext } from '../../context/AppContext';
+import { useAppContext } from '../../context/useAppContext';
 import { getProjectDependencies, saveProject } from '../../features/projects/services/projects.service';
 
 const ProjectEditModal = () => {

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useAppContext } from '../context/AppContext';
+import { useAppContext } from '../context/useAppContext';
 import StatusBadge from '../components/shared/StatusBadge';
 import CrewDetailView from './CrewDetailView';
 import ContractorEditModal from '../components/modals/ContractorEditModal';

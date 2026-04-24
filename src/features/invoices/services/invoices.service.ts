@@ -32,7 +32,6 @@ type BillingItem = {
 };
 
 type BillingBatch = {
-  cid?: number;
   contractorProfileId?: string;
   items: Map<string, BillingItem>;
   eventIds: Set<number>;
@@ -41,7 +40,6 @@ type BillingBatch = {
 };
 
 export type InvoiceCreateCandidate = {
-  contractorId?: number;
   contractorProfileId?: string;
   contractorName: string;
   timelogCount: number;
@@ -76,7 +74,6 @@ export type InvoiceCreatePreviewItem = {
 };
 
 export type InvoiceCreatePreview = {
-  contractorId?: number;
   contractorProfileId?: string;
   contractorName: string;
   items: InvoiceCreatePreviewItem[];
@@ -121,23 +118,15 @@ type InvoiceReceiptRow = {
 let invoicesHydrationPromise: Promise<void> | null = null;
 let invoicesLoaded = false;
 
-const findContractor = (contractors: Contractor[], id?: number): Contractor | null => (
-  id == null ? null : contractors.find((contractor) => contractor.id === id) ?? null
-);
-
 const findContractorByIdentity = (
   contractors: Contractor[],
   contractorProfileId: string | undefined,
-  contractorId?: number,
 ): Contractor | null => {
-  if (contractorProfileId) {
-    const contractorByProfileId = contractors.find((contractor) => contractor.profileId === contractorProfileId);
-    if (contractorByProfileId) {
-      return contractorByProfileId;
-    }
+  if (!contractorProfileId) {
+    return null;
   }
 
-  return findContractor(contractors, contractorId);
+  return contractors.find((contractor) => contractor.profileId === contractorProfileId) ?? null;
 };
 
 const findEvent = (events: Event[], id: number): Event | null => (
@@ -223,18 +212,15 @@ const buildBillingBatches = (): BillingBatch[] => {
 
   const grouped = new Map<string, BillingBatch>();
 
-const getBatchKey = (contractor: Contractor | null, fallbackContractorId?: number): string => (
-    contractor?.profileId ?? `legacy:${fallbackContractorId ?? 'missing'}`
-  );
+  const getBatchKey = (contractor: Contractor): string => contractor.profileId ?? '';
 
-  const getBatch = (contractor: Contractor | null, fallbackContractorId?: number): BillingBatch => {
-    const key = getBatchKey(contractor, fallbackContractorId);
+  const getBatch = (contractor: Contractor): BillingBatch => {
+    const key = getBatchKey(contractor);
     const existing = grouped.get(key);
     if (existing) return existing;
 
     const created: BillingBatch = {
-      cid: contractor?.id ?? fallbackContractorId,
-      contractorProfileId: contractor?.profileId,
+      contractorProfileId: contractor.profileId,
       items: new Map<string, BillingItem>(),
       eventIds: new Set<number>(),
       timelogIds: [],
@@ -264,11 +250,11 @@ const getBatchKey = (contractor: Contractor | null, fallbackContractorId?: numbe
   };
 
   approvedTimelogs.forEach((timelog) => {
-    const contractor = findContractorByIdentity(contractors, timelog.contractorProfileId, timelog.cid);
+    const contractor = findContractorByIdentity(contractors, timelog.contractorProfileId);
     const event = findEvent(events, timelog.eid);
     if (!contractor || !event) return;
 
-    const batch = getBatch(contractor, timelog.cid);
+    const batch = getBatch(contractor);
     const jobNumber = normalizeJobNumber(event.job);
     const item = getItem(batch, jobNumber);
     const hours = round2(calculateTotalHours(timelog.days));
@@ -287,11 +273,11 @@ const getBatchKey = (contractor: Contractor | null, fallbackContractorId?: numbe
   });
 
   approvedReceipts.forEach((receipt) => {
-    const contractor = findContractorByIdentity(contractors, receipt.contractorProfileId, receipt.cid);
+    const contractor = findContractorByIdentity(contractors, receipt.contractorProfileId);
     const event = findEvent(events, receipt.eid);
     if (!contractor) return;
 
-    const batch = getBatch(contractor, receipt.cid);
+    const batch = getBatch(contractor);
     const jobNumber = normalizeJobNumber(receipt.job || event?.job);
     const item = getItem(batch, jobNumber);
 
@@ -313,7 +299,7 @@ const buildInvoiceFromBatch = (
   index: number,
 ): Invoice => {
   const contractors = getLocalAppState().contractors ?? [];
-  const contractor = findContractorByIdentity(contractors, batch.contractorProfileId, batch.cid);
+  const contractor = findContractorByIdentity(contractors, batch.contractorProfileId);
   const itemList = Array.from(batch.items.values());
   const jobNumbers = uniqueSortedStrings(itemList.map((item) => item.jobNumber));
   const hours = round2(itemList.reduce((sum, item) => sum + item.hours, 0));
@@ -326,7 +312,6 @@ const buildInvoiceFromBatch = (
 
   return {
     id: uniqueId,
-    cid: batch.cid,
     contractorProfileId: batch.contractorProfileId ?? contractor?.profileId,
     eid: primaryEventId,
     hours,
@@ -349,7 +334,7 @@ const batchToPreview = (
   batch: BillingBatch,
   contractors: Contractor[],
 ): InvoiceCreatePreview => {
-  const contractor = findContractorByIdentity(contractors, batch.contractorProfileId, batch.cid);
+  const contractor = findContractorByIdentity(contractors, batch.contractorProfileId);
   const snapshot = getLocalAppState();
   const timelogById = new Map((snapshot.timelogs ?? []).map((timelog) => [timelog.id, timelog]));
   const receiptById = new Map((snapshot.receipts ?? []).map((receipt) => [receipt.id, receipt]));
@@ -407,7 +392,6 @@ const batchToPreview = (
   const totalAmountReceipts = items.reduce((sum, item) => sum + item.amountReceipts, 0);
 
   return {
-    contractorId: batch.cid,
     contractorProfileId: batch.contractorProfileId ?? contractor?.profileId,
     contractorName: contractor?.name ?? '',
     items,
@@ -422,12 +406,8 @@ const batchToPreview = (
   };
 };
 
-const getContractorSelectionKey = (contractor: Pick<Contractor, 'id' | 'profileId'>): string => (
-  contractor.profileId ?? `legacy:${contractor.id}`
-);
-
 const buildBatchFromSelection = (
-  contractorSelectionKey: string,
+  contractorProfileId: string,
   selectedTimelogIds: number[],
   selectedReceiptIds: number[],
 ): BillingBatch | null => {
@@ -436,7 +416,7 @@ const buildBatchFromSelection = (
   const events = snapshot.events ?? [];
   const timelogs = getTimelogs() ?? [];
   const receipts = getReceipts() ?? [];
-  const contractor = contractors.find((item) => getContractorSelectionKey(item) === contractorSelectionKey) ?? null;
+  const contractor = contractors.find((item) => item.profileId === contractorProfileId) ?? null;
 
   if (!contractor) {
     throw new Error('Kontraktor pro fakturaci nebyl nalezen.');
@@ -451,12 +431,12 @@ const buildBatchFromSelection = (
     (snapshot.invoices ?? []).flatMap((invoice) => invoice.receiptIds ?? []),
   );
   const selectedTimelogs = timelogs.filter((timelog) => (
-    (timelog.contractorProfileId === contractor.profileId || timelog.cid === contractor.id)
+    timelog.contractorProfileId === contractor.profileId
     && timelog.status === 'approved'
     && timelogIdSet.has(timelog.id)
   ));
   const selectedReceipts = receipts.filter((receipt) => (
-    (receipt.contractorProfileId === contractor.profileId || receipt.cid === contractor.id)
+    receipt.contractorProfileId === contractor.profileId
     && receipt.status === 'approved'
     && receiptIdSet.has(receipt.id)
   ));
@@ -476,7 +456,6 @@ const buildBatchFromSelection = (
   }
 
   const batch: BillingBatch = {
-    cid: contractor.id,
     contractorProfileId: contractor.profileId,
     items: new Map<string, BillingItem>(),
     eventIds: new Set<number>(),
@@ -712,7 +691,7 @@ const persistSupabaseGeneratedInvoice = async (invoice: Invoice): Promise<string
   ]);
 
   const contractorRowId = invoice.contractorProfileId
-    ?? findContractorByIdentity(getLocalAppState().contractors ?? [], invoice.contractorProfileId, invoice.cid)?.profileId;
+    ?? findContractorByIdentity(getLocalAppState().contractors ?? [], invoice.contractorProfileId)?.profileId;
   if (!contractorRowId) {
     throw new Error('Nepodarilo se sparovat kontraktora pro fakturaci.');
   }
@@ -755,7 +734,7 @@ const persistSupabaseGeneratedInvoice = async (invoice: Invoice): Promise<string
   const timelogById = new Map((snapshot.timelogs ?? []).map((timelog) => [timelog.id, timelog]));
   const receiptById = new Map((snapshot.receipts ?? []).map((receipt) => [receipt.id, receipt]));
   const eventById = new Map((snapshot.events ?? []).map((event) => [event.id, event]));
-  const contractor = findContractorByIdentity(snapshot.contractors ?? [], invoice.contractorProfileId, invoice.cid);
+  const contractor = findContractorByIdentity(snapshot.contractors ?? [], invoice.contractorProfileId);
 
   const items = new Map<string, BillingItem>();
   (invoice.timelogIds ?? []).forEach((timelogId) => {
@@ -884,7 +863,7 @@ export const getInvoices = (search = ''): Invoice[] => {
 
   return safeInvoices.filter((invoice) => {
     const event = invoice.eid ? findEvent(safeEvents, invoice.eid) : null;
-    const contractor = findContractorByIdentity(safeContractors, invoice.contractorProfileId, invoice.cid);
+    const contractor = findContractorByIdentity(safeContractors, invoice.contractorProfileId);
 
     return (
       invoice.id.toLowerCase().includes(query)
@@ -905,11 +884,10 @@ export const getInvoiceCreateCandidates = (): InvoiceCreateCandidate[] => {
 
   return buildBillingBatches()
     .map((batch) => {
-      const contractor = findContractorByIdentity(contractors, batch.contractorProfileId, batch.cid);
+      const contractor = findContractorByIdentity(contractors, batch.contractorProfileId);
       const preview = batchToPreview(batch, contractors);
 
       return {
-        contractorId: batch.cid,
         contractorProfileId: batch.contractorProfileId,
         contractorName: contractor?.name ?? '',
         timelogCount: batch.timelogIds.length,
@@ -920,12 +898,10 @@ export const getInvoiceCreateCandidates = (): InvoiceCreateCandidate[] => {
     .sort((a, b) => a.contractorName.localeCompare(b.contractorName));
 };
 
-export const getInvoiceCreatePreview = (contractorSelectionKey: string): InvoiceCreatePreview | null => {
+export const getInvoiceCreatePreview = (contractorProfileId: string): InvoiceCreatePreview | null => {
   const snapshot = getLocalAppState();
   const contractors = snapshot.contractors ?? [];
-  const batch = buildBillingBatches().find((item) => (
-    getContractorSelectionKey({ id: item.cid, profileId: item.contractorProfileId }) === contractorSelectionKey
-  ));
+  const batch = buildBillingBatches().find((item) => item.contractorProfileId === contractorProfileId);
   if (!batch) return null;
   return batchToPreview(batch, contractors);
 };
@@ -950,8 +926,11 @@ export const generateInvoices = async (): Promise<Invoice[]> => {
 
   const newInvoices: Invoice[] = [];
   for (const batch of batches) {
+    if (!batch.contractorProfileId) {
+      continue;
+    }
     const created = await createInvoiceFromSelection(
-      getContractorSelectionKey({ id: batch.cid, profileId: batch.contractorProfileId }),
+      batch.contractorProfileId,
       uniqueSortedNumbers(batch.timelogIds),
       uniqueSortedNumbers(batch.receiptIds),
     );
@@ -964,11 +943,11 @@ export const generateInvoices = async (): Promise<Invoice[]> => {
 };
 
 export const createInvoiceFromSelection = async (
-  contractorSelectionKey: string,
+  contractorProfileId: string,
   selectedTimelogIds: number[],
   selectedReceiptIds: number[],
 ): Promise<Invoice | null> => {
-  const batch = buildBatchFromSelection(contractorSelectionKey, selectedTimelogIds, selectedReceiptIds);
+  const batch = buildBatchFromSelection(contractorProfileId, selectedTimelogIds, selectedReceiptIds);
   if (!batch) {
     toast.info('Neni co fakturovat.');
     return null;

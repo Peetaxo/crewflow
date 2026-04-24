@@ -3,7 +3,7 @@ import { ArrowLeft, Clock, MapPin, Receipt } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { format, parseISO, subMonths } from 'date-fns';
-import { useAppContext } from '../context/AppContext';
+import { useAppContext } from '../context/useAppContext';
 import { Contractor, Event, Timelog } from '../types';
 import { calculateTotalHours, formatCurrency } from '../utils';
 import { getTimelogDependencies, getTimelogs, subscribeToTimelogChanges } from '../features/timelogs/services/timelogs.service';

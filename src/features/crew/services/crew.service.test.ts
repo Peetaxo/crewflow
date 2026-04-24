@@ -33,7 +33,6 @@ describe('crew.service UUID detail lookups', () => {
         {
           id: 1,
           eid: 1,
-          cid: 999,
           contractorProfileId: 'profile-uuid-1',
           days: [],
           km: 0,
@@ -44,7 +43,6 @@ describe('crew.service UUID detail lookups', () => {
       invoices: [
         {
           id: 'INV-1',
-          cid: 999,
           contractorProfileId: 'profile-uuid-1',
           eid: 1,
           hours: 4,
@@ -60,7 +58,6 @@ describe('crew.service UUID detail lookups', () => {
       receipts: [
         {
           id: 1,
-          cid: 999,
           contractorProfileId: 'profile-uuid-1',
           eid: 1,
           job: 'JOB-1',

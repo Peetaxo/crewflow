@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, Moon, Palette, Sun, UserRound } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useAuth } from '../app/providers/AuthProvider';
-import { useAppContext } from '../context/AppContext';
+import { useAuth } from '../app/providers/useAuth';
+import { useAppContext } from '../context/useAppContext';
 import type { Contractor } from '../types';
 import {
   getContractors,

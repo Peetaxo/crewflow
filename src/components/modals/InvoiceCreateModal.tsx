@@ -181,12 +181,14 @@ const InvoiceCreateModal = ({ onClose, onDirtyChange }: InvoiceCreateModalProps)
             ) : (
               candidates.map((candidate) => (
                 <button
-                  key={candidate.contractorId}
+                  key={candidate.contractorProfileId ?? candidate.contractorName}
                   type="button"
                   onClick={() => {
-                    const contractorKey = candidate.contractorProfileId ?? `legacy:${candidate.contractorId}`;
-                    setSelectedContractorKey(contractorKey);
-                    loadPreview(contractorKey, true);
+                    if (!candidate.contractorProfileId) {
+                      return;
+                    }
+                    setSelectedContractorKey(candidate.contractorProfileId);
+                    loadPreview(candidate.contractorProfileId, true);
                   }}
                   className="flex w-full items-center justify-between rounded-xl border border-gray-100 bg-white p-4 text-left shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50"
                 >

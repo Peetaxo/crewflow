@@ -52,7 +52,7 @@ const isTimelog = (value: unknown): value is Timelog =>
   isRecord(value) &&
   isNumber(value.id) &&
   isNumber(value.eid) &&
-  isNumber(value.cid) &&
+  (value.contractorProfileId === undefined || isString(value.contractorProfileId)) &&
   Array.isArray(value.days) &&
   value.days.every(isTimelogDay) &&
   isNumber(value.km) &&
@@ -62,7 +62,7 @@ const isTimelog = (value: unknown): value is Timelog =>
 const isReceiptItem = (value: unknown): value is ReceiptItem =>
   isRecord(value) &&
   isNumber(value.id) &&
-  isNumber(value.cid) &&
+  (value.contractorProfileId === undefined || isString(value.contractorProfileId)) &&
   isNumber(value.eid) &&
   isString(value.job) &&
   isString(value.title) &&

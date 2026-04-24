@@ -17,7 +17,7 @@ import {
   subWeeks,
 } from 'date-fns';
 import { cs } from 'date-fns/locale';
-import { useAppContext } from '../context/AppContext';
+import { useAppContext } from '../context/useAppContext';
 import { Event, Timelog } from '../types';
 import { calculateTotalHours, eventOccursOnDate, formatDateRange, getDatesBetween } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';

@@ -407,7 +407,6 @@ describe('events.service write flow', () => {
         {
           id: 1,
           eid: 1,
-          cid: 1,
           contractorProfileId: 'profile-uuid-1',
           days: [{ d: '2026-04-20', f: '08:00', t: '17:00', type: 'instal' }],
           km: 0,

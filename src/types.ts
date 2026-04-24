@@ -100,8 +100,6 @@ export interface Timelog {
   id: number;
   /** ID akce */
   eid: number;
-  /** ID kontraktora */
-  cid?: number;
   contractorProfileId?: string;
   days: TimelogDay[];
   /** Cestovne v km */
@@ -116,8 +114,6 @@ export type InvoiceStatus = 'draft' | 'sent' | 'paid';
 /** Faktura */
 export interface Invoice {
   id: string;
-  /** ID kontraktora */
-  cid?: number;
   contractorProfileId?: string;
   /** ID akce */
   eid: number;
@@ -150,7 +146,6 @@ export type ReceiptStatus = 'draft' | 'submitted' | 'approved' | 'attached' | 'r
 /** Účtenka / výdaj crew k akci */
 export interface ReceiptItem {
   id: number;
-  cid?: number;
   contractorProfileId?: string;
   eid: number;
   job: string;

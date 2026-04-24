@@ -11,81 +11,81 @@ vi.mock('framer-motion', () => ({
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-vi.mock('../context/AppContext', () => ({
+vi.mock('../../context/AppContext', () => ({
   useAppContext: () => mockAppContext,
 }));
 
-vi.mock('../components/layout/Sidebar', () => ({
+vi.mock('./Sidebar', () => ({
   default: () => <aside data-testid="sidebar" />,
 }));
 
-vi.mock('./DashboardView', () => ({
+vi.mock('../../views/DashboardView', () => ({
   default: () => <div data-testid="dashboard-view" />,
 }));
 
-vi.mock('./MyShiftsView', () => ({
+vi.mock('../../views/MyShiftsView', () => ({
   default: () => <div data-testid="my-shifts-view" />,
 }));
 
-vi.mock('./ClientsView', () => ({
+vi.mock('../../views/ClientsView', () => ({
   default: () => <div data-testid="clients-view" />,
 }));
 
-vi.mock('./ProjectsView', () => ({
+vi.mock('../../views/ProjectsView', () => ({
   default: () => <div data-testid="projects-view" />,
 }));
 
-vi.mock('./EventsView', () => ({
+vi.mock('../../views/EventsView', () => ({
   default: () => <div data-testid="events-view" />,
 }));
 
-vi.mock('./CrewView', () => ({
+vi.mock('../../views/CrewView', () => ({
   default: () => <div data-testid="crew-view" />,
 }));
 
-vi.mock('./TimelogsView', () => ({
+vi.mock('../../views/TimelogsView', () => ({
   default: () => <div data-testid="timelogs-view" />,
 }));
 
-vi.mock('./InvoicesView', () => ({
+vi.mock('../../views/InvoicesView', () => ({
   default: () => <div data-testid="invoices-view" />,
 }));
 
-vi.mock('./ReceiptsView', () => ({
+vi.mock('../../views/ReceiptsView', () => ({
   default: () => <div data-testid="receipts-view" />,
 }));
 
-vi.mock('./RecruitmentView', () => ({
+vi.mock('../../views/RecruitmentView', () => ({
   default: () => <div data-testid="recruitment-view" />,
 }));
 
-vi.mock('./SettingsView', () => ({
+vi.mock('../../views/SettingsView', () => ({
   default: () => <div data-testid="settings-view" />,
 }));
 
-vi.mock('../components/modals/TimelogEditModal', () => ({
+vi.mock('../modals/TimelogEditModal', () => ({
   default: () => null,
 }));
 
-vi.mock('../components/modals/ProjectEditModal', () => ({
+vi.mock('../modals/ProjectEditModal', () => ({
   default: () => null,
 }));
 
-vi.mock('../components/modals/ClientEditModal', () => ({
+vi.mock('../modals/ClientEditModal', () => ({
   default: () => null,
 }));
 
-vi.mock('../components/modals/ReceiptEditModal', () => ({
+vi.mock('../modals/ReceiptEditModal', () => ({
   default: () => null,
 }));
 
-vi.mock('../components/modals/DeleteConfirmModal', () => ({
+vi.mock('../modals/DeleteConfirmModal', () => ({
   default: () => null,
 }));
 
-import AppLayout from '../components/layout/AppLayout';
+import AppLayout from './AppLayout';
 
-describe('DashboardView shell', () => {
+describe('AppLayout shell', () => {
   it('applies nodu shell classes to the dashboard layout wrapper', () => {
     const { container } = render(<AppLayout />);
 

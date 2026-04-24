@@ -19,7 +19,7 @@ const noduLogoDataUri = `data:image/svg+xml;utf8,${encodeURIComponent(`
 `)}`;
 
 const navButtonBaseClass = 'relative flex w-full items-center rounded-xl px-3 py-2.5 text-[13px] transition-all';
-const navButtonIdleClass = 'border border-transparent text-[color:var(--nodu-text-soft)] hover:border-[color:var(--nodu-border)] hover:bg-white/85 hover:text-[color:var(--nodu-text)]';
+const navButtonIdleClass = 'border border-transparent nodu-nav-idle';
 const navButtonActiveClass = 'nodu-nav-active font-medium text-[color:var(--nodu-accent)]';
 
 const Sidebar: React.FC = () => {
@@ -96,12 +96,12 @@ const Sidebar: React.FC = () => {
       <div className="nodu-sidebar-divider p-4">
         <div className={`flex items-start ${sidebarCollapsed ? 'justify-center' : 'justify-between gap-3'}`}>
           {sidebarCollapsed ? (
-            <div className="flex h-11 w-11 items-center justify-center rounded-[18px] border border-[color:var(--nodu-border)] bg-white/80 shadow-[0_10px_24px_rgba(90,60,34,0.08)]">
+            <div className="nodu-sidebar-logo-frame flex h-11 w-11 items-center justify-center rounded-[18px] border border-[color:var(--nodu-border)]">
               <img src={noduLogoDataUri} alt="Nodu" className="h-8 w-8 rounded-xl object-cover" />
             </div>
           ) : (
             <div className="flex min-w-0 items-center gap-3">
-              <img src={noduLogoDataUri} alt="Nodu" className="h-11 w-11 rounded-[18px] border border-[color:var(--nodu-border)] bg-white/80 object-cover shadow-[0_10px_24px_rgba(90,60,34,0.08)]" />
+              <img src={noduLogoDataUri} alt="Nodu" className="nodu-sidebar-logo-frame h-11 w-11 rounded-[18px] border border-[color:var(--nodu-border)] object-cover" />
               <div className="min-w-0">
                 <div className="text-base font-semibold tracking-tight text-[color:var(--nodu-text)]">nodu.</div>
                 <div className="mt-0.5 text-[11px] text-[color:var(--nodu-text-soft)]">Operations pilot panel</div>
@@ -112,7 +112,7 @@ const Sidebar: React.FC = () => {
           <button
             type="button"
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-[color:var(--nodu-border)] bg-white/80 text-[color:var(--nodu-text-soft)] transition-colors hover:border-[color:var(--nodu-accent)] hover:text-[color:var(--nodu-accent)]"
+            className="nodu-sidebar-control flex h-9 w-9 items-center justify-center rounded-xl border border-[color:var(--nodu-border)] text-[color:var(--nodu-text-soft)] transition-colors hover:border-[color:var(--nodu-accent)] hover:text-[color:var(--nodu-accent)]"
             title={sidebarCollapsed ? 'Rozbalit panel' : 'Sbalit panel'}
           >
             {sidebarCollapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
@@ -127,7 +127,7 @@ const Sidebar: React.FC = () => {
             <input
               type="text"
               placeholder="Hledat akci, job nebo jmeno..."
-              className="nodu-sidebar-search w-full rounded-xl border border-[color:var(--nodu-border)] bg-white/80 py-2.5 pl-9 pr-3 text-[11px] text-[color:var(--nodu-text)] transition-all placeholder:text-[color:var(--nodu-text-soft)] focus:border-[color:var(--nodu-accent)] focus:outline-none focus:ring-2 focus:ring-[color:var(--nodu-accent-soft)]"
+              className="nodu-sidebar-search nodu-sidebar-control w-full rounded-xl border border-[color:var(--nodu-border)] py-2.5 pl-9 pr-3 text-[11px] text-[color:var(--nodu-text)] transition-all placeholder:text-[color:var(--nodu-text-soft)] focus:border-[color:var(--nodu-accent)] focus:outline-none focus:ring-2 focus:ring-[color:var(--nodu-accent-soft)]"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
             />
@@ -138,7 +138,7 @@ const Sidebar: React.FC = () => {
           <button
             type="button"
             onClick={() => setSidebarCollapsed(false)}
-            className="flex w-full items-center justify-center rounded-xl border border-[color:var(--nodu-border)] bg-white/80 py-2.5 text-[color:var(--nodu-text-soft)] transition-colors hover:border-[color:var(--nodu-accent)] hover:text-[color:var(--nodu-accent)]"
+            className="nodu-sidebar-control flex w-full items-center justify-center rounded-xl border border-[color:var(--nodu-border)] py-2.5 text-[color:var(--nodu-text-soft)] transition-colors hover:border-[color:var(--nodu-accent)] hover:text-[color:var(--nodu-accent)]"
             title="Rozbalit a hledat"
           >
             <Search size={16} />
@@ -162,7 +162,7 @@ const Sidebar: React.FC = () => {
                   <button
                     key={roleOption}
                     onClick={() => setRole(roleOption)}
-                    className={`rounded-lg py-1.5 text-[11px] font-medium transition-all ${role === roleOption ? 'border border-[color:var(--nodu-accent)] bg-[color:var(--nodu-accent-soft)] text-[color:var(--nodu-accent)] shadow-[0_8px_18px_rgba(180,106,53,0.12)]' : 'border border-transparent text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
+                    className={`rounded-lg py-1.5 text-[11px] font-medium transition-all ${role === roleOption ? 'nodu-role-toggle-active border' : 'border border-transparent text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
                   >
                     {ROLE_SHORT_LABELS[roleOption]}
                   </button>
@@ -181,7 +181,7 @@ const Sidebar: React.FC = () => {
                 <button
                   key={roleOption}
                   onClick={() => setRole(roleOption)}
-                  className={`flex w-full items-center justify-center rounded-xl border px-2 py-2 text-[11px] font-semibold transition-all ${role === roleOption ? 'border-[color:var(--nodu-accent)] bg-[color:var(--nodu-accent-soft)] text-[color:var(--nodu-accent)]' : 'nodu-sidebar-surface border-[color:var(--nodu-border)] text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
+                  className={`flex w-full items-center justify-center rounded-xl border px-2 py-2 text-[11px] font-semibold transition-all ${role === roleOption ? 'nodu-role-toggle-active' : 'nodu-sidebar-surface border-[color:var(--nodu-border)] text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
                   title={ROLE_LABELS[roleOption]}
                 >
                   {ROLE_SHORT_LABELS[roleOption]}
@@ -207,7 +207,7 @@ const Sidebar: React.FC = () => {
               <item.icon size={16} />
               {!sidebarCollapsed && <span className="flex-1 text-left">{item.label}</span>}
               {badge > 0 && (
-                <span className={`rounded-full border border-[color:rgba(180,106,53,0.18)] bg-[color:rgba(180,106,53,0.12)] px-1.5 py-0.5 text-[10px] font-bold text-[color:var(--nodu-accent)] ${sidebarCollapsed ? 'absolute right-1 top-1' : ''}`}>
+                <span className={`nodu-nav-badge rounded-full px-1.5 py-0.5 text-[10px] font-bold ${sidebarCollapsed ? 'absolute right-1 top-1' : ''}`}>
                   {badge}
                 </span>
               )}
@@ -233,7 +233,7 @@ const Sidebar: React.FC = () => {
         title="Profil"
       >
         <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
-          <div className="av h-9 w-9 border border-[color:var(--nodu-border)] bg-white/80 text-[10px] text-[color:var(--nodu-accent)]">
+          <div className="nodu-sidebar-avatar av h-9 w-9 border border-[color:var(--nodu-border)] text-[10px] text-[color:var(--nodu-accent)]">
             {profileName.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'PH'}
           </div>
           {!sidebarCollapsed && (

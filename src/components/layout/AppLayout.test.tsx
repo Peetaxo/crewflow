@@ -107,6 +107,8 @@ describe('AppLayout shell', () => {
 
     const { container } = render(<AppLayout />);
 
-    expect(container.firstElementChild).toHaveClass('dark');
+    expect(container.firstElementChild).toHaveClass('dark', 'nodu-app-shell');
+    expect(screen.getByRole('main')).toHaveClass('nodu-page-frame');
+    expect(screen.getByRole('main').className).not.toContain('bg-white');
   });
 });

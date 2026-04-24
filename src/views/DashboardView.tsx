@@ -168,7 +168,7 @@ const DashboardView = () => {
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="nodu-dashboard-shell">
       <div className="mb-6">
         <p className="nodu-dashboard-kicker">Pilot overview</p>
-        <h1 className="mt-2 text-[32px] font-semibold leading-none tracking-[-0.04em] text-gray-900">Dashboard</h1>
+        <h1 className="nodu-dashboard-heading">Dashboard</h1>
         <p className="nodu-dashboard-lead">
           {roleLabel} · Duben 2026
         </p>
@@ -230,17 +230,17 @@ const DashboardView = () => {
                       {contractor.ii}
                     </div>
                     <div className="min-width-0 flex-1">
-                      <div className="truncate text-xs font-semibold text-gray-900">{contractor.name}</div>
-                      <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
+                      <div className="nodu-dashboard-row-title">{contractor.name}</div>
+                      <div className="nodu-dashboard-row-meta mt-1 gap-2">
                         <span>{event.name}</span>
                         <span className="jn nodu-job-badge">{event.job}</span>
                       </div>
                     </div>
                     <div className="shrink-0 text-right">
-                      <div className="text-xs font-semibold text-gray-900">{hours.toFixed(1)}h</div>
-                      <div className="text-[11px] text-gray-500">{formatCurrency(hours * contractor.rate)}</div>
+                      <div className="nodu-dashboard-row-value">{hours.toFixed(1)}h</div>
+                      <div className="text-[11px] text-[color:var(--nodu-text-soft)]">{formatCurrency(hours * contractor.rate)}</div>
                     </div>
-                    <div className="rounded-full bg-white/80 p-2 text-[#9b5d2e] shadow-sm">
+                    <div className="nodu-dashboard-action">
                       <ChevronRight size={14} />
                     </div>
                   </button>
@@ -248,7 +248,7 @@ const DashboardView = () => {
               })}
 
             {timelogQueue.length === 0 && (
-              <div className="py-8 text-center text-sm text-gray-400">Zadne vykazy k akci</div>
+              <div className="nodu-dashboard-empty">Zadne vykazy k akci</div>
             )}
           </div>
         </div>
@@ -266,8 +266,8 @@ const DashboardView = () => {
                   <span className="jn nodu-job-badge">{event.job}</span>
                   <StatusBadge status={getEventStatus(event)} />
                 </div>
-                <div className="truncate text-xs font-semibold text-gray-900">{event.name}</div>
-                <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-gray-500">
+                <div className="nodu-dashboard-row-title">{event.name}</div>
+                <div className="nodu-dashboard-row-meta mt-0.5 gap-1.5">
                   {formatDateRange(event.startDate, event.endDate)} · {event.city}
                   {event.startDate !== event.endDate && (
                     <span className="nodu-event-meta-badge rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em]">
@@ -275,18 +275,18 @@ const DashboardView = () => {
                     </span>
                   )}
                 </div>
-                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#f0e2d5]">
+                <div className="nodu-dashboard-progress-track mt-2">
                   <div
                     className={`h-full rounded-full ${event.filled >= event.needed ? 'bg-emerald-500' : 'bg-amber-500'}`}
                     style={{ width: `${Math.min(100, Math.round((event.filled / event.needed) * 100))}%` }}
                   />
                 </div>
-                <div className="mt-1 text-[10px] text-gray-500">{event.filled}/{event.needed} crew</div>
+                <div className="mt-1 text-[10px] text-[color:var(--nodu-text-soft)]">{event.filled}/{event.needed} crew</div>
               </button>
             ))}
 
             {upcomingEvents.length === 0 && (
-              <div className="py-8 text-center text-sm text-gray-400">Zadne nadchazejici akce</div>
+              <div className="nodu-dashboard-empty">Zadne nadchazejici akce</div>
             )}
           </div>
         </div>

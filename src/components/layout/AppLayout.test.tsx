@@ -1,11 +1,13 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-let mockAppContext = {
+const defaultAppContext = {
   darkMode: false,
   currentTab: 'dashboard',
 };
+
+let mockAppContext = { ...defaultAppContext };
 
 vi.mock('framer-motion', () => ({
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -86,10 +88,25 @@ vi.mock('../modals/DeleteConfirmModal', () => ({
 import AppLayout from './AppLayout';
 
 describe('AppLayout shell', () => {
+  beforeEach(() => {
+    mockAppContext = { ...defaultAppContext };
+  });
+
   it('applies nodu shell classes to the dashboard layout wrapper', () => {
     const { container } = render(<AppLayout />);
 
     expect(container.firstElementChild).toHaveClass('nodu-app-shell');
     expect(screen.getByRole('main')).toHaveClass('nodu-page-frame');
+  });
+
+  it('adds the dark class when the app context is in dark mode', () => {
+    mockAppContext = {
+      ...mockAppContext,
+      darkMode: true,
+    };
+
+    const { container } = render(<AppLayout />);
+
+    expect(container.firstElementChild).toHaveClass('dark');
   });
 });

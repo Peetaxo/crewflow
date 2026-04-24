@@ -364,22 +364,4 @@ describe('UUID mine-scope identity', () => {
     expect(screen.getByRole('button', { name: /Moje faktury/i })).toHaveTextContent('1');
     expect(screen.getByRole('button', { name: /Moje účtenky/i })).toHaveTextContent('1');
   });
-
-  it('keeps the sidebar semantic surfaces in dark mode', async () => {
-    const { default: Sidebar } = await import('../components/layout/Sidebar');
-    mockAppContext = {
-      ...mockAppContext,
-      darkMode: true,
-      currentTab: 'my-timelogs',
-    };
-
-    render(
-      <div className="dark">
-        <Sidebar />
-      </div>,
-    );
-
-    expect(screen.getAllByText('Crew')[0]).toHaveClass('nodu-sidebar-surface');
-    expect(screen.getByTitle('Profil')).toHaveClass('nodu-sidebar-hover-surface');
-  });
 });

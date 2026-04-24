@@ -1,4 +1,6 @@
 import React from 'react';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -118,8 +120,33 @@ describe('DashboardView', () => {
 
     const timelogsHeading = screen.getByRole('heading', { name: 'Timelogy ke zpracovani' });
     const timelogPanel = timelogsHeading.closest('.nodu-dashboard-panel');
+    const eventsHeading = screen.getByRole('heading', { name: 'Nadchazejici akce' });
+    const eventsPanel = eventsHeading.closest('.nodu-dashboard-panel');
+    const timelogRow = within(timelogPanel as HTMLElement).getByRole('button', { name: /Alex Novak/i });
+    const upcomingEventRow = within(eventsPanel as HTMLElement).getByRole('button', { name: /Nodu pilot Prague/i });
 
     expect(timelogPanel).not.toBeNull();
     expect(within(timelogPanel as HTMLElement).getByText('JOB-101')).toHaveClass('nodu-job-badge');
+    expect(timelogRow).toHaveClass('nodu-dashboard-row', 'border-b');
+    expect(upcomingEventRow).toHaveClass('nodu-dashboard-row', 'border');
+    expect(timelogRow.className).not.toContain('border-[#f1e4d6]');
+    expect(upcomingEventRow.className).not.toContain('border-[#f1e4d6]');
+  });
+
+  it('keeps dashboard helper styles wired to nodu tokens and preserves row borders for dark mode', () => {
+    const css = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8');
+    const panelRule = css.match(/\.nodu-dashboard-panel\s*\{[\s\S]*?\}/)?.[0];
+    const rowRule = css.match(/\.nodu-dashboard-row\s*\{[\s\S]*?\}/)?.[0];
+    const rowHoverRule = css.match(/\.nodu-dashboard-row:hover\s*\{[\s\S]*?\}/)?.[0];
+    const badgeRule = css.match(/\.nodu-event-meta-badge\s*\{[\s\S]*?\}/)?.[0];
+
+    expect(panelRule).toContain('var(--nodu-surface-rgb)');
+    expect(panelRule).toContain('var(--nodu-surface-muted-rgb)');
+    expect(rowRule).toContain('border-color: var(--nodu-border);');
+    expect(rowRule).toContain('box-shadow: inset 0 0 0 1px transparent;');
+    expect(rowRule).not.toContain('border: 1px solid transparent;');
+    expect(rowHoverRule).toContain('var(--nodu-accent-rgb)');
+    expect(badgeRule).toContain('var(--nodu-surface-muted-rgb)');
+    expect(badgeRule).toContain('var(--nodu-text-soft)');
   });
 });

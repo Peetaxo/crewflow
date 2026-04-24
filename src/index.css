@@ -43,6 +43,10 @@
     --nodu-accent: #b46a35;
     --nodu-accent-soft: rgba(180, 106, 53, 0.14);
     --nodu-shadow: 0 24px 60px rgba(68, 44, 20, 0.12);
+    --nodu-surface-rgb: 255 250 244;
+    --nodu-surface-muted-rgb: 244 233 218;
+    --nodu-text-rgb: 47 38 31;
+    --nodu-accent-rgb: 180 106 53;
   }
 
   .dark {
@@ -84,6 +88,10 @@
     --nodu-accent: #e08a4a;
     --nodu-accent-soft: rgba(224, 138, 74, 0.16);
     --nodu-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
+    --nodu-surface-rgb: 35 27 22;
+    --nodu-surface-muted-rgb: 44 34 27;
+    --nodu-text-rgb: 245 234 223;
+    --nodu-accent-rgb: 224 138 74;
   }
 }
 
@@ -261,9 +269,9 @@
 }
 
 .nodu-dashboard-panel {
-  background: linear-gradient(180deg, rgba(255, 250, 244, 0.98) 0%, rgba(252, 244, 234, 0.96) 100%);
+  background: linear-gradient(180deg, rgb(var(--nodu-surface-rgb) / 0.98) 0%, rgb(var(--nodu-surface-muted-rgb) / 0.96) 100%);
   border: 1px solid var(--nodu-border);
-  box-shadow: 0 18px 42px rgba(86, 60, 35, 0.08);
+  box-shadow: var(--nodu-shadow);
 }
 
 .nodu-dashboard-panel-title {
@@ -272,13 +280,14 @@
 }
 
 .nodu-dashboard-row {
-  border: 1px solid transparent;
-  background: rgba(255, 255, 255, 0.62);
+  border-color: var(--nodu-border);
+  background: rgb(var(--nodu-surface-rgb) / 0.72);
+  box-shadow: inset 0 0 0 1px transparent;
 }
 
 .nodu-dashboard-row:hover {
-  background: rgba(255, 251, 246, 0.92);
-  border-color: rgba(180, 106, 53, 0.12);
+  background: rgb(var(--nodu-surface-rgb) / 0.94);
+  box-shadow: inset 0 0 0 1px rgb(var(--nodu-accent-rgb) / 0.18);
 }
 
 .nodu-job-badge {
@@ -288,7 +297,7 @@
 }
 
 .nodu-event-meta-badge {
-  background: rgba(47, 38, 31, 0.05);
+  background: rgb(var(--nodu-surface-muted-rgb) / 0.9);
   color: var(--nodu-text-soft);
 }
 

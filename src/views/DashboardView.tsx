@@ -224,7 +224,7 @@ const DashboardView = () => {
                   <button
                     key={timelog.id}
                     onClick={openTimelogs}
-                    className="nodu-dashboard-row flex w-full items-center gap-3 rounded-[20px] border-b border-[#f1e4d6] px-3 py-3 text-left transition-colors last:border-0"
+                    className="nodu-dashboard-row flex w-full items-center gap-3 rounded-[20px] border-b px-3 py-3 text-left transition-colors last:border-0"
                   >
                     <div className="av h-8 w-8 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>
                       {contractor.ii}
@@ -260,7 +260,7 @@ const DashboardView = () => {
               <button
                 key={event.id}
                 onClick={() => openEventDetail(event.id)}
-                className="nodu-dashboard-row block w-full rounded-[22px] border border-[#f1e4d6] px-3 pb-3 pt-3 text-left transition-colors last:pb-3"
+                className="nodu-dashboard-row block w-full rounded-[22px] border px-3 pb-3 pt-3 text-left transition-colors last:pb-3"
               >
                 <div className="mb-1.5 flex items-center gap-2">
                   <span className="jn nodu-job-badge">{event.job}</span>

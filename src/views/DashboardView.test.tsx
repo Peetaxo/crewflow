@@ -1,6 +1,6 @@
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockAppContext = {
@@ -103,7 +103,7 @@ describe('DashboardView', () => {
     vi.clearAllMocks();
   });
 
-  it('renders the dashboard header, stat chip, nodu job badge, and no decorative stat accent dots', async () => {
+  it('renders the dashboard header, stat chip, timelog job badge, and no decorative stat accent dots', async () => {
     const { default: DashboardView } = await import('./DashboardView');
     const queryClient = new QueryClient();
     const { container } = render(
@@ -114,7 +114,12 @@ describe('DashboardView', () => {
 
     expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
     expect(container.querySelector('.nodu-stat-chip')).not.toBeNull();
-    expect(container.querySelector('.nodu-job-badge')).not.toBeNull();
     expect(container.querySelector('[data-testid="stat-accent-dot"]')).toBeNull();
+
+    const timelogsHeading = screen.getByRole('heading', { name: 'Timelogy ke zpracovani' });
+    const timelogPanel = timelogsHeading.closest('.nodu-dashboard-panel');
+
+    expect(timelogPanel).not.toBeNull();
+    expect(within(timelogPanel as HTMLElement).getByText('JOB-101')).toHaveClass('nodu-job-badge');
   });
 });

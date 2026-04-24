@@ -348,9 +348,16 @@ describe('UUID mine-scope identity', () => {
 
   it('computes sidebar my badges from currentProfileId', async () => {
     const { default: Sidebar } = await import('../components/layout/Sidebar');
+    mockAppContext = {
+      ...mockAppContext,
+      currentTab: 'my-timelogs',
+    };
 
     render(<Sidebar />);
 
+    expect(screen.getByAltText('Nodu')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Hledat akci, job nebo jmeno/i)).toHaveClass('nodu-sidebar-search');
+    expect(screen.getByRole('button', { name: /Moje timelogy/i })).toHaveClass('nodu-nav-active');
     expect(screen.getByRole('button', { name: /Moje timelogy/i })).toHaveTextContent('1');
     expect(screen.getByRole('button', { name: /Moje faktury/i })).toHaveTextContent('1');
     expect(screen.getByRole('button', { name: /Moje účtenky/i })).toHaveTextContent('1');

@@ -9,6 +9,19 @@ import { useTimelogsQuery } from '../../features/timelogs/queries/useTimelogsQue
 import { useReceiptsQuery } from '../../features/receipts/queries/useReceiptsQuery';
 import { useInvoicesQuery } from '../../features/invoices/queries/useInvoicesQuery';
 
+const noduLogoDataUri = `data:image/svg+xml;utf8,${encodeURIComponent(`
+  <svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72" fill="none">
+    <rect x="6" y="6" width="60" height="60" rx="20" fill="#FFF8F0"/>
+    <rect x="6.5" y="6.5" width="59" height="59" rx="19.5" stroke="#DCC3AB"/>
+    <circle cx="36" cy="36" r="16" fill="#B46A35" fill-opacity="0.12"/>
+    <path d="M28 42V30.8h2.56l7.04 8.08V30.8H41V42h-2.4l-7.2-8.2V42H28Z" fill="#7A4A25"/>
+  </svg>
+`)}`;
+
+const navButtonBaseClass = 'relative flex w-full items-center rounded-xl px-3 py-2.5 text-[13px] transition-all';
+const navButtonIdleClass = 'border border-transparent text-[color:var(--nodu-text-soft)] hover:border-[color:var(--nodu-border)] hover:bg-white/85 hover:text-[color:var(--nodu-text)]';
+const navButtonActiveClass = 'nodu-nav-active font-medium text-[color:var(--nodu-accent)]';
+
 const Sidebar: React.FC = () => {
   const { currentProfileId, isAuthRequired, profile, role: authRole, signOut } = useAuth();
   const timelogsQuery = useTimelogsQuery();
@@ -79,24 +92,27 @@ const Sidebar: React.FC = () => {
   };
 
   return (
-    <aside className={`flex shrink-0 flex-col border-r border-gray-200 bg-gray-50 transition-all duration-300 ${sidebarCollapsed ? 'w-20' : 'w-56'}`}>
-      <div className="border-b border-gray-200 p-4">
+    <aside className={`nodu-sidebar-shell flex shrink-0 flex-col transition-all duration-300 ${sidebarCollapsed ? 'w-20' : 'w-64'}`}>
+      <div className="nodu-sidebar-divider p-4">
         <div className={`flex items-start ${sidebarCollapsed ? 'justify-center' : 'justify-between gap-3'}`}>
           {sidebarCollapsed ? (
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-50 text-sm font-bold text-emerald-700">
-              EH
+            <div className="flex h-11 w-11 items-center justify-center rounded-[18px] border border-[color:var(--nodu-border)] bg-white/80 shadow-[0_10px_24px_rgba(90,60,34,0.08)]">
+              <img src={noduLogoDataUri} alt="Nodu" className="h-8 w-8 rounded-xl object-cover" />
             </div>
           ) : (
-            <div>
-              <div className="text-base font-semibold tracking-tight text-gray-900">Event Helper</div>
-              <div className="mt-0.5 text-[11px] text-gray-500">Crew Management</div>
+            <div className="flex min-w-0 items-center gap-3">
+              <img src={noduLogoDataUri} alt="Nodu" className="h-11 w-11 rounded-[18px] border border-[color:var(--nodu-border)] bg-white/80 object-cover shadow-[0_10px_24px_rgba(90,60,34,0.08)]" />
+              <div className="min-w-0">
+                <div className="text-base font-semibold tracking-tight text-[color:var(--nodu-text)]">nodu.</div>
+                <div className="mt-0.5 text-[11px] text-[color:var(--nodu-text-soft)]">Operations pilot panel</div>
+              </div>
             </div>
           )}
 
           <button
             type="button"
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-500 transition-colors hover:border-emerald-200 hover:text-emerald-700"
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-[color:var(--nodu-border)] bg-white/80 text-[color:var(--nodu-text-soft)] transition-colors hover:border-[color:var(--nodu-accent)] hover:text-[color:var(--nodu-accent)]"
             title={sidebarCollapsed ? 'Rozbalit panel' : 'Sbalit panel'}
           >
             {sidebarCollapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
@@ -105,24 +121,24 @@ const Sidebar: React.FC = () => {
       </div>
 
       {!sidebarCollapsed ? (
-        <div className="border-b border-gray-200 p-3">
+        <div className="nodu-sidebar-divider p-3">
           <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 text-gray-400" size={14} />
+            <Search className="absolute left-3 top-3 text-[color:var(--nodu-text-soft)]" size={14} />
             <input
               type="text"
               placeholder="Hledat akci, job nebo jmeno..."
-              className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-8 pr-3 text-[11px] transition-all focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+              className="nodu-sidebar-search w-full rounded-xl border border-[color:var(--nodu-border)] bg-white/80 py-2.5 pl-9 pr-3 text-[11px] text-[color:var(--nodu-text)] transition-all placeholder:text-[color:var(--nodu-text-soft)] focus:border-[color:var(--nodu-accent)] focus:outline-none focus:ring-2 focus:ring-[color:var(--nodu-accent-soft)]"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
             />
           </div>
         </div>
       ) : (
-        <div className="border-b border-gray-200 p-3">
+        <div className="nodu-sidebar-divider p-3">
           <button
             type="button"
             onClick={() => setSidebarCollapsed(false)}
-            className="flex w-full items-center justify-center rounded-xl border border-gray-200 bg-white py-2 text-gray-500 transition-colors hover:border-emerald-200 hover:text-emerald-700"
+            className="flex w-full items-center justify-center rounded-xl border border-[color:var(--nodu-border)] bg-white/80 py-2.5 text-[color:var(--nodu-text-soft)] transition-colors hover:border-[color:var(--nodu-accent)] hover:text-[color:var(--nodu-accent)]"
             title="Rozbalit a hledat"
           >
             <Search size={16} />
@@ -130,23 +146,23 @@ const Sidebar: React.FC = () => {
         </div>
       )}
 
-      <div className="border-b border-gray-200 p-3">
+      <div className="nodu-sidebar-divider p-3">
         {!sidebarCollapsed ? (
           <>
-            <div className="mb-2 text-[10px] uppercase tracking-wider text-gray-500">
+            <div className="mb-2 text-[10px] uppercase tracking-[0.24em] text-[color:var(--nodu-text-soft)]">
               {isAuthRequired ? 'Prihlasena role' : 'Zobrazuji jako'}
             </div>
             {isAuthRequired ? (
-              <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-[11px] font-semibold text-emerald-700">
+              <div className="rounded-xl border border-[color:var(--nodu-border)] bg-white/75 px-3 py-2 text-[11px] font-semibold text-[color:var(--nodu-accent)]">
                 {ROLE_LABELS[effectiveRole]}
               </div>
             ) : (
-              <div className="grid grid-cols-3 gap-0.5 rounded-lg border border-gray-200 bg-white p-0.5">
+              <div className="grid grid-cols-3 gap-1 rounded-xl border border-[color:var(--nodu-border)] bg-white/75 p-1">
                 {(['crew', 'crewhead', 'coo'] as const).map((roleOption) => (
                   <button
                     key={roleOption}
                     onClick={() => setRole(roleOption)}
-                    className={`rounded-md py-1 text-[11px] font-medium transition-all ${role === roleOption ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                    className={`rounded-lg py-1.5 text-[11px] font-medium transition-all ${role === roleOption ? 'border border-[color:var(--nodu-accent)] bg-[color:var(--nodu-accent-soft)] text-[color:var(--nodu-accent)] shadow-[0_8px_18px_rgba(180,106,53,0.12)]' : 'border border-transparent text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
                   >
                     {ROLE_SHORT_LABELS[roleOption]}
                   </button>
@@ -156,7 +172,7 @@ const Sidebar: React.FC = () => {
           </>
         ) : (
           isAuthRequired ? (
-            <div className="flex items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 px-2 py-2 text-[11px] font-semibold text-emerald-700">
+            <div className="flex items-center justify-center rounded-xl border border-[color:var(--nodu-border)] bg-white/75 px-2 py-2 text-[11px] font-semibold text-[color:var(--nodu-accent)]">
               {ROLE_SHORT_LABELS[effectiveRole]}
             </div>
           ) : (
@@ -165,7 +181,7 @@ const Sidebar: React.FC = () => {
                 <button
                   key={roleOption}
                   onClick={() => setRole(roleOption)}
-                  className={`flex w-full items-center justify-center rounded-xl border px-2 py-2 text-[11px] font-semibold transition-all ${role === roleOption ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-white text-gray-500 hover:text-gray-900'}`}
+                  className={`flex w-full items-center justify-center rounded-xl border px-2 py-2 text-[11px] font-semibold transition-all ${role === roleOption ? 'border-[color:var(--nodu-accent)] bg-[color:var(--nodu-accent-soft)] text-[color:var(--nodu-accent)]' : 'border-[color:var(--nodu-border)] bg-white/75 text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
                   title={ROLE_LABELS[roleOption]}
                 >
                   {ROLE_SHORT_LABELS[roleOption]}
@@ -176,21 +192,22 @@ const Sidebar: React.FC = () => {
         )}
       </div>
 
-      <nav className="flex-1 space-y-0.5 overflow-y-auto p-2">
+      <nav className="flex-1 space-y-1 overflow-y-auto p-2">
         {navItems.map((item) => {
           const badge = badgeCounts[item.id] || 0;
+          const isActive = currentTab === item.id;
 
           return (
             <button
               key={item.id}
               onClick={() => handleNavClick(item.id)}
-              className={`relative flex w-full items-center rounded-lg px-3 py-2 text-[13px] transition-colors ${sidebarCollapsed ? 'justify-center' : 'gap-2.5'} ${currentTab === item.id ? 'bg-emerald-50 font-medium text-emerald-700' : 'text-gray-600 hover:bg-white hover:text-gray-900'}`}
+              className={`${navButtonBaseClass} ${sidebarCollapsed ? 'justify-center' : 'gap-2.5'} ${isActive ? navButtonActiveClass : navButtonIdleClass}`}
               title={item.label}
             >
               <item.icon size={16} />
               {!sidebarCollapsed && <span className="flex-1 text-left">{item.label}</span>}
               {badge > 0 && (
-                <span className={`rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 ${sidebarCollapsed ? 'absolute right-1 top-1' : ''}`}>
+                <span className={`rounded-full border border-[color:rgba(180,106,53,0.18)] bg-[color:rgba(180,106,53,0.12)] px-1.5 py-0.5 text-[10px] font-bold text-[color:var(--nodu-accent)] ${sidebarCollapsed ? 'absolute right-1 top-1' : ''}`}>
                   {badge}
                 </span>
               )}
@@ -199,10 +216,10 @@ const Sidebar: React.FC = () => {
         })}
       </nav>
 
-      <div className="border-t border-gray-200 p-2">
+      <div className="nodu-sidebar-divider p-2">
         <button
           onClick={() => openSettings('menu')}
-          className={`flex w-full items-center rounded-lg px-3 py-2 text-[13px] transition-colors ${sidebarCollapsed ? 'justify-center' : 'gap-2.5'} ${currentTab === 'settings' ? 'bg-emerald-50 font-medium text-emerald-700' : 'text-gray-600 hover:bg-white hover:text-gray-900'}`}
+          className={`${navButtonBaseClass} ${sidebarCollapsed ? 'justify-center' : 'gap-2.5'} ${currentTab === 'settings' ? navButtonActiveClass : navButtonIdleClass}`}
           title="Nastaveni"
         >
           <Settings size={16} />
@@ -212,33 +229,33 @@ const Sidebar: React.FC = () => {
 
       <button
         onClick={() => openSettings('profile')}
-        className={`border-t border-gray-200 p-4 text-left transition-colors hover:bg-white ${sidebarCollapsed ? 'flex justify-center' : ''}`}
+        className={`nodu-sidebar-divider p-4 text-left transition-colors hover:bg-white/70 ${sidebarCollapsed ? 'flex justify-center' : ''}`}
         title="Profil"
       >
         <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
-          <div className="av h-8 w-8 bg-blue-50 text-[10px] text-blue-700">
+          <div className="av h-9 w-9 border border-[color:var(--nodu-border)] bg-white/80 text-[10px] text-[color:var(--nodu-accent)]">
             {profileName.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'PH'}
           </div>
           {!sidebarCollapsed && (
             <div className="min-w-0">
-              <div className="truncate text-xs font-semibold text-gray-900">{profileName}</div>
-              <div className="text-[10px] text-gray-500">{ROLE_LABELS[effectiveRole]}</div>
+              <div className="truncate text-xs font-semibold text-[color:var(--nodu-text)]">{profileName}</div>
+              <div className="text-[10px] text-[color:var(--nodu-text-soft)]">{ROLE_LABELS[effectiveRole]}</div>
             </div>
           )}
         </div>
         {!sidebarCollapsed && (
-          <div className="mt-3 flex items-center gap-1.5 text-[10px] text-gray-500">
-            <div className="h-1.5 w-1.5 rounded-full bg-emerald-500"></div>
+          <div className="mt-3 flex items-center gap-1.5 text-[10px] text-[color:var(--nodu-text-soft)]">
+            <div className="h-1.5 w-1.5 rounded-full bg-[color:var(--nodu-accent)]"></div>
             {profile?.email || 'API ready · v2.0'}
           </div>
         )}
       </button>
 
       {isAuthRequired && (
-        <div className="border-t border-gray-200 p-2">
+        <div className="nodu-sidebar-divider p-2">
           <button
             onClick={handleSignOut}
-            className={`flex w-full items-center rounded-lg px-3 py-2 text-[13px] text-gray-600 transition-colors hover:bg-white hover:text-gray-900 ${sidebarCollapsed ? 'justify-center' : 'gap-2.5'}`}
+            className={`${navButtonBaseClass} ${sidebarCollapsed ? 'justify-center' : 'gap-2.5'} ${navButtonIdleClass}`}
             title="Odhlasit se"
           >
             <LogOut size={16} />

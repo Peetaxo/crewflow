@@ -22,6 +22,7 @@ describe('StatCard', () => {
     expect(value).toHaveClass('nodu-stat-value');
     expect(value.className).not.toContain('text-gray-');
     expect(chip).toHaveClass('nodu-stat-chip');
+    expect(chip).toHaveClass('bg-amber-50', 'text-amber-700');
     expect(container.querySelector('[data-testid="stat-accent-dot"]')).toBeNull();
   });
 
@@ -36,7 +37,7 @@ describe('StatCard', () => {
     expect(cardRule).toContain('border-color: var(--nodu-border);');
     expect(labelRule).toContain('var(--nodu-text-soft)');
     expect(valueRule).toContain('var(--nodu-text)');
-    expect(chipRule).toContain('var(--nodu-surface-muted-rgb)');
-    expect(chipRule).toContain('var(--nodu-text-soft)');
+    expect(chipRule).not.toContain('var(--nodu-surface-muted-rgb)');
+    expect(chipRule).not.toContain('var(--nodu-text-soft)');
   });
 });

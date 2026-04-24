@@ -9,7 +9,11 @@ describe('nodu CSS helpers', () => {
     const sidebarShellRule = css.match(/\.nodu-sidebar-shell\s*\{[\s\S]*?\}/)?.[0];
     const sidebarSurfaceRule = css.match(/\.nodu-sidebar-surface\s*\{[\s\S]*?\}/)?.[0];
     const sidebarSearchRule = css.match(/\.nodu-sidebar-search\s*\{[\s\S]*?\}/)?.[0];
+    const darkSidebarShellRule = css.match(/\.dark \.nodu-sidebar-shell\s*\{[\s\S]*?\}/)?.[0];
+    const darkSidebarSearchRule = css.match(/\.dark \.nodu-sidebar-search::placeholder\s*\{[\s\S]*?\}/)?.[0];
+    const darkJobBadgeRule = css.match(/\.dark \.jn\.nodu-job-badge,\s*\.dark \.nodu-event-meta-badge\s*\{[\s\S]*?\}/)?.[0];
     const statCardRule = css.match(/\.nodu-stat-card\s*\{[\s\S]*?\}/)?.[0];
+    const darkStatCardRule = css.match(/\.dark \.nodu-stat-card\s*\{[\s\S]*?\}/)?.[0];
     const dashboardActionRule = css.match(/\.nodu-dashboard-action\s*\{[\s\S]*?\}/)?.[0];
 
     [
@@ -22,6 +26,8 @@ describe('nodu CSS helpers', () => {
       '.nodu-sidebar-shell',
       '.nodu-stat-card',
       '.nodu-dashboard-action',
+      '.dark .nodu-sidebar-shell',
+      '.dark .nodu-stat-card',
     ].forEach((token) => {
       expect(css).toContain(token);
     });
@@ -34,6 +40,10 @@ describe('nodu CSS helpers', () => {
     expect(sidebarSearchRule).toContain('var(--nodu-surface-rgb)');
     expect(statCardRule).toContain('var(--nodu-surface-rgb)');
     expect(dashboardActionRule).toContain('var(--nodu-surface-rgb)');
+    expect(darkSidebarShellRule).toContain('!important');
+    expect(darkSidebarSearchRule).toContain('!important');
+    expect(darkStatCardRule).toContain('!important');
+    expect(darkJobBadgeRule).toContain('var(--nodu-accent-rgb)');
     expect(sidebarShellRule).not.toContain('255, 250, 244');
     expect(sidebarSurfaceRule).not.toContain('255, 255, 255');
   });

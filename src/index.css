@@ -32,6 +32,17 @@
     --sidebar-accent-foreground: 240 5.9% 10%;
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 217.2 91.2% 59.8%;
+
+    --nodu-paper: #f7efe5;
+    --nodu-paper-strong: #efe0cf;
+    --nodu-surface: #fffaf4;
+    --nodu-surface-muted: #f4e9da;
+    --nodu-text: #2f261f;
+    --nodu-text-soft: #705e50;
+    --nodu-border: rgba(92, 68, 46, 0.16);
+    --nodu-accent: #b46a35;
+    --nodu-accent-soft: rgba(180, 106, 53, 0.14);
+    --nodu-shadow: 0 24px 60px rgba(68, 44, 20, 0.12);
   }
 
   .dark {
@@ -62,6 +73,17 @@
     --sidebar-accent-foreground: 240 4.8% 95.9%;
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 217.2 91.2% 59.8%;
+
+    --nodu-paper: #18120f;
+    --nodu-paper-strong: #221914;
+    --nodu-surface: #231b16;
+    --nodu-surface-muted: #2c221b;
+    --nodu-text: #f5eadf;
+    --nodu-text-soft: #cdb8a8;
+    --nodu-border: rgba(246, 224, 205, 0.12);
+    --nodu-accent: #e08a4a;
+    --nodu-accent-soft: rgba(224, 138, 74, 0.16);
+    --nodu-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
   }
 }
 
@@ -245,4 +267,36 @@ tbody tr:hover td {
 
 .bg-white-knob {
   @apply !bg-white;
+}
+
+.nodu-app-shell {
+  @apply flex h-screen overflow-hidden font-sans;
+  color: var(--nodu-text);
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.5), transparent 34%),
+    radial-gradient(circle at bottom right, var(--nodu-accent-soft), transparent 28%),
+    linear-gradient(180deg, var(--nodu-paper) 0%, var(--nodu-paper-strong) 100%);
+}
+
+.nodu-page-frame {
+  @apply flex-1 overflow-y-auto p-6 lg:p-8;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 16%),
+    transparent;
+}
+
+.nodu-surface {
+  @apply rounded-xl border;
+  background: var(--nodu-surface);
+  border-color: var(--nodu-border);
+  color: var(--nodu-text);
+  box-shadow: var(--nodu-shadow);
+}
+
+.nodu-panel {
+  @apply rounded-2xl border;
+  background: var(--nodu-surface-muted);
+  border-color: var(--nodu-border);
+  color: var(--nodu-text);
+  box-shadow: 0 16px 36px rgba(68, 44, 20, 0.08);
 }

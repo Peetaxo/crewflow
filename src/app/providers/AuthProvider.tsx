@@ -225,6 +225,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     isAuthRequired,
     isAuthenticated: !isAuthRequired || Boolean(session?.user) || isDevSession,
     isLoading,
+    hasKnownSession: Boolean(session?.user) || isDevSession,
     isDevSession,
     session,
     user,

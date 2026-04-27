@@ -19,6 +19,7 @@ export interface AuthContextType {
   isAuthRequired: boolean;
   isAuthenticated: boolean;
   isLoading: boolean;
+  hasKnownSession: boolean;
   isDevSession: boolean;
   session: Session | null;
   user: User | null;

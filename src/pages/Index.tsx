@@ -6,9 +6,9 @@ import { AppProvider } from '../context/AppContext';
 import LoginView from '../views/LoginView';
 
 const AppShell = () => {
-  const { isAuthRequired, isAuthenticated, isLoading } = useAuth();
+  const { hasKnownSession, isAuthRequired, isAuthenticated, isLoading } = useAuth();
 
-  if (isLoading) {
+  if (isLoading && !hasKnownSession) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
         <div className="rounded-2xl border border-slate-200 bg-white px-6 py-5 text-sm text-slate-600 shadow-sm">

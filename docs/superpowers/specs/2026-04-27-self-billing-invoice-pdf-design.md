@@ -138,19 +138,23 @@ PDF se nebude generovat v browseru. Browser bude pouze volat Supabase Edge Funct
 
 ## Invoice Numbering
 
-Prvni verze zavede jednu ciselnu radu pro self-billing faktury.
+Prvni verze zavede ciselne rady pro self-billing faktury podle dodavatele a roku.
 
-Doporuceny format:
+Format:
 
 ```text
-SF-YYYY-0001
+SF-YYYY-PRIJMENI-J-0001
 ```
 
 Priklad:
 
 ```text
-SF-2026-0001
+SF-2026-NOVAK-T-0001
 ```
+
+`PRIJMENI` se bere z `profiles.last_name`. `J` je prvni pismeno z `profiles.first_name`. Pro cislo faktury a Storage path se obe hodnoty normalizuji do ASCII uppercase slug hodnot bez mezer a diakritiky.
+
+Sekvence `0001` se pocita samostatne pro kombinaci rok + dodavatel. Prvni faktura dodavatele Tomas Novak v roce 2026 bude `SF-2026-NOVAK-T-0001`, dalsi `SF-2026-NOVAK-T-0002`.
 
 Generovani cisla musi byt server-side, aby nevznikly duplicity pri soubeznem vytvareni faktur.
 
@@ -285,7 +289,6 @@ Manualni test:
 
 Pred implementaci je nutne potvrdit:
 
-1. format cisla faktury: navrh `SF-YYYY-0001`
-2. splatnost: navrh 14 dni od vystaveni
-3. ktery `client` je odberatel pro polozky faktury, pokud cesta `invoice_item -> event -> project -> client` nebude u vsech dat jednoznacna
-4. jestli ma PDF vznikat pouze na tlacitko, nebo automaticky po `Vytvorit a poslat` v pozdejsi fazi
+1. splatnost: navrh 14 dni od vystaveni
+2. ktery `client` je odberatel pro polozky faktury, pokud cesta `invoice_item -> event -> project -> client` nebude u vsech dat jednoznacna
+3. jestli ma PDF vznikat pouze na tlacitko, nebo automaticky po `Vytvorit a poslat` v pozdejsi fazi

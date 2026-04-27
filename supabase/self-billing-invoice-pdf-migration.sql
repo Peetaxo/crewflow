@@ -77,6 +77,83 @@ create policy "Users can read invoice PDFs"
     )
   );
 
+with invoices_to_backfill as (
+  select
+    invoice.id,
+    invoice.contractor_id,
+    extract(year from coalesce(invoice.created_at, now()))::integer as invoice_year,
+    coalesce(invoice.created_at::date, current_date) as issue_date,
+    profile.first_name,
+    profile.last_name,
+    profile.ico as supplier_ico,
+    profile.dic as supplier_dic,
+    profile.bank_account,
+    profile.billing_street,
+    profile.billing_zip,
+    profile.billing_city,
+    coalesce(profile.billing_country, 'Ceska republika') as billing_country,
+    client.id as client_id,
+    client.name as client_name,
+    client.ico as client_ico,
+    client.dic as client_dic,
+    client.street as client_street,
+    client.zip as client_zip,
+    client.city as client_city,
+    coalesce(client.country, 'Ceska republika') as client_country
+  from public.invoices invoice
+  join public.profiles profile on profile.id = invoice.contractor_id
+  join public.events event on event.id = invoice.event_id
+  join public.projects project on project.id = event.project_id
+  join public.clients client on client.id = project.client_id
+  where invoice.invoice_number is null
+),
+numbered_invoices as (
+  select
+    *,
+    public.next_self_billing_invoice_sequence(invoice_year, contractor_id) as invoice_sequence
+  from invoices_to_backfill
+)
+update public.invoices invoice
+set
+  invoice_number = concat(
+    'SF-',
+    numbered.invoice_year,
+    '-',
+    coalesce(nullif(regexp_replace(upper(numbered.last_name), '[^A-Z0-9]+', '-', 'g'), ''), 'X'),
+    '-',
+    left(coalesce(nullif(regexp_replace(upper(numbered.first_name), '[^A-Z0-9]+', '', 'g'), ''), 'X'), 1),
+    '-',
+    lpad(numbered.invoice_sequence::text, 4, '0')
+  ),
+  issue_date = numbered.issue_date,
+  taxable_supply_date = numbered.issue_date,
+  due_date = numbered.issue_date + interval '14 days',
+  currency = 'CZK',
+  supplier_snapshot = jsonb_build_object(
+    'profileId', numbered.contractor_id,
+    'name', trim(concat_ws(' ', numbered.first_name, numbered.last_name)),
+    'ico', coalesce(numbered.supplier_ico, ''),
+    'dic', nullif(numbered.supplier_dic, ''),
+    'bankAccount', coalesce(numbered.bank_account, ''),
+    'billingStreet', coalesce(numbered.billing_street, ''),
+    'billingZip', coalesce(numbered.billing_zip, ''),
+    'billingCity', coalesce(numbered.billing_city, ''),
+    'billingCountry', numbered.billing_country,
+    'vatPayer', false
+  ),
+  customer_snapshot = jsonb_build_object(
+    'clientId', numbered.client_id,
+    'name', coalesce(numbered.client_name, ''),
+    'ico', coalesce(numbered.client_ico, ''),
+    'dic', nullif(numbered.client_dic, ''),
+    'street', coalesce(numbered.client_street, ''),
+    'zip', coalesce(numbered.client_zip, ''),
+    'city', coalesce(numbered.client_city, ''),
+    'country', numbered.client_country
+  )
+from numbered_invoices numbered
+where invoice.id = numbered.id;
+
 comment on column public.invoices.invoice_number is
   'Self-billing invoice number, e.g. SF-2026-NOVAK-T-0001.';
 comment on column public.invoices.supplier_snapshot is

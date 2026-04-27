@@ -20,6 +20,7 @@ export interface EventPhaseSlot extends EventPhaseTime {
 /** Akce (event) - konkretni realizace projektu */
 export interface Event {
   id: number;
+  projectId?: string | null;
   name: string;
   /** Job Number - propojeni s projektem */
   job: string;
@@ -179,8 +180,10 @@ export interface Candidate {
 export interface Project {
   /** Job Number jako ID */
   id: string;
+  supabaseId?: string;
   name: string;
   client: string;
+  clientId?: string | null;
   note?: string;
   createdAt: string;
 }

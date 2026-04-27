@@ -50,8 +50,10 @@ export function mapClient(row: ClientRow): Client {
 export function mapProject(row: ProjectRow, clientName?: string): Project {
   return {
     id: row.job_number,
+    supabaseId: row.id,
     name: row.name,
     client: clientName ?? '',
+    clientId: row.client_id,
     note: row.note ?? '',
     createdAt: row.created_at,
   };
@@ -92,6 +94,7 @@ export function mapContractor(row: ProfileRow): Contractor {
 export function mapEvent(row: EventRow): Event {
   return {
     id: Number.NaN,
+    projectId: row.project_id,
     name: row.name,
     job: row.job_number ?? '',
     startDate: row.date_from ?? '',

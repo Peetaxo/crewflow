@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Contractor, Event, Invoice, ReceiptItem, Timelog } from '../types';
+import type { Client, Contractor, Event, Invoice, Project, ReceiptItem, Timelog } from '../types';
 
 type Snapshot = {
   events: Event[];
@@ -8,14 +8,15 @@ type Snapshot = {
   receipts: ReceiptItem[];
   invoices: Invoice[];
   candidates: [];
-  projects: [];
-  clients: [];
+  projects: Project[];
+  clients: Client[];
 };
 
 const createSnapshot = (): Snapshot => ({
   events: [
     {
       id: 1,
+      projectId: 'project-uuid-1',
       name: 'Akce 1',
       job: 'AK001',
       startDate: '2026-04-10',
@@ -41,10 +42,15 @@ const createSnapshot = (): Snapshot => ({
       rate: 250,
       phone: '',
       email: '',
-      ico: '',
+      ico: '12345678',
       dic: '',
-      bank: '',
+      bank: '123456789/0100',
       city: 'Praha',
+      billingName: 'Test User',
+      billingStreet: 'Dodavatelska 1',
+      billingZip: '110 00',
+      billingCity: 'Praha',
+      billingCountry: 'Ceska republika',
       reliable: true,
       note: '',
     },
@@ -63,8 +69,12 @@ const createSnapshot = (): Snapshot => ({
   receipts: [],
   invoices: [],
   candidates: [],
-  projects: [],
-  clients: [],
+  projects: [
+    { id: 'AK001', supabaseId: 'project-uuid-1', name: 'Projekt 1', client: 'Klient A', clientId: 'client-uuid-1', createdAt: '2026-04-01' },
+  ],
+  clients: [
+    { id: 1, supabaseId: 'client-uuid-1', name: 'Klient A', ico: '87654321', dic: '', street: 'Odberatelska 1', zip: '120 00', city: 'Praha', country: 'Ceska republika' },
+  ],
 });
 
 describe('UUID write flows integration', () => {
@@ -190,7 +200,13 @@ describe('UUID write flows integration', () => {
     });
 
     vi.doMock('../lib/app-config', () => ({ appDataSource: 'supabase' }));
-    vi.doMock('../lib/supabase', () => ({ isSupabaseConfigured: true, supabase: { from: fromMock } }));
+    vi.doMock('../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: fromMock,
+        rpc: vi.fn().mockResolvedValue({ data: 1, error: null }),
+      },
+    }));
     vi.doMock('../lib/app-data', () => ({
       getLocalAppState: () => structuredClone(snapshot),
       updateLocalAppState: (updater: (state: Snapshot) => Snapshot) => {

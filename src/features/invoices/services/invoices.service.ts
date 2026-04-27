@@ -18,6 +18,17 @@ import {
   markReceiptsAsReimbursed,
   markReceiptsAsReimbursedForInvoice,
 } from '../../receipts/services/receipts.service';
+import {
+  buildSelfBillingInvoiceNumber,
+  getInvoiceDueDate,
+  getInvoiceIssueDate,
+} from './invoice-numbering';
+import {
+  buildCustomerSnapshot,
+  buildSupplierSnapshot,
+  resolveSingleInvoiceClient,
+  validateInvoiceSnapshots,
+} from './invoice-customer-resolution';
 
 type BillingItem = {
   jobNumber: string;
@@ -189,6 +200,27 @@ const getSupabaseEventIdMap = async (): Promise<Map<number, string>> => {
     `${a.date_from ?? ''}|${a.name}`.localeCompare(`${b.date_from ?? ''}|${b.name}`)
   ));
   return new Map(sortedRows.map((row, index) => [index + 1, row.id]));
+};
+
+const getNextInvoiceSequence = async (invoiceYear: number, contractorProfileId: string): Promise<number> => {
+  if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
+    const existingCount = (getLocalAppState().invoices ?? []).filter((invoice) => (
+      invoice.contractorProfileId === contractorProfileId
+      && invoice.invoiceNumber?.startsWith(`SF-${invoiceYear}-`)
+    )).length;
+    return existingCount + 1;
+  }
+
+  const result = await supabase.rpc('next_self_billing_invoice_sequence', {
+    p_invoice_year: invoiceYear,
+    p_supplier_profile_id: contractorProfileId,
+  });
+
+  if (result.error || typeof result.data !== 'number') {
+    throw new Error(result.error?.message ?? 'Nepodarilo se vygenerovat cislo faktury.');
+  }
+
+  return result.data;
 };
 
 const buildBillingBatches = (): BillingBatch[] => {
@@ -718,6 +750,15 @@ const persistSupabaseGeneratedInvoice = async (invoice: Invoice): Promise<string
       amount_km: invoice.kAmt,
       amount_receipts: invoice.receiptAmt ?? 0,
       total_amount: invoice.total,
+      invoice_number: invoice.invoiceNumber ?? null,
+      issue_date: invoice.issueDate ?? null,
+      taxable_supply_date: invoice.taxableSupplyDate ?? null,
+      due_date: invoice.dueDate ?? null,
+      currency: invoice.currency ?? 'CZK',
+      supplier_snapshot: invoice.supplierSnapshot ?? null,
+      customer_snapshot: invoice.customerSnapshot ?? null,
+      pdf_path: invoice.pdfPath ?? null,
+      pdf_generated_at: invoice.pdfGeneratedAt ?? null,
       status: invoice.status,
       sent_at: invoice.sentAt,
     })
@@ -953,7 +994,52 @@ export const createInvoiceFromSelection = async (
     return null;
   }
 
-  const draftInvoice = buildInvoiceFromBatch(batch, 0);
+  const snapshot = getLocalAppState();
+  const contractor = findContractorByIdentity(snapshot.contractors ?? [], contractorProfileId);
+  if (!contractor) {
+    throw new Error('Dodavatel pro fakturu nebyl nalezen.');
+  }
+
+  const client = resolveSingleInvoiceClient({
+    timelogs: snapshot.timelogs ?? [],
+    receipts: snapshot.receipts ?? [],
+    selectedTimelogIds,
+    selectedReceiptIds,
+    events: snapshot.events ?? [],
+    projects: snapshot.projects ?? [],
+    clients: snapshot.clients ?? [],
+  });
+
+  const supplierSnapshot = buildSupplierSnapshot(contractor);
+  const customerSnapshot = buildCustomerSnapshot(client);
+  const snapshotErrors = validateInvoiceSnapshots(supplierSnapshot, customerSnapshot);
+  if (snapshotErrors.length > 0) {
+    throw new Error(`PDF fakturacni udaje nejsou kompletni. ${snapshotErrors[0]}`);
+  }
+
+  const issueDate = getInvoiceIssueDate();
+  const invoiceYear = Number(issueDate.slice(0, 4));
+  const sequence = await getNextInvoiceSequence(invoiceYear, contractorProfileId);
+  const [firstName = '', ...lastNameParts] = contractor.name.split(' ');
+  const invoiceNumber = buildSelfBillingInvoiceNumber({
+    year: invoiceYear,
+    firstName,
+    lastName: lastNameParts.join(' ') || contractor.name,
+    sequence,
+  });
+
+  const draftInvoice = {
+    ...buildInvoiceFromBatch(batch, 0),
+    invoiceNumber,
+    issueDate,
+    taxableSupplyDate: issueDate,
+    dueDate: getInvoiceDueDate(issueDate),
+    currency: 'CZK' as const,
+    supplierSnapshot,
+    customerSnapshot,
+    pdfPath: null,
+    pdfGeneratedAt: null,
+  };
   const persistedInvoiceId = await persistSupabaseGeneratedInvoice(draftInvoice);
   const invoice = persistedInvoiceId ? { ...draftInvoice, id: persistedInvoiceId } : draftInvoice;
 

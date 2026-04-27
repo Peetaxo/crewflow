@@ -9,6 +9,7 @@ const createSnapshot = (overrides?: Partial<{
   events: [
     {
       id: 1,
+      projectId: 'project-uuid-1',
       name: 'Akce 1',
       job: 'AK001',
       startDate: '2026-04-10',
@@ -21,6 +22,7 @@ const createSnapshot = (overrides?: Partial<{
     },
     {
       id: 2,
+      projectId: 'project-uuid-2',
       name: 'Akce 2',
       job: 'AK002',
       startDate: '2026-04-11',
@@ -46,10 +48,15 @@ const createSnapshot = (overrides?: Partial<{
       rate: 250,
       phone: '',
       email: '',
-      ico: '',
+      ico: '12345678',
       dic: '',
-      bank: '',
+      bank: '123456789/0100',
       city: 'Praha',
+      billingName: 'Test User',
+      billingStreet: 'Dodavatelska 1',
+      billingZip: '110 00',
+      billingCity: 'Praha',
+      billingCountry: 'Ceska republika',
       reliable: true,
       note: '',
     },
@@ -90,13 +97,19 @@ const createSnapshot = (overrides?: Partial<{
   ],
   invoices: [],
   candidates: [],
-  projects: [],
-  clients: [],
+  projects: [
+    { id: 'AK001', supabaseId: 'project-uuid-1', name: 'Projekt 1', client: 'Klient A', clientId: 'client-uuid-1', createdAt: '2026-04-01' },
+    { id: 'AK002', supabaseId: 'project-uuid-2', name: 'Projekt 2', client: 'Klient A', clientId: 'client-uuid-1', createdAt: '2026-04-01' },
+  ],
+  clients: [
+    { id: 1, supabaseId: 'client-uuid-1', name: 'Klient A', ico: '87654321', dic: '', street: 'Odberatelska 1', zip: '120 00', city: 'Praha', country: 'Ceska republika' },
+  ],
   ...overrides,
 });
 
 describe('invoices.service billing batches', () => {
   beforeEach(() => {
+    vi.useRealTimers();
     vi.resetModules();
     vi.clearAllMocks();
   });
@@ -426,7 +439,13 @@ describe('invoices.service billing batches', () => {
     });
 
     vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
-    vi.doMock('../../../lib/supabase', () => ({ isSupabaseConfigured: true, supabase: { from: fromMock } }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: fromMock,
+        rpc: vi.fn().mockResolvedValue({ data: 1, error: null }),
+      },
+    }));
     vi.doMock('../../../lib/supabase-mappers', () => ({ mapInvoice: vi.fn() }));
     vi.doMock('../../../lib/app-data', () => ({
       getLocalAppState: () => structuredClone(snapshot),
@@ -483,6 +502,114 @@ describe('invoices.service billing batches', () => {
     ]);
     expect(markTimelogsAsInvoiced).toHaveBeenCalledWith([2]);
     expect(markReceiptsAsAttached).toHaveBeenCalledWith([11]);
+  });
+
+  it('persists invoice number dates and billing snapshots when creating an invoice', async () => {
+    let snapshot = createSnapshot({
+      timelogs: [
+        {
+          id: 2,
+          eid: 2,
+          contractorProfileId: 'profile-uuid-1',
+          days: [{ d: '2026-04-11', f: '09:00', t: '16:00', type: 'provoz' as const }],
+          km: 0,
+          note: '',
+          status: 'approved' as const,
+        },
+      ],
+      receipts: [
+        {
+          id: 11,
+          contractorProfileId: 'profile-uuid-1',
+          eid: 2,
+          job: 'AK002',
+          title: 'Parkovne',
+          vendor: 'Parking',
+          amount: 300,
+          paidAt: '2026-04-11',
+          note: '',
+          status: 'approved' as const,
+        },
+      ],
+    });
+    snapshot = {
+      ...snapshot,
+      contractors: [{
+        ...snapshot.contractors[0],
+        name: 'Tomas Novak',
+        ico: '12345678',
+        bank: '123456789/0100',
+        billingName: 'Tomas Novak',
+        billingStreet: 'Dodavatelska 1',
+        billingZip: '110 00',
+        billingCity: 'Praha',
+        billingCountry: 'Ceska republika',
+      }],
+      events: snapshot.events.map((event) => event.id === 2 ? { ...event, projectId: 'project-uuid-2' } : event),
+      projects: [{ id: 'AK002', supabaseId: 'project-uuid-2', name: 'Projekt 2', client: 'Klient B', clientId: 'client-uuid-2', createdAt: '2026-04-01' }],
+      clients: [{ id: 2, supabaseId: 'client-uuid-2', name: 'Klient B', ico: '87654321', dic: '', street: 'Odberatelska 1', zip: '120 00', city: 'Praha', country: 'Ceska republika' }],
+    };
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-27T10:00:00Z'));
+
+    const invoiceInsertSingle = vi.fn().mockResolvedValue({ data: { id: 'invoice-uuid-1' }, error: null });
+    const invoiceInsert = vi.fn(() => ({ select: vi.fn(() => ({ single: invoiceInsertSingle })) }));
+    const rpc = vi.fn().mockResolvedValue({ data: 1, error: null });
+    const fromMock = vi.fn((table: string) => {
+      if (table === 'invoices') return { insert: invoiceInsert };
+      if (table === 'invoice_items') return { insert: vi.fn().mockResolvedValue({ error: null }) };
+      if (table === 'invoice_timelogs') return { insert: vi.fn().mockResolvedValue({ error: null }) };
+      if (table === 'invoice_receipts') return { insert: vi.fn().mockResolvedValue({ error: null }) };
+      if (table === 'timelogs') return { select: vi.fn(() => ({ order: vi.fn().mockResolvedValue({ data: [{ id: 'timelog-uuid-2' }], error: null }) })), update: vi.fn(() => ({ in: vi.fn().mockResolvedValue({ error: null }) })) };
+      if (table === 'receipts') return { select: vi.fn(() => ({ order: vi.fn().mockResolvedValue({ data: [{ id: 'receipt-uuid-11' }], error: null }) })), update: vi.fn(() => ({ in: vi.fn().mockResolvedValue({ error: null }) })) };
+      if (table === 'events') return { select: vi.fn(() => ({ order: vi.fn().mockResolvedValue({ data: [{ id: 'event-uuid-2', date_from: '2026-04-11', name: 'Akce 2' }], error: null }) })) };
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({ isSupabaseConfigured: true, supabase: { from: fromMock, rpc } }));
+    vi.doMock('../../../lib/supabase-mappers', () => ({ mapInvoice: vi.fn() }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+    vi.doMock('../../timelogs/services/timelogs.service', () => ({
+      getTimelogs: () => structuredClone(snapshot.timelogs),
+      markTimelogsAsInvoiced: vi.fn(),
+      markTimelogsAsPaid: vi.fn(),
+      markTimelogsAsPaidForInvoice: vi.fn(),
+    }));
+    vi.doMock('../../receipts/services/receipts.service', () => ({
+      getReceipts: () => structuredClone(snapshot.receipts),
+      markReceiptsAsAttached: vi.fn(),
+      markReceiptsAsReimbursed: vi.fn(),
+      markReceiptsAsReimbursedForInvoice: vi.fn(),
+    }));
+    vi.doMock('../../../data', () => ({ KM_RATE: 5 }));
+    vi.doMock('../../../utils', () => ({ calculateTotalHours: () => 7 }));
+    vi.doMock('sonner', () => ({ toast: { info: vi.fn(), success: vi.fn() } }));
+
+    const { createInvoiceFromSelection } = await import('./invoices.service');
+    await createInvoiceFromSelection('profile-uuid-1', [2], [11]);
+
+    expect(rpc).toHaveBeenCalledWith('next_self_billing_invoice_sequence', {
+      p_invoice_year: 2026,
+      p_supplier_profile_id: 'profile-uuid-1',
+    });
+    expect(invoiceInsert).toHaveBeenCalledWith(expect.objectContaining({
+      invoice_number: 'SF-2026-NOVAK-T-0001',
+      issue_date: '2026-04-27',
+      taxable_supply_date: '2026-04-27',
+      due_date: '2026-05-11',
+      currency: 'CZK',
+      supplier_snapshot: expect.objectContaining({ vatPayer: false, ico: '12345678' }),
+      customer_snapshot: expect.objectContaining({ clientId: 'client-uuid-2', name: 'Klient B' }),
+    }));
   });
 
   it('preserves contractor profile UUIDs during Supabase hydration', async () => {

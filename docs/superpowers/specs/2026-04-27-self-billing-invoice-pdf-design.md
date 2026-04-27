@@ -107,6 +107,8 @@ Pridat metadata:
 
 Snapshoty jsou dulezite proto, aby se PDF ani historicka faktura nezmenily po pozdejsi uprave profilu dodavatele nebo klienta.
 
+`due_date` se v prvni verzi nastavuje na 14 dni od `issue_date`.
+
 ### `invoice_items`
 
 Prvni verze muze vyuzit soucasna pole:
@@ -289,6 +291,5 @@ Manualni test:
 
 Pred implementaci je nutne potvrdit:
 
-1. splatnost: navrh 14 dni od vystaveni
-2. ktery `client` je odberatel pro polozky faktury, pokud cesta `invoice_item -> event -> project -> client` nebude u vsech dat jednoznacna
-3. jestli ma PDF vznikat pouze na tlacitko, nebo automaticky po `Vytvorit a poslat` v pozdejsi fazi
+1. ktery `client` je odberatel pro polozky faktury, pokud cesta `invoice_item -> event -> project -> client` nebude u vsech dat jednoznacna
+2. jestli ma PDF vznikat pouze na tlacitko, nebo automaticky po `Vytvorit a poslat` v pozdejsi fazi

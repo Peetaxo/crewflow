@@ -28,8 +28,9 @@ const AppDataBootstrap = () => {
   useEffect(() => {
     if (appDataSource !== 'supabase') return;
 
+    resetSupabaseHydrationState();
+
     if (isAuthRequired && !isAuthenticated) {
-      resetSupabaseHydrationState();
       updateLocalAppState(() => getLocalAppData());
     }
   }, [isAuthRequired, isAuthenticated]);

@@ -11,6 +11,7 @@ import { EventAssignmentResult, EventConflictDetail, EventFilter, EventWithDeriv
 const DEFAULT_TIME_FROM = '08:00';
 const DEFAULT_TIME_TO = '17:00';
 const EVENT_PHASE_TYPES: TimelogType[] = ['instal', 'provoz', 'deinstal'];
+type TimelogAssignmentRow = { event_id: string | null; contractor_id: string | null };
 
 const createSlotId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
@@ -18,18 +19,27 @@ let eventsHydrationPromise: Promise<void> | null = null;
 let eventsLoaded = false;
 const eventRowIdByLocalId = new Map<number, string>();
 
+const countAssignedCrewForEvent = (timelogs: Timelog[], eventId: number): number => (
+  new Set(
+    timelogs
+      .filter((timelog) => timelog.eid === eventId && timelog.contractorProfileId)
+      .map((timelog) => timelog.contractorProfileId as string),
+  ).size
+);
+
 export const fetchEventsSnapshot = async (): Promise<Event[]> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
     return getLocalAppState().events ?? [];
   }
 
-  const [eventsResult, projectsResult, clientsResult] = await Promise.all([
+  const [eventsResult, projectsResult, clientsResult, timelogsResult] = await Promise.all([
     supabase.from('events').select('*').order('date_from').order('name'),
     supabase.from('projects').select('*').order('job_number'),
     supabase.from('clients').select('*').order('name'),
+    supabase.from('timelogs').select('event_id,contractor_id'),
   ]);
 
-  const firstError = eventsResult.error ?? projectsResult.error ?? clientsResult.error;
+  const firstError = eventsResult.error ?? projectsResult.error ?? clientsResult.error ?? timelogsResult.error;
   if (firstError) {
     throw new Error(firstError.message);
   }
@@ -37,11 +47,21 @@ export const fetchEventsSnapshot = async (): Promise<Event[]> => {
   const clientRows = clientsResult.data ?? [];
   const projectRows = projectsResult.data ?? [];
   const eventRows = eventsResult.data ?? [];
+  const timelogRows = (timelogsResult.data ?? []) as TimelogAssignmentRow[];
 
   const clientsByUuid = new Map(
     clientRows.map((row, index) => [row.id, { ...mapClient(row), id: index + 1 }]),
   );
   const projectRowsByUuid = new Map(projectRows.map((row) => [row.id, row]));
+  const assignedProfilesByEventRowId = new Map<string, Set<string>>();
+
+  timelogRows.forEach((row) => {
+    if (!row.event_id || !row.contractor_id) return;
+
+    const assignedProfiles = assignedProfilesByEventRowId.get(row.event_id) ?? new Set<string>();
+    assignedProfiles.add(row.contractor_id);
+    assignedProfilesByEventRowId.set(row.event_id, assignedProfiles);
+  });
 
   const supabaseEvents = eventRows.map((row, index) => {
     const project = row.project_id ? projectRowsByUuid.get(row.project_id) : undefined;
@@ -52,6 +72,7 @@ export const fetchEventsSnapshot = async (): Promise<Event[]> => {
       id: index + 1,
       job: row.job_number ?? project?.job_number ?? '',
       client: row.client_name ?? client?.name ?? '',
+      filled: assignedProfilesByEventRowId.get(row.id)?.size ?? 0,
     };
   });
 
@@ -271,9 +292,14 @@ export const getEventDetailData = (eventId: number | null): {
     };
   }
 
+  const eventTimelogs = (snapshot.timelogs ?? []).filter((timelog) => timelog.eid === event.id);
+
   return {
-    event,
-    timelogs: (snapshot.timelogs ?? []).filter((timelog) => timelog.eid === event.id),
+    event: {
+      ...event,
+      filled: eventTimelogs.length > 0 ? countAssignedCrewForEvent(eventTimelogs, event.id) : event.filled,
+    },
+    timelogs: eventTimelogs,
     contractors: snapshot.contractors ?? [],
     receipts: (snapshot.receipts ?? []).filter((receipt) => receipt.eid === event.id),
   };
@@ -636,14 +662,14 @@ export const removeContractorFromEvent = async (eventId: number, contractorProfi
       throw new Error('Akce nebyla nalezena.');
     }
 
-    nextEvent = {
-      ...event,
-      filled: Math.max(0, event.filled - 1),
-    };
     nextTimelogs = snapshot.timelogs.filter((timelog) => !(
       timelog.eid === eventId
       && timelog.contractorProfileId === contractorProfileId
     ));
+    nextEvent = {
+      ...event,
+      filled: countAssignedCrewForEvent(nextTimelogs, eventId),
+    };
 
     return {
       ...snapshot,
@@ -789,20 +815,31 @@ export const assignCrewToEvent = async (
     throw new Error('Tento clen crew ma ve stejnem terminu jinou akci.');
   }
 
+  const isAlreadyAssigned = snapshot.timelogs.some((timelog) => (
+    timelog.eid === event.id && timelog.contractorProfileId === contractorProfileId
+  ));
+
+  if (isAlreadyAssigned) {
+    throw new Error('Tento clen crew uz je na akci prirazen.');
+  }
+
+  const timelog: Timelog = {
+    id: Math.max(0, ...snapshot.timelogs.map((item) => item.id)) + 1,
+    eid: event.id,
+    contractorProfileId,
+    days: initialDays,
+    km: 0,
+    note: '',
+    status: 'draft',
+  };
+  const nextTimelogs = [...snapshot.timelogs, timelog];
+
   const assignment: EventAssignmentResult = {
     event: {
       ...event,
-      filled: Math.min(event.needed, event.filled + 1),
+      filled: countAssignedCrewForEvent(nextTimelogs, event.id),
     },
-    timelog: {
-      id: Math.max(0, ...snapshot.timelogs.map((timelog) => timelog.id)) + 1,
-      eid: event.id,
-      contractorProfileId,
-      days: initialDays,
-      km: 0,
-      note: '',
-      status: 'draft',
-    },
+    timelog,
   };
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {

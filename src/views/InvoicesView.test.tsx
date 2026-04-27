@@ -155,6 +155,7 @@ describe('InvoicesView', () => {
     expect(screen.getByRole('button', { name: /Stahnout PDF/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Vygenerovat PDF/i })).not.toBeInTheDocument();
   });
+
 });
 
 const createInvoiceForPdfTest = (pdfPath: string | null = null): Invoice => ({

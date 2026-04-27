@@ -34,7 +34,9 @@ export const getInvoicePdfDownloadUrl = async (pdfPath: string): Promise<string>
 
   const result = await supabase.storage
     .from(INVOICE_PDF_BUCKET)
-    .createSignedUrl(pdfPath, SIGNED_URL_TTL_SECONDS);
+    .createSignedUrl(pdfPath, SIGNED_URL_TTL_SECONDS, {
+      download: true,
+    });
 
   if (result.error || !result.data?.signedUrl) {
     throw new Error(result.error?.message ?? 'PDF se nepodarilo pripravit ke stazeni.');

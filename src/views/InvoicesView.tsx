@@ -27,6 +27,7 @@ import {
 } from '../features/invoices/services/invoices.service';
 import { useInvoicesQuery } from '../features/invoices/queries/useInvoicesQuery';
 import { generateInvoicePdf, getInvoicePdfDownloadUrl } from '../features/invoices/services/invoice-pdf.service';
+import { openInvoicePdfUrl } from '../features/invoices/services/invoice-pdf-download';
 
 interface InvoicesViewProps {
   scope?: 'all' | 'mine';
@@ -149,7 +150,7 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
   const handleDownloadPdf = async (pdfPath: string) => {
     try {
       const url = await getInvoicePdfDownloadUrl(pdfPath);
-      window.open(url, '_blank', 'noopener,noreferrer');
+      openInvoicePdfUrl(url);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Nepodarilo se stahnout PDF.');
     }

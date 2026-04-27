@@ -34,5 +34,9 @@ describe('invoice PDF service', () => {
 
     const { getInvoicePdfDownloadUrl } = await import('./invoice-pdf.service');
     await expect(getInvoicePdfDownloadUrl('invoices/1/test.pdf')).resolves.toBe('https://signed.example/pdf');
+
+    expect(createSignedUrl).toHaveBeenCalledWith('invoices/1/test.pdf', 300, {
+      download: true,
+    });
   });
 });

@@ -18,9 +18,10 @@ import { useReceiptsQuery } from '../../features/receipts/queries/useReceiptsQue
 interface InvoiceCreateModalProps {
   onClose: () => void;
   onDirtyChange?: (isDirty: boolean) => void;
+  onSubmitSuccess?: () => void;
 }
 
-const InvoiceCreateModal = ({ onClose, onDirtyChange }: InvoiceCreateModalProps) => {
+const InvoiceCreateModal = ({ onClose, onDirtyChange, onSubmitSuccess }: InvoiceCreateModalProps) => {
   const invoicesQuery = useInvoicesQuery();
   const timelogsQuery = useTimelogsQuery();
   const receiptsQuery = useReceiptsQuery();
@@ -137,7 +138,8 @@ const InvoiceCreateModal = ({ onClose, onDirtyChange }: InvoiceCreateModalProps)
       }
 
       if (created) {
-        onClose();
+        onDirtyChange?.(false);
+        onSubmitSuccess?.();
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Nepodarilo se vytvorit fakturu.');

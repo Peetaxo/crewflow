@@ -166,6 +166,7 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
           <InvoiceCreateModal
             onClose={requestCloseCreate}
             onDirtyChange={setHasUnsavedCreate}
+            onSubmitSuccess={leaveCreateMode}
           />
         </motion.div>
 

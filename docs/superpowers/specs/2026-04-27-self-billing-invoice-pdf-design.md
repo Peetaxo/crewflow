@@ -249,6 +249,8 @@ V `InvoicesView` bude u kazde faktury:
 
 V prvni verzi se PDF generuje rucne tlacitkem. Automaticke generovani po `Vytvorit a poslat` se prida az po overeni pipeline.
 
+Potvrzene pravidlo pro v1: PDF nevznika automaticky pri `Vytvorit a poslat`. Uzivatel nejdrive vytvori fakturu a potom explicitne klikne na `Vygenerovat PDF`.
+
 ## Validation Rules
 
 PDF nelze vygenerovat, pokud chybi:
@@ -304,6 +306,4 @@ Manualni test:
 
 ## Open Decisions Before Implementation
 
-Pred implementaci je nutne potvrdit:
-
-1. jestli ma PDF vznikat pouze na tlacitko, nebo automaticky po `Vytvorit a poslat` v pozdejsi fazi
+Pred implementaci nejsou otevrena rozhodnuti, ktera by blokovala plan.

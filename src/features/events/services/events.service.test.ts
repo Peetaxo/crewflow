@@ -201,6 +201,60 @@ describe('events.service write flow', () => {
     vi.clearAllMocks();
   });
 
+  it('requests timelog hydration when reading event detail data', async () => {
+    const ensureSupabaseTimelogsLoaded = vi.fn();
+    const snapshot = createSnapshot({
+      events: [
+        {
+          id: 1,
+          name: 'Akce 1',
+          job: 'AK001',
+          startDate: '2026-04-20',
+          endDate: '2026-04-20',
+          city: 'Praha',
+          needed: 2,
+          filled: 1,
+          status: 'upcoming',
+          client: 'Klient A',
+          showDayTypes: false,
+        },
+      ],
+    });
+
+    vi.doMock('../../../lib/app-config', () => ({
+      appDataSource: 'local',
+    }));
+
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: false,
+      supabase: null,
+    }));
+
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: vi.fn(),
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    vi.doMock('../../timelogs/services/timelogs.service', () => ({
+      ensureSupabaseTimelogsLoaded,
+    }));
+
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapClient: vi.fn(),
+      mapEvent: vi.fn(),
+    }));
+
+    const { getEventDetailData } = await import('./events.service');
+
+    const detail = getEventDetailData(1);
+
+    expect(detail.event?.filled).toBe(1);
+    await vi.waitFor(() => {
+      expect(ensureSupabaseTimelogsLoaded).toHaveBeenCalledOnce();
+    });
+  });
+
   it('persists a new event to Supabase with the mapped project row id', async () => {
     let snapshot = createSnapshot();
 

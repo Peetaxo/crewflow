@@ -101,7 +101,7 @@ const hydrateTimelogsFromSupabase = async (): Promise<void> => {
   }));
 };
 
-const ensureSupabaseTimelogsLoaded = () => {
+export const ensureSupabaseTimelogsLoaded = () => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
     return;
   }

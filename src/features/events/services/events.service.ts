@@ -27,6 +27,14 @@ const countAssignedCrewForEvent = (timelogs: Timelog[], eventId: number): number
   ).size
 );
 
+const requestSupabaseTimelogsHydration = () => {
+  void import('../../timelogs/services/timelogs.service')
+    .then(({ ensureSupabaseTimelogsLoaded }) => ensureSupabaseTimelogsLoaded())
+    .catch((error) => {
+      console.warn('Nepodarilo se spustit nacitani timelogu pro detail akce.', error);
+    });
+};
+
 export const fetchEventsSnapshot = async (): Promise<Event[]> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
     return getLocalAppState().events ?? [];
@@ -280,6 +288,7 @@ export const getEventDetailData = (eventId: number | null): {
   receipts: ReceiptItem[];
 } => {
   ensureSupabaseEventsLoaded();
+  requestSupabaseTimelogsHydration();
   const snapshot = getLocalAppState();
   const event = eventId == null ? null : (snapshot.events ?? []).find((item) => item.id === eventId) ?? null;
 
@@ -606,6 +615,7 @@ export const deleteEvent = async (eventId: number): Promise<{ id: number }> => {
 
 export const getEventCrew = (eventId: number): Contractor[] => {
   ensureSupabaseEventsLoaded();
+  requestSupabaseTimelogsHydration();
   const snapshot = getLocalAppState();
   return (snapshot.contractors ?? []).filter((contractor) => (
     (snapshot.timelogs ?? []).some((timelog) => (

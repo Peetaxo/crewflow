@@ -33,6 +33,21 @@ Jedna faktura reprezentuje prave jednoho dodavatele a prave jednoho odberatele.
 
 Pokud budou v budoucnu vybrane polozky patrit vice odberatelum, system vytvori vice faktur. Prvni verze tento split nemusi implementovat, ale datovy model s nim nesmi byt v rozporu.
 
+Odberatel faktury se urcuje pres zahrnute polozky:
+
+```text
+timelog/receipt -> event -> project -> client
+```
+
+Platne produkcni pravidlo:
+
+- kazdy `event` musi mit `project_id`
+- kazdy `project` musi mit `client_id`
+- jedna faktura muze obsahovat vice timelogu a uctenek, ale vsechny musi vest na stejneho klienta
+- uctenka navazana na job/event automaticky spada pod projekt dane akce
+
+Pokud nektera vazba chybi nebo polozky vedou na vice klientu, vytvoreni faktury/PDF se zastavi s jasnou chybou. Pozdejsi verze misto zastaveni rozdeli davku do vice faktur podle klienta.
+
 ## Legal/Accounting Baseline
 
 Prvni verze cili na ucetni doklad pro neplatce DPH podle ceskeho prostredi.
@@ -291,5 +306,4 @@ Manualni test:
 
 Pred implementaci je nutne potvrdit:
 
-1. ktery `client` je odberatel pro polozky faktury, pokud cesta `invoice_item -> event -> project -> client` nebude u vsech dat jednoznacna
-2. jestli ma PDF vznikat pouze na tlacitko, nebo automaticky po `Vytvorit a poslat` v pozdejsi fazi
+1. jestli ma PDF vznikat pouze na tlacitko, nebo automaticky po `Vytvorit a poslat` v pozdejsi fazi

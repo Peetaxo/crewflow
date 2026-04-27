@@ -1,10 +1,12 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
-import type { Contractor, Event } from '../types';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Contractor, Event, Invoice } from '../types';
 import InvoicesView from './InvoicesView';
 
 const setNavigationGuardMessage = vi.fn();
+const refetchInvoices = vi.fn();
+let mockInvoices: Invoice[] = [];
 
 const contractors: Contractor[] = [
   {
@@ -109,10 +111,20 @@ vi.mock('../features/invoices/services/invoices.service', () => ({
 }));
 
 vi.mock('../features/invoices/queries/useInvoicesQuery', () => ({
-  useInvoicesQuery: () => ({ data: [], isLoading: false, error: null }),
+  useInvoicesQuery: () => ({ data: mockInvoices, isLoading: false, error: null, refetch: refetchInvoices }),
+}));
+
+vi.mock('../features/invoices/services/invoice-pdf.service', () => ({
+  generateInvoicePdf: vi.fn().mockResolvedValue({ pdfPath: 'invoices/invoice-uuid-1/SF-2026-NOVAK-T-0001.pdf' }),
+  getInvoicePdfDownloadUrl: vi.fn().mockResolvedValue('https://signed.example/invoice.pdf'),
 }));
 
 describe('InvoicesView', () => {
+  beforeEach(() => {
+    mockInvoices = [];
+    refetchInvoices.mockReset();
+  });
+
   it('closes invoice creation after submit success without showing discard warning', () => {
     render(<InvoicesView />);
 
@@ -125,4 +137,40 @@ describe('InvoicesView', () => {
     expect(screen.queryByText('Invoice create modal')).not.toBeInTheDocument();
     expect(screen.getByText('Faktury')).toBeInTheDocument();
   });
+
+  it('shows generate PDF button when invoice has no pdfPath', () => {
+    mockInvoices = [createInvoiceForPdfTest(null)];
+
+    render(<InvoicesView />);
+
+    expect(screen.getByRole('button', { name: /Vygenerovat PDF/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Stahnout PDF/i })).not.toBeInTheDocument();
+  });
+
+  it('shows download PDF button when invoice has pdfPath', () => {
+    mockInvoices = [createInvoiceForPdfTest('invoices/invoice-uuid-1/SF-2026-NOVAK-T-0001.pdf')];
+
+    render(<InvoicesView />);
+
+    expect(screen.getByRole('button', { name: /Stahnout PDF/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Vygenerovat PDF/i })).not.toBeInTheDocument();
+  });
+});
+
+const createInvoiceForPdfTest = (pdfPath: string | null = null): Invoice => ({
+  id: 'invoice-uuid-1',
+  contractorProfileId: 'profile-uuid-1',
+  eid: 1,
+  hours: 7,
+  hAmt: 1400,
+  km: 0,
+  kAmt: 0,
+  receiptAmt: 0,
+  total: 1400,
+  job: 'JOB-1',
+  status: 'draft',
+  sentAt: null,
+  invoiceNumber: 'SF-2026-NOVAK-T-0001',
+  pdfPath,
+  pdfGeneratedAt: pdfPath ? '2026-04-27T10:00:00Z' : null,
 });

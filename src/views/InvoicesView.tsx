@@ -26,6 +26,7 @@ import {
   sendInvoice,
 } from '../features/invoices/services/invoices.service';
 import { useInvoicesQuery } from '../features/invoices/queries/useInvoicesQuery';
+import { generateInvoicePdf, getInvoicePdfDownloadUrl } from '../features/invoices/services/invoice-pdf.service';
 
 interface InvoicesViewProps {
   scope?: 'all' | 'mine';
@@ -41,6 +42,7 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
   const [isCreateMode, setIsCreateMode] = useState(false);
   const [hasUnsavedCreate, setHasUnsavedCreate] = useState(false);
   const [showDiscardDialog, setShowDiscardDialog] = useState(false);
+  const [pdfActionInvoiceId, setPdfActionInvoiceId] = useState<string | null>(null);
 
   const loadDependencies = useCallback(() => {
     const dependencies = getInvoiceDependencies();
@@ -127,6 +129,29 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
       toast.success('Faktura byla oznacena jako zaplacena.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Nepodarilo se uzavrit fakturu.');
+    }
+  };
+
+  const handleGeneratePdf = async (invoiceId: string) => {
+    try {
+      setPdfActionInvoiceId(invoiceId);
+      await generateInvoicePdf(invoiceId);
+      toast.success('PDF faktury bylo vygenerovano.');
+      invoicesQuery.refetch?.();
+      loadDependencies();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Nepodarilo se vygenerovat PDF.');
+    } finally {
+      setPdfActionInvoiceId(null);
+    }
+  };
+
+  const handleDownloadPdf = async (pdfPath: string) => {
+    try {
+      const url = await getInvoicePdfDownloadUrl(pdfPath);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Nepodarilo se stahnout PDF.');
     }
   };
 
@@ -275,9 +300,24 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
               </div>
 
               <div className="mt-3 flex gap-2">
-                <button className="rounded-md border border-gray-200 px-3 py-1 text-[11px] hover:bg-gray-50">
-                  PDF ke stazeni
-                </button>
+                {invoice.pdfPath ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleDownloadPdf(invoice.pdfPath!)}
+                    className="rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Stahnout PDF
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void handleGeneratePdf(invoice.id)}
+                    disabled={pdfActionInvoiceId === invoice.id}
+                    className="rounded-md border border-emerald-200 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:text-emerald-300"
+                  >
+                    {pdfActionInvoiceId === invoice.id ? 'Generuji PDF...' : 'Vygenerovat PDF'}
+                  </button>
+                )}
 
                 {invoice.status === 'draft' && !isCrew && (
                   <>

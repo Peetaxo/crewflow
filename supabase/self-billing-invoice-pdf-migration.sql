@@ -57,6 +57,26 @@ insert into storage.buckets (id, name, public)
 values ('invoice-pdfs', 'invoice-pdfs', false)
 on conflict (id) do nothing;
 
+drop policy if exists "Users can read invoice PDFs" on storage.objects;
+
+create policy "Users can read invoice PDFs"
+  on storage.objects
+  for select
+  to authenticated
+  using (
+    bucket_id = 'invoice-pdfs'
+    and exists (
+      select 1
+      from public.invoices invoice
+      where invoice.pdf_path = storage.objects.name
+        and (
+          invoice.contractor_id = public.current_profile_id()
+          or public.has_role(auth.uid(), 'crewhead'::public.app_role)
+          or public.has_role(auth.uid(), 'coo'::public.app_role)
+        )
+    )
+  );
+
 comment on column public.invoices.invoice_number is
   'Self-billing invoice number, e.g. SF-2026-NOVAK-T-0001.';
 comment on column public.invoices.supplier_snapshot is

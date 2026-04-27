@@ -27,3 +27,6 @@ dist-ssr
 
 # Claude Code metadata (worktrees, plans, launch configs)
 .claude/
+
+# Supabase CLI local metadata
+supabase/.temp/

@@ -3,6 +3,7 @@ import { ArrowLeft, BarChart3, Calendar, CheckCircle2, ChevronDown, ChevronDownC
 import { AnimatePresence, motion } from 'framer-motion';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { format, parseISO } from 'date-fns';
+import { toast } from 'sonner';
 import { useAppContext } from '../context/useAppContext';
 import { KM_RATE } from '../data';
 import StatusBadge from '../components/shared/StatusBadge';
@@ -92,14 +93,18 @@ const CrewDetailView = () => {
       .sort((a, b) => a.date.getTime() - b.date.getTime());
   }, [cInvoices, chartPeriod]);
 
-  const saveMeta = () => {
+  const saveMeta = async () => {
     if (!c) return;
-    updateCrew({
-      ...c,
-      rate: Number(metaForm.rate) || c.rate,
-      note: metaForm.note,
-    });
-    setIsEditingMeta(false);
+    try {
+      await updateCrew({
+        ...c,
+        rate: Number(metaForm.rate) || c.rate,
+        note: metaForm.note,
+      });
+      setIsEditingMeta(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Clena crew se nepodarilo ulozit.');
+    }
   };
 
   const personalRows: [string, string][] = [

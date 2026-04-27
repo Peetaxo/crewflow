@@ -1,18 +1,30 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'sonner';
 import { useAppContext } from '../../context/useAppContext';
 import { getProjectDependencies, saveProject } from '../../features/projects/services/projects.service';
 
 const ProjectEditModal = () => {
   const { editingProject, setEditingProject } = useAppContext();
+  const [isSaving, setIsSaving] = useState(false);
   const { projects, clients } = getProjectDependencies();
 
   if (!editingProject) return null;
 
-  const handleSave = () => {
-    saveProject(editingProject);
-    setEditingProject(null);
+  const handleSave = async () => {
+    if (isSaving) return;
+
+    setIsSaving(true);
+    try {
+      await saveProject(editingProject);
+      setEditingProject(null);
+      toast.success('Projekt ulozen.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Projekt se nepodarilo ulozit.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -88,9 +100,10 @@ const ProjectEditModal = () => {
               </button>
               <button
                 onClick={handleSave}
-                className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-medium hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all"
+                disabled={isSaving}
+                className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-medium hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Ulozit projekt
+                {isSaving ? 'Ukladam...' : 'Ulozit projekt'}
               </button>
             </div>
           </motion.div>

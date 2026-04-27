@@ -188,6 +188,7 @@ export interface Project {
 /** Klient */
 export interface Client {
   id: number;
+  supabaseId?: string;
   name: string;
   ico?: string;
   dic?: string;

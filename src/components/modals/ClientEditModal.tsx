@@ -1,18 +1,30 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'sonner';
 import { useAppContext } from '../../context/useAppContext';
 import { getClients, saveClient } from '../../features/clients/services/clients.service';
 
 const ClientEditModal = () => {
   const { editingClient, setEditingClient } = useAppContext();
+  const [isSaving, setIsSaving] = useState(false);
   const clients = getClients();
 
   if (!editingClient) return null;
 
-  const handleSave = () => {
-    saveClient(editingClient);
-    setEditingClient(null);
+  const handleSave = async () => {
+    if (isSaving) return;
+
+    setIsSaving(true);
+    try {
+      await saveClient(editingClient);
+      setEditingClient(null);
+      toast.success('Klient ulozen.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Klienta se nepodarilo ulozit.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -126,9 +138,10 @@ const ClientEditModal = () => {
               </button>
               <button
                 onClick={handleSave}
-                className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-medium hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all"
+                disabled={isSaving}
+                className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-medium hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Ulozit klienta
+                {isSaving ? 'Ukladam...' : 'Ulozit klienta'}
               </button>
             </div>
           </motion.div>

@@ -36,6 +36,7 @@ export function mapCandidate(row: CandidateRow): Candidate {
 export function mapClient(row: ClientRow): Client {
   return {
     id: Number.NaN,
+    supabaseId: row.id,
     name: row.name,
     ico: row.ico ?? '',
     dic: row.dic ?? '',

@@ -231,16 +231,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       switch (type) {
         case 'client':
-          deleteClient(Number(id));
+          await deleteClient(Number(id));
           break;
         case 'project':
-          deleteProject(String(id));
+          await deleteProject(String(id));
           break;
         case 'event':
           await deleteEvent(Number(id));
           break;
         case 'crew':
-          deleteCrew(Number(id));
+          await deleteCrew(Number(id));
           break;
         case 'receipt':
           await deleteReceipt(Number(id));

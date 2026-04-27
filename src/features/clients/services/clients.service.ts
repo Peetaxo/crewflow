@@ -16,6 +16,33 @@ const normalizeClient = (client: Client): Client => ({
   note: client.note?.trim() || '',
 });
 
+const getSupabaseClientRowId = async (client: Client): Promise<string> => {
+  if (client.supabaseId) {
+    return client.supabaseId;
+  }
+
+  if (!supabase || !isSupabaseConfigured) {
+    throw new Error('Supabase neni nakonfigurovany.');
+  }
+
+  const clientLookup = await supabase
+    .from('clients')
+    .select('id')
+    .eq('name', client.name)
+    .limit(1)
+    .maybeSingle();
+
+  if (clientLookup.error) {
+    throw new Error(clientLookup.error.message);
+  }
+
+  if (!clientLookup.data?.id) {
+    throw new Error('Nepodarilo se sparovat klienta s databazovym zaznamem.');
+  }
+
+  return clientLookup.data.id;
+};
+
 let clientsHydrationPromise: Promise<void> | null = null;
 let clientsLoaded = false;
 
@@ -102,10 +129,48 @@ export const createEmptyClient = (): Client => ({
   name: '',
 });
 
-export const saveClient = (client: Client): Client => {
-  const normalizedClient = normalizeClient(client);
+export const saveClient = async (client: Client): Promise<Client> => {
+  let normalizedClient = normalizeClient(client);
   if (!normalizedClient.name) {
     throw new Error('Vyplnte nazev klienta.');
+  }
+
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    const existing = (getLocalAppState().clients ?? []).some((item) => item.id === normalizedClient.id);
+    const payload = {
+      name: normalizedClient.name,
+      ico: normalizedClient.ico || null,
+      dic: normalizedClient.dic || null,
+      street: normalizedClient.street || null,
+      zip: normalizedClient.zip || null,
+      city: normalizedClient.city || null,
+      country: normalizedClient.country || null,
+    };
+
+    if (existing) {
+      const clientRowId = await getSupabaseClientRowId(normalizedClient);
+      const clientUpdate = await supabase
+        .from('clients')
+        .update(payload)
+        .eq('id', clientRowId);
+
+      if (clientUpdate.error) {
+        throw new Error(clientUpdate.error.message);
+      }
+
+      normalizedClient = {
+        ...normalizedClient,
+        supabaseId: clientRowId,
+      };
+    } else {
+      const clientInsert = await supabase
+        .from('clients')
+        .insert(payload);
+
+      if (clientInsert.error) {
+        throw new Error(clientInsert.error.message);
+      }
+    }
   }
 
   updateLocalAppState((snapshot) => {
@@ -121,7 +186,24 @@ export const saveClient = (client: Client): Client => {
   return normalizedClient;
 };
 
-export const deleteClient = (id: number): { id: number } => {
+export const deleteClient = async (id: number): Promise<{ id: number }> => {
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    const existing = getLocalAppState().clients.find((client) => client.id === id);
+    if (!existing) {
+      throw new Error('Klient nebyl nalezen.');
+    }
+
+    const clientRowId = await getSupabaseClientRowId(existing);
+    const clientDelete = await supabase
+      .from('clients')
+      .delete()
+      .eq('id', clientRowId);
+
+    if (clientDelete.error) {
+      throw new Error(clientDelete.error.message);
+    }
+  }
+
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     clients: snapshot.clients.filter((client) => client.id !== id),

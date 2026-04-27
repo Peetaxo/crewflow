@@ -20,10 +20,10 @@ const ContractorEditModal = ({
 
   const isExisting = getCrew().some((contractor) => contractor.id === editingContractor.id);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     try {
       if (isExisting) {
-        updateCrew(editingContractor);
+        await updateCrew(editingContractor);
       } else {
         createCrew(editingContractor);
       }

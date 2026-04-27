@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0';
+import { renderInvoicePdf } from './invoice-pdf.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -42,9 +43,10 @@ Deno.serve(async (request) => {
       return json({ error: 'Invoice number is missing' }, 400);
     }
 
-    const pdfBytes = new TextEncoder().encode(
-      `Faktura ${invoice.invoice_number}\nVystaveno odberatelem\nDodavatel neni platcem DPH\n`,
-    );
+    const pdfBytes = await renderInvoicePdf({
+      invoice,
+      items: invoice.invoice_items ?? [],
+    });
     const pdfPath = `invoices/${invoice.id}/${invoice.invoice_number}.pdf`;
 
     const uploadResult = await supabase

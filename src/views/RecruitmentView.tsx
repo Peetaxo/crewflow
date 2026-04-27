@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { Button } from '../components/ui/button';
 import StatusBadge from '../components/shared/StatusBadge';
 import type { Candidate } from '../types';
 import {
@@ -33,14 +34,15 @@ const RecruitmentView = () => {
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <div className="mb-5 flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold">Nábor</h1>
-          <p className="mt-0.5 text-xs text-gray-500">Tally.so + Cal.com pipeline</p>
+          <div className="nodu-dashboard-kicker">Recruitment</div>
+          <h1 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--nodu-text)]">Nábor</h1>
+          <p className="mt-1 text-sm text-[color:var(--nodu-text-soft)]">Tally.so + Cal.com pipeline</p>
         </div>
         <div className="flex gap-1.5">
-          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+          <span className="rounded-full bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] px-2 py-0.5 text-[10px] font-medium text-[color:var(--nodu-accent)]">
             Tally webhook aktivní
           </span>
-          <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700">
+          <span className="rounded-full bg-[color:rgb(var(--nodu-text-rgb)/0.08)] px-2 py-0.5 text-[10px] font-medium text-[color:var(--nodu-text)]">
             Cal.com sync
           </span>
         </div>
@@ -51,62 +53,67 @@ const RecruitmentView = () => {
           return (
             <div key={col.id} className="min-w-0">
               <div className="mb-3">
-                <div className="text-xs font-semibold text-gray-900">{col.lbl}</div>
-                <div className="mt-0.5 text-[10px] text-gray-500">{col.sub}</div>
-                <span className="mt-1.5 inline-block rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500">
+                <div className="text-xs font-semibold text-[color:var(--nodu-text)]">{col.lbl}</div>
+                <div className="mt-0.5 text-[10px] text-[color:var(--nodu-text-soft)]">{col.sub}</div>
+                <span className="mt-1.5 inline-block rounded-full bg-[color:rgb(var(--nodu-text-rgb)/0.08)] px-2 py-0.5 text-[10px] text-[color:var(--nodu-text-soft)]">
                   {cc.length}
                 </span>
               </div>
               <div className="space-y-2">
                 {cc.map((candidate) => (
-                  <div key={candidate.id} className="rounded-xl border border-gray-100 bg-white p-3 shadow-sm">
-                    <div className="text-[13px] font-semibold text-gray-900">{candidate.name}</div>
-                    <div className="mb-2 text-[11px] text-gray-500">{candidate.phone}</div>
+                  <div key={candidate.id} className="rounded-[24px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] p-3 shadow-[0_14px_32px_rgba(47,38,31,0.08)]">
+                    <div className="text-[13px] font-semibold text-[color:var(--nodu-text)]">{candidate.name}</div>
+                    <div className="mb-2 text-[11px] text-[color:var(--nodu-text-soft)]">{candidate.phone}</div>
                     <div className="mb-2 flex gap-1">
                       <StatusBadge status="decision" label="Tally" />
                       {candidate.calBooked && <StatusBadge status="pending_coo" label="Cal.com" />}
                     </div>
                     {candidate.interviewAt && (
-                      <div className="mb-2 text-[10px] leading-relaxed text-gray-500">
+                      <div className="mb-2 text-[10px] leading-relaxed text-[color:var(--nodu-text-soft)]">
                         Pohovor: {candidate.interviewAt}
                         <br />
                         Holešovická tržnice
                       </div>
                     )}
-                    <p className="mb-3 text-[11px] leading-relaxed text-gray-500">{candidate.note}</p>
+                    <p className="mb-3 text-[11px] leading-relaxed text-[color:var(--nodu-text-soft)]">{candidate.note}</p>
                     {col.id === 'new' && (
-                      <button
+                      <Button
                         onClick={() => advanceCandidate(candidate.id)}
-                        className="w-full rounded-md border border-gray-200 py-1.5 text-[11px] hover:bg-gray-50"
+                        variant="outline"
+                        size="sm"
+                        className="w-full text-[11px]"
                       >
                         Naplánovat pohovor →
-                      </button>
+                      </Button>
                     )}
                     {col.id === 'interview_scheduled' && (
-                      <button
+                      <Button
                         onClick={() => advanceCandidate(candidate.id)}
-                        className="w-full rounded-md border border-gray-200 py-1.5 text-[11px] hover:bg-gray-50"
+                        variant="outline"
+                        size="sm"
+                        className="w-full text-[11px]"
                       >
                         Zapsat výsledek →
-                      </button>
+                      </Button>
                     )}
                     {col.id === 'decision' && (
                       <div className="flex gap-1.5">
-                        <button
+                        <Button
                           onClick={() => advanceCandidate(candidate.id)}
-                          className="flex-1 rounded-md bg-emerald-600 py-1.5 text-[11px] text-white hover:bg-emerald-700"
+                          size="sm"
+                          className="flex-1 text-[11px]"
                         >
                           Přijmout
-                        </button>
-                        <button className="flex-1 rounded-md border border-red-100 py-1.5 text-[11px] text-red-600 hover:bg-red-50">
+                        </Button>
+                        <Button variant="outline" size="sm" className="flex-1 border-[#e8b4a3] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39] text-[11px]">
                           Odmítnout
-                        </button>
+                        </Button>
                       </div>
                     )}
                     {col.id === 'accepted' && (
                       <>
-                        <div className="text-[11px] font-semibold text-emerald-600">Onboarding zahájen ✓</div>
-                        <div className="mt-1 text-[10px] text-gray-500">Čeká na doplnění IČO/DIČ</div>
+                        <div className="text-[11px] font-semibold text-[color:var(--nodu-accent)]">Onboarding zahájen ✓</div>
+                        <div className="mt-1 text-[10px] text-[color:var(--nodu-text-soft)]">Čeká na doplnění IČO/DIČ</div>
                       </>
                     )}
                   </div>

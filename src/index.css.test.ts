@@ -35,8 +35,8 @@ describe('nodu CSS helpers', () => {
 
     expect(darkTokenBlock).toContain('--nodu-surface-rgb: 35 27 22;');
     expect(darkTokenBlock).toContain('--nodu-text-rgb: 245 234 223;');
-    expect(sidebarShellRule).toContain('var(--nodu-surface-rgb)');
-    expect(sidebarShellRule).toContain('var(--nodu-surface-muted-rgb)');
+    expect(sidebarShellRule).toContain('var(--nodu-paper-rgb');
+    expect(sidebarShellRule).toContain('var(--nodu-paper-strong-rgb');
     expect(sidebarSurfaceRule).toContain('var(--nodu-surface-rgb)');
     expect(sidebarSearchRule).toContain('var(--nodu-surface-rgb)');
     expect(statCardRule).toContain('var(--nodu-surface-rgb)');

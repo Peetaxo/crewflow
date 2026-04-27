@@ -6,6 +6,7 @@ import { useAppContext } from '../context/AppContext';
 import { KM_RATE } from '../data';
 import { PHASE_CONFIG } from '../constants';
 import { calculateDayHours, calculateTotalHours, formatCurrency, formatDateRange, getDatesBetween, getEventStatus } from '../utils';
+import { Button } from '../components/ui/button';
 import StatusBadge from '../components/shared/StatusBadge';
 import EventEditModal from '../components/modals/EventEditModal';
 import AssignCrewModal from '../components/modals/AssignCrewModal';
@@ -89,45 +90,45 @@ const EventDetailView = () => {
 
   return (
     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
-      <button onClick={() => setSelectedEventId(null)} className="mb-4 flex items-center gap-1 text-xs text-gray-500 transition-colors hover:text-gray-900">
+      <button onClick={() => setSelectedEventId(null)} className="mb-4 flex items-center gap-1 text-xs text-[color:var(--nodu-text-soft)] transition-colors hover:text-[color:var(--nodu-accent)]">
         <ArrowLeft size={14} /> Zpet na Akce
       </button>
 
-      <div className="mb-6 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+      <div className="mb-6 rounded-[30px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] p-6 shadow-[0_22px_54px_rgba(47,38,31,0.1)]">
         <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="mb-2 flex items-center gap-2">
-              <span className="jn px-2 py-0.5 text-sm">{event.job}</span>
+              <span className="jn nodu-job-badge px-2 py-0.5 text-sm">{event.job}</span>
               <StatusBadge status={eventStatus} />
             </div>
-            <h1 className="text-2xl font-bold text-gray-900">{event.name}</h1>
-            <p className="mt-1 text-sm text-gray-500">{formatDateRange(event.startDate, event.endDate)} - {event.city} - {event.client}</p>
-            {event.description && <p className="mt-3 max-w-2xl text-xs leading-relaxed text-gray-600">{event.description}</p>}
+            <h1 className="text-2xl font-bold text-[color:var(--nodu-text)]">{event.name}</h1>
+            <p className="mt-1 text-sm text-[color:var(--nodu-text-soft)]">{formatDateRange(event.startDate, event.endDate)} - {event.city} - {event.client}</p>
+            {event.description && <p className="mt-3 max-w-2xl text-xs leading-relaxed text-[color:var(--nodu-text-soft)]">{event.description}</p>}
 
             <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2">
               {event.contactPerson && (
-                <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
-                  <User size={12} className="text-gray-400" />
-                  <span className="font-medium text-gray-700">Kontakt:</span> {event.contactPerson}
+                <div className="flex items-center gap-1.5 text-[11px] text-[color:var(--nodu-text-soft)]">
+                  <User size={12} className="text-[color:var(--nodu-text-soft)]" />
+                  <span className="font-medium text-[color:var(--nodu-text)]">Kontakt:</span> {event.contactPerson}
                 </div>
               )}
               {event.meetingLocation && (
-                <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
-                  <MapPin size={12} className="text-gray-400" />
-                  <span className="font-medium text-gray-700">Sraz:</span> {event.meetingLocation}
+                <div className="flex items-center gap-1.5 text-[11px] text-[color:var(--nodu-text-soft)]">
+                  <MapPin size={12} className="text-[color:var(--nodu-text-soft)]" />
+                  <span className="font-medium text-[color:var(--nodu-text)]">Sraz:</span> {event.meetingLocation}
                 </div>
               )}
               {event.dresscode && (
-                <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
-                  <Shirt size={12} className="text-gray-400" />
-                  <span className="font-medium text-gray-700">Dresscode:</span> {event.dresscode}
+                <div className="flex items-center gap-1.5 text-[11px] text-[color:var(--nodu-text-soft)]">
+                  <Shirt size={12} className="text-[color:var(--nodu-text-soft)]" />
+                  <span className="font-medium text-[color:var(--nodu-text)]">Dresscode:</span> {event.dresscode}
                 </div>
               )}
             </div>
           </div>
 
           <div className="flex gap-2">
-            <button
+            <Button
               onClick={() => setEditingReceipt({
                 id: Math.max(0, ...eventReceipts.map((receipt) => receipt.id)) + 1,
                 cid: 0,
@@ -141,35 +142,36 @@ const EventDetailView = () => {
                 note: '',
                 status: 'draft',
               })}
-              className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium hover:bg-gray-50"
+              variant="outline"
             >
               Pridat uctenku
-            </button>
+            </Button>
 
             {canManageEvents && (
               <>
-                <button onClick={() => setAssigningEvent(event)} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm shadow-emerald-200 hover:bg-emerald-700">
+                <Button onClick={() => setAssigningEvent(event)}>
                   Obsadit crew
-                </button>
-                <button onClick={() => setEditingEvent(event)} className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium hover:bg-gray-50">
+                </Button>
+                <Button onClick={() => setEditingEvent(event)} variant="outline">
                   Upravit akci
-                </button>
-                <button
+                </Button>
+                <Button
                   onClick={() => setDeleteConfirm({ type: 'event', id: event.id, name: event.name })}
-                  className="rounded-xl border border-red-100 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+                  variant="outline"
+                  className="border-[#e8b4a3] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]"
                   title="Smazat akci"
                 >
                   <Trash2 size={18} />
-                </button>
+                </Button>
               </>
             )}
           </div>
         </div>
 
-        <div className="-mx-6 flex gap-1 border-b border-gray-100 px-6">
+        <div className="-mx-6 flex gap-1 border-b border-[color:var(--nodu-border)] px-6">
           <button
             onClick={() => setEventTab('overview')}
-            className={`border-b-2 px-4 py-2 text-sm font-medium transition-all ${eventTab === 'overview' ? 'border-emerald-500 text-emerald-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+            className={`border-b-2 px-4 py-2 text-sm font-medium transition-all ${eventTab === 'overview' ? 'border-[color:var(--nodu-accent)] text-[color:var(--nodu-accent)]' : 'border-transparent text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
           >
             Prehled
           </button>
@@ -179,7 +181,7 @@ const EventDetailView = () => {
               <button
                 key={date}
                 onClick={() => setEventTab(date)}
-                className={`border-b-2 px-4 py-2 text-sm font-medium transition-all ${eventTab === date ? 'border-emerald-500 text-emerald-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                className={`border-b-2 px-4 py-2 text-sm font-medium transition-all ${eventTab === date ? 'border-[color:var(--nodu-accent)] text-[color:var(--nodu-accent)]' : 'border-transparent text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
               >
                 <div className="flex flex-col items-center">
                   <span className="text-[10px] font-bold uppercase opacity-60">{new Date(date).toLocaleDateString('cs-CZ', { weekday: 'short' })}</span>
@@ -205,13 +207,13 @@ const EventDetailView = () => {
               <div className="space-y-6 lg:col-span-2">
                 <div>
                   <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold">
-                    <Users size={16} className="text-gray-400" />
+                    <Users size={16} className="text-[color:var(--nodu-text-soft)]" />
                     Prirazena Crew ({eventCrew.length})
                   </h3>
-                  <div className="overflow-hidden rounded-xl border border-gray-100 bg-gray-50">
+                  <div className="overflow-hidden rounded-[24px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)]">
                     <table className="w-full border-collapse text-left">
                       <thead>
-                        <tr className="border-b border-gray-100 text-[10px] uppercase tracking-wider text-gray-400">
+                        <tr className="border-b border-[color:var(--nodu-border)] text-[10px] uppercase tracking-wider text-[color:var(--nodu-text-soft)]">
                           <th className="px-4 py-3 text-left font-medium">Jmeno</th>
                           {event.showDayTypes && <th className="px-4 py-3 text-left font-medium">Faze</th>}
                           <th className="px-4 py-3 text-left font-medium">Hodiny</th>
@@ -219,18 +221,18 @@ const EventDetailView = () => {
                           <th className="px-4 py-3 text-right font-medium">Akce</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-100">
+                      <tbody className="divide-y divide-[color:rgb(var(--nodu-text-rgb)/0.06)]">
                         {eventCrew.map((contractor) => {
                           const timelog = eventTimelogs.find((item) => item.contractorProfileId === contractor.profileId)
                             ?? eventTimelogs.find((item) => item.cid === contractor.id);
                           const hours = timelog ? calculateTotalHours(timelog.days) : 0;
 
                           return (
-                            <tr key={contractor.id} className="bg-white transition-colors hover:bg-gray-50">
+                            <tr key={contractor.id} className="bg-white transition-colors hover:bg-[color:var(--nodu-accent-soft)]">
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-2">
                                   <div className="av h-7 w-7 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
-                                  <span className="text-xs font-medium">{contractor.name}</span>
+                                  <span className="text-xs font-medium text-[color:var(--nodu-text)]">{contractor.name}</span>
                                 </div>
                               </td>
                               {event.showDayTypes && (
@@ -239,7 +241,7 @@ const EventDetailView = () => {
                                     {PHASE_CONFIG.map((phase) => {
                                       const isActive = timelog?.days.some((day) => day.type === phase.type);
                                       return (
-                                        <div key={phase.id} className={`flex h-5 w-5 items-center justify-center rounded border text-[8px] font-black transition-all ${isActive ? `${phase.color} text-white shadow-sm` : 'border-gray-200 bg-gray-100 text-gray-300'}`} title={phase.label}>
+                                        <div key={phase.id} className={`flex h-5 w-5 items-center justify-center rounded border text-[8px] font-black transition-all ${isActive ? `${phase.color} text-white shadow-sm` : 'border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-text-rgb)/0.06)] text-[color:var(--nodu-text-soft)]'}`} title={phase.label}>
                                           {phase.id}
                                         </div>
                                       );
@@ -247,15 +249,15 @@ const EventDetailView = () => {
                                   </div>
                                 </td>
                               )}
-                              <td className="px-4 py-3 text-xs font-semibold">{hours.toFixed(1)}h</td>
-                              <td className="px-4 py-3 text-right text-xs font-bold text-gray-900">{formatCurrency(hours * contractor.rate)}</td>
+                              <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text)]">{hours.toFixed(1)}h</td>
+                              <td className="px-4 py-3 text-right text-xs font-bold text-[color:var(--nodu-text)]">{formatCurrency(hours * contractor.rate)}</td>
                               <td className="px-4 py-3 text-right">
                                 {canManageEvents && (
                                   <div className="flex items-center justify-end gap-1">
                                     {timelog && (
                                       <button
                                         onClick={() => setEditingTimelog(timelog)}
-                                        className="rounded-lg p-1.5 text-gray-400 transition-all hover:bg-emerald-50 hover:text-emerald-600"
+                                        className="rounded-lg p-1.5 text-[color:var(--nodu-text-soft)] transition-all hover:bg-[color:var(--nodu-success-bg)] hover:text-[color:var(--nodu-success-text)]"
                                         title="Upravit timelog"
                                       >
                                         <FileText size={14} />
@@ -263,7 +265,7 @@ const EventDetailView = () => {
                                     )}
                                     <button
                                       onClick={() => handleRemoveFromEvent(contractor.profileId)}
-                                      className="rounded-lg p-1.5 text-gray-300 transition-all hover:bg-red-50 hover:text-red-600"
+                                      className="rounded-lg p-1.5 text-[color:var(--nodu-text-soft)] transition-all hover:bg-[color:var(--nodu-error-bg)] hover:text-[color:var(--nodu-error-text)]"
                                       title="Odebrat z akce"
                                     >
                                       <Trash2 size={14} />
@@ -281,60 +283,66 @@ const EventDetailView = () => {
               </div>
 
               <div className="space-y-4">
-                <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
-                  <h4 className="mb-3 text-[10px] font-bold uppercase tracking-wider text-emerald-700">Financni souhrn</h4>
+                <div className="rounded-[22px] border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] p-4">
+                  <h4 className="mb-3 text-[10px] font-bold uppercase tracking-wider text-[color:var(--nodu-success-text)]">Financni souhrn</h4>
                   <div className="space-y-2">
                     <div className="flex justify-between text-xs">
-                      <span className="text-emerald-600">Celkem hodiny</span>
-                      <span className="font-bold text-emerald-900">{totalHours.toFixed(1)}h</span>
+                      <span className="text-[color:var(--nodu-success-text)]">Celkem hodiny</span>
+                      <span className="font-bold text-[color:var(--nodu-text)]">{totalHours.toFixed(1)}h</span>
                     </div>
                     <div className="flex justify-between text-xs">
-                      <span className="text-emerald-600">Naklady na crew</span>
-                      <span className="font-bold text-emerald-900">{formatCurrency(totalCrewCost)}</span>
+                      <span className="text-[color:var(--nodu-success-text)]">Naklady na crew</span>
+                      <span className="font-bold text-[color:var(--nodu-text)]">{formatCurrency(totalCrewCost)}</span>
                     </div>
                     <div className="flex justify-between text-xs">
-                      <span className="text-emerald-600">Cestovne</span>
-                      <span className="font-bold text-emerald-900">{formatCurrency(totalTravelCost)}</span>
+                      <span className="text-[color:var(--nodu-success-text)]">Cestovne</span>
+                      <span className="font-bold text-[color:var(--nodu-text)]">{formatCurrency(totalTravelCost)}</span>
                     </div>
                     <div className="flex justify-between text-xs">
-                      <span className="text-emerald-600">Uctenky</span>
-                      <span className="font-bold text-emerald-900">{formatCurrency(totalReceiptCost)}</span>
+                      <span className="text-[color:var(--nodu-success-text)]">Uctenky</span>
+                      <span className="font-bold text-[color:var(--nodu-text)]">{formatCurrency(totalReceiptCost)}</span>
                     </div>
-                    <div className="mt-2 flex justify-between border-t border-emerald-200 pt-2 text-sm">
-                      <span className="font-bold text-emerald-700">Celkovy rozpocet</span>
-                      <span className="font-black text-emerald-900">{formatCurrency(totalCrewCost + totalTravelCost + totalReceiptCost)}</span>
+                    <div className="mt-2 flex justify-between border-t border-[color:var(--nodu-success-border)] pt-2 text-sm">
+                      <span className="font-bold text-[color:var(--nodu-success-text)]">Celkovy rozpocet</span>
+                      <span className="font-black text-[color:var(--nodu-text)]">{formatCurrency(totalCrewCost + totalTravelCost + totalReceiptCost)}</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-                  <h4 className="mb-3 text-[10px] font-bold uppercase tracking-wider text-gray-500">Statistiky akce</h4>
+                <div className="rounded-[22px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] p-4">
+                  <h4 className="mb-3 text-[10px] font-bold uppercase tracking-wider text-[color:var(--nodu-text-soft)]">Statistiky akce</h4>
                   <div className="space-y-3">
                     <div>
                       <div className="mb-1 flex justify-between text-[11px]">
-                        <span>Obsazenost</span>
-                        <span className="font-semibold">{event.filled}/{event.needed}</span>
+                        <span className="text-[color:var(--nodu-text-soft)]">Obsazenost</span>
+                        <span className="font-semibold text-[color:var(--nodu-text)]">{event.filled}/{event.needed}</span>
                       </div>
-                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
-                        <div className={`h-full rounded-full ${event.filled >= event.needed ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{ width: `${Math.min(100, Math.round((event.filled / event.needed) * 100))}%` }} />
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-[color:rgb(var(--nodu-text-rgb)/0.08)]">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${Math.min(100, Math.round((event.filled / event.needed) * 100))}%`,
+                            backgroundColor: event.filled >= event.needed ? 'var(--nodu-success-text)' : 'var(--nodu-warning-text)',
+                          }}
+                        />
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
-                      <div className="rounded-lg border border-gray-100 bg-white p-2 text-center">
-                        <div className="text-[9px] uppercase text-gray-400">Dny</div>
-                        <div className="text-sm font-bold">{days.length}</div>
+                      <div className="rounded-xl border border-[color:var(--nodu-border)] bg-white p-2 text-center">
+                        <div className="text-[9px] uppercase text-[color:var(--nodu-text-soft)]">Dny</div>
+                        <div className="text-sm font-bold text-[color:var(--nodu-text)]">{days.length}</div>
                       </div>
-                      <div className="rounded-lg border border-gray-100 bg-white p-2 text-center">
-                        <div className="text-[9px] uppercase text-gray-400">Vykazy</div>
-                        <div className="text-sm font-bold">{eventTimelogs.length}</div>
+                      <div className="rounded-xl border border-[color:var(--nodu-border)] bg-white p-2 text-center">
+                        <div className="text-[9px] uppercase text-[color:var(--nodu-text-soft)]">Vykazy</div>
+                        <div className="text-sm font-bold text-[color:var(--nodu-text)]">{eventTimelogs.length}</div>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-                  <h4 className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                    <Receipt size={12} className="text-gray-400" />
+                <div className="rounded-[22px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] p-4">
+                  <h4 className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-[color:var(--nodu-text-soft)]">
+                    <Receipt size={12} className="text-[color:var(--nodu-text-soft)]" />
                     Uctenky ({eventReceipts.length})
                   </h4>
                   <div className="space-y-2">
@@ -342,14 +350,14 @@ const EventDetailView = () => {
                       const contractor = contractors.find((item) => item.profileId === receipt.contractorProfileId)
                         ?? contractors.find((item) => item.id === receipt.cid);
                       return (
-                        <div key={receipt.id} className="rounded-lg border border-gray-100 bg-white p-3">
+                        <div key={receipt.id} className="rounded-xl border border-[color:var(--nodu-border)] bg-white p-3">
                           <div className="flex items-start justify-between gap-3">
                             <div>
-                              <div className="text-xs font-semibold text-gray-900">{receipt.title}</div>
-                              <div className="text-[10px] text-gray-500">{contractor?.name || '-'} - {receipt.vendor}</div>
+                              <div className="text-xs font-semibold text-[color:var(--nodu-text)]">{receipt.title}</div>
+                              <div className="text-[10px] text-[color:var(--nodu-text-soft)]">{contractor?.name || '-'} - {receipt.vendor}</div>
                             </div>
                             <div className="text-right">
-                              <div className="text-xs font-bold text-gray-900">{formatCurrency(receipt.amount)}</div>
+                              <div className="text-xs font-bold text-[color:var(--nodu-text)]">{formatCurrency(receipt.amount)}</div>
                               <StatusBadge status={receipt.status} />
                             </div>
                           </div>
@@ -357,7 +365,7 @@ const EventDetailView = () => {
                       );
                     })}
                     {eventReceipts.length === 0 && (
-                      <div className="rounded-lg border border-dashed border-gray-200 bg-white px-3 py-6 text-center text-xs text-gray-400">
+                      <div className="rounded-xl border border-dashed border-[color:var(--nodu-border)] bg-white px-3 py-6 text-center text-xs text-[color:var(--nodu-text-soft)]">
                         K teto akci zatim nejsou zadane zadne uctenky.
                       </div>
                     )}
@@ -368,8 +376,8 @@ const EventDetailView = () => {
           ) : (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="flex items-center gap-2 text-sm font-semibold">
-                  <Clock size={16} className="text-gray-400" />
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-[color:var(--nodu-text)]">
+                  <Clock size={16} className="text-[color:var(--nodu-text-soft)]" />
                   Crew pro den: {new Date(eventTab).toLocaleDateString('cs-CZ', { day: 'numeric', month: 'numeric', year: 'numeric' })}
                   {event.showDayTypes && (
                     <span className="ml-2 flex gap-1">
@@ -381,7 +389,7 @@ const EventDetailView = () => {
                     </span>
                   )}
                 </h3>
-                <button className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-200">
+                <button className="rounded-xl border border-[color:var(--nodu-border)] bg-white px-3 py-1.5 text-xs font-medium text-[color:var(--nodu-text)] transition-colors hover:bg-[color:var(--nodu-accent-soft)] hover:text-[color:var(--nodu-accent)]">
                   Exportovat Call Sheet
                 </button>
               </div>
@@ -394,13 +402,13 @@ const EventDetailView = () => {
                   const matchingDays = timelog.days.filter((day) => day.d === eventTab);
 
                   return (
-                    <div key={timelog.id} className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
+                    <div key={timelog.id} className="rounded-[22px] border border-[color:var(--nodu-border)] bg-white p-4 shadow-[0_14px_34px_rgba(47,38,31,0.06)] transition-shadow hover:shadow-[0_18px_42px_rgba(47,38,31,0.1)]">
                       <div className="mb-3 flex items-center gap-3">
                         <div className="av h-10 w-10 text-xs" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
                         <div>
-                          <div className="text-sm font-bold">{contractor.name}</div>
+                          <div className="text-sm font-bold text-[color:var(--nodu-text)]">{contractor.name}</div>
                           <div className="mt-0.5 flex items-center gap-1.5">
-                            <span className="text-[10px] text-gray-500">{contractor.phone}</span>
+                            <span className="text-[10px] text-[color:var(--nodu-text-soft)]">{contractor.phone}</span>
                           </div>
                         </div>
                       </div>
@@ -409,11 +417,11 @@ const EventDetailView = () => {
                         {matchingDays.map((day, index) => {
                           const phase = PHASE_CONFIG.find((item) => item.type === day.type);
                           return (
-                            <div key={`${timelog.id}-${index}`} className="flex items-center justify-between rounded-lg bg-gray-50 p-2.5">
+                            <div key={`${timelog.id}-${index}`} className="flex items-center justify-between rounded-xl bg-[color:var(--nodu-paper-strong)] p-2.5">
                               <div className="flex flex-col">
-                                <span className="text-[9px] font-bold uppercase text-gray-400">Cas</span>
+                                <span className="text-[9px] font-bold uppercase text-[color:var(--nodu-text-soft)]">Cas</span>
                                 <div className="flex items-center gap-2">
-                                  <span className="text-xs font-mono font-bold">{day.f} - {day.t}</span>
+                                  <span className="text-xs font-mono font-bold text-[color:var(--nodu-text)]">{day.f} - {day.t}</span>
                                   {phase && (
                                     <span className={`rounded px-1.5 py-0.5 text-[9px] font-black text-white ${phase.color}`}>
                                       {phase.id}
@@ -422,8 +430,8 @@ const EventDetailView = () => {
                                 </div>
                               </div>
                               <div className="flex flex-col text-right">
-                                <span className="text-[9px] font-bold uppercase text-gray-400">Hodiny</span>
-                                <span className="text-xs font-bold">{calculateDayHours(day.f, day.t).toFixed(1)}h</span>
+                                <span className="text-[9px] font-bold uppercase text-[color:var(--nodu-text-soft)]">Hodiny</span>
+                                <span className="text-xs font-bold text-[color:var(--nodu-text)]">{calculateDayHours(day.f, day.t).toFixed(1)}h</span>
                               </div>
                             </div>
                           );
@@ -434,7 +442,7 @@ const EventDetailView = () => {
                 })}
 
                 {eventTimelogs.filter((timelog) => timelog.days.some((day) => day.d === eventTab)).length === 0 && (
-                  <div className="col-span-full rounded-2xl border border-dashed border-gray-200 bg-gray-50 py-12 text-center text-sm text-gray-400">
+                  <div className="col-span-full rounded-[24px] border border-dashed border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] py-12 text-center text-sm text-[color:var(--nodu-text-soft)]">
                     Na tento den neni nikdo naplanovan.
                   </div>
                 )}

@@ -179,31 +179,31 @@ const DashboardView = () => {
           label="Vykazy cekaji na me"
           value={pendingForMe}
           sub={reviewLabel}
-          cls={pendingForMe ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}
+          cls={pendingForMe ? 'bg-[color:var(--nodu-warning-bg)] text-[color:var(--nodu-warning-text)]' : 'bg-[color:var(--nodu-success-bg)] text-[color:var(--nodu-success-text)]'}
         />
         <StatCard
           label="Faktury v procesu"
           value={pendingInvoices}
           sub="Self-billing"
-          cls={pendingInvoices ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}
+          cls={pendingInvoices ? 'bg-[color:var(--nodu-warning-bg)] text-[color:var(--nodu-warning-text)]' : 'bg-[color:var(--nodu-success-bg)] text-[color:var(--nodu-success-text)]'}
         />
         <StatCard
           label="Uctenky v procesu"
           value={pendingReceipts}
           sub="Cekaji na schvaleni"
-          cls={pendingReceipts ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}
+          cls={pendingReceipts ? 'bg-[color:var(--nodu-warning-bg)] text-[color:var(--nodu-warning-text)]' : 'bg-[color:var(--nodu-success-bg)] text-[color:var(--nodu-success-text)]'}
         />
         <StatCard
           label="Schvalene hodiny"
           value={`${Math.round(approvedHours)}h`}
           sub="Tento mesic"
-          cls="bg-emerald-50 text-emerald-700"
+          cls="bg-[color:var(--nodu-success-bg)] text-[color:var(--nodu-success-text)]"
         />
         <StatCard
           label="Akce bez obsazeni"
           value={needsFilling}
           sub="Chybi crew"
-          cls={needsFilling ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}
+          cls={needsFilling ? 'bg-[color:var(--nodu-error-bg)] text-[color:var(--nodu-error-text)]' : 'bg-[color:var(--nodu-success-bg)] text-[color:var(--nodu-success-text)]'}
         />
       </div>
 
@@ -277,8 +277,11 @@ const DashboardView = () => {
                 </div>
                 <div className="nodu-dashboard-progress-track mt-2">
                   <div
-                    className={`h-full rounded-full ${event.filled >= event.needed ? 'bg-emerald-500' : 'bg-amber-500'}`}
-                    style={{ width: `${Math.min(100, Math.round((event.filled / event.needed) * 100))}%` }}
+                    className="h-full rounded-full"
+                    style={{
+                      width: `${Math.min(100, Math.round((event.filled / event.needed) * 100))}%`,
+                      backgroundColor: event.filled >= event.needed ? 'var(--nodu-success-text)' : 'var(--nodu-warning-text)',
+                    }}
                   />
                 </div>
                 <div className="mt-1 text-[10px] text-[color:var(--nodu-text-soft)]">{event.filled}/{event.needed} crew</div>

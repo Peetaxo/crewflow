@@ -104,8 +104,8 @@ const ApprovalsView = () => {
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <div className="mb-5 flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold">Schvalovani</h1>
-          <p className="mt-0.5 text-xs text-gray-500">
+          <h1 className="text-lg font-semibold text-[var(--nodu-text)]">Schvalovani</h1>
+          <p className="mt-0.5 text-xs text-[var(--nodu-text-soft)]">
             {isCrewHead ? 'CrewHead - vizualni kontrola a predani COO' : 'COO - finalni schvaleni a financni prehled'}
           </p>
         </div>
@@ -113,10 +113,10 @@ const ApprovalsView = () => {
       </div>
 
       {mine.length === 0 ? (
-        <div className="rounded-xl border border-gray-100 bg-white p-12 text-center shadow-sm">
-          <div className="mb-3 text-3xl text-emerald-500">✓</div>
-          <div className="text-sm font-medium text-gray-900">Vse schvaleno</div>
-          <p className="mt-1 text-xs text-gray-500">Zadne cekajici vykazy k vyrizeni.</p>
+        <div className="rounded-[24px] border border-[var(--nodu-border)] bg-white p-12 text-center shadow-[0_18px_40px_rgba(var(--nodu-text-rgb),0.06)]">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full border border-[var(--nodu-success-border)] bg-[var(--nodu-success-bg)] text-xl font-semibold text-[var(--nodu-success-text)]">✓</div>
+          <div className="text-sm font-medium text-[var(--nodu-text)]">Vse schvaleno</div>
+          <p className="mt-1 text-xs text-[var(--nodu-text-soft)]">Zadne cekajici vykazy k vyrizeni.</p>
         </div>
       ) : isCrewHead ? (
         <div className="space-y-3">
@@ -128,35 +128,35 @@ const ApprovalsView = () => {
             const totalHours = calculateTotalHours(timelog.days);
 
             return (
-              <div key={timelog.id} className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-                <div className="mb-4 flex items-center gap-3 border-b border-gray-50 pb-4">
+              <div key={timelog.id} className="rounded-[24px] border border-[var(--nodu-border)] bg-white p-5 shadow-[0_18px_40px_rgba(var(--nodu-text-rgb),0.06)]">
+                <div className="mb-4 flex items-center gap-3 border-b border-[rgba(var(--nodu-text-rgb),0.06)] pb-4">
                   <div className="av h-9 w-9 text-xs" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
                   <div>
-                    <div className="text-sm font-semibold">{contractor.name}</div>
+                    <div className="text-sm font-semibold text-[var(--nodu-text)]">{contractor.name}</div>
                     <div className="mt-0.5 flex items-center gap-1.5">
                       <span className="jn">{event.job}</span>
-                      <span className="text-xs text-gray-500">{event.name}</span>
+                      <span className="text-xs text-[var(--nodu-text-soft)]">{event.name}</span>
                     </div>
                   </div>
                   <div className="ml-auto text-right">
-                    <div className="text-base font-semibold">{totalHours.toFixed(1)}h = {formatCurrency(totalHours * contractor.rate)}</div>
-                    {timelog.km > 0 && <div className="text-[10px] text-gray-500">+ {formatCurrency(timelog.km * KM_RATE)} cestovne</div>}
+                    <div className="text-base font-semibold text-[var(--nodu-text)]">{totalHours.toFixed(1)}h = {formatCurrency(totalHours * contractor.rate)}</div>
+                    {timelog.km > 0 && <div className="text-[10px] text-[var(--nodu-text-soft)]">+ {formatCurrency(timelog.km * KM_RATE)} cestovne</div>}
                   </div>
                 </div>
-                <div className="secdiv mb-4">
+                <div className="mb-4 rounded-xl border border-[var(--nodu-border)] bg-[var(--nodu-paper-strong)] p-3">
                   {timelog.days.map((day, index) => (
                     <div key={index} className="flex items-center gap-4 py-1 text-xs">
-                      <span className="w-20 text-gray-500">{formatShortDate(day.d)}</span>
-                      <span className="font-mono font-semibold">{day.f} - {day.t}</span>
+                      <span className="w-20 text-[var(--nodu-text-soft)]">{formatShortDate(day.d)}</span>
+                      <span className="font-mono font-semibold text-[var(--nodu-text)]">{day.f} - {day.t}</span>
                       <StatusBadge status={day.type} />
-                      <span className="ml-auto text-gray-500">{calculateDayHours(day.f, day.t).toFixed(1)}h</span>
+                      <span className="ml-auto text-[var(--nodu-text-soft)]">{calculateDayHours(day.f, day.t).toFixed(1)}h</span>
                     </div>
                   ))}
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => handleTimelogAction(timelog.id, 'ch')} className="rounded-md bg-emerald-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">Schvalit a poslat COO</button>
-                  <button onClick={() => handleTimelogAction(timelog.id, 'rej')} className="rounded-md border border-red-100 px-4 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50">Zamitnout</button>
-                  <button onClick={() => setEditingTimelog(timelog)} className="ml-auto rounded-md border border-gray-200 px-4 py-1.5 text-xs font-medium hover:bg-gray-50">Upravit</button>
+                  <button onClick={() => handleTimelogAction(timelog.id, 'ch')} className="rounded-xl border border-[var(--nodu-success-border)] bg-[var(--nodu-success-bg)] px-4 py-1.5 text-xs font-semibold text-[var(--nodu-success-text)] shadow-[0_14px_28px_rgba(47,125,79,0.10)] hover:bg-[var(--nodu-success-bg-hover)] hover:shadow-[0_16px_32px_rgba(47,125,79,0.14)]">Schvalit a poslat COO</button>
+                  <button onClick={() => handleTimelogAction(timelog.id, 'rej')} className="rounded-xl border border-[var(--nodu-error-border)] px-4 py-1.5 text-xs font-medium text-[var(--nodu-error-text)] hover:bg-[var(--nodu-error-bg)]">Zamitnout</button>
+                  <button onClick={() => setEditingTimelog(timelog)} className="ml-auto rounded-xl border border-[var(--nodu-border)] px-4 py-1.5 text-xs font-medium text-[var(--nodu-text)] hover:bg-[var(--nodu-accent-soft)]">Upravit</button>
                 </div>
               </div>
             );
@@ -172,13 +172,13 @@ const ApprovalsView = () => {
             }, 0);
 
             return (
-              <div key={group.event.id} className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-                <div className="mb-4 flex items-start justify-between border-b border-gray-100 pb-3">
+              <div key={group.event.id} className="rounded-[24px] border border-[var(--nodu-border)] bg-white p-5 shadow-[0_18px_40px_rgba(var(--nodu-text-rgb),0.06)]">
+                <div className="mb-4 flex items-start justify-between border-b border-[rgba(var(--nodu-text-rgb),0.06)] pb-3">
                   <div>
-                    <div className="flex items-center gap-2"><span className="jn px-2 py-1 text-sm">{group.event.job}</span><span className="text-base font-semibold">{group.event.name}</span></div>
-                    <div className="mt-1.5 text-xs text-gray-500">{formatShortDate(group.event.startDate)} · {group.event.city} · {group.tls.length} kontraktoru</div>
+                    <div className="flex items-center gap-2"><span className="jn px-2 py-1 text-sm">{group.event.job}</span><span className="text-base font-semibold text-[var(--nodu-text)]">{group.event.name}</span></div>
+                    <div className="mt-1.5 text-xs text-[var(--nodu-text-soft)]">{formatShortDate(group.event.startDate)} · {group.event.city} · {group.tls.length} kontraktoru</div>
                   </div>
-                  <div className="text-right"><div className="text-xl font-semibold">{formatCurrency(totalAmount)}</div><div className="text-xs text-gray-500">{totalHours.toFixed(1)}h celkem</div></div>
+                  <div className="text-right"><div className="text-xl font-semibold text-[var(--nodu-text)]">{formatCurrency(totalAmount)}</div><div className="text-xs text-[var(--nodu-text-soft)]">{totalHours.toFixed(1)}h celkem</div></div>
                 </div>
                 <div className="space-y-1">
                   {group.tls.map((timelog) => {
@@ -187,18 +187,18 @@ const ApprovalsView = () => {
                     const hours = calculateTotalHours(timelog.days);
 
                     return (
-                      <div key={timelog.id} className="flex items-center gap-3 border-b border-gray-50 py-2 last:border-0">
+                      <div key={timelog.id} className="flex items-center gap-3 border-b border-[rgba(var(--nodu-text-rgb),0.06)] py-2 last:border-0">
                         <div className="av h-6 w-6 text-[9px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
-                        <span className="text-xs font-medium">{contractor.name}</span>
+                        <span className="text-xs font-medium text-[var(--nodu-text)]">{contractor.name}</span>
                         <div className="flex gap-1">{Array.from(new Set(timelog.days.map((day) => day.type))).map((type) => <StatusBadge key={type} status={type} />)}</div>
-                        <span className="text-[10px] text-gray-500">{timelog.days.length} {timelog.days.length === 1 ? 'den' : 'dny'}</span>
-                        <span className="ml-auto text-xs font-semibold">{hours.toFixed(1)}h = {formatCurrency(hours * contractor.rate)}{timelog.km > 0 ? ` + ${formatCurrency(timelog.km * KM_RATE)} km` : ''}</span>
+                        <span className="text-[10px] text-[var(--nodu-text-soft)]">{timelog.days.length} {timelog.days.length === 1 ? 'den' : 'dny'}</span>
+                        <span className="ml-auto text-xs font-semibold text-[var(--nodu-text)]">{hours.toFixed(1)}h = {formatCurrency(hours * contractor.rate)}{timelog.km > 0 ? ` + ${formatCurrency(timelog.km * KM_RATE)} km` : ''}</span>
                       </div>
                     );
                   })}
                 </div>
                 <div className="mt-4 flex gap-2">
-                  <button onClick={() => handleApproveAll(group.event.id)} className="rounded-md bg-emerald-600 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-700">Schvalit vse - {group.event.job} ({formatCurrency(totalAmount)})</button>
+                  <button onClick={() => handleApproveAll(group.event.id)} className="rounded-xl border border-[var(--nodu-success-border)] bg-[var(--nodu-success-bg)] px-4 py-2 text-xs font-semibold text-[var(--nodu-success-text)] shadow-[0_14px_28px_rgba(47,125,79,0.10)] hover:bg-[var(--nodu-success-bg-hover)] hover:shadow-[0_16px_32px_rgba(47,125,79,0.14)]">Schvalit vse - {group.event.job} ({formatCurrency(totalAmount)})</button>
                 </div>
               </div>
             );

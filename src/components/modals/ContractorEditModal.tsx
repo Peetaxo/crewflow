@@ -19,6 +19,9 @@ const ContractorEditModal = ({
   if (!editingContractor) return null;
 
   const isExisting = getCrew().some((contractor) => contractor.id === editingContractor.id);
+  const labelClass = 'mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--nodu-text-soft)]';
+  const inputClass = 'w-full rounded-xl border border-[var(--nodu-border)] bg-white px-3 py-2 text-sm text-[var(--nodu-text)] outline-none transition focus:border-[var(--nodu-accent)] focus:ring-2 focus:ring-[rgba(var(--nodu-accent-rgb),0.16)]';
+  const checkClass = 'rounded border-[var(--nodu-border)] text-[var(--nodu-accent)] focus:ring-[var(--nodu-accent)]';
 
   const handleSave = () => {
     try {
@@ -43,13 +46,13 @@ const ContractorEditModal = ({
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
+            className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-[24px] border border-[var(--nodu-border)] bg-white shadow-[var(--nodu-shadow)]"
           >
-            <div className="flex items-center justify-between border-b border-gray-100 p-4">
-              <h3 className="font-semibold text-gray-900">
+            <div className="flex items-center justify-between border-b border-[var(--nodu-border)] p-4">
+              <h3 className="font-semibold text-[var(--nodu-text)]">
                 {isExisting ? 'Upravit clena crew' : 'Novy clen crew'}
               </h3>
-              <button onClick={onClose} className="rounded-full p-1 text-gray-400 hover:bg-gray-100">
+              <button onClick={onClose} className="rounded-full p-1.5 text-[var(--nodu-text-soft)] transition hover:bg-[var(--nodu-accent-soft)] hover:text-[var(--nodu-text)]">
                 <X size={20} />
               </button>
             </div>
@@ -57,22 +60,22 @@ const ContractorEditModal = ({
             <div className="space-y-4 overflow-y-auto p-5">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Jmeno</label>
+                  <label className={labelClass}>Jmeno</label>
                   <input
                     type="text"
                     value={editingContractor.name}
                     onChange={(e) => onChange({ ...editingContractor, name: e.target.value })}
-                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                    className={inputClass}
                     placeholder="Jmeno a prijmeni"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Mesto</label>
+                  <label className={labelClass}>Mesto</label>
                   <input
                     type="text"
                     value={editingContractor.city}
                     onChange={(e) => onChange({ ...editingContractor, city: e.target.value })}
-                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                    className={inputClass}
                     placeholder="Praha"
                   />
                 </div>
@@ -80,22 +83,22 @@ const ContractorEditModal = ({
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Telefon</label>
+                  <label className={labelClass}>Telefon</label>
                   <input
                     type="text"
                     value={editingContractor.phone}
                     onChange={(e) => onChange({ ...editingContractor, phone: e.target.value })}
-                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                    className={inputClass}
                     placeholder="777 123 456"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">E-mail</label>
+                  <label className={labelClass}>E-mail</label>
                   <input
                     type="email"
                     value={editingContractor.email}
                     onChange={(e) => onChange({ ...editingContractor, email: e.target.value })}
-                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                    className={inputClass}
                     placeholder="jmeno@email.cz"
                   />
                 </div>
@@ -103,48 +106,48 @@ const ContractorEditModal = ({
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Sazba / hod</label>
+                  <label className={labelClass}>Sazba / hod</label>
                   <input
                     type="number"
                     min="0"
                     value={editingContractor.rate}
                     onChange={(e) => onChange({ ...editingContractor, rate: Number(e.target.value) })}
-                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                    className={inputClass}
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">ICO</label>
+                  <label className={labelClass}>ICO</label>
                   <input
                     type="text"
                     value={editingContractor.ico}
                     onChange={(e) => onChange({ ...editingContractor, ico: e.target.value })}
-                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                    className={inputClass}
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">DIC</label>
+                  <label className={labelClass}>DIC</label>
                   <input
                     type="text"
                     value={editingContractor.dic}
                     onChange={(e) => onChange({ ...editingContractor, dic: e.target.value })}
-                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                    className={inputClass}
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Cislo uctu</label>
+                  <label className={labelClass}>Cislo uctu</label>
                   <input
                     type="text"
                     value={editingContractor.bank}
                     onChange={(e) => onChange({ ...editingContractor, bank: e.target.value })}
-                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                    className={inputClass}
                     placeholder="123456789/0800"
                   />
                 </div>
                 <div className="flex items-end">
-                  <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <label className="flex items-center gap-2 text-sm text-[var(--nodu-text)]">
                     <input
                       type="checkbox"
                       checked={editingContractor.tags.includes('Ridic')}
@@ -152,7 +155,7 @@ const ContractorEditModal = ({
                         ...editingContractor,
                         tags: e.target.checked ? ['Ridic'] : [],
                       })}
-                      className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                      className={checkClass}
                     />
                     Oznacit jako ridice
                   </label>
@@ -161,69 +164,69 @@ const ContractorEditModal = ({
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Fakturacni jmeno</label>
+                  <label className={labelClass}>Fakturacni jmeno</label>
                   <input
                     type="text"
                     value={editingContractor.billingName || ''}
                     onChange={(e) => onChange({ ...editingContractor, billingName: e.target.value })}
-                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                    className={inputClass}
                     placeholder="Jmeno nebo firma"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Fakturacni ulice</label>
+                  <label className={labelClass}>Fakturacni ulice</label>
                   <input
                     type="text"
                     value={editingContractor.billingStreet || ''}
                     onChange={(e) => onChange({ ...editingContractor, billingStreet: e.target.value })}
-                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                    className={inputClass}
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">PSC</label>
+                  <label className={labelClass}>PSC</label>
                   <input
                     type="text"
                     value={editingContractor.billingZip || ''}
                     onChange={(e) => onChange({ ...editingContractor, billingZip: e.target.value })}
-                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                    className={inputClass}
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Fakturacni mesto</label>
+                  <label className={labelClass}>Fakturacni mesto</label>
                   <input
                     type="text"
                     value={editingContractor.billingCity || ''}
                     onChange={(e) => onChange({ ...editingContractor, billingCity: e.target.value })}
-                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                    className={inputClass}
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Stat</label>
+                  <label className={labelClass}>Stat</label>
                   <input
                     type="text"
                     value={editingContractor.billingCountry || ''}
                     onChange={(e) => onChange({ ...editingContractor, billingCountry: e.target.value })}
-                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                    className={inputClass}
                   />
                 </div>
               </div>
 
               <div className="space-y-4">
-                <label className="flex items-center gap-2 text-sm text-gray-700">
+                <label className="flex items-center gap-2 text-sm text-[var(--nodu-text)]">
                   <input
                     type="checkbox"
                     checked={editingContractor.reliable}
                     onChange={(e) => onChange({ ...editingContractor, reliable: e.target.checked })}
-                    className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                    className={checkClass}
                   />
                   Oznacit jako spolehliveho clena crew
                 </label>
 
                 <div>
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Hodnoceni 1-5</label>
+                  <label className={labelClass}>Hodnoceni 1-5</label>
                   <input
                     type="number"
                     min="1"
@@ -234,30 +237,30 @@ const ContractorEditModal = ({
                       ...editingContractor,
                       rating: e.target.value === '' ? null : Number(e.target.value),
                     })}
-                    className="mb-4 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                    className={`${inputClass} mb-4`}
                     placeholder="napr. 4.5"
                   />
-                  <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Poznamka</label>
+                  <label className={labelClass}>Poznamka</label>
                   <textarea
                     value={editingContractor.note}
                     onChange={(e) => onChange({ ...editingContractor, note: e.target.value })}
-                    className="h-24 w-full resize-none rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                    className={`${inputClass} h-24 resize-none`}
                     placeholder="Interni poznamka k cloveku, zkusenostem nebo dostupnosti"
                   />
                 </div>
               </div>
             </div>
 
-            <div className="flex gap-3 border-t border-gray-100 bg-gray-50 p-4">
+            <div className="flex gap-3 border-t border-[var(--nodu-border)] bg-white p-4">
               <button
                 onClick={onClose}
-                className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-700 transition-all hover:bg-white"
+                className="flex-1 rounded-xl border border-[var(--nodu-border)] py-2.5 text-sm font-medium text-[var(--nodu-text)] transition-all hover:bg-[var(--nodu-accent-soft)]"
               >
                 Zrusit
               </button>
               <button
                 onClick={handleSave}
-                className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-sm font-medium text-white shadow-lg shadow-emerald-200 transition-all hover:bg-emerald-700"
+                className="flex-1 rounded-xl bg-[var(--nodu-accent)] py-2.5 text-sm font-semibold text-white shadow-[0_16px_32px_rgba(var(--nodu-accent-rgb),0.18)] transition-all hover:bg-[#e96f00]"
               >
                 Ulozit clena
               </button>

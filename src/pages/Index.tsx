@@ -6,6 +6,9 @@ import LoginView from '../views/LoginView';
 
 const AppShell = () => {
   const { isAuthRequired, isAuthenticated, isLoading } = useAuth();
+  const isLoginPreview = import.meta.env.DEV
+    && typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('previewLogin') === '1';
 
   if (isLoading) {
     return (
@@ -18,6 +21,10 @@ const AppShell = () => {
   }
 
   if (isAuthRequired && !isAuthenticated) {
+    return <LoginView />;
+  }
+
+  if (isLoginPreview) {
     return <LoginView />;
   }
 

@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { useAuth } from '../app/providers/AuthProvider';
 import { useAppContext } from '../context/AppContext';
+import { Button } from '../components/ui/button';
 import { Contractor, Event, Invoice } from '../types';
 import { formatCurrency, formatShortDate, getCountdown } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';
@@ -164,7 +165,7 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
               <button
                 type="button"
                 onClick={requestCloseCreate}
-                className="mb-2 inline-flex items-center gap-2 text-sm font-medium text-emerald-700 hover:text-emerald-800"
+                className="mb-2 inline-flex items-center gap-2 text-sm font-medium text-[color:var(--nodu-accent)] hover:opacity-80"
               >
                 <ArrowLeft size={16} /> Zpet na faktury
               </button>
@@ -202,26 +203,28 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold">{scope === 'mine' ? 'Moje faktury' : 'Faktury'}</h1>
-          <p className="mt-0.5 text-xs text-gray-500">Self-billing system</p>
+          <div className="nodu-dashboard-kicker">Billing</div>
+          <h1 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--nodu-text)]">{scope === 'mine' ? 'Moje faktury' : 'Faktury'}</h1>
+          <p className="mt-1 text-sm text-[color:var(--nodu-text-soft)]">Self-billing system</p>
         </div>
         {!isCrew && pendingBatchCount > 0 ? (
-          <button
+          <Button
             onClick={() => setIsCreateMode(true)}
-            className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
+            size="sm"
+            className="text-xs"
           >
             Vytvorit fakturu ({pendingBatchCount}) {'->'}
-          </button>
+          </Button>
         ) : (
           <StatusBadge status="approved" label="Self-billing bezi" />
         )}
       </div>
 
-      <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50 p-4">
-        <div className="mb-1 flex items-center gap-2 text-xs font-semibold text-blue-800">
+      <div className="mb-4 rounded-[22px] border border-[color:rgb(var(--nodu-accent-rgb)/0.18)] bg-[color:rgb(var(--nodu-accent-rgb)/0.08)] p-4">
+        <div className="mb-1 flex items-center gap-2 text-xs font-semibold text-[color:var(--nodu-accent)]">
           <Info size={14} /> Self-billing je aktivni
         </div>
-        <p className="text-[11px] leading-relaxed text-blue-700">
+        <p className="text-[11px] leading-relaxed text-[color:var(--nodu-text-soft)]">
           Schvalene timelogy cekaji na vedome vytvoreni faktury. V seznamu nize vidis jen skutecne
           vytvorene faktury ve stavech draft, odeslano a zaplaceno.
         </p>
@@ -235,15 +238,15 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
           const countdown = invoice.status === 'sent' ? getCountdown(invoice.sentAt) : null;
 
           return (
-            <div key={invoice.id} className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+            <div key={invoice.id} className="nodu-panel rounded-[28px] p-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-xs font-semibold">{invoice.id}</span>
-                    <span className="jn">{invoice.job}</span>
+                    <span className="font-mono text-xs font-semibold text-[color:var(--nodu-text)]">{invoice.id}</span>
+                    <span className="jn nodu-job-badge">{invoice.job}</span>
                     <StatusBadge status={invoice.status} />
                     {countdown && (
-                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${countdown.exp ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}>
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${countdown.exp ? 'bg-[rgba(212,93,55,0.12)] text-[#c45c39]' : 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)]'}`}>
                         ⏱ {countdown.text}
                       </span>
                     )}
@@ -252,65 +255,69 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
                     <div className="av h-6 w-6 text-[9px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>
                       {contractor.ii}
                     </div>
-                    <span className="text-xs font-medium">{contractor.name}</span>
-                    <span className="text-xs text-gray-500">· {event ? event.name : 'Vice akci'}</span>
+                    <span className="text-xs font-medium text-[color:var(--nodu-text)]">{contractor.name}</span>
+                    <span className="text-xs text-[color:var(--nodu-text-soft)]">· {event ? event.name : 'Vice akci'}</span>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
-                    <div className="rounded-lg bg-gray-50 px-2.5 py-1.5 text-gray-600">
-                      <span className="font-semibold text-gray-800">Hodiny</span>
+                    <div className="rounded-[16px] bg-[color:rgb(var(--nodu-text-rgb)/0.05)] px-2.5 py-1.5 text-[color:var(--nodu-text-soft)]">
+                      <span className="font-semibold text-[color:var(--nodu-text)]">Hodiny</span>
                       <span>{` ${invoice.hours}h x ${Math.round(invoice.hAmt / Math.max(invoice.hours, 1))} Kc/h = ${formatCurrency(invoice.hAmt)}`}</span>
                     </div>
                     {(invoice.receiptAmt || 0) > 0 && (
-                      <div className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-amber-700">
-                        <span className="font-semibold text-amber-900">Uctenky</span>
+                      <div className="rounded-[16px] bg-[color:rgb(var(--nodu-accent-rgb)/0.1)] px-2.5 py-1.5 text-[color:var(--nodu-accent)]">
+                        <span className="font-semibold text-[color:var(--nodu-text)]">Uctenky</span>
                         <span>{` = ${formatCurrency(invoice.receiptAmt || 0)}`}</span>
                       </div>
                     )}
                     {invoice.km > 0 && (
-                      <div className="rounded-lg bg-blue-50 px-2.5 py-1.5 text-blue-700">
-                        <span className="font-semibold text-blue-900">Cestovne</span>
+                      <div className="rounded-[16px] bg-[color:rgb(var(--nodu-text-rgb)/0.05)] px-2.5 py-1.5 text-[color:var(--nodu-text-soft)]">
+                        <span className="font-semibold text-[color:var(--nodu-text)]">Cestovne</span>
                         <span>{` ${invoice.km} km = ${formatCurrency(invoice.kAmt)}`}</span>
                       </div>
                     )}
                   </div>
                 </div>
                 <div className="shrink-0 text-right">
-                  <div className="text-xl font-semibold">{formatCurrency(invoice.total)}</div>
-                  <div className="mt-1 text-[10px] text-gray-500">
+                  <div className="text-xl font-semibold text-[color:var(--nodu-text)]">{formatCurrency(invoice.total)}</div>
+                  <div className="mt-1 text-[10px] text-[color:var(--nodu-text-soft)]">
                     {invoice.sentAt ? formatShortDate(invoice.sentAt) : 'Zatim neodeslano'}
                   </div>
                 </div>
               </div>
 
               <div className="mt-3 flex gap-2">
-                <button className="rounded-md border border-gray-200 px-3 py-1 text-[11px] hover:bg-gray-50">
+                <Button variant="outline" size="sm" className="text-[11px]">
                   PDF ke stazeni
-                </button>
+                </Button>
 
                 {invoice.status === 'draft' && !isCrew && (
                   <>
-                    <button
+                    <Button
                       onClick={() => handleDeleteInvoice(invoice.id)}
-                      className="rounded-md border border-red-200 px-3 py-1 text-[11px] text-red-700 hover:bg-red-50"
+                      variant="outline"
+                      size="sm"
+                      className="border-[#e8b4a3] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39] text-[11px]"
                     >
                       Smazat draft
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       onClick={() => handleSendInvoice(invoice.id)}
-                      className="ml-auto rounded-md bg-blue-600 px-3 py-1 text-[11px] text-white hover:bg-blue-700"
+                      className="ml-auto text-[11px]"
+                      size="sm"
                     >
                       Odeslat fakturu {'->'}
-                    </button>
+                    </Button>
                   </>
                 )}
 
                 {invoice.status === 'sent' && !isCrew && (
-                  <button
+                  <Button
                     onClick={() => handleMarkPaid(invoice.id)}
-                    className="ml-auto rounded-md bg-emerald-600 px-3 py-1 text-[11px] text-white hover:bg-emerald-700"
+                    className="ml-auto border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] text-[11px] text-[color:var(--nodu-success-text)] shadow-[0_10px_24px_rgba(45,108,78,0.1)] hover:bg-[color:var(--nodu-success-bg-hover)]"
+                    size="sm"
                   >
                     Oznacit jako zaplacene {'->'}
-                  </button>
+                  </Button>
                 )}
               </div>
             </div>
@@ -318,7 +325,7 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
         })}
 
         {visibleInvoices.length === 0 && (
-          <div className="rounded-xl border border-gray-100 bg-white p-10 text-center text-sm text-gray-400">
+          <div className="rounded-[24px] border border-[color:var(--nodu-border)] bg-white p-10 text-center text-sm text-[color:var(--nodu-text-soft)]">
             Zatim zadne faktury
           </div>
         )}

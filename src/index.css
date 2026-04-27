@@ -33,20 +33,35 @@
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 217.2 91.2% 59.8%;
 
-    --nodu-paper: #f7efe5;
-    --nodu-paper-strong: #efe0cf;
-    --nodu-surface: #fffaf4;
-    --nodu-surface-muted: #f4e9da;
+    --nodu-paper: #ffffff;
+    --nodu-paper-strong: #fefefd;
+    --nodu-surface: #ffffff;
+    --nodu-surface-muted: #ffffff;
     --nodu-text: #2f261f;
     --nodu-text-soft: #705e50;
     --nodu-border: rgba(92, 68, 46, 0.16);
-    --nodu-accent: #b46a35;
-    --nodu-accent-soft: rgba(180, 106, 53, 0.14);
+    --nodu-accent: #ff800d;
+    --nodu-accent-soft: rgba(255, 128, 13, 0.14);
     --nodu-shadow: 0 24px 60px rgba(68, 44, 20, 0.12);
-    --nodu-surface-rgb: 255 250 244;
-    --nodu-surface-muted-rgb: 244 233 218;
+    --nodu-success-bg: #d7eedc;
+    --nodu-success-bg-hover: #c7e6ce;
+    --nodu-success-border: #98cfa6;
+    --nodu-success-text: #2f7d4f;
+    --nodu-info-bg: #d8eef4;
+    --nodu-info-border: #9cc9d5;
+    --nodu-info-text: #357184;
+    --nodu-warning-bg: #f9e6b3;
+    --nodu-warning-border: #e7c596;
+    --nodu-warning-text: #8a6322;
+    --nodu-error-bg: #f2b39f;
+    --nodu-error-border: #df8c70;
+    --nodu-error-text: #9a3e24;
+    --nodu-paper-rgb: 255 255 255;
+    --nodu-paper-strong-rgb: 254 254 253;
+    --nodu-surface-rgb: 255 255 255;
+    --nodu-surface-muted-rgb: 255 255 255;
     --nodu-text-rgb: 47 38 31;
-    --nodu-accent-rgb: 180 106 53;
+    --nodu-accent-rgb: 255 128 13;
   }
 
   .dark {
@@ -88,6 +103,21 @@
     --nodu-accent: #e08a4a;
     --nodu-accent-soft: rgba(224, 138, 74, 0.16);
     --nodu-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
+    --nodu-success-bg: rgba(85, 143, 102, 0.24);
+    --nodu-success-bg-hover: rgba(85, 143, 102, 0.32);
+    --nodu-success-border: rgba(152, 207, 166, 0.42);
+    --nodu-success-text: #bce5c5;
+    --nodu-info-bg: rgba(78, 135, 150, 0.22);
+    --nodu-info-border: rgba(156, 201, 213, 0.38);
+    --nodu-info-text: #b8dfe8;
+    --nodu-warning-bg: rgba(168, 121, 40, 0.24);
+    --nodu-warning-border: rgba(231, 197, 150, 0.4);
+    --nodu-warning-text: #f1d9a8;
+    --nodu-error-bg: rgba(154, 62, 36, 0.25);
+    --nodu-error-border: rgba(223, 140, 112, 0.42);
+    --nodu-error-text: #f3c0ae;
+    --nodu-paper-rgb: 24 18 15;
+    --nodu-paper-strong-rgb: 34 25 20;
     --nodu-surface-rgb: 35 27 22;
     --nodu-surface-muted-rgb: 44 34 27;
     --nodu-text-rgb: 245 234 223;
@@ -236,7 +266,9 @@
 
 /** Job number badge */
 .jn {
-  @apply font-mono text-[11px] bg-gray-100 text-gray-500 px-[7px] py-[2px] rounded-[4px] tracking-wider;
+  @apply font-mono text-[11px] px-[7px] py-[2px] rounded-[4px] tracking-wider;
+  background: var(--nodu-accent-soft);
+  color: var(--nodu-accent);
 }
 
 /** Avatar kruh */
@@ -274,6 +306,9 @@
 
 .nodu-dashboard-shell {
   color: var(--nodu-text);
+  background: rgb(var(--nodu-surface-rgb) / 0.9);
+  border-radius: 32px;
+  padding: 1.25rem;
 }
 
 .nodu-dashboard-heading {
@@ -388,16 +423,15 @@ tbody tr:hover td {
   @apply flex h-screen overflow-hidden font-sans;
   color: var(--nodu-text);
   background:
-    radial-gradient(circle at top left, rgb(var(--nodu-surface-rgb) / 0.5), transparent 34%),
-    radial-gradient(circle at bottom right, var(--nodu-accent-soft), transparent 28%),
+    radial-gradient(circle at top left, rgb(var(--nodu-surface-rgb) / 0.38), transparent 34%),
+    radial-gradient(circle at bottom right, rgb(var(--nodu-accent-rgb) / 0.04), transparent 28%),
     linear-gradient(180deg, var(--nodu-paper) 0%, var(--nodu-paper-strong) 100%);
 }
 
 .nodu-page-frame {
   @apply flex-1 overflow-y-auto p-6 lg:p-8;
   background:
-    linear-gradient(180deg, rgb(var(--nodu-surface-rgb) / 0.18), transparent 16%),
-    transparent;
+    linear-gradient(180deg, rgb(var(--nodu-surface-rgb) / 0.88), rgb(var(--nodu-surface-rgb) / 0.84));
 }
 
 .nodu-surface {
@@ -418,7 +452,7 @@ tbody tr:hover td {
 
 .nodu-sidebar-shell {
   @apply m-4 mr-0 rounded-[28px] border;
-  background: linear-gradient(180deg, rgb(var(--nodu-surface-rgb) / 0.9) 0%, rgb(var(--nodu-surface-muted-rgb) / 0.84) 100%);
+  background: linear-gradient(180deg, rgb(var(--nodu-paper-rgb, 255 254 252) / 0.96) 0%, rgb(var(--nodu-paper-strong-rgb, 252 250 245) / 0.92) 100%);
   border-color: rgb(var(--nodu-text-rgb) / 0.08);
   box-shadow: 0 18px 42px rgb(var(--nodu-text-rgb) / 0.08);
   backdrop-filter: blur(16px);
@@ -452,6 +486,61 @@ tbody tr:hover td {
 .nodu-sidebar-search {
   background: rgb(var(--nodu-surface-rgb) / 0.8);
   box-shadow: inset 0 1px 0 rgb(var(--nodu-surface-rgb) / 0.62);
+}
+
+.nodu-sidebar-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.nodu-sidebar-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.nodu-sidebar-scroll-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: rgb(var(--nodu-surface-rgb) / 0.96);
+  color: rgb(var(--nodu-accent-rgb) / 0.9);
+  box-shadow:
+    0 8px 20px rgb(var(--nodu-text-rgb) / 0.1),
+    inset 0 1px 0 rgb(var(--nodu-surface-rgb) / 0.8);
+}
+
+.nodu-sidebar-scroll-indicator-top {
+  animation: nodu-scroll-hint-up 1.4s ease-in-out infinite;
+}
+
+.nodu-sidebar-scroll-indicator-bottom {
+  animation: nodu-scroll-hint-down 1.4s ease-in-out infinite;
+}
+
+@keyframes nodu-scroll-hint-up {
+  0%, 100% {
+    transform: translateY(0);
+    opacity: 0.78;
+  }
+
+  50% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+@keyframes nodu-scroll-hint-down {
+  0%, 100% {
+    transform: translateY(0);
+    opacity: 0.78;
+  }
+
+  50% {
+    transform: translateY(4px);
+    opacity: 1;
+  }
 }
 
 .nodu-sidebar-logo-frame {

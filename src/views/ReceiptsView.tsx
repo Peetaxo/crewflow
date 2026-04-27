@@ -4,6 +4,8 @@ import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { useAuth } from '../app/providers/AuthProvider';
 import { useAppContext } from '../context/AppContext';
+import { Button } from '../components/ui/button';
+import { Card, CardContent } from '../components/ui/card';
 import { Contractor, Event, ReceiptItem } from '../types';
 import { formatCurrency, formatShortDate } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';
@@ -103,41 +105,43 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="text-lg font-semibold">{title}</h1>
-          <p className="mt-1 text-xs text-gray-500">
+          <div className="nodu-dashboard-kicker">Expenses</div>
+          <h1 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--nodu-text)]">{title}</h1>
+          <p className="mt-1 text-sm text-[color:var(--nodu-text-soft)]">
             Výdaje crew přiřazené ke konkrétní akci a projektu.
           </p>
         </div>
 
-        <button
+        <Button
           onClick={() => setEditingReceipt(createEmptyReceipt(currentContractorId ?? (isCrew ? 1 : contractors[0]?.id || 1)))}
-          className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700"
+          size="sm"
+          className="text-xs"
         >
           <span className="inline-flex items-center gap-1.5">
             <Plus size={14} />
             Nová účtenka
           </span>
-        </button>
+        </Button>
       </div>
 
       <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-4">
         {[
-          { label: 'Celkem', value: formatCurrency(stats.total), tone: 'bg-emerald-50 border-emerald-100 text-emerald-900' },
-          { label: 'Ke schválení', value: stats.submitted, tone: 'bg-amber-50 border-amber-100 text-amber-900' },
-          { label: 'Schválené', value: stats.approved, tone: 'bg-blue-50 border-blue-100 text-blue-900' },
-          { label: 'Proplacené', value: stats.reimbursed, tone: 'bg-teal-50 border-teal-100 text-teal-900' },
+          { label: 'Celkem', value: formatCurrency(stats.total), tone: 'bg-[color:rgb(var(--nodu-accent-rgb)/0.08)] border-[color:rgb(var(--nodu-accent-rgb)/0.18)] text-[color:var(--nodu-text)]' },
+          { label: 'Ke schválení', value: stats.submitted, tone: 'bg-[color:rgb(var(--nodu-accent-rgb)/0.08)] border-[color:rgb(var(--nodu-accent-rgb)/0.18)] text-[color:var(--nodu-text)]' },
+          { label: 'Schválené', value: stats.approved, tone: 'bg-[color:rgb(var(--nodu-text-rgb)/0.05)] border-[color:rgb(var(--nodu-text-rgb)/0.08)] text-[color:var(--nodu-text)]' },
+          { label: 'Proplacené', value: stats.reimbursed, tone: 'bg-[color:rgb(var(--nodu-text-rgb)/0.05)] border-[color:rgb(var(--nodu-text-rgb)/0.08)] text-[color:var(--nodu-text)]' },
         ].map((item) => (
           <div key={item.label} className={`rounded-xl border p-4 ${item.tone}`}>
-            <div className="text-[10px] uppercase tracking-wider opacity-70">{item.label}</div>
+            <div className="text-[10px] uppercase tracking-wider text-[color:var(--nodu-text-soft)]">{item.label}</div>
             <div className="mt-2 text-xl font-bold">{item.value}</div>
           </div>
         ))}
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
+      <div className="overflow-hidden rounded-[28px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] shadow-[0_18px_42px_rgba(47,38,31,0.08)]">
         <table className="w-full border-collapse text-left">
           <thead>
-            <tr className="border-b border-gray-100 text-[10px] uppercase tracking-wider text-gray-400">
+            <tr className="border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] text-[10px] uppercase tracking-wider text-[color:var(--nodu-text-soft)]">
               <th className="px-4 py-3 font-medium">Účtenka</th>
               <th className="px-4 py-3 font-medium">Akce</th>
               <th className="px-4 py-3 font-medium">Crew</th>
@@ -147,26 +151,26 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
               <th className="px-4 py-3 font-medium text-right">Akce</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-50">
+          <tbody className="divide-y divide-[color:rgb(var(--nodu-text-rgb)/0.06)]">
             {baseReceipts.map((receipt) => {
               const event = findEvent(receipt.eid);
               const contractor = findContractor(receipt.contractorProfileId, receipt.cid);
 
               return (
-                <tr key={receipt.id} className="transition-colors hover:bg-gray-50">
+                <tr key={receipt.id} className="transition-colors hover:bg-[color:rgb(var(--nodu-accent-rgb)/0.04)]">
                   <td className="px-4 py-3">
-                    <div className="text-xs font-semibold text-gray-900">{receipt.title}</div>
-                    <div className="text-[10px] text-gray-500">{receipt.vendor || 'Bez dodavatele'}</div>
+                    <div className="text-xs font-semibold text-[color:var(--nodu-text)]">{receipt.title}</div>
+                    <div className="text-[10px] text-[color:var(--nodu-text-soft)]">{receipt.vendor || 'Bez dodavatele'}</div>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="text-xs font-semibold text-gray-900">{event?.name || 'Bez akce'}</div>
-                    <div className="text-[10px] text-gray-500">{receipt.job}</div>
+                    <div className="text-xs font-semibold text-[color:var(--nodu-text)]">{event?.name || 'Bez akce'}</div>
+                    <div className="text-[10px] text-[color:var(--nodu-text-soft)]">{receipt.job}</div>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="text-xs text-gray-700">{contractor?.name || '—'}</div>
+                    <div className="text-xs text-[color:var(--nodu-text)]">{contractor?.name || '—'}</div>
                   </td>
-                  <td className="px-4 py-3 text-xs text-gray-700">{formatShortDate(receipt.paidAt)}</td>
-                  <td className="px-4 py-3 text-xs font-semibold text-gray-900">{formatCurrency(receipt.amount)}</td>
+                  <td className="px-4 py-3 text-xs text-[color:var(--nodu-text)]">{formatShortDate(receipt.paidAt)}</td>
+                  <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text)]">{formatCurrency(receipt.amount)}</td>
                   <td className="px-4 py-3">
                     <StatusBadge status={receipt.status} />
                   </td>
@@ -174,50 +178,57 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
                     <div className="flex items-center justify-end gap-2">
                       {(scope === 'mine' || isCrew) && (receipt.status === 'draft' || receipt.status === 'rejected') && (
                         <>
-                          <button
+                          <Button
                             onClick={() => setEditingReceipt(receipt)}
-                            className="rounded-lg border border-gray-200 px-2.5 py-1 text-[11px] font-medium hover:bg-gray-50"
+                            variant="outline"
+                            size="sm"
+                            className="text-[11px]"
                           >
                             Upravit
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             onClick={() => handleReceiptAction(receipt.id, 'submit')}
-                            className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-emerald-700"
+                            size="sm"
+                            className="text-[11px]"
                           >
                             Odeslat
-                          </button>
+                          </Button>
                         </>
                       )}
 
                       {!isCrew && scope === 'all' && receipt.status === 'submitted' && (
                         <>
-                          <button
+                          <Button
                             onClick={() => handleReceiptAction(receipt.id, 'approve')}
-                            className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-emerald-700"
+                            size="sm"
+                            className="border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] text-[11px] text-[color:var(--nodu-success-text)] shadow-[0_10px_24px_rgba(45,108,78,0.1)] hover:bg-[color:var(--nodu-success-bg-hover)]"
                           >
                             Schválit
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             onClick={() => handleReceiptAction(receipt.id, 'reject')}
-                            className="rounded-lg border border-red-100 px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50"
+                            variant="outline"
+                            size="sm"
+                            className="border-[#e8b4a3] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39] text-[11px]"
                           >
                             Zamítnout
-                          </button>
+                          </Button>
                         </>
                       )}
 
                       {!isCrew && scope === 'all' && receipt.status === 'approved' && (
-                        <button
+                        <Button
                           onClick={() => handleReceiptAction(receipt.id, 'reimburse')}
-                          className="rounded-lg bg-teal-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-teal-700"
+                          size="sm"
+                          className="border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] text-[11px] text-[color:var(--nodu-success-text)] shadow-[0_10px_24px_rgba(45,108,78,0.1)] hover:bg-[color:var(--nodu-success-bg-hover)]"
                         >
                           Proplatit
-                        </button>
+                        </Button>
                       )}
 
                       <button
                         onClick={() => setDeleteConfirm({ type: 'receipt', id: receipt.id, name: receipt.title })}
-                        className="rounded-lg p-1.5 text-gray-300 transition-all hover:bg-red-50 hover:text-red-600"
+                        className="rounded-lg p-1.5 text-[color:var(--nodu-text-soft)] transition-all hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]"
                         title="Smazat účtenku"
                       >
                         <Trash2 size={14} />
@@ -231,7 +242,7 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
         </table>
 
         {baseReceipts.length === 0 && (
-          <div className="px-6 py-12 text-center text-sm text-gray-400">
+          <div className="px-6 py-12 text-center text-sm text-[color:var(--nodu-text-soft)]">
             Zatím tu nejsou žádné účtenky.
           </div>
         )}

@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronsLeft, ChevronsRight, LogOut, Search, Settings } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, ChevronUp, ChevronsLeft, ChevronsRight, LogOut, Search, Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../app/providers/AuthProvider';
 import { useAppContext } from '../../context/AppContext';
@@ -8,15 +8,6 @@ import { getCandidates, subscribeToCandidateChanges } from '../../features/recru
 import { useTimelogsQuery } from '../../features/timelogs/queries/useTimelogsQuery';
 import { useReceiptsQuery } from '../../features/receipts/queries/useReceiptsQuery';
 import { useInvoicesQuery } from '../../features/invoices/queries/useInvoicesQuery';
-
-const noduLogoDataUri = `data:image/svg+xml;utf8,${encodeURIComponent(`
-  <svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72" fill="none">
-    <rect x="6" y="6" width="60" height="60" rx="20" fill="#FFF8F0"/>
-    <rect x="6.5" y="6.5" width="59" height="59" rx="19.5" stroke="#DCC3AB"/>
-    <circle cx="36" cy="36" r="16" fill="#B46A35" fill-opacity="0.12"/>
-    <path d="M28 42V30.8h2.56l7.04 8.08V30.8H41V42h-2.4l-7.2-8.2V42H28Z" fill="#7A4A25"/>
-  </svg>
-`)}`;
 
 const navButtonBaseClass = 'relative flex w-full items-center rounded-xl px-3 py-2.5 text-[13px] transition-all';
 const navButtonIdleClass = 'border border-transparent nodu-nav-idle';
@@ -40,6 +31,9 @@ const Sidebar: React.FC = () => {
   } = useAppContext();
 
   const [candidates, setCandidates] = useState(() => getCandidates() ?? []);
+  const navRef = useRef<HTMLElement | null>(null);
+  const [showScrollHintTop, setShowScrollHintTop] = useState(false);
+  const [showScrollHintBottom, setShowScrollHintBottom] = useState(false);
 
   const loadData = useCallback(() => {
     setCandidates(getCandidates() ?? []);
@@ -68,6 +62,20 @@ const Sidebar: React.FC = () => {
     recruitment: candidates.filter((c) => c.stage === 'new').length,
   }), [candidates, currentProfileId, invoices, receipts, timelogs]);
 
+  const updateScrollHints = useCallback(() => {
+    const node = navRef.current;
+    if (!node) {
+      setShowScrollHintTop(false);
+      setShowScrollHintBottom(false);
+      return;
+    }
+
+    const { scrollTop, scrollHeight, clientHeight } = node;
+    const maxScrollTop = Math.max(0, scrollHeight - clientHeight);
+    setShowScrollHintTop(scrollTop > 8);
+    setShowScrollHintBottom(maxScrollTop - scrollTop > 8);
+  }, []);
+
   const handleNavClick = (tabId: string) => {
     setCurrentTab(tabId);
     setSelectedContractorProfileId(null);
@@ -91,21 +99,43 @@ const Sidebar: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    updateScrollHints();
+  }, [sidebarCollapsed, navItems.length, updateScrollHints]);
+
+  useEffect(() => {
+    const node = navRef.current;
+    if (!node) return;
+
+    updateScrollHints();
+    node.addEventListener('scroll', updateScrollHints, { passive: true });
+    window.addEventListener('resize', updateScrollHints);
+
+    return () => {
+      node.removeEventListener('scroll', updateScrollHints);
+      window.removeEventListener('resize', updateScrollHints);
+    };
+  }, [updateScrollHints]);
+
   return (
     <aside className={`nodu-sidebar-shell flex shrink-0 flex-col transition-all duration-300 ${sidebarCollapsed ? 'w-20' : 'w-64'}`}>
       <div className="nodu-sidebar-divider p-4">
         <div className={`flex items-start ${sidebarCollapsed ? 'justify-center' : 'justify-between gap-3'}`}>
           {sidebarCollapsed ? (
-            <div className="nodu-sidebar-logo-frame flex h-11 w-11 items-center justify-center rounded-[18px] border border-[color:var(--nodu-border)]">
-              <img src={noduLogoDataUri} alt="Nodu" className="h-8 w-8 rounded-xl object-cover" />
-            </div>
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed(false)}
+              className="flex h-11 w-11 items-center justify-center rounded-[18px] transition-transform hover:scale-[1.03]"
+              title="Rozbalit panel"
+            >
+              <img src="/nodu-mark.svg" alt="Nodu" className="h-8 w-8 object-contain" />
+            </button>
           ) : (
             <div className="flex min-w-0 items-center gap-3">
-              <img src={noduLogoDataUri} alt="Nodu" className="nodu-sidebar-logo-frame h-11 w-11 rounded-[18px] border border-[color:var(--nodu-border)] object-cover" />
-              <div className="min-w-0">
-                <div className="text-base font-semibold tracking-tight text-[color:var(--nodu-text)]">nodu.</div>
-                <div className="mt-0.5 text-[11px] text-[color:var(--nodu-text-soft)]">Operations pilot panel</div>
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center">
+                <img src="/nodu-mark.svg" alt="Nodu" className="h-8 w-8 object-contain" />
               </div>
+              <img src="/nodu-wordmark.svg" alt="nodu." className="h-6 w-auto max-w-[92px] object-contain" />
             </div>
           )}
 
@@ -192,29 +222,45 @@ const Sidebar: React.FC = () => {
         )}
       </div>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto p-2">
-        {navItems.map((item) => {
-          const badge = badgeCounts[item.id] || 0;
-          const isActive = currentTab === item.id;
+      <div className="relative flex-1 min-h-0">
+        {showScrollHintTop && (
+          <div className="pointer-events-none absolute inset-x-0 top-1 z-10 flex justify-center">
+            <div className="nodu-sidebar-scroll-indicator nodu-sidebar-scroll-indicator-top">
+              <ChevronUp size={14} />
+            </div>
+          </div>
+        )}
+        <nav ref={navRef} className="nodu-sidebar-scroll h-full space-y-1 overflow-y-auto p-2">
+          {navItems.map((item) => {
+            const badge = badgeCounts[item.id] || 0;
+            const isActive = currentTab === item.id;
 
-          return (
-            <button
-              key={item.id}
-              onClick={() => handleNavClick(item.id)}
-              className={`${navButtonBaseClass} ${sidebarCollapsed ? 'justify-center' : 'gap-2.5'} ${isActive ? navButtonActiveClass : navButtonIdleClass}`}
-              title={item.label}
-            >
-              <item.icon size={16} />
-              {!sidebarCollapsed && <span className="flex-1 text-left">{item.label}</span>}
-              {badge > 0 && (
-                <span className={`nodu-nav-badge rounded-full px-1.5 py-0.5 text-[10px] font-bold ${sidebarCollapsed ? 'absolute right-1 top-1' : ''}`}>
-                  {badge}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </nav>
+            return (
+              <button
+                key={item.id}
+                onClick={() => handleNavClick(item.id)}
+                className={`${navButtonBaseClass} ${sidebarCollapsed ? 'justify-center' : 'gap-2.5'} ${isActive ? navButtonActiveClass : navButtonIdleClass}`}
+                title={item.label}
+              >
+                <item.icon size={16} />
+                {!sidebarCollapsed && <span className="flex-1 text-left">{item.label}</span>}
+                {badge > 0 && (
+                  <span className={`nodu-nav-badge rounded-full px-1.5 py-0.5 text-[10px] font-bold ${sidebarCollapsed ? 'absolute right-1 top-1' : ''}`}>
+                    {badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+        {showScrollHintBottom && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-1 z-10 flex justify-center">
+            <div className="nodu-sidebar-scroll-indicator nodu-sidebar-scroll-indicator-bottom">
+              <ChevronDown size={14} />
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="nodu-sidebar-divider p-2">
         <button

@@ -17,28 +17,28 @@ const ShiftCard = ({ timelog, event, project }: ShiftCardProps) => {
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow"
+      className="rounded-[24px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] p-4 shadow-[0_18px_42px_rgba(47,38,31,0.08)] transition-shadow hover:shadow-[0_22px_48px_rgba(47,38,31,0.12)]"
     >
       <div className="flex justify-between items-start mb-3">
         <div>
-          <div className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">{project.id}</div>
-          <h3 className="text-sm font-bold text-gray-900 mt-0.5">{event.name}</h3>
-          <p className="text-[11px] text-gray-500">{project.client}</p>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-[color:var(--nodu-accent)]">{project.id}</div>
+          <h3 className="mt-0.5 text-sm font-bold text-[color:var(--nodu-text)]">{event.name}</h3>
+          <p className="text-[11px] text-[color:var(--nodu-text-soft)]">{project.client}</p>
         </div>
         <StatusBadge status={timelog.status} />
       </div>
 
       <div className="space-y-2 mt-3">
         {timelog.days.map((day, idx) => (
-          <div key={idx} className="flex items-center justify-between text-xs p-2 bg-gray-50 rounded-lg">
+          <div key={idx} className="flex items-center justify-between rounded-lg bg-[color:rgb(var(--nodu-text-rgb)/0.04)] p-2 text-xs">
             <div className="flex items-center gap-2">
-              <Calendar size={12} className="text-gray-400" />
-              <span className="font-medium">{formatShortDate(day.d)}</span>
+              <Calendar size={12} className="text-[color:var(--nodu-text-soft)]" />
+              <span className="font-medium text-[color:var(--nodu-text)]">{formatShortDate(day.d)}</span>
             </div>
             <div className="flex items-center gap-2">
-              <Clock size={12} className="text-gray-400" />
-              <span>{day.f} - {day.t}</span>
-              <span className="text-[10px] px-1.5 py-0.5 bg-white border border-gray-200 rounded text-gray-500 uppercase font-bold">
+              <Clock size={12} className="text-[color:var(--nodu-text-soft)]" />
+              <span className="text-[color:var(--nodu-text)]">{day.f} - {day.t}</span>
+              <span className="rounded border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] px-1.5 py-0.5 text-[10px] font-bold uppercase text-[color:var(--nodu-text-soft)]">
                 {day.type}
               </span>
             </div>
@@ -46,9 +46,9 @@ const ShiftCard = ({ timelog, event, project }: ShiftCardProps) => {
         ))}
       </div>
 
-      <div className="flex justify-between items-center mt-4 pt-3 border-t border-gray-50">
-        <div className="text-[10px] text-gray-400 uppercase font-bold">Celkem</div>
-        <div className="text-xs font-bold text-gray-900">{calculateTotalHours(timelog.days).toFixed(1)} h</div>
+      <div className="mt-4 flex items-center justify-between border-t border-[color:rgb(var(--nodu-text-rgb)/0.08)] pt-3">
+        <div className="text-[10px] font-bold uppercase text-[color:var(--nodu-text-soft)]">Celkem</div>
+        <div className="text-xs font-bold text-[color:var(--nodu-text)]">{calculateTotalHours(timelog.days).toFixed(1)} h</div>
       </div>
     </motion.div>
   );

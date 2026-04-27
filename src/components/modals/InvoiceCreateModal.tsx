@@ -148,10 +148,10 @@ const InvoiceCreateModal = ({ onClose, onDirtyChange }: InvoiceCreateModalProps)
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-      <div className="flex items-center justify-between rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+      <div className="flex items-center justify-between rounded-[24px] border border-[var(--nodu-border)] bg-white p-5 shadow-[0_18px_40px_rgba(var(--nodu-text-rgb),0.06)]">
         <div>
-          <h2 className="text-lg font-semibold text-gray-900">Vytvorit fakturu</h2>
-          <p className="mt-0.5 text-xs text-gray-500">
+          <h2 className="text-lg font-semibold text-[var(--nodu-text)]">Vytvorit fakturu</h2>
+          <p className="mt-0.5 text-xs text-[var(--nodu-text-soft)]">
             {selectedContractorKey == null
               ? 'Vyber kontraktora pripraveneho k fakturaci.'
               : 'Zkontroluj a pripadne uprav vyber polozek pred vytvorenim faktury.'}
@@ -164,18 +164,18 @@ const InvoiceCreateModal = ({ onClose, onDirtyChange }: InvoiceCreateModalProps)
               setSelectedContractorKey(null);
               loadPreview(null);
             }}
-            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-white"
+            className="inline-flex items-center gap-1 rounded-xl border border-[var(--nodu-border)] px-3 py-2 text-xs font-medium text-[var(--nodu-text)] transition hover:bg-[var(--nodu-accent-soft)]"
           >
             <ArrowLeft size={14} /> Zpet na vyber
           </button>
         )}
       </div>
 
-      <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+      <div className="rounded-[24px] border border-[var(--nodu-border)] bg-white p-5 shadow-[0_18px_40px_rgba(var(--nodu-text-rgb),0.06)]">
         {selectedContractorKey == null ? (
           <div className="space-y-3">
             {candidates.length === 0 ? (
-              <div className="rounded-xl border border-gray-100 bg-gray-50 p-10 text-center text-sm text-gray-500">
+              <div className="rounded-2xl border border-dashed border-[var(--nodu-border)] bg-[var(--nodu-paper-strong)] p-10 text-center text-sm text-[var(--nodu-text-soft)]">
                 Nikdo ted nema schvalene polozky k fakturaci.
               </div>
             ) : (
@@ -188,20 +188,20 @@ const InvoiceCreateModal = ({ onClose, onDirtyChange }: InvoiceCreateModalProps)
                     setSelectedContractorKey(contractorKey);
                     loadPreview(contractorKey, true);
                   }}
-                  className="flex w-full items-center justify-between rounded-xl border border-gray-100 bg-white p-4 text-left shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50"
+                  className="flex w-full items-center justify-between rounded-2xl border border-[var(--nodu-border)] bg-white p-4 text-left shadow-sm transition hover:border-[rgba(var(--nodu-accent-rgb),0.35)] hover:bg-[var(--nodu-accent-soft)]"
                 >
                   <div>
-                    <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
-                      <UserRound size={16} className="text-emerald-600" />
+                    <div className="flex items-center gap-2 text-sm font-semibold text-[var(--nodu-text)]">
+                      <UserRound size={16} className="text-[var(--nodu-accent)]" />
                       {candidate.contractorName}
                     </div>
-                    <div className="mt-1 text-xs text-gray-500">
+                    <div className="mt-1 text-xs text-[var(--nodu-text-soft)]">
                       {candidate.timelogCount} schvalenych timelogu · {candidate.receiptCount} schvalenych uctenek
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-sm font-semibold text-gray-900">{formatCurrency(candidate.totalAmount)}</div>
-                    <div className="mt-1 text-[11px] text-emerald-700">Otevrit nahled</div>
+                    <div className="text-sm font-semibold text-[var(--nodu-text)]">{formatCurrency(candidate.totalAmount)}</div>
+                    <div className="mt-1 text-[11px] font-semibold text-[var(--nodu-accent)]">Otevrit nahled</div>
                   </div>
                 </button>
               ))
@@ -209,41 +209,41 @@ const InvoiceCreateModal = ({ onClose, onDirtyChange }: InvoiceCreateModalProps)
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50 p-4">
+            <div className="flex items-center justify-between rounded-2xl border border-[var(--nodu-border)] bg-[var(--nodu-paper-strong)] p-4">
               <div>
-                <div className="text-sm font-semibold text-gray-900">{preview?.contractorName ?? 'Neznamy kontraktor'}</div>
-                <div className="mt-1 text-xs text-gray-500">
+                <div className="text-sm font-semibold text-[var(--nodu-text)]">{preview?.contractorName ?? 'Neznamy kontraktor'}</div>
+                <div className="mt-1 text-xs text-[var(--nodu-text-soft)]">
                   Vybrano: {selectedTimelogIds.length} timelogu · {selectedReceiptIds.length} uctenek
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-xs text-gray-500">Vybrany soucet</div>
-                <div className="text-lg font-semibold text-gray-900">{formatCurrency(selectedTotal)}</div>
+                <div className="text-xs text-[var(--nodu-text-soft)]">Vybrany soucet</div>
+                <div className="text-lg font-semibold text-[var(--nodu-text)]">{formatCurrency(selectedTotal)}</div>
               </div>
             </div>
 
             {(preview?.items ?? []).map((item) => (
-              <div key={item.jobNumber} className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+              <div key={item.jobNumber} className="rounded-2xl border border-[var(--nodu-border)] bg-white p-4 shadow-sm">
                 <div className="mb-3 flex items-center justify-between">
                   <div>
                     <div className="jn">{item.jobNumber}</div>
-                    <div className="mt-1 text-xs text-gray-500">
+                    <div className="mt-1 text-xs text-[var(--nodu-text-soft)]">
                       {item.timelogIds.length} timelogu · {item.receiptIds.length} uctenek
                     </div>
                   </div>
-                  <div className="text-right text-sm font-semibold text-gray-900">
+                  <div className="text-right text-sm font-semibold text-[var(--nodu-text)]">
                     {formatCurrency(item.totalAmount)}
                   </div>
                 </div>
 
                 <div className="grid gap-3 md:grid-cols-2">
-                  <div className="rounded-lg bg-gray-50 p-3">
-                    <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-gray-700">
+                  <div className="rounded-xl border border-[var(--nodu-border)] bg-[var(--nodu-paper-strong)] p-3">
+                    <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-[var(--nodu-text)]">
                       <CheckSquare size={14} /> Timelogy
                     </div>
                     <div className="space-y-2">
                       {item.timelogIds.length === 0 && (
-                        <div className="text-xs text-gray-400">Bez timelogu</div>
+                        <div className="text-xs text-[var(--nodu-text-soft)]">Bez timelogu</div>
                       )}
                       {item.timelogEntries.map((entry) => {
                         const isSelected = selectedTimelogIds.includes(entry.timelogId);
@@ -252,21 +252,21 @@ const InvoiceCreateModal = ({ onClose, onDirtyChange }: InvoiceCreateModalProps)
                             key={entry.timelogId}
                             type="button"
                             onClick={() => toggleTimelog(entry.timelogId)}
-                            className="flex w-full items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 text-left text-xs hover:bg-emerald-50"
+                            className="flex w-full items-center justify-between gap-3 rounded-xl border border-transparent bg-white px-3 py-2 text-left text-xs transition hover:border-[rgba(var(--nodu-accent-rgb),0.22)] hover:bg-[var(--nodu-accent-soft)]"
                           >
                             <div className="min-w-0">
-                              <div className="truncate font-medium text-gray-800">
+                              <div className="truncate font-medium text-[var(--nodu-text)]">
                                 {entry.jobNumber} · {entry.eventName}
                               </div>
-                              <div className="mt-0.5 text-[11px] text-gray-500">
+                              <div className="mt-0.5 text-[11px] text-[var(--nodu-text-soft)]">
                                 {entry.hours}h · {formatCurrency(entry.amountHours + entry.amountKm)}
                               </div>
                             </div>
                             <span
                               className={`inline-flex h-5 w-5 items-center justify-center rounded border text-[11px] font-bold ${
                                 isSelected
-                                  ? 'border-emerald-600 bg-emerald-600 text-white'
-                                  : 'border-gray-300 bg-white text-transparent'
+                                  ? 'border-[var(--nodu-accent)] bg-[var(--nodu-accent)] text-white'
+                                  : 'border-[var(--nodu-border)] bg-white text-transparent'
                               }`}
                             >
                               ✓
@@ -277,13 +277,13 @@ const InvoiceCreateModal = ({ onClose, onDirtyChange }: InvoiceCreateModalProps)
                     </div>
                   </div>
 
-                  <div className="rounded-lg bg-amber-50 p-3">
-                    <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-amber-800">
+                  <div className="rounded-xl border border-[rgba(var(--nodu-accent-rgb),0.18)] bg-[var(--nodu-accent-soft)] p-3">
+                    <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-[var(--nodu-text)]">
                       <Receipt size={14} /> Uctenky
                     </div>
                     <div className="space-y-2">
                       {item.receiptIds.length === 0 && (
-                        <div className="text-xs text-amber-600/60">Bez uctenek</div>
+                        <div className="text-xs text-[var(--nodu-text-soft)]">Bez uctenek</div>
                       )}
                       {item.receiptIds.map((receiptId) => {
                         const isSelected = selectedReceiptIds.includes(receiptId);
@@ -292,14 +292,14 @@ const InvoiceCreateModal = ({ onClose, onDirtyChange }: InvoiceCreateModalProps)
                             key={receiptId}
                             type="button"
                             onClick={() => toggleReceipt(receiptId)}
-                            className="flex w-full items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 text-left text-xs hover:bg-amber-100"
+                            className="flex w-full items-center justify-between gap-3 rounded-xl border border-transparent bg-white px-3 py-2 text-left text-xs transition hover:border-[rgba(var(--nodu-accent-rgb),0.22)]"
                           >
                             <span>Uctenka #{receiptId}</span>
                             <span
                               className={`inline-flex h-5 w-5 items-center justify-center rounded border text-[11px] font-bold ${
                                 isSelected
-                                  ? 'border-emerald-600 bg-emerald-600 text-white'
-                                  : 'border-gray-300 bg-white text-transparent'
+                                  ? 'border-[var(--nodu-accent)] bg-[var(--nodu-accent)] text-white'
+                                  : 'border-[var(--nodu-border)] bg-white text-transparent'
                               }`}
                             >
                               ✓
@@ -313,11 +313,11 @@ const InvoiceCreateModal = ({ onClose, onDirtyChange }: InvoiceCreateModalProps)
               </div>
             ))}
 
-            <div className="flex items-center justify-end gap-3 border-t border-gray-100 pt-4">
+            <div className="flex items-center justify-end gap-3 border-t border-[var(--nodu-border)] pt-4">
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-white"
+                className="rounded-xl border border-[var(--nodu-border)] px-4 py-2 text-sm font-medium text-[var(--nodu-text)] hover:bg-[var(--nodu-accent-soft)]"
               >
                 Zpet na faktury
               </button>
@@ -325,7 +325,7 @@ const InvoiceCreateModal = ({ onClose, onDirtyChange }: InvoiceCreateModalProps)
                 type="button"
                 onClick={() => handleCreate(false)}
                 disabled={selectedContractorKey == null || isSubmitting || (selectedTimelogIds.length === 0 && selectedReceiptIds.length === 0)}
-                className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 py-2 text-sm font-medium text-emerald-700 shadow-sm hover:bg-emerald-50 disabled:cursor-not-allowed disabled:border-emerald-100 disabled:text-emerald-300"
+                className="inline-flex items-center gap-2 rounded-xl border border-[rgba(var(--nodu-accent-rgb),0.28)] bg-white px-4 py-2 text-sm font-medium text-[var(--nodu-accent)] shadow-sm hover:bg-[var(--nodu-accent-soft)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <FilePlus2 size={16} />
                 {isSubmitting ? 'Ukladam...' : 'Draft'}
@@ -334,7 +334,7 @@ const InvoiceCreateModal = ({ onClose, onDirtyChange }: InvoiceCreateModalProps)
                 type="button"
                 onClick={() => handleCreate(true)}
                 disabled={selectedContractorKey == null || isSubmitting || (selectedTimelogIds.length === 0 && selectedReceiptIds.length === 0)}
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm shadow-emerald-200 hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                className="inline-flex items-center gap-2 rounded-xl bg-[var(--nodu-accent)] px-4 py-2 text-sm font-semibold text-white shadow-[0_16px_32px_rgba(var(--nodu-accent-rgb),0.18)] hover:bg-[#e96f00] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <FilePlus2 size={16} />
                 {isSubmitting ? 'Vytvarim...' : 'Vytvorit a poslat'}

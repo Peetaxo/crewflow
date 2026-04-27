@@ -20,6 +20,7 @@ import { cs } from 'date-fns/locale';
 import { useAppContext } from '../context/AppContext';
 import { Event, Timelog } from '../types';
 import { calculateTotalHours, eventOccursOnDate, formatDateRange, getDatesBetween } from '../utils';
+import { Button } from '../components/ui/button';
 import StatusBadge from '../components/shared/StatusBadge';
 import EventDetailView from './EventDetailView';
 import EventEditModal from '../components/modals/EventEditModal';
@@ -254,8 +255,11 @@ const EventsView = () => {
       <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-lg font-semibold">Akce</h1>
-            <div className="flex items-center rounded-lg border border-gray-200 bg-white p-0.5">
+            <div>
+              <div className="nodu-dashboard-kicker">Event Planner</div>
+              <h1 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--nodu-text)]">Akce</h1>
+            </div>
+            <div className="flex items-center rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
               {[
                 { id: 'list' as const, label: 'Seznam', icon: List },
                 { id: 'calendar' as const, label: 'Kalendar', icon: CalendarDays },
@@ -263,7 +267,7 @@ const EventsView = () => {
                 <button
                   key={item.id}
                   onClick={() => setEventsViewMode(item.id)}
-                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${viewMode === item.id ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                  className={`flex items-center gap-1.5 rounded-[14px] px-3 py-2 text-xs font-medium transition-all ${viewMode === item.id ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)] shadow-[inset_0_0_0_1px_rgba(255,128,13,0.16)]' : 'text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
                 >
                   <item.icon size={14} />
                   {item.label}
@@ -283,14 +287,14 @@ const EventsView = () => {
                 onClick={() => setEventsFilter(item.id)}
                 className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-all ${
                   eventFilter === item.id
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                    : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:text-gray-900'
+                    ? 'border-[color:rgb(var(--nodu-accent-rgb)/0.18)] bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)]'
+                    : 'border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] text-[color:var(--nodu-text-soft)] hover:border-[color:rgb(var(--nodu-accent-rgb)/0.18)] hover:text-[color:var(--nodu-text)]'
                 }`}
               >
                 {item.label}
               </button>
             ))}
-            <span className="text-[11px] font-medium text-gray-400">
+            <span className="text-[11px] font-medium text-[color:var(--nodu-text-soft)]">
               {visibleEvents.length} akci
             </span>
           </div>
@@ -299,7 +303,7 @@ const EventsView = () => {
         <div className="flex items-center gap-2">
           {viewMode === 'calendar' && (
             <>
-              <div className="flex items-center rounded-lg border border-gray-200 bg-white p-0.5">
+              <div className="flex items-center rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
                 {[
                   { id: 'month' as const, label: 'Mesic' },
                   { id: 'week' as const, label: 'Tyden' },
@@ -307,22 +311,22 @@ const EventsView = () => {
                   <button
                     key={item.id}
                     onClick={() => setEventsCalendarMode(item.id)}
-                    className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${calendarMode === item.id ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                    className={`rounded-[14px] px-3 py-2 text-xs font-medium transition-all ${calendarMode === item.id ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)] shadow-[inset_0_0_0_1px_rgba(255,128,13,0.16)]' : 'text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
                   >
                     {item.label}
                   </button>
                 ))}
               </div>
-              <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white p-1">
-                <button onClick={() => moveCalendar('prev')} className="rounded-md p-1.5 text-gray-500 hover:bg-gray-50 hover:text-gray-900">
+              <div className="flex items-center gap-1 rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.96)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
+                <button onClick={() => moveCalendar('prev')} className="rounded-[14px] p-2 text-[color:var(--nodu-text-soft)] hover:bg-[color:rgb(var(--nodu-accent-rgb)/0.08)] hover:text-[color:var(--nodu-accent)]">
                   <ChevronLeft size={14} />
                 </button>
-                <div className="min-w-[160px] px-2 text-center text-xs font-semibold text-gray-700">
+                <div className="min-w-[160px] px-2 text-center text-xs font-semibold text-[color:var(--nodu-text)]">
                   {calendarMode === 'month'
                     ? format(calendarDate, 'LLLL yyyy', { locale: cs })
                     : `${format(calendarStart, 'd. M.', { locale: cs })} - ${format(calendarEnd, 'd. M. yyyy', { locale: cs })}`}
                 </div>
-                <button onClick={() => moveCalendar('next')} className="rounded-md p-1.5 text-gray-500 hover:bg-gray-50 hover:text-gray-900">
+                <button onClick={() => moveCalendar('next')} className="rounded-[14px] p-2 text-[color:var(--nodu-text-soft)] hover:bg-[color:rgb(var(--nodu-accent-rgb)/0.08)] hover:text-[color:var(--nodu-accent)]">
                   <ChevronRight size={14} />
                 </button>
               </div>
@@ -330,20 +334,21 @@ const EventsView = () => {
           )}
 
           {canManageEvents && (
-            <button
+            <Button
               onClick={() => setEditingEvent(createEmptyEvent())}
-              className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700"
+              size="sm"
+              className="text-xs"
             >
               + Nova akce
-            </button>
+            </Button>
           )}
         </div>
       </div>
 
       {visibleEvents.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-6 py-12 text-center shadow-sm">
-          <div className="text-sm font-semibold text-gray-900">Pro tento filtr tu zatim nejsou zadne akce.</div>
-          <div className="mt-1 text-xs text-gray-500">
+        <div className="rounded-[28px] border border-dashed border-[color:rgb(var(--nodu-accent-rgb)/0.24)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] px-6 py-12 text-center shadow-[0_18px_42px_rgba(47,38,31,0.08)]">
+          <div className="text-sm font-semibold text-[color:var(--nodu-text)]">Pro tento filtr tu zatim nejsou zadne akce.</div>
+          <div className="mt-1 text-xs text-[color:var(--nodu-text-soft)]">
             Zkuste prepnout filtr nebo vytvorit novou akci.
           </div>
         </div>
@@ -352,11 +357,11 @@ const EventsView = () => {
           {sortedDates.map((date) => (
             <div key={date} className="space-y-3">
               <div className="flex items-center gap-4 py-4">
-                <div className="h-px flex-1 bg-gray-200"></div>
-                <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-gray-500">
+                <div className="h-px flex-1 bg-[color:rgb(var(--nodu-text-rgb)/0.1)]"></div>
+                <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-[color:var(--nodu-text-soft)]">
                   {new Date(date).toLocaleDateString('cs-CZ', { weekday: 'short', day: 'numeric', month: 'long' })}
                 </span>
-                <div className="h-px flex-1 bg-gray-200"></div>
+                <div className="h-px flex-1 bg-[color:rgb(var(--nodu-text-rgb)/0.1)]"></div>
               </div>
 
               <div className="grid grid-cols-1 gap-3">
@@ -366,26 +371,26 @@ const EventsView = () => {
                   const daysCount = getDatesBetween(event.startDate, event.endDate).length;
 
                   return (
-                    <div key={event.id} className="relative overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm transition-shadow hover:shadow-md">
+                    <div key={event.id} className="relative overflow-hidden rounded-[28px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] shadow-[0_18px_42px_rgba(47,38,31,0.08)] transition-shadow hover:shadow-[0_22px_48px_rgba(47,38,31,0.12)]">
                       {canManageEvents && (
                         <button
                           onClick={() => setDeleteConfirm({ type: 'event', id: event.id, name: event.name })}
-                          className="absolute right-4 top-4 rounded-lg p-1.5 text-gray-300 transition-all hover:bg-red-50 hover:text-red-600"
+                          className="absolute right-4 top-4 rounded-lg p-1.5 text-[color:var(--nodu-text-soft)] transition-all hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]"
                           title="Smazat akci"
                         >
                           <Trash2 size={16} />
                         </button>
                       )}
-                      <div className="border-b border-gray-50 p-4">
+                      <div className="border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] p-4">
                         <div className="mb-2 flex items-center gap-2">
-                          <span className="jn px-2 py-0.5 text-[13px] font-semibold">{event.job}</span>
+                          <span className="jn nodu-job-badge px-2 py-0.5 text-[13px] font-semibold">{event.job}</span>
                           <StatusBadge status={event.derivedStatus} />
                         </div>
-                        <h3 className="text-base font-semibold text-gray-900">{event.name}</h3>
-                        <div className="mt-1 flex items-center gap-1.5 text-xs text-gray-500">
+                        <h3 className="text-base font-semibold text-[color:var(--nodu-text)]">{event.name}</h3>
+                        <div className="mt-1 flex items-center gap-1.5 text-xs text-[color:var(--nodu-text-soft)]">
                           {formatDateRange(event.startDate, event.endDate)} - {event.city} - {event.client}
                           {daysCount > 1 && (
-                            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-tighter text-gray-600">
+                            <span className="rounded bg-[color:rgb(var(--nodu-text-rgb)/0.08)] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-tighter text-[color:var(--nodu-text-soft)]">
                               {daysCount} dny
                             </span>
                           )}
@@ -393,36 +398,40 @@ const EventsView = () => {
                       </div>
                       <div className="flex items-center gap-5 px-4 py-3">
                         <div>
-                          <div className="mb-1 text-[10px] uppercase tracking-wider text-gray-500">Crew obsazeni</div>
+                          <div className="mb-1 text-[10px] uppercase tracking-wider text-[color:var(--nodu-text-soft)]">Crew obsazeni</div>
                           <div className="flex items-center gap-2">
-                            <div className="h-1 w-20 overflow-hidden rounded-full bg-gray-100">
+                            <div className="h-1 w-20 overflow-hidden rounded-full bg-[color:rgb(var(--nodu-text-rgb)/0.08)]">
                               <div
-                                className={`h-full rounded-full ${event.filled >= event.needed ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                                className={`h-full rounded-full ${event.filled >= event.needed ? 'bg-[color:var(--nodu-accent)]' : 'bg-[#e8b05a]'}`}
                                 style={{ width: `${Math.min(100, Math.round((event.filled / event.needed) * 100))}%` }}
                               />
                             </div>
-                            <span className="text-xs font-semibold">{event.filled}/{event.needed}</span>
+                            <span className="text-xs font-semibold text-[color:var(--nodu-text)]">{event.filled}/{event.needed}</span>
                           </div>
                         </div>
                         <div>
-                          <div className="mb-1 text-[10px] uppercase tracking-wider text-gray-500">Timelogy</div>
-                          <div className="text-xs font-semibold">{eventTimelogs.length} zaz. - {totalHours.toFixed(1)}h</div>
+                          <div className="mb-1 text-[10px] uppercase tracking-wider text-[color:var(--nodu-text-soft)]">Timelogy</div>
+                          <div className="text-xs font-semibold text-[color:var(--nodu-text)]">{eventTimelogs.length} zaz. - {totalHours.toFixed(1)}h</div>
                         </div>
                         <div className="ml-auto flex gap-2">
                           {canManageEvents && (
-                            <button
+                            <Button
                               onClick={() => setAssigningEvent(event)}
-                              className="rounded-md border border-gray-200 px-3 py-1 text-[11px] hover:bg-gray-50"
+                              variant="outline"
+                              size="sm"
+                              className="text-[11px]"
                             >
                               Obsadit crew {'->'}
-                            </button>
+                            </Button>
                           )}
-                          <button
+                          <Button
                             onClick={() => openEventDetail(event.id)}
-                            className="rounded-md border border-gray-200 px-3 py-1 text-[11px] hover:bg-gray-50"
+                            variant="outline"
+                            size="sm"
+                            className="text-[11px]"
                           >
                             Detail
-                          </button>
+                          </Button>
                         </div>
                       </div>
                     </div>
@@ -433,16 +442,16 @@ const EventsView = () => {
           ))}
         </div>
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
-          <div className="grid grid-cols-7 border-b border-gray-100 bg-gray-50">
+        <div className="overflow-hidden rounded-[28px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] shadow-[0_18px_42px_rgba(47,38,31,0.08)]">
+          <div className="grid grid-cols-7 border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] bg-[color:rgb(var(--nodu-surface-rgb)/0.94)]">
             {['Po', 'Ut', 'St', 'Ct', 'Pa', 'So', 'Ne'].map((dayLabel) => (
-              <div key={dayLabel} className="border-r border-gray-100 px-3 py-3 text-[11px] font-bold uppercase tracking-wider text-gray-500 last:border-r-0">
+              <div key={dayLabel} className="border-r border-[color:rgb(var(--nodu-text-rgb)/0.08)] px-3 py-3 text-[11px] font-bold uppercase tracking-wider text-[color:var(--nodu-text-soft)] last:border-r-0">
                 {dayLabel}
               </div>
             ))}
           </div>
 
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-[color:rgb(var(--nodu-text-rgb)/0.08)]">
             {calendarWeeks.map((weekDays, weekIndex) => {
               const segments = buildWeekSegments(weekDays, visibleEvents);
               const rowHeight = getWeekRowHeight(segments);
@@ -456,13 +465,13 @@ const EventsView = () => {
                       const isCurrentMonth = isSameMonth(day, calendarDate);
 
                       return (
-                        <div key={dayKey} className={`relative border-r border-gray-100 p-3 last:border-r-0 ${isCurrentMonth || calendarMode === 'week' ? 'bg-white' : 'bg-gray-50/70'}`}>
+                        <div key={dayKey} className={`relative border-r border-[color:rgb(var(--nodu-text-rgb)/0.08)] p-3 last:border-r-0 ${isCurrentMonth || calendarMode === 'week' ? 'bg-[color:rgb(var(--nodu-surface-rgb)/0.98)]' : 'bg-[color:rgb(var(--nodu-text-rgb)/0.03)]'}`}>
                           <div className="flex items-center justify-between">
-                            <span className={`text-xs font-bold ${isCurrentMonth || calendarMode === 'week' ? 'text-gray-900' : 'text-gray-400'}`}>
+                            <span className={`text-xs font-bold ${isCurrentMonth || calendarMode === 'week' ? 'text-[color:var(--nodu-text)]' : 'text-[color:rgb(var(--nodu-text-rgb)/0.4)]'}`}>
                               {format(day, calendarMode === 'month' ? 'd.' : 'EEE d.', { locale: cs })}
                             </span>
                             {dayEvents.length > 0 && (
-                              <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold text-gray-500">
+                              <span className="rounded-full bg-[color:rgb(var(--nodu-text-rgb)/0.08)] px-1.5 py-0.5 text-[10px] font-bold text-[color:var(--nodu-text-soft)]">
                                 {dayEvents.length}
                               </span>
                             )}

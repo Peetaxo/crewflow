@@ -58,6 +58,9 @@ Muzes sem psat svoje napady a ja z nich pak muzu delat konkretni ukoly.
 - [ ] Napojit faktury
   Poznamka: dodelat realne navazani na fakturacni proces.
 
+- [ ] Zkontrolovat design faktury
+  Poznamka: doladit vizualni podobu generovaneho PDF po prvnim funkcim napojeni.
+
 - [ ] Prepracovat model fakturace na billing batch
   Poznamka: jedna faktura ma umet obsahovat vice schvalenych timelogu a vice job number pro jednoho kontraktora.
 

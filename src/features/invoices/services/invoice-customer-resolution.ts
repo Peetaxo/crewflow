@@ -83,6 +83,7 @@ export const buildSupplierSnapshot = (contractor: Contractor): InvoiceSupplierSn
   ico: requireText(contractor.ico),
   dic: requireText(contractor.dic) || null,
   bankAccount: requireText(contractor.bank),
+  iban: requireText(contractor.iban) || null,
   billingStreet: requireText(contractor.billingStreet),
   billingZip: requireText(contractor.billingZip),
   billingCity: requireText(contractor.billingCity) || requireText(contractor.city),

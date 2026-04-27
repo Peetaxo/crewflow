@@ -11,6 +11,9 @@ alter table public.invoices
   add column if not exists pdf_path text,
   add column if not exists pdf_generated_at timestamptz;
 
+alter table public.profiles
+  add column if not exists iban text;
+
 create unique index if not exists invoices_invoice_number_key
   on public.invoices(invoice_number)
   where invoice_number is not null;
@@ -88,6 +91,7 @@ with invoices_to_backfill as (
     profile.ico as supplier_ico,
     profile.dic as supplier_dic,
     profile.bank_account,
+    profile.iban,
     profile.billing_street,
     profile.billing_zip,
     profile.billing_city,
@@ -135,6 +139,7 @@ set
     'ico', coalesce(numbered.supplier_ico, ''),
     'dic', nullif(numbered.supplier_dic, ''),
     'bankAccount', coalesce(numbered.bank_account, ''),
+    'iban', nullif(numbered.iban, ''),
     'billingStreet', coalesce(numbered.billing_street, ''),
     'billingZip', coalesce(numbered.billing_zip, ''),
     'billingCity', coalesce(numbered.billing_city, ''),
@@ -154,6 +159,26 @@ set
 from numbered_invoices numbered
 where invoice.id = numbered.id;
 
+update public.invoices invoice
+set supplier_snapshot = jsonb_set(
+  jsonb_set(
+    coalesce(invoice.supplier_snapshot, '{}'::jsonb),
+    '{iban}',
+    to_jsonb(profile.iban),
+    true
+  ),
+  '{bankAccount}',
+  to_jsonb(profile.bank_account),
+  true
+)
+from public.profiles profile
+where profile.id = invoice.contractor_id
+  and profile.iban is not null
+  and (
+    (invoice.supplier_snapshot->>'iban') is null
+    or (invoice.supplier_snapshot->>'bankAccount') is distinct from profile.bank_account
+  );
+
 comment on column public.invoices.invoice_number is
   'Self-billing invoice number, e.g. SF-2026-NOVAK-T-0001.';
 comment on column public.invoices.supplier_snapshot is
@@ -162,5 +187,7 @@ comment on column public.invoices.customer_snapshot is
   'Immutable customer billing snapshot copied from clients when the invoice is issued.';
 comment on column public.invoices.pdf_path is
   'Private Supabase Storage path in bucket invoice-pdfs.';
+comment on column public.profiles.iban is
+  'Verified IBAN used for QR Platba on self-billing invoices.';
 
 commit;

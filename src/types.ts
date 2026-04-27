@@ -71,6 +71,7 @@ export interface Contractor {
   ico: string;
   dic: string;
   bank: string;
+  iban?: string;
   city: string;
   billingName?: string;
   billingStreet?: string;
@@ -118,6 +119,7 @@ export interface InvoiceSupplierSnapshot {
   ico: string;
   dic: string | null;
   bankAccount: string;
+  iban?: string | null;
   billingStreet: string;
   billingZip: string;
   billingCity: string;

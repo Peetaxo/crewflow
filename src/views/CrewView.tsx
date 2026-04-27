@@ -33,6 +33,7 @@ const createEmptyContractor = (nextId: number): Contractor => {
     ico: '',
     dic: '',
     bank: '',
+    iban: '',
     city: '',
     billingName: '',
     billingStreet: '',

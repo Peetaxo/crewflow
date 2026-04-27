@@ -157,6 +157,7 @@ export interface Database {
           ico: string | null;
           dic: string | null;
           bank_account: string | null;
+          iban: string | null;
           billing_street: string | null;
           billing_zip: string | null;
           billing_city: string | null;

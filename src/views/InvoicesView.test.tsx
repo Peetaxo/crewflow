@@ -153,7 +153,7 @@ describe('InvoicesView', () => {
     render(<InvoicesView />);
 
     expect(screen.getByRole('button', { name: /Stahnout PDF/i })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Vygenerovat PDF/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Pregenerovat PDF/i })).toBeInTheDocument();
   });
 
 });

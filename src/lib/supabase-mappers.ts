@@ -79,6 +79,7 @@ export function mapContractor(row: ProfileRow): Contractor {
     ico: row.ico ?? '',
     dic: row.dic ?? '',
     bank: row.bank_account ?? '',
+    iban: row.iban ?? '',
     city: row.billing_city ?? '',
     billingName: `${firstName} ${lastName}`.trim(),
     billingStreet: row.billing_street ?? '',

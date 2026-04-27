@@ -302,13 +302,23 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
 
               <div className="mt-3 flex gap-2">
                 {invoice.pdfPath ? (
-                  <button
-                    type="button"
-                    onClick={() => void handleDownloadPdf(invoice.pdfPath!)}
-                    className="rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                  >
-                    Stahnout PDF
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void handleDownloadPdf(invoice.pdfPath!)}
+                      className="rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                    >
+                      Stahnout PDF
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleGeneratePdf(invoice.id)}
+                      disabled={pdfActionInvoiceId === invoice.id}
+                      className="rounded-md border border-emerald-200 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:text-emerald-300"
+                    >
+                      {pdfActionInvoiceId === invoice.id ? 'Generuji PDF...' : 'Pregenerovat PDF'}
+                    </button>
+                  </>
                 ) : (
                   <button
                     type="button"

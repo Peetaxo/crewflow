@@ -112,6 +112,30 @@ export interface Timelog {
 /** Status faktury */
 export type InvoiceStatus = 'draft' | 'sent' | 'paid';
 
+export interface InvoiceSupplierSnapshot {
+  profileId: string;
+  name: string;
+  ico: string;
+  dic: string | null;
+  bankAccount: string;
+  billingStreet: string;
+  billingZip: string;
+  billingCity: string;
+  billingCountry: string;
+  vatPayer: false;
+}
+
+export interface InvoiceCustomerSnapshot {
+  clientId: string;
+  name: string;
+  ico: string;
+  dic: string | null;
+  street: string;
+  zip: string;
+  city: string;
+  country: string;
+}
+
 /** Faktura */
 export interface Invoice {
   id: string;
@@ -137,6 +161,15 @@ export interface Invoice {
   receiptIds?: number[];
   /** Vsechny navazane akce zahrnute do faktury */
   eventIds?: number[];
+  invoiceNumber?: string;
+  issueDate?: string;
+  taxableSupplyDate?: string;
+  dueDate?: string;
+  currency?: 'CZK';
+  supplierSnapshot?: InvoiceSupplierSnapshot;
+  customerSnapshot?: InvoiceCustomerSnapshot;
+  pdfPath?: string | null;
+  pdfGeneratedAt?: string | null;
   status: InvoiceStatus;
   sentAt: string | null;
 }

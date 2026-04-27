@@ -99,6 +99,15 @@ export interface Database {
           amount_km: number | null;
           amount_receipts: number | null;
           total_amount: number | null;
+          invoice_number: string | null;
+          issue_date: string | null;
+          taxable_supply_date: string | null;
+          due_date: string | null;
+          currency: string;
+          supplier_snapshot: Json | null;
+          customer_snapshot: Json | null;
+          pdf_path: string | null;
+          pdf_generated_at: string | null;
           status: InvoiceStatus;
           sent_at: string | null;
           paid_at: string | null;
@@ -222,6 +231,15 @@ export interface Database {
           user_id: string;
           role: AppRole;
         };
+      };
+    };
+    Functions: {
+      next_self_billing_invoice_sequence: {
+        Args: {
+          p_invoice_year: number;
+          p_supplier_profile_id: string;
+        };
+        Returns: number;
       };
     };
   };

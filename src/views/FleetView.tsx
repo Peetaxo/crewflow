@@ -172,23 +172,45 @@ const FleetView: React.FC = () => {
 
   const renderSelectedReservationDetail = (reservation: FleetReservation, showVehicle = false) => (
     <div
-      data-testid="fleet-selected-reservation-detail"
-      className="mt-4 rounded-xl border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-text-rgb)/0.02)] p-3"
+      data-testid="fleet-reservation-overlay"
+      className="absolute inset-0 z-20 flex items-center justify-center bg-white/72 p-4 backdrop-blur-[2px]"
+      onClick={() => setSelectedCalendarReservationId(null)}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="mb-2 text-sm font-semibold text-[color:var(--nodu-text)]">Vybraná rezervace</h3>
-          {showVehicle && (
-            <div className="mb-2 text-[11px] font-semibold text-[color:var(--nodu-text-soft)]">
-              Auto: {getVehicleName(reservation.vehicleId)}
-            </div>
-          )}
-          {renderReservationSummary(reservation)}
+      <div
+        role="dialog"
+        aria-modal="false"
+        aria-labelledby="fleet-selected-reservation-title"
+        data-testid="fleet-selected-reservation-detail"
+        className="w-full max-w-md rounded-2xl border border-[color:var(--nodu-border)] bg-white p-4 text-left shadow-[0_18px_42px_rgba(47,38,31,0.16)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 id="fleet-selected-reservation-title" className="mb-2 text-sm font-semibold text-[color:var(--nodu-text)]">
+              Vybraná rezervace
+            </h3>
+            {showVehicle && (
+              <div className="mb-2 text-[11px] font-semibold text-[color:var(--nodu-text-soft)]">
+                Auto: {getVehicleName(reservation.vehicleId)}
+              </div>
+            )}
+            {renderReservationSummary(reservation)}
+          </div>
+          <div className="flex shrink-0 items-start gap-2">
+            {reservation.hasConflict && <span className={`${badgeClass} ${statusClass.conflict}`}>Konflikt</span>}
+            <button
+              type="button"
+              aria-label="Zavřít detail rezervace"
+              onClick={() => setSelectedCalendarReservationId(null)}
+              className="rounded-full p-1.5 text-[color:var(--nodu-text-soft)] transition hover:bg-[color:var(--nodu-accent-soft)] hover:text-[color:var(--nodu-text)]"
+            >
+              <X size={16} />
+            </button>
+          </div>
         </div>
-        {reservation.hasConflict && <span className={`${badgeClass} ${statusClass.conflict}`}>Konflikt</span>}
-      </div>
-      <div className="mt-2 text-[11px] text-[color:var(--nodu-text-soft)]">
-        Odpovědná osoba: {getResponsibleName(reservation.responsibleProfileId)}
+        <div className="mt-2 text-[11px] text-[color:var(--nodu-text-soft)]">
+          Odpovědná osoba: {getResponsibleName(reservation.responsibleProfileId)}
+        </div>
       </div>
     </div>
   );
@@ -247,7 +269,7 @@ const FleetView: React.FC = () => {
 
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.2fr_0.8fr]">
           <div className="space-y-5">
-            <section className="rounded-[28px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] p-5 shadow-[0_18px_42px_rgba(47,38,31,0.08)]">
+            <section className="relative overflow-hidden rounded-[28px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] p-5 shadow-[0_18px_42px_rgba(47,38,31,0.08)]">
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2">
                 <CalendarDays size={16} className="text-[color:var(--nodu-accent)]" />
@@ -523,7 +545,7 @@ const FleetView: React.FC = () => {
         </table>
       </div>
 
-      <section className="mt-5 rounded-[28px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] p-5 shadow-[0_18px_42px_rgba(47,38,31,0.08)]">
+      <section className="relative mt-5 overflow-hidden rounded-[28px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] p-5 shadow-[0_18px_42px_rgba(47,38,31,0.08)]">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
             <CalendarDays size={16} className="text-[color:var(--nodu-accent)]" />

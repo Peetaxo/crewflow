@@ -14,6 +14,7 @@ import InvoicesView from '../../views/InvoicesView';
 import ReceiptsView from '../../views/ReceiptsView';
 import RecruitmentView from '../../views/RecruitmentView';
 import FleetView from '../../views/FleetView';
+import WarehouseView from '../../views/WarehouseView';
 import SettingsView from '../../views/SettingsView';
 
 import TimelogEditModal from '../modals/TimelogEditModal';
@@ -52,6 +53,8 @@ const AppLayout: React.FC = () => {
         return <CrewView key="crew" />;
       case 'fleet':
         return <FleetView key="fleet" />;
+      case 'warehouse':
+        return <WarehouseView key="warehouse" />;
       case 'timelogs':
       case 'approvals':
         return <TimelogsView key="timelogs" scope="all" />;

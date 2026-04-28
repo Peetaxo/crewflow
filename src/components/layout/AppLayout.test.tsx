@@ -65,6 +65,10 @@ vi.mock('../../views/FleetView', () => ({
   default: () => <div data-testid="fleet-view" />,
 }));
 
+vi.mock('../../views/WarehouseView', () => ({
+  default: () => <div data-testid="warehouse-view" />,
+}));
+
 vi.mock('../../views/SettingsView', () => ({
   default: () => <div data-testid="settings-view" />,
 }));
@@ -125,5 +129,16 @@ describe('AppLayout shell', () => {
     render(<AppLayout />);
 
     expect(screen.getByTestId('fleet-view')).toBeInTheDocument();
+  });
+
+  it('renders the warehouse view for the warehouse tab', () => {
+    mockAppContext = {
+      ...mockAppContext,
+      currentTab: 'warehouse',
+    };
+
+    render(<AppLayout />);
+
+    expect(screen.getByTestId('warehouse-view')).toBeInTheDocument();
   });
 });

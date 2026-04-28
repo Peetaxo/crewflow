@@ -89,6 +89,7 @@ const FleetView: React.FC = () => {
   const { currentProfileId } = useAuth();
   const [, setVersion] = useState(0);
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
+  const [selectedCalendarReservationId, setSelectedCalendarReservationId] = useState<number | null>(null);
   const [editingReservation, setEditingReservation] = useState<FleetReservationDraft | null>(null);
   const [calendarMonth, setCalendarMonth] = useState<Date | null>(null);
   const [overviewCalendarMonth, setOverviewCalendarMonth] = useState<Date | null>(null);
@@ -107,6 +108,9 @@ const FleetView: React.FC = () => {
   const rows = getFleetOverviewRows(referenceDate);
   const selectedDetail = selectedVehicleId ? getFleetVehicleDetail(selectedVehicleId, referenceDate) : null;
   const selectedVehicle = selectedDetail?.vehicle ?? null;
+  const selectedCalendarReservation = selectedCalendarReservationId
+    ? dependencies.reservations.find((reservation) => reservation.id === selectedCalendarReservationId) ?? null
+    : null;
   const responsibleProfileId = currentProfileId
     ?? dependencies.contractors[0]?.profileId
     ?? '';
@@ -166,6 +170,29 @@ const FleetView: React.FC = () => {
     );
   };
 
+  const renderSelectedReservationDetail = (reservation: FleetReservation, showVehicle = false) => (
+    <div
+      data-testid="fleet-selected-reservation-detail"
+      className="mt-4 rounded-xl border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-text-rgb)/0.02)] p-3"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="mb-2 text-sm font-semibold text-[color:var(--nodu-text)]">Vybraná rezervace</h3>
+          {showVehicle && (
+            <div className="mb-2 text-[11px] font-semibold text-[color:var(--nodu-text-soft)]">
+              Auto: {getVehicleName(reservation.vehicleId)}
+            </div>
+          )}
+          {renderReservationSummary(reservation)}
+        </div>
+        {reservation.hasConflict && <span className={`${badgeClass} ${statusClass.conflict}`}>Konflikt</span>}
+      </div>
+      <div className="mt-2 text-[11px] text-[color:var(--nodu-text-soft)]">
+        Odpovědná osoba: {getResponsibleName(reservation.responsibleProfileId)}
+      </div>
+    </div>
+  );
+
   if (selectedDetail && selectedVehicle) {
     const defaultCalendarDate = selectedDetail.upcomingReservations[0]
       ? parseISO(selectedDetail.upcomingReservations[0].startsAt)
@@ -183,6 +210,7 @@ const FleetView: React.FC = () => {
               onClick={() => {
                 setSelectedVehicleId(null);
                 setCalendarMonth(null);
+                setSelectedCalendarReservationId(null);
               }}
               className="mb-3 inline-flex items-center gap-1.5 text-xs font-semibold text-[color:var(--nodu-text-soft)] transition hover:text-[color:var(--nodu-accent)]"
             >
@@ -229,7 +257,10 @@ const FleetView: React.FC = () => {
                 <button
                   type="button"
                   aria-label="Předchozí měsíc"
-                  onClick={() => setCalendarMonth(subMonths(calendarDate, 1))}
+                  onClick={() => {
+                    setCalendarMonth(subMonths(calendarDate, 1));
+                    setSelectedCalendarReservationId(null);
+                  }}
                   className="flex h-8 w-8 items-center justify-center rounded-lg border border-[color:var(--nodu-border)] text-[color:var(--nodu-text-soft)] transition hover:border-[color:var(--nodu-accent)] hover:text-[color:var(--nodu-accent)]"
                 >
                   <ChevronLeft size={15} />
@@ -240,7 +271,10 @@ const FleetView: React.FC = () => {
                 <button
                   type="button"
                   aria-label="Další měsíc"
-                  onClick={() => setCalendarMonth(addMonths(calendarDate, 1))}
+                  onClick={() => {
+                    setCalendarMonth(addMonths(calendarDate, 1));
+                    setSelectedCalendarReservationId(null);
+                  }}
                   className="flex h-8 w-8 items-center justify-center rounded-lg border border-[color:var(--nodu-border)] text-[color:var(--nodu-text-soft)] transition hover:border-[color:var(--nodu-accent)] hover:text-[color:var(--nodu-accent)]"
                 >
                   <ChevronRight size={15} />
@@ -266,18 +300,23 @@ const FleetView: React.FC = () => {
                     <div className="text-[11px] font-semibold">{format(day, 'd')}</div>
                     <div className="mt-1 space-y-1">
                       {dayReservations.slice(0, 2).map((reservation) => (
-                        <div
+                        <button
+                          type="button"
                           key={reservation.id}
-                          className={`truncate rounded-md px-1.5 py-1 text-[9px] font-semibold ${reservation.hasConflict ? 'bg-red-50 text-red-700' : 'bg-[color:rgb(var(--nodu-accent-rgb)/0.1)] text-[color:var(--nodu-accent)]'}`}
+                          onClick={() => setSelectedCalendarReservationId(reservation.id)}
+                          className={`block w-full truncate rounded-md px-1.5 py-1 text-left text-[9px] font-semibold transition ring-offset-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--nodu-accent)] ${reservation.hasConflict ? 'bg-red-50 text-red-700' : 'bg-[color:rgb(var(--nodu-accent-rgb)/0.1)] text-[color:var(--nodu-accent)]'}`}
                         >
                           {getProjectLabel(reservation.projectId)}
-                        </div>
+                        </button>
                       ))}
                     </div>
                   </div>
                 );
               })}
             </div>
+            {selectedCalendarReservation
+              && selectedCalendarReservation.vehicleId === selectedVehicle.id
+              && renderSelectedReservationDetail(selectedCalendarReservation)}
             </section>
 
             <section className="rounded-[24px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] p-5 shadow-[0_18px_42px_rgba(47,38,31,0.08)]">
@@ -442,12 +481,14 @@ const FleetView: React.FC = () => {
                   onClick={() => {
                     setSelectedVehicleId(row.vehicle.id);
                     setCalendarMonth(null);
+                    setSelectedCalendarReservationId(null);
                   }}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault();
                       setSelectedVehicleId(row.vehicle.id);
                       setCalendarMonth(null);
+                      setSelectedCalendarReservationId(null);
                     }
                   }}
                   className={`${row.hasConflict ? 'bg-red-50/40' : ''} cursor-pointer transition-colors hover:bg-[color:rgb(var(--nodu-accent-rgb)/0.04)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--nodu-accent)]`}
@@ -492,7 +533,10 @@ const FleetView: React.FC = () => {
             <button
               type="button"
               aria-label="Předchozí měsíc flotily"
-              onClick={() => setOverviewCalendarMonth(subMonths(overviewCalendarDate, 1))}
+              onClick={() => {
+                setOverviewCalendarMonth(subMonths(overviewCalendarDate, 1));
+                setSelectedCalendarReservationId(null);
+              }}
               className="flex h-8 w-8 items-center justify-center rounded-lg border border-[color:var(--nodu-border)] text-[color:var(--nodu-text-soft)] transition hover:border-[color:var(--nodu-accent)] hover:text-[color:var(--nodu-accent)]"
             >
               <ChevronLeft size={15} />
@@ -503,7 +547,10 @@ const FleetView: React.FC = () => {
             <button
               type="button"
               aria-label="Další měsíc flotily"
-              onClick={() => setOverviewCalendarMonth(addMonths(overviewCalendarDate, 1))}
+              onClick={() => {
+                setOverviewCalendarMonth(addMonths(overviewCalendarDate, 1));
+                setSelectedCalendarReservationId(null);
+              }}
               className="flex h-8 w-8 items-center justify-center rounded-lg border border-[color:var(--nodu-border)] text-[color:var(--nodu-text-soft)] transition hover:border-[color:var(--nodu-accent)] hover:text-[color:var(--nodu-accent)]"
             >
               <ChevronRight size={15} />
@@ -548,14 +595,17 @@ const FleetView: React.FC = () => {
                     }
 
                     return (
-                      <div
+                      <button
+                        type="button"
                         key={`${key}-${reservation.id}`}
                         data-testid={`fleet-calendar-slot-${vehicle.id}`}
                         data-fleet-slot={vehicleSlotIndex}
                         data-fleet-reservation={vehicle.id}
-                        className="truncate rounded-md border px-1.5 py-1 text-[9px] font-semibold"
+                        onClick={() => setSelectedCalendarReservationId(reservation.id)}
+                        className="block w-full truncate rounded-md border px-1.5 py-1 text-left text-[9px] font-semibold transition ring-offset-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--nodu-accent)]"
                         style={vehicleStyle}
                         title={`${getVehicleName(reservation.vehicleId)} · ${project.jobNumber} · ${project.name}`}
+                        aria-label={`${getVehicleName(reservation.vehicleId)} · ${project.jobNumber} · ${project.name}`}
                       >
                         <span
                           data-testid={`fleet-calendar-reservation-${vehicle.id}`}
@@ -566,7 +616,7 @@ const FleetView: React.FC = () => {
                           {reservation.hasConflict && ' · Konflikt'}
                           {vehicleReservations.length > 1 && ` +${vehicleReservations.length - 1}`}
                         </span>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
@@ -574,6 +624,7 @@ const FleetView: React.FC = () => {
             );
           })}
         </div>
+        {selectedCalendarReservation && renderSelectedReservationDetail(selectedCalendarReservation, true)}
       </section>
     </motion.div>
   );

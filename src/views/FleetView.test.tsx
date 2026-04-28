@@ -82,6 +82,17 @@ describe('FleetView', () => {
     expect(screen.getByLabelText('Přidat dokument')).toBeInTheDocument();
   });
 
+  it('shows the reservation detail after clicking a detail-calendar reservation', () => {
+    render(<FleetView />);
+
+    fireEvent.click(screen.getByRole('row', { name: /Crafter 1/i }));
+    fireEvent.click(screen.getAllByRole('button', { name: /BTL Mattoni/i })[0]);
+
+    expect(screen.getByRole('heading', { name: 'Vybraná rezervace' })).toBeInTheDocument();
+    expect(screen.getByTestId('fleet-selected-reservation-detail')).toHaveTextContent('AKV104');
+    expect(screen.getByTestId('fleet-selected-reservation-detail')).toHaveTextContent('Odpovědná osoba: Petr Heitzer');
+  });
+
   it('shows a fleet-wide monthly calendar on overview', () => {
     render(<FleetView />);
 
@@ -108,5 +119,15 @@ describe('FleetView', () => {
     expect(screen.getAllByTestId('fleet-calendar-slot-crafter-1').length).toBeGreaterThan(0);
     expect(screen.getAllByTestId('fleet-calendar-slot-transit-1').length).toBeGreaterThan(0);
     expect(screen.queryByTestId('fleet-calendar-slot-van-crew')).not.toBeInTheDocument();
+  });
+
+  it('shows the reservation detail after clicking a fleet-calendar reservation', () => {
+    render(<FleetView />);
+
+    fireEvent.click(screen.getAllByRole('button', { name: /Crafter 1 · AKV104/i })[0]);
+
+    expect(screen.getByRole('heading', { name: 'Vybraná rezervace' })).toBeInTheDocument();
+    expect(screen.getByTestId('fleet-selected-reservation-detail')).toHaveTextContent('Auto: Crafter 1');
+    expect(screen.getByTestId('fleet-selected-reservation-detail')).toHaveTextContent('Odpovědná osoba: Petr Heitzer');
   });
 });

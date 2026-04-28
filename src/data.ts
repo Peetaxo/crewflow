@@ -1,4 +1,5 @@
-﻿import { Event, Contractor, Timelog, Invoice, Candidate, Project, Client, ReceiptItem } from './types';
+﻿import { Event, Contractor, Timelog, Invoice, Candidate, Project, Client, ReceiptItem, FleetReservation, FleetVehicle } from './types';
+import type { WarehouseItem, WarehouseReservation } from './types';
 
 
 export const INITIAL_EVENTS: Event[] = [
@@ -563,6 +564,40 @@ export const INITIAL_RECEIPTS: ReceiptItem[] = [
   { id: 5, contractorProfileId: 'profile-local-3', eid: 1, job: 'TEST001', title: 'Palivo', vendor: 'Shell', amount: 680, paidAt: '2026-04-09', note: 'Schváleno a připraveno k přiřazení do faktury.', status: 'approved' },
 ];
 
+export const INITIAL_FLEET_VEHICLES: FleetVehicle[] = [
+  { id: 'crafter-1', name: 'Crafter 1', plate: '4AK 1234', type: 'Dodávka 12 m3', status: 'available', capacity: '3 místa / 12 m3', inspectionValidUntil: '2026-05-11', insuranceValidUntil: '2026-11-30', serviceDueAt: '2026-07-15', note: 'Hlavní dodávka pro větší instalace.' },
+  { id: 'transit-1', name: 'Transit 1', plate: '5AX 7788', type: 'Dodávka 9 m3', status: 'available', capacity: '3 místa / 9 m3', inspectionValidUntil: '2026-08-20', insuranceValidUntil: '2026-12-10', serviceDueAt: '2026-06-30', note: 'Univerzální auto pro menší projekty.' },
+  { id: 'octavia-1', name: 'Octavia 1', plate: '6AB 2020', type: 'Osobní', status: 'available', capacity: '5 míst', inspectionValidUntil: '2027-02-15', insuranceValidUntil: '2026-10-01', serviceDueAt: '2026-09-01', note: 'Produkční auto.' },
+  { id: 'octavia-2', name: 'Octavia 2', plate: '7AC 4040', type: 'Osobní', status: 'service', capacity: '5 míst', inspectionValidUntil: '2026-12-01', insuranceValidUntil: '2026-12-01', serviceDueAt: '2026-04-30', note: 'Aktuálně v servisu.' },
+  { id: 'trailer-1', name: 'Vozík 1', plate: '1AZ 9090', type: 'Vozík', status: 'available', capacity: '750 kg', inspectionValidUntil: '2026-06-05', insuranceValidUntil: '2027-01-01', serviceDueAt: '2026-08-01', note: 'Brzděný vozík pro materiál.' },
+  { id: 'sprinter-1', name: 'Sprinter', plate: '2AS 5656', type: 'Dodávka 14 m3', status: 'available', capacity: '3 místa / 14 m3', inspectionValidUntil: '2026-09-12', insuranceValidUntil: '2027-02-01', serviceDueAt: '2026-06-20', note: 'Větší dodávka pro scénografii.' },
+  { id: 'pickup-1', name: 'Pickup', plate: '8AP 3131', type: 'Pickup', status: 'available', capacity: '5 míst / korba', inspectionValidUntil: '2026-10-05', insuranceValidUntil: '2027-03-01', serviceDueAt: '2026-10-01', note: 'Vhodné pro venkovní akce.' },
+  { id: 'van-crew', name: 'Crew Van', plate: '9AV 1111', type: 'Minibus', status: 'available', capacity: '8 míst', inspectionValidUntil: '2026-07-18', insuranceValidUntil: '2026-12-18', serviceDueAt: '2026-06-18', note: 'Převoz crew.' },
+];
+
+export const INITIAL_FLEET_RESERVATIONS: FleetReservation[] = [
+  { id: 5, vehicleId: 'crafter-1', projectId: 'TEST001', eventId: 1, responsibleProfileId: 'profile-local-1', startsAt: '2026-04-09T08:00', endsAt: '2026-04-10T18:00', note: 'Historická rezervace pro demo detailu.', hasConflict: false },
+  { id: 1, vehicleId: 'crafter-1', projectId: 'AKV104', eventId: 22, responsibleProfileId: 'profile-local-1', startsAt: '2026-05-02T08:00', endsAt: '2026-05-02T18:00', note: 'BTL Mattoni - materiál a instalace.', hasConflict: false },
+  { id: 2, vehicleId: 'transit-1', projectId: 'BNZ003', eventId: 26, responsibleProfileId: 'profile-local-22', startsAt: '2026-05-04T07:00', endsAt: '2026-05-08T20:00', note: 'Dealers meeting produkce.', hasConflict: false },
+  { id: 3, vehicleId: 'octavia-1', projectId: 'Majáles Bratislava', eventId: 205, responsibleProfileId: 'profile-local-11', startsAt: '2026-05-01T09:00', endsAt: '2026-05-02T22:00', note: 'Produkční cesta.', hasConflict: false },
+  { id: 4, vehicleId: 'crafter-1', projectId: 'AKV104', eventId: 23, responsibleProfileId: 'profile-local-7', startsAt: '2026-05-02T15:00', endsAt: '2026-05-02T21:00', note: 'Záměrný překryv pro demo konfliktu.', hasConflict: true },
+];
+
+export const INITIAL_WAREHOUSE_ITEMS: WarehouseItem[] = [
+  { id: '11111111-1111-4111-8111-111111111111', name: 'mix pult Pioneer DJM 900', category: 'Zvuk', imageUrl: 'https://images.booqablecdn.com/w500/uploads/64d9181153af5ebc841e02c68b6c8c06/photo/photo/0c40ef9e-a7e6-45c0-8109-9b614dc268fe/1718785126-670191252422062-0028-7678/upload.jpeg', priceCents: 200000, currency: 'CZK', pricePeriodLabel: '1 Den', quantityTotal: 1, ownerLabel: null, status: 'active', booqableProductId: 'e334ae21-6278-4c02-a95a-81b94e0a8991', booqableProductPath: '/products/mix-pult-pioneer-djm-900' },
+  { id: '22222222-2222-4222-8222-222222222222', name: 'Stojan malirsky dreveny', category: 'Stojan', imageUrl: 'https://images.booqablecdn.com/w500/uploads/64d9181153af5ebc841e02c68b6c8c06/photo/photo/d0b5ab46-a826-425e-bac8-ae8f79a31c1e/1714394775-49287610891557-0010-8723/8291_dreveny-malirsky-stojan-a-dubovy.jpg', priceCents: 5000, currency: 'CZK', pricePeriodLabel: 'Opraveno', quantityTotal: 1, ownerLabel: null, status: 'active', booqableProductId: 'cfa03f1f-2ee5-4274-8486-930d52f825eb', booqableProductPath: '/products/stojan-malirsky-dreveny' },
+  { id: '33333333-3333-4333-8333-333333333333', name: 'Makita DML 805 (venkovni led svetlo)', category: 'Svetlo', imageUrl: 'https://images.booqablecdn.com/w500/uploads/64d9181153af5ebc841e02c68b6c8c06/photo/photo/681f95e1-d8c8-4051-8572-5a2037787e07/591721213d867e4628e7427d3b478d31.jpg', priceCents: 5000, currency: 'CZK', pricePeriodLabel: '1 Den', quantityTotal: 1, ownerLabel: null, status: 'active', booqableProductId: '3e16ddb7-5ccc-4430-9300-8d6a8bef82bd', booqableProductPath: '/products/makita-dml-805-venkovni-led-svetlo' },
+  { id: '44444444-4444-4444-8444-444444444444', name: 'Stojan - Malirsky A4 !CERNY!', category: 'Stojan', imageUrl: 'https://images.booqablecdn.com/w500/uploads/64d9181153af5ebc841e02c68b6c8c06/photo/photo/9a9965ad-9dcb-42ea-b990-d8a26b992b1f/upload.webp', priceCents: 5000, currency: 'CZK', pricePeriodLabel: '1 Den', quantityTotal: 1, ownerLabel: null, status: 'active', booqableProductId: '41547df6-a70e-4937-b70a-1091fa725b38', booqableProductPath: '/products/stojan-malirsky-a4-cerny' },
+  { id: '55555555-5555-4555-8555-555555555555', name: 'Backstage - Easy Up 3 x 6m', category: 'Backstage', imageUrl: 'https://images.booqablecdn.com/w500/uploads/64d9181153af5ebc841e02c68b6c8c06/photo/photo/8fa09471-52b8-4b93-9c24-eb47b0ecf9af/upload.jpeg', priceCents: 150000, currency: 'CZK', pricePeriodLabel: '1 Den', quantityTotal: 1, ownerLabel: null, status: 'active', booqableProductId: 'cfe344ee-6169-49a6-976d-94ac4f669afc', booqableProductPath: '/products/backstage-easy-up-3-x-6m' },
+  { id: '66666666-6666-4666-8666-666666666666', name: 'Mikrovlnna trouba "Tesco"', category: 'Backstage', imageUrl: 'https://images.booqablecdn.com/w500/uploads/64d9181153af5ebc841e02c68b6c8c06/photo/photo/cc68ccb4-9c55-45c2-a56d-c074d605fe42/upload.jpeg', priceCents: 10000, currency: 'CZK', pricePeriodLabel: '1 Den', quantityTotal: 1, ownerLabel: null, status: 'active', booqableProductId: '42511243-7569-4773-8ff0-466d1b71033d', booqableProductPath: '/products/mikrovlnna-trouba-tesco-obrazek-je-pouze-ilustracni' },
+  { id: '77777777-7777-4777-8777-777777777777', name: 'AKU Tacker DST221S Makita', category: 'Naradi', imageUrl: 'https://images.booqablecdn.com/w500/uploads/64d9181153af5ebc841e02c68b6c8c06/photo/photo/92017a7b-4f23-4804-83f2-134982be186c/maxresdefault.jpg', priceCents: 35000, currency: 'CZK', pricePeriodLabel: '1 Den', quantityTotal: 1, ownerLabel: null, status: 'active', booqableProductId: '127c801e-2852-4b23-8772-05f3b16ca761', booqableProductPath: '/products/aku-tacker-dst221s-makita' },
+  { id: '88888888-8888-4888-8888-888888888888', name: 'Stojan -malirsky,kovovy', category: 'Stojan', imageUrl: 'https://images.booqablecdn.com/w500/uploads/64d9181153af5ebc841e02c68b6c8c06/photo/photo/f8c86a4f-38f3-424f-b8df-005aae3a5a92/upload.png', priceCents: 10000, currency: 'CZK', pricePeriodLabel: '1 Den', quantityTotal: 1, ownerLabel: null, status: 'active', booqableProductId: 'f7f2479e-74f0-4a8f-a82b-e6a697d44b75', booqableProductPath: '/products/stojan-malirsky-kovovy' },
+  { id: '99999999-9999-4999-8999-999999999999', name: 'Cable Cross "prejezdy"', category: 'Kabelaz', imageUrl: 'https://images.booqablecdn.com/w500/uploads/64d9181153af5ebc841e02c68b6c8c06/photo/photo/86114265-cda5-4032-a412-575ca28e94d7/upload.jpeg', priceCents: 20000, currency: 'CZK', pricePeriodLabel: '1 Den', quantityTotal: 1, ownerLabel: null, status: 'active', booqableProductId: '94d08ab1-5d7d-461a-951c-7963ad6c0c83', booqableProductPath: '/products/cable-cross-prejezdy' },
+  { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', name: 'Regal', category: 'Vybaveni', imageUrl: 'https://images.booqablecdn.com/w500/uploads/64d9181153af5ebc841e02c68b6c8c06/photo/photo/b02b1b4a-9923-4e98-9b9f-1a55f17576e7/upload.jpeg', priceCents: 400000, currency: 'CZK', pricePeriodLabel: 'Opraveno', quantityTotal: 1, ownerLabel: null, status: 'active', booqableProductId: '88da6f0d-feca-4dd6-bbd4-9fbeeb44037a', booqableProductPath: '/products/regal' },
+];
+
+export const INITIAL_WAREHOUSE_RESERVATIONS: WarehouseReservation[] = [];
+
 export const INITIAL_CANDIDATES: Candidate[] = [
   { id: 1, name: 'Pavel Horák', phone: '603 222 333', email: 'pavel.horak@email.cz', src: 'Tally', calBooked: true, stage: 'interview_scheduled', interviewAt: '2026-04-07 14:00', note: 'Zájem o víkendové akce, má ŘP.' },
   { id: 2, name: 'Eva Klimešová', phone: '776 444 555', email: 'eva.klimesova@email.cz', src: 'Tally', calBooked: false, stage: 'new', interviewAt: null, note: 'Doporučena Kateřinou P.' },
@@ -572,6 +607,3 @@ export const INITIAL_CANDIDATES: Candidate[] = [
 
 /** Sazba za km (Kc) - presunout do nastaveni/DB pri migraci na Supabase */
 export const KM_RATE = 5.60;
-
-
-

@@ -1,9 +1,11 @@
-import type { Candidate, Client, Contractor, Event, Invoice, Project, ReceiptItem, Timelog, TimelogDay } from '@/types';
+import type { Candidate, Client, Contractor, Event, FleetReservation, FleetVehicle, Invoice, Project, ReceiptItem, Timelog, TimelogDay } from '@/types';
 import type { Database, Json } from './database.types';
 
 type CandidateRow = Database['public']['Tables']['candidates']['Row'];
 type ClientRow = Database['public']['Tables']['clients']['Row'];
 type EventRow = Database['public']['Tables']['events']['Row'];
+type FleetReservationRow = Database['public']['Tables']['fleet_reservations']['Row'];
+type FleetVehicleRow = Database['public']['Tables']['fleet_vehicles']['Row'];
 type InvoiceRow = Database['public']['Tables']['invoices']['Row'];
 type ProfileRow = Database['public']['Tables']['profiles']['Row'];
 type ProjectRow = Database['public']['Tables']['projects']['Row'];
@@ -95,6 +97,7 @@ export function mapContractor(row: ProfileRow): Contractor {
 export function mapEvent(row: EventRow): Event {
   return {
     id: Number.NaN,
+    supabaseId: row.id,
     projectId: row.project_id,
     name: row.name,
     job: row.job_number ?? '',
@@ -115,6 +118,45 @@ export function mapEvent(row: EventRow): Event {
     dayTypes: asRecord(row.day_types) as Event['dayTypes'],
     phaseTimes: asRecord(row.phase_times) as Event['phaseTimes'],
     phaseSchedules: asRecord(row.phase_schedules) as Event['phaseSchedules'],
+  };
+}
+
+export function mapFleetVehicle(row: FleetVehicleRow): FleetVehicle {
+  return {
+    id: row.slug,
+    supabaseId: row.id,
+    name: row.name,
+    plate: row.plate,
+    type: row.type,
+    status: row.status,
+    capacity: row.capacity,
+    inspectionValidUntil: row.inspection_valid_until,
+    insuranceValidUntil: row.insurance_valid_until ?? undefined,
+    serviceDueAt: row.service_due_at ?? undefined,
+    note: row.note ?? '',
+  };
+}
+
+export function mapFleetReservation(
+  row: FleetReservationRow,
+  links: {
+    localId: number;
+    vehicleSlug: string;
+    projectJobNumber: string;
+    eventId: number | null;
+  },
+): FleetReservation {
+  return {
+    id: links.localId,
+    supabaseId: row.id,
+    vehicleId: links.vehicleSlug,
+    projectId: links.projectJobNumber,
+    eventId: links.eventId,
+    responsibleProfileId: row.responsible_profile_id,
+    startsAt: row.starts_at,
+    endsAt: row.ends_at,
+    note: row.note ?? '',
+    hasConflict: row.has_conflict,
   };
 }
 

@@ -13,6 +13,7 @@ export type TimelogStatus = 'draft' | 'pending_ch' | 'pending_coo' | 'approved' 
 export type InvoiceStatus = 'draft' | 'sent' | 'paid';
 export type ReceiptStatus = 'draft' | 'submitted' | 'approved' | 'attached' | 'reimbursed' | 'rejected';
 export type RecruitmentStage = 'new' | 'interview_scheduled' | 'decision' | 'accepted' | 'rejected';
+export type FleetVehicleStatus = 'available' | 'reserved' | 'service' | 'out_of_order';
 
 export interface Database {
   public: {
@@ -111,6 +112,50 @@ export interface Database {
           status: InvoiceStatus;
           sent_at: string | null;
           paid_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      fleet_reservations: {
+        Row: {
+          id: string;
+          vehicle_id: string;
+          project_id: string;
+          event_id: string | null;
+          responsible_profile_id: string;
+          starts_at: string;
+          ends_at: string;
+          note: string | null;
+          has_conflict: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      fleet_vehicle_documents: {
+        Row: {
+          id: string;
+          vehicle_id: string;
+          file_name: string;
+          storage_path: string | null;
+          content_type: string | null;
+          size_bytes: number | null;
+          uploaded_by_profile_id: string | null;
+          created_at: string;
+        };
+      };
+      fleet_vehicles: {
+        Row: {
+          id: string;
+          slug: string;
+          name: string;
+          plate: string;
+          type: string;
+          status: FleetVehicleStatus;
+          capacity: string;
+          inspection_valid_until: string;
+          insurance_valid_until: string | null;
+          service_due_at: string | null;
+          note: string | null;
           created_at: string;
           updated_at: string;
         };

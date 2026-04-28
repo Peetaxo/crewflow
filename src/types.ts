@@ -20,6 +20,7 @@ export interface EventPhaseSlot extends EventPhaseTime {
 /** Akce (event) - konkretni realizace projektu */
 export interface Event {
   id: number;
+  supabaseId?: string;
   projectId?: string | null;
   name: string;
   /** Job Number - propojeni s projektem */
@@ -209,6 +210,105 @@ export interface Candidate {
   stage: RecruitmentStage;
   interviewAt: string | null;
   note: string;
+}
+
+export type FleetVehicleStatus = 'available' | 'reserved' | 'service' | 'out_of_order';
+
+export interface FleetVehicle {
+  id: string;
+  supabaseId?: string;
+  name: string;
+  plate: string;
+  type: string;
+  status: FleetVehicleStatus;
+  capacity: string;
+  inspectionValidUntil: string;
+  insuranceValidUntil?: string;
+  serviceDueAt?: string;
+  note: string;
+}
+
+export interface FleetReservation {
+  id: number;
+  supabaseId?: string;
+  vehicleId: string;
+  projectId: string;
+  eventId: number | null;
+  responsibleProfileId: string;
+  startsAt: string;
+  endsAt: string;
+  note: string;
+  hasConflict: boolean;
+}
+
+export type FleetReservationDraft = Omit<FleetReservation, 'id' | 'hasConflict'> & {
+  id?: number;
+  hasConflict?: boolean;
+};
+
+export type WarehouseItemStatus = 'active' | 'draft' | 'maintenance' | 'retired';
+export type WarehouseReservationStatus = 'draft' | 'reserved' | 'picked_up' | 'returned' | 'cancelled';
+
+export interface WarehouseItem {
+  id: string;
+  name: string;
+  category: string | null;
+  description?: string | null;
+  imageUrl: string | null;
+  priceCents: number;
+  currency: 'CZK';
+  pricePeriodLabel: string | null;
+  quantityTotal: number;
+  ownerClientId?: string | null;
+  ownerLabel?: string | null;
+  status: WarehouseItemStatus;
+  booqableProductId?: string | null;
+  booqableProductPath?: string | null;
+}
+
+export interface WarehouseReservationItem {
+  id: string;
+  reservationId: string;
+  warehouseItemId: string;
+  quantity: number;
+  unitPriceCents: number;
+  pricePeriodLabel: string | null;
+  lineTotalCents: number;
+  itemNameSnapshot: string;
+}
+
+export interface WarehouseReservation {
+  id: string;
+  projectId?: string | null;
+  projectJobNumber: string;
+  eventId?: string | null;
+  eventLocalId?: number | null;
+  reservedByProfileId?: string | null;
+  startsAt: string;
+  endsAt: string;
+  status: WarehouseReservationStatus;
+  note: string;
+  totalCents: number;
+  currency: 'CZK';
+  booqableOrderId?: string | null;
+  items: WarehouseReservationItem[];
+}
+
+export interface WarehouseCartItemDraft {
+  warehouseItemId: string;
+  quantity: number;
+}
+
+export interface WarehouseReservationDraft {
+  projectJobNumber: string;
+  projectId?: string | null;
+  eventId?: string | null;
+  eventLocalId?: number | null;
+  reservedByProfileId?: string | null;
+  startsAt: string;
+  endsAt: string;
+  note: string;
+  items: WarehouseCartItemDraft[];
 }
 
 /** Projekt (Job Number) */

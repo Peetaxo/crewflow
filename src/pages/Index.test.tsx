@@ -43,6 +43,9 @@ describe('Index unauthenticated routing', () => {
     );
 
     expect(screen.getByRole('heading', { name: /Cely provoz od akce po fakturu/i })).toBeInTheDocument();
+    expect(screen.getByText('Job Number jako spojovaci bod')).toBeInTheDocument();
+    expect(screen.getByText('Role vidi jen to, co potrebuji')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Prihlasit' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Prihlaseni' })).not.toBeInTheDocument();
   });
 

@@ -4,6 +4,7 @@ import { getLocalAppData, updateLocalAppState } from '../../lib/app-data';
 import { resetSupabaseClientsHydration } from '../../features/clients/services/clients.service';
 import { resetSupabaseCrewHydration } from '../../features/crew/services/crew.service';
 import { resetSupabaseEventsHydration } from '../../features/events/services/events.service';
+import { resetSupabaseFleetHydration } from '../../features/fleet/services/fleet.service';
 import { resetSupabaseInvoicesHydration } from '../../features/invoices/services/invoices.service';
 import { resetSupabaseProjectsHydration } from '../../features/projects/services/projects.service';
 import { resetSupabaseReceiptsHydration } from '../../features/receipts/services/receipts.service';
@@ -20,6 +21,7 @@ const resetSupabaseHydrationState = () => {
   resetSupabaseTimelogsHydration();
   resetSupabaseInvoicesHydration();
   resetSupabaseCandidatesHydration();
+  resetSupabaseFleetHydration();
 };
 
 const AppDataBootstrap = () => {

@@ -3,22 +3,31 @@ import {
   INITIAL_CLIENTS,
   INITIAL_CONTRACTORS,
   INITIAL_EVENTS,
+  INITIAL_FLEET_RESERVATIONS,
+  INITIAL_FLEET_VEHICLES,
   INITIAL_INVOICES,
   INITIAL_PROJECTS,
   INITIAL_RECEIPTS,
   INITIAL_TIMELOGS,
+  INITIAL_WAREHOUSE_ITEMS,
+  INITIAL_WAREHOUSE_RESERVATIONS,
 } from '@/data';
 import type {
   Candidate,
   Client,
   Contractor,
   Event,
+  FleetReservation,
+  FleetVehicle,
   Invoice,
   Project,
   ReceiptItem,
   Timelog,
+  WarehouseItem,
+  WarehouseReservation,
+  WarehouseReservationItem,
 } from '@/types';
-import { mapCandidate, mapClient, mapContractor, mapEvent, mapInvoice, mapProject, mapReceipt, mapTimelog } from './supabase-mappers';
+import { mapCandidate, mapClient, mapContractor, mapEvent, mapFleetReservation, mapFleetVehicle, mapInvoice, mapProject, mapReceipt, mapTimelog } from './supabase-mappers';
 import { isSupabaseConfigured, supabase } from './supabase';
 
 export interface AppDataSnapshot {
@@ -27,6 +36,10 @@ export interface AppDataSnapshot {
   timelogs: Timelog[];
   invoices: Invoice[];
   receipts: ReceiptItem[];
+  fleetVehicles: FleetVehicle[];
+  fleetReservations: FleetReservation[];
+  warehouseItems: WarehouseItem[];
+  warehouseReservations: WarehouseReservation[];
   candidates: Candidate[];
   projects: Project[];
   clients: Client[];
@@ -44,6 +57,10 @@ let localAppState = cloneSnapshot({
   timelogs: INITIAL_TIMELOGS,
   invoices: INITIAL_INVOICES,
   receipts: INITIAL_RECEIPTS,
+  fleetVehicles: INITIAL_FLEET_VEHICLES,
+  fleetReservations: INITIAL_FLEET_RESERVATIONS,
+  warehouseItems: INITIAL_WAREHOUSE_ITEMS,
+  warehouseReservations: INITIAL_WAREHOUSE_RESERVATIONS,
   candidates: INITIAL_CANDIDATES,
   projects: INITIAL_PROJECTS,
   clients: INITIAL_CLIENTS,
@@ -58,6 +75,10 @@ export function getLocalAppData(): AppDataSnapshot {
     timelogs: INITIAL_TIMELOGS,
     invoices: INITIAL_INVOICES,
     receipts: INITIAL_RECEIPTS,
+    fleetVehicles: INITIAL_FLEET_VEHICLES,
+    fleetReservations: INITIAL_FLEET_RESERVATIONS,
+    warehouseItems: INITIAL_WAREHOUSE_ITEMS,
+    warehouseReservations: INITIAL_WAREHOUSE_RESERVATIONS,
     candidates: INITIAL_CANDIDATES,
     projects: INITIAL_PROJECTS,
     clients: INITIAL_CLIENTS,
@@ -88,10 +109,123 @@ function indexById<T extends { id: string }>(rows: T[]): Map<string, number> {
   return new Map(rows.map((row, index) => [row.id, index + 1]));
 }
 
+type SupabaseUntypedResult = {
+  data: unknown[] | null;
+  error: { message: string } | null;
+};
+
+type SupabaseUntyped = {
+  from: (table: string) => {
+    select: (columns: string) => {
+      order: (column: string) => Promise<SupabaseUntypedResult>;
+    };
+  };
+};
+
+interface WarehouseItemRow {
+  id: string;
+  name: string;
+  category: string | null;
+  description: string | null;
+  image_url: string | null;
+  price_cents: number;
+  currency: string;
+  price_period_label: string | null;
+  quantity_total: number;
+  owner_client_id: string | null;
+  owner_label: string | null;
+  status: WarehouseItem['status'];
+  booqable_product_id: string | null;
+  booqable_product_path: string | null;
+}
+
+interface WarehouseReservationItemRow {
+  id: string;
+  reservation_id: string;
+  warehouse_item_id: string;
+  quantity: number;
+  unit_price_cents: number;
+  price_period_label: string | null;
+  line_total_cents: number;
+  item_name_snapshot: string;
+}
+
+interface WarehouseReservationRow {
+  id: string;
+  project_id: string | null;
+  project_job_number: string;
+  event_id: string | null;
+  event_local_id: number | null;
+  reserved_by_profile_id: string | null;
+  starts_at: string;
+  ends_at: string;
+  status: WarehouseReservation['status'];
+  note: string | null;
+  total_cents: number;
+  currency: string;
+  booqable_order_id: string | null;
+}
+
+function mapWarehouseItem(row: WarehouseItemRow): WarehouseItem {
+  return {
+    id: row.id,
+    name: row.name,
+    category: row.category,
+    description: row.description,
+    imageUrl: row.image_url,
+    priceCents: row.price_cents,
+    currency: (row.currency ?? 'CZK') as 'CZK',
+    pricePeriodLabel: row.price_period_label,
+    quantityTotal: row.quantity_total,
+    ownerClientId: row.owner_client_id,
+    ownerLabel: row.owner_label,
+    status: row.status,
+    booqableProductId: row.booqable_product_id,
+    booqableProductPath: row.booqable_product_path,
+  };
+}
+
+function mapWarehouseReservationItem(row: WarehouseReservationItemRow): WarehouseReservationItem {
+  return {
+    id: row.id,
+    reservationId: row.reservation_id,
+    warehouseItemId: row.warehouse_item_id,
+    quantity: row.quantity,
+    unitPriceCents: row.unit_price_cents,
+    pricePeriodLabel: row.price_period_label,
+    lineTotalCents: row.line_total_cents,
+    itemNameSnapshot: row.item_name_snapshot,
+  };
+}
+
+function mapWarehouseReservation(
+  row: WarehouseReservationRow,
+  items: WarehouseReservationItemRow[],
+): WarehouseReservation {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    projectJobNumber: row.project_job_number,
+    eventId: row.event_id,
+    eventLocalId: row.event_local_id,
+    reservedByProfileId: row.reserved_by_profile_id,
+    startsAt: row.starts_at,
+    endsAt: row.ends_at,
+    status: row.status,
+    note: row.note ?? '',
+    totalCents: row.total_cents,
+    currency: (row.currency ?? 'CZK') as 'CZK',
+    booqableOrderId: row.booqable_order_id,
+    items: items.map(mapWarehouseReservationItem),
+  };
+}
+
 export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
   if (!supabase || !isSupabaseConfigured) {
     throw new Error('Supabase neni nakonfigurovane.');
   }
+
+  const supabaseUntyped = supabase as unknown as SupabaseUntyped;
 
   const [
     clientsResult,
@@ -103,6 +237,11 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     invoicesResult,
     receiptsResult,
     candidatesResult,
+    fleetVehiclesResult,
+    fleetReservationsResult,
+    warehouseItemsResult,
+    warehouseReservationsResult,
+    warehouseReservationItemsResult,
   ] = await Promise.all([
     supabase.from('clients').select('*').order('name'),
     supabase.from('projects').select('*').order('job_number'),
@@ -113,6 +252,11 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     supabase.from('invoices').select('*').order('created_at'),
     supabase.from('receipts').select('*').order('created_at'),
     supabase.from('candidates').select('*').order('created_at'),
+    supabase.from('fleet_vehicles').select('*').order('name'),
+    supabase.from('fleet_reservations').select('*').order('starts_at'),
+    supabaseUntyped.from('warehouse_items').select('*').order('name'),
+    supabaseUntyped.from('warehouse_reservations').select('*').order('starts_at'),
+    supabaseUntyped.from('warehouse_reservation_items').select('*').order('created_at'),
   ]);
 
   const results = [
@@ -125,6 +269,11 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     invoicesResult,
     receiptsResult,
     candidatesResult,
+    fleetVehiclesResult,
+    fleetReservationsResult,
+    warehouseItemsResult,
+    warehouseReservationsResult,
+    warehouseReservationItemsResult,
   ];
 
   const firstError = results.find((result) => result.error)?.error;
@@ -141,6 +290,11 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
   const invoiceRows = invoicesResult.data ?? [];
   const receiptRows = receiptsResult.data ?? [];
   const candidateRows = candidatesResult.data ?? [];
+  const fleetVehicleRows = fleetVehiclesResult.data ?? [];
+  const fleetReservationRows = fleetReservationsResult.data ?? [];
+  const warehouseItemRows = (warehouseItemsResult.data ?? []) as WarehouseItemRow[];
+  const warehouseReservationRows = (warehouseReservationsResult.data ?? []) as WarehouseReservationRow[];
+  const warehouseReservationItemRows = (warehouseReservationItemsResult.data ?? []) as WarehouseReservationItemRow[];
 
   const clients = clientRows.map((row, index) => ({
     ...mapClient(row),
@@ -208,12 +362,38 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     id: candidateIdMap.get(row.id) ?? Number.NaN,
   }));
 
+  const fleetVehicles = fleetVehicleRows.map(mapFleetVehicle);
+  const fleetVehicleSlugByUuid = new Map(fleetVehicleRows.map((row) => [row.id, row.slug]));
+  const projectJobNumberByUuid = new Map(projectRows.map((row) => [row.id, row.job_number]));
+  const fleetReservationIdMap = indexById(fleetReservationRows);
+  const fleetReservations = fleetReservationRows
+    .map((row) => mapFleetReservation(row, {
+      localId: fleetReservationIdMap.get(row.id) ?? Number.NaN,
+      vehicleSlug: fleetVehicleSlugByUuid.get(row.vehicle_id) ?? row.vehicle_id,
+      projectJobNumber: projectJobNumberByUuid.get(row.project_id) ?? row.project_id,
+      eventId: row.event_id ? (eventIdMap.get(row.event_id) ?? null) : null,
+    }));
+
+  const warehouseItems = warehouseItemRows.map(mapWarehouseItem);
+  const warehouseReservationItemsByReservationId = new Map<string, WarehouseReservationItemRow[]>();
+  for (const itemRow of warehouseReservationItemRows) {
+    const current = warehouseReservationItemsByReservationId.get(itemRow.reservation_id) ?? [];
+    current.push(itemRow);
+    warehouseReservationItemsByReservationId.set(itemRow.reservation_id, current);
+  }
+  const warehouseReservations = warehouseReservationRows
+    .map((row) => mapWarehouseReservation(row, warehouseReservationItemsByReservationId.get(row.id) ?? []));
+
   return {
     events,
     contractors,
     timelogs,
     invoices,
     receipts,
+    fleetVehicles,
+    fleetReservations,
+    warehouseItems,
+    warehouseReservations,
     candidates,
     projects,
     clients,

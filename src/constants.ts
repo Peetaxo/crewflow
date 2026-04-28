@@ -8,6 +8,7 @@ import {
   Clock,
   FolderKanban,
   Building2,
+  Car,
   Settings,
 } from 'lucide-react';
 import { Role } from './types';
@@ -25,6 +26,7 @@ export const NAV_ITEMS = [
   { id: 'projects', label: 'Projekty', icon: FolderKanban },
   { id: 'events', label: 'Akce', icon: Calendar },
   { id: 'crew', label: 'Crew', icon: Users },
+  { id: 'fleet', label: 'Flotila', icon: Car },
   { id: 'timelogs', label: 'Timelogy', icon: FileText },
   { id: 'my-timelogs', label: 'Moje timelogy', icon: FileText },
   { id: 'invoices', label: 'Faktury', icon: Receipt },
@@ -37,8 +39,8 @@ export const NAV_ITEMS = [
 
 export const NAV_BY_ROLE: Record<Role, string[]> = {
   crew: ['my-shifts', 'events', 'my-timelogs', 'my-invoices', 'my-receipts'],
-  crewhead: ['dashboard', 'my-shifts', 'clients', 'projects', 'events', 'crew', 'timelogs', 'invoices', 'receipts', 'recruitment'],
-  coo: ['dashboard', 'my-shifts', 'clients', 'projects', 'events', 'crew', 'timelogs', 'invoices', 'receipts'],
+  crewhead: ['dashboard', 'my-shifts', 'clients', 'projects', 'events', 'crew', 'fleet', 'timelogs', 'invoices', 'receipts', 'recruitment'],
+  coo: ['dashboard', 'my-shifts', 'clients', 'projects', 'events', 'crew', 'fleet', 'timelogs', 'invoices', 'receipts'],
 };
 
 export const ROLE_LABELS: Record<Role, string> = {

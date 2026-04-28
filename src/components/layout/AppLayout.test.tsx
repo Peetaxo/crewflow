@@ -61,6 +61,10 @@ vi.mock('../../views/RecruitmentView', () => ({
   default: () => <div data-testid="recruitment-view" />,
 }));
 
+vi.mock('../../views/FleetView', () => ({
+  default: () => <div data-testid="fleet-view" />,
+}));
+
 vi.mock('../../views/SettingsView', () => ({
   default: () => <div data-testid="settings-view" />,
 }));
@@ -110,5 +114,16 @@ describe('AppLayout shell', () => {
     expect(container.firstElementChild).toHaveClass('dark', 'nodu-app-shell');
     expect(screen.getByRole('main')).toHaveClass('nodu-page-frame');
     expect(screen.getByRole('main').className).not.toContain('bg-white');
+  });
+
+  it('renders the fleet view for the fleet tab', () => {
+    mockAppContext = {
+      ...mockAppContext,
+      currentTab: 'fleet',
+    };
+
+    render(<AppLayout />);
+
+    expect(screen.getByTestId('fleet-view')).toBeInTheDocument();
   });
 });

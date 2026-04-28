@@ -254,6 +254,84 @@ describe('crew.service', () => {
     }));
   });
 
+  it('omits empty rating from Supabase profile updates so older schemas can save rate changes', async () => {
+    let snapshot = {
+      contractors: [
+        {
+          id: 1,
+          profileId: 'profile-uuid-1',
+          userId: 'user-uuid-1',
+          name: 'Contractor One',
+          ii: 'CO',
+          bg: '#000',
+          fg: '#fff',
+          tags: [],
+          events: 1,
+          rate: 250,
+          phone: '111',
+          email: 'one@example.com',
+          ico: '',
+          dic: '',
+          bank: '',
+          city: 'Praha',
+          billingName: 'Contractor One',
+          billingStreet: '',
+          billingZip: '',
+          billingCity: 'Praha',
+          billingCountry: 'Ceska republika',
+          reliable: true,
+          rating: null,
+          note: '',
+        },
+      ],
+      timelogs: [],
+      invoices: [],
+      receipts: [],
+      events: [],
+      projects: [],
+      clients: [],
+      candidates: [],
+    };
+
+    const updateEq = vi.fn().mockResolvedValue({ error: null });
+    const update = vi.fn(() => ({ eq: updateEq }));
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: vi.fn((table: string) => {
+          if (table !== 'profiles') {
+            throw new Error(`Unexpected table ${table}`);
+          }
+
+          return { update };
+        }),
+      },
+    }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    const { updateCrew } = await import('./crew.service');
+
+    await updateCrew({
+      ...snapshot.contractors[0],
+      rate: 300,
+    });
+
+    const payload = update.mock.calls[0][0];
+    expect(payload).not.toHaveProperty('rating');
+    expect(payload).toEqual(expect.objectContaining({
+      hourly_rate: 300,
+    }));
+  });
+
   it('deletes a crew member in Supabase when there are no linked financial records', async () => {
     let snapshot = {
       contractors: [

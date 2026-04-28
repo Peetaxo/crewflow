@@ -38,27 +38,31 @@ const normalizeTags = (tags: string[] = []) => (
     .filter(Boolean)
 );
 
-const toProfilePayload = (member: CreateCrewInput | UpdateCrewInput) => ({
-  first_name: member.name.trim().split(/\s+/).slice(0, -1).join(' ') || member.name.trim(),
-  last_name: member.name.trim().split(/\s+/).slice(-1).join(''),
-  phone: member.phone || null,
-  email: member.email || null,
-  ico: member.ico || null,
-  dic: member.dic || null,
-  bank_account: member.bank || null,
-  iban: member.iban || null,
-  billing_street: member.billingStreet || null,
-  billing_zip: member.billingZip || null,
-  billing_city: member.billingCity || member.city || null,
-  billing_country: member.billingCountry || DEFAULT_BILLING_COUNTRY,
-  hourly_rate: Number(member.rate) || 0,
-  tags: member.tags.includes('Ridic') ? ['Ridic'] : normalizeTags(member.tags),
-  note: member.note || null,
-  reliable: member.reliable,
-  rating: clampRating(member.rating),
-  avatar_color: member.fg || null,
-  avatar_bg: member.bg || null,
-});
+const toProfilePayload = (member: CreateCrewInput | UpdateCrewInput) => {
+  const rating = clampRating(member.rating);
+  const payload = {
+    first_name: member.name.trim().split(/\s+/).slice(0, -1).join(' ') || member.name.trim(),
+    last_name: member.name.trim().split(/\s+/).slice(-1).join(''),
+    phone: member.phone || null,
+    email: member.email || null,
+    ico: member.ico || null,
+    dic: member.dic || null,
+    bank_account: member.bank || null,
+    iban: member.iban || null,
+    billing_street: member.billingStreet || null,
+    billing_zip: member.billingZip || null,
+    billing_city: member.billingCity || member.city || null,
+    billing_country: member.billingCountry || DEFAULT_BILLING_COUNTRY,
+    hourly_rate: Number(member.rate) || 0,
+    tags: member.tags.includes('Ridic') ? ['Ridic'] : normalizeTags(member.tags),
+    note: member.note || null,
+    reliable: member.reliable,
+    avatar_color: member.fg || null,
+    avatar_bg: member.bg || null,
+  };
+
+  return rating == null ? payload : { ...payload, rating };
+};
 
 const normalizeCrewMember = <T extends CreateCrewInput | UpdateCrewInput>(member: T): T => {
   const name = normalizeText(member.name);

@@ -76,7 +76,7 @@ const mockDependencies = {
   ],
 };
 
-vi.mock('../context/AppContext', () => ({
+vi.mock('../context/useAppContext', () => ({
   useAppContext: () => mockAppContext,
 }));
 

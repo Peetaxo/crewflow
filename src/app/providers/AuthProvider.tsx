@@ -1,55 +1,21 @@
-/* eslint-disable react-refresh/only-export-components */
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { appDataSource } from '../../lib/app-config';
 import { getContractors, subscribeToCrewChanges } from '../../features/crew/services/crew.service';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import type { Contractor, Role } from '../../types';
 import { clearPersistedUiSession } from '../../context/ui-session-storage';
+import { AuthContext, type AuthProfile, type AuthContextType, type DevLoginOption } from './auth-context';
 
 const DEV_SESSION_STORAGE_KEY = 'event-helper-dev-session';
 
-type AuthProfile = {
-  firstName: string;
-  lastName: string;
-  email: string;
-};
-
-type DevLoginOption = {
-  id: number;
-  profileId: string | null;
-  name: string;
-  email: string;
-};
-
 type StoredDevSession = {
-  id: number;
   profileId: string | null;
   userId: string | null;
   name: string;
   email: string;
   role: Role;
 };
-
-interface AuthContextType {
-  isAuthRequired: boolean;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  isDevSession: boolean;
-  session: Session | null;
-  user: User | null;
-  role: Role | null;
-  profile: AuthProfile | null;
-  currentProfileId: string | null;
-  currentUserId: string | null;
-  currentContractorId: number | null;
-  devLoginOptions: DevLoginOption[];
-  signIn: (email: string, password: string) => Promise<void>;
-  signInAsDevUser: (contractorId: number, role: Role) => void;
-  signOut: () => Promise<void>;
-}
-
-const AuthContext = createContext<AuthContextType | null>(null);
 
 const ROLE_PRIORITY: Role[] = ['coo', 'crewhead', 'crew'];
 
@@ -98,14 +64,6 @@ const writeStoredDevSession = (session: StoredDevSession | null) => {
   }
 
   window.localStorage.setItem(DEV_SESSION_STORAGE_KEY, JSON.stringify(session));
-};
-
-export const useAuth = (): AuthContextType => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth musi byt pouzit uvnitr AuthProvider');
-  }
-  return context;
 };
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
@@ -166,7 +124,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           setRole(storedDevSession.role);
           setCurrentProfileId(storedDevSession.profileId);
           setCurrentUserId(storedDevSession.userId);
-          setCurrentContractorId(storedDevSession.id);
+          setCurrentContractorId(getContractorIdByProfileId(storedDevSession.profileId));
           setProfile({
             firstName,
             lastName,
@@ -267,6 +225,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     isAuthRequired,
     isAuthenticated: !isAuthRequired || Boolean(session?.user) || isDevSession,
     isLoading,
+    hasKnownSession: Boolean(session?.user) || isDevSession,
     isDevSession,
     session,
     user,
@@ -286,15 +245,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         throw new Error(error.message);
       }
     },
-    signInAsDevUser: (contractorId: number, nextRole: Role) => {
-      const contractor = (getContractors() ?? []).find((item) => item.id === contractorId);
+    signInAsDevUser: (profileId: string, nextRole: Role) => {
+      const contractor = (getContractors() ?? []).find((item) => item.profileId === profileId);
       if (!contractor) {
         throw new Error('Vybrany testovaci profil nebyl nalezen.');
       }
 
       const { firstName, lastName } = splitName(contractor.name);
       const storedSession: StoredDevSession = {
-        id: contractor.id,
         profileId: contractor.profileId ?? null,
         userId: contractor.userId ?? null,
         name: contractor.name,
@@ -309,7 +267,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setRole(nextRole);
       setCurrentProfileId(storedSession.profileId);
       setCurrentUserId(storedSession.userId);
-      setCurrentContractorId(storedSession.id);
+      setCurrentContractorId(getContractorIdByProfileId(storedSession.profileId));
       setProfile({
         firstName,
         lastName,

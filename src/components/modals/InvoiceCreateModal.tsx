@@ -18,9 +18,10 @@ import { useReceiptsQuery } from '../../features/receipts/queries/useReceiptsQue
 interface InvoiceCreateModalProps {
   onClose: () => void;
   onDirtyChange?: (isDirty: boolean) => void;
+  onSubmitSuccess?: () => void;
 }
 
-const InvoiceCreateModal = ({ onClose, onDirtyChange }: InvoiceCreateModalProps) => {
+const InvoiceCreateModal = ({ onClose, onDirtyChange, onSubmitSuccess }: InvoiceCreateModalProps) => {
   const invoicesQuery = useInvoicesQuery();
   const timelogsQuery = useTimelogsQuery();
   const receiptsQuery = useReceiptsQuery();
@@ -137,7 +138,8 @@ const InvoiceCreateModal = ({ onClose, onDirtyChange }: InvoiceCreateModalProps)
       }
 
       if (created) {
-        onClose();
+        onDirtyChange?.(false);
+        onSubmitSuccess?.();
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Nepodarilo se vytvorit fakturu.');
@@ -181,12 +183,14 @@ const InvoiceCreateModal = ({ onClose, onDirtyChange }: InvoiceCreateModalProps)
             ) : (
               candidates.map((candidate) => (
                 <button
-                  key={candidate.contractorId}
+                  key={candidate.contractorProfileId ?? candidate.contractorName}
                   type="button"
                   onClick={() => {
-                    const contractorKey = candidate.contractorProfileId ?? `legacy:${candidate.contractorId}`;
-                    setSelectedContractorKey(contractorKey);
-                    loadPreview(contractorKey, true);
+                    if (!candidate.contractorProfileId) {
+                      return;
+                    }
+                    setSelectedContractorKey(candidate.contractorProfileId);
+                    loadPreview(candidate.contractorProfileId, true);
                   }}
                   className="flex w-full items-center justify-between rounded-2xl border border-[var(--nodu-border)] bg-white p-4 text-left shadow-sm transition hover:border-[rgba(var(--nodu-accent-rgb),0.35)] hover:bg-[var(--nodu-accent-soft)]"
                 >

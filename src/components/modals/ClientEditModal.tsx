@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAppContext } from '../../context/AppContext';
+import { toast } from 'sonner';
+import { useAppContext } from '../../context/useAppContext';
 import { getClients, saveClient } from '../../features/clients/services/clients.service';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -9,13 +10,24 @@ import { Textarea } from '../ui/textarea';
 
 const ClientEditModal = () => {
   const { editingClient, setEditingClient } = useAppContext();
+  const [isSaving, setIsSaving] = useState(false);
   const clients = getClients();
 
   if (!editingClient) return null;
 
-  const handleSave = () => {
-    saveClient(editingClient);
-    setEditingClient(null);
+  const handleSave = async () => {
+    if (isSaving) return;
+
+    setIsSaving(true);
+    try {
+      await saveClient(editingClient);
+      setEditingClient(null);
+      toast.success('Klient ulozen.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Klienta se nepodarilo ulozit.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -123,9 +135,10 @@ const ClientEditModal = () => {
               </Button>
               <Button
                 onClick={handleSave}
+                disabled={isSaving}
                 className="flex-1"
               >
-                Ulozit klienta
+                {isSaving ? 'Ukladam...' : 'Ulozit klienta'}
               </Button>
             </div>
           </motion.div>

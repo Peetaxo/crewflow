@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useAppContext } from '../context/AppContext';
 import { Button } from '../components/ui/button';
+import { useAppContext } from '../context/useAppContext';
 import { ProjectFilter, createEmptyProject, getProjectById, getProjectRows, subscribeToProjectChanges } from '../features/projects/services/projects.service';
 import { formatCurrency } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';

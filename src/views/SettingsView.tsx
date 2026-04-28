@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, Moon, Palette, Sun, UserRound } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useAuth } from '../app/providers/AuthProvider';
-import { useAppContext } from '../context/AppContext';
+import { toast } from 'sonner';
+import { useAuth } from '../app/providers/useAuth';
+import { useAppContext } from '../context/useAppContext';
 import type { Contractor } from '../types';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
@@ -86,13 +87,18 @@ const SettingsView = () => {
     setSettingsSection(section);
   };
 
-  const saveProfile = () => {
+  const saveProfile = async () => {
     if (!me) return;
-    updateContractor({
-      ...me,
-      ...profileForm,
-    });
-    setIsEditingProfile(false);
+
+    try {
+      await updateContractor({
+        ...me,
+        ...profileForm,
+      });
+      setIsEditingProfile(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Profil se nepodarilo ulozit.');
+    }
   };
 
   const settingsCards = [

@@ -20,6 +20,7 @@ export interface EventPhaseSlot extends EventPhaseTime {
 /** Akce (event) - konkretni realizace projektu */
 export interface Event {
   id: number;
+  projectId?: string | null;
   name: string;
   /** Job Number - propojeni s projektem */
   job: string;
@@ -70,6 +71,7 @@ export interface Contractor {
   ico: string;
   dic: string;
   bank: string;
+  iban?: string;
   city: string;
   billingName?: string;
   billingStreet?: string;
@@ -100,8 +102,6 @@ export interface Timelog {
   id: number;
   /** ID akce */
   eid: number;
-  /** ID kontraktora */
-  cid?: number;
   contractorProfileId?: string;
   days: TimelogDay[];
   /** Cestovne v km */
@@ -113,11 +113,34 @@ export interface Timelog {
 /** Status faktury */
 export type InvoiceStatus = 'draft' | 'sent' | 'paid';
 
+export interface InvoiceSupplierSnapshot {
+  profileId: string;
+  name: string;
+  ico: string;
+  dic: string | null;
+  bankAccount: string;
+  iban?: string | null;
+  billingStreet: string;
+  billingZip: string;
+  billingCity: string;
+  billingCountry: string;
+  vatPayer: false;
+}
+
+export interface InvoiceCustomerSnapshot {
+  clientId: string;
+  name: string;
+  ico: string;
+  dic: string | null;
+  street: string;
+  zip: string;
+  city: string;
+  country: string;
+}
+
 /** Faktura */
 export interface Invoice {
   id: string;
-  /** ID kontraktora */
-  cid?: number;
   contractorProfileId?: string;
   /** ID akce */
   eid: number;
@@ -140,6 +163,15 @@ export interface Invoice {
   receiptIds?: number[];
   /** Vsechny navazane akce zahrnute do faktury */
   eventIds?: number[];
+  invoiceNumber?: string;
+  issueDate?: string;
+  taxableSupplyDate?: string;
+  dueDate?: string;
+  currency?: 'CZK';
+  supplierSnapshot?: InvoiceSupplierSnapshot;
+  customerSnapshot?: InvoiceCustomerSnapshot;
+  pdfPath?: string | null;
+  pdfGeneratedAt?: string | null;
   status: InvoiceStatus;
   sentAt: string | null;
 }
@@ -150,7 +182,6 @@ export type ReceiptStatus = 'draft' | 'submitted' | 'approved' | 'attached' | 'r
 /** Účtenka / výdaj crew k akci */
 export interface ReceiptItem {
   id: number;
-  cid?: number;
   contractorProfileId?: string;
   eid: number;
   job: string;
@@ -184,8 +215,10 @@ export interface Candidate {
 export interface Project {
   /** Job Number jako ID */
   id: string;
+  supabaseId?: string;
   name: string;
   client: string;
+  clientId?: string | null;
   note?: string;
   createdAt: string;
 }
@@ -193,6 +226,7 @@ export interface Project {
 /** Klient */
 export interface Client {
   id: number;
+  supabaseId?: string;
   name: string;
   ico?: string;
   dic?: string;

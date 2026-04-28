@@ -1,7 +1,8 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AppProvider, useAppContext } from './AppContext';
+import { AppProvider } from './AppContext';
+import { useAppContext } from './useAppContext';
 import type { Role } from '../types';
 import {
   clearPersistedUiSession,
@@ -15,7 +16,7 @@ const mockAuthState = {
   role: 'coo' as Role | null,
 };
 
-vi.mock('../app/providers/AuthProvider', () => ({
+vi.mock('../app/providers/useAuth', () => ({
   useAuth: () => mockAuthState,
 }));
 
@@ -59,7 +60,6 @@ vi.mock('../features/receipts/services/receipts.service', () => ({
 
 const editingReceipt = {
   id: 42,
-  cid: 7,
   eid: 9,
   job: 'JOB-42',
   title: 'Taxi',

@@ -20,7 +20,7 @@ describe('timelogs.service write flow', () => {
 
   it('updates timelog status in Supabase using the mapped row id', async () => {
     let snapshot = createSnapshot([
-      { id: 1, eid: 1, cid: 1, contractorProfileId: 'profile-uuid-1', days: [], km: 0, note: '', status: 'draft' },
+      { id: 1, eid: 1, contractorProfileId: 'profile-uuid-1', days: [], km: 0, note: '', status: 'draft' },
     ]);
 
     const updateEq = vi.fn().mockResolvedValue({ error: null });
@@ -81,9 +81,9 @@ describe('timelogs.service write flow', () => {
 
   it('approves all matching event timelogs in Supabase and updates local state', async () => {
     let snapshot = createSnapshot([
-      { id: 1, eid: 7, cid: 1, contractorProfileId: 'profile-uuid-1', days: [], km: 0, note: '', status: 'pending_coo' },
-      { id: 2, eid: 7, cid: 2, contractorProfileId: 'profile-uuid-2', days: [], km: 0, note: '', status: 'pending_coo' },
-      { id: 3, eid: 8, cid: 3, contractorProfileId: 'profile-uuid-3', days: [], km: 0, note: '', status: 'pending_coo' },
+      { id: 1, eid: 7, contractorProfileId: 'profile-uuid-1', days: [], km: 0, note: '', status: 'pending_coo' },
+      { id: 2, eid: 7, contractorProfileId: 'profile-uuid-2', days: [], km: 0, note: '', status: 'pending_coo' },
+      { id: 3, eid: 8, contractorProfileId: 'profile-uuid-3', days: [], km: 0, note: '', status: 'pending_coo' },
     ]);
 
     const eqCalls: Array<[string, string]> = [];
@@ -252,7 +252,6 @@ describe('timelogs.service write flow', () => {
     const timelogs = getTimelogs();
 
     expect(timelogs[0].contractorProfileId).toBe('profile-uuid-1');
-    expect(timelogs[0].cid).toBeUndefined();
     expect(timelogs[0].eid).toBe(1);
   });
 
@@ -261,7 +260,6 @@ describe('timelogs.service write flow', () => {
       {
         id: 1,
         eid: 1,
-        cid: 1,
         contractorProfileId: 'profile-uuid-1',
         days: [{ d: '2026-04-10', f: '08:00', t: '16:00', type: 'instal' }],
         km: 10,
@@ -397,14 +395,13 @@ describe('timelogs.service write flow', () => {
     expect(snapshot.timelogs[0].km).toBe(25);
   });
 
-  it('derives contractorProfileId from local contractor data when saving a legacy numeric timelog', async () => {
+  it('throws when saving a timelog without contractorProfileId', async () => {
     let snapshot = {
       events: [{ id: 1 }],
       contractors: [{ id: 1, profileId: 'profile-uuid-1', name: 'Crew member' }],
       timelogs: [{
         id: 1,
         eid: 1,
-        cid: 1,
         days: [{ d: '2026-04-10', f: '08:00', t: '16:00', type: 'instal' as const }],
         km: 0,
         note: '',
@@ -485,15 +482,10 @@ describe('timelogs.service write flow', () => {
 
     const { saveTimelog } = await import('./timelogs.service');
 
-    const updated = await saveTimelog({
+    await expect(saveTimelog({
       ...snapshot.timelogs[0],
       note: 'Legacy cid only',
-    });
-
-    expect(timelogUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      contractor_id: 'profile-uuid-1',
-    }));
-    expect(updated.contractorProfileId).toBe('profile-uuid-1');
-    expect(snapshot.timelogs[0].contractorProfileId).toBe('profile-uuid-1');
+    })).rejects.toThrow('Nepodarilo se dohledat UUID identitu clena crew.');
+    expect(timelogUpdate).not.toHaveBeenCalled();
   });
 });

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useAppContext } from '../context/AppContext';
+import { useAppContext } from '../context/useAppContext';
 import { Contractor, Event, ReceiptItem, Timelog } from '../types';
 import { calculateTotalHours, formatCurrency, formatDateRange, getDatesBetween, getEventStatus } from '../utils';
 import StatCard from '../components/shared/StatCard';
@@ -43,20 +43,11 @@ const DashboardView = () => {
     loadData();
   }, [eventsQuery.data, invoicesQuery.data, loadData, timelogsQuery.data, receiptsQuery.data]);
 
-  const findContractor = useCallback((contractorProfileId?: string, contractorId?: number) => {
-    if (contractorProfileId) {
-      const contractorByProfileId = contractors.find((contractor) => contractor.profileId === contractorProfileId);
-      if (contractorByProfileId) {
-        return contractorByProfileId;
-      }
-    }
-
-    if (contractorId == null) {
-      return null;
-    }
-
-    return contractors.find((contractor) => contractor.id === contractorId) ?? null;
-  }, [contractors]);
+  const findContractor = useCallback((contractorProfileId?: string) => (
+    contractorProfileId
+      ? contractors.find((contractor) => contractor.profileId === contractorProfileId) ?? null
+      : null
+  ), [contractors]);
 
   const filteredEvents = useMemo(() => {
     const safeEvents = eventsQuery.data ?? [];
@@ -77,7 +68,7 @@ const DashboardView = () => {
 
     return safeTimelogs.filter((timelog) => {
       const event = events.find((item) => item.id === timelog.eid);
-      const contractor = findContractor(timelog.contractorProfileId, timelog.cid);
+      const contractor = findContractor(timelog.contractorProfileId);
       if (!event || !contractor) return false;
 
       return (
@@ -96,7 +87,7 @@ const DashboardView = () => {
 
     return safeReceipts.filter((receipt) => {
       const event = events.find((item) => item.id === receipt.eid);
-      const contractor = findContractor(receipt.contractorProfileId, receipt.cid);
+      const contractor = findContractor(receipt.contractorProfileId);
       if (!event || !contractor) return false;
 
       return (
@@ -117,7 +108,7 @@ const DashboardView = () => {
 
     return safeInvoices.filter((invoice) => {
       const event = invoice.eid ? events.find((item) => item.id === invoice.eid) : null;
-      const contractor = findContractor(invoice.contractorProfileId, invoice.cid);
+      const contractor = findContractor(invoice.contractorProfileId);
 
       return (
         invoice.id.toLowerCase().includes(query)
@@ -214,7 +205,7 @@ const DashboardView = () => {
             {timelogQueue
               .slice(0, 4)
               .map((timelog) => {
-                const contractor = findContractor(timelog.contractorProfileId, timelog.cid);
+                const contractor = findContractor(timelog.contractorProfileId);
                 const event = findEvent(timelog.eid);
                 if (!contractor || !event) return null;
 

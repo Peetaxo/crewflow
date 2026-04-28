@@ -38,6 +38,28 @@ const normalizeTags = (tags: string[] = []) => (
     .filter(Boolean)
 );
 
+const toProfilePayload = (member: CreateCrewInput | UpdateCrewInput) => ({
+  first_name: member.name.trim().split(/\s+/).slice(0, -1).join(' ') || member.name.trim(),
+  last_name: member.name.trim().split(/\s+/).slice(-1).join(''),
+  phone: member.phone || null,
+  email: member.email || null,
+  ico: member.ico || null,
+  dic: member.dic || null,
+  bank_account: member.bank || null,
+  iban: member.iban || null,
+  billing_street: member.billingStreet || null,
+  billing_zip: member.billingZip || null,
+  billing_city: member.billingCity || member.city || null,
+  billing_country: member.billingCountry || DEFAULT_BILLING_COUNTRY,
+  hourly_rate: Number(member.rate) || 0,
+  tags: member.tags.includes('Ridic') ? ['Ridic'] : normalizeTags(member.tags),
+  note: member.note || null,
+  reliable: member.reliable,
+  rating: clampRating(member.rating),
+  avatar_color: member.fg || null,
+  avatar_bg: member.bg || null,
+});
+
 const normalizeCrewMember = <T extends CreateCrewInput | UpdateCrewInput>(member: T): T => {
   const name = normalizeText(member.name);
   const city = normalizeText(member.city);
@@ -51,6 +73,7 @@ const normalizeCrewMember = <T extends CreateCrewInput | UpdateCrewInput>(member
     ico: normalizeText(member.ico),
     dic: normalizeText(member.dic),
     bank: normalizeText(member.bank),
+    iban: normalizeText(member.iban),
     city,
     billingName: normalizeText(member.billingName) || name,
     billingStreet: normalizeText(member.billingStreet),
@@ -255,11 +278,26 @@ export const createCrew = (input: CreateCrewInput): CrewMember => {
   return normalized;
 };
 
-export const updateCrew = (input: UpdateCrewInput): CrewMember => {
+export const updateCrew = async (input: UpdateCrewInput): Promise<CrewMember> => {
   const normalized = normalizeCrewMember(input);
   validateCrewMember(normalized);
 
   let updatedContractor: Contractor | null = null;
+
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    if (!normalized.profileId) {
+      throw new Error('Clen crew nema UUID profil, nelze jej ulozit do Supabase.');
+    }
+
+    const profileUpdate = await supabase
+      .from('profiles')
+      .update(toProfilePayload(normalized))
+      .eq('id', normalized.profileId);
+
+    if (profileUpdate.error) {
+      throw new Error(profileUpdate.error.message);
+    }
+  }
 
   updateLocalAppState((snapshot) => {
     const existing = snapshot.contractors.find((member) => member.id === normalized.id);
@@ -283,12 +321,50 @@ export const updateCrew = (input: UpdateCrewInput): CrewMember => {
   return updatedContractor as CrewMember;
 };
 
-export const updateContractor = (contractor: Contractor): Contractor => (
+export const updateContractor = async (contractor: Contractor): Promise<Contractor> => (
   updateCrew(contractor as UpdateCrewInput)
 );
 
-export const deleteCrew = (id: number): DeleteCrewResult => {
+export const deleteCrew = async (id: number): Promise<DeleteCrewResult> => {
   let existing: Contractor | null = null;
+
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    const snapshot = getLocalAppState();
+    existing = snapshot.contractors.find((member) => member.id === id) ?? null;
+    if (!existing) {
+      throw new Error('Clen crew nebyl nalezen.');
+    }
+
+    if (!existing.profileId) {
+      throw new Error('Clen crew nema UUID profil, nelze jej smazat ze Supabase.');
+    }
+
+    const hasLinkedData = (snapshot.timelogs ?? []).some((timelog) => timelog.contractorProfileId === existing?.profileId)
+      || (snapshot.receipts ?? []).some((receipt) => receipt.contractorProfileId === existing?.profileId)
+      || (snapshot.invoices ?? []).some((invoice) => invoice.contractorProfileId === existing?.profileId);
+
+    if (hasLinkedData) {
+      throw new Error('Clena crew s navazanymi vykazy, uctenkami nebo fakturami zatim nelze smazat.');
+    }
+
+    const assignmentDelete = await supabase
+      .from('event_assignments')
+      .delete()
+      .eq('profile_id', existing.profileId);
+
+    if (assignmentDelete.error) {
+      throw new Error(assignmentDelete.error.message);
+    }
+
+    const profileDelete = await supabase
+      .from('profiles')
+      .delete()
+      .eq('id', existing.profileId);
+
+    if (profileDelete.error) {
+      throw new Error(profileDelete.error.message);
+    }
+  }
 
   updateLocalAppState((snapshot) => {
     existing = snapshot.contractors.find((member) => member.id === id) ?? null;

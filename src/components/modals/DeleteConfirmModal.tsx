@@ -1,8 +1,8 @@
 import React from 'react';
 import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAppContext } from '../../context/AppContext';
 import { Button } from '../ui/button';
+import { useAppContext } from '../../context/useAppContext';
 
 /** Potvrzovací dialog pro smazání */
 const DeleteConfirmModal = () => {

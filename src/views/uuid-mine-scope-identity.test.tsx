@@ -130,18 +130,18 @@ const events: Event[] = [
 ];
 
 const timelogs: Timelog[] = [
-  { id: 1, eid: 1, cid: 1, contractorProfileId: 'profile-uuid-1', days: [{ d: '2026-04-20', f: '08:00', t: '12:00', type: 'provoz' }], km: 0, note: '', status: 'draft' },
-  { id: 2, eid: 2, cid: 2, contractorProfileId: 'profile-uuid-2', days: [{ d: '2026-04-21', f: '09:00', t: '15:00', type: 'provoz' }], km: 12, note: '', status: 'draft' },
+  { id: 1, eid: 1, contractorProfileId: 'profile-uuid-1', days: [{ d: '2026-04-20', f: '08:00', t: '12:00', type: 'provoz' }], km: 0, note: '', status: 'draft' },
+  { id: 2, eid: 2, contractorProfileId: 'profile-uuid-2', days: [{ d: '2026-04-21', f: '09:00', t: '15:00', type: 'provoz' }], km: 12, note: '', status: 'draft' },
 ];
 
 const receipts: ReceiptItem[] = [
-  { id: 1, cid: 1, contractorProfileId: 'profile-uuid-1', eid: 1, job: 'JOB-1', title: 'Prvni receipt', vendor: 'Vendor 1', amount: 100, paidAt: '2026-04-20', note: '', status: 'approved' },
-  { id: 2, cid: 2, contractorProfileId: 'profile-uuid-2', eid: 2, job: 'JOB-2', title: 'Moje receipt', vendor: 'Vendor 2', amount: 250, paidAt: '2026-04-21', note: '', status: 'draft' },
+  { id: 1, contractorProfileId: 'profile-uuid-1', eid: 1, job: 'JOB-1', title: 'Prvni receipt', vendor: 'Vendor 1', amount: 100, paidAt: '2026-04-20', note: '', status: 'approved' },
+  { id: 2, contractorProfileId: 'profile-uuid-2', eid: 2, job: 'JOB-2', title: 'Moje receipt', vendor: 'Vendor 2', amount: 250, paidAt: '2026-04-21', note: '', status: 'draft' },
 ];
 
 const invoices: Invoice[] = [
-  { id: 'INV-1', cid: 1, contractorProfileId: 'profile-uuid-1', eid: 1, hours: 4, hAmt: 800, km: 0, kAmt: 0, total: 800, job: 'JOB-1', status: 'sent', sentAt: '2026-04-20' },
-  { id: 'INV-2', cid: 2, contractorProfileId: 'profile-uuid-2', eid: 2, hours: 6, hAmt: 1500, km: 12, kAmt: 60, total: 1560, job: 'JOB-2', status: 'draft', sentAt: null },
+  { id: 'INV-1', contractorProfileId: 'profile-uuid-1', eid: 1, hours: 4, hAmt: 800, km: 0, kAmt: 0, total: 800, job: 'JOB-1', status: 'sent', sentAt: '2026-04-20' },
+  { id: 'INV-2', contractorProfileId: 'profile-uuid-2', eid: 2, hours: 6, hAmt: 1500, km: 12, kAmt: 60, total: 1560, job: 'JOB-2', status: 'draft', sentAt: null },
 ];
 
 const projects = [
@@ -166,11 +166,11 @@ vi.mock('recharts', () => ({
   Tooltip: () => <div />,
 }));
 
-vi.mock('../app/providers/AuthProvider', () => ({
+vi.mock('../app/providers/useAuth', () => ({
   useAuth: () => mockAuth,
 }));
 
-vi.mock('../context/AppContext', () => ({
+vi.mock('../context/useAppContext', () => ({
   useAppContext: () => mockAppContext,
 }));
 
@@ -207,7 +207,11 @@ vi.mock('../constants', () => ({
   ROLE_SHORT_LABELS: { crew: 'CR', crewhead: 'CH', coo: 'CO' },
 }));
 
-const createEmptyReceipt = vi.fn((cid: number) => ({ id: 999, cid, title: '' }));
+const createEmptyReceipt = vi.fn((contractorProfileId?: string) => ({
+  id: 999,
+  contractorProfileId,
+  title: '',
+}));
 
 vi.mock('../features/timelogs/services/timelogs.service', () => ({
   getTimelogs: () => timelogs,
@@ -320,8 +324,8 @@ describe('UUID mine-scope identity', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Nová účtenka/i }));
 
-    expect(createEmptyReceipt).toHaveBeenCalledWith(2);
-    expect(setEditingReceipt).toHaveBeenCalledWith(expect.objectContaining({ cid: 2 }));
+    expect(createEmptyReceipt).toHaveBeenCalledWith('profile-uuid-2');
+    expect(setEditingReceipt).toHaveBeenCalledWith(expect.objectContaining({ contractorProfileId: 'profile-uuid-2' }));
   });
 
   it('filters mine invoices by currentProfileId', async () => {

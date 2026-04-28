@@ -9,7 +9,7 @@ import { resetSupabaseProjectsHydration } from '../../features/projects/services
 import { resetSupabaseReceiptsHydration } from '../../features/receipts/services/receipts.service';
 import { resetSupabaseCandidatesHydration } from '../../features/recruitment/services/candidates.service';
 import { resetSupabaseTimelogsHydration } from '../../features/timelogs/services/timelogs.service';
-import { useAuth } from './AuthProvider';
+import { useAuth } from './useAuth';
 
 const resetSupabaseHydrationState = () => {
   resetSupabaseClientsHydration();
@@ -28,8 +28,9 @@ const AppDataBootstrap = () => {
   useEffect(() => {
     if (appDataSource !== 'supabase') return;
 
+    resetSupabaseHydrationState();
+
     if (isAuthRequired && !isAuthenticated) {
-      resetSupabaseHydrationState();
       updateLocalAppState(() => getLocalAppData());
     }
   }, [isAuthRequired, isAuthenticated]);

@@ -45,7 +45,6 @@ const createSnapshot = (overrides?: Partial<{
   receipts: [
     {
       id: 1,
-      cid: 1,
       contractorProfileId: 'profile-uuid-1',
       eid: 1,
       job: 'AK001',
@@ -208,7 +207,6 @@ describe('receipts.service write flow', () => {
 
     const created = await saveReceipt({
       id: 2,
-      cid: 1,
       contractorProfileId: 'profile-uuid-1',
       eid: 1,
       job: ' ak001 ',
@@ -239,7 +237,7 @@ describe('receipts.service write flow', () => {
     expect(snapshot.receipts[0].title).toBe('Parkovne');
   });
 
-  it('derives contractorProfileId from local contractor data for new receipts created from numeric selection', async () => {
+  it('persists contractorProfileId for new receipts created from UUID selection', async () => {
     let snapshot = createSnapshot({
       receipts: [],
     });
@@ -297,7 +295,7 @@ describe('receipts.service write flow', () => {
 
     const { createEmptyReceipt, saveReceipt } = await import('./receipts.service');
 
-    const createdDraft = createEmptyReceipt(1);
+    const createdDraft = createEmptyReceipt('profile-uuid-1');
     const created = await saveReceipt({
       ...createdDraft,
       eid: 1,

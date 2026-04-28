@@ -36,6 +36,7 @@ export function mapCandidate(row: CandidateRow): Candidate {
 export function mapClient(row: ClientRow): Client {
   return {
     id: Number.NaN,
+    supabaseId: row.id,
     name: row.name,
     ico: row.ico ?? '',
     dic: row.dic ?? '',
@@ -49,8 +50,10 @@ export function mapClient(row: ClientRow): Client {
 export function mapProject(row: ProjectRow, clientName?: string): Project {
   return {
     id: row.job_number,
+    supabaseId: row.id,
     name: row.name,
     client: clientName ?? '',
+    clientId: row.client_id,
     note: row.note ?? '',
     createdAt: row.created_at,
   };
@@ -76,6 +79,7 @@ export function mapContractor(row: ProfileRow): Contractor {
     ico: row.ico ?? '',
     dic: row.dic ?? '',
     bank: row.bank_account ?? '',
+    iban: row.iban ?? '',
     city: row.billing_city ?? '',
     billingName: `${firstName} ${lastName}`.trim(),
     billingStreet: row.billing_street ?? '',
@@ -91,6 +95,7 @@ export function mapContractor(row: ProfileRow): Contractor {
 export function mapEvent(row: EventRow): Event {
   return {
     id: Number.NaN,
+    projectId: row.project_id,
     name: row.name,
     job: row.job_number ?? '',
     startDate: row.date_from ?? '',
@@ -146,6 +151,15 @@ export function mapInvoice(row: InvoiceRow): Invoice {
     receiptAmt: Number(row.amount_receipts ?? 0),
     total: Number(row.total_amount ?? 0),
     job: row.job_number ?? '',
+    invoiceNumber: row.invoice_number ?? undefined,
+    issueDate: row.issue_date ?? undefined,
+    taxableSupplyDate: row.taxable_supply_date ?? undefined,
+    dueDate: row.due_date ?? undefined,
+    currency: (row.currency ?? 'CZK') as 'CZK',
+    supplierSnapshot: row.supplier_snapshot as Invoice['supplierSnapshot'],
+    customerSnapshot: row.customer_snapshot as Invoice['customerSnapshot'],
+    pdfPath: row.pdf_path ?? null,
+    pdfGeneratedAt: row.pdf_generated_at ?? null,
     status: row.status,
     sentAt: row.sent_at,
   };

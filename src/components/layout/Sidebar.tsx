@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, ChevronsLeft, ChevronsRight, LogOut, Search, Settings } from 'lucide-react';
 import { toast } from 'sonner';
-import { useAuth } from '../../app/providers/AuthProvider';
-import { useAppContext } from '../../context/AppContext';
+import { useAuth } from '../../app/providers/useAuth';
+import { useAppContext } from '../../context/useAppContext';
 import { getNavItemsForRole, ROLE_LABELS, ROLE_SHORT_LABELS } from '../../constants';
 import { getCandidates, subscribeToCandidateChanges } from '../../features/recruitment/services/candidates.service';
 import { useTimelogsQuery } from '../../features/timelogs/queries/useTimelogsQuery';

@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { useAuth } from '../app/providers/AuthProvider';
+import { useAuth } from '../app/providers/useAuth';
 
 const LoginView = () => {
   const { signIn, isLoading } = useAuth();

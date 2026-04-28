@@ -2,7 +2,7 @@ import React from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { useAppContext } from '../../context/AppContext';
+import { useAppContext } from '../../context/useAppContext';
 import { KM_RATE } from '../../data';
 import { calculateTotalHours, formatCurrency } from '../../utils';
 import { getTimelogDependencies, saveTimelog } from '../../features/timelogs/services/timelogs.service';
@@ -20,7 +20,6 @@ const TimelogEditModal = () => {
 
   const { contractors, events } = getTimelogDependencies();
   const contractor = contractors.find((item) => item.profileId === editingTimelog.contractorProfileId)
-    ?? contractors.find((item) => item.id === editingTimelog.cid)
     ?? null;
   const event = events.find((item) => item.id === editingTimelog.eid) ?? null;
   if (!contractor || !event) return null;

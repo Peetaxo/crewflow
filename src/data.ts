@@ -543,24 +543,24 @@ export const INITIAL_CONTRACTORS: Contractor[] = [
 ];
 
 export const INITIAL_TIMELOGS: Timelog[] = [
-  { id: 1, eid: 1, cid: 1, contractorProfileId: 'profile-local-1', days: [{ d: '2026-04-09', f: '08:00', t: '18:00', type: 'instal' }, { d: '2026-04-10', f: '08:00', t: '16:00', type: 'deinstal' }], km: 0, note: 'Už proplacený testovací výkaz.', status: 'paid' },
-  { id: 2, eid: 1, cid: 2, contractorProfileId: 'profile-local-2', days: [{ d: '2026-04-10', f: '08:00', t: '16:00', type: 'deinstal' }], km: 0, note: 'Čeká na finální schválení COO.', status: 'pending_coo' },
-  { id: 3, eid: 1, cid: 3, contractorProfileId: 'profile-local-3', days: [{ d: '2026-04-09', f: '08:00', t: '18:00', type: 'instal' }], km: 120, note: 'Rozpracovaný draft z mobilu.', status: 'draft' },
-  { id: 4, eid: 1, cid: 4, contractorProfileId: 'profile-local-4', days: [{ d: '2026-04-10', f: '09:00', t: '17:00', type: 'deinstal' }], km: 0, note: 'CrewHead má zkontrolovat rozsah směny.', status: 'pending_ch' },
-  { id: 5, eid: 1, cid: 5, contractorProfileId: 'profile-local-5', days: [{ d: '2026-04-10', f: '08:00', t: '17:00', type: 'deinstal' }], km: 0, note: 'Už odesláno do faktury.', status: 'invoiced' },
+  { id: 1, eid: 1, contractorProfileId: 'profile-local-1', days: [{ d: '2026-04-09', f: '08:00', t: '18:00', type: 'instal' }, { d: '2026-04-10', f: '08:00', t: '16:00', type: 'deinstal' }], km: 0, note: 'Už proplacený testovací výkaz.', status: 'paid' },
+  { id: 2, eid: 1, contractorProfileId: 'profile-local-2', days: [{ d: '2026-04-10', f: '08:00', t: '16:00', type: 'deinstal' }], km: 0, note: 'Čeká na finální schválení COO.', status: 'pending_coo' },
+  { id: 3, eid: 1, contractorProfileId: 'profile-local-3', days: [{ d: '2026-04-09', f: '08:00', t: '18:00', type: 'instal' }], km: 120, note: 'Rozpracovaný draft z mobilu.', status: 'draft' },
+  { id: 4, eid: 1, contractorProfileId: 'profile-local-4', days: [{ d: '2026-04-10', f: '09:00', t: '17:00', type: 'deinstal' }], km: 0, note: 'CrewHead má zkontrolovat rozsah směny.', status: 'pending_ch' },
+  { id: 5, eid: 1, contractorProfileId: 'profile-local-5', days: [{ d: '2026-04-10', f: '08:00', t: '17:00', type: 'deinstal' }], km: 0, note: 'Už odesláno do faktury.', status: 'invoiced' },
 ];
 
 export const INITIAL_INVOICES: Invoice[] = [
-  { id: 'FAK-TEST-001', cid: 1, contractorProfileId: 'profile-local-1', eid: 1, hours: 18, hAmt: 4500, km: 0, kAmt: 0, receiptAmt: 420, total: 4920, job: 'TEST001', status: 'paid', sentAt: '2026-04-05T10:00:00Z' },
-  { id: 'FAK-TEST-002', cid: 5, contractorProfileId: 'profile-local-5', eid: 1, hours: 9, hAmt: 2070, km: 0, kAmt: 0, receiptAmt: 260, total: 2330, job: 'TEST001', status: 'sent', sentAt: '2026-04-06T10:00:00Z' },
+  { id: 'FAK-TEST-001', contractorProfileId: 'profile-local-1', eid: 1, hours: 18, hAmt: 4500, km: 0, kAmt: 0, receiptAmt: 420, total: 4920, job: 'TEST001', status: 'paid', sentAt: '2026-04-05T10:00:00Z' },
+  { id: 'FAK-TEST-002', contractorProfileId: 'profile-local-5', eid: 1, hours: 9, hAmt: 2070, km: 0, kAmt: 0, receiptAmt: 260, total: 2330, job: 'TEST001', status: 'sent', sentAt: '2026-04-06T10:00:00Z' },
 ];
 
 export const INITIAL_RECEIPTS: ReceiptItem[] = [
-  { id: 1, cid: 1, contractorProfileId: 'profile-local-1', eid: 1, job: 'TEST001', title: 'Parkovné', vendor: 'Mr. Parkit', amount: 420, paidAt: '2026-04-10', note: 'Parkování dodávky u venue.', status: 'reimbursed' },
-  { id: 2, cid: 5, contractorProfileId: 'profile-local-5', eid: 1, job: 'TEST001', title: 'Noční parkování', vendor: 'Parking Tower', amount: 260, paidAt: '2026-04-10', note: 'Účtenka je připojena k odeslané faktuře.', status: 'attached' },
-  { id: 3, cid: 2, contractorProfileId: 'profile-local-2', eid: 1, job: 'TEST001', title: 'Taxi po směně', vendor: 'Bolt', amount: 315, paidAt: '2026-04-10', note: 'Posláno ke schválení.', status: 'submitted' },
-  { id: 4, cid: 4, contractorProfileId: 'profile-local-4', eid: 1, job: 'TEST001', title: 'Nákup vody pro crew', vendor: 'Albert', amount: 190, paidAt: '2026-04-10', note: 'Výdaj byl zamítnut jako neuznatelný.', status: 'rejected' },
-  { id: 5, cid: 3, contractorProfileId: 'profile-local-3', eid: 1, job: 'TEST001', title: 'Palivo', vendor: 'Shell', amount: 680, paidAt: '2026-04-09', note: 'Schváleno a připraveno k přiřazení do faktury.', status: 'approved' },
+  { id: 1, contractorProfileId: 'profile-local-1', eid: 1, job: 'TEST001', title: 'Parkovné', vendor: 'Mr. Parkit', amount: 420, paidAt: '2026-04-10', note: 'Parkování dodávky u venue.', status: 'reimbursed' },
+  { id: 2, contractorProfileId: 'profile-local-5', eid: 1, job: 'TEST001', title: 'Noční parkování', vendor: 'Parking Tower', amount: 260, paidAt: '2026-04-10', note: 'Účtenka je připojena k odeslané faktuře.', status: 'attached' },
+  { id: 3, contractorProfileId: 'profile-local-2', eid: 1, job: 'TEST001', title: 'Taxi po směně', vendor: 'Bolt', amount: 315, paidAt: '2026-04-10', note: 'Posláno ke schválení.', status: 'submitted' },
+  { id: 4, contractorProfileId: 'profile-local-4', eid: 1, job: 'TEST001', title: 'Nákup vody pro crew', vendor: 'Albert', amount: 190, paidAt: '2026-04-10', note: 'Výdaj byl zamítnut jako neuznatelný.', status: 'rejected' },
+  { id: 5, contractorProfileId: 'profile-local-3', eid: 1, job: 'TEST001', title: 'Palivo', vendor: 'Shell', amount: 680, paidAt: '2026-04-09', note: 'Schváleno a připraveno k přiřazení do faktury.', status: 'approved' },
 ];
 
 export const INITIAL_CANDIDATES: Candidate[] = [
@@ -572,7 +572,6 @@ export const INITIAL_CANDIDATES: Candidate[] = [
 
 /** Sazba za km (Kc) - presunout do nastaveni/DB pri migraci na Supabase */
 export const KM_RATE = 5.60;
-
 
 
 

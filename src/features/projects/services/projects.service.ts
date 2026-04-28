@@ -15,6 +15,35 @@ const normalizeProject = (project: Project): Project => ({
   note: project.note?.trim() || '',
 });
 
+const getSupabaseClientRowIdByName = async (clientName: string): Promise<string | null> => {
+  const normalizedClientName = clientName.trim();
+  if (!normalizedClientName) {
+    return null;
+  }
+
+  const existingClient = (getLocalAppState().clients ?? []).find((client) => client.name === normalizedClientName);
+  if (existingClient?.supabaseId) {
+    return existingClient.supabaseId;
+  }
+
+  if (!supabase || !isSupabaseConfigured) {
+    throw new Error('Supabase neni nakonfigurovany.');
+  }
+
+  const clientLookup = await supabase
+    .from('clients')
+    .select('id')
+    .eq('name', normalizedClientName)
+    .limit(1)
+    .maybeSingle();
+
+  if (clientLookup.error) {
+    throw new Error(clientLookup.error.message);
+  }
+
+  return clientLookup.data?.id ?? null;
+};
+
 let projectsHydrationPromise: Promise<void> | null = null;
 let projectsLoaded = false;
 
@@ -105,10 +134,11 @@ export const getProjectById = (id: string | null): Project | null => {
   return (getLocalAppState().projects ?? []).find((project) => project.id === id) ?? null;
 };
 
-export const getProjectDependencies = (): { events: Event[]; invoices: Invoice[]; clients: Client[] } => {
+export const getProjectDependencies = (): { projects: Project[]; events: Event[]; invoices: Invoice[]; clients: Client[] } => {
   ensureSupabaseProjectsLoaded();
   const snapshot = getLocalAppState();
   return {
+    projects: snapshot.projects ?? [],
     events: snapshot.events ?? [],
     invoices: snapshot.invoices ?? [],
     clients: snapshot.clients ?? [],
@@ -123,10 +153,40 @@ export const createEmptyProject = (): Project => ({
   createdAt: new Date().toISOString().split('T')[0],
 });
 
-export const saveProject = (project: Project): Project => {
+export const saveProject = async (project: Project): Promise<Project> => {
   const normalizedProject = normalizeProject(project);
   if (!normalizedProject.id || !normalizedProject.name) {
     throw new Error('Vyplnte Job Number a nazev projektu.');
+  }
+
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    const existing = (getLocalAppState().projects ?? []).some((item) => item.id === normalizedProject.id);
+    const clientRowId = await getSupabaseClientRowIdByName(normalizedProject.client);
+    const payload = {
+      job_number: normalizedProject.id,
+      name: normalizedProject.name,
+      client_id: clientRowId,
+      note: normalizedProject.note || null,
+    };
+
+    if (existing) {
+      const projectUpdate = await supabase
+        .from('projects')
+        .update(payload)
+        .eq('job_number', normalizedProject.id);
+
+      if (projectUpdate.error) {
+        throw new Error(projectUpdate.error.message);
+      }
+    } else {
+      const projectInsert = await supabase
+        .from('projects')
+        .insert(payload);
+
+      if (projectInsert.error) {
+        throw new Error(projectInsert.error.message);
+      }
+    }
   }
 
   updateLocalAppState((snapshot) => {
@@ -142,7 +202,18 @@ export const saveProject = (project: Project): Project => {
   return normalizedProject;
 };
 
-export const deleteProject = (id: string): { id: string } => {
+export const deleteProject = async (id: string): Promise<{ id: string }> => {
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    const projectDelete = await supabase
+      .from('projects')
+      .delete()
+      .eq('job_number', id);
+
+    if (projectDelete.error) {
+      throw new Error(projectDelete.error.message);
+    }
+  }
+
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     projects: snapshot.projects.filter((project) => project.id !== id),

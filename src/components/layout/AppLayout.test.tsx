@@ -13,7 +13,7 @@ vi.mock('framer-motion', () => ({
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-vi.mock('../../context/AppContext', () => ({
+vi.mock('../../context/useAppContext', () => ({
   useAppContext: () => mockAppContext,
 }));
 

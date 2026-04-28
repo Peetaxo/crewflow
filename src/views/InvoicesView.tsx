@@ -2,9 +2,9 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Info } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { useAuth } from '../app/providers/AuthProvider';
-import { useAppContext } from '../context/AppContext';
 import { Button } from '../components/ui/button';
+import { useAuth } from '../app/providers/useAuth';
+import { useAppContext } from '../context/useAppContext';
 import { Contractor, Event, Invoice } from '../types';
 import { formatCurrency, formatShortDate, getCountdown } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';
@@ -27,6 +27,8 @@ import {
   sendInvoice,
 } from '../features/invoices/services/invoices.service';
 import { useInvoicesQuery } from '../features/invoices/queries/useInvoicesQuery';
+import { generateInvoicePdf, getInvoicePdfDownloadUrl } from '../features/invoices/services/invoice-pdf.service';
+import { openInvoicePdfUrl } from '../features/invoices/services/invoice-pdf-download';
 
 interface InvoicesViewProps {
   scope?: 'all' | 'mine';
@@ -42,6 +44,7 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
   const [isCreateMode, setIsCreateMode] = useState(false);
   const [hasUnsavedCreate, setHasUnsavedCreate] = useState(false);
   const [showDiscardDialog, setShowDiscardDialog] = useState(false);
+  const [pdfActionInvoiceId, setPdfActionInvoiceId] = useState<string | null>(null);
 
   const loadDependencies = useCallback(() => {
     const dependencies = getInvoiceDependencies();
@@ -66,20 +69,11 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
     };
   }, [hasUnsavedCreate, isCreateMode, setNavigationGuardMessage]);
 
-  const findContractor = useCallback((contractorProfileId?: string, contractorId?: number) => {
-    if (contractorProfileId) {
-      const contractorByProfileId = contractors.find((contractor) => contractor.profileId === contractorProfileId);
-      if (contractorByProfileId) {
-        return contractorByProfileId;
-      }
-    }
-
-    if (contractorId == null) {
-      return null;
-    }
-
-    return contractors.find((contractor) => contractor.id === contractorId) ?? null;
-  }, [contractors]);
+  const findContractor = useCallback((contractorProfileId?: string) => (
+    contractorProfileId
+      ? contractors.find((contractor) => contractor.profileId === contractorProfileId) ?? null
+      : null
+  ), [contractors]);
 
   const findEvent = useCallback((id: number) => (
     events.find((event) => event.id === id) ?? null
@@ -93,7 +87,7 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
 
     return safeInvoices.filter((invoice) => {
       const event = invoice.eid ? findEvent(invoice.eid) : null;
-      const contractor = findContractor(invoice.contractorProfileId, invoice.cid);
+      const contractor = findContractor(invoice.contractorProfileId);
 
       return (
         invoice.id.toLowerCase().includes(query)
@@ -140,6 +134,29 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
     }
   };
 
+  const handleGeneratePdf = async (invoiceId: string) => {
+    try {
+      setPdfActionInvoiceId(invoiceId);
+      await generateInvoicePdf(invoiceId);
+      toast.success('PDF faktury bylo vygenerovano.');
+      invoicesQuery.refetch?.();
+      loadDependencies();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Nepodarilo se vygenerovat PDF.');
+    } finally {
+      setPdfActionInvoiceId(null);
+    }
+  };
+
+  const handleDownloadPdf = async (pdfPath: string) => {
+    try {
+      const url = await getInvoicePdfDownloadUrl(pdfPath);
+      openInvoicePdfUrl(url);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Nepodarilo se stahnout PDF.');
+    }
+  };
+
   const requestCloseCreate = () => {
     if (hasUnsavedCreate) {
       setShowDiscardDialog(true);
@@ -176,6 +193,7 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
           <InvoiceCreateModal
             onClose={requestCloseCreate}
             onDirtyChange={setHasUnsavedCreate}
+            onSubmitSuccess={leaveCreateMode}
           />
         </motion.div>
 
@@ -232,7 +250,7 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
 
       <div className="space-y-2">
         {visibleInvoices.map((invoice) => {
-          const contractor = findContractor(invoice.contractorProfileId, invoice.cid);
+          const contractor = findContractor(invoice.contractorProfileId);
           const event = invoice.eid ? findEvent(invoice.eid) : null;
           if (!contractor) return null;
           const countdown = invoice.status === 'sent' ? getCountdown(invoice.sentAt) : null;
@@ -286,9 +304,40 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
               </div>
 
               <div className="mt-3 flex gap-2">
-                <Button variant="outline" size="sm" className="text-[11px]">
-                  PDF ke stazeni
-                </Button>
+                {invoice.pdfPath ? (
+                  <>
+                    <Button
+                      type="button"
+                      onClick={() => void handleDownloadPdf(invoice.pdfPath!)}
+                      variant="outline"
+                      size="sm"
+                      className="text-[11px]"
+                    >
+                      Stahnout PDF
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => void handleGeneratePdf(invoice.id)}
+                      disabled={pdfActionInvoiceId === invoice.id}
+                      variant="outline"
+                      size="sm"
+                      className="border-[color:var(--nodu-success-border)] text-[11px] text-[color:var(--nodu-success-text)] hover:bg-[color:var(--nodu-success-bg-hover)] hover:text-[color:var(--nodu-success-text)] disabled:cursor-not-allowed disabled:opacity-55"
+                    >
+                      {pdfActionInvoiceId === invoice.id ? 'Generuji PDF...' : 'Pregenerovat PDF'}
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    type="button"
+                    onClick={() => void handleGeneratePdf(invoice.id)}
+                    disabled={pdfActionInvoiceId === invoice.id}
+                    variant="outline"
+                    size="sm"
+                    className="border-[color:var(--nodu-success-border)] text-[11px] text-[color:var(--nodu-success-text)] hover:bg-[color:var(--nodu-success-bg-hover)] hover:text-[color:var(--nodu-success-text)] disabled:cursor-not-allowed disabled:opacity-55"
+                  >
+                    {pdfActionInvoiceId === invoice.id ? 'Generuji PDF...' : 'Vygenerovat PDF'}
+                  </Button>
+                )}
 
                 {invoice.status === 'draft' && !isCrew && (
                   <>

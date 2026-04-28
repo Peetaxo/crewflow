@@ -1,16 +1,17 @@
-import { AuthProvider, useAuth } from '../app/providers/AuthProvider';
+import { AuthProvider } from '../app/providers/AuthProvider';
+import { useAuth } from '../app/providers/useAuth';
 import AppDataBootstrap from '../app/providers/AppDataBootstrap';
 import AppLayout from '../components/layout/AppLayout';
 import { AppProvider } from '../context/AppContext';
 import LoginView from '../views/LoginView';
 
 const AppShell = () => {
-  const { isAuthRequired, isAuthenticated, isLoading } = useAuth();
+  const { hasKnownSession, isAuthRequired, isAuthenticated, isLoading } = useAuth();
   const isLoginPreview = import.meta.env.DEV
     && typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('previewLogin') === '1';
 
-  if (isLoading) {
+  if (isLoading && !hasKnownSession) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
         <div className="rounded-2xl border border-slate-200 bg-white px-6 py-5 text-sm text-slate-600 shadow-sm">

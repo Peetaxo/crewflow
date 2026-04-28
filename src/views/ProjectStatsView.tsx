@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ChevronDown, ChevronRight, Clock, MapPin, Receipt, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
-import { useAppContext } from '../context/AppContext';
+import { useAppContext } from '../context/useAppContext';
 import { Contractor, Invoice, ReceiptItem, Timelog } from '../types';
 import { calculateDayHours, calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';
@@ -41,20 +41,11 @@ const ProjectStatsView = () => {
   useEffect(() => subscribeToTimelogChanges(loadData), [loadData]);
   useEffect(() => subscribeToReceiptChanges(loadData), [loadData]);
 
-  const findContractor = useCallback((contractorProfileId?: string, contractorId?: number) => {
-    if (contractorProfileId) {
-      const contractorByProfileId = contractors.find((contractor) => contractor.profileId === contractorProfileId);
-      if (contractorByProfileId) {
-        return contractorByProfileId;
-      }
-    }
-
-    if (contractorId == null) {
-      return null;
-    }
-
-    return contractors.find((contractor) => contractor.id === contractorId) ?? null;
-  }, [contractors]);
+  const findContractor = useCallback((contractorProfileId?: string) => (
+    contractorProfileId
+      ? contractors.find((contractor) => contractor.profileId === contractorProfileId) ?? null
+      : null
+  ), [contractors]);
   const projectId = project?.id ?? null;
   const projectEvents = useMemo(
     () => (projectId ? events.filter((event) => event.job === projectId) : []),
@@ -77,13 +68,13 @@ const ProjectStatsView = () => {
   const totalKm = projectTimelogs.reduce((sum, timelog) => sum + timelog.km, 0);
   const totalCrewCost = projectInvoices.reduce((sum, invoice) => sum + invoice.total, 0);
   const totalReceiptCost = projectReceipts.reduce((sum, receipt) => sum + receipt.amount, 0);
-  const crewIds = [...new Set(projectTimelogs.map((timelog) => timelog.contractorProfileId ?? `legacy:${timelog.cid ?? 'missing'}`))];
+  const crewIds = [...new Set(projectTimelogs.map((timelog) => timelog.contractorProfileId).filter(Boolean))];
 
   const costByPhase = useMemo(() => {
     const phaseMap: Record<string, number> = {};
 
     projectTimelogs.forEach((timelog) => {
-      const contractor = findContractor(timelog.contractorProfileId, timelog.cid);
+      const contractor = findContractor(timelog.contractorProfileId);
       if (!contractor) return;
 
       timelog.days.forEach((day) => {
@@ -296,7 +287,7 @@ const ProjectStatsView = () => {
             projectTimelogs.length > 0 ? (
               <div className="mt-4 space-y-3">
                 {projectTimelogs.map((timelog) => {
-                  const contractor = findContractor(timelog.contractorProfileId, timelog.cid);
+                  const contractor = findContractor(timelog.contractorProfileId);
                   const event = projectEvents.find((item) => item.id === timelog.eid);
                   if (!contractor || !event) return null;
 
@@ -380,7 +371,7 @@ const ProjectStatsView = () => {
                   </thead>
                   <tbody className="divide-y divide-[rgba(var(--nodu-text-rgb),0.06)]">
                     {projectReceipts.map((receipt) => {
-                      const contractor = findContractor(receipt.contractorProfileId, receipt.cid);
+                      const contractor = findContractor(receipt.contractorProfileId);
                       const event = projectEvents.find((item) => item.id === receipt.eid);
                       return (
                         <tr key={receipt.id} className="bg-white transition-colors hover:bg-[var(--nodu-accent-soft)]">
@@ -426,7 +417,7 @@ const ProjectStatsView = () => {
                   </thead>
                   <tbody className="divide-y divide-[rgba(var(--nodu-text-rgb),0.06)]">
                     {approvedInvoices.map((invoice) => {
-                      const contractor = findContractor(invoice.contractorProfileId, invoice.cid);
+                      const contractor = findContractor(invoice.contractorProfileId);
                       return (
                         <tr key={invoice.id} className="bg-white transition-colors hover:bg-[var(--nodu-accent-soft)]">
                           <td className="px-4 py-3 text-xs font-mono font-medium text-[var(--nodu-text)]">{invoice.id}</td>

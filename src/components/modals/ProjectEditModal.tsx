@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAppContext } from '../../context/AppContext';
+import { toast } from 'sonner';
+import { useAppContext } from '../../context/useAppContext';
 import { getProjectDependencies, saveProject } from '../../features/projects/services/projects.service';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -9,13 +10,24 @@ import { Textarea } from '../ui/textarea';
 
 const ProjectEditModal = () => {
   const { editingProject, setEditingProject } = useAppContext();
+  const [isSaving, setIsSaving] = useState(false);
   const { projects, clients } = getProjectDependencies();
 
   if (!editingProject) return null;
 
-  const handleSave = () => {
-    saveProject(editingProject);
-    setEditingProject(null);
+  const handleSave = async () => {
+    if (isSaving) return;
+
+    setIsSaving(true);
+    try {
+      await saveProject(editingProject);
+      setEditingProject(null);
+      toast.success('Projekt ulozen.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Projekt se nepodarilo ulozit.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -90,9 +102,10 @@ const ProjectEditModal = () => {
               </Button>
               <Button
                 onClick={handleSave}
+                disabled={isSaving}
                 className="flex-1"
               >
-                Ulozit projekt
+                {isSaving ? 'Ukladam...' : 'Ulozit projekt'}
               </Button>
             </div>
           </motion.div>

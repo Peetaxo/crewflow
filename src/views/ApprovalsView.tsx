@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { useAppContext } from '../context/AppContext';
+import { useAppContext } from '../context/useAppContext';
 import { KM_RATE } from '../data';
 import { Contractor, Event, Timelog } from '../types';
 import { calculateDayHours, calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
@@ -35,20 +35,11 @@ const ApprovalsView = () => {
     loadDependencies();
   }, [loadDependencies, timelogsQuery.data]);
 
-  const findContractor = useCallback((contractorProfileId?: string, contractorId?: number) => {
-    if (contractorProfileId) {
-      const contractorByProfileId = contractors.find((contractor) => contractor.profileId === contractorProfileId);
-      if (contractorByProfileId) {
-        return contractorByProfileId;
-      }
-    }
-
-    if (contractorId == null) {
-      return null;
-    }
-
-    return contractors.find((contractor) => contractor.id === contractorId) ?? null;
-  }, [contractors]);
+  const findContractor = useCallback((contractorProfileId?: string) => (
+    contractorProfileId
+      ? contractors.find((contractor) => contractor.profileId === contractorProfileId) ?? null
+      : null
+  ), [contractors]);
 
   const findEvent = useCallback((id: number) => (
     events.find((event) => event.id === id) ?? null
@@ -62,7 +53,7 @@ const ApprovalsView = () => {
 
     return safeTimelogs.filter((timelog) => {
       const event = events.find((item) => item.id === timelog.eid);
-      const contractor = findContractor(timelog.contractorProfileId, timelog.cid);
+      const contractor = findContractor(timelog.contractorProfileId);
       if (!event || !contractor) return false;
 
       return (
@@ -121,7 +112,7 @@ const ApprovalsView = () => {
       ) : isCrewHead ? (
         <div className="space-y-3">
           {mine.map((timelog) => {
-            const contractor = findContractor(timelog.contractorProfileId, timelog.cid);
+            const contractor = findContractor(timelog.contractorProfileId);
             const event = findEvent(timelog.eid);
             if (!contractor || !event) return null;
 
@@ -167,7 +158,7 @@ const ApprovalsView = () => {
           {grouped?.map((group) => {
             const totalHours = group.tls.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
             const totalAmount = group.tls.reduce((sum, timelog) => {
-              const contractor = findContractor(timelog.contractorProfileId, timelog.cid);
+              const contractor = findContractor(timelog.contractorProfileId);
               return sum + (contractor ? calculateTotalHours(timelog.days) * contractor.rate + timelog.km * KM_RATE : 0);
             }, 0);
 
@@ -182,7 +173,7 @@ const ApprovalsView = () => {
                 </div>
                 <div className="space-y-1">
                   {group.tls.map((timelog) => {
-                    const contractor = findContractor(timelog.contractorProfileId, timelog.cid);
+                    const contractor = findContractor(timelog.contractorProfileId);
                     if (!contractor) return null;
                     const hours = calculateTotalHours(timelog.days);
 

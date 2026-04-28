@@ -2,10 +2,9 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { useAuth } from '../app/providers/AuthProvider';
-import { useAppContext } from '../context/AppContext';
 import { Button } from '../components/ui/button';
-import { Card, CardContent } from '../components/ui/card';
+import { useAuth } from '../app/providers/useAuth';
+import { useAppContext } from '../context/useAppContext';
 import { Contractor, Event, ReceiptItem } from '../types';
 import { formatCurrency, formatShortDate } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';
@@ -27,7 +26,7 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
     setEditingReceipt,
     setDeleteConfirm,
   } = useAppContext();
-  const { currentContractorId, currentProfileId } = useAuth();
+  const { currentProfileId } = useAuth();
   const receiptsQuery = useReceiptsQuery();
   const [events, setEvents] = useState<Event[]>([]);
   const [contractors, setContractors] = useState<Contractor[]>([]);
@@ -46,20 +45,11 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
     events.find((event) => event.id === id) ?? null
   ), [events]);
 
-  const findContractor = useCallback((contractorProfileId?: string, contractorId?: number) => {
-    if (contractorProfileId) {
-      const contractorByProfileId = contractors.find((contractor) => contractor.profileId === contractorProfileId);
-      if (contractorByProfileId) {
-        return contractorByProfileId;
-      }
-    }
-
-    if (contractorId == null) {
-      return null;
-    }
-
-    return contractors.find((contractor) => contractor.id === contractorId) ?? null;
-  }, [contractors]);
+  const findContractor = useCallback((contractorProfileId?: string) => (
+    contractorProfileId
+      ? contractors.find((contractor) => contractor.profileId === contractorProfileId) ?? null
+      : null
+  ), [contractors]);
 
   const receipts = useMemo(() => {
     const safeReceipts = receiptsQuery.data ?? [];
@@ -69,7 +59,7 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
 
     return safeReceipts.filter((receipt) => {
       const event = events.find((item) => item.id === receipt.eid);
-      const contractor = findContractor(receipt.contractorProfileId, receipt.cid);
+      const contractor = findContractor(receipt.contractorProfileId);
       if (!event || !contractor) return false;
 
       return (
@@ -113,7 +103,9 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
         </div>
 
         <Button
-          onClick={() => setEditingReceipt(createEmptyReceipt(currentContractorId ?? (isCrew ? 1 : contractors[0]?.id || 1)))}
+          onClick={() => setEditingReceipt(createEmptyReceipt(
+            currentProfileId ?? contractors[0]?.profileId,
+          ))}
           size="sm"
           className="text-xs"
         >
@@ -154,7 +146,7 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
           <tbody className="divide-y divide-[color:rgb(var(--nodu-text-rgb)/0.06)]">
             {baseReceipts.map((receipt) => {
               const event = findEvent(receipt.eid);
-              const contractor = findContractor(receipt.contractorProfileId, receipt.cid);
+              const contractor = findContractor(receipt.contractorProfileId);
 
               return (
                 <tr key={receipt.id} className="transition-colors hover:bg-[color:rgb(var(--nodu-accent-rgb)/0.04)]">

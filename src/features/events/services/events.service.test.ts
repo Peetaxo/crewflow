@@ -24,7 +24,7 @@ describe('events.service fetch snapshot', () => {
               time_to: null,
               city: 'Praha',
               crew_needed: 2,
-              crew_filled: 1,
+              crew_filled: 2,
               status: 'upcoming',
               description: null,
               contact_person: null,
@@ -76,6 +76,12 @@ describe('events.service fetch snapshot', () => {
         error: null,
       }),
     }));
+    const timelogsSelect = vi.fn().mockResolvedValue({
+      data: [
+        { event_id: 'event-row-1', contractor_id: 'profile-uuid-1' },
+      ],
+      error: null,
+    });
 
     vi.doMock('../../../lib/app-config', () => ({
       appDataSource: 'supabase',
@@ -88,6 +94,7 @@ describe('events.service fetch snapshot', () => {
           if (table === 'events') return { select: eventsSelect };
           if (table === 'projects') return { select: projectsSelect };
           if (table === 'clients') return { select: clientsSelect };
+          if (table === 'timelogs') return { select: timelogsSelect };
           throw new Error(`Unexpected table ${table}`);
         }),
       },
@@ -105,7 +112,14 @@ describe('events.service fetch snapshot', () => {
         name: row.name,
         city: row.city,
       }),
-      mapEvent: (row: { name: string; status: 'upcoming'; date_from: string; date_to: string; city: string }) => ({
+      mapEvent: (row: {
+        name: string;
+        status: 'upcoming';
+        date_from: string;
+        date_to: string;
+        city: string;
+        crew_filled: number;
+      }) => ({
         id: Number.NaN,
         name: row.name,
         job: '',
@@ -113,7 +127,7 @@ describe('events.service fetch snapshot', () => {
         endDate: row.date_to,
         city: row.city,
         needed: 2,
-        filled: 1,
+        filled: row.crew_filled,
         status: row.status,
         client: '',
       }),
@@ -185,6 +199,60 @@ describe('events.service write flow', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+  });
+
+  it('requests timelog hydration when reading event detail data', async () => {
+    const ensureSupabaseTimelogsLoaded = vi.fn();
+    const snapshot = createSnapshot({
+      events: [
+        {
+          id: 1,
+          name: 'Akce 1',
+          job: 'AK001',
+          startDate: '2026-04-20',
+          endDate: '2026-04-20',
+          city: 'Praha',
+          needed: 2,
+          filled: 1,
+          status: 'upcoming',
+          client: 'Klient A',
+          showDayTypes: false,
+        },
+      ],
+    });
+
+    vi.doMock('../../../lib/app-config', () => ({
+      appDataSource: 'local',
+    }));
+
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: false,
+      supabase: null,
+    }));
+
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: vi.fn(),
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    vi.doMock('../../timelogs/services/timelogs.service', () => ({
+      ensureSupabaseTimelogsLoaded,
+    }));
+
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapClient: vi.fn(),
+      mapEvent: vi.fn(),
+    }));
+
+    const { getEventDetailData } = await import('./events.service');
+
+    const detail = getEventDetailData(1);
+
+    expect(detail.event?.filled).toBe(1);
+    await vi.waitFor(() => {
+      expect(ensureSupabaseTimelogsLoaded).toHaveBeenCalledOnce();
+    });
   });
 
   it('persists a new event to Supabase with the mapped project row id', async () => {
@@ -294,7 +362,7 @@ describe('events.service write flow', () => {
           endTime: '17:00',
           city: 'Praha',
           needed: 2,
-          filled: 0,
+          filled: 1,
           status: 'upcoming',
           client: 'Klient A',
           showDayTypes: false,
@@ -397,7 +465,7 @@ describe('events.service write flow', () => {
           endTime: '17:00',
           city: 'Praha',
           needed: 2,
-          filled: 1,
+          filled: 2,
           status: 'upcoming',
           client: 'Klient A',
           showDayTypes: false,
@@ -407,7 +475,6 @@ describe('events.service write flow', () => {
         {
           id: 1,
           eid: 1,
-          cid: 1,
           contractorProfileId: 'profile-uuid-1',
           days: [{ d: '2026-04-20', f: '08:00', t: '17:00', type: 'instal' }],
           km: 0,

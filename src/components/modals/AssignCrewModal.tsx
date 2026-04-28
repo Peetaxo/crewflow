@@ -15,9 +15,7 @@ interface AssignCrewModalProps {
   onClose: () => void;
 }
 
-const getContractorSelectionValue = (contractor: { id: number; profileId?: string }) => (
-  contractor.profileId ?? `legacy:${contractor.id}`
-);
+const getContractorSelectionValue = (contractor: { profileId?: string }) => contractor.profileId ?? null;
 
 const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
   const [pendingContractorSelection, setPendingContractorSelection] = useState<string | null>(null);
@@ -33,9 +31,11 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
   if (!event) return null;
 
   const contractorConflicts = getContractorConflictsForEvent(event, contractors);
-  const assignedContractorIds = new Set(getEventDetailData(event.id).timelogs.map((timelog) => (
-    timelog.contractorProfileId ?? `legacy:${timelog.cid}`
-  )));
+  const assignedContractorIds = new Set(
+    getEventDetailData(event.id).timelogs
+      .map((timelog) => timelog.contractorProfileId)
+      .filter((profileId): profileId is string => Boolean(profileId)),
+  );
 
   const assignContractor = async (contractorProfileId: string, phaseChoices?: Array<TimelogType | 'all'>) => {
     try {
@@ -172,17 +172,25 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
           <div className="flex-1 space-y-1 overflow-y-auto p-2">
             {contractors.map((contractor) => {
               const contractorSelectionValue = getContractorSelectionValue(contractor);
-              const isAlreadyAssigned = assignedContractorIds.has(contractorSelectionValue);
+              const isAlreadyAssigned = contractorSelectionValue
+                ? assignedContractorIds.has(contractorSelectionValue)
+                : false;
               const conflicts = contractorConflicts.get(contractor.id) || [];
               const hasConflict = conflicts.length > 0;
+              const isMissingProfileId = !contractor.profileId;
 
               return (
                 <button
                   key={contractor.id}
-                  disabled={isAlreadyAssigned || hasConflict}
+                  disabled={isAlreadyAssigned || hasConflict || isMissingProfileId}
                   onClick={() => {
                     if (hasConflict) {
                       toast.error('Tento clen crew ma ve stejnem terminu jinou akci.');
+                      return;
+                    }
+
+                    if (!contractor.profileId) {
+                      toast.error('Tento clen crew nema prirazene UUID profileId.');
                       return;
                     }
 
@@ -192,12 +200,10 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
                       return;
                     }
 
-                    if (contractor.profileId) {
-                      void assignContractor(contractor.profileId);
-                    }
+                    void assignContractor(contractor.profileId);
                   }}
                   className={`w-full rounded-xl p-3 text-left transition-all ${
-                    isAlreadyAssigned || hasConflict
+                    isAlreadyAssigned || hasConflict || isMissingProfileId
                       ? 'cursor-not-allowed bg-[color:rgb(var(--nodu-text-rgb)/0.04)]'
                       : 'group hover:bg-[color:var(--nodu-accent-soft)]'
                   }`}
@@ -241,13 +247,13 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
                       )}
                     </div>
 
-                    {!isAlreadyAssigned && !hasConflict ? (
+                    {!isAlreadyAssigned && !hasConflict && !isMissingProfileId ? (
                       <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-[color:var(--nodu-border)] bg-white text-[color:var(--nodu-accent)] transition-all group-hover:border-[color:var(--nodu-accent)] group-hover:bg-[color:var(--nodu-accent)] group-hover:text-white">
                         <Plus size={16} />
                       </div>
                     ) : (
-                      <div className={`text-[10px] font-bold uppercase tracking-wider ${hasConflict ? 'text-[color:var(--nodu-warning-text)]' : 'text-[color:var(--nodu-success-text)]'}`}>
-                        {hasConflict ? 'Kolize' : 'Prirazen'}
+                      <div className={`text-[10px] font-bold uppercase tracking-wider ${hasConflict || isMissingProfileId ? 'text-[color:var(--nodu-warning-text)]' : 'text-[color:var(--nodu-success-text)]'}`}>
+                        {hasConflict ? 'Kolize' : isMissingProfileId ? 'Bez UUID' : 'Prirazen'}
                       </div>
                     )}
                   </div>

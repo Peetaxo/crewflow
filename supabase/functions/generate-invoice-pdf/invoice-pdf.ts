@@ -1,5 +1,6 @@
-import { degrees, PDFDocument, StandardFonts, rgb } from 'https://esm.sh/pdf-lib@1.17.1';
+import { PDFDocument, StandardFonts, rgb } from 'https://esm.sh/pdf-lib@1.17.1';
 import QRCode from 'https://esm.sh/qrcode@1.5.4';
+import { buildInvoicePdfLayout } from './invoice-pdf-layout.ts';
 import { buildQrPaymentPayload } from './payment-qr.ts';
 
 type InvoiceItem = {
@@ -14,11 +15,13 @@ type InvoiceItem = {
 
 type Snapshot = Record<string, unknown>;
 
-const cyan = rgb(0.02, 0.72, 0.82);
-const dark = rgb(0.07, 0.09, 0.15);
-const muted = rgb(0.42, 0.45, 0.52);
-const lightLine = rgb(0.88, 0.9, 0.92);
-const softGray = rgb(0.95, 0.96, 0.97);
+const noduText = rgb(0.184, 0.149, 0.122);
+const noduSoft = rgb(0.439, 0.369, 0.314);
+const noduAccent = rgb(1, 0.502, 0.051);
+const line = rgb(0.87, 0.84, 0.8);
+const softRow = rgb(0.98, 0.97, 0.95);
+const summaryFill = rgb(1, 0.973, 0.945);
+const summaryBorder = rgb(1, 0.78, 0.63);
 
 const money = (value: unknown): string => `${Number(value ?? 0).toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Kc`;
 const text = (value: unknown): string => String(value ?? '');
@@ -29,23 +32,57 @@ const dataUrlToBytes = (dataUrl: string): Uint8Array => {
   return Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
 };
 
-const drawRotatedLabel = (
+const drawText = (
   page: ReturnType<PDFDocument['addPage']>,
   value: string,
-  y: number,
   font: Awaited<ReturnType<PDFDocument['embedFont']>>,
-  color = cyan,
-  x = 32,
+  x: number,
+  y: number,
+  size: number,
+  color = noduText,
 ) => {
   page.drawText(value, {
     x,
     y,
-    size: 9,
+    size,
     font,
     color,
-    rotate: degrees(90),
   });
 };
+
+const drawLabel = (
+  page: ReturnType<PDFDocument['addPage']>,
+  value: string,
+  font: Awaited<ReturnType<PDFDocument['embedFont']>>,
+  x: number,
+  y: number,
+) => {
+  drawText(page, value.toUpperCase(), font, x, y, 6, noduSoft);
+};
+
+const drawRule = (
+  page: ReturnType<PDFDocument['addPage']>,
+  y: number,
+  x1 = 48,
+  x2 = 547,
+) => {
+  page.drawLine({ start: { x: x1, y }, end: { x: x2, y }, thickness: 0.7, color: line });
+};
+
+const drawNoduWordmark = (
+  page: ReturnType<PDFDocument['addPage']>,
+  font: Awaited<ReturnType<PDFDocument['embedFont']>>,
+  x: number,
+  y: number,
+) => {
+  drawText(page, 'nodu', font, x, y, 19, noduText);
+  drawText(page, '.', font, x + 47, y, 19, noduAccent);
+};
+
+const fitText = (
+  value: string,
+  maxLength: number,
+): string => (value.length > maxLength ? `${value.slice(0, Math.max(maxLength - 1, 0))}.` : value);
 
 export const renderInvoicePdf = async ({
   invoice,
@@ -57,47 +94,46 @@ export const renderInvoicePdf = async ({
   const supplier = invoice.supplier_snapshot as Snapshot;
   const customer = invoice.customer_snapshot as Snapshot;
 
+  const layout = buildInvoicePdfLayout(items.length);
   const pdfDoc = await PDFDocument.create();
-  const page = pdfDoc.addPage([595, 842]);
+  const page = pdfDoc.addPage([layout.page.width, layout.page.height]);
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const invoiceNumber = text(invoice.invoice_number);
   const totalAmount = numberValue(invoice.total_amount);
+  const variableSymbol = invoiceNumber.replace(/\D/g, '').slice(0, 10);
 
-  drawRotatedLabel(page, 'IDENTIFIKACNI UDAJE', 700, bold);
-  page.drawText('Dodavatel', { x: 48, y: 790, size: 10, font: bold, color: dark });
-  page.drawText(text(supplier.name), { x: 48, y: 774, size: 10, font: bold, color: dark });
-  page.drawText(`${text(supplier.billingStreet)}, ${text(supplier.billingZip)} ${text(supplier.billingCity)}`, { x: 48, y: 758, size: 9, font, color: dark });
-  page.drawText(text(supplier.billingCountry), { x: 48, y: 744, size: 9, font, color: dark });
-  page.drawText(`IC: ${text(supplier.ico)}`, { x: 48, y: 730, size: 9, font, color: dark });
-  page.drawText('Dodavatel neni platcem DPH', { x: 48, y: 716, size: 9, font, color: dark });
+  drawLabel(page, 'Faktura vystavena odberatelem', bold, 48, 790);
+  drawText(page, 'Danovy doklad', bold, 48, 760, 28);
+  drawNoduWordmark(page, font, 444, 775);
+  drawText(page, invoiceNumber, bold, 444, 748, 11);
+  drawRule(page, 728);
 
-  page.drawLine({ start: { x: 310, y: 790 }, end: { x: 310, y: 610 }, thickness: 1, color: lightLine });
-  page.drawText('Faktura', { x: 345, y: 790, size: 18, font: bold, color: dark });
-  page.drawRectangle({ x: 345, y: 756, width: 178, height: 26, borderColor: lightLine, borderWidth: 1 });
-  page.drawText(invoiceNumber, { x: 356, y: 765, size: 11, font: bold, color: dark });
-  page.drawText('Vystaveno odberatelem', { x: 345, y: 724, size: 10, font: bold, color: dark });
+  drawLabel(page, 'Dodavatel', bold, 48, 686);
+  drawText(page, fitText(text(supplier.name), 34), bold, 48, 672, 9);
+  drawText(page, fitText(`${text(supplier.billingStreet)}, ${text(supplier.billingZip)} ${text(supplier.billingCity)}`, 44), font, 48, 660, 8, noduSoft);
+  drawText(page, `IC: ${text(supplier.ico)}`, font, 48, 648, 8, noduSoft);
+  drawText(page, 'Neni platcem DPH', font, 48, 636, 8, noduSoft);
 
-  page.drawText('Odberatel', { x: 345, y: 690, size: 10, font: bold, color: dark });
-  page.drawText(text(customer.name), { x: 345, y: 674, size: 10, font: bold, color: dark });
-  page.drawText(`${text(customer.street)}, ${text(customer.zip)} ${text(customer.city)}`, { x: 345, y: 658, size: 9, font, color: dark });
-  page.drawText(text(customer.country), { x: 345, y: 644, size: 9, font, color: dark });
-  page.drawText(`IC: ${text(customer.ico)}    DIC: ${text(customer.dic || 'neni')}`, { x: 345, y: 630, size: 9, font, color: dark });
+  drawLabel(page, 'Odberatel', bold, 300, 686);
+  drawText(page, fitText(text(customer.name), 34), bold, 300, 672, 9);
+  drawText(page, fitText(`${text(customer.street)}, ${text(customer.zip)} ${text(customer.city)}`, 44), font, 300, 660, 8, noduSoft);
+  drawText(page, `IC: ${text(customer.ico)}`, font, 300, 648, 8, noduSoft);
+  drawText(page, `DIC: ${text(customer.dic || 'neni')}`, font, 300, 636, 8, noduSoft);
 
-  page.drawText(`Datum vystaveni:`, { x: 48, y: 600, size: 9, font, color: dark });
-  page.drawText(text(invoice.issue_date), { x: 132, y: 600, size: 9, font: bold, color: dark });
-  page.drawText(`Datum splatnosti:`, { x: 190, y: 600, size: 9, font, color: dark });
-  page.drawText(text(invoice.due_date), { x: 284, y: 600, size: 9, font: bold, color: dark });
+  drawRule(page, 612);
+  drawLabel(page, 'Vystaveni', bold, 48, 586);
+  drawText(page, text(invoice.issue_date), bold, 48, 574, 8.5);
+  drawLabel(page, 'Splatnost', bold, 230, 586);
+  drawText(page, text(invoice.due_date), bold, 230, 574, 8.5);
+  drawLabel(page, 'Mena', bold, 410, 586);
+  drawText(page, text(invoice.currency || 'CZK'), bold, 410, 574, 8.5);
+  drawRule(page, 552);
 
-  page.drawRectangle({ x: 0, y: 485, width: 476, height: 78, color: cyan });
-  page.drawText('PLATEBNI UDAJE', { x: 48, y: 548, size: 8, font: bold, color: rgb(1, 1, 1) });
-  page.drawText('Bankovni ucet', { x: 48, y: 530, size: 8, font, color: rgb(1, 1, 1) });
-  page.drawText(text(supplier.bankAccount), { x: 48, y: 520, size: 10, font: bold, color: rgb(1, 1, 1) });
-  page.drawText(`IBAN: ${text(supplier.iban || 'neni vyplnen')}`, { x: 48, y: 502, size: 8, font, color: rgb(1, 1, 1) });
-  page.drawText('Variabilni symbol', { x: 220, y: 540, size: 8, font, color: rgb(1, 1, 1) });
-  page.drawText(invoiceNumber.replace(/\D/g, '').slice(0, 10), { x: 220, y: 520, size: 10, font: bold, color: rgb(1, 1, 1) });
-  page.drawText('K uhrade', { x: 382, y: 520, size: 9, font, color: rgb(1, 1, 1) });
-  page.drawText(money(totalAmount), { x: 365, y: 498, size: 14, font: bold, color: rgb(1, 1, 1) });
+  drawRule(page, layout.items.headerY + 18);
+  drawLabel(page, 'Polozka', bold, 48, layout.items.headerY);
+  drawLabel(page, 'Rozsah', bold, 300, layout.items.headerY);
+  drawLabel(page, 'Celkem', bold, 505, layout.items.headerY);
 
   if (supplier.iban) {
     const qrPayload = buildQrPaymentPayload({
@@ -107,42 +143,55 @@ export const renderInvoicePdf = async ({
       invoiceNumber,
       recipientName: text(supplier.name),
     });
-    const qrDataUrl = await QRCode.toDataURL(qrPayload, { errorCorrectionLevel: 'M', margin: 1, width: 108 });
+    const qrDataUrl = await QRCode.toDataURL(qrPayload, { errorCorrectionLevel: 'M', margin: 1, width: 112 });
     const qrImage = await pdfDoc.embedPng(dataUrlToBytes(qrDataUrl));
-    page.drawImage(qrImage, { x: 490, y: 478, width: 72, height: 72 });
-    page.drawText('QR Platba', { x: 505, y: 465, size: 8, font: bold, color: dark });
+    page.drawImage(qrImage, { x: 495, y: layout.payment.y + 8, width: 52, height: 52 });
   } else {
-    page.drawText('QR platba neni dostupna', { x: 480, y: 520, size: 8, font: bold, color: muted });
-    page.drawText('Dodavateli chybi IBAN.', { x: 480, y: 506, size: 8, font, color: muted });
+    drawText(page, 'QR platba neni dostupna', bold, 420, layout.payment.y + 42, 7, noduSoft);
+    drawText(page, 'Dodavateli chybi IBAN.', font, 420, layout.payment.y + 30, 7, noduSoft);
   }
 
-  drawRotatedLabel(page, 'FAKTURUJEME VAM', 372, bold);
-  page.drawText('Fakturujeme Vam za dodane sluzby:', { x: 48, y: 455, size: 9, font, color: dark });
-  page.drawText('Oznaceni dodavky', { x: 48, y: 425, size: 8, font: bold, color: dark });
-  page.drawText('Hodiny', { x: 300, y: 425, size: 8, font: bold, color: dark });
-  page.drawText('Cestovne', { x: 360, y: 425, size: 8, font: bold, color: dark });
-  page.drawText('Uctenky', { x: 425, y: 425, size: 8, font: bold, color: dark });
-  page.drawText('Celkem', { x: 508, y: 425, size: 8, font: bold, color: dark });
-  page.drawLine({ start: { x: 48, y: 416 }, end: { x: 550, y: 416 }, thickness: 1, color: lightLine });
-
-  let rowY = 400;
+  let rowY = layout.items.startY;
   items.forEach((item) => {
-    page.drawRectangle({ x: 48, y: rowY - 6, width: 502, height: 17, color: softGray });
-    page.drawText(text(item.job_number), { x: 50, y: rowY, size: 8, font, color: dark });
-    page.drawText(String(numberValue(item.hours).toLocaleString('cs-CZ')), { x: 310, y: rowY, size: 8, font, color: dark });
-    page.drawText(money(item.amount_km), { x: 355, y: rowY, size: 8, font, color: dark });
-    page.drawText(money(item.amount_receipts), { x: 420, y: rowY, size: 8, font, color: dark });
-    page.drawText(money(item.total_amount), { x: 493, y: rowY, size: 8, font: bold, color: dark });
-    rowY -= 22;
+    page.drawRectangle({ x: 42, y: rowY - 7, width: 511, height: 15, color: rowY === layout.items.startY ? softRow : rgb(1, 1, 1) });
+    drawText(page, fitText(text(item.job_number), 48), rowY === layout.items.startY ? bold : font, 48, rowY - 1, layout.items.fontSize);
+    drawText(page, `${numberValue(item.hours).toLocaleString('cs-CZ')} h`, font, 300, rowY - 1, layout.items.fontSize);
+    drawText(page, money(item.total_amount), bold, 493, rowY - 1, layout.items.fontSize);
+    rowY -= layout.items.rowHeight;
   });
 
-  drawRotatedLabel(page, 'REKAPITULACE', 220, bold);
-  page.drawRectangle({ x: 300, y: 190, width: 250, height: 28, color: cyan });
-  page.drawText('Celkem k uhrade:', { x: 365, y: 200, size: 11, font: bold, color: rgb(1, 1, 1) });
-  page.drawText(money(totalAmount), { x: 470, y: 200, size: 11, font: bold, color: rgb(1, 1, 1) });
-  page.drawLine({ start: { x: 48, y: 34 }, end: { x: 550, y: 34 }, thickness: 1, color: lightLine });
-  page.drawText(`Vystaveno automaticky v NODU`, { x: 48, y: 20, size: 7, font, color: muted });
-  page.drawText('Strana 1/1', { x: 505, y: 20, size: 7, font, color: muted });
+  const workAmount = items.reduce((sum, item) => sum + numberValue(item.amount_hours), 0);
+  const expenseAmount = items.reduce((sum, item) => sum + numberValue(item.amount_km) + numberValue(item.amount_receipts), 0);
+  page.drawRectangle({
+    x: layout.summary.x,
+    y: layout.summary.y,
+    width: layout.summary.width,
+    height: layout.summary.height,
+    color: summaryFill,
+    borderColor: summaryBorder,
+    borderWidth: 0.7,
+  });
+  drawLabel(page, 'Souhrn', bold, layout.summary.x + 14, layout.summary.y + 53);
+  drawText(page, 'Prace', font, layout.summary.x + 14, layout.summary.y + 39, 7.5);
+  drawText(page, money(workAmount), bold, layout.summary.x + 105, layout.summary.y + 39, 7.5);
+  drawText(page, 'Naklady', font, layout.summary.x + 14, layout.summary.y + 27, 7.5);
+  drawText(page, money(expenseAmount), bold, layout.summary.x + 105, layout.summary.y + 27, 7.5);
+  page.drawLine({
+    start: { x: layout.summary.x + 14, y: layout.summary.y + 19 },
+    end: { x: layout.summary.x + layout.summary.width - 14, y: layout.summary.y + 19 },
+    thickness: 0.6,
+    color: line,
+  });
+  drawText(page, 'Celkem', bold, layout.summary.x + 14, layout.summary.y + 7, 9);
+  drawText(page, money(totalAmount), bold, layout.summary.x + 100, layout.summary.y + 7, 9);
+
+  drawRule(page, layout.payment.y + layout.payment.height);
+  drawLabel(page, 'Platebni udaje', bold, 48, layout.payment.y + 48);
+  drawText(page, `IBAN ${text(supplier.iban || 'neni vyplnen')}`, font, 48, layout.payment.y + 34, 7.5, noduSoft);
+  drawText(page, `VS ${variableSymbol || 'neni'}`, font, 48, layout.payment.y + 22, 7.5, noduSoft);
+  drawText(page, 'Automaticky vystaveno v NODU', font, 48, layout.payment.y + 4, 6.8, noduSoft);
+  drawRule(page, 34);
+  drawText(page, 'Strana 1/1', font, 508, 20, 6.5, noduSoft);
 
   return pdfDoc.save();
 };

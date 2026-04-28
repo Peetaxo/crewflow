@@ -85,6 +85,23 @@ const getVehicleCalendarStyle = (vehicleIndex: number) => (
   vehicleCalendarPalette[vehicleIndex % vehicleCalendarPalette.length]
 );
 
+const getCalendarDayClassName = (isCurrentMonth: boolean) => {
+  const monthClass = isCurrentMonth
+    ? 'border-[color:var(--nodu-border)] bg-white/70'
+    : 'border-transparent bg-[color:rgb(var(--nodu-text-rgb)/0.03)] text-[color:var(--nodu-text-soft)]';
+
+  return `min-h-20 rounded-xl border p-2 text-left ${monthClass}`;
+};
+
+const getTodayCalendarDayStyle = (isToday: boolean): React.CSSProperties | undefined => (
+  isToday
+    ? {
+      backgroundColor: 'rgb(var(--nodu-accent-rgb) / 0.1)',
+      borderColor: 'rgb(var(--nodu-accent-rgb) / 0.42)',
+    }
+    : undefined
+);
+
 const FleetView: React.FC = () => {
   const { currentProfileId } = useAuth();
   const [, setVersion] = useState(0);
@@ -309,6 +326,7 @@ const FleetView: React.FC = () => {
             <div className="mt-2 grid grid-cols-7 gap-1">
               {calendarDays.map((day) => {
                 const key = format(day, 'yyyy-MM-dd');
+                const isToday = key === referenceDate;
                 const dayReservations = selectedDetail.reservations.filter((reservation) => (
                   reservation.startsAt.slice(0, 10) <= key && reservation.endsAt.slice(0, 10) >= key
                 ));
@@ -317,7 +335,10 @@ const FleetView: React.FC = () => {
                   <div
                     key={key}
                     data-testid="fleet-detail-calendar-day"
-                    className={`min-h-20 rounded-xl border p-2 text-left ${isSameMonth(day, calendarDate) ? 'border-[color:var(--nodu-border)] bg-white/70' : 'border-transparent bg-[color:rgb(var(--nodu-text-rgb)/0.03)] text-[color:var(--nodu-text-soft)]'}`}
+                    data-date={key}
+                    data-today={isToday ? 'true' : undefined}
+                    className={getCalendarDayClassName(isSameMonth(day, calendarDate))}
+                    style={getTodayCalendarDayStyle(isToday)}
                   >
                     <div className="text-[11px] font-semibold">{format(day, 'd')}</div>
                     <div className="mt-1 space-y-1">
@@ -586,6 +607,7 @@ const FleetView: React.FC = () => {
         <div className="mt-2 grid grid-cols-7 gap-1">
           {overviewCalendarDays.map((day) => {
             const key = format(day, 'yyyy-MM-dd');
+            const isToday = key === referenceDate;
             const dayReservations = dependencies.reservations.filter((reservation) => (
               reservation.startsAt.slice(0, 10) <= key && reservation.endsAt.slice(0, 10) >= key
             ));
@@ -594,7 +616,10 @@ const FleetView: React.FC = () => {
               <div
                 key={key}
                 data-testid="fleet-overview-calendar-day"
-                className={`min-h-20 rounded-xl border p-2 text-left ${isSameMonth(day, overviewCalendarDate) ? 'border-[color:var(--nodu-border)] bg-white/70' : 'border-transparent bg-[color:rgb(var(--nodu-text-rgb)/0.03)] text-[color:var(--nodu-text-soft)]'}`}
+                data-date={key}
+                data-today={isToday ? 'true' : undefined}
+                className={getCalendarDayClassName(isSameMonth(day, overviewCalendarDate))}
+                style={getTodayCalendarDayStyle(isToday)}
               >
                 <div className="text-[11px] font-semibold">{format(day, 'd')}</div>
                 <div className="mt-1 space-y-1">

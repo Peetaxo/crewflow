@@ -71,6 +71,24 @@ describe('FleetView', () => {
     expect(screen.getAllByTestId('fleet-detail-calendar-day')).toHaveLength(42);
   });
 
+  it('highlights today in detail and fleet calendars', () => {
+    render(<FleetView />);
+
+    const todayOverviewDay = screen
+      .getAllByTestId('fleet-overview-calendar-day')
+      .find((day) => day.getAttribute('data-date') === '2026-04-28');
+
+    expect(todayOverviewDay).toHaveAttribute('data-today', 'true');
+
+    fireEvent.click(screen.getByRole('row', { name: /Crafter 1/i }));
+
+    const todayDetailDay = screen
+      .getAllByTestId('fleet-detail-calendar-day')
+      .find((day) => day.getAttribute('data-date') === '2026-04-28');
+
+    expect(todayDetailDay).toHaveAttribute('data-today', 'true');
+  });
+
   it('shows reservation history and vehicle documents in detail', () => {
     render(<FleetView />);
 

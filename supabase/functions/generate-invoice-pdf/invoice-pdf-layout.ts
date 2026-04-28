@@ -4,6 +4,13 @@ export type InvoicePdfLayout = {
     height: number;
     marginX: number;
   };
+  header: {
+    logoX: number;
+    logoY: number;
+    logoWidth: number;
+    invoiceNumberX: number;
+    invoiceNumberWidth: number;
+  };
   items: {
     headerY: number;
     startY: number;
@@ -19,6 +26,8 @@ export type InvoicePdfLayout = {
   payment: {
     y: number;
     height: number;
+    qrX: number;
+    qrSize: number;
   };
   minimumSectionGap: number;
 };
@@ -38,6 +47,13 @@ export const buildInvoicePdfLayout = (itemCount: number): InvoicePdfLayout => {
       height: 842,
       marginX: 48,
     },
+    header: {
+      logoX: 408,
+      logoY: 774,
+      logoWidth: 76,
+      invoiceNumberX: 408,
+      invoiceNumberWidth: 132,
+    },
     items: {
       headerY: 378,
       startY: 350,
@@ -45,14 +61,16 @@ export const buildInvoicePdfLayout = (itemCount: number): InvoicePdfLayout => {
       fontSize: 7,
     },
     summary: {
-      x: 350,
+      x: 342,
       y: Math.max(naturalSummaryY, minimumSummaryY),
-      width: 197,
+      width: 205,
       height: summaryHeight,
     },
     payment: {
       y: paymentY,
       height: paymentHeight,
+      qrX: 476,
+      qrSize: 70,
     },
     minimumSectionGap,
   };

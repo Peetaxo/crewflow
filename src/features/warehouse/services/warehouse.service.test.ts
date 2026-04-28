@@ -7,13 +7,24 @@ import {
   getWarehouseDependencies,
 } from './warehouse.service';
 
-vi.mock('../../../lib/supabase', () => ({
+const supabaseMockState = vi.hoisted(() => ({
   isSupabaseConfigured: false,
-  supabase: null,
+  supabase: null as unknown,
+}));
+
+vi.mock('../../../lib/supabase', () => ({
+  get isSupabaseConfigured() {
+    return supabaseMockState.isSupabaseConfigured;
+  },
+  get supabase() {
+    return supabaseMockState.supabase;
+  },
 }));
 
 describe('warehouse service', () => {
   beforeEach(() => {
+    supabaseMockState.isSupabaseConfigured = false;
+    supabaseMockState.supabase = null;
     updateLocalAppState(() => getLocalAppData());
   });
 
@@ -54,6 +65,39 @@ describe('warehouse service', () => {
         { warehouseItemId: '11111111-1111-4111-8111-111111111111', quantity: 1 },
       ],
     })).rejects.toThrow('Pozadovane mnozstvi neni dostupne.');
+  });
+
+  it('blocks reservations for non-active warehouse items', async () => {
+    updateLocalAppState((state) => ({
+      ...state,
+      warehouseItems: state.warehouseItems.map((item) => (
+        item.id === '11111111-1111-4111-8111-111111111111'
+          ? { ...item, status: 'maintenance' }
+          : item
+      )),
+    }));
+
+    await expect(createWarehouseReservation({
+      projectJobNumber: 'TEST001',
+      projectId: 'TEST001',
+      eventLocalId: 1,
+      startsAt: '2026-05-02T09:00',
+      endsAt: '2026-05-02T18:00',
+      note: '',
+      items: [{ warehouseItemId: '11111111-1111-4111-8111-111111111111', quantity: 1 }],
+    })).rejects.toThrow('Polozka skladu neni aktivni.');
+  });
+
+  it('blocks malformed reservation date values', async () => {
+    await expect(createWarehouseReservation({
+      projectJobNumber: 'TEST001',
+      projectId: 'TEST001',
+      eventLocalId: 1,
+      startsAt: 'not-a-date',
+      endsAt: '2026-05-02T18:00',
+      note: '',
+      items: [{ warehouseItemId: '11111111-1111-4111-8111-111111111111', quantity: 1 }],
+    })).rejects.toThrow('Vyplnte platny zacatek a konec rezervace.');
   });
 
   it('snapshots item names and prices into reservation lines', async () => {
@@ -111,5 +155,41 @@ describe('warehouse service', () => {
 
     expect(dependencies.projects.length).toBeGreaterThan(0);
     expect(dependencies.events.length).toBeGreaterThan(0);
+  });
+
+  it('cleans up the remote reservation header when Supabase line insert fails', async () => {
+    const deletedReservationIds: string[] = [];
+    let reservationId = '';
+    supabaseMockState.isSupabaseConfigured = true;
+    supabaseMockState.supabase = {
+      from: (table: string) => ({
+        insert: async (payload: unknown) => {
+          if (table === 'warehouse_reservations') {
+            reservationId = (payload as { id: string }).id;
+            return { error: null };
+          }
+          return { error: { message: 'line insert failed' } };
+        },
+        delete: () => ({
+          eq: async (_column: string, value: string) => {
+            deletedReservationIds.push(value);
+            return { error: null };
+          },
+        }),
+      }),
+    };
+
+    await expect(createWarehouseReservation({
+      projectJobNumber: 'TEST001',
+      projectId: 'TEST001',
+      eventLocalId: 1,
+      startsAt: '2026-05-05T09:00',
+      endsAt: '2026-05-05T18:00',
+      note: '',
+      items: [{ warehouseItemId: '11111111-1111-4111-8111-111111111111', quantity: 1 }],
+    })).rejects.toThrow('line insert failed');
+
+    expect(deletedReservationIds).toEqual([reservationId]);
+    expect(getWarehouseDependencies().reservations).toHaveLength(0);
   });
 });

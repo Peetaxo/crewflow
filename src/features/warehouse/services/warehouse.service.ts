@@ -38,10 +38,15 @@ export interface WarehouseDependencies {
 type SupabaseInsertClient = {
   from: (table: string) => {
     insert: (payload: unknown) => Promise<{ error: { message: string } | null }>;
+    delete: () => {
+      eq: (column: string, value: string) => Promise<{ error: { message: string } | null }>;
+    };
   };
 };
 
 const getTime = (value: string) => new Date(value).getTime();
+
+const isValidTime = (value: string) => Number.isFinite(getTime(value));
 
 const overlaps = (a: WarehouseRange, b: WarehouseRange) => (
   getTime(a.startsAt) < getTime(b.endsAt) && getTime(a.endsAt) > getTime(b.startsAt)
@@ -160,7 +165,10 @@ const saveWarehouseReservationToSupabase = async (reservation: WarehouseReservat
     })),
   );
 
-  if (lineResult.error) throw new Error(lineResult.error.message);
+  if (lineResult.error) {
+    await supabaseUntyped.from('warehouse_reservations').delete().eq('id', reservation.id);
+    throw new Error(lineResult.error.message);
+  }
 };
 
 export const createWarehouseReservation = async (
@@ -168,6 +176,9 @@ export const createWarehouseReservation = async (
 ): Promise<WarehouseReservation> => {
   if (!draft.projectJobNumber.trim()) throw new Error('Vyberte projekt.');
   if (!draft.startsAt || !draft.endsAt) throw new Error('Vyplnte zacatek a konec rezervace.');
+  if (!isValidTime(draft.startsAt) || !isValidTime(draft.endsAt)) {
+    throw new Error('Vyplnte platny zacatek a konec rezervace.');
+  }
   if (getTime(draft.endsAt) <= getTime(draft.startsAt)) throw new Error('Konec rezervace musi byt po zacatku.');
   if (draft.items.length === 0) throw new Error('Kosik je prazdny.');
   if (draft.items.some((item) => item.quantity < 1)) throw new Error('Mnozstvi musi byt alespon 1.');
@@ -179,6 +190,7 @@ export const createWarehouseReservation = async (
   const lines: WarehouseReservationItem[] = getAggregatedDraftItems(draft).map((draftItem) => {
     const item = snapshot.warehouseItems.find((candidate) => candidate.id === draftItem.warehouseItemId);
     if (!item) throw new Error('Polozka skladu nebyla nalezena.');
+    if (item.status !== 'active') throw new Error('Polozka skladu neni aktivni.');
 
     return {
       id: createId(),

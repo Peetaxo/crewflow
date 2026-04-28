@@ -156,10 +156,13 @@ const DashboardView = () => {
   };
 
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-      <div className="mb-5">
-        <h1 className="text-lg font-semibold text-gray-900">Dashboard</h1>
-        <p className="mt-0.5 text-xs text-gray-500">{roleLabel} · Duben 2026</p>
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="nodu-dashboard-shell">
+      <div className="mb-6">
+        <p className="nodu-dashboard-kicker">Pilot overview</p>
+        <h1 className="nodu-dashboard-heading">Dashboard</h1>
+        <p className="nodu-dashboard-lead">
+          {roleLabel} · Duben 2026
+        </p>
       </div>
 
       <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -167,37 +170,37 @@ const DashboardView = () => {
           label="Vykazy cekaji na me"
           value={pendingForMe}
           sub={reviewLabel}
-          cls={pendingForMe ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}
+          cls={pendingForMe ? 'bg-[color:var(--nodu-warning-bg)] text-[color:var(--nodu-warning-text)]' : 'bg-[color:var(--nodu-success-bg)] text-[color:var(--nodu-success-text)]'}
         />
         <StatCard
           label="Faktury v procesu"
           value={pendingInvoices}
           sub="Self-billing"
-          cls={pendingInvoices ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}
+          cls={pendingInvoices ? 'bg-[color:var(--nodu-warning-bg)] text-[color:var(--nodu-warning-text)]' : 'bg-[color:var(--nodu-success-bg)] text-[color:var(--nodu-success-text)]'}
         />
         <StatCard
           label="Uctenky v procesu"
           value={pendingReceipts}
           sub="Cekaji na schvaleni"
-          cls={pendingReceipts ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}
+          cls={pendingReceipts ? 'bg-[color:var(--nodu-warning-bg)] text-[color:var(--nodu-warning-text)]' : 'bg-[color:var(--nodu-success-bg)] text-[color:var(--nodu-success-text)]'}
         />
         <StatCard
           label="Schvalene hodiny"
           value={`${Math.round(approvedHours)}h`}
           sub="Tento mesic"
-          cls="bg-emerald-50 text-emerald-700"
+          cls="bg-[color:var(--nodu-success-bg)] text-[color:var(--nodu-success-text)]"
         />
         <StatCard
           label="Akce bez obsazeni"
           value={needsFilling}
           sub="Chybi crew"
-          cls={needsFilling ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}
+          cls={needsFilling ? 'bg-[color:var(--nodu-error-bg)] text-[color:var(--nodu-error-text)]' : 'bg-[color:var(--nodu-success-bg)] text-[color:var(--nodu-success-text)]'}
         />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm lg:col-span-3">
-          <h2 className="mb-3 text-[13px] font-semibold">Timelogy ke zpracovani</h2>
+        <div className="nodu-dashboard-panel rounded-[28px] p-5 lg:col-span-3">
+          <h2 className="nodu-dashboard-panel-title mb-3">Timelogy ke zpracovani</h2>
           <div className="space-y-1">
             {timelogQueue
               .slice(0, 4)
@@ -212,22 +215,23 @@ const DashboardView = () => {
                   <button
                     key={timelog.id}
                     onClick={openTimelogs}
-                    className="flex w-full items-center gap-3 rounded-lg border-b border-gray-50 py-2 text-left transition-colors hover:bg-gray-50 last:border-0"
+                    className="nodu-dashboard-row flex w-full items-center gap-3 rounded-[20px] border-b px-3 py-3 text-left transition-colors last:border-0"
                   >
                     <div className="av h-8 w-8 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>
                       {contractor.ii}
                     </div>
                     <div className="min-width-0 flex-1">
-                      <div className="truncate text-xs font-semibold">{contractor.name}</div>
-                      <div className="text-[11px] text-gray-500">
-                        {event.name} <span className="jn">{event.job}</span>
+                      <div className="nodu-dashboard-row-title">{contractor.name}</div>
+                      <div className="nodu-dashboard-row-meta mt-1 gap-2">
+                        <span>{event.name}</span>
+                        <span className="jn nodu-job-badge">{event.job}</span>
                       </div>
                     </div>
                     <div className="shrink-0 text-right">
-                      <div className="text-xs font-semibold">{hours.toFixed(1)}h</div>
-                      <div className="text-[11px] text-gray-500">{formatCurrency(hours * contractor.rate)}</div>
+                      <div className="nodu-dashboard-row-value">{hours.toFixed(1)}h</div>
+                      <div className="text-[11px] text-[color:var(--nodu-text-soft)]">{formatCurrency(hours * contractor.rate)}</div>
                     </div>
-                    <div className="rounded-md p-1.5 text-emerald-600">
+                    <div className="nodu-dashboard-action">
                       <ChevronRight size={14} />
                     </div>
                   </button>
@@ -235,45 +239,48 @@ const DashboardView = () => {
               })}
 
             {timelogQueue.length === 0 && (
-              <div className="py-8 text-center text-sm text-gray-400">Zadne vykazy k akci</div>
+              <div className="nodu-dashboard-empty">Zadne vykazy k akci</div>
             )}
           </div>
         </div>
 
-        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm lg:col-span-2">
-          <h2 className="mb-3 text-[13px] font-semibold">Nadchazejici akce</h2>
+        <div className="nodu-dashboard-panel rounded-[28px] p-5 lg:col-span-2">
+          <h2 className="nodu-dashboard-panel-title mb-3">Nadchazejici akce</h2>
           <div className="space-y-3">
             {upcomingEvents.map((event) => (
               <button
                 key={event.id}
                 onClick={() => openEventDetail(event.id)}
-                className="block w-full border-b border-gray-50 pb-3 text-left transition-colors hover:bg-gray-50 last:border-0 last:pb-0"
+                className="nodu-dashboard-row block w-full rounded-[22px] border px-3 pb-3 pt-3 text-left transition-colors last:pb-3"
               >
                 <div className="mb-1.5 flex items-center gap-2">
-                  <span className="jn">{event.job}</span>
+                  <span className="jn nodu-job-badge">{event.job}</span>
                   <StatusBadge status={getEventStatus(event)} />
                 </div>
-                <div className="truncate text-xs font-semibold">{event.name}</div>
-                <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-gray-500">
+                <div className="nodu-dashboard-row-title">{event.name}</div>
+                <div className="nodu-dashboard-row-meta mt-0.5 gap-1.5">
                   {formatDateRange(event.startDate, event.endDate)} · {event.city}
                   {event.startDate !== event.endDate && (
-                    <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-tighter text-gray-600">
+                    <span className="nodu-event-meta-badge rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em]">
                       {getDatesBetween(event.startDate, event.endDate).length} dny
                     </span>
                   )}
                 </div>
-                <div className="mt-2 h-1 overflow-hidden rounded-full bg-gray-100">
+                <div className="nodu-dashboard-progress-track mt-2">
                   <div
-                    className={`h-full rounded-full ${event.filled >= event.needed ? 'bg-emerald-500' : 'bg-amber-500'}`}
-                    style={{ width: `${Math.min(100, Math.round((event.filled / event.needed) * 100))}%` }}
+                    className="h-full rounded-full"
+                    style={{
+                      width: `${Math.min(100, Math.round((event.filled / event.needed) * 100))}%`,
+                      backgroundColor: event.filled >= event.needed ? 'var(--nodu-success-text)' : 'var(--nodu-warning-text)',
+                    }}
                   />
                 </div>
-                <div className="mt-1 text-[10px] text-gray-500">{event.filled}/{event.needed} crew</div>
+                <div className="mt-1 text-[10px] text-[color:var(--nodu-text-soft)]">{event.filled}/{event.needed} crew</div>
               </button>
             ))}
 
             {upcomingEvents.length === 0 && (
-              <div className="py-8 text-center text-sm text-gray-400">Zadne nadchazejici akce</div>
+              <div className="nodu-dashboard-empty">Zadne nadchazejici akce</div>
             )}
           </div>
         </div>

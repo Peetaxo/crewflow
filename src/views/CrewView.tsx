@@ -5,6 +5,7 @@ import { useAppContext } from '../context/useAppContext';
 import StatusBadge from '../components/shared/StatusBadge';
 import CrewDetailView from './CrewDetailView';
 import ContractorEditModal from '../components/modals/ContractorEditModal';
+import { Button } from '../components/ui/button';
 import { Contractor } from '../types';
 import { getCrew, subscribeToCrewChanges } from '../features/crew/services/crew.service';
 
@@ -46,6 +47,10 @@ const createEmptyContractor = (nextId: number): Contractor => {
   };
 };
 
+const getContractorDetailKey = (contractor: Contractor) => (
+  contractor.profileId ?? `legacy:${contractor.id}`
+);
+
 const CrewView = () => {
   const {
     selectedContractorProfileId,
@@ -82,19 +87,23 @@ const CrewView = () => {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <div className="mb-5 flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Crew</h1>
-        <button
+        <div>
+          <h1 className="text-lg font-semibold text-[var(--nodu-text)]">Crew</h1>
+          <p className="mt-1 text-xs text-[var(--nodu-text-soft)]">Lide, sazby a kontakty pro obsazovani akci.</p>
+        </div>
+        <Button
+          type="button"
           onClick={() => setEditingContractor(createEmptyContractor(nextContractorId))}
-          className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700"
+          size="sm"
         >
           + Novy clen
-        </button>
+        </Button>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
+      <div className="overflow-hidden rounded-[24px] border border-[var(--nodu-border)] bg-white shadow-[0_18px_40px_rgba(var(--nodu-text-rgb),0.06)]">
         <table className="w-full border-collapse text-left">
           <thead>
-            <tr className="border-b border-gray-100 text-[10px] uppercase tracking-wider text-gray-400">
+            <tr className="border-b border-[var(--nodu-border)] text-[10px] uppercase tracking-[0.16em] text-[var(--nodu-text-soft)]">
               <th className="px-4 py-3 font-medium">Jmeno</th>
               <th className="px-4 py-3 font-medium">Tagy</th>
               <th className="px-4 py-3 font-medium">Akci</th>
@@ -104,51 +113,51 @@ const CrewView = () => {
               <th className="px-4 py-3 text-right font-medium">Akce</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-50">
+          <tbody className="divide-y divide-[rgba(var(--nodu-text-rgb),0.06)]">
             {crew.map((contractor) => (
               <tr
                 key={contractor.id}
-                className="cursor-pointer transition-colors hover:bg-gray-50"
-                onClick={() => setSelectedContractorProfileId(contractor.profileId ?? null)}
+                className="group cursor-pointer transition-colors"
+                onClick={() => setSelectedContractorProfileId(getContractorDetailKey(contractor))}
               >
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 transition-colors group-hover:!bg-[var(--nodu-accent-soft)]">
                   <div className="flex items-center gap-2">
                     <div className="av w-7 h-7 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>
                       {contractor.ii}
                     </div>
                     <div>
-                      <div className="text-xs font-semibold text-gray-900">{contractor.name}</div>
-                      <div className="text-[10px] text-gray-500">{contractor.city}</div>
+                      <div className="text-xs font-semibold text-[var(--nodu-text)]">{contractor.name}</div>
+                      <div className="text-[10px] text-[var(--nodu-text-soft)]">{contractor.city}</div>
                     </div>
                   </div>
-                  <div className="mt-1 text-[10px] text-gray-500">
+                  <div className="mt-1 text-[10px] text-[var(--nodu-text-soft)]">
                     Hodnoceni: {formatRating(contractor.rating)} / 5
                   </div>
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 transition-colors group-hover:!bg-[var(--nodu-accent-soft)]">
                   <div className="flex flex-wrap gap-1">
                     {contractor.tags.includes('Ridic') && <StatusBadge status="bg" label="Ridic" />}
                     {contractor.reliable ? <StatusBadge status="full" label="Spolehlivy" /> : <StatusBadge status="pending_ch" label="Overit" />}
                   </div>
                 </td>
-                <td className="px-4 py-3 text-xs font-semibold">{contractor.events}</td>
-                <td className="px-4 py-3 text-xs font-semibold">{contractor.rate} Kc/h</td>
-                <td className="px-4 py-3">
-                  <div className="text-xs text-gray-700">{contractor.ico || '-'}</div>
-                  <div className="text-[10px] text-gray-400">{contractor.dic || '-'}</div>
+                <td className="px-4 py-3 text-xs font-semibold text-[var(--nodu-text)] transition-colors group-hover:!bg-[var(--nodu-accent-soft)]">{contractor.events}</td>
+                <td className="px-4 py-3 text-xs font-semibold text-[var(--nodu-text)] transition-colors group-hover:!bg-[var(--nodu-accent-soft)]">{contractor.rate} Kc/h</td>
+                <td className="px-4 py-3 transition-colors group-hover:!bg-[var(--nodu-accent-soft)]">
+                  <div className="text-xs text-[var(--nodu-text)]">{contractor.ico || '-'}</div>
+                  <div className="text-[10px] text-[var(--nodu-text-soft)]">{contractor.dic || '-'}</div>
                 </td>
-                <td className="px-4 py-3">
-                  <div className="text-xs text-gray-700">{contractor.phone}</div>
-                  <div className="text-[10px] text-gray-400">{contractor.email}</div>
+                <td className="px-4 py-3 transition-colors group-hover:!bg-[var(--nodu-accent-soft)]">
+                  <div className="text-xs text-[var(--nodu-text)]">{contractor.phone}</div>
+                  <div className="text-[10px] text-[var(--nodu-text-soft)]">{contractor.email}</div>
                 </td>
-                <td className="px-4 py-3 text-right">
+                <td className="px-4 py-3 text-right transition-colors group-hover:!bg-[var(--nodu-accent-soft)]">
                   <div className="flex items-center justify-end gap-1">
                     <button
                       onClick={(event) => {
                         event.stopPropagation();
                         setDeleteConfirm({ type: 'crew', id: contractor.id, name: contractor.name });
                       }}
-                      className="rounded-lg p-1.5 text-gray-300 transition-all hover:bg-red-50 hover:text-red-600"
+                      className="rounded-lg p-1.5 text-[var(--nodu-text-soft)] transition-all hover:bg-[var(--nodu-error-bg)] hover:text-[var(--nodu-error-text)]"
                       title="Smazat"
                     >
                       <Trash2 size={14} />
@@ -161,7 +170,7 @@ const CrewView = () => {
         </table>
 
         {crew.length === 0 && (
-          <div className="py-12 text-center text-sm text-gray-400">Zadni clenove crew</div>
+          <div className="py-12 text-center text-sm text-[var(--nodu-text-soft)]">Zadni clenove crew</div>
         )}
       </div>
 

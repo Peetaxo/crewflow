@@ -4,6 +4,9 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { getDatesBetween } from '../../utils';
 import { Event, EventPhaseSlot, TimelogType } from '../../types';
+import { Button } from '../ui/button';
+import { Input } from '../ui/input';
+import { Textarea } from '../ui/textarea';
 import {
   applyEventDraft,
   createDefaultPhaseTimes,
@@ -23,6 +26,11 @@ const PHASES = [
   { id: 'P', type: 'provoz' as const, color: 'bg-emerald-500 border-emerald-600', label: 'Provoz' },
   { id: 'D', type: 'deinstal' as const, color: 'bg-orange-500 border-orange-600', label: 'Deinstalace' },
 ];
+
+const fieldLabelClass = 'mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]';
+const nativeFieldClass = 'w-full rounded-xl border border-[color:var(--nodu-border)] bg-white px-3 py-2 text-sm text-[color:var(--nodu-text)] outline-none transition-all focus:border-[color:var(--nodu-accent)] focus:ring-2 focus:ring-[color:rgb(var(--nodu-accent-rgb)/0.14)]';
+const smallFieldLabelClass = 'mb-1 block text-[9px] uppercase text-[color:var(--nodu-text-soft)]';
+const smallNativeFieldClass = 'w-full rounded-lg border border-[color:var(--nodu-border)] bg-white px-2 py-1 text-[10px] text-[color:var(--nodu-text)] outline-none focus:border-[color:var(--nodu-accent)] focus:ring-2 focus:ring-[color:rgb(var(--nodu-accent-rgb)/0.12)]';
 
 const createSlotId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
@@ -119,11 +127,11 @@ const EventEditModal = ({
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
-          className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
+          className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] shadow-[0_28px_80px_rgba(47,38,31,0.18)]"
         >
-          <div className="flex items-center justify-between border-b border-gray-100 p-4">
-            <h3 className="font-semibold text-gray-900">Upravit akci</h3>
-            <button onClick={onClose} className="rounded-full p-1 text-gray-400 hover:bg-gray-100">
+          <div className="flex items-center justify-between border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] p-5">
+            <h3 className="text-xl font-semibold tracking-[-0.03em] text-[color:var(--nodu-text)]">Upravit akci</h3>
+            <button onClick={onClose} className="rounded-xl border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-2 text-[color:var(--nodu-text-soft)] transition-all hover:border-[color:rgb(var(--nodu-accent-rgb)/0.24)] hover:text-[color:var(--nodu-accent)]">
               <X size={20} />
             </button>
           </div>
@@ -131,10 +139,10 @@ const EventEditModal = ({
           <div className="flex-1 space-y-4 overflow-y-auto p-5">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Job Number</label>
+                <label className="mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">Job Number</label>
                 <div ref={projectMenuRef} className="relative">
-                  <div className="flex overflow-hidden rounded-lg border border-gray-200 bg-white focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/20">
-                    <input
+                  <div className="flex overflow-hidden rounded-xl border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.88)] focus-within:ring-2 focus-within:ring-[color:var(--nodu-accent-soft)]">
+                    <Input
                       type="text"
                       value={editingEvent.job}
                       onChange={(e) => {
@@ -143,12 +151,12 @@ const EventEditModal = ({
                       }}
                       onFocus={() => setIsProjectMenuOpen(true)}
                       placeholder="Napr. NEX300"
-                      className="w-full px-3 py-2 text-sm outline-none"
+                      className="w-full border-0 bg-transparent shadow-none focus-visible:ring-0"
                     />
                     <button
                       type="button"
                       onClick={() => setIsProjectMenuOpen((prev) => !prev)}
-                      className="border-l border-gray-200 px-3 text-gray-400 transition-colors hover:bg-gray-50 hover:text-gray-600"
+                      className="border-l border-[color:rgb(var(--nodu-text-rgb)/0.08)] px-3 text-[color:var(--nodu-text-soft)] transition-colors hover:bg-[color:rgb(var(--nodu-accent-rgb)/0.08)] hover:text-[color:var(--nodu-accent)]"
                       aria-label="Rozbalit projekty"
                     >
                       <ChevronDown size={16} className={`transition-transform ${isProjectMenuOpen ? 'rotate-180' : ''}`} />
@@ -156,26 +164,26 @@ const EventEditModal = ({
                   </div>
 
                   {isProjectMenuOpen && (
-                    <div className="absolute z-20 mt-2 max-h-56 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 shadow-lg">
+                    <div className="absolute z-20 mt-2 max-h-56 w-full overflow-y-auto rounded-[22px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] p-1 shadow-[0_18px_42px_rgba(47,38,31,0.16)]">
                       {filteredProjects.length > 0 ? (
                         filteredProjects.map((project) => (
                           <button
                             key={project.id}
                             type="button"
                             onClick={() => selectProject(project.id)}
-                            className="flex w-full items-start justify-between rounded-lg px-3 py-2 text-left transition-colors hover:bg-gray-50"
+                            className="flex w-full items-start justify-between rounded-[16px] px-3 py-2 text-left transition-colors hover:bg-[color:rgb(var(--nodu-accent-rgb)/0.08)]"
                           >
                             <div>
-                              <div className="text-sm font-semibold text-gray-900">{project.id}</div>
-                              <div className="text-xs text-gray-500">{project.name}</div>
+                              <div className="text-sm font-semibold text-[color:var(--nodu-text)]">{project.id}</div>
+                              <div className="text-xs text-[color:var(--nodu-text-soft)]">{project.name}</div>
                             </div>
-                            <div className="pl-3 text-[10px] font-medium uppercase tracking-wider text-gray-400">
+                            <div className="pl-3 text-[10px] font-medium uppercase tracking-wider text-[color:var(--nodu-text-soft)]">
                               {project.client}
                             </div>
                           </button>
                         ))
                       ) : (
-                        <div className="px-3 py-2 text-xs text-gray-500">
+                        <div className="px-3 py-2 text-xs text-[color:var(--nodu-text-soft)]">
                           Zadny existujici projekt. Akce vytvori novy projekt automaticky.
                         </div>
                       )}
@@ -184,23 +192,22 @@ const EventEditModal = ({
                 </div>
               </div>
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Nazev akce</label>
-                <input
+                <label className="mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">Nazev akce</label>
+                <Input
                   type="text"
                   value={editingEvent.name}
                   onChange={(e) => updateEventDraft({ ...editingEvent, name: e.target.value })}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Klient / Firma</label>
+                <label className={fieldLabelClass}>Klient / Firma</label>
                 <select
                   value={editingEvent.client}
                   onChange={(e) => updateEventDraft({ ...editingEvent, client: e.target.value })}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                  className={nativeFieldClass}
                 >
                   <option value="">Vyberte klienta</option>
                   {clients.map((client) => (
@@ -209,40 +216,40 @@ const EventEditModal = ({
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Mesto</label>
+                <label className={fieldLabelClass}>Mesto</label>
                 <input
                   type="text"
                   value={editingEvent.city}
                   onChange={(e) => updateEventDraft({ ...editingEvent, city: e.target.value })}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  className={nativeFieldClass}
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Datum zacatku</label>
+                <label className={fieldLabelClass}>Datum zacatku</label>
                 <input
                   type="date"
                   value={editingEvent.startDate}
                   onChange={(e) => updateEventDraft({ ...editingEvent, startDate: e.target.value })}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  className={nativeFieldClass}
                 />
               </div>
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Datum konce</label>
+                <label className={fieldLabelClass}>Datum konce</label>
                 <input
                   type="date"
                   value={editingEvent.endDate}
                   onChange={(e) => updateEventDraft({ ...editingEvent, endDate: e.target.value })}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  className={nativeFieldClass}
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Od</label>
+                <label className={fieldLabelClass}>Od</label>
                 <input
                   type="time"
                   value={globalFrom}
@@ -259,11 +266,11 @@ const EventEditModal = ({
                         ) as Event['phaseSchedules']
                       : editingEvent.phaseSchedules,
                   })}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  className={nativeFieldClass}
                 />
               </div>
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Do</label>
+                <label className={fieldLabelClass}>Do</label>
                 <input
                   type="time"
                   value={globalTo}
@@ -280,63 +287,63 @@ const EventEditModal = ({
                         ) as Event['phaseSchedules']
                       : editingEvent.phaseSchedules,
                   })}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  className={nativeFieldClass}
                 />
               </div>
             </div>
 
             <div>
-              <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Popis akce</label>
-              <textarea
+              <label className="mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">Popis akce</label>
+              <Textarea
                 value={editingEvent.description || ''}
                 onChange={(e) => updateEventDraft({ ...editingEvent, description: e.target.value })}
-                className="h-16 w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                className="h-16 resize-none"
               />
             </div>
 
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Kontaktni osoba</label>
+                <label className={fieldLabelClass}>Kontaktni osoba</label>
                 <input
                   type="text"
                   value={editingEvent.contactPerson || ''}
                   onChange={(e) => updateEventDraft({ ...editingEvent, contactPerson: e.target.value })}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  className={nativeFieldClass}
                 />
               </div>
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Dresscode</label>
+                <label className={fieldLabelClass}>Dresscode</label>
                 <input
                   type="text"
                   value={editingEvent.dresscode || ''}
                   onChange={(e) => updateEventDraft({ ...editingEvent, dresscode: e.target.value })}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  className={nativeFieldClass}
                 />
               </div>
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Misto srazu</label>
+                <label className={fieldLabelClass}>Misto srazu</label>
                 <input
                   type="text"
                   value={editingEvent.meetingLocation || ''}
                   onChange={(e) => updateEventDraft({ ...editingEvent, meetingLocation: e.target.value })}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  className={nativeFieldClass}
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Potreba crew</label>
+                <label className={fieldLabelClass}>Potreba crew</label>
                 <input
                   type="number"
                   value={editingEvent.needed}
                   onChange={(e) => updateEventDraft({ ...editingEvent, needed: Number(e.target.value) })}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  className={nativeFieldClass}
                 />
               </div>
             </div>
 
-            <div className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 p-3">
+            <div className="flex items-center gap-2 rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] p-3">
               <input
                 type="checkbox"
                 id="showDayTypes"
@@ -351,17 +358,17 @@ const EventEditModal = ({
                     ? (editingEvent.phaseSchedules || normalizeEventSchedules(editingEvent))
                     : editingEvent.phaseSchedules,
                 })}
-                className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                className="h-4 w-4 rounded border-[color:var(--nodu-border)] text-[color:var(--nodu-accent)] focus:ring-[color:var(--nodu-accent)]"
               />
-              <label htmlFor="showDayTypes" className="cursor-pointer select-none text-xs font-bold text-gray-700">
+              <label htmlFor="showDayTypes" className="cursor-pointer select-none text-xs font-bold text-[color:var(--nodu-text)]">
                 Zobrazovat typy dnu (I-P-D) na akci
               </label>
             </div>
 
             {editingEvent.showDayTypes && editingEvent.startDate && editingEvent.endDate && (
-              <div className="space-y-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
+              <div className="space-y-4 rounded-[22px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] p-4">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Nastaveni typu dnu (I-P-D)</h4>
+                  <h4 className="text-[10px] font-bold uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">Nastaveni typu dnu (I-P-D)</h4>
                   <button
                     type="button"
                     onClick={() => updateEventDraft({
@@ -373,20 +380,20 @@ const EventEditModal = ({
                         ]),
                       ) as Event['phaseSchedules'],
                     })}
-                    className="text-[9px] font-bold uppercase text-red-500 hover:text-red-600"
+                    className="text-[9px] font-bold uppercase text-[color:var(--nodu-error-text)] hover:opacity-80"
                   >
                     Vymazat vse
                   </button>
                 </div>
 
                 {PHASES.map((phase) => (
-                  <div key={phase.id} className="space-y-3 rounded-lg border border-gray-200 bg-white p-3">
+                  <div key={phase.id} className="space-y-3 rounded-[18px] border border-[color:var(--nodu-border)] bg-white p-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <div className={`flex h-5 w-5 items-center justify-center rounded text-[9px] font-black text-white shadow-sm ${phase.color}`}>
                           {phase.id}
                         </div>
-                        <span className="text-xs font-bold text-gray-700">{phase.label}</span>
+                        <span className="text-xs font-bold text-[color:var(--nodu-text)]">{phase.label}</span>
                       </div>
                       <button
                         type="button"
@@ -394,16 +401,16 @@ const EventEditModal = ({
                           ...slots,
                           { id: createSlotId(), from: globalFrom, to: globalTo, dates: [] },
                         ])}
-                        className="inline-flex items-center gap-1 text-[10px] font-bold uppercase text-emerald-600 hover:text-emerald-700"
+                        className="inline-flex items-center gap-1 text-[10px] font-bold uppercase text-[color:var(--nodu-accent)] hover:opacity-80"
                       >
                         <Plus size={12} /> Pridat cas
                       </button>
                     </div>
 
                     {(phaseSchedules[phase.type] || []).map((slot, slotIndex) => (
-                      <div key={slot.id} className="space-y-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
+                      <div key={slot.id} className="space-y-3 rounded-xl border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] p-3">
                         <div className="flex items-center justify-between">
-                          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-[color:var(--nodu-text-soft)]">
                             Blok {slotIndex + 1}
                           </div>
                           <div className="flex items-center gap-2">
@@ -412,7 +419,7 @@ const EventEditModal = ({
                               onClick={() => patchPhaseSlots(phase.type, (slots) => (
                                 slots.map((currentSlot) => currentSlot.id === slot.id ? { ...currentSlot, dates: [...allEventDates] } : currentSlot)
                               ))}
-                              className="text-[9px] font-bold uppercase text-emerald-600 hover:text-emerald-700"
+                              className="text-[9px] font-bold uppercase text-[color:var(--nodu-accent)] hover:opacity-80"
                             >
                               Vsechny dny
                             </button>
@@ -423,7 +430,7 @@ const EventEditModal = ({
                                   ? slots.filter((currentSlot) => currentSlot.id !== slot.id)
                                   : [{ ...slot, dates: [] }]
                               ))}
-                              className="text-[9px] font-bold uppercase text-gray-400 hover:text-gray-500"
+                              className="text-[9px] font-bold uppercase text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]"
                             >
                               {(phaseSchedules[phase.type] || []).length > 1 ? (
                                 <span className="inline-flex items-center gap-1"><Trash2 size={10} /> Smazat</span>
@@ -434,31 +441,31 @@ const EventEditModal = ({
 
                         <div className="grid grid-cols-2 gap-2">
                           <div>
-                            <label className="mb-1 block text-[9px] uppercase text-gray-400">Od</label>
+                            <label className={smallFieldLabelClass}>Od</label>
                             <input
                               type="time"
                               value={slot.from}
                               onChange={(e) => patchPhaseSlots(phase.type, (slots) => (
                                 slots.map((currentSlot) => currentSlot.id === slot.id ? { ...currentSlot, from: e.target.value } : currentSlot)
                               ))}
-                              className="w-full rounded border border-gray-200 bg-white px-2 py-1 text-[10px]"
+                              className={smallNativeFieldClass}
                             />
                           </div>
                           <div>
-                            <label className="mb-1 block text-[9px] uppercase text-gray-400">Do</label>
+                            <label className={smallFieldLabelClass}>Do</label>
                             <input
                               type="time"
                               value={slot.to}
                               onChange={(e) => patchPhaseSlots(phase.type, (slots) => (
                                 slots.map((currentSlot) => currentSlot.id === slot.id ? { ...currentSlot, to: e.target.value } : currentSlot)
                               ))}
-                              className="w-full rounded border border-gray-200 bg-white px-2 py-1 text-[10px]"
+                              className={smallNativeFieldClass}
                             />
                           </div>
                         </div>
 
                         <div>
-                          <label className="mb-2 block text-[9px] uppercase text-gray-400">Dny</label>
+                          <label className="mb-2 block text-[9px] uppercase text-[color:var(--nodu-text-soft)]">Dny</label>
                           <div className="flex flex-wrap gap-1">
                             {allEventDates.map((date) => {
                               const isSelected = slot.dates.includes(date);
@@ -480,7 +487,7 @@ const EventEditModal = ({
                                   className={`h-8 w-8 rounded border text-[9px] font-bold transition-all ${
                                     isSelected
                                       ? `${phase.color} text-white shadow-sm`
-                                      : 'border-gray-200 bg-white text-gray-400 hover:border-gray-300'
+                                      : 'border-[color:var(--nodu-border)] bg-white text-[color:var(--nodu-text-soft)] hover:border-[color:rgb(var(--nodu-accent-rgb)/0.28)] hover:text-[color:var(--nodu-accent)]'
                                   }`}
                                   title={`${new Date(date).toLocaleDateString('cs-CZ')} - ${phase.label}`}
                                 >
@@ -498,16 +505,16 @@ const EventEditModal = ({
             )}
           </div>
 
-          <div className="flex gap-3 border-t border-gray-100 bg-gray-50 p-4">
+          <div className="flex gap-3 border-t border-[color:rgb(var(--nodu-text-rgb)/0.08)] bg-[color:var(--nodu-paper-strong)] p-4">
             <button
               onClick={onClose}
-              className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-700 transition-all hover:bg-white"
+              className="flex-1 rounded-xl border border-[color:var(--nodu-border)] bg-white py-2.5 text-sm font-medium text-[color:var(--nodu-text)] transition-all hover:bg-[color:var(--nodu-accent-soft)] hover:text-[color:var(--nodu-accent)]"
             >
               Zrusit
             </button>
             <button
               onClick={handleSave}
-              className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-sm font-medium text-white shadow-lg shadow-emerald-200 transition-all hover:bg-emerald-700"
+              className="flex-1 rounded-xl border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] py-2.5 text-sm font-medium text-[color:var(--nodu-success-text)] shadow-[0_12px_30px_rgba(45,108,78,0.12)] transition-all hover:bg-[color:var(--nodu-success-bg-hover)]"
             >
               Ulozit akci
             </button>

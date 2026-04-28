@@ -151,7 +151,7 @@ const CrewDetailView = () => {
     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
       <button
         onClick={() => setSelectedContractorProfileId(null)}
-        className="mb-4 flex items-center gap-1 text-xs text-gray-500 transition-colors hover:text-gray-900"
+        className="mb-4 flex items-center gap-1 text-xs font-medium text-[var(--nodu-text-soft)] transition-colors hover:text-[var(--nodu-accent)]"
       >
         <ArrowLeft size={14} />
         Zpet na Crew
@@ -163,48 +163,48 @@ const CrewDetailView = () => {
             label: 'Vydelano celkem',
             value: formatCurrency(stats.totalEarned),
             sub: 'Z proplacenych faktur',
-            bg: 'bg-emerald-50 border-emerald-100',
+            bg: 'bg-white border-[var(--nodu-border)]',
             icon: Receipt,
-            iconBg: 'bg-emerald-100 text-emerald-700',
-            labelCls: 'text-emerald-700',
-            valueCls: 'text-emerald-900',
-            subCls: 'text-emerald-600',
+            iconBg: 'bg-[var(--nodu-success-bg)] text-[var(--nodu-success-text)]',
+            labelCls: 'text-[var(--nodu-success-text)]',
+            valueCls: 'text-[var(--nodu-text)]',
+            subCls: 'text-[var(--nodu-text-soft)]',
           },
           {
             label: 'K vyplaceni',
             value: formatCurrency(stats.toPay),
             sub: 'Odeslane faktury',
-            bg: 'bg-blue-50 border-blue-100',
+            bg: 'bg-white border-[var(--nodu-border)]',
             icon: Clock,
-            iconBg: 'bg-blue-100 text-blue-700',
-            labelCls: 'text-blue-700',
-            valueCls: 'text-blue-900',
-            subCls: 'text-blue-600',
+            iconBg: 'bg-[var(--nodu-info-bg)] text-[var(--nodu-info-text)]',
+            labelCls: 'text-[var(--nodu-info-text)]',
+            valueCls: 'text-[var(--nodu-text)]',
+            subCls: 'text-[var(--nodu-text-soft)]',
           },
           {
             label: 'Ke schvaleni',
             value: `${stats.pendingHours.toFixed(1)} h`,
             sub: 'Ceka na schvaleni',
-            bg: 'bg-amber-50 border-amber-100',
+            bg: 'bg-white border-[var(--nodu-border)]',
             icon: CheckCircle2,
-            iconBg: 'bg-amber-100 text-amber-700',
-            labelCls: 'text-amber-700',
-            valueCls: 'text-amber-900',
-            subCls: 'text-amber-600',
+            iconBg: 'bg-[var(--nodu-warning-bg)] text-[var(--nodu-warning-text)]',
+            labelCls: 'text-[var(--nodu-warning-text)]',
+            valueCls: 'text-[var(--nodu-text)]',
+            subCls: 'text-[var(--nodu-text-soft)]',
           },
           {
             label: 'Celkem odpracovano',
             value: `${stats.totalHours.toFixed(1)} h`,
             sub: 'Schvalene smeny',
-            bg: 'bg-gray-50 border-gray-100',
+            bg: 'bg-white border-[var(--nodu-border)]',
             icon: Calendar,
-            iconBg: 'bg-gray-200 text-gray-700',
-            labelCls: 'text-gray-700',
-            valueCls: 'text-gray-900',
-            subCls: 'text-gray-500',
+            iconBg: 'bg-[rgba(var(--nodu-text-rgb),0.06)] text-[var(--nodu-text-soft)]',
+            labelCls: 'text-[var(--nodu-text-soft)]',
+            valueCls: 'text-[var(--nodu-text)]',
+            subCls: 'text-[var(--nodu-text-soft)]',
           },
         ].map((s) => (
-          <div key={s.label} className={`${s.bg} rounded-2xl border p-4`}>
+          <div key={s.label} className={`${s.bg} rounded-[22px] border p-4 shadow-[0_16px_34px_rgba(var(--nodu-text-rgb),0.06)]`}>
             <div className="mb-2 flex items-center gap-3">
               <div className={`rounded-lg p-2 ${s.iconBg}`}>
                 <s.icon size={18} />
@@ -219,12 +219,12 @@ const CrewDetailView = () => {
 
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start">
         <div className="space-y-4 lg:w-[32%] lg:flex-none">
-          <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-            <div className="mb-4 flex items-center gap-3 border-b border-gray-50 pb-4">
+          <div className="rounded-[24px] border border-[var(--nodu-border)] bg-white p-5 shadow-[0_18px_40px_rgba(var(--nodu-text-rgb),0.06)]">
+            <div className="mb-4 flex items-center gap-3 border-b border-[rgba(var(--nodu-text-rgb),0.06)] pb-4">
               <div className="av h-12 w-12 text-lg" style={{ backgroundColor: c.bg, color: c.fg }}>{c.ii}</div>
               <div>
-                <div className="text-base font-semibold">{c.name}</div>
-                <div className="text-xs text-gray-500">{c.city || 'Bez mesta'}</div>
+                <div className="text-base font-semibold text-[var(--nodu-text)]">{c.name}</div>
+                <div className="text-xs text-[var(--nodu-text-soft)]">{c.city || 'Bez mesta'}</div>
               </div>
             </div>
 
@@ -233,23 +233,23 @@ const CrewDetailView = () => {
               {c.reliable ? <StatusBadge status="full" label="Spolehlivy" /> : <StatusBadge status="pending_ch" label="Overit" />}
             </div>
 
-            <div className="mb-4 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wider text-gray-500">Hodnoceni</div>
-              <div className="mt-1 text-sm font-semibold text-gray-900">
+            <div className="mb-4 rounded-xl border border-[var(--nodu-border)] bg-[var(--nodu-paper-strong)] px-3 py-2">
+              <div className="text-[10px] uppercase tracking-wider text-[var(--nodu-text-soft)]">Hodnoceni</div>
+              <div className="mt-1 text-sm font-semibold text-[var(--nodu-text)]">
                 {typeof c.rating === 'number' ? `${c.rating.toFixed(1).replace('.0', '')} / 5` : 'Bez hodnoceni'}
               </div>
             </div>
 
-            <div className="mb-4 flex gap-1 rounded-lg border border-gray-200 bg-white p-0.5">
+            <div className="mb-4 flex gap-1 rounded-xl border border-[var(--nodu-border)] bg-white p-1">
               <button
                 onClick={() => setProfileTab('personal')}
-                className={`flex-1 rounded-md py-2 text-[11px] font-medium transition-all ${profileTab === 'personal' ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                className={`flex-1 rounded-lg py-2 text-[11px] font-medium transition-all ${profileTab === 'personal' ? 'bg-[var(--nodu-accent)] text-white shadow-sm' : 'text-[var(--nodu-text-soft)] hover:bg-[var(--nodu-accent-soft)] hover:text-[var(--nodu-text)]'}`}
               >
                 Osobni udaje
               </button>
               <button
                 onClick={() => setProfileTab('billing')}
-                className={`flex-1 rounded-md py-2 text-[11px] font-medium transition-all ${profileTab === 'billing' ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                className={`flex-1 rounded-lg py-2 text-[11px] font-medium transition-all ${profileTab === 'billing' ? 'bg-[var(--nodu-accent)] text-white shadow-sm' : 'text-[var(--nodu-text-soft)] hover:bg-[var(--nodu-accent-soft)] hover:text-[var(--nodu-text)]'}`}
               >
                 Fakturacni adresa
               </button>
@@ -257,21 +257,21 @@ const CrewDetailView = () => {
 
             <div className="space-y-2">
               {(profileTab === 'personal' ? personalRows : billingRows).map(([label, value]) => (
-                <div key={label} className="flex justify-between gap-4 border-b border-gray-50 py-1.5 last:border-0">
-                  <span className="text-xs text-gray-500">{label}</span>
-                  <span className="text-right text-xs font-semibold">{value}</span>
+                <div key={label} className="flex justify-between gap-4 border-b border-[rgba(var(--nodu-text-rgb),0.06)] py-1.5 last:border-0">
+                  <span className="text-xs text-[var(--nodu-text-soft)]">{label}</span>
+                  <span className="text-right text-xs font-semibold text-[var(--nodu-text)]">{value}</span>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-            <div className="mb-4 flex items-center justify-between border-b border-gray-50 pb-4">
-              <h3 className="text-sm font-semibold">Sazba a poznamka</h3>
+          <div className="rounded-[24px] border border-[var(--nodu-border)] bg-white p-5 shadow-[0_18px_40px_rgba(var(--nodu-text-rgb),0.06)]">
+            <div className="mb-4 flex items-center justify-between border-b border-[rgba(var(--nodu-text-rgb),0.06)] pb-4">
+              <h3 className="text-sm font-semibold text-[var(--nodu-text)]">Sazba a poznamka</h3>
               {!isEditingMeta ? (
                 <button
                   onClick={() => setIsEditingMeta(true)}
-                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-[11px] font-medium hover:bg-gray-50"
+                  className="rounded-xl border border-[var(--nodu-border)] px-3 py-1.5 text-[11px] font-medium text-[var(--nodu-text)] transition hover:bg-[var(--nodu-accent-soft)]"
                 >
                   Upravit
                 </button>
@@ -280,30 +280,30 @@ const CrewDetailView = () => {
 
             {!isEditingMeta ? (
               <div className="space-y-2">
-                <div className="flex justify-between border-b border-gray-50 py-1.5">
-                  <span className="text-xs text-gray-500">Sazba</span>
-                  <span className="text-xs font-semibold">{c.rate} Kc/h</span>
+                <div className="flex justify-between border-b border-[rgba(var(--nodu-text-rgb),0.06)] py-1.5">
+                  <span className="text-xs text-[var(--nodu-text-soft)]">Sazba</span>
+                  <span className="text-xs font-semibold text-[var(--nodu-text)]">{c.rate} Kc/h</span>
                 </div>
                 <div className="pt-2">
-                  <div className="mb-1 text-xs text-gray-500">Poznamka</div>
-                  <div className="min-h-10 text-sm text-gray-700">{c.note || '-'}</div>
+                  <div className="mb-1 text-xs text-[var(--nodu-text-soft)]">Poznamka</div>
+                  <div className="min-h-10 text-sm text-[var(--nodu-text)]">{c.note || '-'}</div>
                 </div>
               </div>
             ) : (
               <div className="space-y-4">
-                <label className="block text-xs text-gray-600">Sazba
+                <label className="block text-xs text-[var(--nodu-text-soft)]">Sazba
                   <input
                     value={metaForm.rate}
                     onChange={(e) => setMetaForm((prev) => ({ ...prev, rate: e.target.value }))}
-                    className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded-xl border border-[var(--nodu-border)] px-3 py-2 text-sm text-[var(--nodu-text)] outline-none focus:border-[var(--nodu-accent)] focus:ring-2 focus:ring-[rgba(var(--nodu-accent-rgb),0.16)]"
                   />
                 </label>
-                <label className="block text-xs text-gray-600">Poznamka
+                <label className="block text-xs text-[var(--nodu-text-soft)]">Poznamka
                   <textarea
                     value={metaForm.note}
                     onChange={(e) => setMetaForm((prev) => ({ ...prev, note: e.target.value }))}
                     rows={4}
-                    className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded-xl border border-[var(--nodu-border)] px-3 py-2 text-sm text-[var(--nodu-text)] outline-none focus:border-[var(--nodu-accent)] focus:ring-2 focus:ring-[rgba(var(--nodu-accent-rgb),0.16)]"
                   />
                 </label>
                 <div className="flex justify-end gap-3">
@@ -312,13 +312,13 @@ const CrewDetailView = () => {
                       setMetaForm({ rate: String(c.rate), note: c.note ?? '' });
                       setIsEditingMeta(false);
                     }}
-                    className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium hover:bg-gray-50"
+                    className="rounded-xl border border-[var(--nodu-border)] px-4 py-2 text-sm font-medium text-[var(--nodu-text)] hover:bg-[var(--nodu-accent-soft)]"
                   >
                     Zrusit
                   </button>
                   <button
                     onClick={saveMeta}
-                    className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                    className="rounded-xl bg-[var(--nodu-accent)] px-4 py-2 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(var(--nodu-accent-rgb),0.18)] hover:bg-[#e96f00]"
                   >
                     Ulozit
                   </button>
@@ -328,10 +328,10 @@ const CrewDetailView = () => {
           </div>
         </div>
 
-        <div className="relative flex min-h-0 flex-col rounded-xl border border-gray-100 bg-white p-5 shadow-sm lg:h-[41rem] lg:flex-1 lg:min-w-0">
+        <div className="relative flex min-h-0 flex-col rounded-[24px] border border-[var(--nodu-border)] bg-white p-5 shadow-[0_18px_40px_rgba(var(--nodu-text-rgb),0.06)] lg:h-[41rem] lg:flex-1 lg:min-w-0">
           <div className="mb-4">
-            <h3 className="mb-3 text-sm font-semibold">Smeny</h3>
-            <div className="flex w-fit flex-wrap items-center gap-2 rounded-xl border border-gray-100 bg-white p-1">
+            <h3 className="mb-3 text-sm font-semibold text-[var(--nodu-text)]">Smeny</h3>
+            <div className="flex w-fit flex-wrap items-center gap-2 rounded-xl border border-[var(--nodu-border)] bg-white p-1">
               {[
                 { id: 'upcoming' as const, lbl: 'Nadchazejici', count: categorized.upcoming.length },
                 { id: 'processing' as const, lbl: 'Zpracovava se', count: categorized.processing.length },
@@ -341,11 +341,11 @@ const CrewDetailView = () => {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-all ${activeTab === tab.id ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}
+                  className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-all ${activeTab === tab.id ? 'bg-[var(--nodu-accent)] text-white shadow-sm' : 'text-[var(--nodu-text-soft)] hover:bg-[var(--nodu-accent-soft)] hover:text-[var(--nodu-text)]'}`}
                 >
                   {tab.lbl}
                   {tab.count > 0 && (
-                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${activeTab === tab.id ? 'bg-emerald-100' : 'bg-gray-100'}`}>
+                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${activeTab === tab.id ? 'bg-white/22' : 'bg-[rgba(var(--nodu-text-rgb),0.06)]'}`}>
                       {tab.count}
                     </span>
                   )}
@@ -374,7 +374,7 @@ const CrewDetailView = () => {
                     return <ShiftCard key={t.id} timelog={t} event={ev} project={pr} />;
                   })}
                   {categorized[activeTab].length === 0 && (
-                    <div className="col-span-full rounded-2xl border border-dashed border-gray-200 bg-gray-50 py-12 text-center text-sm text-gray-500">
+                    <div className="col-span-full rounded-2xl border border-dashed border-[var(--nodu-border)] bg-[var(--nodu-paper-strong)] py-12 text-center text-sm text-[var(--nodu-text-soft)]">
                       Zadne zaznamy
                     </div>
                   )}
@@ -388,22 +388,22 @@ const CrewDetailView = () => {
                   className="space-y-3"
                 >
                   {cInvoices.map((inv) => (
-                    <div key={inv.id} className="flex items-center justify-between rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+                    <div key={inv.id} className="flex items-center justify-between rounded-2xl border border-[var(--nodu-border)] bg-white p-4 shadow-sm">
                       <div className="flex items-center gap-4">
-                        <div className="rounded-lg bg-emerald-50 p-2 text-emerald-600">
+                        <div className="rounded-xl bg-[var(--nodu-accent-soft)] p-2 text-[var(--nodu-accent)]">
                           <Receipt size={20} />
                         </div>
                         <div>
-                          <div className="text-xs font-bold text-gray-900">{inv.id}</div>
-                          <div className="text-[10px] text-gray-500">
+                          <div className="text-xs font-bold text-[var(--nodu-text)]">{inv.id}</div>
+                          <div className="text-[10px] text-[var(--nodu-text-soft)]">
                             {inv.job} - {inv.sentAt ? formatShortDate(inv.sentAt) : '-'}
                           </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-6">
                         <div className="text-right">
-                          <div className="text-xs font-bold text-gray-900">{formatCurrency(inv.total)}</div>
-                          <div className="text-[10px] text-gray-400">{inv.hours}h + {inv.km}km</div>
+                          <div className="text-xs font-bold text-[var(--nodu-text)]">{formatCurrency(inv.total)}</div>
+                          <div className="text-[10px] text-[var(--nodu-text-soft)]">{inv.hours}h + {inv.km}km</div>
                         </div>
                         <StatusBadge status={inv.status} />
                       </div>
@@ -426,7 +426,7 @@ const CrewDetailView = () => {
                 <motion.div
                   animate={{ y: [0, 6, 0] }}
                   transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
-                  className="relative z-10 rounded-full border border-emerald-100 bg-white/95 px-3 py-1.5 text-[11px] font-medium text-emerald-700 shadow-sm"
+                  className="relative z-10 rounded-full border border-[rgba(var(--nodu-accent-rgb),0.24)] bg-white/95 px-3 py-1.5 text-[11px] font-medium text-[var(--nodu-accent)] shadow-sm"
                 >
                   <span className="flex items-center gap-1.5">
                     Posunout niz
@@ -439,12 +439,12 @@ const CrewDetailView = () => {
         </div>
       </div>
 
-      <div className="mb-6 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
-        <div className="border-b border-gray-50 p-4 text-sm font-semibold">Historie timelogu</div>
+      <div className="mb-6 overflow-hidden rounded-[24px] border border-[var(--nodu-border)] bg-white shadow-[0_18px_40px_rgba(var(--nodu-text-rgb),0.06)]">
+        <div className="border-b border-[rgba(var(--nodu-text-rgb),0.06)] p-4 text-sm font-semibold text-[var(--nodu-text)]">Historie timelogu</div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-gray-50 text-left text-[10px] uppercase tracking-wider text-gray-400">
+              <tr className="border-b border-[rgba(var(--nodu-text-rgb),0.06)] text-left text-[10px] uppercase tracking-wider text-[var(--nodu-text-soft)]">
                 <th className="px-4 py-3 font-bold">Akce</th>
                 <th className="px-4 py-3 font-bold">Hodiny</th>
                 <th className="px-4 py-3 font-bold">Km</th>
@@ -453,26 +453,26 @@ const CrewDetailView = () => {
                 <th className="px-4 py-3 font-bold"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody className="divide-y divide-[rgba(var(--nodu-text-rgb),0.06)]">
               {cTls.map((t) => {
                 const e = events.find((event) => event.id === t.eid);
                 if (!e) return null;
                 const hours = calculateTotalHours(t.days);
 
                 return (
-                  <tr key={t.id} className="transition-colors hover:bg-gray-50">
+                  <tr key={t.id} className="transition-colors hover:bg-[var(--nodu-accent-soft)]">
                     <td className="px-4 py-3">
-                      <div className="text-xs font-medium text-gray-900">{e.name}</div>
-                      <div className="font-mono text-[10px] text-gray-400">{e.job}</div>
+                      <div className="text-xs font-medium text-[var(--nodu-text)]">{e.name}</div>
+                      <div className="font-mono text-[10px] text-[var(--nodu-accent)]">{e.job}</div>
                     </td>
-                    <td className="px-4 py-3 text-xs font-semibold">{hours.toFixed(1)}h</td>
-                    <td className="px-4 py-3 text-xs text-gray-500">{t.km || '-'}</td>
-                    <td className="px-4 py-3 text-xs font-bold text-gray-900">{formatCurrency(hours * c.rate + t.km * KM_RATE)}</td>
+                    <td className="px-4 py-3 text-xs font-semibold text-[var(--nodu-text)]">{hours.toFixed(1)}h</td>
+                    <td className="px-4 py-3 text-xs text-[var(--nodu-text-soft)]">{t.km || '-'}</td>
+                    <td className="px-4 py-3 text-xs font-bold text-[var(--nodu-text)]">{formatCurrency(hours * c.rate + t.km * KM_RATE)}</td>
                     <td className="px-4 py-3">
                       <StatusBadge status={t.status} />
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <button onClick={() => setEditingTimelog(t)} className="rounded p-1 text-gray-400 hover:bg-gray-100">
+                      <button onClick={() => setEditingTimelog(t)} className="rounded p-1 text-[var(--nodu-text-soft)] hover:bg-[var(--nodu-accent-soft)] hover:text-[var(--nodu-accent)]">
                         <FileText size={14} />
                       </button>
                     </td>
@@ -484,16 +484,16 @@ const CrewDetailView = () => {
         </div>
       </div>
 
-      <div className="mb-8 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+      <div className="mb-8 overflow-hidden rounded-[24px] border border-[var(--nodu-border)] bg-white shadow-[0_18px_40px_rgba(var(--nodu-text-rgb),0.06)]">
         <button
           onClick={() => setIsChartExpanded(!isChartExpanded)}
-          className="flex w-full items-center justify-between px-6 py-4 transition-colors hover:bg-gray-50"
+          className="flex w-full items-center justify-between px-6 py-4 transition-colors hover:bg-[var(--nodu-accent-soft)]"
         >
           <div className="flex items-center gap-3">
-            <BarChart3 size={18} className="text-emerald-600" />
-            <h2 className="text-sm font-bold uppercase tracking-wider text-gray-900">Fakturace za dane obdobi</h2>
+            <BarChart3 size={18} className="text-[var(--nodu-accent)]" />
+            <h2 className="text-sm font-bold uppercase tracking-wider text-[var(--nodu-text)]">Fakturace za dane obdobi</h2>
           </div>
-          <ChevronDown size={16} className={`text-gray-400 transition-transform duration-300 ${isChartExpanded ? 'rotate-180' : ''}`} />
+          <ChevronDown size={16} className={`text-[var(--nodu-text-soft)] transition-transform duration-300 ${isChartExpanded ? 'rotate-180' : ''}`} />
         </button>
 
         <AnimatePresence>
@@ -506,12 +506,12 @@ const CrewDetailView = () => {
             >
               <div className="px-6 pb-6 pt-2">
                 <div className="mb-6 flex justify-end">
-                  <div className="flex gap-1 rounded-lg border border-gray-100 bg-gray-50 p-1">
+                  <div className="flex gap-1 rounded-xl border border-[var(--nodu-border)] bg-white p-1">
                     {(['month', 'quarter', 'year'] as const).map((period) => (
                       <button
                         key={period}
                         onClick={() => setChartPeriod(period)}
-                        className={`rounded-md px-3 py-1.5 text-[10px] font-bold uppercase transition-all ${chartPeriod === period ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                        className={`rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase transition-all ${chartPeriod === period ? 'bg-[var(--nodu-accent)] text-white shadow-sm' : 'text-[var(--nodu-text-soft)] hover:bg-[var(--nodu-accent-soft)] hover:text-[var(--nodu-text)]'}`}
                       >
                         {period === 'month' ? 'Mesice' : period === 'quarter' ? 'Kvartaly' : 'Roky'}
                       </button>
@@ -536,7 +536,7 @@ const CrewDetailView = () => {
                         }}
                         formatter={(v: number) => [formatCurrency(v), 'Fakturovano']}
                       />
-                      <Bar dataKey="total" fill="#10b981" radius={[4, 4, 0, 0]} barSize={40} />
+                      <Bar dataKey="total" fill="var(--nodu-accent)" radius={[4, 4, 0, 0]} barSize={40} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>

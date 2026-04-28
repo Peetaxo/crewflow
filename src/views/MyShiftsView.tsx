@@ -128,20 +128,20 @@ const MyShiftsView = () => {
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <div className="mb-8 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Moje smeny</h1>
-          <p className="text-sm text-gray-500">Vitejte zpet, {displayName}</p>
+          <h1 className="text-xl font-bold text-[var(--nodu-text)]">Moje smeny</h1>
+          <p className="text-sm text-[var(--nodu-text-soft)]">Vitejte zpet, {displayName}</p>
         </div>
       </div>
 
       <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-5">
         {[
-          { label: 'Vydelano celkem', value: formatCurrency(stats.totalEarned), sub: 'Z proplacenych faktur', bg: 'bg-emerald-50 border-emerald-100', icon: Receipt, iconBg: 'bg-emerald-100 text-emerald-700', labelCls: 'text-emerald-700', valueCls: 'text-emerald-900', subCls: 'text-emerald-600' },
-          { label: 'K vyplaceni', value: formatCurrency(stats.toPay), sub: 'Odeslane faktury', bg: 'bg-blue-50 border-blue-100', icon: Clock, iconBg: 'bg-blue-100 text-blue-700', labelCls: 'text-blue-700', valueCls: 'text-blue-900', subCls: 'text-blue-600' },
-          { label: 'Uctenky k proplaceni', value: formatCurrency(stats.receiptToPay), sub: 'Schvalene uctenky', bg: 'bg-amber-50 border-amber-100', icon: Receipt, iconBg: 'bg-amber-100 text-amber-700', labelCls: 'text-amber-700', valueCls: 'text-amber-900', subCls: 'text-amber-600' },
-          { label: 'Ke schvaleni', value: `${stats.pendingHours.toFixed(1)} h`, sub: 'Ceka na schvaleni', bg: 'bg-amber-50 border-amber-100', icon: CheckCircle2, iconBg: 'bg-amber-100 text-amber-700', labelCls: 'text-amber-700', valueCls: 'text-amber-900', subCls: 'text-amber-600' },
-          { label: 'Celkem odpracovano', value: `${stats.totalHours.toFixed(1)} h`, sub: 'Schvalene smeny', bg: 'bg-gray-50 border-gray-100', icon: Calendar, iconBg: 'bg-gray-200 text-gray-700', labelCls: 'text-gray-700', valueCls: 'text-gray-900', subCls: 'text-gray-500' },
+          { label: 'Vydelano celkem', value: formatCurrency(stats.totalEarned), sub: 'Z proplacenych faktur', bg: 'bg-white border-[var(--nodu-border)]', icon: Receipt, iconBg: 'bg-[var(--nodu-success-bg)] text-[var(--nodu-success-text)]', labelCls: 'text-[var(--nodu-success-text)]', valueCls: 'text-[var(--nodu-text)]', subCls: 'text-[var(--nodu-text-soft)]' },
+          { label: 'K vyplaceni', value: formatCurrency(stats.toPay), sub: 'Odeslane faktury', bg: 'bg-white border-[var(--nodu-border)]', icon: Clock, iconBg: 'bg-[var(--nodu-info-bg)] text-[var(--nodu-info-text)]', labelCls: 'text-[var(--nodu-info-text)]', valueCls: 'text-[var(--nodu-text)]', subCls: 'text-[var(--nodu-text-soft)]' },
+          { label: 'Uctenky k proplaceni', value: formatCurrency(stats.receiptToPay), sub: 'Schvalene uctenky', bg: 'bg-white border-[var(--nodu-border)]', icon: Receipt, iconBg: 'bg-[var(--nodu-warning-bg)] text-[var(--nodu-warning-text)]', labelCls: 'text-[var(--nodu-warning-text)]', valueCls: 'text-[var(--nodu-text)]', subCls: 'text-[var(--nodu-text-soft)]' },
+          { label: 'Ke schvaleni', value: `${stats.pendingHours.toFixed(1)} h`, sub: 'Ceka na schvaleni', bg: 'bg-white border-[var(--nodu-border)]', icon: CheckCircle2, iconBg: 'bg-[var(--nodu-warning-bg)] text-[var(--nodu-warning-text)]', labelCls: 'text-[var(--nodu-warning-text)]', valueCls: 'text-[var(--nodu-text)]', subCls: 'text-[var(--nodu-text-soft)]' },
+          { label: 'Celkem odpracovano', value: `${stats.totalHours.toFixed(1)} h`, sub: 'Schvalene smeny', bg: 'bg-white border-[var(--nodu-border)]', icon: Calendar, iconBg: 'bg-[rgba(var(--nodu-text-rgb),0.06)] text-[var(--nodu-text-soft)]', labelCls: 'text-[var(--nodu-text-soft)]', valueCls: 'text-[var(--nodu-text)]', subCls: 'text-[var(--nodu-text-soft)]' },
         ].map((stat) => (
-          <div key={stat.label} className={`${stat.bg} rounded-2xl border p-4`}>
+          <div key={stat.label} className={`${stat.bg} rounded-[22px] border p-4 shadow-[0_16px_34px_rgba(var(--nodu-text-rgb),0.06)]`}>
             <div className="mb-2 flex items-center gap-3">
               <div className={`rounded-lg p-2 ${stat.iconBg}`}>
                 <stat.icon size={18} />
@@ -155,7 +155,7 @@ const MyShiftsView = () => {
       </div>
 
       <div className="mb-6 space-y-4">
-        <div className="flex w-fit flex-nowrap items-center gap-1 overflow-x-auto rounded-xl border border-gray-100 bg-white p-1">
+        <div className="flex w-fit flex-nowrap items-center gap-1 overflow-x-auto rounded-xl border border-[var(--nodu-border)] bg-white p-1">
           {[
             { id: 'upcoming' as const, lbl: 'Nadchazejici', count: categorized.upcoming.length },
             { id: 'processing' as const, lbl: 'Zpracovava se', count: categorized.processing.length },
@@ -165,10 +165,10 @@ const MyShiftsView = () => {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-all ${activeTab === tab.id ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}
+              className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-all ${activeTab === tab.id ? 'bg-[var(--nodu-accent)] text-white shadow-sm' : 'text-[var(--nodu-text-soft)] hover:bg-[var(--nodu-accent-soft)] hover:text-[var(--nodu-text)]'}`}
             >
               {tab.lbl}
-              {tab.count > 0 && <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${activeTab === tab.id ? 'bg-emerald-100' : 'bg-gray-100'}`}>{tab.count}</span>}
+              {tab.count > 0 && <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${activeTab === tab.id ? 'bg-white/22' : 'bg-[rgba(var(--nodu-text-rgb),0.06)]'}`}>{tab.count}</span>}
             </button>
           ))}
         </div>
@@ -183,42 +183,42 @@ const MyShiftsView = () => {
               if (!event || !project) return null;
               return <ShiftCard key={timelog.id} timelog={timelog} event={event} project={project} />;
             })}
-            {filteredData[activeTab].length === 0 && <div className="col-span-full rounded-2xl border border-dashed border-gray-200 bg-gray-50 py-12 text-center text-sm text-gray-500">{searchQuery ? 'Nebyly nalezeny zadne vysledky' : 'Zadne zaznamy'}</div>}
+            {filteredData[activeTab].length === 0 && <div className="col-span-full rounded-2xl border border-dashed border-[var(--nodu-border)] bg-[var(--nodu-paper-strong)] py-12 text-center text-sm text-[var(--nodu-text-soft)]">{searchQuery ? 'Nebyly nalezeny zadne vysledky' : 'Zadne zaznamy'}</div>}
           </motion.div>
         ) : (
           <motion.div key="invoices" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="space-y-3">
             {filteredData.invoices.map((invoice) => (
-              <div key={invoice.id} className="flex items-center justify-between rounded-xl border border-gray-100 bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
+              <div key={invoice.id} className="flex items-center justify-between rounded-2xl border border-[var(--nodu-border)] bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
                 <div className="flex items-center gap-4">
-                  <div className="rounded-lg bg-emerald-50 p-2 text-emerald-600"><Receipt size={20} /></div>
+                  <div className="rounded-xl bg-[var(--nodu-accent-soft)] p-2 text-[var(--nodu-accent)]"><Receipt size={20} /></div>
                   <div>
-                    <div className="text-xs font-bold text-gray-900">{invoice.id}</div>
-                    <div className="text-[10px] text-gray-500">{invoice.job} â€˘ {invoice.sentAt ? formatShortDate(invoice.sentAt) : 'â€”'}</div>
+                    <div className="text-xs font-bold text-[var(--nodu-text)]">{invoice.id}</div>
+                    <div className="text-[10px] text-[var(--nodu-text-soft)]">{invoice.job} · {invoice.sentAt ? formatShortDate(invoice.sentAt) : '-'}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-6">
                   <div className="text-right">
-                    <div className="text-xs font-bold text-gray-900">{formatCurrency(invoice.total)}</div>
-                    <div className="text-[10px] text-gray-400">{invoice.hours}h + {invoice.km}km</div>
+                    <div className="text-xs font-bold text-[var(--nodu-text)]">{formatCurrency(invoice.total)}</div>
+                    <div className="text-[10px] text-[var(--nodu-text-soft)]">{invoice.hours}h + {invoice.km}km</div>
                   </div>
                   <StatusBadge status={invoice.status} />
                 </div>
               </div>
             ))}
-            {filteredData.invoices.length === 0 && <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 py-12 text-center text-sm text-gray-500">{searchQuery ? 'Nebyly nalezeny zadne vysledky' : 'Zatim zadne faktury'}</div>}
+            {filteredData.invoices.length === 0 && <div className="rounded-2xl border border-dashed border-[var(--nodu-border)] bg-[var(--nodu-paper-strong)] py-12 text-center text-sm text-[var(--nodu-text-soft)]">{searchQuery ? 'Nebyly nalezeny zadne vysledky' : 'Zatim zadne faktury'}</div>}
           </motion.div>
         )}
       </AnimatePresence>
 
-      <div className="mt-8 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+      <div className="mt-8 rounded-[24px] border border-[var(--nodu-border)] bg-white p-6 shadow-[0_18px_40px_rgba(var(--nodu-text-rgb),0.06)]">
         <div className="mb-6 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
           <div>
-            <h2 className="text-sm font-bold uppercase tracking-wider text-gray-900">Fakturace za dane obdobi</h2>
-            <p className="text-xs text-gray-500">Prehled vasich prijmu</p>
+            <h2 className="text-sm font-bold uppercase tracking-wider text-[var(--nodu-text)]">Fakturace za dane obdobi</h2>
+            <p className="text-xs text-[var(--nodu-text-soft)]">Prehled vasich prijmu</p>
           </div>
-          <div className="flex gap-1 rounded-lg border border-gray-100 bg-gray-50 p-1">
+          <div className="flex gap-1 rounded-xl border border-[var(--nodu-border)] bg-white p-1">
             {(['month', 'quarter', 'year'] as const).map((period) => (
-              <button key={period} onClick={() => setChartPeriod(period)} className={`rounded-md px-3 py-1.5 text-[10px] font-bold uppercase transition-all ${chartPeriod === period ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>
+              <button key={period} onClick={() => setChartPeriod(period)} className={`rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase transition-all ${chartPeriod === period ? 'bg-[var(--nodu-accent)] text-white shadow-sm' : 'text-[var(--nodu-text-soft)] hover:bg-[var(--nodu-accent-soft)] hover:text-[var(--nodu-text)]'}`}>
                 {period === 'month' ? 'Mesice' : period === 'quarter' ? 'Kvartaly' : 'Roky'}
               </button>
             ))}
@@ -231,7 +231,7 @@ const MyShiftsView = () => {
               <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9ca3af' }} dy={10} />
               <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9ca3af' }} tickFormatter={(value) => `${value / 1000}k`} />
               <Tooltip cursor={{ fill: darkMode ? '#111827' : '#f9fafb' }} contentStyle={{ backgroundColor: darkMode ? '#111827' : '#fff', border: 'none', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '12px' }} formatter={(value: number) => [formatCurrency(value), 'Fakturovano']} />
-              <Bar dataKey="total" fill="#10b981" radius={[4, 4, 0, 0]} barSize={40} />
+              <Bar dataKey="total" fill="var(--nodu-accent)" radius={[4, 4, 0, 0]} barSize={40} />
             </BarChart>
           </ResponsiveContainer>
         </div>

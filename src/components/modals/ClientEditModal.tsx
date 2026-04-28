@@ -4,6 +4,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { useAppContext } from '../../context/useAppContext';
 import { getClients, saveClient } from '../../features/clients/services/clients.service';
+import { Button } from '../ui/button';
+import { Input } from '../ui/input';
+import { Textarea } from '../ui/textarea';
 
 const ClientEditModal = () => {
   const { editingClient, setEditingClient } = useAppContext();
@@ -30,119 +33,113 @@ const ClientEditModal = () => {
   return (
     <AnimatePresence>
       {editingClient && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden flex flex-col"
+            className="flex w-full max-w-md flex-col overflow-hidden rounded-[28px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] shadow-[0_28px_80px_rgba(47,38,31,0.18)]"
           >
-            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900">
+            <div className="flex items-center justify-between border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] p-5">
+              <h3 className="text-xl font-semibold tracking-[-0.03em] text-[color:var(--nodu-text)]">
                 {clients.some((client) => client.id === editingClient.id) ? 'Upravit klienta' : 'Novy klient'}
               </h3>
-              <button onClick={() => setEditingClient(null)} className="p-1 hover:bg-gray-100 rounded-full text-gray-400">
+              <button onClick={() => setEditingClient(null)} className="rounded-xl border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-2 text-[color:var(--nodu-text-soft)] transition-all hover:border-[color:rgb(var(--nodu-accent-rgb)/0.24)] hover:text-[color:var(--nodu-accent)]">
                 <X size={20} />
               </button>
             </div>
 
-            <div className="p-5 space-y-4">
+            <div className="space-y-4 p-5">
               <div>
-                <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Nazev klienta</label>
-                <input
+                <label className="mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">Nazev klienta</label>
+                <Input
                   type="text"
                   value={editingClient.name}
                   onChange={(e) => setEditingClient({ ...editingClient, name: e.target.value })}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
                   placeholder="Nazev spolecnosti"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">ICO</label>
-                  <input
+                  <label className="mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">ICO</label>
+                  <Input
                     type="text"
                     value={editingClient.ico || ''}
                     onChange={(e) => setEditingClient({ ...editingClient, ico: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">DIC</label>
-                  <input
+                  <label className="mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">DIC</label>
+                  <Input
                     type="text"
                     value={editingClient.dic || ''}
                     onChange={(e) => setEditingClient({ ...editingClient, dic: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Ulice a c.p.</label>
-                <input
+                <label className="mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">Ulice a c.p.</label>
+                <Input
                   type="text"
                   value={editingClient.street || ''}
                   onChange={(e) => setEditingClient({ ...editingClient, street: e.target.value })}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
                   placeholder="Ulice 123"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">PSC</label>
-                  <input
+                  <label className="mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">PSC</label>
+                  <Input
                     type="text"
                     value={editingClient.zip || ''}
                     onChange={(e) => setEditingClient({ ...editingClient, zip: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
                     placeholder="123 45"
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Mesto</label>
-                  <input
+                  <label className="mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">Mesto</label>
+                  <Input
                     type="text"
                     value={editingClient.city || ''}
                     onChange={(e) => setEditingClient({ ...editingClient, city: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
                     placeholder="Mesto"
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Stat</label>
-                <input
+                <label className="mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">Stat</label>
+                <Input
                   type="text"
                   value={editingClient.country || ''}
                   onChange={(e) => setEditingClient({ ...editingClient, country: e.target.value })}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
                   placeholder="Ceska republika"
                 />
               </div>
               <div>
-                <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Poznamka</label>
-                <textarea
+                <label className="mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">Poznamka</label>
+                <Textarea
                   value={editingClient.note || ''}
                   onChange={(e) => setEditingClient({ ...editingClient, note: e.target.value })}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none h-20 resize-none"
+                  className="h-20 resize-none"
                 />
               </div>
             </div>
 
-            <div className="p-4 border-t border-gray-100 bg-gray-50 flex gap-3">
-              <button
+            <div className="flex gap-3 border-t border-[color:rgb(var(--nodu-text-rgb)/0.08)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-4">
+              <Button
                 onClick={() => setEditingClient(null)}
-                className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-white transition-all"
+                variant="outline"
+                className="flex-1"
               >
                 Zrusit
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={handleSave}
                 disabled={isSaving}
-                className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-medium hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex-1"
               >
                 {isSaving ? 'Ukladam...' : 'Ulozit klienta'}
-              </button>
+              </Button>
             </div>
           </motion.div>
         </div>

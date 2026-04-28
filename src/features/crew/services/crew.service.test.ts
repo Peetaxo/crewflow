@@ -93,6 +93,78 @@ describe('crew.service', () => {
     expect(getCrewReceipts('profile-uuid-1')).toHaveLength(1);
   });
 
+  it('builds crew detail for legacy contractors without profileId', async () => {
+    const snapshot = {
+      contractors: [
+        {
+          id: 7,
+          name: 'Legacy Contractor',
+          ii: 'LC',
+          bg: '#000',
+          fg: '#fff',
+          tags: [],
+          events: 1,
+          rate: 250,
+          phone: '',
+          email: '',
+          ico: '',
+          dic: '',
+          bank: '',
+          city: 'Praha',
+          reliable: true,
+          note: '',
+        },
+      ],
+      timelogs: [
+        {
+          id: 1,
+          eid: 1,
+          cid: 7,
+          days: [],
+          km: 0,
+          note: '',
+          status: 'draft',
+        },
+      ],
+      invoices: [
+        {
+          id: 'INV-LEGACY',
+          cid: 7,
+          eid: 1,
+          hours: 4,
+          hAmt: 1000,
+          km: 0,
+          kAmt: 0,
+          total: 1000,
+          job: 'JOB-1',
+          status: 'draft',
+          sentAt: null,
+        },
+      ],
+      receipts: [],
+      events: [],
+      projects: [],
+      clients: [],
+      candidates: [],
+    };
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'local' }));
+    vi.doMock('../../../lib/supabase', () => ({ isSupabaseConfigured: false, supabase: null }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: vi.fn(),
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    const { getCrewDetailData } = await import('./crew.service');
+
+    const detail = getCrewDetailData('legacy:7');
+
+    expect(detail.contractor?.id).toBe(7);
+    expect(detail.timelogs).toHaveLength(1);
+    expect(detail.invoices).toHaveLength(1);
+  });
+
   it('updates an existing crew member in Supabase by profileId', async () => {
     let snapshot = {
       contractors: [

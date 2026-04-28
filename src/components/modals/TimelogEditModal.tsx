@@ -6,6 +6,9 @@ import { useAppContext } from '../../context/useAppContext';
 import { KM_RATE } from '../../data';
 import { calculateTotalHours, formatCurrency } from '../../utils';
 import { getTimelogDependencies, saveTimelog } from '../../features/timelogs/services/timelogs.service';
+import { Button } from '../ui/button';
+import { Input } from '../ui/input';
+import { Textarea } from '../ui/textarea';
 
 const TimelogEditModal = () => {
   const {
@@ -49,36 +52,36 @@ const TimelogEditModal = () => {
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
-          className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
+          className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] shadow-[0_28px_80px_rgba(47,38,31,0.18)]"
         >
-          <div className="flex items-center justify-between border-b border-gray-100 p-4">
+          <div className="flex items-center justify-between border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] p-5">
             <div>
-              <h3 className="font-semibold text-gray-900">Upravit výkaz</h3>
-              <p className="mt-0.5 text-[10px] uppercase tracking-wider text-gray-500">
+              <h3 className="text-xl font-semibold tracking-[-0.03em] text-[color:var(--nodu-text)]">Upravit výkaz</h3>
+              <p className="mt-1 text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">
                 {contractor.name} · {event.name}
               </p>
             </div>
-            <button onClick={() => setEditingTimelog(null)} className="rounded-full p-1 text-gray-400 hover:bg-gray-100">
+            <button onClick={() => setEditingTimelog(null)} className="rounded-xl border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-2 text-[color:var(--nodu-text-soft)] transition-all hover:border-[color:rgb(var(--nodu-accent-rgb)/0.24)] hover:text-[color:var(--nodu-accent)]">
               <X size={20} />
             </button>
           </div>
 
           <div className="flex-1 space-y-4 overflow-y-auto p-5">
-            <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
+            <div className="rounded-[22px] border border-[color:rgb(var(--nodu-accent-rgb)/0.18)] bg-[color:rgb(var(--nodu-accent-rgb)/0.08)] p-4">
               <div className="flex items-center justify-between">
-                <div className="text-xs text-emerald-600">Celkem hodin</div>
-                <div className="text-xl font-bold text-emerald-900">{totalHours.toFixed(1)}h</div>
+                <div className="text-xs uppercase tracking-[0.18em] text-[color:var(--nodu-accent)]">Celkem hodin</div>
+                <div className="text-xl font-bold text-[color:var(--nodu-text)]">{totalHours.toFixed(1)}h</div>
               </div>
               <div className="mt-1 flex items-center justify-between">
-                <div className="text-xs text-emerald-600">Odměna</div>
-                <div className="text-sm font-semibold text-emerald-800">
+                <div className="text-xs text-[color:var(--nodu-text-soft)]">Odměna</div>
+                <div className="text-sm font-semibold text-[color:var(--nodu-text)]">
                   {formatCurrency(totalHours * contractor.rate)}
                 </div>
               </div>
               {editingTimelog.km > 0 && (
                 <div className="mt-1 flex items-center justify-between">
-                  <div className="text-xs text-emerald-600">Cestovné</div>
-                  <div className="text-sm font-semibold text-emerald-800">
+                  <div className="text-xs text-[color:var(--nodu-text-soft)]">Cestovné</div>
+                  <div className="text-sm font-semibold text-[color:var(--nodu-text)]">
                     {formatCurrency(editingTimelog.km * KM_RATE)}
                   </div>
                 </div>
@@ -86,7 +89,7 @@ const TimelogEditModal = () => {
             </div>
 
             <div>
-              <label className="mb-2 block text-[10px] uppercase tracking-wider text-gray-500">Dny</label>
+              <label className="mb-2 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">Dny</label>
               <div className="space-y-2">
                 {editingTimelog.days.map((day, idx) => {
                   const expectedDay = resolveExpectedDay(day);
@@ -100,11 +103,11 @@ const TimelogEditModal = () => {
                       key={`${day.d}-${idx}`}
                       className={`flex items-center gap-2 rounded-lg border p-2.5 ${
                         isDifferent
-                          ? 'border-amber-200 bg-amber-50'
-                          : 'border-transparent bg-gray-50'
+                          ? 'border-[color:rgb(var(--nodu-accent-rgb)/0.18)] bg-[color:rgb(var(--nodu-accent-rgb)/0.08)]'
+                          : 'border-[color:rgb(var(--nodu-text-rgb)/0.08)] bg-[color:rgb(var(--nodu-surface-rgb)/0.9)]'
                       }`}
                     >
-                      <input
+                      <Input
                         type="date"
                         value={day.d}
                         onChange={(e) => {
@@ -112,9 +115,9 @@ const TimelogEditModal = () => {
                           newDays[idx] = { ...newDays[idx], d: e.target.value };
                           setEditingTimelog({ ...editingTimelog, days: newDays });
                         }}
-                        className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs"
+                        className="flex-1 text-xs"
                       />
-                      <input
+                      <Input
                         type="time"
                         value={day.f}
                         onChange={(e) => {
@@ -122,10 +125,10 @@ const TimelogEditModal = () => {
                           newDays[idx] = { ...newDays[idx], f: e.target.value };
                           setEditingTimelog({ ...editingTimelog, days: newDays });
                         }}
-                        className="w-20 rounded border border-gray-200 bg-white px-2 py-1 text-xs"
+                        className="w-24 text-xs"
                       />
-                      <span className="text-xs text-gray-400">-</span>
-                      <input
+                      <span className="text-xs text-[color:var(--nodu-text-soft)]">-</span>
+                      <Input
                         type="time"
                         value={day.t}
                         onChange={(e) => {
@@ -133,7 +136,7 @@ const TimelogEditModal = () => {
                           newDays[idx] = { ...newDays[idx], t: e.target.value };
                           setEditingTimelog({ ...editingTimelog, days: newDays });
                         }}
-                        className="w-20 rounded border border-gray-200 bg-white px-2 py-1 text-xs"
+                        className="w-24 text-xs"
                       />
                       <select
                         value={day.type}
@@ -142,7 +145,7 @@ const TimelogEditModal = () => {
                           newDays[idx] = { ...newDays[idx], type: e.target.value as typeof day.type };
                           setEditingTimelog({ ...editingTimelog, days: newDays });
                         }}
-                        className="w-24 rounded border border-gray-200 bg-white px-1 py-1 text-[10px]"
+                        className="w-28 rounded-xl border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.88)] px-2 py-2 text-[10px] text-[color:var(--nodu-text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] outline-none focus:border-[color:rgb(var(--nodu-accent-rgb)/0.32)]"
                       >
                         <option value="instal">Instal</option>
                         <option value="provoz">Provoz</option>
@@ -153,7 +156,7 @@ const TimelogEditModal = () => {
                           const newDays = editingTimelog.days.filter((_, dayIndex) => dayIndex !== idx);
                           setEditingTimelog({ ...editingTimelog, days: newDays });
                         }}
-                        className="p-1 text-gray-400 hover:text-red-500"
+                        className="p-1 text-[color:var(--nodu-text-soft)] transition-colors hover:text-[#c45c39]"
                       >
                         <Trash2 size={14} />
                       </button>
@@ -183,7 +186,7 @@ const TimelogEditModal = () => {
                       ],
                     });
                   }}
-                  className="flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-gray-300 py-2 text-xs text-gray-500 hover:bg-gray-50"
+                  className="flex w-full items-center justify-center gap-1 rounded-[18px] border border-dashed border-[color:rgb(var(--nodu-accent-rgb)/0.26)] py-3 text-xs text-[color:var(--nodu-accent)] transition-colors hover:bg-[color:rgb(var(--nodu-accent-rgb)/0.06)]"
                 >
                   <Plus size={14} /> Přidat den
                 </button>
@@ -192,35 +195,35 @@ const TimelogEditModal = () => {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Cestovné (km)</label>
-                <input
+                <label className="mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">Cestovné (km)</label>
+                <Input
                   type="number"
                   value={editingTimelog.km}
                   onChange={(e) => setEditingTimelog({ ...editingTimelog, km: Number(e.target.value) })}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
                 />
               </div>
             </div>
 
             <div>
-              <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">Poznámka</label>
-              <textarea
+              <label className="mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">Poznámka</label>
+              <Textarea
                 value={editingTimelog.note}
                 onChange={(e) => setEditingTimelog({ ...editingTimelog, note: e.target.value })}
-                className="h-20 w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                className="h-20 resize-none"
                 placeholder="Doplňte detaily..."
               />
             </div>
           </div>
 
-          <div className="flex gap-3 border-t border-gray-100 bg-gray-50 p-4">
-            <button
+          <div className="flex gap-3 border-t border-[color:rgb(var(--nodu-text-rgb)/0.08)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-4">
+            <Button
               onClick={() => setEditingTimelog(null)}
-              className="flex-1 rounded-xl border border-gray-200 py-2 text-sm font-medium hover:bg-white"
+              variant="outline"
+              className="flex-1"
             >
               Zrušit
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={async () => {
                 try {
                   await saveTimelog(editingTimelog);
@@ -229,10 +232,10 @@ const TimelogEditModal = () => {
                   toast.error(error instanceof Error ? error.message : 'Nepodařilo se uložit výkaz.');
                 }
               }}
-              className="flex-1 rounded-xl bg-emerald-600 py-2 text-sm font-medium text-white shadow-sm shadow-emerald-200 hover:bg-emerald-700"
+              className="flex-1"
             >
               Uložit změny
-            </button>
+            </Button>
           </div>
         </motion.div>
       </div>

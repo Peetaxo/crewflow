@@ -211,6 +211,12 @@ export const getCrewById = (id: number | null): CrewMember | null => {
 
 export const getCrewByExternalId = (_externalId: string): CrewMember | null => null;
 
+const parseLegacyCrewKey = (profileId: string | null): number | null => {
+  if (!profileId?.startsWith('legacy:')) return null;
+  const legacyId = Number(profileId.slice('legacy:'.length));
+  return Number.isFinite(legacyId) ? legacyId : null;
+};
+
 export const getCrewDetailData = (profileId: string | null): {
   contractor: CrewMember | null;
   timelogs: Timelog[];
@@ -220,9 +226,14 @@ export const getCrewDetailData = (profileId: string | null): {
 } => {
   ensureSupabaseCrewLoaded();
   const snapshot = getLocalAppState();
+  const legacyId = parseLegacyCrewKey(profileId);
   const contractor = profileId == null
     ? null
-    : (snapshot.contractors ?? []).find((member) => member.profileId === profileId) ?? null;
+    : (snapshot.contractors ?? []).find((member) => (
+      legacyId == null
+        ? member.profileId === profileId
+        : member.id === legacyId
+    )) ?? null;
 
   if (!contractor) {
     return {
@@ -234,10 +245,16 @@ export const getCrewDetailData = (profileId: string | null): {
     };
   }
 
+  const matchesContractor = (item: { cid?: number; contractorProfileId?: string }) => (
+    contractor.profileId
+      ? item.contractorProfileId === contractor.profileId
+      : item.cid === contractor.id
+  );
+
   return {
     contractor,
-    timelogs: (snapshot.timelogs ?? []).filter((timelog) => timelog.contractorProfileId === contractor.profileId),
-    invoices: (snapshot.invoices ?? []).filter((invoice) => invoice.contractorProfileId === contractor.profileId),
+    timelogs: (snapshot.timelogs ?? []).filter(matchesContractor),
+    invoices: (snapshot.invoices ?? []).filter(matchesContractor),
     events: snapshot.events ?? [],
     projects: snapshot.projects ?? [],
   };

@@ -131,45 +131,87 @@ const ClientStatsView = () => {
 
   if (!client) return null;
 
+  const statCards = [
+    {
+      label: 'Naklady Crew',
+      value: formatCurrency(totalCost),
+      icon: Receipt,
+      tone: 'success',
+    },
+    {
+      label: 'Hodiny',
+      value: `${totalHours.toFixed(1)}h`,
+      icon: Clock,
+      tone: 'info',
+    },
+    {
+      label: 'Kilometry',
+      value: `${totalKm} km`,
+      icon: MapPin,
+      tone: 'warning',
+    },
+    {
+      label: 'Akci celkem',
+      value: String(clientEvents.length),
+      icon: Receipt,
+      tone: 'neutral',
+    },
+  ] as const;
+
+  const getToneClasses = (tone: typeof statCards[number]['tone']) => {
+    if (tone === 'success') return 'bg-[var(--nodu-success-bg)] text-[var(--nodu-success-text)]';
+    if (tone === 'info') return 'bg-[var(--nodu-info-bg)] text-[var(--nodu-info-text)]';
+    if (tone === 'warning') return 'bg-[var(--nodu-warning-bg)] text-[var(--nodu-warning-text)]';
+    return 'bg-[rgba(var(--nodu-text-rgb),0.06)] text-[var(--nodu-text-soft)]';
+  };
+
   return (
     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
-      <button onClick={() => setSelectedClientIdForStats(null)} className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-900 mb-4 transition-colors">
+      <button onClick={() => setSelectedClientIdForStats(null)} className="mb-4 flex items-center gap-1 text-xs font-medium text-[var(--nodu-text-soft)] transition-colors hover:text-[var(--nodu-accent)]">
         <ArrowLeft size={14} /> Zpet na Klienty
       </button>
 
-      <div className="bg-white border border-gray-100 rounded-2xl p-6 shadow-sm mb-6">
-        <div className="flex justify-between items-start mb-6">
+      <div className="mb-6 rounded-[28px] border border-[var(--nodu-border)] bg-white p-6 shadow-[0_18px_40px_rgba(var(--nodu-text-rgb),0.06)]">
+        <div className="mb-6 flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-1">{client.name}</h1>
-            <p className="text-sm text-gray-500">{client.city || '—'} {client.ico ? `· ICO: ${client.ico}` : ''}</p>
+            <div className="nodu-dashboard-kicker">Client detail</div>
+            <h1 className="mb-1 text-2xl font-semibold tracking-[-0.03em] text-[var(--nodu-text)]">{client.name}</h1>
+            <p className="text-sm text-[var(--nodu-text-soft)]">{client.city || '—'} {client.ico ? `· ICO: ${client.ico}` : ''}</p>
           </div>
-          <div className="flex gap-1 bg-gray-50 p-1 rounded-lg border border-gray-100">
+          <div className="flex gap-1 rounded-xl border border-[var(--nodu-border)] bg-white p-1 shadow-[0_12px_28px_rgba(var(--nodu-text-rgb),0.06)]">
             {(['1M', '3M', '6M', '1R', 'all'] as const).map((range) => (
-              <button key={range} onClick={() => setDateRange(range)} className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all ${dateRange === range ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>
+              <button key={range} onClick={() => setDateRange(range)} className={`rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase transition-all ${dateRange === range ? 'bg-[var(--nodu-accent)] text-white shadow-sm' : 'text-[var(--nodu-text-soft)] hover:bg-[var(--nodu-accent-soft)] hover:text-[var(--nodu-text)]'}`}>
                 {range === 'all' ? 'Vse' : range}
               </button>
             ))}
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-100"><div className="flex items-center gap-2 mb-2"><Receipt size={14} className="text-emerald-600" /><span className="text-[9px] font-bold text-emerald-700 uppercase">Naklady Crew</span></div><div className="text-lg font-bold text-emerald-900">{formatCurrency(totalCost)}</div></div>
-          <div className="bg-blue-50 rounded-xl p-4 border border-blue-100"><div className="flex items-center gap-2 mb-2"><Clock size={14} className="text-blue-600" /><span className="text-[9px] font-bold text-blue-700 uppercase">Hodiny</span></div><div className="text-lg font-bold text-blue-900">{totalHours.toFixed(1)}h</div></div>
-          <div className="bg-amber-50 rounded-xl p-4 border border-amber-100"><div className="flex items-center gap-2 mb-2"><MapPin size={14} className="text-amber-600" /><span className="text-[9px] font-bold text-amber-700 uppercase">Kilometry</span></div><div className="text-lg font-bold text-amber-900">{totalKm} km</div></div>
-          <div className="bg-gray-50 rounded-xl p-4 border border-gray-100"><span className="text-[9px] font-bold text-gray-700 uppercase">Akci celkem</span><div className="text-lg font-bold text-gray-900 mt-2">{clientEvents.length}</div></div>
+        <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
+          {statCards.map((item) => (
+            <div key={item.label} className="rounded-[22px] border border-[var(--nodu-border)] bg-white p-4 shadow-[0_14px_30px_rgba(var(--nodu-text-rgb),0.05)]">
+              <div className="mb-2 flex items-center gap-2">
+                <div className={`rounded-xl p-2 ${getToneClasses(item.tone)}`}>
+                  <item.icon size={14} />
+                </div>
+                <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-[var(--nodu-text-soft)]">{item.label}</span>
+              </div>
+              <div className="text-lg font-bold text-[var(--nodu-text)]">{item.value}</div>
+            </div>
+          ))}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-            <div className="flex justify-between items-center mb-4">
-              <div className="flex gap-1 bg-white p-0.5 rounded-lg border border-gray-100">
-                <button onClick={() => setChartMode('time')} className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${chartMode === 'time' ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>Naklady v case</button>
-                <button onClick={() => setChartMode('project')} className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${chartMode === 'project' ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>Dle projektu</button>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div className="rounded-[24px] border border-[var(--nodu-border)] bg-[var(--nodu-paper-strong)] p-4">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="flex gap-1 rounded-xl border border-[var(--nodu-border)] bg-white p-1">
+                <button onClick={() => setChartMode('time')} className={`rounded-lg px-3 py-1.5 text-[10px] font-bold transition-all ${chartMode === 'time' ? 'bg-[var(--nodu-accent)] text-white shadow-sm' : 'text-[var(--nodu-text-soft)] hover:bg-[var(--nodu-accent-soft)] hover:text-[var(--nodu-text)]'}`}>Naklady v case</button>
+                <button onClick={() => setChartMode('project')} className={`rounded-lg px-3 py-1.5 text-[10px] font-bold transition-all ${chartMode === 'project' ? 'bg-[var(--nodu-accent)] text-white shadow-sm' : 'text-[var(--nodu-text-soft)] hover:bg-[var(--nodu-accent-soft)] hover:text-[var(--nodu-text)]'}`}>Dle projektu</button>
               </div>
               {chartMode === 'time' && (
-                <div className="flex gap-1 bg-white p-0.5 rounded-lg border border-gray-100">
+                <div className="flex gap-1 rounded-xl border border-[var(--nodu-border)] bg-white p-1">
                   {(['month', 'quarter', 'year'] as const).map((period) => (
-                    <button key={period} onClick={() => setChartPeriod(period)} className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all ${chartPeriod === period ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>
+                    <button key={period} onClick={() => setChartPeriod(period)} className={`rounded-lg px-2 py-1 text-[10px] font-bold transition-all ${chartPeriod === period ? 'bg-[var(--nodu-accent)] text-white shadow-sm' : 'text-[var(--nodu-text-soft)] hover:bg-[var(--nodu-accent-soft)] hover:text-[var(--nodu-text)]'}`}>
                       {period === 'month' ? 'Mesice' : period === 'quarter' ? 'Kvartaly' : 'Roky'}
                     </button>
                   ))}
@@ -184,18 +226,18 @@ const ClientStatsView = () => {
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9ca3af' }} dy={10} />
                     <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9ca3af' }} tickFormatter={(value) => `${value / 1000}k`} />
                     <Tooltip cursor={{ fill: darkMode ? '#111827' : '#f9fafb' }} contentStyle={{ backgroundColor: darkMode ? '#111827' : '#fff', border: 'none', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '12px' }} formatter={(value: number) => [formatCurrency(value), 'Naklady']} />
-                    <Bar dataKey="total" fill="#10b981" radius={[4, 4, 0, 0]} barSize={40} />
+                    <Bar dataKey="total" fill="var(--nodu-accent)" radius={[4, 4, 0, 0]} barSize={40} />
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="flex items-center justify-center h-full text-gray-400 text-xs">Zadna data pro zvolene obdobi</div>
+                <div className="flex h-full items-center justify-center text-xs text-[var(--nodu-text-soft)]">Zadna data pro zvolene obdobi</div>
               )}
             </div>
           </div>
 
-          <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-            <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-4">Projekty</h3>
-            <div className="space-y-3 max-h-[300px] overflow-y-auto">
+          <div className="rounded-[24px] border border-[var(--nodu-border)] bg-[var(--nodu-paper-strong)] p-4">
+            <h3 className="mb-4 text-xs font-bold uppercase tracking-[0.14em] text-[var(--nodu-text-soft)]">Projekty</h3>
+            <div className="max-h-[300px] space-y-3 overflow-y-auto pr-1">
               {projects.filter((project) => project.client === client.name).map((project) => {
                 const jobEvents = events.filter((event) => event.job === project.id);
                 const jobTimelogs = timelogs.filter((timelog) => jobEvents.some((event) => event.id === timelog.eid));
@@ -205,15 +247,15 @@ const ClientStatsView = () => {
                 const jobRevenue = jobInvoices.reduce((sum, invoice) => sum + invoice.total, 0);
 
                 return (
-                  <button key={project.id} onClick={() => handleProjectClick(project.id)} className="w-full text-left p-3 bg-white rounded-xl hover:shadow-md transition-all">
-                    <div className="flex justify-between items-start mb-2">
+                  <button key={project.id} onClick={() => handleProjectClick(project.id)} className="w-full rounded-2xl border border-[var(--nodu-border)] bg-white p-3 text-left transition-all hover:border-[rgba(var(--nodu-accent-rgb),0.28)] hover:bg-[var(--nodu-accent-soft)] hover:shadow-[0_14px_30px_rgba(var(--nodu-text-rgb),0.08)]">
+                    <div className="mb-2 flex items-start justify-between gap-3">
                       <div>
-                        <div className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">{project.id}</div>
-                        <div className="text-xs font-semibold text-gray-900">{project.name}</div>
+                        <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--nodu-accent)]">{project.id}</div>
+                        <div className="text-xs font-semibold text-[var(--nodu-text)]">{project.name}</div>
                       </div>
-                      <div className="text-xs font-bold text-gray-900">{jobRevenue.toLocaleString()} Kc</div>
+                      <div className="text-xs font-bold text-[var(--nodu-text)]">{jobRevenue.toLocaleString()} Kc</div>
                     </div>
-                    <div className="flex gap-3 text-[10px] text-gray-500">
+                    <div className="flex gap-3 text-[10px] text-[var(--nodu-text-soft)]">
                       <span className="flex items-center gap-1"><Clock size={10} /> {jobHours.toFixed(1)}h</span>
                       <span className="flex items-center gap-1"><MapPin size={10} /> {jobKm} km</span>
                     </div>
@@ -221,7 +263,7 @@ const ClientStatsView = () => {
                 );
               })}
               {projects.filter((project) => project.client === client.name).length === 0 && (
-                <div className="text-center py-10"><div className="text-gray-300 mb-2"><Receipt size={32} className="mx-auto" /></div><p className="text-xs text-gray-500">Zadne projekty u tohoto klienta</p></div>
+                <div className="py-10 text-center"><div className="mb-2 text-[var(--nodu-text-soft)]"><Receipt size={32} className="mx-auto" /></div><p className="text-xs text-[var(--nodu-text-soft)]">Zadne projekty u tohoto klienta</p></div>
               )}
             </div>
           </div>

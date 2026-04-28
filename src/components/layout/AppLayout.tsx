@@ -64,10 +64,10 @@ const AppLayout: React.FC = () => {
   };
 
   return (
-    <div className={`flex h-screen overflow-hidden bg-gray-50 font-sans ${darkMode ? 'dark' : ''}`}>
+    <div className={`nodu-app-shell ${darkMode ? 'dark' : ''}`}>
       <Sidebar />
 
-      <main className="flex-1 overflow-y-auto p-6 lg:p-8">
+      <main className="nodu-page-frame">
         <div className="mx-auto max-w-6xl">
           <AnimatePresence mode="wait">{renderCurrentView()}</AnimatePresence>
         </div>

@@ -1,35 +1,42 @@
 import React from 'react';
 
 const StatusBadge = ({ status, label }: { status: string; label?: string }) => {
+  const neutral = 'border-[color:rgb(var(--nodu-text-rgb)/0.1)] bg-[color:rgb(var(--nodu-text-rgb)/0.06)] text-[color:var(--nodu-text-soft)]';
+  const success = 'border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] text-[color:var(--nodu-success-text)]';
+  const info = 'border-[color:var(--nodu-info-border)] bg-[color:var(--nodu-info-bg)] text-[color:var(--nodu-info-text)]';
+  const warning = 'border-[color:var(--nodu-warning-border)] bg-[color:var(--nodu-warning-bg)] text-[color:var(--nodu-warning-text)]';
+  const error = 'border-[color:var(--nodu-error-border)] bg-[color:var(--nodu-error-bg)] text-[color:var(--nodu-error-text)]';
+  const decision = 'border-[color:rgb(var(--nodu-accent-rgb)/0.22)] bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)]';
+
   const statusMap: Record<string, [string, string]> = {
-    draft: ['bg-gray-100 text-gray-600', 'Koncept'],
-    pending_ch: ['bg-amber-50 text-amber-700', 'Čeká CH'],
-    pending_coo: ['bg-blue-50 text-blue-700', 'Čeká COO'],
-    approved: ['bg-emerald-50 text-emerald-700', 'Schváleno'],
-    invoiced: ['bg-teal-50 text-teal-700', 'Fakturovano'],
-    paid: ['bg-teal-50 text-teal-700', 'Zaplaceno'],
-    rejected: ['bg-red-50 text-red-700', 'Zamítnuto'],
-    sent: ['bg-blue-50 text-blue-700', 'Odesláno'],
-    submitted: ['bg-amber-50 text-amber-700', 'Čeká na schválení'],
-    attached: ['bg-cyan-50 text-cyan-700', 'Ve faktuře'],
-    reimbursed: ['bg-teal-50 text-teal-700', 'Proplaceno'],
-    upcoming: ['bg-blue-50 text-blue-700', 'Nadcházející'],
-    full: ['bg-emerald-50 text-emerald-700', 'Obsazeno'],
-    planning: ['bg-gray-100 text-gray-600', 'Plánování'],
-    new: ['bg-blue-50 text-blue-700', 'Nový'],
-    interview_scheduled: ['bg-amber-50 text-amber-700', 'Pohovor'],
-    decision: ['bg-indigo-50 text-indigo-700', 'Rozhodnutí'],
-    accepted: ['bg-emerald-50 text-emerald-700', 'Přijat'],
-    instal: ['bg-blue-50 text-blue-700', 'Instal'],
-    provoz: ['bg-emerald-50 text-emerald-700', 'Provoz'],
-    deinstal: ['bg-amber-50 text-amber-700', 'Deinstal'],
-    past: ['bg-gray-100 text-gray-500', 'Uplynulé'],
+    draft: [neutral, 'Koncept'],
+    pending_ch: [warning, 'Čeká CH'],
+    pending_coo: [info, 'Čeká COO'],
+    approved: [success, 'Schváleno'],
+    invoiced: [info, 'Fakturovano'],
+    paid: [success, 'Zaplaceno'],
+    rejected: [error, 'Zamítnuto'],
+    sent: [info, 'Odesláno'],
+    submitted: [warning, 'Čeká na schválení'],
+    attached: [info, 'Ve faktuře'],
+    reimbursed: [success, 'Proplaceno'],
+    upcoming: [info, 'Nadcházející'],
+    full: [success, 'Obsazeno'],
+    planning: [neutral, 'Plánování'],
+    new: [info, 'Nový'],
+    interview_scheduled: [warning, 'Pohovor'],
+    decision: [decision, 'Rozhodnutí'],
+    accepted: [success, 'Přijat'],
+    instal: [info, 'Instal'],
+    provoz: [success, 'Provoz'],
+    deinstal: [warning, 'Deinstal'],
+    past: [neutral, 'Uplynulé'],
   };
 
-  const [cls, defaultLabel] = statusMap[status] || ['bg-gray-100 text-gray-600', status];
+  const [cls, defaultLabel] = statusMap[status] || [neutral, status];
 
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${cls}`}>
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${cls}`}>
       {label || defaultLabel}
     </span>
   );

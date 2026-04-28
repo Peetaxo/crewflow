@@ -11,10 +11,10 @@ const EmptyState = ({
   message: string;
   subMessage?: string;
 }) => (
-  <div className="col-span-full py-12 text-center bg-gray-50 rounded-2xl border border-dashed border-gray-200">
-    <Icon className="mx-auto text-gray-300 mb-2" size={32} />
-    <p className="text-sm text-gray-500">{message}</p>
-    {subMessage && <p className="text-xs text-gray-400 mt-1">{subMessage}</p>}
+  <div className="col-span-full rounded-[28px] border border-dashed border-[color:rgb(var(--nodu-accent-rgb)/0.24)] bg-[color:rgb(var(--nodu-surface-rgb)/0.96)] py-12 text-center shadow-[0_18px_42px_rgba(47,38,31,0.08)]">
+    <Icon className="mx-auto mb-2 text-[color:rgb(var(--nodu-accent-rgb)/0.62)]" size={32} />
+    <p className="text-sm text-[color:var(--nodu-text)]">{message}</p>
+    {subMessage && <p className="mt-1 text-xs text-[color:var(--nodu-text-soft)]">{subMessage}</p>}
   </div>
 );
 

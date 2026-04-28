@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
+import { Button } from '../components/ui/button';
 import { useAuth } from '../app/providers/useAuth';
 import { useAppContext } from '../context/useAppContext';
 import { KM_RATE } from '../data';
@@ -163,80 +164,90 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
   const renderRowActions = (timelog: typeof filtered[number]) => (
     <div className="flex gap-2">
       {timelog.status === 'draft' && (
-        <button
+        <Button
           onClick={() => handleTimelogAction(timelog.id, 'sub')}
-          className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
+          size="sm"
+          className="border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] text-[11px] text-[color:var(--nodu-success-text)] shadow-[0_12px_24px_rgba(47,125,79,0.10)] hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)] hover:text-[color:var(--nodu-success-text)]"
         >
           Odeslat ke kontrole CH
-        </button>
+        </Button>
       )}
       {timelog.status === 'pending_ch' && role === 'crewhead' && (
         <>
-          <button
+          <Button
             onClick={() => handleTimelogAction(timelog.id, 'ch')}
-            className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
+            size="sm"
+            className="border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] text-[11px] text-[color:var(--nodu-success-text)] shadow-[0_12px_24px_rgba(47,125,79,0.10)] hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)] hover:text-[color:var(--nodu-success-text)]"
           >
             Schválit a poslat COO
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={() => handleTimelogAction(timelog.id, 'rej')}
-            className="px-3 py-1.5 rounded-md border border-red-100 text-[11px] text-red-600 hover:bg-red-50"
+            variant="outline"
+            size="sm"
+            className="border-[#e8b4a3] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39] text-[11px]"
           >
             Zamítnout
-          </button>
+          </Button>
         </>
       )}
       {timelog.status === 'pending_coo' && role === 'coo' && (
         <>
-          <button
+          <Button
             onClick={() => handleTimelogAction(timelog.id, 'coo')}
-            className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
+            size="sm"
+            className="border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] text-[11px] text-[color:var(--nodu-success-text)] shadow-[0_12px_24px_rgba(47,125,79,0.10)] hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)] hover:text-[color:var(--nodu-success-text)]"
           >
             Schválit
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={() => handleTimelogAction(timelog.id, 'rej')}
-            className="px-3 py-1.5 rounded-md border border-red-100 text-[11px] text-red-600 hover:bg-red-50"
+            variant="outline"
+            size="sm"
+            className="border-[#e8b4a3] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39] text-[11px]"
           >
             Zamítnout
-          </button>
+          </Button>
         </>
       )}
       {(scope === 'mine' || !isCrew) && (
-        <button
+        <Button
           onClick={() => setEditingTimelog(timelog)}
-          className="ml-auto px-3 py-1.5 rounded-md border border-gray-200 text-[11px] hover:bg-gray-50"
+          variant="outline"
+          size="sm"
+          className="ml-auto text-[11px]"
         >
           Upravit
-        </button>
+        </Button>
       )}
     </div>
   );
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      <div className="mb-4 space-y-3">
+      <div className="mb-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-lg font-semibold">{title}</h1>
+            <div className="nodu-dashboard-kicker">Timesheets</div>
+            <h1 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--nodu-text)]">{title}</h1>
             {scope === 'all' && (
-              <p className="mt-0.5 text-xs text-gray-500">
+              <p className="mt-1 text-sm text-[color:var(--nodu-text-soft)]">
                 Schvalování i detail výkazů na jednom místě.
               </p>
             )}
           </div>
 
           {scope === 'all' && (
-            <div className="flex rounded-lg border border-gray-200 bg-white p-0.5">
+            <div className="inline-flex rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
               <button
                 onClick={() => setViewMode('job')}
-                className={`px-3 py-1 text-[11px] font-medium rounded-md ${viewMode === 'job' ? 'bg-emerald-50 text-emerald-700' : 'text-gray-500 hover:text-gray-900'}`}
+                className={`rounded-[14px] px-3.5 py-2 text-[11px] font-medium transition-all ${viewMode === 'job' ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)] shadow-[inset_0_0_0_1px_rgba(255,128,13,0.16)]' : 'text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
               >
                 Po Job Number
               </button>
               <button
                 onClick={() => setViewMode('people')}
-                className={`px-3 py-1 text-[11px] font-medium rounded-md ${viewMode === 'people' ? 'bg-emerald-50 text-emerald-700' : 'text-gray-500 hover:text-gray-900'}`}
+                className={`rounded-[14px] px-3.5 py-2 text-[11px] font-medium transition-all ${viewMode === 'people' ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)] shadow-[inset_0_0_0_1px_rgba(255,128,13,0.16)]' : 'text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
               >
                 Po lidech
               </button>
@@ -244,15 +255,15 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
           )}
         </div>
 
-        <div className="flex flex-wrap gap-1 rounded-lg border border-gray-200 bg-white p-0.5 w-fit">
+        <div className="flex w-fit flex-wrap gap-1 rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
           {filterOptions.map((filter) => (
             <button
               key={filter.id}
               onClick={() => setTimelogFilter(filter.id)}
-              className={`inline-flex items-center gap-2 rounded-md px-3 py-1 text-[11px] font-medium transition-all ${timelogFilter === filter.id ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+              className={`inline-flex items-center gap-2 rounded-[14px] px-3 py-2 text-[11px] font-medium transition-all ${timelogFilter === filter.id ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)] shadow-[inset_0_0_0_1px_rgba(255,128,13,0.16)]' : 'text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
             >
               <span>{filter.label}</span>
-              <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${timelogFilter === filter.id ? 'bg-emerald-100' : 'bg-gray-100 text-gray-600'}`}>
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${timelogFilter === filter.id ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.16)]' : 'bg-[color:rgb(var(--nodu-text-rgb)/0.08)] text-[color:var(--nodu-text-soft)]'}`}>
                 {filter.count}
               </span>
             </button>
@@ -272,21 +283,21 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
             const bulkAction = getBulkActionMeta(group.timelogs);
 
             return (
-              <div key={group.job} className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-                <div className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-gray-100 pb-3">
+              <div key={group.job} className="nodu-panel rounded-[28px] p-5">
+                <div className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] pb-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="jn px-2 py-1 text-sm">{group.job}</span>
-                      <span className="text-base font-semibold text-gray-900">{group.eventName}</span>
+                      <span className="jn nodu-job-badge px-2 py-1 text-sm">{group.job}</span>
+                      <span className="text-base font-semibold text-[color:var(--nodu-text)]">{group.eventName}</span>
                     </div>
-                    <div className="mt-1 text-xs text-gray-500">
+                    <div className="mt-1 text-xs text-[color:var(--nodu-text-soft)]">
                       {group.city} · {group.timelogs.length} výkazů
                     </div>
                   </div>
 
                   <div className="text-right">
-                    <div className="text-xl font-semibold text-gray-900">{formatCurrency(totalAmount)}</div>
-                    <div className="text-xs text-gray-500">{totalHours.toFixed(1)}h celkem</div>
+                    <div className="text-xl font-semibold text-[color:var(--nodu-text)]">{formatCurrency(totalAmount)}</div>
+                    <div className="text-xs text-[color:var(--nodu-text-soft)]">{totalHours.toFixed(1)}h celkem</div>
                   </div>
                 </div>
 
@@ -300,22 +311,22 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                     const phases = Array.from(new Set(timelog.days.map((day) => day.type)));
 
                     return (
-                      <div key={timelog.id} className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-                        <div className="mb-3 flex flex-wrap items-center gap-3 border-b border-gray-100 pb-3">
+                      <div key={timelog.id} className="rounded-[22px] border border-[color:rgb(var(--nodu-text-rgb)/0.08)] bg-[color:rgb(var(--nodu-surface-rgb)/0.9)] p-4 shadow-[0_12px_28px_rgba(47,38,31,0.06)]">
+                        <div className="mb-3 flex flex-wrap items-center gap-3 border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] pb-3">
                           <div className="av w-8 h-8 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>
                             {contractor.ii}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <div className="text-sm font-semibold">{contractor.name}</div>
-                            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
+                            <div className="text-sm font-semibold text-[color:var(--nodu-text)]">{contractor.name}</div>
+                            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-[color:var(--nodu-text-soft)]">
                               <span>{event.name}</span>
                               {phases.map((phase) => <StatusBadge key={`${timelog.id}-${phase}`} status={phase} />)}
                             </div>
                           </div>
                           <StatusBadge status={timelog.status} />
                           <div className="text-right">
-                            <div className="text-sm font-semibold">{hours.toFixed(1)}h</div>
-                            <div className="text-[11px] text-gray-500">
+                            <div className="text-sm font-semibold text-[color:var(--nodu-text)]">{hours.toFixed(1)}h</div>
+                            <div className="text-[11px] text-[color:var(--nodu-text-soft)]">
                               {formatCurrency(hours * contractor.rate)}
                               {timelog.km > 0 ? ` + ${formatCurrency(timelog.km * KM_RATE)}` : ''}
                             </div>
@@ -325,22 +336,22 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                         <div className="mb-3 space-y-1">
                           {timelog.days.map((day, index) => (
                             <div key={`${timelog.id}-${index}`} className="flex items-center gap-4 py-1 text-xs">
-                              <span className="w-20 text-gray-500">{formatShortDate(day.d)}</span>
-                              <span className="font-mono font-semibold">{day.f} - {day.t}</span>
+                              <span className="w-20 text-[color:var(--nodu-text-soft)]">{formatShortDate(day.d)}</span>
+                              <span className="font-mono font-semibold text-[color:var(--nodu-text)]">{day.f} - {day.t}</span>
                               <StatusBadge status={day.type} />
-                              <span className="ml-auto text-gray-500">{calculateDayHours(day.f, day.t).toFixed(1)}h</span>
+                              <span className="ml-auto text-[color:var(--nodu-text-soft)]">{calculateDayHours(day.f, day.t).toFixed(1)}h</span>
                             </div>
                           ))}
                         </div>
 
                         <div className="mb-3 flex items-center gap-3">
                           {timelog.note && (
-                            <p className="min-w-0 flex-1 text-xs italic text-gray-500">"{timelog.note}"</p>
+                            <p className="min-w-0 flex-1 text-xs italic text-[color:var(--nodu-text-soft)]">"{timelog.note}"</p>
                           )}
                           {(scope === 'mine' || !isCrew) && (
                             <button
                               onClick={() => setEditingTimelog(timelog)}
-                              className="ml-auto rounded-md border border-gray-200 px-3 py-1.5 text-[11px] hover:bg-gray-50"
+                              className="ml-auto rounded-xl border border-[color:var(--nodu-border)] px-3 py-1.5 text-[11px] font-medium text-[color:var(--nodu-text)] transition hover:bg-[color:var(--nodu-accent-soft)]"
                             >
                               Upravit
                             </button>
@@ -351,7 +362,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                           {timelog.status === 'draft' && (
                             <button
                               onClick={() => handleTimelogAction(timelog.id, 'sub')}
-                              className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
+                              className="rounded-xl border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] px-3 py-1.5 text-[11px] font-semibold text-[color:var(--nodu-success-text)] shadow-[0_12px_24px_rgba(47,125,79,0.10)] transition hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)]"
                             >
                               Odeslat ke kontrole CH
                             </button>
@@ -360,13 +371,13 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                             <>
                               <button
                                 onClick={() => handleTimelogAction(timelog.id, 'ch')}
-                                className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
+                                className="rounded-xl border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] px-3 py-1.5 text-[11px] font-semibold text-[color:var(--nodu-success-text)] shadow-[0_12px_24px_rgba(47,125,79,0.10)] transition hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)]"
                               >
                                 Schválit a poslat COO
                               </button>
                               <button
                                 onClick={() => handleTimelogAction(timelog.id, 'rej')}
-                                className="px-3 py-1.5 rounded-md border border-red-100 text-[11px] text-red-600 hover:bg-red-50"
+                                className="rounded-xl border border-[color:var(--nodu-error-border)] px-3 py-1.5 text-[11px] font-medium text-[color:var(--nodu-error-text)] transition hover:bg-[color:var(--nodu-error-bg)]"
                               >
                                 Zamítnout
                               </button>
@@ -376,13 +387,13 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                             <>
                               <button
                                 onClick={() => handleTimelogAction(timelog.id, 'coo')}
-                                className="px-3 py-1.5 rounded-md bg-emerald-600 text-[11px] text-white hover:bg-emerald-700"
+                                className="rounded-xl border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] px-3 py-1.5 text-[11px] font-semibold text-[color:var(--nodu-success-text)] shadow-[0_12px_24px_rgba(47,125,79,0.10)] transition hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)]"
                               >
                                 Schválit
                               </button>
                               <button
                                 onClick={() => handleTimelogAction(timelog.id, 'rej')}
-                                className="px-3 py-1.5 rounded-md border border-red-100 text-[11px] text-red-600 hover:bg-red-50"
+                                className="rounded-xl border border-[color:var(--nodu-error-border)] px-3 py-1.5 text-[11px] font-medium text-[color:var(--nodu-error-text)] transition hover:bg-[color:var(--nodu-error-bg)]"
                               >
                                 Zamítnout
                               </button>
@@ -396,12 +407,13 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
 
                 {bulkAction && (
                   <div className="mt-4 flex justify-end">
-                    <button
+                    <Button
                       onClick={() => runBulkAction(bulkAction.ids, bulkAction.action)}
-                      className="rounded-md bg-emerald-600 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-700"
+                      size="sm"
+                      className="border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] text-xs text-[color:var(--nodu-success-text)] shadow-[0_14px_28px_rgba(47,125,79,0.10)] hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)] hover:text-[color:var(--nodu-success-text)]"
                     >
                       {bulkAction.label}
-                    </button>
+                    </Button>
                   </div>
                 )}
               </div>
@@ -409,7 +421,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
           })}
 
           {groupedByJob.length === 0 && (
-            <div className="rounded-xl border border-gray-100 bg-white p-10 text-center text-sm text-gray-400">
+            <div className="nodu-panel rounded-[24px] p-10 text-center text-sm text-[color:var(--nodu-text-soft)]">
               Žádné záznamy pro tento filtr
             </div>
           )}
@@ -424,44 +436,44 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
             const totalHours = calculateTotalHours(timelog.days);
 
             return (
-              <div key={timelog.id} className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-                <div className="mb-3 flex items-center gap-3 border-b border-gray-50 pb-3">
+              <div key={timelog.id} className="nodu-panel rounded-[28px] p-5">
+                <div className="mb-3 flex items-center gap-3 border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] pb-3">
                   <div className="av w-8 h-8 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>
                     {contractor.ii}
                   </div>
                   <div className="flex-1">
-                    <div className="text-sm font-semibold">{contractor.name}</div>
+                    <div className="text-sm font-semibold text-[color:var(--nodu-text)]">{contractor.name}</div>
                     <div className="mt-0.5 flex items-center gap-1.5">
-                      <span className="jn">{event.job}</span>
-                      <span className="text-xs text-gray-500">{event.name}</span>
+                      <span className="jn nodu-job-badge">{event.job}</span>
+                      <span className="text-xs text-[color:var(--nodu-text-soft)]">{event.name}</span>
                     </div>
                   </div>
                   <StatusBadge status={timelog.status} />
                   <div className="text-right">
-                    <div className="text-base font-semibold">{totalHours.toFixed(1)}h</div>
-                    {timelog.km > 0 && <div className="text-[10px] text-gray-500">+ {timelog.km} km</div>}
+                    <div className="text-base font-semibold text-[color:var(--nodu-text)]">{totalHours.toFixed(1)}h</div>
+                    {timelog.km > 0 && <div className="text-[10px] text-[color:var(--nodu-text-soft)]">+ {timelog.km} km</div>}
                   </div>
                 </div>
 
                 <div className="mb-3">
                   {timelog.days.map((day, index) => (
                     <div key={`${timelog.id}-${index}`} className="flex items-center gap-4 py-1 text-xs">
-                      <span className="w-20 text-gray-500">{formatShortDate(day.d)}</span>
-                      <span className="font-mono font-semibold">{day.f} - {day.t}</span>
+                      <span className="w-20 text-[color:var(--nodu-text-soft)]">{formatShortDate(day.d)}</span>
+                      <span className="font-mono font-semibold text-[color:var(--nodu-text)]">{day.f} - {day.t}</span>
                       <StatusBadge status={day.type} />
-                      <span className="ml-auto text-gray-500">{calculateDayHours(day.f, day.t).toFixed(1)}h</span>
+                      <span className="ml-auto text-[color:var(--nodu-text-soft)]">{calculateDayHours(day.f, day.t).toFixed(1)}h</span>
                     </div>
                   ))}
                 </div>
 
-                {timelog.note && <p className="mb-3 text-xs italic text-gray-500">"{timelog.note}"</p>}
+                {timelog.note && <p className="mb-3 text-xs italic text-[color:var(--nodu-text-soft)]">"{timelog.note}"</p>}
                 {renderRowActions(timelog)}
               </div>
             );
           })}
 
           {filtered.length === 0 && (
-            <div className="rounded-xl border border-gray-100 bg-white p-10 text-center text-sm text-gray-400">
+            <div className="nodu-panel rounded-[24px] p-10 text-center text-sm text-[color:var(--nodu-text-soft)]">
               Žádné záznamy pro tento filtr
             </div>
           )}

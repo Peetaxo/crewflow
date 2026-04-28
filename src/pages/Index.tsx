@@ -1,4 +1,4 @@
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider } from '../app/providers/AuthProvider';
 import { useAuth } from '../app/providers/useAuth';
 import AppDataBootstrap from '../app/providers/AppDataBootstrap';
@@ -15,6 +15,15 @@ export const AppShell = () => {
     && typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('previewLogin') === '1';
 
+  if (location.pathname === '/' && !isLoginPreview) {
+    return (
+      <WelcomeView
+        onLogin={() => navigate('/login')}
+        onRegister={() => navigate('/login')}
+      />
+    );
+  }
+
   if (isLoading && !hasKnownSession) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
@@ -26,20 +35,15 @@ export const AppShell = () => {
   }
 
   if (isAuthRequired && !isAuthenticated) {
-    if (location.pathname !== '/login') {
-      return (
-        <WelcomeView
-          onLogin={() => navigate('/login')}
-          onRegister={() => navigate('/login')}
-        />
-      );
-    }
-
     return <LoginView />;
   }
 
   if (isLoginPreview) {
     return <LoginView />;
+  }
+
+  if (location.pathname === '/login') {
+    return <Navigate to="/app" replace />;
   }
 
   return (

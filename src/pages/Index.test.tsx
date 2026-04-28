@@ -1,18 +1,20 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppShell } from './Index';
 
+const mockAuthState = {
+  hasKnownSession: false,
+  isAuthRequired: true,
+  isAuthenticated: false,
+  isLoading: false,
+  devLoginOptions: [],
+  signIn: vi.fn(),
+  signInAsDevUser: vi.fn(),
+};
+
 vi.mock('../app/providers/useAuth', () => ({
-  useAuth: () => ({
-    hasKnownSession: false,
-    isAuthRequired: true,
-    isAuthenticated: false,
-    isLoading: false,
-    devLoginOptions: [],
-    signIn: vi.fn(),
-    signInAsDevUser: vi.fn(),
-  }),
+  useAuth: () => mockAuthState,
 }));
 
 vi.mock('../app/providers/AppDataBootstrap', () => ({
@@ -24,6 +26,15 @@ vi.mock('../components/layout/AppLayout', () => ({
 }));
 
 describe('Index unauthenticated routing', () => {
+  beforeEach(() => {
+    Object.assign(mockAuthState, {
+      hasKnownSession: false,
+      isAuthRequired: true,
+      isAuthenticated: false,
+      isLoading: false,
+    });
+  });
+
   it('shows the public Nodu welcome page before login on the homepage', () => {
     render(
       <MemoryRouter initialEntries={['/']}>
@@ -43,5 +54,37 @@ describe('Index unauthenticated routing', () => {
     );
 
     expect(screen.getByRole('heading', { name: 'Prihlaseni' })).toBeInTheDocument();
+  });
+
+  it('keeps the public Nodu welcome page on the homepage for signed-in users', () => {
+    Object.assign(mockAuthState, {
+      hasKnownSession: true,
+      isAuthenticated: true,
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <AppShell />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('heading', { name: /Cely provoz od akce po fakturu/i })).toBeInTheDocument();
+    expect(screen.queryByText('App layout')).not.toBeInTheDocument();
+  });
+
+  it('shows the authenticated app on the app route', () => {
+    Object.assign(mockAuthState, {
+      hasKnownSession: true,
+      isAuthenticated: true,
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/app']}>
+        <AppShell />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('App layout')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /Cely provoz od akce po fakturu/i })).not.toBeInTheDocument();
   });
 });

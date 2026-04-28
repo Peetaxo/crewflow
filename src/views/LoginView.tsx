@@ -1,4 +1,5 @@
 import { FormEvent, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { LockKeyhole, Mail } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -8,6 +9,7 @@ import { useAuth } from '../app/providers/useAuth';
 
 const LoginView = () => {
   const { signIn, isLoading } = useAuth();
+  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -21,6 +23,7 @@ const LoginView = () => {
     try {
       await signIn(email.trim(), password);
       toast.success('Prihlaseni probehlo uspesne.');
+      navigate('/app', { replace: true });
     } catch (submitError) {
       const message = submitError instanceof Error ? submitError.message : 'Prihlaseni selhalo.';
       setError(message);

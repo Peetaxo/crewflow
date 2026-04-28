@@ -46,7 +46,19 @@ type SupabaseInsertClient = {
 
 const getTime = (value: string) => new Date(value).getTime();
 
-const isValidTime = (value: string) => Number.isFinite(getTime(value));
+const isValidDateTime = (value: string) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+  if (!match) return false;
+
+  const [, year, month, day, hour, minute] = match.map(Number);
+  const parsed = new Date(year, month - 1, day, hour, minute);
+
+  return parsed.getFullYear() === year
+    && parsed.getMonth() === month - 1
+    && parsed.getDate() === day
+    && parsed.getHours() === hour
+    && parsed.getMinutes() === minute;
+};
 
 const overlaps = (a: WarehouseRange, b: WarehouseRange) => (
   getTime(a.startsAt) < getTime(b.endsAt) && getTime(a.endsAt) > getTime(b.startsAt)
@@ -166,7 +178,10 @@ const saveWarehouseReservationToSupabase = async (reservation: WarehouseReservat
   );
 
   if (lineResult.error) {
-    await supabaseUntyped.from('warehouse_reservations').delete().eq('id', reservation.id);
+    const cleanupResult = await supabaseUntyped.from('warehouse_reservations').delete().eq('id', reservation.id);
+    if (cleanupResult.error) {
+      throw new Error(`${lineResult.error.message} Cleanup failed: ${cleanupResult.error.message}`);
+    }
     throw new Error(lineResult.error.message);
   }
 };
@@ -176,7 +191,7 @@ export const createWarehouseReservation = async (
 ): Promise<WarehouseReservation> => {
   if (!draft.projectJobNumber.trim()) throw new Error('Vyberte projekt.');
   if (!draft.startsAt || !draft.endsAt) throw new Error('Vyplnte zacatek a konec rezervace.');
-  if (!isValidTime(draft.startsAt) || !isValidTime(draft.endsAt)) {
+  if (!isValidDateTime(draft.startsAt) || !isValidDateTime(draft.endsAt)) {
     throw new Error('Vyplnte platny zacatek a konec rezervace.');
   }
   if (getTime(draft.endsAt) <= getTime(draft.startsAt)) throw new Error('Konec rezervace musi byt po zacatku.');

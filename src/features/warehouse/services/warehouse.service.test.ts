@@ -100,6 +100,18 @@ describe('warehouse service', () => {
     })).rejects.toThrow('Vyplnte platny zacatek a konec rezervace.');
   });
 
+  it('blocks impossible calendar date values', async () => {
+    await expect(createWarehouseReservation({
+      projectJobNumber: 'TEST001',
+      projectId: 'TEST001',
+      eventLocalId: 1,
+      startsAt: '2026-02-31T09:00',
+      endsAt: '2026-03-01T18:00',
+      note: '',
+      items: [{ warehouseItemId: '11111111-1111-4111-8111-111111111111', quantity: 1 }],
+    })).rejects.toThrow('Vyplnte platny zacatek a konec rezervace.');
+  });
+
   it('snapshots item names and prices into reservation lines', async () => {
     const saved = await createWarehouseReservation({
       projectJobNumber: 'TEST001',
@@ -190,6 +202,35 @@ describe('warehouse service', () => {
     })).rejects.toThrow('line insert failed');
 
     expect(deletedReservationIds).toEqual([reservationId]);
+    expect(getWarehouseDependencies().reservations).toHaveLength(0);
+  });
+
+  it('reports cleanup failure when Supabase line insert and header cleanup both fail', async () => {
+    supabaseMockState.isSupabaseConfigured = true;
+    supabaseMockState.supabase = {
+      from: (table: string) => ({
+        insert: async () => {
+          if (table === 'warehouse_reservations') {
+            return { error: null };
+          }
+          return { error: { message: 'line insert failed' } };
+        },
+        delete: () => ({
+          eq: async () => ({ error: { message: 'cleanup failed' } }),
+        }),
+      }),
+    };
+
+    await expect(createWarehouseReservation({
+      projectJobNumber: 'TEST001',
+      projectId: 'TEST001',
+      eventLocalId: 1,
+      startsAt: '2026-05-05T09:00',
+      endsAt: '2026-05-05T18:00',
+      note: '',
+      items: [{ warehouseItemId: '11111111-1111-4111-8111-111111111111', quantity: 1 }],
+    })).rejects.toThrow('line insert failed Cleanup failed: cleanup failed');
+
     expect(getWarehouseDependencies().reservations).toHaveLength(0);
   });
 });

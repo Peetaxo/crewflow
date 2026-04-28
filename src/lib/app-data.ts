@@ -129,7 +129,7 @@ interface WarehouseItemRow {
   description: string | null;
   image_url: string | null;
   price_cents: number;
-  currency: string;
+  currency: string | null;
   price_period_label: string | null;
   quantity_total: number;
   owner_client_id: string | null;
@@ -162,8 +162,23 @@ interface WarehouseReservationRow {
   status: WarehouseReservation['status'];
   note: string | null;
   total_cents: number;
-  currency: string;
+  currency: string | null;
   booqable_order_id: string | null;
+}
+
+function normalizeWarehouseCurrency(currency: string | null): 'CZK' {
+  if (currency === 'CZK') {
+    return currency;
+  }
+  return 'CZK';
+}
+
+function getWarehouseFallbackData(): Pick<AppDataSnapshot, 'warehouseItems' | 'warehouseReservations'> {
+  const snapshot = getLocalAppState();
+  return {
+    warehouseItems: snapshot.warehouseItems ?? INITIAL_WAREHOUSE_ITEMS,
+    warehouseReservations: snapshot.warehouseReservations ?? INITIAL_WAREHOUSE_RESERVATIONS,
+  };
 }
 
 function mapWarehouseItem(row: WarehouseItemRow): WarehouseItem {
@@ -174,7 +189,7 @@ function mapWarehouseItem(row: WarehouseItemRow): WarehouseItem {
     description: row.description,
     imageUrl: row.image_url,
     priceCents: row.price_cents,
-    currency: (row.currency ?? 'CZK') as 'CZK',
+    currency: normalizeWarehouseCurrency(row.currency),
     pricePeriodLabel: row.price_period_label,
     quantityTotal: row.quantity_total,
     ownerClientId: row.owner_client_id,
@@ -214,7 +229,7 @@ function mapWarehouseReservation(
     status: row.status,
     note: row.note ?? '',
     totalCents: row.total_cents,
-    currency: (row.currency ?? 'CZK') as 'CZK',
+    currency: normalizeWarehouseCurrency(row.currency),
     booqableOrderId: row.booqable_order_id,
     items: items.map(mapWarehouseReservationItem),
   };
@@ -271,15 +286,19 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     candidatesResult,
     fleetVehiclesResult,
     fleetReservationsResult,
-    warehouseItemsResult,
-    warehouseReservationsResult,
-    warehouseReservationItemsResult,
   ];
 
   const firstError = results.find((result) => result.error)?.error;
   if (firstError) {
     throw new Error(firstError.message);
   }
+
+  const warehouseResults = [
+    warehouseItemsResult,
+    warehouseReservationsResult,
+    warehouseReservationItemsResult,
+  ];
+  const useWarehouseFallback = warehouseResults.some((result) => result.error);
 
   const clientRows = clientsResult.data ?? [];
   const projectRows = projectsResult.data ?? [];
@@ -374,15 +393,21 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
       eventId: row.event_id ? (eventIdMap.get(row.event_id) ?? null) : null,
     }));
 
-  const warehouseItems = warehouseItemRows.map(mapWarehouseItem);
-  const warehouseReservationItemsByReservationId = new Map<string, WarehouseReservationItemRow[]>();
-  for (const itemRow of warehouseReservationItemRows) {
-    const current = warehouseReservationItemsByReservationId.get(itemRow.reservation_id) ?? [];
-    current.push(itemRow);
-    warehouseReservationItemsByReservationId.set(itemRow.reservation_id, current);
+  let warehouseItems: WarehouseItem[];
+  let warehouseReservations: WarehouseReservation[];
+  if (useWarehouseFallback) {
+    ({ warehouseItems, warehouseReservations } = getWarehouseFallbackData());
+  } else {
+    warehouseItems = warehouseItemRows.map(mapWarehouseItem);
+    const warehouseReservationItemsByReservationId = new Map<string, WarehouseReservationItemRow[]>();
+    for (const itemRow of warehouseReservationItemRows) {
+      const current = warehouseReservationItemsByReservationId.get(itemRow.reservation_id) ?? [];
+      current.push(itemRow);
+      warehouseReservationItemsByReservationId.set(itemRow.reservation_id, current);
+    }
+    warehouseReservations = warehouseReservationRows
+      .map((row) => mapWarehouseReservation(row, warehouseReservationItemsByReservationId.get(row.id) ?? []));
   }
-  const warehouseReservations = warehouseReservationRows
-    .map((row) => mapWarehouseReservation(row, warehouseReservationItemsByReservationId.get(row.id) ?? []));
 
   return {
     events,

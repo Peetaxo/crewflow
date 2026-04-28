@@ -40,7 +40,7 @@ const normalizeTags = (tags: string[] = []) => (
 
 const toProfilePayload = (member: CreateCrewInput | UpdateCrewInput) => {
   const rating = clampRating(member.rating);
-  const payload = {
+  return {
     first_name: member.name.trim().split(/\s+/).slice(0, -1).join(' ') || member.name.trim(),
     last_name: member.name.trim().split(/\s+/).slice(-1).join(''),
     phone: member.phone || null,
@@ -56,12 +56,10 @@ const toProfilePayload = (member: CreateCrewInput | UpdateCrewInput) => {
     hourly_rate: Number(member.rate) || 0,
     tags: member.tags.includes('Ridic') ? ['Ridic'] : normalizeTags(member.tags),
     note: member.note || null,
-    reliable: member.reliable,
+    reliability: rating ?? (member.reliable ? 4 : 1),
     avatar_color: member.fg || null,
     avatar_bg: member.bg || null,
   };
-
-  return rating == null ? payload : { ...payload, rating };
 };
 
 const normalizeCrewMember = <T extends CreateCrewInput | UpdateCrewInput>(member: T): T => {

@@ -242,6 +242,7 @@ describe('crew.service', () => {
       hourly_rate: 300,
       billing_city: 'Praha',
       note: 'Aktualizovano',
+      reliability: 4,
       avatar_bg: '#000',
       avatar_color: '#fff',
     }));
@@ -254,7 +255,7 @@ describe('crew.service', () => {
     }));
   });
 
-  it('omits empty rating from Supabase profile updates so older schemas can save rate changes', async () => {
+  it('uses the current Supabase profiles schema when saving rate-only changes', async () => {
     let snapshot = {
       contractors: [
         {
@@ -327,8 +328,10 @@ describe('crew.service', () => {
 
     const payload = update.mock.calls[0][0];
     expect(payload).not.toHaveProperty('rating');
+    expect(payload).not.toHaveProperty('reliable');
     expect(payload).toEqual(expect.objectContaining({
       hourly_rate: 300,
+      tags: [],
     }));
   });
 

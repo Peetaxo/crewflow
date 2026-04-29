@@ -300,6 +300,11 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
     days: sortTimelogDays(updated.days),
   };
 
+  if (normalizedTimelog.days.length === 0) {
+    await deleteTimelog(normalizedTimelog.id);
+    return normalizedTimelog;
+  }
+
   if (!normalizedTimelog.contractorProfileId) {
     throw new Error('Nepodarilo se dohledat UUID identitu clena crew.');
   }

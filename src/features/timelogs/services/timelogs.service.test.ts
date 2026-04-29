@@ -395,6 +395,92 @@ describe('timelogs.service write flow', () => {
     expect(snapshot.timelogs[0].km).toBe(25);
   });
 
+  it('deletes the timelog when saving it without any days', async () => {
+    let snapshot = {
+      ...createSnapshot([
+        {
+          id: 1,
+          eid: 1,
+          contractorProfileId: 'profile-uuid-1',
+          days: [{ d: '2026-04-10', f: '23:00', t: '01:00', type: 'provoz' as const }],
+          km: 0,
+          note: '',
+          status: 'draft' as const,
+        },
+      ]),
+      events: [{ id: 1 }],
+      contractors: [{ id: 1, profileId: 'profile-uuid-1', name: 'Crew member' }],
+    };
+
+    const timelogDeleteEq = vi.fn().mockResolvedValue({ error: null });
+    const timelogDelete = vi.fn(() => ({ eq: timelogDeleteEq }));
+    const timelogUpdate = vi.fn();
+    const timelogDaysDeleteEq = vi.fn().mockResolvedValue({ error: null });
+    const timelogDaysDelete = vi.fn(() => ({ eq: timelogDaysDeleteEq }));
+    const timelogDaysInsert = vi.fn();
+    const timelogsSelectMock = vi.fn(() => ({
+      order: vi.fn(() => Promise.resolve({
+        data: [{ id: 'timelog-row-1' }],
+        error: null,
+      })),
+    }));
+
+    vi.doMock('../../../lib/app-config', () => ({
+      appDataSource: 'supabase',
+    }));
+
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: vi.fn((table: string) => {
+          if (table === 'timelogs') {
+            return {
+              select: timelogsSelectMock,
+              update: timelogUpdate,
+              delete: timelogDelete,
+            };
+          }
+
+          if (table === 'timelog_days') {
+            return {
+              delete: timelogDaysDelete,
+              insert: timelogDaysInsert,
+            };
+          }
+
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    }));
+
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapTimelog: vi.fn(),
+    }));
+
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    const { saveTimelog } = await import('./timelogs.service');
+
+    const result = await saveTimelog({
+      ...snapshot.timelogs[0],
+      days: [],
+    });
+
+    expect(timelogDaysDeleteEq).toHaveBeenCalledWith('timelog_id', 'timelog-row-1');
+    expect(timelogDeleteEq).toHaveBeenCalledWith('id', 'timelog-row-1');
+    expect(timelogUpdate).not.toHaveBeenCalled();
+    expect(timelogDaysInsert).not.toHaveBeenCalled();
+    expect(result.days).toEqual([]);
+    expect(snapshot.timelogs).toEqual([]);
+  });
+
   it('throws when saving a timelog without contractorProfileId', async () => {
     let snapshot = {
       events: [{ id: 1 }],

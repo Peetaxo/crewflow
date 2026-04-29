@@ -5,7 +5,6 @@ import { Button } from '../components/ui/button';
 import { useAppContext } from '../context/useAppContext';
 import { ProjectFilter, createEmptyProject, getProjectById, getProjectRows, subscribeToProjectChanges } from '../features/projects/services/projects.service';
 import { formatCurrency } from '../utils';
-import StatusBadge from '../components/shared/StatusBadge';
 import ProjectStatsView from './ProjectStatsView';
 
 const ProjectsView = () => {
@@ -82,7 +81,6 @@ const ProjectsView = () => {
               <th className="px-4 py-3 font-medium">Job Number</th>
               <th className="px-4 py-3 font-medium">Nazev</th>
               <th className="px-4 py-3 font-medium">Klient</th>
-              <th className="px-4 py-3 font-medium">Stav</th>
               <th className="px-4 py-3 font-medium">Pocet akci</th>
               <th className="px-4 py-3 font-medium">Naklady Crew</th>
               <th className="px-4 py-3 font-medium text-right">Akce</th>
@@ -105,15 +103,6 @@ const ProjectsView = () => {
                 </td>
                 <td className="px-4 py-3">
                   <div className="text-xs text-[color:var(--nodu-text)]">{project.client || '—'}</div>
-                </td>
-                <td className="px-4 py-3">
-                  {project.status === 'empty' ? (
-                    <span className="inline-flex items-center rounded-full bg-[color:rgb(var(--nodu-text-rgb)/0.08)] px-2 py-0.5 text-[11px] font-medium text-[color:var(--nodu-text-soft)]">
-                      Bez akci
-                    </span>
-                  ) : (
-                    <StatusBadge status={project.status} />
-                  )}
                 </td>
                 <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text)]">{project.eventCount}</td>
                 <td className="px-4 py-3">

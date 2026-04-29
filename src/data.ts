@@ -1,5 +1,5 @@
 ﻿import { Event, Contractor, Timelog, Invoice, Candidate, Project, Client, ReceiptItem, FleetReservation, FleetVehicle } from './types';
-import type { WarehouseItem, WarehouseReservation } from './types';
+import type { BudgetItem, BudgetPackage, WarehouseItem, WarehouseReservation } from './types';
 
 
 export const INITIAL_EVENTS: Event[] = [
@@ -582,6 +582,9 @@ export const INITIAL_FLEET_RESERVATIONS: FleetReservation[] = [
   { id: 3, vehicleId: 'octavia-1', projectId: 'Majáles Bratislava', eventId: 205, responsibleProfileId: 'profile-local-11', startsAt: '2026-05-01T09:00', endsAt: '2026-05-02T22:00', note: 'Produkční cesta.', hasConflict: false },
   { id: 4, vehicleId: 'crafter-1', projectId: 'AKV104', eventId: 23, responsibleProfileId: 'profile-local-7', startsAt: '2026-05-02T15:00', endsAt: '2026-05-02T21:00', note: 'Záměrný překryv pro demo konfliktu.', hasConflict: true },
 ];
+
+export const INITIAL_BUDGET_PACKAGES: BudgetPackage[] = [];
+export const INITIAL_BUDGET_ITEMS: BudgetItem[] = [];
 
 export const INITIAL_WAREHOUSE_ITEMS: WarehouseItem[] = [
   { id: '11111111-1111-4111-8111-111111111111', name: 'mix pult Pioneer DJM 900', category: 'Zvuk', imageUrl: 'https://images.booqablecdn.com/w500/uploads/64d9181153af5ebc841e02c68b6c8c06/photo/photo/0c40ef9e-a7e6-45c0-8109-9b614dc268fe/1718785126-670191252422062-0028-7678/upload.jpeg', priceCents: 200000, currency: 'CZK', pricePeriodLabel: '1 Den', quantityTotal: 1, ownerClientId: null, ownerLabel: null, status: 'active', booqableProductId: 'e334ae21-6278-4c02-a95a-81b94e0a8991', booqableProductPath: '/products/mix-pult-pioneer-djm-900' },

@@ -9,6 +9,7 @@ const mockAuthState = {
 
 const mocks = vi.hoisted(() => ({
   resetSupabaseClientsHydration: vi.fn(),
+  resetSupabaseBudgetsHydration: vi.fn(),
   resetSupabaseProjectsHydration: vi.fn(),
   resetSupabaseEventsHydration: vi.fn(),
   resetSupabaseCrewHydration: vi.fn(),
@@ -30,6 +31,7 @@ vi.mock('../../lib/app-data', () => ({
 }));
 
 vi.mock('../../features/clients/services/clients.service', () => ({ resetSupabaseClientsHydration: mocks.resetSupabaseClientsHydration }));
+vi.mock('../../features/budgets/services/budgets.service', () => ({ resetSupabaseBudgetsHydration: mocks.resetSupabaseBudgetsHydration }));
 vi.mock('../../features/projects/services/projects.service', () => ({ resetSupabaseProjectsHydration: mocks.resetSupabaseProjectsHydration }));
 vi.mock('../../features/events/services/events.service', () => ({ resetSupabaseEventsHydration: mocks.resetSupabaseEventsHydration }));
 vi.mock('../../features/crew/services/crew.service', () => ({ resetSupabaseCrewHydration: mocks.resetSupabaseCrewHydration }));
@@ -54,6 +56,7 @@ describe('AppDataBootstrap', () => {
     render(<AppDataBootstrap />);
 
     expect(mocks.resetSupabaseClientsHydration).toHaveBeenCalledTimes(1);
+    expect(mocks.resetSupabaseBudgetsHydration).toHaveBeenCalledTimes(1);
     expect(mocks.resetSupabaseProjectsHydration).toHaveBeenCalledTimes(1);
     expect(mocks.resetSupabaseEventsHydration).toHaveBeenCalledTimes(1);
     expect(mocks.resetSupabaseCrewHydration).toHaveBeenCalledTimes(1);

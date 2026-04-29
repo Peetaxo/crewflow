@@ -104,6 +104,34 @@ describe('app-data Supabase loading', () => {
         created_at: '2026-04-28T00:00:00Z',
         updated_at: '2026-04-28T00:00:00Z',
       }],
+      budget_packages: [{
+        id: 'package-uuid-1',
+        project_id: 'project-uuid-1',
+        name: 'Majales',
+        note: null,
+        created_at: '2026-04-28T00:00:00Z',
+        updated_at: '2026-04-28T00:00:00Z',
+      }],
+      budget_package_events: [{
+        budget_package_id: 'package-uuid-1',
+        event_id: 'event-uuid-1',
+        created_at: '2026-04-28T00:00:00Z',
+      }],
+      budget_items: [{
+        id: 'item-uuid-1',
+        project_id: 'project-uuid-1',
+        budget_package_id: 'package-uuid-1',
+        event_id: 'event-uuid-1',
+        section: 'TRANSPORTATION',
+        name: 'Van',
+        units: 'km/action/czk',
+        amount: 10,
+        quantity: 2,
+        unit_price: 100,
+        note: null,
+        created_at: '2026-04-28T00:00:00Z',
+        updated_at: '2026-04-28T00:00:00Z',
+      }],
     };
 
     const from = vi.fn((table: keyof typeof rowsByTable) => ({
@@ -136,6 +164,24 @@ describe('app-data Supabase loading', () => {
         projectId: 'AKV104',
         eventId: 1,
         responsibleProfileId: 'profile-uuid-1',
+      }),
+    ]);
+    expect(snapshot.budgetPackages).toEqual([
+      expect.objectContaining({
+        id: 1,
+        supabaseId: 'package-uuid-1',
+        projectId: 'AKV104',
+        eventIds: [1],
+      }),
+    ]);
+    expect(snapshot.budgetItems).toEqual([
+      expect.objectContaining({
+        id: 1,
+        supabaseId: 'item-uuid-1',
+        projectId: 'AKV104',
+        budgetPackageId: 1,
+        eventId: 1,
+        unitPrice: 100,
       }),
     ]);
   });

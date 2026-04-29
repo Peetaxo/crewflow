@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { appDataSource } from '../../lib/app-config';
 import { getLocalAppData, updateLocalAppState } from '../../lib/app-data';
+import { resetSupabaseBudgetsHydration } from '../../features/budgets/services/budgets.service';
 import { resetSupabaseClientsHydration } from '../../features/clients/services/clients.service';
 import { resetSupabaseCrewHydration } from '../../features/crew/services/crew.service';
 import { resetSupabaseEventsHydration } from '../../features/events/services/events.service';
@@ -14,6 +15,7 @@ import { useAuth } from './useAuth';
 
 const resetSupabaseHydrationState = () => {
   resetSupabaseClientsHydration();
+  resetSupabaseBudgetsHydration();
   resetSupabaseProjectsHydration();
   resetSupabaseEventsHydration();
   resetSupabaseCrewHydration();

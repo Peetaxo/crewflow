@@ -52,6 +52,9 @@ Muzes sem psat svoje napady a ja z nich pak muzu delat konkretni ukoly.
 - [ ] Pridat uzivatelske ucty
   Poznamka: priprava na vice uzivatelu a role.
 
+- [ ] Obnovit Auth vazbu pro crew, kteri se budou prihlasovat
+  Poznamka: `profiles.user_id` je docasne nullable kvuli importu crew bez loginu. Az budou mit vybrani clenove pristup do aplikace, vytvorit jim Supabase Auth usera, doplnit `profiles.user_id = auth.users.id` a nastavit roli v `user_roles`.
+
 - [x] Pridat klienty
   Poznamka: tato cast uz je v aplikaci dostupna.
 

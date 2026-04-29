@@ -3,6 +3,8 @@ import {
   INITIAL_CLIENTS,
   INITIAL_CONTRACTORS,
   INITIAL_EVENTS,
+  INITIAL_BUDGET_ITEMS,
+  INITIAL_BUDGET_PACKAGES,
   INITIAL_FLEET_RESERVATIONS,
   INITIAL_FLEET_VEHICLES,
   INITIAL_INVOICES,
@@ -17,6 +19,8 @@ import type {
   Client,
   Contractor,
   Event,
+  BudgetItem,
+  BudgetPackage,
   FleetReservation,
   FleetVehicle,
   Invoice,
@@ -27,7 +31,7 @@ import type {
   WarehouseReservation,
   WarehouseReservationItem,
 } from '@/types';
-import { mapCandidate, mapClient, mapContractor, mapEvent, mapFleetReservation, mapFleetVehicle, mapInvoice, mapProject, mapReceipt, mapTimelog } from './supabase-mappers';
+import { mapBudgetItem, mapBudgetPackage, mapCandidate, mapClient, mapContractor, mapEvent, mapFleetReservation, mapFleetVehicle, mapInvoice, mapProject, mapReceipt, mapTimelog } from './supabase-mappers';
 import { isSupabaseConfigured, supabase } from './supabase';
 
 export interface AppDataSnapshot {
@@ -36,6 +40,8 @@ export interface AppDataSnapshot {
   timelogs: Timelog[];
   invoices: Invoice[];
   receipts: ReceiptItem[];
+  budgetPackages: BudgetPackage[];
+  budgetItems: BudgetItem[];
   fleetVehicles: FleetVehicle[];
   fleetReservations: FleetReservation[];
   warehouseItems: WarehouseItem[];
@@ -57,6 +63,8 @@ let localAppState = cloneSnapshot({
   timelogs: INITIAL_TIMELOGS,
   invoices: INITIAL_INVOICES,
   receipts: INITIAL_RECEIPTS,
+  budgetPackages: INITIAL_BUDGET_PACKAGES,
+  budgetItems: INITIAL_BUDGET_ITEMS,
   fleetVehicles: INITIAL_FLEET_VEHICLES,
   fleetReservations: INITIAL_FLEET_RESERVATIONS,
   warehouseItems: INITIAL_WAREHOUSE_ITEMS,
@@ -75,6 +83,8 @@ export function getLocalAppData(): AppDataSnapshot {
     timelogs: INITIAL_TIMELOGS,
     invoices: INITIAL_INVOICES,
     receipts: INITIAL_RECEIPTS,
+    budgetPackages: INITIAL_BUDGET_PACKAGES,
+    budgetItems: INITIAL_BUDGET_ITEMS,
     fleetVehicles: INITIAL_FLEET_VEHICLES,
     fleetReservations: INITIAL_FLEET_RESERVATIONS,
     warehouseItems: INITIAL_WAREHOUSE_ITEMS,
@@ -252,6 +262,9 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     invoicesResult,
     receiptsResult,
     candidatesResult,
+    budgetPackagesResult,
+    budgetPackageEventsResult,
+    budgetItemsResult,
     fleetVehiclesResult,
     fleetReservationsResult,
     warehouseItemsResult,
@@ -267,6 +280,9 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     supabase.from('invoices').select('*').order('created_at'),
     supabase.from('receipts').select('*').order('created_at'),
     supabase.from('candidates').select('*').order('created_at'),
+    supabase.from('budget_packages').select('*').order('created_at'),
+    supabase.from('budget_package_events').select('*').order('created_at'),
+    supabase.from('budget_items').select('*').order('created_at'),
     supabase.from('fleet_vehicles').select('*').order('name'),
     supabase.from('fleet_reservations').select('*').order('starts_at'),
     supabaseUntyped.from('warehouse_items').select('*').order('name'),
@@ -284,6 +300,9 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     invoicesResult,
     receiptsResult,
     candidatesResult,
+    budgetPackagesResult,
+    budgetPackageEventsResult,
+    budgetItemsResult,
     fleetVehiclesResult,
     fleetReservationsResult,
   ];
@@ -309,6 +328,9 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
   const invoiceRows = invoicesResult.data ?? [];
   const receiptRows = receiptsResult.data ?? [];
   const candidateRows = candidatesResult.data ?? [];
+  const budgetPackageRows = budgetPackagesResult.data ?? [];
+  const budgetPackageEventRows = budgetPackageEventsResult.data ?? [];
+  const budgetItemRows = budgetItemsResult.data ?? [];
   const fleetVehicleRows = fleetVehiclesResult.data ?? [];
   const fleetReservationRows = fleetReservationsResult.data ?? [];
   const warehouseItemRows = (warehouseItemsResult.data ?? []) as WarehouseItemRow[];
@@ -336,6 +358,7 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
 
   const eventIdMap = indexById(eventRows);
   const projectByUuid = new Map(projectRows.map((row) => [row.id, row]));
+  const projectJobNumberByUuid = new Map(projectRows.map((row) => [row.id, row.job_number]));
   const events = eventRows.map((row) => {
     const project = row.project_id ? projectByUuid.get(row.project_id) : undefined;
     return {
@@ -381,9 +404,32 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     id: candidateIdMap.get(row.id) ?? Number.NaN,
   }));
 
+  const budgetPackageIdMap = indexById(budgetPackageRows);
+  const budgetPackageEventsByPackageId = new Map<string, number[]>();
+  for (const row of budgetPackageEventRows) {
+    const eventId = eventIdMap.get(row.event_id);
+    if (!eventId) {
+      continue;
+    }
+    const current = budgetPackageEventsByPackageId.get(row.budget_package_id) ?? [];
+    current.push(eventId);
+    budgetPackageEventsByPackageId.set(row.budget_package_id, current);
+  }
+  const budgetPackages = budgetPackageRows.map((row) => mapBudgetPackage(row, {
+    localId: budgetPackageIdMap.get(row.id) ?? Number.NaN,
+    projectJobNumber: projectJobNumberByUuid.get(row.project_id) ?? row.project_id,
+    eventIds: budgetPackageEventsByPackageId.get(row.id) ?? [],
+  }));
+  const budgetItemIdMap = indexById(budgetItemRows);
+  const budgetItems = budgetItemRows.map((row) => mapBudgetItem(row, {
+    localId: budgetItemIdMap.get(row.id) ?? Number.NaN,
+    projectJobNumber: projectJobNumberByUuid.get(row.project_id) ?? row.project_id,
+    budgetPackageId: row.budget_package_id ? (budgetPackageIdMap.get(row.budget_package_id) ?? null) : null,
+    eventId: row.event_id ? (eventIdMap.get(row.event_id) ?? null) : null,
+  }));
+
   const fleetVehicles = fleetVehicleRows.map(mapFleetVehicle);
   const fleetVehicleSlugByUuid = new Map(fleetVehicleRows.map((row) => [row.id, row.slug]));
-  const projectJobNumberByUuid = new Map(projectRows.map((row) => [row.id, row.job_number]));
   const fleetReservationIdMap = indexById(fleetReservationRows);
   const fleetReservations = fleetReservationRows
     .map((row) => mapFleetReservation(row, {
@@ -415,6 +461,8 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     timelogs,
     invoices,
     receipts,
+    budgetPackages,
+    budgetItems,
     fleetVehicles,
     fleetReservations,
     warehouseItems,

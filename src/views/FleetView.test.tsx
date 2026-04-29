@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import FleetView from './FleetView';
 
 vi.mock('../app/providers/useAuth', () => ({
@@ -17,6 +17,15 @@ vi.mock('framer-motion', () => ({
 }));
 
 describe('FleetView', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-28T12:00:00+02:00'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('renders the operational fleet overview table', () => {
     render(<FleetView />);
 

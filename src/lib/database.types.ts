@@ -18,6 +18,96 @@ export type FleetVehicleStatus = 'available' | 'reserved' | 'service' | 'out_of_
 export interface Database {
   public: {
     Tables: {
+      budget_items: {
+        Row: {
+          id: string;
+          project_id: string;
+          budget_package_id: string | null;
+          event_id: string | null;
+          section: string;
+          name: string;
+          units: string;
+          amount: number;
+          quantity: number;
+          unit_price: number;
+          note: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          project_id: string;
+          budget_package_id?: string | null;
+          event_id?: string | null;
+          section: string;
+          name: string;
+          units?: string;
+          amount?: number;
+          quantity?: number;
+          unit_price?: number;
+          note?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          project_id?: string;
+          budget_package_id?: string | null;
+          event_id?: string | null;
+          section?: string;
+          name?: string;
+          units?: string;
+          amount?: number;
+          quantity?: number;
+          unit_price?: number;
+          note?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      budget_package_events: {
+        Row: {
+          budget_package_id: string;
+          event_id: string;
+          created_at: string;
+        };
+        Insert: {
+          budget_package_id: string;
+          event_id: string;
+          created_at?: string;
+        };
+        Update: {
+          budget_package_id?: string;
+          event_id?: string;
+          created_at?: string;
+        };
+      };
+      budget_packages: {
+        Row: {
+          id: string;
+          project_id: string;
+          name: string;
+          note: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          project_id: string;
+          name: string;
+          note?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          project_id?: string;
+          name?: string;
+          note?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
       candidates: {
         Row: {
           id: string;
@@ -194,7 +284,7 @@ export interface Database {
       profiles: {
         Row: {
           id: string;
-          user_id: string;
+          user_id: string | null;
           first_name: string;
           last_name: string;
           phone: string | null;
@@ -286,6 +376,13 @@ export interface Database {
           p_supplier_profile_id: string;
         };
         Returns: number;
+      };
+      save_budget_package_events: {
+        Args: {
+          p_budget_package_id: string;
+          p_event_ids: string[];
+        };
+        Returns: void;
       };
     };
   };

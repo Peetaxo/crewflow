@@ -246,6 +246,42 @@ export type FleetReservationDraft = Omit<FleetReservation, 'id' | 'hasConflict'>
   hasConflict?: boolean;
 };
 
+export interface BudgetPackage {
+  id: number;
+  supabaseId?: string;
+  projectId: string;
+  name: string;
+  note: string;
+  eventIds: number[];
+  createdAt: string;
+}
+
+export type BudgetPackageDraft = Omit<BudgetPackage, 'id' | 'createdAt'> & {
+  id?: number;
+  createdAt?: string;
+};
+
+export interface BudgetItem {
+  id: number;
+  supabaseId?: string;
+  projectId: string;
+  budgetPackageId: number | null;
+  eventId: number | null;
+  section: string;
+  name: string;
+  units: string;
+  amount: number;
+  quantity: number;
+  unitPrice: number;
+  note: string;
+  createdAt: string;
+}
+
+export type BudgetItemDraft = Omit<BudgetItem, 'id' | 'createdAt'> & {
+  id?: number;
+  createdAt?: string;
+};
+
 export type WarehouseItemStatus = 'active' | 'draft' | 'maintenance' | 'retired';
 export type WarehouseReservationStatus = 'draft' | 'reserved' | 'picked_up' | 'returned' | 'cancelled';
 

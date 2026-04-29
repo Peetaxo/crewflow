@@ -8,7 +8,7 @@ describe('navigation items by role', () => {
     expect(getNavItemsForRole('coo').map((item) => item.id)).toContain('fleet');
   });
 
-  it('shows Warehouse only to crewhead and coo roles', () => {
+  it('shows Warehouse only to crewhead and coo roles after Fleet', () => {
     expect(getNavItemsForRole('crew').map((item) => item.id)).not.toContain('warehouse');
 
     const crewheadItems = getNavItemsForRole('crewhead').map((item) => item.id);

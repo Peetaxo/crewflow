@@ -1,6 +1,8 @@
-import type { Candidate, Client, Contractor, Event, FleetReservation, FleetVehicle, Invoice, Project, ReceiptItem, Timelog, TimelogDay } from '@/types';
+import type { BudgetItem, BudgetPackage, Candidate, Client, Contractor, Event, FleetReservation, FleetVehicle, Invoice, Project, ReceiptItem, Timelog, TimelogDay } from '@/types';
 import type { Database, Json } from './database.types';
 
+type BudgetItemRow = Database['public']['Tables']['budget_items']['Row'];
+type BudgetPackageRow = Database['public']['Tables']['budget_packages']['Row'];
 type CandidateRow = Database['public']['Tables']['candidates']['Row'];
 type ClientRow = Database['public']['Tables']['clients']['Row'];
 type EventRow = Database['public']['Tables']['events']['Row'];
@@ -157,6 +159,51 @@ export function mapFleetReservation(
     endsAt: row.ends_at,
     note: row.note ?? '',
     hasConflict: row.has_conflict,
+  };
+}
+
+export function mapBudgetPackage(
+  row: BudgetPackageRow,
+  links: {
+    localId: number;
+    projectJobNumber: string;
+    eventIds: number[];
+  },
+): BudgetPackage {
+  return {
+    id: links.localId,
+    supabaseId: row.id,
+    projectId: links.projectJobNumber,
+    name: row.name,
+    note: row.note ?? '',
+    eventIds: links.eventIds,
+    createdAt: row.created_at,
+  };
+}
+
+export function mapBudgetItem(
+  row: BudgetItemRow,
+  links: {
+    localId: number;
+    projectJobNumber: string;
+    budgetPackageId: number | null;
+    eventId: number | null;
+  },
+): BudgetItem {
+  return {
+    id: links.localId,
+    supabaseId: row.id,
+    projectId: links.projectJobNumber,
+    budgetPackageId: links.budgetPackageId,
+    eventId: links.eventId,
+    section: row.section,
+    name: row.name,
+    units: row.units,
+    amount: Number(row.amount),
+    quantity: Number(row.quantity),
+    unitPrice: Number(row.unit_price),
+    note: row.note ?? '',
+    createdAt: row.created_at,
   };
 }
 

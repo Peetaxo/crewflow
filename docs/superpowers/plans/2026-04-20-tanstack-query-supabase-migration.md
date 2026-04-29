@@ -627,6 +627,12 @@ Allowed to remain:
 - draft form state in components
 - dev session storage in `AuthProvider`
 
+Also clean up the old local seed/fallback data:
+- remove or fully anonymize `src/data.ts` `INITIAL_*` demo records so real-looking names, phones, e-mails, and billing details are not bundled into production
+- remove obsolete `src/backup/*` data exports if they are no longer needed for migration/reference
+- move `KM_RATE` out of `src/data.ts` into a small non-seed constants module before deleting or shrinking the seed file
+- remove fallback behavior that restores domain data from `INITIAL_*` once Supabase/TanStack Query is the only production source of truth
+
 - [ ] **Step 4: Final verification**
 
 Run:

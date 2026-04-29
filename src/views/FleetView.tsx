@@ -28,8 +28,6 @@ import {
   subscribeToFleetChanges,
 } from '../features/fleet/services/fleet.service';
 
-const referenceDate = new Date().toISOString().split('T')[0];
-
 const statusLabels: Record<FleetVehicleStatus, string> = {
   available: 'Volné',
   reserved: 'Rezervované',
@@ -104,6 +102,7 @@ const getTodayCalendarDayStyle = (isToday: boolean): React.CSSProperties | undef
 
 const FleetView: React.FC = () => {
   const { currentProfileId } = useAuth();
+  const referenceDate = new Date().toISOString().split('T')[0];
   const [, setVersion] = useState(0);
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const [selectedCalendarReservationId, setSelectedCalendarReservationId] = useState<number | null>(null);

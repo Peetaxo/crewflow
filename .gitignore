@@ -28,5 +28,11 @@ dist-ssr
 # Claude Code metadata (worktrees, plans, launch configs)
 .claude/
 
+# Agent scratch files
+.superpowers/
+
 # Supabase CLI local metadata
 supabase/.temp/
+
+# Generated import SQL can contain production-like personal data.
+supabase/generated/

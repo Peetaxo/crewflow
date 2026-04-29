@@ -163,7 +163,7 @@ const hydrateCrewFromSupabase = async (): Promise<void> => {
   }));
 };
 
-const ensureSupabaseCrewLoaded = () => {
+export const ensureSupabaseCrewLoaded = () => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
     return;
   }

@@ -558,4 +558,89 @@ describe('events.service write flow', () => {
     expect(result.event.filled).toBe(0);
     expect(snapshot.timelogs).toHaveLength(0);
   });
+
+  it('deletes only the Supabase event matching the UUID when local event ids collide', async () => {
+    let snapshot = createSnapshot({
+      events: [
+        {
+          id: 1,
+          supabaseId: 'event-uuid-1',
+          name: 'Mladi ladi jazz',
+          job: 'AK001',
+          startDate: '2026-04-30',
+          endDate: '2026-04-30',
+          city: 'Praha',
+          needed: 2,
+          filled: 0,
+          status: 'upcoming',
+          client: 'Klient A',
+          showDayTypes: false,
+        },
+        {
+          id: 1,
+          supabaseId: 'event-uuid-2',
+          name: 'Mladi ladi jazz',
+          job: 'AK001',
+          startDate: '2026-04-30',
+          endDate: '2026-04-30',
+          city: 'Praha',
+          needed: 2,
+          filled: 0,
+          status: 'upcoming',
+          client: 'Klient A',
+          showDayTypes: false,
+        },
+      ],
+      timelogs: [],
+      receipts: [],
+    });
+
+    const timelogsSelectEq = vi.fn().mockResolvedValue({ data: [], error: null });
+    const eventDeleteEq = vi.fn().mockResolvedValue({ error: null });
+    const receiptDeleteEq = vi.fn().mockResolvedValue({ error: null });
+
+    vi.doMock('../../../lib/app-config', () => ({
+      appDataSource: 'supabase',
+    }));
+
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: vi.fn((table: string) => {
+          if (table === 'timelogs') {
+            return { select: vi.fn(() => ({ eq: timelogsSelectEq })) };
+          }
+          if (table === 'receipts') {
+            return { delete: vi.fn(() => ({ eq: receiptDeleteEq })) };
+          }
+          if (table === 'events') {
+            return { delete: vi.fn(() => ({ eq: eventDeleteEq })) };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    }));
+
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapClient: vi.fn(),
+      mapEvent: vi.fn(),
+    }));
+
+    const { deleteEvent } = await import('./events.service');
+
+    await deleteEvent('event-uuid-1');
+
+    expect(eventDeleteEq).toHaveBeenCalledWith('id', 'event-uuid-1');
+    expect(snapshot.events).toHaveLength(1);
+    expect(snapshot.events[0].supabaseId).toBe('event-uuid-2');
+  });
 });

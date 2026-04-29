@@ -42,6 +42,19 @@ const EventEditModal = ({
   const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
   const projectMenuRef = useRef<HTMLDivElement | null>(null);
   const { projects, clients } = useMemo(() => getEventFormOptions(), []);
+  const clientOptions = useMemo(() => {
+    if (!editingEvent?.client || clients.some((client) => client.name === editingEvent.client)) {
+      return clients;
+    }
+
+    return [
+      ...clients,
+      {
+        id: -1,
+        name: editingEvent.client,
+      },
+    ];
+  }, [clients, editingEvent?.client]);
 
   const filteredProjects = useMemo(() => {
     const query = editingEvent?.job.trim().toLowerCase() ?? '';
@@ -210,7 +223,7 @@ const EventEditModal = ({
                   className={nativeFieldClass}
                 >
                   <option value="">Vyberte klienta</option>
-                  {clients.map((client) => (
+                  {clientOptions.map((client) => (
                     <option key={client.id} value={client.name}>{client.name}</option>
                   ))}
                 </select>

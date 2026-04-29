@@ -371,10 +371,10 @@ const EventsView = () => {
                   const daysCount = getDatesBetween(event.startDate, event.endDate).length;
 
                   return (
-                    <div key={event.id} className="relative overflow-hidden rounded-[28px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] shadow-[0_18px_42px_rgba(47,38,31,0.08)] transition-shadow hover:shadow-[0_22px_48px_rgba(47,38,31,0.12)]">
+                    <div key={event.supabaseId ?? event.id} className="relative overflow-hidden rounded-[28px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] shadow-[0_18px_42px_rgba(47,38,31,0.08)] transition-shadow hover:shadow-[0_22px_48px_rgba(47,38,31,0.12)]">
                       {canManageEvents && (
                         <button
-                          onClick={() => setDeleteConfirm({ type: 'event', id: event.id, name: event.name })}
+                          onClick={() => setDeleteConfirm({ type: 'event', id: event.supabaseId ?? event.id, name: event.name })}
                           className="absolute right-4 top-4 rounded-lg p-1.5 text-[color:var(--nodu-text-soft)] transition-all hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]"
                           title="Smazat akci"
                         >

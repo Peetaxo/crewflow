@@ -2,8 +2,11 @@ import { appDataSource } from '../../../lib/app-config';
 import { getLocalAppState, subscribeToLocalAppState, updateLocalAppState } from '../../../lib/app-data';
 import { mapClient, mapProject } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
-import { Client, Event, Invoice, Project } from '../../../types';
-import { getEventStatus } from '../../../utils';
+import { Client, Contractor, Event, Invoice, Project, Timelog } from '../../../types';
+import { calculateTotalHours, getEventStatus } from '../../../utils';
+import { ensureSupabaseCrewLoaded } from '../../crew/services/crew.service';
+import { ensureSupabaseEventsLoaded } from '../../events/services/events.service';
+import { ensureSupabaseTimelogsLoaded } from '../../timelogs/services/timelogs.service';
 
 export type ProjectFilter = 'all' | 'upcoming' | 'past';
 
@@ -102,8 +105,34 @@ const ensureSupabaseProjectsLoaded = () => {
     });
 };
 
+const ensureSupabaseProjectDependenciesLoaded = () => {
+  if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
+    return;
+  }
+
+  ensureSupabaseEventsLoaded();
+  ensureSupabaseTimelogsLoaded();
+  ensureSupabaseCrewLoaded();
+};
+
+const calculateProjectCrewCost = (
+  projectEvents: Event[],
+  timelogs: Timelog[],
+  contractors: Contractor[],
+) => {
+  const projectEventIds = new Set(projectEvents.map((event) => event.id));
+
+  return timelogs
+    .filter((timelog) => projectEventIds.has(timelog.eid))
+    .reduce((sum, timelog) => {
+      const contractor = contractors.find((item) => item.profileId === timelog.contractorProfileId);
+      return sum + (contractor ? calculateTotalHours(timelog.days) * contractor.rate : 0);
+    }, 0);
+};
+
 export const getProjects = (search = '', filter: ProjectFilter = 'all'): Project[] => {
   ensureSupabaseProjectsLoaded();
+  ensureSupabaseProjectDependenciesLoaded();
   const snapshot = getLocalAppState();
   let projects = snapshot.projects ?? [];
 
@@ -130,12 +159,14 @@ export const getProjects = (search = '', filter: ProjectFilter = 'all'): Project
 
 export const getProjectById = (id: string | null): Project | null => {
   ensureSupabaseProjectsLoaded();
+  ensureSupabaseProjectDependenciesLoaded();
   if (!id) return null;
   return (getLocalAppState().projects ?? []).find((project) => project.id === id) ?? null;
 };
 
 export const getProjectDependencies = (): { projects: Project[]; events: Event[]; invoices: Invoice[]; clients: Client[] } => {
   ensureSupabaseProjectsLoaded();
+  ensureSupabaseProjectDependenciesLoaded();
   const snapshot = getLocalAppState();
   return {
     projects: snapshot.projects ?? [],
@@ -227,12 +258,12 @@ export const getProjectRows = (search = '', filter: ProjectFilter = 'all') => {
   const snapshot = getLocalAppState();
   const projects = getProjects(search, filter);
   const events = snapshot.events ?? [];
-  const invoices = snapshot.invoices ?? [];
+  const timelogs = snapshot.timelogs ?? [];
+  const contractors = snapshot.contractors ?? [];
 
   return projects
     .map((project) => {
       const projectEvents = events.filter((event) => event.job === project.id);
-      const projectInvoices = invoices.filter((invoice) => invoice.job === project.id);
 
       const status: 'upcoming' | 'full' | 'past' | 'empty' = projectEvents.length === 0
         ? 'empty'
@@ -248,7 +279,7 @@ export const getProjectRows = (search = '', filter: ProjectFilter = 'all') => {
         client: project.client,
         status,
         eventCount: projectEvents.length,
-        crewCost: projectInvoices.reduce((sum, invoice) => sum + invoice.total, 0),
+        crewCost: calculateProjectCrewCost(projectEvents, timelogs, contractors),
         createdAt: project.createdAt,
       };
     })

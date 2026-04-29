@@ -12,6 +12,7 @@ const DEFAULT_TIME_FROM = '08:00';
 const DEFAULT_TIME_TO = '17:00';
 const EVENT_PHASE_TYPES: TimelogType[] = ['instal', 'provoz', 'deinstal'];
 type TimelogAssignmentRow = { event_id: string | null; contractor_id: string | null };
+type EventIdentifier = number | string;
 
 const createSlotId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
@@ -100,7 +101,7 @@ const hydrateEventsFromSupabase = async (): Promise<void> => {
   }));
 };
 
-const ensureSupabaseEventsLoaded = () => {
+export const ensureSupabaseEventsLoaded = () => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
     return;
   }
@@ -183,8 +184,17 @@ const getSupabaseEventRows = async (): Promise<Array<{ id: string; date_from: st
   return result.data ?? [];
 };
 
-const getSupabaseEventRowId = async (localEventId: number): Promise<string> => {
-  const mapped = eventRowIdByLocalId.get(localEventId);
+const getSupabaseEventRowId = async (eventId: EventIdentifier): Promise<string> => {
+  if (typeof eventId === 'string') {
+    return eventId;
+  }
+
+  const event = (getLocalAppState().events ?? []).find((item) => item.id === eventId);
+  if (event?.supabaseId) {
+    return event.supabaseId;
+  }
+
+  const mapped = eventRowIdByLocalId.get(eventId);
   if (mapped) {
     return mapped;
   }
@@ -194,7 +204,7 @@ const getSupabaseEventRowId = async (localEventId: number): Promise<string> => {
     eventRowIdByLocalId.set(index + 1, row.id);
   });
 
-  const rowId = eventRowIdByLocalId.get(localEventId);
+  const rowId = eventRowIdByLocalId.get(eventId);
   if (!rowId) {
     throw new Error('Nepodarilo se sparovat akci s databazovym zaznamem.');
   }
@@ -547,7 +557,21 @@ export const saveEvent = async (event: Event): Promise<Event> => {
   return normalized;
 };
 
-export const deleteEvent = async (eventId: number): Promise<{ id: number }> => {
+const removeEventRowIdMapping = (eventId: EventIdentifier) => {
+  if (typeof eventId === 'number') {
+    eventRowIdByLocalId.delete(eventId);
+    return;
+  }
+
+  for (const [localId, rowId] of eventRowIdByLocalId.entries()) {
+    if (rowId === eventId) {
+      eventRowIdByLocalId.delete(localId);
+      return;
+    }
+  }
+};
+
+export const deleteEvent = async (eventId: EventIdentifier): Promise<{ id: EventIdentifier }> => {
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
     const eventRowId = await getSupabaseEventRowId(eventId);
     const eventTimelogs = await supabase
@@ -599,15 +623,31 @@ export const deleteEvent = async (eventId: number): Promise<{ id: number }> => {
       throw new Error(eventDelete.error.message);
     }
 
-    eventRowIdByLocalId.delete(eventId);
+    removeEventRowIdMapping(eventId);
   }
 
-  updateLocalAppState((snapshot) => ({
-    ...snapshot,
-    events: snapshot.events.filter((event) => event.id !== eventId),
-    timelogs: snapshot.timelogs.filter((timelog) => timelog.eid !== eventId),
-    receipts: snapshot.receipts.filter((receipt) => receipt.eid !== eventId),
-  }));
+  updateLocalAppState((snapshot) => {
+    const deletedEvent = typeof eventId === 'string'
+      ? snapshot.events.find((event) => event.supabaseId === eventId)
+      : snapshot.events.find((event) => event.id === eventId);
+    const deletedLocalId = deletedEvent?.id ?? (typeof eventId === 'number' ? eventId : null);
+    const nextEvents = typeof eventId === 'string'
+      ? snapshot.events.filter((event) => event.supabaseId !== eventId)
+      : snapshot.events.filter((event) => event.id !== eventId);
+    const hasRemainingWithSameLocalId = deletedLocalId != null
+      && nextEvents.some((event) => event.id === deletedLocalId);
+
+    return {
+      ...snapshot,
+      events: nextEvents,
+      timelogs: deletedLocalId != null && !hasRemainingWithSameLocalId
+        ? snapshot.timelogs.filter((timelog) => timelog.eid !== deletedLocalId)
+        : snapshot.timelogs,
+      receipts: deletedLocalId != null && !hasRemainingWithSameLocalId
+        ? snapshot.receipts.filter((receipt) => receipt.eid !== deletedLocalId)
+        : snapshot.receipts,
+    };
+  });
 
   invalidateEventQueries();
   return { id: eventId };

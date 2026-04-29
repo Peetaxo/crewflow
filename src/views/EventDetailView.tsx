@@ -154,7 +154,7 @@ const EventDetailView = () => {
                   Upravit akci
                 </Button>
                 <Button
-                  onClick={() => setDeleteConfirm({ type: 'event', id: event.id, name: event.name })}
+                  onClick={() => setDeleteConfirm({ type: 'event', id: event.supabaseId ?? event.id, name: event.name })}
                   variant="outline"
                   className="border-[#e8b4a3] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]"
                   title="Smazat akci"

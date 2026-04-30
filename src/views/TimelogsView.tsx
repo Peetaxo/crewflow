@@ -18,7 +18,7 @@ interface TimelogsViewProps {
   scope?: 'all' | 'mine';
 }
 
-type ViewMode = 'job' | 'people';
+type ViewMode = 'event' | 'people';
 
 const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
   const {
@@ -31,7 +31,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
   const { currentProfileId } = useAuth();
   const timelogsQuery = useTimelogsQuery();
 
-  const [viewMode, setViewMode] = useState<ViewMode>(scope === 'mine' ? 'people' : 'job');
+  const [viewMode, setViewMode] = useState<ViewMode>(scope === 'mine' ? 'people' : 'event');
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
 
@@ -106,25 +106,31 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
     ];
   }, [baseTimelogs]);
 
-  const groupedByJob = useMemo(() => {
-    const groups = new Map<string, { job: string; eventName: string; city: string; timelogs: typeof filtered }>();
+  const groupedByEvent = useMemo(() => {
+    const groups = new Map<number, { eventId: number; job: string; eventName: string; city: string; startDate: string; timelogs: typeof filtered }>();
 
     filtered.forEach((timelog) => {
       const event = findEvent(timelog.eid);
       if (!event) return;
 
-      const existing = groups.get(event.job) || {
+      const existing = groups.get(event.id) || {
+        eventId: event.id,
         job: event.job,
         eventName: event.name,
         city: event.city,
+        startDate: event.startDate,
         timelogs: [],
       };
 
       existing.timelogs.push(timelog);
-      groups.set(event.job, existing);
+      groups.set(event.id, existing);
     });
 
-    return Array.from(groups.values()).sort((a, b) => a.job.localeCompare(b.job));
+    return Array.from(groups.values()).sort((a, b) => {
+      const dateDiff = a.startDate.localeCompare(b.startDate);
+      if (dateDiff !== 0) return dateDiff;
+      return a.eventName.localeCompare(b.eventName);
+    });
   }, [filtered, findEvent]);
 
   const handleTimelogAction = useCallback((id: number, action: 'sub' | 'ch' | 'coo' | 'rej') => {
@@ -240,10 +246,10 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
           {scope === 'all' && (
             <div className="inline-flex rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
               <button
-                onClick={() => setViewMode('job')}
-                className={`rounded-[14px] px-3.5 py-2 text-[11px] font-medium transition-all ${viewMode === 'job' ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)] shadow-[inset_0_0_0_1px_rgba(255,128,13,0.16)]' : 'text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
+                onClick={() => setViewMode('event')}
+                className={`rounded-[14px] px-3.5 py-2 text-[11px] font-medium transition-all ${viewMode === 'event' ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)] shadow-[inset_0_0_0_1px_rgba(255,128,13,0.16)]' : 'text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
               >
-                Po Job Number
+                Po akci
               </button>
               <button
                 onClick={() => setViewMode('people')}
@@ -271,9 +277,9 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
         </div>
       </div>
 
-      {scope === 'all' && viewMode === 'job' ? (
+      {scope === 'all' && viewMode === 'event' ? (
         <div className="space-y-4">
-          {groupedByJob.map((group) => {
+          {groupedByEvent.map((group) => {
             const totalHours = group.timelogs.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
             const totalAmount = group.timelogs.reduce((sum, timelog) => {
               const contractor = findContractor(timelog.contractorProfileId);
@@ -283,7 +289,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
             const bulkAction = getBulkActionMeta(group.timelogs);
 
             return (
-              <div key={group.job} className="nodu-panel rounded-[28px] p-5">
+              <div key={group.eventId} className="nodu-panel rounded-[28px] p-5">
                 <div className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] pb-3">
                   <div>
                     <div className="flex items-center gap-2">
@@ -420,7 +426,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
             );
           })}
 
-          {groupedByJob.length === 0 && (
+          {groupedByEvent.length === 0 && (
             <div className="nodu-panel rounded-[24px] p-10 text-center text-sm text-[color:var(--nodu-text-soft)]">
               Žádné záznamy pro tento filtr
             </div>

@@ -126,7 +126,12 @@ export const ensureSupabaseTimelogsLoaded = () => {
     });
 };
 
+const syncTimelogQueryData = (timelogs: Timelog[]) => {
+  queryClient.setQueryData(queryKeys.timelogs.all, timelogs);
+};
+
 const invalidateTimelogQueries = () => {
+  syncTimelogQueryData(getLocalAppState().timelogs ?? []);
   void queryClient.invalidateQueries({ queryKey: queryKeys.timelogs.all });
 };
 

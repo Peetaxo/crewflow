@@ -149,9 +149,9 @@ const DashboardView = () => {
     setCurrentTab('timelogs');
   };
 
-  const openEventDetail = (eventId: number) => {
+  const openEventDetail = (event: Event) => {
     setCurrentTab('events');
-    setSelectedEventId(eventId);
+    setSelectedEventId(event.supabaseId ?? event.id);
     setEventTab('overview');
   };
 
@@ -250,7 +250,7 @@ const DashboardView = () => {
             {upcomingEvents.map((event) => (
               <button
                 key={event.id}
-                onClick={() => openEventDetail(event.id)}
+                onClick={() => openEventDetail(event)}
                 className="nodu-dashboard-row block w-full rounded-[22px] border px-3 pb-3 pt-3 text-left transition-colors last:pb-3"
               >
                 <div className="mb-1.5 flex items-center gap-2">

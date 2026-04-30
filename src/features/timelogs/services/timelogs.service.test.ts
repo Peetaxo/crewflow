@@ -22,6 +22,8 @@ describe('timelogs.service write flow', () => {
     let snapshot = createSnapshot([
       { id: 1, eid: 1, contractorProfileId: 'profile-uuid-1', days: [], km: 0, note: '', status: 'draft' },
     ]);
+    const setQueryData = vi.fn();
+    const invalidateQueries = vi.fn();
 
     const updateEq = vi.fn().mockResolvedValue({ error: null });
     const updateMock = vi.fn(() => ({ eq: updateEq }));
@@ -67,6 +69,21 @@ describe('timelogs.service write flow', () => {
       subscribeToLocalAppState: vi.fn(() => () => undefined),
     }));
 
+    vi.doMock('../../../lib/query-client', () => ({
+      queryClient: {
+        setQueryData,
+        invalidateQueries,
+      },
+    }));
+
+    vi.doMock('../../../lib/query-keys', () => ({
+      queryKeys: {
+        timelogs: {
+          all: ['timelogs'],
+        },
+      },
+    }));
+
     const { updateTimelogStatus } = await import('./timelogs.service');
 
     const result = await updateTimelogStatus(1, 'sub');
@@ -77,6 +94,8 @@ describe('timelogs.service write flow', () => {
     expect(result.status).toBe('pending_ch');
     expect(snapshot.timelogs[0].contractorProfileId).toBe('profile-uuid-1');
     expect(snapshot.timelogs[0].status).toBe('pending_ch');
+    expect(setQueryData).toHaveBeenCalledWith(['timelogs'], snapshot.timelogs);
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['timelogs'] });
   });
 
   it('approves all matching event timelogs in Supabase and updates local state', async () => {

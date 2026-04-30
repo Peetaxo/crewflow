@@ -38,6 +38,9 @@ describe('ui session storage', () => {
 
     expect(loadPersistedUiSession()).toEqual(snapshot);
 
+    savePersistedUiSession({ ...snapshot, selectedEventId: 'event-uuid-1' });
+    expect(loadPersistedUiSession()?.selectedEventId).toBe('event-uuid-1');
+
     clearPersistedUiSession();
     expect(loadPersistedUiSession()).toBeNull();
   });
@@ -71,7 +74,7 @@ describe('ui session storage', () => {
         version: 2,
         state: {
           ...snapshot,
-          selectedEventId: '11',
+          selectedEventId: {},
         },
       }),
     );

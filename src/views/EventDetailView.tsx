@@ -225,7 +225,13 @@ const EventDetailView = () => {
                           const hours = timelog ? calculateTotalHours(timelog.days) : 0;
 
                           return (
-                            <tr key={contractor.id} className="bg-white transition-colors hover:bg-[color:var(--nodu-accent-soft)]">
+                            <tr
+                              key={contractor.id}
+                              onClick={() => {
+                                if (timelog) setEditingTimelog(timelog);
+                              }}
+                              className={`bg-white transition-colors hover:bg-[color:var(--nodu-accent-soft)] ${timelog ? 'cursor-pointer' : ''}`}
+                            >
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-2">
                                   <div className="av h-7 w-7 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
@@ -253,7 +259,10 @@ const EventDetailView = () => {
                                   <div className="flex items-center justify-end gap-1">
                                     {timelog && (
                                       <button
-                                        onClick={() => setEditingTimelog(timelog)}
+                                        onClick={(clickEvent) => {
+                                          clickEvent.stopPropagation();
+                                          setEditingTimelog(timelog);
+                                        }}
                                         className="rounded-lg p-1.5 text-[color:var(--nodu-text-soft)] transition-all hover:bg-[color:var(--nodu-success-bg)] hover:text-[color:var(--nodu-success-text)]"
                                         title="Upravit timelog"
                                       >
@@ -261,7 +270,10 @@ const EventDetailView = () => {
                                       </button>
                                     )}
                                     <button
-                                      onClick={() => handleRemoveFromEvent(contractor.profileId)}
+                                      onClick={(clickEvent) => {
+                                        clickEvent.stopPropagation();
+                                        handleRemoveFromEvent(contractor.profileId);
+                                      }}
                                       className="rounded-lg p-1.5 text-[color:var(--nodu-text-soft)] transition-all hover:bg-[color:var(--nodu-error-bg)] hover:text-[color:var(--nodu-error-text)]"
                                       title="Odebrat z akce"
                                     >

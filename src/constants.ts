@@ -27,9 +27,9 @@ export const NAV_ITEMS = [
   { id: 'projects', label: 'Projekty', icon: FolderKanban },
   { id: 'events', label: 'Akce', icon: Calendar },
   { id: 'crew', label: 'Crew', icon: Users },
+  { id: 'timelogs', label: 'Schvalování', icon: FileText },
   { id: 'fleet', label: 'Flotila', icon: Car },
   { id: 'warehouse', label: 'Sklad', icon: Boxes },
-  { id: 'timelogs', label: 'Timelogy', icon: FileText },
   { id: 'my-timelogs', label: 'Moje timelogy', icon: FileText },
   { id: 'invoices', label: 'Faktury', icon: Receipt },
   { id: 'my-invoices', label: 'Moje faktury', icon: Receipt },
@@ -41,8 +41,8 @@ export const NAV_ITEMS = [
 
 export const NAV_BY_ROLE: Record<Role, string[]> = {
   crew: ['my-shifts', 'events', 'my-timelogs', 'my-invoices', 'my-receipts'],
-  crewhead: ['dashboard', 'my-shifts', 'clients', 'projects', 'events', 'crew', 'fleet', 'warehouse', 'timelogs', 'invoices', 'receipts', 'recruitment'],
-  coo: ['dashboard', 'my-shifts', 'clients', 'projects', 'events', 'crew', 'fleet', 'warehouse', 'timelogs', 'invoices', 'receipts'],
+  crewhead: ['dashboard', 'my-shifts', 'clients', 'projects', 'events', 'crew', 'timelogs', 'fleet', 'warehouse', 'invoices', 'receipts', 'recruitment'],
+  coo: ['dashboard', 'my-shifts', 'clients', 'projects', 'events', 'crew', 'timelogs', 'fleet', 'warehouse', 'invoices', 'receipts'],
 };
 
 export const ROLE_LABELS: Record<Role, string> = {

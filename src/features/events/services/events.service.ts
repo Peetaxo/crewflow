@@ -28,6 +28,12 @@ const countAssignedCrewForEvent = (timelogs: Timelog[], eventId: number): number
   ).size
 );
 
+const matchesEventIdentifier = (event: Event, eventId: EventIdentifier): boolean => (
+  typeof eventId === 'string'
+    ? event.supabaseId === eventId
+    : event.id === eventId
+);
+
 const requestSupabaseTimelogsHydration = () => {
   void import('../../timelogs/services/timelogs.service')
     .then(({ ensureSupabaseTimelogsLoaded }) => ensureSupabaseTimelogsLoaded())
@@ -90,15 +96,16 @@ export const fetchEventsSnapshot = async (): Promise<Event[]> => {
     eventRowIdByLocalId.set(index + 1, row.id);
   });
 
-  return supabaseEvents;
-};
-
-const hydrateEventsFromSupabase = async (): Promise<void> => {
-  const supabaseEvents = await fetchEventsSnapshot();
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     events: supabaseEvents,
   }));
+
+  return supabaseEvents;
+};
+
+const hydrateEventsFromSupabase = async (): Promise<void> => {
+  await fetchEventsSnapshot();
 };
 
 export const ensureSupabaseEventsLoaded = () => {
@@ -127,6 +134,10 @@ export const ensureSupabaseEventsLoaded = () => {
 };
 
 const invalidateEventQueries = () => {
+  const snapshot = getLocalAppState();
+  queryClient.setQueryData(queryKeys.events.all, snapshot.events ?? []);
+  queryClient.setQueryData(queryKeys.timelogs.all, snapshot.timelogs ?? []);
+  queryClient.setQueryData(queryKeys.receipts.all, snapshot.receipts ?? []);
   void queryClient.invalidateQueries({ queryKey: queryKeys.events.all });
   void queryClient.invalidateQueries({ queryKey: queryKeys.timelogs.all });
   void queryClient.invalidateQueries({ queryKey: queryKeys.receipts.all });
@@ -285,13 +296,13 @@ export const getEvents = (search = ''): Event[] => {
   ));
 };
 
-export const getEventById = (id: number | null): Event | null => {
+export const getEventById = (id: EventIdentifier | null): Event | null => {
   ensureSupabaseEventsLoaded();
   if (id == null) return null;
-  return (getLocalAppState().events ?? []).find((event) => event.id === id) ?? null;
+  return (getLocalAppState().events ?? []).find((event) => matchesEventIdentifier(event, id)) ?? null;
 };
 
-export const getEventDetailData = (eventId: number | null): {
+export const getEventDetailData = (eventId: EventIdentifier | null): {
   event: Event | null;
   timelogs: Timelog[];
   contractors: Contractor[];
@@ -300,7 +311,7 @@ export const getEventDetailData = (eventId: number | null): {
   ensureSupabaseEventsLoaded();
   requestSupabaseTimelogsHydration();
   const snapshot = getLocalAppState();
-  const event = eventId == null ? null : (snapshot.events ?? []).find((item) => item.id === eventId) ?? null;
+  const event = eventId == null ? null : (snapshot.events ?? []).find((item) => matchesEventIdentifier(item, eventId)) ?? null;
 
   if (!event) {
     return {

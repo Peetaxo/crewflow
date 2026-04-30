@@ -197,6 +197,25 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
           </Button>
         </>
       )}
+      {timelog.status === 'pending_ch' && role === 'coo' && (
+        <>
+          <Button
+            onClick={() => handleTimelogAction(timelog.id, 'ch')}
+            size="sm"
+            className="border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] text-[11px] text-[color:var(--nodu-success-text)] shadow-[0_12px_24px_rgba(47,125,79,0.10)] hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)] hover:text-[color:var(--nodu-success-text)]"
+          >
+            Schválit za CH
+          </Button>
+          <Button
+            onClick={() => handleTimelogAction(timelog.id, 'rej')}
+            variant="outline"
+            size="sm"
+            className="border-[#e8b4a3] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39] text-[11px]"
+          >
+            Zamítnout
+          </Button>
+        </>
+      )}
       {timelog.status === 'pending_coo' && role === 'coo' && (
         <>
           <Button
@@ -380,6 +399,22 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                                 className="rounded-xl border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] px-3 py-1.5 text-[11px] font-semibold text-[color:var(--nodu-success-text)] shadow-[0_12px_24px_rgba(47,125,79,0.10)] transition hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)]"
                               >
                                 Schválit a poslat COO
+                              </button>
+                              <button
+                                onClick={() => handleTimelogAction(timelog.id, 'rej')}
+                                className="rounded-xl border border-[color:var(--nodu-error-border)] px-3 py-1.5 text-[11px] font-medium text-[color:var(--nodu-error-text)] transition hover:bg-[color:var(--nodu-error-bg)]"
+                              >
+                                Zamítnout
+                              </button>
+                            </>
+                          )}
+                          {timelog.status === 'pending_ch' && role === 'coo' && (
+                            <>
+                              <button
+                                onClick={() => handleTimelogAction(timelog.id, 'ch')}
+                                className="rounded-xl border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] px-3 py-1.5 text-[11px] font-semibold text-[color:var(--nodu-success-text)] shadow-[0_12px_24px_rgba(47,125,79,0.10)] transition hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)]"
+                              >
+                                Schválit za CH
                               </button>
                               <button
                                 onClick={() => handleTimelogAction(timelog.id, 'rej')}

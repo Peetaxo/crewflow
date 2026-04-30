@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockContext = {
@@ -55,6 +55,13 @@ const timelogs = [
     km: 0,
     note: '',
     status: 'draft' as const,
+  },
+];
+
+const pendingCrewheadTimelogs = [
+  {
+    ...timelogs[0],
+    status: 'pending_ch' as const,
   },
 ];
 
@@ -131,5 +138,39 @@ describe('TimelogsView', () => {
     expect(screen.queryByRole('button', { name: 'Po Job Number' })).not.toBeInTheDocument();
     expect(screen.getAllByText('Ploom Chodov').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Ploom Zlicin').length).toBeGreaterThan(0);
+  });
+
+  it('lets COO approve a CrewHead step without final COO approval', async () => {
+    const updateTimelogStatus = vi.fn().mockResolvedValue({ ...pendingCrewheadTimelogs[0], status: 'pending_coo' });
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockContext,
+        role: 'coo',
+        timelogFilter: 'pending_ch',
+      }),
+    }));
+
+    vi.doMock('../app/providers/useAuth', () => ({
+      useAuth: () => ({ currentProfileId: null }),
+    }));
+
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
+      useTimelogsQuery: () => ({ data: pendingCrewheadTimelogs }),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      getTimelogDependencies: () => ({ contractors, events }),
+      updateTimelogStatus,
+    }));
+
+    const { default: TimelogsView } = await import('./TimelogsView');
+
+    render(<TimelogsView />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Schválit za CH' }));
+
+    expect(updateTimelogStatus).toHaveBeenCalledWith(1, 'ch');
+    expect(updateTimelogStatus).not.toHaveBeenCalledWith(1, 'coo');
   });
 });

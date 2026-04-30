@@ -19,7 +19,8 @@ import {
 import { cs } from 'date-fns/locale';
 import { useAppContext } from '../context/useAppContext';
 import { Event, Timelog } from '../types';
-import { calculateTotalHours, eventOccursOnDate, formatDateRange, getDatesBetween } from '../utils';
+import type { SelectedEventId } from '../context/app-context';
+import { calculateTotalHours, eventOccursOnDate, getDatesBetween } from '../utils';
 import { Button } from '../components/ui/button';
 import StatusBadge from '../components/shared/StatusBadge';
 import EventDetailView from './EventDetailView';
@@ -47,6 +48,11 @@ type CalendarSegment = {
   startIndex: number;
   endIndex: number;
   lane: number;
+};
+
+type EventListOccurrence = {
+  event: CalendarEvent;
+  date: string;
 };
 
 type EventColorStyle = {
@@ -123,11 +129,60 @@ const getEventColorStyle = (index: number, status: CalendarEvent['derivedStatus'
   };
 };
 
+const formatOccurrenceDate = (date: string) => format(parseISO(date), 'd. M. yyyy', { locale: cs });
+
+const formatTimelogShift = (from: string, to: string) => `${from} - ${to}`;
+
+const getTimeSortValue = (time: string) => {
+  const [hours, minutes] = time.split(':').map(Number);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return Number.MAX_SAFE_INTEGER;
+  return hours * 60 + minutes;
+};
+
+const getEventOccurrenceTimeLabel = (event: Event, date: string, timelogs: Timelog[] = []) => {
+  const timelogTimes = timelogs.flatMap((timelog) => (
+    timelog.days
+      .filter((day) => day.d === date)
+      .map((day) => ({ from: day.f, label: formatTimelogShift(day.f, day.t) }))
+  ));
+  const uniqueTimelogTimes = Array.from(
+    timelogTimes.reduce((acc, shift) => (
+      acc.has(shift.label) ? acc : acc.set(shift.label, shift)
+    ), new Map<string, { from: string; label: string }>()),
+  )
+    .map(([, shift]) => shift)
+    .sort((a, b) => getTimeSortValue(a.from) - getTimeSortValue(b.from))
+    .map((shift) => shift.label);
+
+  if (uniqueTimelogTimes.length > 0) {
+    if (uniqueTimelogTimes.length <= 2) return uniqueTimelogTimes.join(', ');
+    return `${uniqueTimelogTimes[0]} + ${uniqueTimelogTimes.length - 1} smeny`;
+  }
+
+  const phaseTimes = event.showDayTypes
+    ? Object.values(event.phaseSchedules ?? {})
+      .flat()
+      .filter((slot) => slot.dates.includes(date))
+      .map((slot) => formatTimelogShift(slot.from, slot.to))
+    : [];
+
+  const uniquePhaseTimes = [...new Set(phaseTimes)];
+  if (uniquePhaseTimes.length > 0) return uniquePhaseTimes.join(', ');
+  if (event.startTime && event.endTime) return `${event.startTime} - ${event.endTime}`;
+  if (event.startTime) return `od ${event.startTime}`;
+  if (event.endTime) return `do ${event.endTime}`;
+  return 'Cas neurcen';
+};
+
+const getEventSelectionId = (event: Event): SelectedEventId => event.supabaseId ?? event.id;
+
 const EventsView = () => {
   const {
     role,
+    setCurrentTab,
     selectedEventId,
     setSelectedEventId,
+    setSelectedContractorProfileId,
     searchQuery,
     setDeleteConfirm,
     setEventTab,
@@ -149,7 +204,11 @@ const EventsView = () => {
   const calendarMode = eventsCalendarMode as CalendarMode;
   const eventFilter = eventsFilter as EventFilter;
   const selectedEvent = useMemo(
-    () => (eventsQuery.data ?? []).find((event) => event.id === selectedEventId) ?? null,
+    () => (eventsQuery.data ?? []).find((event) => (
+      selectedEventId == null
+        ? false
+        : getEventSelectionId(event) === selectedEventId || event.id === selectedEventId
+    )) ?? null,
     [eventsQuery.data, selectedEventId],
   );
   const events = useMemo(() => {
@@ -206,16 +265,17 @@ const EventsView = () => {
     )
   ), [visibleEvents]);
 
-  const groupedEvents = useMemo(() => (
+  const groupedEventOccurrences = useMemo(() => (
     visibleEvents.reduce((acc, event) => {
-      const date = event.startDate;
-      if (!acc[date]) acc[date] = [];
-      acc[date].push(event);
+      getDatesBetween(event.startDate, event.endDate).forEach((date) => {
+        if (!acc[date]) acc[date] = [];
+        acc[date].push({ event, date });
+      });
       return acc;
-    }, {} as Record<string, typeof visibleEvents>)
+    }, {} as Record<string, EventListOccurrence[]>)
   ), [visibleEvents]);
 
-  const sortedDates = Object.keys(groupedEvents).sort();
+  const sortedDates = Object.keys(groupedEventOccurrences).sort();
 
   const calendarStart = calendarMode === 'month'
     ? startOfWeek(startOfMonth(calendarDate), { weekStartsOn: 1 })
@@ -233,8 +293,8 @@ const EventsView = () => {
     return weeks;
   }, [calendarDays]);
 
-  const openEventDetail = (eventId: number) => {
-    setSelectedEventId(eventId);
+  const openEventDetail = (event: Event) => {
+    setSelectedEventId(getEventSelectionId(event));
     setEventTab('overview');
   };
 
@@ -365,16 +425,42 @@ const EventsView = () => {
               </div>
 
               <div className="grid grid-cols-1 gap-3">
-                {groupedEvents[date].map((event) => {
-                  const eventTimelogs: Timelog[] = getEventDetailData(event.id).timelogs;
+                {groupedEventOccurrences[date].map(({ event, date: occurrenceDate }) => {
+                  const eventDetail = getEventDetailData(getEventSelectionId(event));
+                  const eventTimelogs: Timelog[] = eventDetail.timelogs;
+                  const assignedCrew = eventTimelogs.reduce<Array<{ profileId: string; name: string }>>((crew, timelog) => {
+                    if (!timelog.contractorProfileId || crew.some((item) => item.profileId === timelog.contractorProfileId)) {
+                      return crew;
+                    }
+
+                    const contractor = eventDetail.contractors.find((item) => item.profileId === timelog.contractorProfileId);
+                    return contractor ? [...crew, { profileId: timelog.contractorProfileId, name: contractor.name }] : crew;
+                  }, []);
                   const totalHours = eventTimelogs.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
                   const daysCount = getDatesBetween(event.startDate, event.endDate).length;
+                  const isFullyStaffed = event.needed > 0 && event.filled >= event.needed;
+                  const occurrenceTimeLabel = getEventOccurrenceTimeLabel(event, occurrenceDate, eventTimelogs);
 
                   return (
-                    <div key={event.supabaseId ?? event.id} className="relative overflow-hidden rounded-[28px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] shadow-[0_18px_42px_rgba(47,38,31,0.08)] transition-shadow hover:shadow-[0_22px_48px_rgba(47,38,31,0.12)]">
+                    <div
+                      key={`${event.supabaseId ?? event.id}-${occurrenceDate}`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openEventDetail(event)}
+                      onKeyDown={(keyboardEvent) => {
+                        if (keyboardEvent.key === 'Enter' || keyboardEvent.key === ' ') {
+                          keyboardEvent.preventDefault();
+                          openEventDetail(event);
+                        }
+                      }}
+                      className="relative cursor-pointer overflow-hidden rounded-[28px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] shadow-[0_18px_42px_rgba(47,38,31,0.08)] transition-shadow hover:shadow-[0_22px_48px_rgba(47,38,31,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:rgb(var(--nodu-accent-rgb)/0.22)]"
+                    >
                       {canManageEvents && (
                         <button
-                          onClick={() => setDeleteConfirm({ type: 'event', id: event.supabaseId ?? event.id, name: event.name })}
+                          onClick={(clickEvent) => {
+                            clickEvent.stopPropagation();
+                            setDeleteConfirm({ type: 'event', id: event.supabaseId ?? event.id, name: event.name });
+                          }}
                           className="absolute right-4 top-4 rounded-lg p-1.5 text-[color:var(--nodu-text-soft)] transition-all hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]"
                           title="Smazat akci"
                         >
@@ -382,18 +468,43 @@ const EventsView = () => {
                         </button>
                       )}
                       <div className="border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] p-4">
-                        <div className="mb-2 flex items-center gap-2">
-                          <span className="jn nodu-job-badge px-2 py-0.5 text-[13px] font-semibold">{event.job}</span>
-                          <StatusBadge status={event.derivedStatus} />
-                        </div>
-                        <h3 className="text-base font-semibold text-[color:var(--nodu-text)]">{event.name}</h3>
-                        <div className="mt-1 flex items-center gap-1.5 text-xs text-[color:var(--nodu-text-soft)]">
-                          {formatDateRange(event.startDate, event.endDate)} - {event.city} - {event.client}
-                          {daysCount > 1 && (
-                            <span className="rounded bg-[color:rgb(var(--nodu-text-rgb)/0.08)] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-tighter text-[color:var(--nodu-text-soft)]">
-                              {daysCount} dny
-                            </span>
-                          )}
+                        <div className="grid gap-4 pr-10 md:grid-cols-[minmax(0,1fr)_minmax(280px,0.92fr)]">
+                          <div className="min-w-0">
+                            <div className="mb-2 flex items-center gap-2">
+                              <span className="jn nodu-job-badge px-2 py-0.5 text-[13px] font-semibold">{event.job}</span>
+                              <StatusBadge status={event.derivedStatus} />
+                            </div>
+                            <h3 className="text-base font-semibold text-[color:var(--nodu-text)]">{event.name}</h3>
+                            <div className="mt-1 flex items-center gap-1.5 text-xs text-[color:var(--nodu-text-soft)]">
+                              {formatOccurrenceDate(occurrenceDate)} - {occurrenceTimeLabel} - {event.client}
+                              {daysCount > 1 && (
+                                <span className="rounded bg-[color:rgb(var(--nodu-text-rgb)/0.08)] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-tighter text-[color:var(--nodu-text-soft)]">
+                                  {daysCount} dny
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="hidden min-h-[72px] border-l border-[color:rgb(var(--nodu-text-rgb)/0.1)] pl-6 md:block">
+                            {assignedCrew.length > 0 && (
+                              <div className="flex min-w-0 flex-wrap content-start items-start justify-start gap-1.5 pt-1">
+                                {assignedCrew.map((contractor) => (
+                                  <button
+                                    key={`${event.id}-${contractor.profileId}`}
+                                    type="button"
+                                    onClick={(clickEvent) => {
+                                      clickEvent.stopPropagation();
+                                      setSelectedContractorProfileId(contractor.profileId);
+                                      setCurrentTab('crew');
+                                    }}
+                                    className="rounded-full border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] px-2.5 py-1 text-[11px] font-medium text-[color:var(--nodu-success-text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] transition hover:bg-[color:var(--nodu-success-bg-hover)]"
+                                  >
+                                    {contractor.name}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-5 px-4 py-3">
@@ -402,7 +513,7 @@ const EventsView = () => {
                           <div className="flex items-center gap-2">
                             <div className="h-1 w-20 overflow-hidden rounded-full bg-[color:rgb(var(--nodu-text-rgb)/0.08)]">
                               <div
-                                className={`h-full rounded-full ${event.filled >= event.needed ? 'bg-[color:var(--nodu-accent)]' : 'bg-[#e8b05a]'}`}
+                                className={`h-full rounded-full ${isFullyStaffed ? 'bg-[color:var(--nodu-success-text)]' : 'bg-[color:var(--nodu-accent)]'}`}
                                 style={{ width: `${Math.min(100, Math.round((event.filled / event.needed) * 100))}%` }}
                               />
                             </div>
@@ -410,13 +521,16 @@ const EventsView = () => {
                           </div>
                         </div>
                         <div>
-                          <div className="mb-1 text-[10px] uppercase tracking-wider text-[color:var(--nodu-text-soft)]">Timelogy</div>
-                          <div className="text-xs font-semibold text-[color:var(--nodu-text)]">{eventTimelogs.length} zaz. - {totalHours.toFixed(1)}h</div>
+                          <div className="mb-1 text-[10px] uppercase tracking-wider text-[color:var(--nodu-text-soft)]">Crew hodiny celkem</div>
+                          <div className="text-xs font-semibold text-[color:var(--nodu-text)]">{eventTimelogs.length} timelogy · {totalHours.toFixed(1)} h</div>
                         </div>
                         <div className="ml-auto flex gap-2">
                           {canManageEvents && (
                             <Button
-                              onClick={() => setAssigningEvent(event)}
+                              onClick={(clickEvent) => {
+                                clickEvent.stopPropagation();
+                                setAssigningEvent(event);
+                              }}
                               variant="outline"
                               size="sm"
                               className="text-[11px]"
@@ -424,14 +538,6 @@ const EventsView = () => {
                               Obsadit crew {'->'}
                             </Button>
                           )}
-                          <Button
-                            onClick={() => openEventDetail(event.id)}
-                            variant="outline"
-                            size="sm"
-                            className="text-[11px]"
-                          >
-                            Detail
-                          </Button>
                         </div>
                       </div>
                     </div>
@@ -491,7 +597,7 @@ const EventsView = () => {
                       return (
                         <button
                           key={`${segment.event.id}-${segment.startIndex}-${segment.endIndex}`}
-                          onClick={() => openEventDetail(segment.event.id)}
+                          onClick={() => openEventDetail(segment.event)}
                           className="pointer-events-auto absolute h-12 overflow-hidden rounded-lg border text-left transition-all hover:shadow-sm"
                           style={{
                             left: `calc(${left}% + 6px)`,

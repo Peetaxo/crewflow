@@ -1,6 +1,8 @@
 import { createContext } from 'react';
 import type { Client, Project, ReceiptItem, Role, Timelog } from '../types';
 
+export type SelectedEventId = number | string;
+
 export interface DeleteConfirmData {
   type: 'client' | 'project' | 'event' | 'crew' | 'receipt';
   id: number | string;
@@ -27,8 +29,8 @@ export interface AppContextType {
   setProjectFilter: (f: string) => void;
   selectedContractorProfileId: string | null;
   setSelectedContractorProfileId: (id: string | null) => void;
-  selectedEventId: number | null;
-  setSelectedEventId: (id: number | null) => void;
+  selectedEventId: SelectedEventId | null;
+  setSelectedEventId: (id: SelectedEventId | null) => void;
   selectedProjectIdForStats: string | null;
   setSelectedProjectIdForStats: (id: string | null) => void;
   selectedClientIdForStats: number | null;

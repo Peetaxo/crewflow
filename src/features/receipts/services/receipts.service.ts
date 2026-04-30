@@ -116,6 +116,7 @@ const ensureSupabaseReceiptsLoaded = () => {
 };
 
 const invalidateReceiptQueries = () => {
+  queryClient.setQueryData(queryKeys.receipts.all, getLocalAppState().receipts ?? []);
   void queryClient.invalidateQueries({ queryKey: queryKeys.receipts.all });
 };
 

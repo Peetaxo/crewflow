@@ -1,4 +1,5 @@
 import type { Client, Project, ReceiptItem, Timelog } from '../types';
+import type { SelectedEventId } from './app-context';
 
 const UI_SESSION_STORAGE_KEY = 'crewflow.ui-session.v2';
 
@@ -8,7 +9,7 @@ export type PersistedUiSessionState = {
   timelogFilter: string;
   projectFilter: string;
   selectedContractorProfileId: string | null;
-  selectedEventId: number | null;
+  selectedEventId: SelectedEventId | null;
   selectedProjectIdForStats: string | null;
   selectedClientIdForStats: number | null;
   eventTab: string;
@@ -40,6 +41,9 @@ const isNumber = (value: unknown): value is number =>
 
 const isNullableNumber = (value: unknown): value is number | null =>
   value === null || isNumber(value);
+
+const isNullableEventId = (value: unknown): value is SelectedEventId | null =>
+  value === null || isNumber(value) || isString(value);
 
 const isTimelogDay = (value: unknown): value is Timelog['days'][number] =>
   isRecord(value) &&
@@ -99,7 +103,7 @@ const isPersistedUiSessionState = (value: unknown): value is PersistedUiSessionS
   isString(value.timelogFilter) &&
   isString(value.projectFilter) &&
   (value.selectedContractorProfileId === null || isString(value.selectedContractorProfileId)) &&
-  isNullableNumber(value.selectedEventId) &&
+  isNullableEventId(value.selectedEventId) &&
   (value.selectedProjectIdForStats === null || isString(value.selectedProjectIdForStats)) &&
   isNullableNumber(value.selectedClientIdForStats) &&
   isString(value.eventTab) &&

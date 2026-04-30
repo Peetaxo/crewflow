@@ -20,7 +20,7 @@ import { deleteClient } from '../features/clients/services/clients.service';
 import { deleteReceipt } from '../features/receipts/services/receipts.service';
 import { loadPersistedUiSession, savePersistedUiSession, type PersistedUiSessionState } from './ui-session-storage';
 import { loadUiPreferences, saveUiPreferences } from './ui-preferences-storage';
-import { AppContext, type AppContextType, type DeleteConfirmData } from './app-context';
+import { AppContext, type AppContextType, type DeleteConfirmData, type SelectedEventId } from './app-context';
 
 const normalizeUiSessionState = (
   state: PersistedUiSessionState,
@@ -80,7 +80,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [projectFilter, setProjectFilter] = useState(initialUiSession?.projectFilter ?? 'all');
 
   const [selectedContractorProfileId, setSelectedContractorProfileId] = useState<string | null>(initialUiSession?.selectedContractorProfileId ?? null);
-  const [selectedEventId, setSelectedEventId] = useState<number | null>(initialUiSession?.selectedEventId ?? null);
+  const [selectedEventId, setSelectedEventId] = useState<SelectedEventId | null>(initialUiSession?.selectedEventId ?? null);
   const [selectedProjectIdForStats, setSelectedProjectIdForStats] = useState<string | null>(initialUiSession?.selectedProjectIdForStats ?? null);
   const [selectedClientIdForStats, setSelectedClientIdForStats] = useState<number | null>(initialUiSession?.selectedClientIdForStats ?? null);
 

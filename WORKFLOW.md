@@ -53,6 +53,11 @@ Tento soubor popisuje, jak na projektu pracujeme a jak se maji zachazet zmeny.
 - Pokud preview spadne, ma se nejdriv znovu spustit a zkontrolovat.
 - Neni dovolene posilat preview odkaz jen podle stareho logu nebo predchoziho spusteni.
 
+### Netlify
+
+- Aktualne nepocitat s Netlify preview ani deployi: tym prekrocil credit limit a Netlify pozastavilo projekty a deploye do dalsiho mesice, pripadne do upgradu planu.
+- Dokud se Netlify neobnovi, pracujeme a overujeme zmeny pres lokalni dev server / localhost.
+
 ## Pojmenovavani commitu
 
 - Commit message psat cesky.
@@ -78,6 +83,13 @@ Tento soubor popisuje, jak na projektu pracujeme a jak se maji zachazet zmeny.
 - Kontext aplikace je ulozen v souboru CONTEXT.md.
 - Napady a budoucni ukoly jsou v souboru TODO.md.
 - Pokud se domluvime na dalsich pravidlech, maji se doplnit sem.
+- Pri zmene, ktera se muze tykat Supabase databaze, je potreba soucasne zkontrolovat databazovy model pres Supabase MCP:
+  - tabulky, sloupce, enumy a constrainty
+  - RLS policies a role opravneni
+  - existujici migrace a `src/lib/database.types.ts`
+  - jestli je potreba upravit aplikacni kod, databazovou migraci, nebo oboji
+- Typicke priklady jsou zmeny stavu workflow, schvalovani, opravneni, identit/UUID, vazeb mezi tabulkami, rozpoctu, fakturace a importu dat.
+- Pokud staci existujici schema, ma se to explicitne poznamenat v odpovedi. Pokud schema nestaci, pripravit migraci pres Supabase MCP a po DDL zkontrolovat advisors.
 
 ## Dohodnute architektonicke smerovani
 

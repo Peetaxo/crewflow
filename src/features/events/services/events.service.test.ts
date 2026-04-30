@@ -100,9 +100,13 @@ describe('events.service fetch snapshot', () => {
       },
     }));
 
+    const updateLocalAppState = vi.fn((updater: (snapshot: { events: unknown[]; contractors: unknown[] }) => unknown) => (
+      updater({ events: [{ id: 99, name: 'Stara akce' }], contractors: [{ id: 1, name: 'Crew' }] })
+    ));
+
     vi.doMock('../../../lib/app-data', () => ({
       getLocalAppState: () => ({ events: [] }),
-      updateLocalAppState: vi.fn(),
+      updateLocalAppState,
       subscribeToLocalAppState: vi.fn(() => () => undefined),
     }));
 
@@ -113,6 +117,7 @@ describe('events.service fetch snapshot', () => {
         city: row.city,
       }),
       mapEvent: (row: {
+        id: string;
         name: string;
         status: 'upcoming';
         date_from: string;
@@ -121,6 +126,7 @@ describe('events.service fetch snapshot', () => {
         crew_filled: number;
       }) => ({
         id: Number.NaN,
+        supabaseId: row.id,
         name: row.name,
         job: '',
         startDate: row.date_from,
@@ -138,6 +144,7 @@ describe('events.service fetch snapshot', () => {
     await expect(fetchEventsSnapshot()).resolves.toEqual([
       {
         id: 1,
+        supabaseId: 'event-row-1',
         name: 'Akce 1',
         job: 'AK001',
         startDate: '2026-04-20',
@@ -149,6 +156,26 @@ describe('events.service fetch snapshot', () => {
         client: 'Klient A',
       },
     ]);
+
+    expect(updateLocalAppState).toHaveBeenCalledTimes(1);
+    expect(updateLocalAppState.mock.results[0].value).toEqual({
+      events: [
+        {
+          id: 1,
+          supabaseId: 'event-row-1',
+          name: 'Akce 1',
+          job: 'AK001',
+          startDate: '2026-04-20',
+          endDate: '2026-04-21',
+          city: 'Praha',
+          needed: 2,
+          filled: 1,
+          status: 'upcoming',
+          client: 'Klient A',
+        },
+      ],
+      contractors: [{ id: 1, name: 'Crew' }],
+    });
   });
 });
 
@@ -207,6 +234,7 @@ describe('events.service write flow', () => {
       events: [
         {
           id: 1,
+          supabaseId: 'event-uuid-1',
           name: 'Akce 1',
           job: 'AK001',
           startDate: '2026-04-20',
@@ -250,6 +278,7 @@ describe('events.service write flow', () => {
     const detail = getEventDetailData(1);
 
     expect(detail.event?.filled).toBe(1);
+    expect(getEventDetailData('event-uuid-1').event?.name).toBe('Akce 1');
     await vi.waitFor(() => {
       expect(ensureSupabaseTimelogsLoaded).toHaveBeenCalledOnce();
     });

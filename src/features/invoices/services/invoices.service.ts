@@ -2,6 +2,8 @@ import { toast } from 'sonner';
 import { appDataSource } from '../../../lib/app-config';
 import { KM_RATE } from '../../../data';
 import { getLocalAppState, subscribeToLocalAppState, updateLocalAppState } from '../../../lib/app-data';
+import { queryClient } from '../../../lib/query-client';
+import { queryKeys } from '../../../lib/query-keys';
 import { mapInvoice } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import type { Contractor, Event, Invoice, ReceiptItem, Timelog } from '../../../types';
@@ -48,6 +50,13 @@ type BillingBatch = {
   eventIds: Set<number>;
   timelogIds: number[];
   receiptIds: number[];
+};
+
+const syncInvoiceQueryData = () => {
+  const snapshot = getLocalAppState();
+  queryClient.setQueryData(queryKeys.invoices.all, snapshot.invoices ?? []);
+  queryClient.setQueryData(queryKeys.timelogs.all, snapshot.timelogs ?? []);
+  queryClient.setQueryData(queryKeys.receipts.all, snapshot.receipts ?? []);
 };
 
 export type InvoiceCreateCandidate = {
@@ -1047,6 +1056,7 @@ export const createInvoiceFromSelection = async (
     ...currentSnapshot,
     invoices: [...(currentSnapshot.invoices ?? []), invoice],
   }));
+  syncInvoiceQueryData();
 
   if ((invoice.timelogIds ?? []).length > 0) {
     await markTimelogsAsInvoiced(invoice.timelogIds ?? []);
@@ -1117,6 +1127,7 @@ export const approveInvoice = async (id: string): Promise<Invoice | null> => {
     ...currentSnapshot,
     invoices: (currentSnapshot.invoices ?? []).map((item) => item.id === id ? { ...item, status: 'paid' } : item),
   }));
+  syncInvoiceQueryData();
 
   if ((invoice.timelogIds ?? []).length > 0) {
     await markTimelogsAsPaid(invoice.timelogIds ?? []);
@@ -1169,6 +1180,7 @@ export const sendInvoice = async (id: string): Promise<Invoice | null> => {
       item.id === id ? { ...item, status: 'sent', sentAt } : item
     )),
   }));
+  syncInvoiceQueryData();
 
   return {
     ...invoice,
@@ -1248,6 +1260,8 @@ export const deleteInvoice = async (id: string): Promise<boolean> => {
       )),
     }));
   }
+
+  syncInvoiceQueryData();
 
   return true;
 };

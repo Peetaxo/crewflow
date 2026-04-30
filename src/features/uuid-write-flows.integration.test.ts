@@ -87,6 +87,7 @@ describe('UUID write flows integration', () => {
     let snapshot = createSnapshot();
     let profileSelectCalls = 0;
     const invalidateQueries = vi.fn().mockResolvedValue(undefined);
+    const setQueryData = vi.fn();
     const timelogStatusEq = vi.fn().mockResolvedValue({ error: null });
     const timelogStatusIn = vi.fn().mockResolvedValue({ error: null });
     const timelogUpdateEq = vi.fn().mockResolvedValue({ error: null });
@@ -216,10 +217,11 @@ describe('UUID write flows integration', () => {
       subscribeToLocalAppState: vi.fn(() => () => undefined),
     }));
     vi.doMock('../lib/query-client', () => ({
-      queryClient: { invalidateQueries },
+      queryClient: { invalidateQueries, setQueryData },
     }));
     vi.doMock('../lib/query-keys', () => ({
       queryKeys: {
+        invoices: { all: ['invoices'] },
         timelogs: { all: ['timelogs'] },
         receipts: { all: ['receipts'] },
       },

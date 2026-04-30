@@ -19,4 +19,12 @@ describe('navigation items by role', () => {
     expect(crewheadItems.indexOf('warehouse')).toBe(crewheadItems.indexOf('fleet') + 1);
     expect(cooItems.indexOf('warehouse')).toBe(cooItems.indexOf('fleet') + 1);
   });
+
+  it('shows approvals directly after Crew for crewhead and coo roles', () => {
+    const crewheadItems = getNavItemsForRole('crewhead').map((item) => item.id);
+    const cooItems = getNavItemsForRole('coo').map((item) => item.id);
+
+    expect(crewheadItems.indexOf('timelogs')).toBe(crewheadItems.indexOf('crew') + 1);
+    expect(cooItems.indexOf('timelogs')).toBe(cooItems.indexOf('crew') + 1);
+  });
 });

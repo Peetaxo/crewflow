@@ -497,7 +497,7 @@ const EventsView = () => {
                                       setSelectedContractorProfileId(contractor.profileId);
                                       setCurrentTab('crew');
                                     }}
-                                    className="rounded-full border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] px-2.5 py-1 text-[11px] font-medium text-[color:var(--nodu-success-text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] transition hover:bg-[color:var(--nodu-success-bg-hover)]"
+                                    className="rounded-full border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] px-2.5 py-1 text-[11px] font-semibold text-[color:var(--nodu-text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] transition hover:bg-[color:var(--nodu-success-bg-hover)]"
                                   >
                                     {contractor.name}
                                   </button>

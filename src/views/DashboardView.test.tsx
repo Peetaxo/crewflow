@@ -19,8 +19,8 @@ const mockEvents = [
     id: 101,
     name: 'Nodu pilot Prague',
     job: 'JOB-101',
-    startDate: '2026-04-28',
-    endDate: '2026-04-29',
+    startDate: '2026-12-28',
+    endDate: '2026-12-29',
     city: 'Praha',
     needed: 8,
     filled: 6,
@@ -118,7 +118,7 @@ describe('DashboardView', () => {
     expect(container.querySelector('.nodu-stat-chip')).not.toBeNull();
     expect(container.querySelector('[data-testid="stat-accent-dot"]')).toBeNull();
 
-    const timelogsHeading = screen.getByRole('heading', { name: 'Timelogy ke zpracovani' });
+    const timelogsHeading = screen.getByRole('heading', { name: 'Ke schválení' });
     const timelogPanel = timelogsHeading.closest('.nodu-dashboard-panel');
     const eventsHeading = screen.getByRole('heading', { name: 'Nadchazejici akce' });
     const eventsPanel = eventsHeading.closest('.nodu-dashboard-panel');

@@ -200,7 +200,7 @@ const DashboardView = () => {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
         <div className="nodu-dashboard-panel rounded-[28px] p-5 lg:col-span-3">
-          <h2 className="nodu-dashboard-panel-title mb-3">Timelogy ke zpracovani</h2>
+          <h2 className="nodu-dashboard-panel-title mb-3">Ke schválení</h2>
           <div className="space-y-1">
             {timelogQueue
               .slice(0, 4)

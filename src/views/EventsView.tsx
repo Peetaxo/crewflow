@@ -18,15 +18,18 @@ import {
 } from 'date-fns';
 import { cs } from 'date-fns/locale';
 import { useAppContext } from '../context/useAppContext';
-import { Event, Timelog } from '../types';
+import { Event, GrasonEventConfirmation, Timelog } from '../types';
 import type { SelectedEventId } from '../context/app-context';
 import { calculateTotalHours, eventOccursOnDate, getDatesBetween } from '../utils';
 import { Button } from '../components/ui/button';
 import StatusBadge from '../components/shared/StatusBadge';
+import ApprovalStatusDot from '../components/shared/ApprovalStatusDot';
 import EventDetailView from './EventDetailView';
 import EventEditModal from '../components/modals/EventEditModal';
 import AssignCrewModal from '../components/modals/AssignCrewModal';
 import { useEventsQuery } from '../features/events/queries/useEventsQuery';
+import { useInvoiceApprovalsQuery } from '../features/invoices/queries/useInvoiceApprovalsQuery';
+import { getEventPersonApprovalState } from '../features/invoices/services/invoice-approval-sync.service';
 import {
   createEmptyEvent,
   filterEventsByStatus,
@@ -176,6 +179,38 @@ const getEventOccurrenceTimeLabel = (event: Event, date: string, timelogs: Timel
 
 const getEventSelectionId = (event: Event): SelectedEventId => event.supabaseId ?? event.id;
 
+type GrasonCrewChip = {
+  key: string;
+  profileId: string | null;
+  name: string;
+};
+
+const getGrasonCrewChips = (
+  confirmations: GrasonEventConfirmation[] = [],
+  assignedProfileIds = new Set<string>(),
+): GrasonCrewChip[] => {
+  const chips = new Map<string, GrasonCrewChip>();
+
+  confirmations.forEach((confirmation) => {
+    if (confirmation.profileId && assignedProfileIds.has(confirmation.profileId)) {
+      return;
+    }
+
+    const key = confirmation.profileId || confirmation.confirmedName.toLowerCase();
+    if (!key || chips.has(key)) {
+      return;
+    }
+
+    chips.set(key, {
+      key,
+      profileId: confirmation.profileId,
+      name: confirmation.confirmedName,
+    });
+  });
+
+  return [...chips.values()].sort((left, right) => left.name.localeCompare(right.name, 'cs'));
+};
+
 const EventsView = () => {
   const {
     role,
@@ -196,6 +231,7 @@ const EventsView = () => {
     setEventsCalendarDate,
   } = useAppContext();
   const eventsQuery = useEventsQuery();
+  const invoiceApprovalsQuery = useInvoiceApprovalsQuery();
   const [didInitCalendarDate, setDidInitCalendarDate] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const [assigningEvent, setAssigningEvent] = useState<Event | null>(null);
@@ -203,6 +239,7 @@ const EventsView = () => {
   const viewMode = eventsViewMode as EventsViewMode;
   const calendarMode = eventsCalendarMode as CalendarMode;
   const eventFilter = eventsFilter as EventFilter;
+  const approvalDocuments = invoiceApprovalsQuery.data ?? [];
   const selectedEvent = useMemo(
     () => (eventsQuery.data ?? []).find((event) => (
       selectedEventId == null
@@ -223,10 +260,11 @@ const EventsView = () => {
   }, [eventsQuery.data, searchQuery]);
 
   useEffect(() => {
+    if (eventsQuery.isLoading || eventsQuery.isFetching) return;
     if (selectedEventId && !selectedEvent) {
       setSelectedEventId(null);
     }
-  }, [selectedEventId, selectedEvent, setSelectedEventId]);
+  }, [eventsQuery.isFetching, eventsQuery.isLoading, selectedEventId, selectedEvent, setSelectedEventId]);
 
   const calendarDate = useMemo(() => {
     if (!eventsCalendarDate) {
@@ -436,6 +474,8 @@ const EventsView = () => {
                     const contractor = eventDetail.contractors.find((item) => item.profileId === timelog.contractorProfileId);
                     return contractor ? [...crew, { profileId: timelog.contractorProfileId, name: contractor.name }] : crew;
                   }, []);
+                  const assignedProfileIds = new Set(assignedCrew.map((contractor) => contractor.profileId));
+                  const grasonCrew = getGrasonCrewChips(eventDetail.grasonConfirmations ?? [], assignedProfileIds);
                   const totalHours = eventTimelogs.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
                   const daysCount = getDatesBetween(event.startDate, event.endDate).length;
                   const isFullyStaffed = event.needed > 0 && event.filled >= event.needed;
@@ -488,20 +528,67 @@ const EventsView = () => {
                           <div className="hidden min-h-[72px] border-l border-[color:rgb(var(--nodu-text-rgb)/0.1)] pl-6 md:block">
                             {assignedCrew.length > 0 && (
                               <div className="flex min-w-0 flex-wrap content-start items-start justify-start gap-1.5 pt-1">
-                                {assignedCrew.map((contractor) => (
-                                  <button
-                                    key={`${event.id}-${contractor.profileId}`}
-                                    type="button"
-                                    onClick={(clickEvent) => {
-                                      clickEvent.stopPropagation();
-                                      setSelectedContractorProfileId(contractor.profileId);
-                                      setCurrentTab('crew');
-                                    }}
-                                    className="rounded-full border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] px-2.5 py-1 text-[11px] font-semibold text-[color:var(--nodu-text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] transition hover:bg-[color:var(--nodu-success-bg-hover)]"
-                                  >
-                                    {contractor.name}
-                                  </button>
-                                ))}
+                                {assignedCrew.map((contractor) => {
+                                  const approvalState = getEventPersonApprovalState({
+                                    event,
+                                    personName: contractor.name,
+                                    approvalDocuments,
+                                  });
+
+                                  return (
+                                    <button
+                                      key={`${event.id}-${contractor.profileId}`}
+                                      type="button"
+                                      onClick={(clickEvent) => {
+                                        clickEvent.stopPropagation();
+                                        setSelectedContractorProfileId(contractor.profileId);
+                                        setCurrentTab('crew');
+                                      }}
+                                      className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] px-2.5 py-1 text-[11px] font-semibold text-[color:var(--nodu-text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] transition hover:bg-[color:var(--nodu-success-bg-hover)]"
+                                    >
+                                      <ApprovalStatusDot status={approvalState.status} label={approvalState.label} />
+                                      {contractor.name}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            {grasonCrew.length > 0 && (
+                              <div className={`flex min-w-0 flex-wrap content-start items-start justify-start gap-1.5 ${assignedCrew.length > 0 ? 'mt-2' : 'pt-1'}`}>
+                                <span className="rounded-full border border-[color:rgb(var(--nodu-accent-rgb)/0.22)] bg-[color:rgb(var(--nodu-accent-rgb)/0.08)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-[color:var(--nodu-accent)]">
+                                  Grason
+                                </span>
+                                {grasonCrew.map((person) => {
+                                  const approvalState = getEventPersonApprovalState({
+                                    event,
+                                    personName: person.name,
+                                    approvalDocuments,
+                                  });
+
+                                  return person.profileId ? (
+                                    <button
+                                      key={person.key}
+                                      type="button"
+                                      onClick={(clickEvent) => {
+                                        clickEvent.stopPropagation();
+                                        setSelectedContractorProfileId(person.profileId ?? undefined);
+                                        setCurrentTab('crew');
+                                      }}
+                                      className="inline-flex items-center gap-1.5 rounded-full border border-[color:rgb(var(--nodu-text-rgb)/0.12)] bg-white px-2.5 py-1 text-[11px] font-semibold text-[color:var(--nodu-text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] transition hover:border-[color:rgb(var(--nodu-accent-rgb)/0.24)] hover:text-[color:var(--nodu-accent)]"
+                                    >
+                                      <ApprovalStatusDot status={approvalState.status} label={approvalState.label} />
+                                      {person.name}
+                                    </button>
+                                  ) : (
+                                    <span
+                                      key={person.key}
+                                      className="inline-flex items-center gap-1.5 rounded-full border border-[color:rgb(var(--nodu-text-rgb)/0.12)] bg-white px-2.5 py-1 text-[11px] font-semibold text-[color:var(--nodu-text)]"
+                                    >
+                                      <ApprovalStatusDot status={approvalState.status} label={approvalState.label} />
+                                      {person.name}
+                                    </span>
+                                  );
+                                })}
                               </div>
                             )}
                           </div>

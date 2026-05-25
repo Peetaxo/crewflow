@@ -5,18 +5,75 @@ import { toast } from 'sonner';
 import { useAppContext } from '../context/useAppContext';
 import { KM_RATE } from '../data';
 import { PHASE_CONFIG } from '../constants';
-import { calculateDayHours, calculateTotalHours, formatCurrency, formatDateRange, getDatesBetween, getEventStatus } from '../utils';
+import { calculateDayHours, calculateTotalHours, formatCurrency, formatDateRange, formatShortDate, getDatesBetween, getEventStatus } from '../utils';
 import { Button } from '../components/ui/button';
 import StatusBadge from '../components/shared/StatusBadge';
+import ApprovalStatusDot from '../components/shared/ApprovalStatusDot';
 import EventEditModal from '../components/modals/EventEditModal';
 import AssignCrewModal from '../components/modals/AssignCrewModal';
-import { Event } from '../types';
+import { Event, GrasonEventConfirmation, InvoiceApprovalDocument } from '../types';
 import {
   getEventCrew,
   getEventDetailData,
   removeContractorFromEvent,
   subscribeToEventChanges,
 } from '../features/events/services/events.service';
+import { useInvoiceApprovalsQuery } from '../features/invoices/queries/useInvoiceApprovalsQuery';
+import {
+  getEventApprovalDocuments,
+  getEventPersonApprovalState,
+} from '../features/invoices/services/invoice-approval-sync.service';
+import { updateTimelogStatus } from '../features/timelogs/services/timelogs.service';
+
+type GrasonConfirmedPerson = {
+  key: string;
+  name: string;
+  phase: GrasonEventConfirmation['phase'];
+  shiftDate: string;
+  sourceTitle: string;
+};
+
+const EMPTY_APPROVAL_DOCUMENTS: InvoiceApprovalDocument[] = [];
+
+const getGrasonConfirmedPeople = (
+  confirmations: GrasonEventConfirmation[] = [],
+): GrasonConfirmedPerson[] => {
+  const people = new Map<string, GrasonConfirmedPerson>();
+
+  confirmations.forEach((confirmation) => {
+    const key = confirmation.profileId || confirmation.confirmedName.toLowerCase();
+    if (!key || people.has(key)) {
+      return;
+    }
+
+    people.set(key, {
+      key,
+      name: confirmation.confirmedName,
+      phase: confirmation.phase,
+      shiftDate: confirmation.shiftDate,
+      sourceTitle: confirmation.sourceTitle,
+    });
+  });
+
+  return [...people.values()].sort((left, right) => left.name.localeCompare(right.name, 'cs'));
+};
+
+const getPhaseLabel = (phase: GrasonEventConfirmation['phase']) => (
+  PHASE_CONFIG.find((item) => item.type === phase)?.label ?? phase
+);
+
+const getApprovalDocumentBadgeStatus = (document: InvoiceApprovalDocument) => (
+  document.approvalStatus === 'unknown' ? 'needs_review' : document.approvalStatus
+);
+
+const getApprovalDocumentPersonLabel = (document: InvoiceApprovalDocument) => {
+  const parsedPerson = document.comment
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)[1];
+
+  return parsedPerson || document.supplierName || '-';
+};
 
 const EventDetailView = () => {
   const {
@@ -32,6 +89,8 @@ const EventDetailView = () => {
   const [detail, setDetail] = useState(() => getEventDetailData(selectedEventId));
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const [assigningEvent, setAssigningEvent] = useState<Event | null>(null);
+  const [crewPanelTab, setCrewPanelTab] = useState<'assigned' | 'timelogApproval'>('assigned');
+  const invoiceApprovalsQuery = useInvoiceApprovalsQuery();
 
   const loadDetail = useCallback(() => {
     setDetail(getEventDetailData(selectedEventId));
@@ -50,12 +109,18 @@ const EventDetailView = () => {
   }, [detail.event, selectedEventId, setSelectedEventId]);
 
   const event = detail.event;
+  const approvalDocuments = invoiceApprovalsQuery.data ?? EMPTY_APPROVAL_DOCUMENTS;
+  const eventApprovalDocuments = useMemo(() => (
+    event ? getEventApprovalDocuments(event, approvalDocuments) : []
+  ), [approvalDocuments, event]);
+
   if (!event) return null;
 
   const eventStatus = getEventStatus(event);
   const eventTimelogs = detail.timelogs;
   const eventReceipts = detail.receipts;
   const contractors = detail.contractors;
+  const grasonConfirmations = detail.grasonConfirmations ?? [];
   const totalHours = eventTimelogs.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
   const totalCrewCost = eventTimelogs.reduce((sum, timelog) => {
     const contractor = contractors.find((item) => item.profileId === timelog.contractorProfileId);
@@ -65,7 +130,25 @@ const EventDetailView = () => {
   const totalReceiptCost = eventReceipts.reduce((sum, receipt) => sum + receipt.amount, 0);
   const days = getDatesBetween(event.startDate, event.endDate);
   const eventCrew = getEventCrew(event.id);
+  const grasonConfirmedPeople = getGrasonConfirmedPeople(grasonConfirmations);
+  const dayTimelogs = eventTab === 'overview'
+    ? []
+    : eventTimelogs.filter((timelog) => timelog.days.some((day) => day.d === eventTab));
+  const dayGrasonPeople = eventTab === 'overview'
+    ? []
+    : getGrasonConfirmedPeople(grasonConfirmations.filter((confirmation) => confirmation.shiftDate === eventTab));
   const canManageEvents = role !== 'crew';
+  const eventApprovalTimelogs = canManageEvents
+    ? eventTimelogs.filter((timelog) => (
+        timelog.status === 'draft'
+        || (role === 'crewhead'
+          ? timelog.status === 'pending_ch'
+          : timelog.status === 'pending_ch' || timelog.status === 'pending_coo')
+      ))
+    : [];
+  const getApprovalStateForPerson = (personName: string) => (
+    getEventPersonApprovalState({ event, personName, approvalDocuments })
+  );
 
   const getPhasesForDate = (date: string) => (
     event.showDayTypes
@@ -85,6 +168,14 @@ const EventDetailView = () => {
     void removeContractorFromEvent(event.id, contractorProfileId).catch((error) => {
       toast.error(error instanceof Error ? error.message : 'Nepodařilo se odebrat člena crew.');
     });
+  };
+
+  const handleTimelogApprovalAction = (timelogId: number, action: 'sub' | 'ch' | 'coo' | 'rej') => {
+    void updateTimelogStatus(timelogId, action)
+      .then(loadDetail)
+      .catch((error) => {
+        toast.error(error instanceof Error ? error.message : 'Nepodařilo se aktualizovat výkaz.');
+      });
   };
 
   return (
@@ -204,94 +295,247 @@ const EventDetailView = () => {
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
               <div className="space-y-6 lg:col-span-2">
                 <div>
-                  <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold">
-                    <Users size={16} className="text-[color:var(--nodu-text-soft)]" />
-                    Prirazena Crew ({eventCrew.length})
-                  </h3>
-                  <div className="overflow-hidden rounded-[24px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)]">
-                    <table className="w-full border-collapse text-left">
-                      <thead>
-                        <tr className="border-b border-[color:var(--nodu-border)] text-[10px] uppercase tracking-wider text-[color:var(--nodu-text-soft)]">
-                          <th className="px-4 py-3 text-left font-medium">Jmeno</th>
-                          {event.showDayTypes && <th className="px-4 py-3 text-left font-medium">Faze</th>}
-                          <th className="px-4 py-3 text-left font-medium">Hodiny</th>
-                          <th className="px-4 py-3 text-right font-medium">Celkem</th>
-                          <th className="px-4 py-3 text-right font-medium">Akce</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[color:rgb(var(--nodu-text-rgb)/0.06)]">
-                        {eventCrew.map((contractor) => {
-                          const timelog = eventTimelogs.find((item) => item.contractorProfileId === contractor.profileId);
-                          const hours = timelog ? calculateTotalHours(timelog.days) : 0;
+                  <div className="mb-4 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCrewPanelTab('assigned')}
+                      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-semibold transition-all ${crewPanelTab === 'assigned' ? 'border-[color:var(--nodu-accent)] bg-[color:var(--nodu-accent-soft)] text-[color:var(--nodu-accent)]' : 'border-[color:var(--nodu-border)] bg-white text-[color:var(--nodu-text)] hover:border-[color:rgb(var(--nodu-accent-rgb)/0.34)] hover:text-[color:var(--nodu-accent)]'}`}
+                    >
+                      <Users size={16} className="text-current" />
+                      Prirazena Crew ({eventCrew.length})
+                    </button>
+                    {canManageEvents && (
+                      <button
+                        type="button"
+                        onClick={() => setCrewPanelTab('timelogApproval')}
+                        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-semibold transition-all ${crewPanelTab === 'timelogApproval' ? 'border-[color:var(--nodu-accent)] bg-[color:var(--nodu-accent-soft)] text-[color:var(--nodu-accent)]' : 'border-[color:var(--nodu-border)] bg-white text-[color:var(--nodu-text)] hover:border-[color:rgb(var(--nodu-accent-rgb)/0.34)] hover:text-[color:var(--nodu-accent)]'}`}
+                      >
+                        <FileText size={16} className="text-current" />
+                        Schvalovani timelogu ({eventApprovalTimelogs.length})
+                      </button>
+                    )}
+                  </div>
 
-                          return (
-                            <tr
-                              key={contractor.id}
-                              onClick={() => {
-                                if (timelog) setEditingTimelog(timelog);
-                              }}
-                              className={`bg-white transition-colors hover:bg-[color:var(--nodu-accent-soft)] ${timelog ? 'cursor-pointer' : ''}`}
-                            >
-                              <td className="px-4 py-3">
-                                <div className="flex items-center gap-2">
-                                  <div className="av h-7 w-7 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
-                                  <span className="text-xs font-medium text-[color:var(--nodu-text)]">{contractor.name}</span>
-                                </div>
-                              </td>
-                              {event.showDayTypes && (
+                  {crewPanelTab === 'assigned' || !canManageEvents ? (
+                    <div className="overflow-hidden rounded-[24px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)]">
+                      <table className="w-full border-collapse text-left">
+                        <thead>
+                          <tr className="border-b border-[color:var(--nodu-border)] text-[10px] uppercase tracking-wider text-[color:var(--nodu-text-soft)]">
+                            <th className="px-4 py-3 text-left font-medium">Jmeno</th>
+                            {event.showDayTypes && <th className="px-4 py-3 text-left font-medium">Faze</th>}
+                            <th className="px-4 py-3 text-left font-medium">Hodiny</th>
+                            <th className="px-4 py-3 text-right font-medium">Celkem</th>
+                            <th className="px-4 py-3 text-right font-medium">Akce</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[color:rgb(var(--nodu-text-rgb)/0.06)]">
+                          {eventCrew.map((contractor) => {
+                            const timelog = eventTimelogs.find((item) => item.contractorProfileId === contractor.profileId);
+                            const hours = timelog ? calculateTotalHours(timelog.days) : 0;
+                            const approvalState = getApprovalStateForPerson(contractor.name);
+
+                            return (
+                              <tr
+                                key={contractor.id}
+                                onClick={() => {
+                                  if (timelog) setEditingTimelog(timelog);
+                                }}
+                                className={`bg-white transition-colors hover:bg-[color:var(--nodu-accent-soft)] ${timelog ? 'cursor-pointer' : ''}`}
+                              >
                                 <td className="px-4 py-3">
-                                  <div className="flex gap-1">
-                                    {PHASE_CONFIG.map((phase) => {
-                                      const isActive = timelog?.days.some((day) => day.type === phase.type);
-                                      return (
-                                        <div key={phase.id} className={`flex h-5 w-5 items-center justify-center rounded border text-[8px] font-black transition-all ${isActive ? `${phase.color} text-white shadow-sm` : 'border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-text-rgb)/0.06)] text-[color:var(--nodu-text-soft)]'}`} title={phase.label}>
-                                          {phase.id}
-                                        </div>
-                                      );
-                                    })}
+                                  <div className="flex items-center gap-2">
+                                    <div className="av h-7 w-7 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
+                                    <ApprovalStatusDot status={approvalState.status} label={approvalState.label} />
+                                    <span className="text-xs font-medium text-[color:var(--nodu-text)]">{contractor.name}</span>
                                   </div>
                                 </td>
-                              )}
-                              <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text)]">{hours.toFixed(1)}h</td>
-                              <td className="px-4 py-3 text-right text-xs font-bold text-[color:var(--nodu-text)]">{formatCurrency(hours * contractor.rate)}</td>
-                              <td className="px-4 py-3 text-right">
-                                {canManageEvents && (
-                                  <div className="flex items-center justify-end gap-1">
-                                    {timelog && (
+                                {event.showDayTypes && (
+                                  <td className="px-4 py-3">
+                                    <div className="flex gap-1">
+                                      {PHASE_CONFIG.map((phase) => {
+                                        const isActive = timelog?.days.some((day) => day.type === phase.type);
+                                        return (
+                                          <div key={phase.id} className={`flex h-5 w-5 items-center justify-center rounded border text-[8px] font-black transition-all ${isActive ? `${phase.color} text-white shadow-sm` : 'border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-text-rgb)/0.06)] text-[color:var(--nodu-text-soft)]'}`} title={phase.label}>
+                                            {phase.id}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </td>
+                                )}
+                                <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text)]">{hours.toFixed(1)}h</td>
+                                <td className="px-4 py-3 text-right text-xs font-bold text-[color:var(--nodu-text)]">{formatCurrency(hours * contractor.rate)}</td>
+                                <td className="px-4 py-3 text-right">
+                                  {canManageEvents && (
+                                    <div className="flex items-center justify-end gap-1">
+                                      {timelog && (
+                                        <button
+                                          onClick={(clickEvent) => {
+                                            clickEvent.stopPropagation();
+                                            setEditingTimelog(timelog);
+                                          }}
+                                          className="rounded-lg p-1.5 text-[color:var(--nodu-text-soft)] transition-all hover:bg-[color:var(--nodu-success-bg)] hover:text-[color:var(--nodu-success-text)]"
+                                          title="Upravit timelog"
+                                        >
+                                          <FileText size={14} />
+                                        </button>
+                                      )}
                                       <button
                                         onClick={(clickEvent) => {
                                           clickEvent.stopPropagation();
-                                          setEditingTimelog(timelog);
+                                          handleRemoveFromEvent(contractor.profileId);
                                         }}
-                                        className="rounded-lg p-1.5 text-[color:var(--nodu-text-soft)] transition-all hover:bg-[color:var(--nodu-success-bg)] hover:text-[color:var(--nodu-success-text)]"
-                                        title="Upravit timelog"
+                                        className="rounded-lg p-1.5 text-[color:var(--nodu-text-soft)] transition-all hover:bg-[color:var(--nodu-error-bg)] hover:text-[color:var(--nodu-error-text)]"
+                                        title="Odebrat z akce"
                                       >
-                                        <FileText size={14} />
+                                        <Trash2 size={14} />
                                       </button>
-                                    )}
-                                    <button
-                                      onClick={(clickEvent) => {
-                                        clickEvent.stopPropagation();
-                                        handleRemoveFromEvent(contractor.profileId);
-                                      }}
-                                      className="rounded-lg p-1.5 text-[color:var(--nodu-text-soft)] transition-all hover:bg-[color:var(--nodu-error-bg)] hover:text-[color:var(--nodu-error-text)]"
-                                      title="Odebrat z akce"
-                                    >
-                                      <Trash2 size={14} />
-                                    </button>
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="rounded-[24px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] p-4">
+                      {eventApprovalTimelogs.length > 0 ? (
+                        <div className="space-y-3">
+                          {eventApprovalTimelogs.map((timelog) => {
+                            const contractor = contractors.find((item) => item.profileId === timelog.contractorProfileId);
+                            const totalTimelogHours = calculateTotalHours(timelog.days);
+                            const amount = contractor ? totalTimelogHours * contractor.rate + timelog.km * KM_RATE : 0;
+                            const approveAction = timelog.status === 'draft'
+                              ? 'sub'
+                              : timelog.status === 'pending_ch' ? 'ch' : 'coo';
+                            const approveLabel = timelog.status === 'draft'
+                              ? 'Odeslat ke kontrole CH'
+                              : timelog.status === 'pending_ch'
+                                ? (role === 'coo' ? 'Schvalit za CH' : 'Schvalit a poslat COO')
+                                : 'Schvalit';
+
+                            return (
+                              <div key={timelog.id} className="rounded-[18px] border border-[color:var(--nodu-border)] bg-white p-4">
+                                <div className="mb-3 flex items-start gap-3">
+                                  <div className="av h-8 w-8 text-[10px]" style={{ backgroundColor: contractor?.bg ?? '#f3f4f6', color: contractor?.fg ?? '#6b7280' }}>{contractor?.ii ?? '?'}</div>
+                                  <div>
+                                    <div className="text-sm font-semibold text-[color:var(--nodu-text)]">{contractor?.name ?? 'Neznamy clen crew'}</div>
+                                    <StatusBadge status={timelog.status} />
                                   </div>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                                  <div className="ml-auto text-right">
+                                    <div className="text-sm font-bold text-[color:var(--nodu-text)]">{totalTimelogHours.toFixed(1)}h</div>
+                                    <div className="text-xs font-semibold text-[color:var(--nodu-text-soft)]">{formatCurrency(amount)}</div>
+                                  </div>
+                                </div>
+                                <div className="rounded-xl border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] p-3">
+                                  {timelog.days.map((day, index) => (
+                                    <div key={`${timelog.id}-${day.d}-${index}`} className="flex items-center gap-3 py-1 text-xs">
+                                      <span className="w-16 text-[color:var(--nodu-text-soft)]">{formatShortDate(day.d)}</span>
+                                      <span className="font-mono font-semibold text-[color:var(--nodu-text)]">{day.f} - {day.t}</span>
+                                      <StatusBadge status={day.type} />
+                                      <span className="ml-auto text-[color:var(--nodu-text-soft)]">{calculateDayHours(day.f, day.t).toFixed(1)}h</span>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  <Button size="sm" className="h-8 text-[11px]" onClick={() => handleTimelogApprovalAction(timelog.id, approveAction)}>
+                                    {approveLabel}
+                                  </Button>
+                                  {timelog.status !== 'draft' && (
+                                    <Button size="sm" variant="outline" className="h-8 border-[#e8b4a3] text-[11px] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]" onClick={() => handleTimelogApprovalAction(timelog.id, 'rej')}>
+                                      Zamitnout
+                                    </Button>
+                                  )}
+                                  <Button size="sm" variant="outline" className="ml-auto h-8 text-[11px]" onClick={() => setEditingTimelog(timelog)}>
+                                    Upravit
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="rounded-[18px] border border-dashed border-[color:var(--nodu-border)] bg-white px-4 py-10 text-center text-sm text-[color:var(--nodu-text-soft)]">
+                          Zadne vykazy teto akce necekaji na schvaleni.
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
+
+                {grasonConfirmedPeople.length > 0 && (
+                  <div>
+                    <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold">
+                      <Users size={16} className="text-[color:var(--nodu-text-soft)]" />
+                      Potvrzeni z Grasonu ({grasonConfirmedPeople.length})
+                    </h3>
+                    <div className="flex flex-wrap gap-2 rounded-[24px] border border-[color:rgb(var(--nodu-accent-rgb)/0.18)] bg-[color:rgb(var(--nodu-accent-rgb)/0.06)] p-4">
+                      {grasonConfirmedPeople.map((person) => {
+                        const approvalState = getApprovalStateForPerson(person.name);
+
+                        return (
+                          <span
+                            key={person.key}
+                            title={person.sourceTitle}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-[color:rgb(var(--nodu-accent-rgb)/0.18)] bg-white px-3 py-1.5 text-xs font-semibold text-[color:var(--nodu-text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.65)]"
+                          >
+                            <ApprovalStatusDot status={approvalState.status} label={approvalState.label} />
+                            {person.name}
+                            <span className="text-[10px] font-bold uppercase text-[color:var(--nodu-text-soft)]">
+                              {getPhaseLabel(person.phase)}
+                            </span>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-4">
+                <div className="rounded-[22px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] p-4">
+                  <h4 className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-[color:var(--nodu-text-soft)]">
+                    <FileText size={12} className="text-[color:var(--nodu-text-soft)]" />
+                    Schvalovani faktur
+                  </h4>
+                  {eventApprovalDocuments.length > 0 ? (
+                    <div className="overflow-hidden rounded-[16px] border border-[color:rgb(var(--nodu-text-rgb)/0.08)] bg-white">
+                      <table className="w-full table-fixed border-collapse text-left">
+                        <thead>
+                          <tr className="border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] text-[9px] uppercase tracking-wider text-[color:var(--nodu-text-soft)]">
+                            <th className="w-[72%] px-3 py-2 font-medium">Dokument</th>
+                            <th className="w-[28%] px-3 py-2 text-right font-medium">Stav</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[color:rgb(var(--nodu-text-rgb)/0.06)]">
+                          {eventApprovalDocuments.map((document) => (
+                            <tr key={document.id}>
+                              <td className="min-w-0 px-3 py-2">
+                                <div className="truncate text-[11px] font-semibold text-[color:var(--nodu-text)]">{document.documentName}</div>
+                                <div className="mt-0.5 truncate text-[10px] text-[color:var(--nodu-text-soft)]">
+                                  {document.invoiceNumber || '-'} · {document.comment.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)[0] || event.name}
+                                </div>
+                                <div className="mt-1 truncate text-[10px] font-semibold text-[color:var(--nodu-text)]">
+                                  {getApprovalDocumentPersonLabel(document)}
+                                </div>
+                              </td>
+                              <td className="px-3 py-2 text-right">
+                                <StatusBadge status={getApprovalDocumentBadgeStatus(document)} />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="rounded-[16px] border border-dashed border-[color:var(--nodu-border)] bg-white px-3 py-6 text-center text-xs text-[color:var(--nodu-text-soft)]">
+                      K teto akci zatim neni sparovany zadny dokument z PowerApps.
+                    </div>
+                  )}
+                </div>
+
                 <div className="rounded-[22px] border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] p-4">
                   <h4 className="mb-3 text-[10px] font-bold uppercase tracking-wider text-[color:var(--nodu-success-text)]">Financni souhrn</h4>
                   <div className="space-y-2">
@@ -403,17 +647,21 @@ const EventDetailView = () => {
               </div>
 
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {eventTimelogs.filter((timelog) => timelog.days.some((day) => day.d === eventTab)).map((timelog) => {
+                {dayTimelogs.map((timelog) => {
                   const contractor = contractors.find((item) => item.profileId === timelog.contractorProfileId);
                   if (!contractor) return null;
                   const matchingDays = timelog.days.filter((day) => day.d === eventTab);
+                  const approvalState = getApprovalStateForPerson(contractor.name);
 
                   return (
                     <div key={timelog.id} className="rounded-[22px] border border-[color:var(--nodu-border)] bg-white p-4 shadow-[0_14px_34px_rgba(47,38,31,0.06)] transition-shadow hover:shadow-[0_18px_42px_rgba(47,38,31,0.1)]">
                       <div className="mb-3 flex items-center gap-3">
                         <div className="av h-10 w-10 text-xs" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
                         <div>
-                          <div className="text-sm font-bold text-[color:var(--nodu-text)]">{contractor.name}</div>
+                          <div className="flex items-center gap-1.5 text-sm font-bold text-[color:var(--nodu-text)]">
+                            <ApprovalStatusDot status={approvalState.status} label={approvalState.label} />
+                            {contractor.name}
+                          </div>
                           <div className="mt-0.5 flex items-center gap-1.5">
                             <span className="text-[10px] text-[color:var(--nodu-text-soft)]">{contractor.phone}</span>
                           </div>
@@ -448,7 +696,32 @@ const EventDetailView = () => {
                   );
                 })}
 
-                {eventTimelogs.filter((timelog) => timelog.days.some((day) => day.d === eventTab)).length === 0 && (
+                {dayGrasonPeople.length > 0 && (
+                  <div className="col-span-full rounded-[24px] border border-[color:rgb(var(--nodu-accent-rgb)/0.18)] bg-[color:rgb(var(--nodu-accent-rgb)/0.06)] p-4">
+                    <h4 className="mb-3 text-[10px] font-bold uppercase tracking-wider text-[color:var(--nodu-accent)]">Potvrzeni z Grasonu</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {dayGrasonPeople.map((person) => {
+                        const approvalState = getApprovalStateForPerson(person.name);
+
+                        return (
+                          <span
+                            key={person.key}
+                            title={person.sourceTitle}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-[color:rgb(var(--nodu-accent-rgb)/0.18)] bg-white px-3 py-1.5 text-xs font-semibold text-[color:var(--nodu-text)]"
+                          >
+                            <ApprovalStatusDot status={approvalState.status} label={approvalState.label} />
+                            {person.name}
+                            <span className="text-[10px] font-bold uppercase text-[color:var(--nodu-text-soft)]">
+                              {getPhaseLabel(person.phase)}
+                            </span>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {dayTimelogs.length === 0 && dayGrasonPeople.length === 0 && (
                   <div className="col-span-full rounded-[24px] border border-dashed border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] py-12 text-center text-sm text-[color:var(--nodu-text-soft)]">
                     Na tento den neni nikdo naplanovan.
                   </div>

@@ -250,6 +250,10 @@ vi.mock('../features/invoices/queries/useInvoicesQuery', () => ({
   useInvoicesQuery: () => ({ data: invoices, isLoading: false, error: null }),
 }));
 
+vi.mock('../features/invoices/queries/useInvoiceApprovalsQuery', () => ({
+  useInvoiceApprovalsQuery: () => ({ data: [], isLoading: false, error: null }),
+}));
+
 vi.mock('../features/projects/services/projects.service', () => ({
   getProjects: () => projects,
   subscribeToProjectChanges: () => () => undefined,

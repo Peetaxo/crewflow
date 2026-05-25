@@ -23,10 +23,13 @@ import type {
   BudgetPackage,
   FleetReservation,
   FleetVehicle,
+  GrasonEventConfirmation,
   Invoice,
+  InvoiceApprovalDocument,
   Project,
   ReceiptItem,
   Timelog,
+  TimelogType,
   WarehouseItem,
   WarehouseReservation,
   WarehouseReservationItem,
@@ -39,6 +42,8 @@ export interface AppDataSnapshot {
   contractors: Contractor[];
   timelogs: Timelog[];
   invoices: Invoice[];
+  invoiceApprovalDocuments: InvoiceApprovalDocument[];
+  grasonEventConfirmations: GrasonEventConfirmation[];
   receipts: ReceiptItem[];
   budgetPackages: BudgetPackage[];
   budgetItems: BudgetItem[];
@@ -62,6 +67,8 @@ let localAppState = cloneSnapshot({
   contractors: INITIAL_CONTRACTORS,
   timelogs: INITIAL_TIMELOGS,
   invoices: INITIAL_INVOICES,
+  invoiceApprovalDocuments: [],
+  grasonEventConfirmations: [],
   receipts: INITIAL_RECEIPTS,
   budgetPackages: INITIAL_BUDGET_PACKAGES,
   budgetItems: INITIAL_BUDGET_ITEMS,
@@ -82,6 +89,8 @@ export function getLocalAppData(): AppDataSnapshot {
     contractors: INITIAL_CONTRACTORS,
     timelogs: INITIAL_TIMELOGS,
     invoices: INITIAL_INVOICES,
+    invoiceApprovalDocuments: [],
+    grasonEventConfirmations: [],
     receipts: INITIAL_RECEIPTS,
     budgetPackages: INITIAL_BUDGET_PACKAGES,
     budgetItems: INITIAL_BUDGET_ITEMS,
@@ -175,6 +184,54 @@ interface WarehouseReservationRow {
   currency: string | null;
   booqable_order_id: string | null;
 }
+
+interface GrasonEventConfirmationRow {
+  id: string;
+  source: string | null;
+  source_month: string | null;
+  source_key: string | null;
+  event_id: string | null;
+  profile_id: string | null;
+  shift_date: string | null;
+  source_title: string | null;
+  event_name: string | null;
+  job_number: string | null;
+  phase: string | null;
+  confirmed_name: string | null;
+  source_occurrence_count: number | null;
+  raw_payload: Record<string, unknown> | null;
+  imported_at: string | null;
+  updated_at: string | null;
+}
+
+const TIMELOG_PHASES = new Set<TimelogType>(['instal', 'provoz', 'deinstal']);
+
+const toGrasonPhase = (value: string | null): TimelogType => {
+  if (value && TIMELOG_PHASES.has(value as TimelogType)) {
+    return value as TimelogType;
+  }
+
+  return 'provoz';
+};
+
+const mapGrasonEventConfirmation = (row: GrasonEventConfirmationRow): GrasonEventConfirmation => ({
+  id: row.id,
+  source: 'grason',
+  sourceMonth: row.source_month ?? '',
+  sourceKey: row.source_key ?? '',
+  eventId: row.event_id,
+  profileId: row.profile_id,
+  shiftDate: row.shift_date ?? '',
+  sourceTitle: row.source_title ?? '',
+  eventName: row.event_name ?? '',
+  jobNumber: row.job_number ?? '',
+  phase: toGrasonPhase(row.phase),
+  confirmedName: row.confirmed_name ?? '',
+  sourceOccurrenceCount: row.source_occurrence_count ?? 1,
+  rawPayload: row.raw_payload ?? null,
+  importedAt: row.imported_at ?? '',
+  updatedAt: row.updated_at ?? '',
+});
 
 function normalizeWarehouseCurrency(currency: string | null): 'CZK' {
   if (currency === 'CZK') {
@@ -270,6 +327,7 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     warehouseItemsResult,
     warehouseReservationsResult,
     warehouseReservationItemsResult,
+    grasonEventConfirmationsResult,
   ] = await Promise.all([
     supabase.from('clients').select('*').order('name'),
     supabase.from('projects').select('*').order('job_number'),
@@ -288,6 +346,7 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     supabaseUntyped.from('warehouse_items').select('*').order('name'),
     supabaseUntyped.from('warehouse_reservations').select('*').order('starts_at'),
     supabaseUntyped.from('warehouse_reservation_items').select('*').order('created_at'),
+    supabaseUntyped.from('grason_event_confirmations').select('*').order('shift_date'),
   ]);
 
   const results = [
@@ -318,6 +377,7 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     warehouseReservationItemsResult,
   ];
   const useWarehouseFallback = warehouseResults.some((result) => result.error);
+  const useGrasonConfirmationsFallback = Boolean(grasonEventConfirmationsResult.error);
 
   const clientRows = clientsResult.data ?? [];
   const projectRows = projectsResult.data ?? [];
@@ -336,6 +396,9 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
   const warehouseItemRows = (warehouseItemsResult.data ?? []) as WarehouseItemRow[];
   const warehouseReservationRows = (warehouseReservationsResult.data ?? []) as WarehouseReservationRow[];
   const warehouseReservationItemRows = (warehouseReservationItemsResult.data ?? []) as WarehouseReservationItemRow[];
+  const grasonEventConfirmationRows = (useGrasonConfirmationsFallback
+    ? []
+    : (grasonEventConfirmationsResult.data ?? [])) as GrasonEventConfirmationRow[];
 
   const clients = clientRows.map((row, index) => ({
     ...mapClient(row),
@@ -460,6 +523,8 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     contractors,
     timelogs,
     invoices,
+    invoiceApprovalDocuments: getLocalAppState().invoiceApprovalDocuments ?? [],
+    grasonEventConfirmations: grasonEventConfirmationRows.map(mapGrasonEventConfirmation),
     receipts,
     budgetPackages,
     budgetItems,

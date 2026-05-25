@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import { CalendarDays, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAppContext } from '../context/useAppContext';
 import StatusBadge from '../components/shared/StatusBadge';
 import CrewDetailView from './CrewDetailView';
+import CrewShiftCalendarView from './CrewShiftCalendarView';
 import ContractorEditModal from '../components/modals/ContractorEditModal';
 import { Button } from '../components/ui/button';
 import { Contractor } from '../types';
@@ -60,6 +61,7 @@ const CrewView = () => {
   } = useAppContext();
   const [editingContractor, setEditingContractor] = useState<Contractor | null>(null);
   const [crew, setCrew] = useState<Contractor[]>([]);
+  const [crewViewMode, setCrewViewMode] = useState<'list' | 'calendar'>('list');
 
   const loadCrew = useCallback(() => {
     setCrew(getCrew({ search: searchQuery }));
@@ -80,24 +82,39 @@ const CrewView = () => {
     return <CrewDetailView />;
   }
 
+  if (crewViewMode === 'calendar') {
+    return <CrewShiftCalendarView onBack={() => setCrewViewMode('list')} />;
+  }
+
   const formatRating = (rating?: number | null) => (
     typeof rating === 'number' ? rating.toFixed(1).replace('.0', '') : 'Bez hodnoceni'
   );
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      <div className="mb-5 flex items-center justify-between">
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-lg font-semibold text-[var(--nodu-text)]">Crew</h1>
           <p className="mt-1 text-xs text-[var(--nodu-text-soft)]">Lide, sazby a kontakty pro obsazovani akci.</p>
         </div>
-        <Button
-          type="button"
-          onClick={() => setEditingContractor(createEmptyContractor(nextContractorId))}
-          size="sm"
-        >
-          + Novy clen
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            onClick={() => setCrewViewMode('calendar')}
+            variant="outline"
+            size="sm"
+          >
+            <CalendarDays size={14} />
+            Kalendář směn
+          </Button>
+          <Button
+            type="button"
+            onClick={() => setEditingContractor(createEmptyContractor(nextContractorId))}
+            size="sm"
+          >
+            + Novy clen
+          </Button>
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-[24px] border border-[var(--nodu-border)] bg-white shadow-[0_18px_40px_rgba(var(--nodu-text-rgb),0.06)]">

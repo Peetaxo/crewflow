@@ -82,6 +82,30 @@ describe('events.service fetch snapshot', () => {
       ],
       error: null,
     });
+    const grasonConfirmationsSelect = vi.fn(() => ({
+      order: vi.fn().mockResolvedValue({
+        data: [
+          {
+            id: 'grason-confirmation-1',
+            source_month: '2026-05',
+            source_key: '2026-05-20|Akce 1 / AK001',
+            event_id: 'event-row-1',
+            profile_id: 'profile-uuid-1',
+            shift_date: '2026-05-20',
+            source_title: 'Akce 1 / AK001',
+            event_name: 'Akce 1',
+            job_number: 'AK001',
+            phase: 'provoz',
+            confirmed_name: 'Test User',
+            source_occurrence_count: 1,
+            raw_payload: null,
+            imported_at: '2026-05-20T00:00:00Z',
+            updated_at: '2026-05-20T00:00:00Z',
+          },
+        ],
+        error: null,
+      }),
+    }));
 
     vi.doMock('../../../lib/app-config', () => ({
       appDataSource: 'supabase',
@@ -95,6 +119,7 @@ describe('events.service fetch snapshot', () => {
           if (table === 'projects') return { select: projectsSelect };
           if (table === 'clients') return { select: clientsSelect };
           if (table === 'timelogs') return { select: timelogsSelect };
+          if (table === 'grason_event_confirmations') return { select: grasonConfirmationsSelect };
           throw new Error(`Unexpected table ${table}`);
         }),
       },
@@ -172,6 +197,26 @@ describe('events.service fetch snapshot', () => {
           filled: 1,
           status: 'upcoming',
           client: 'Klient A',
+        },
+      ],
+      grasonEventConfirmations: [
+        {
+          id: 'grason-confirmation-1',
+          source: 'grason',
+          sourceMonth: '2026-05',
+          sourceKey: '2026-05-20|Akce 1 / AK001',
+          eventId: 'event-row-1',
+          profileId: 'profile-uuid-1',
+          shiftDate: '2026-05-20',
+          sourceTitle: 'Akce 1 / AK001',
+          eventName: 'Akce 1',
+          jobNumber: 'AK001',
+          phase: 'provoz',
+          confirmedName: 'Test User',
+          sourceOccurrenceCount: 1,
+          rawPayload: null,
+          importedAt: '2026-05-20T00:00:00Z',
+          updatedAt: '2026-05-20T00:00:00Z',
         },
       ],
       contractors: [{ id: 1, name: 'Crew' }],
@@ -282,6 +327,105 @@ describe('events.service write flow', () => {
     await vi.waitFor(() => {
       expect(ensureSupabaseTimelogsLoaded).toHaveBeenCalledOnce();
     });
+  });
+
+  it('returns Grason confirmations in event detail without requiring timelogs', async () => {
+    const ensureSupabaseTimelogsLoaded = vi.fn();
+    const snapshot = createSnapshot({
+      events: [
+        {
+          id: 1,
+          supabaseId: 'event-uuid-1',
+          name: 'Grason akce',
+          job: 'AK001',
+          startDate: '2026-05-20',
+          endDate: '2026-05-20',
+          city: 'Praha',
+          needed: 2,
+          filled: 2,
+          status: 'upcoming',
+          client: 'Klient A',
+          showDayTypes: true,
+        },
+      ],
+      grasonEventConfirmations: [
+        {
+          id: 'confirmation-1',
+          source: 'grason',
+          sourceMonth: '2026-05',
+          sourceKey: '2026-05-20|Grason akce / AK001',
+          eventId: 'event-uuid-1',
+          profileId: 'profile-uuid-1',
+          shiftDate: '2026-05-20',
+          sourceTitle: 'Grason akce / AK001',
+          eventName: 'Grason akce',
+          jobNumber: 'AK001',
+          phase: 'provoz',
+          confirmedName: 'Test User',
+          sourceOccurrenceCount: 1,
+          rawPayload: null,
+          importedAt: '2026-05-20T00:00:00Z',
+          updatedAt: '2026-05-20T00:00:00Z',
+        },
+        {
+          id: 'confirmation-2',
+          source: 'grason',
+          sourceMonth: '2026-05',
+          sourceKey: '2026-05-20|Grason akce / AK001',
+          eventId: 'event-uuid-1',
+          profileId: null,
+          shiftDate: '2026-05-20',
+          sourceTitle: 'Grason akce / AK001',
+          eventName: 'Grason akce',
+          jobNumber: 'AK001',
+          phase: 'provoz',
+          confirmedName: 'Externi Clovek',
+          sourceOccurrenceCount: 1,
+          rawPayload: null,
+          importedAt: '2026-05-20T00:00:00Z',
+          updatedAt: '2026-05-20T00:00:00Z',
+        },
+      ],
+    } as Parameters<typeof createSnapshot>[0]);
+
+    vi.doMock('../../../lib/app-config', () => ({
+      appDataSource: 'local',
+    }));
+
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: false,
+      supabase: null,
+    }));
+
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: vi.fn(),
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    vi.doMock('../../timelogs/services/timelogs.service', () => ({
+      ensureSupabaseTimelogsLoaded,
+    }));
+
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapClient: vi.fn(),
+      mapEvent: vi.fn(),
+    }));
+
+    const { getEventDetailData, getGrasonConfirmationsForEvent } = await import('./events.service');
+
+    const detail = getEventDetailData('event-uuid-1');
+
+    expect(detail.timelogs).toEqual([]);
+    expect(detail.event?.filled).toBe(2);
+    expect(detail.grasonConfirmations.map((confirmation) => confirmation.confirmedName)).toEqual([
+      'Externi Clovek',
+      'Test User',
+    ]);
+    expect(getGrasonConfirmationsForEvent(detail.event!, snapshot.grasonEventConfirmations).map((confirmation) => confirmation.confirmedName)).toEqual([
+      'Externi Clovek',
+      'Test User',
+    ]);
   });
 
   it('persists a new event to Supabase with the mapped project row id', async () => {

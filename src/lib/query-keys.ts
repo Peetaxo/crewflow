@@ -15,4 +15,7 @@ export const queryKeys = {
     all: ['invoices'] as const,
     list: (search = '') => ['invoices', 'list', search] as const,
   },
+  invoiceApprovals: {
+    all: ['invoice-approvals'] as const,
+  },
 };

@@ -1,12 +1,13 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Contractor, Event, Invoice } from '../types';
+import type { Contractor, Event, Invoice, InvoiceApprovalDocument } from '../types';
 import InvoicesView from './InvoicesView';
 
 const setNavigationGuardMessage = vi.fn();
 const refetchInvoices = vi.fn();
 let mockInvoices: Invoice[] = [];
+let mockInvoiceApprovals: InvoiceApprovalDocument[] = [];
 
 const contractors: Contractor[] = [
   {
@@ -105,13 +106,17 @@ vi.mock('../components/ui/alert-dialog', () => ({
 vi.mock('../features/invoices/services/invoices.service', () => ({
   approveInvoice: vi.fn(),
   deleteInvoice: vi.fn(),
-  getInvoiceDependencies: () => ({ contractors, events }),
+  getInvoiceDependencies: () => ({ contractors, events, timelogs: [] }),
   getPendingInvoiceBatchCount: () => 1,
   sendInvoice: vi.fn(),
 }));
 
 vi.mock('../features/invoices/queries/useInvoicesQuery', () => ({
   useInvoicesQuery: () => ({ data: mockInvoices, isLoading: false, error: null, refetch: refetchInvoices }),
+}));
+
+vi.mock('../features/invoices/queries/useInvoiceApprovalsQuery', () => ({
+  useInvoiceApprovalsQuery: () => ({ data: mockInvoiceApprovals, isLoading: false, error: null }),
 }));
 
 vi.mock('../features/invoices/services/invoice-pdf.service', () => ({
@@ -122,6 +127,7 @@ vi.mock('../features/invoices/services/invoice-pdf.service', () => ({
 describe('InvoicesView', () => {
   beforeEach(() => {
     mockInvoices = [];
+    mockInvoiceApprovals = [];
     refetchInvoices.mockReset();
   });
 
@@ -154,6 +160,67 @@ describe('InvoicesView', () => {
 
     expect(screen.getByRole('button', { name: /Stahnout PDF/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Pregenerovat PDF/i })).toBeInTheDocument();
+  });
+
+  it('shows PowerApps approval state separately from paid invoice state', () => {
+    mockInvoices = [createInvoiceForPdfTest(null)];
+    mockInvoiceApprovals = [
+      {
+        id: 'approval-doc-1',
+        source: 'powerapps_document_approval',
+        externalId: 'powerapps-doc-1',
+        documentName: 'Test Contractor - SF-2026-NOVAK-T-0001.pdf',
+        company: 'NL',
+        jobNumber: 'JOB-1',
+        invoiceNumber: 'SF-2026-NOVAK-T-0001',
+        supplierName: 'Test Contractor',
+        approvalStatus: 'pending',
+        approvalStatusLabel: 've schvalování',
+        comment: 'Test Event\n\nTest Contractor\n20.4 9:00 - 16:00\nCelkem 7h',
+        approvers: ['Ales Burger'],
+        requester: 'Petr Heitzer',
+        rawPayload: null,
+        matchedInvoiceId: null,
+        lastSyncedAt: '2026-05-22T09:00:00Z',
+      },
+    ];
+
+    render(<InvoicesView />);
+
+    expect(screen.getAllByText('Ve schvalování').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Zaplaceno')).not.toBeInTheDocument();
+  });
+
+  it('shows imported SharePoint approval documents even before Nodu invoices exist', () => {
+    mockInvoices = [];
+    mockInvoiceApprovals = [
+      {
+        id: 'approval-doc-1',
+        source: 'powerapps_document_approval',
+        externalId: 'sharepoint-doc-1',
+        documentName: 'Tyl - 2026-10.pdf',
+        company: 'NL',
+        jobNumber: 'JTI001',
+        invoiceNumber: '2026-10',
+        supplierName: 'Milan Tyl',
+        approvalStatus: 'pending',
+        approvalStatusLabel: 've schvalování',
+        comment: 'Koncert Rene Dang\n\nMilan Tyl\n16. 5. 15:00-22:00\nCelkem 12h',
+        approvers: ['Ales Burger', 'Marcela Siglova'],
+        requester: 'Petr Heitzer',
+        rawPayload: null,
+        matchedInvoiceId: null,
+        lastSyncedAt: '2026-05-22T09:00:00Z',
+      },
+    ];
+
+    render(<InvoicesView />);
+
+    expect(screen.getByText('SharePoint schvalovani (1)')).toBeInTheDocument();
+    expect(screen.getByText('Tyl - 2026-10.pdf')).toBeInTheDocument();
+    expect(screen.getByText('Ve schvalování')).toBeInTheDocument();
+    expect(screen.getByText('Milan Tyl')).toBeInTheDocument();
+    expect(screen.getByText('Zatim zadne faktury')).toBeInTheDocument();
   });
 
 });

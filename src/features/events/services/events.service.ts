@@ -5,7 +5,7 @@ import { queryKeys } from '../../../lib/query-keys';
 import { mapClient, mapEvent } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { getDatesBetween, getEventStatus } from '../../../utils';
-import { Client, Contractor, Event, EventPhaseSlot, Project, ReceiptItem, Timelog, TimelogType } from '../../../types';
+import { Client, Contractor, Event, EventPhaseSlot, GrasonEventConfirmation, Project, ReceiptItem, Timelog, TimelogType } from '../../../types';
 import { EventAssignmentResult, EventConflictDetail, EventFilter, EventWithDerivedStatus } from '../types/events.types';
 
 const DEFAULT_TIME_FROM = '08:00';
@@ -13,6 +13,34 @@ const DEFAULT_TIME_TO = '17:00';
 const EVENT_PHASE_TYPES: TimelogType[] = ['instal', 'provoz', 'deinstal'];
 type TimelogAssignmentRow = { event_id: string | null; contractor_id: string | null };
 type EventIdentifier = number | string;
+type GrasonEventConfirmationRow = {
+  id: string;
+  source_month: string | null;
+  source_key: string | null;
+  event_id: string | null;
+  profile_id: string | null;
+  shift_date: string | null;
+  source_title: string | null;
+  event_name: string | null;
+  job_number: string | null;
+  phase: string | null;
+  confirmed_name: string | null;
+  source_occurrence_count: number | null;
+  raw_payload: Record<string, unknown> | null;
+  imported_at: string | null;
+  updated_at: string | null;
+};
+type SupabaseGrasonResult = {
+  data: unknown[] | null;
+  error: { message: string } | null;
+};
+type SupabaseGrasonClient = {
+  from: (table: 'grason_event_confirmations') => {
+    select: (columns: string) => {
+      order: (column: string) => Promise<SupabaseGrasonResult>;
+    };
+  };
+};
 
 const createSlotId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
@@ -28,11 +56,96 @@ const countAssignedCrewForEvent = (timelogs: Timelog[], eventId: number): number
   ).size
 );
 
+const normalizeGrasonMatchText = (value: string | null | undefined): string => (
+  String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+);
+
+const normalizeGrasonJobNumber = (value: string | null | undefined): string => (
+  String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/\s+/g, '')
+    .trim()
+);
+
+const getGrasonConfirmationIdentity = (confirmation: GrasonEventConfirmation): string => (
+  confirmation.profileId || normalizeGrasonMatchText(confirmation.confirmedName)
+);
+
 const matchesEventIdentifier = (event: Event, eventId: EventIdentifier): boolean => (
   typeof eventId === 'string'
     ? event.supabaseId === eventId
     : event.id === eventId
 );
+
+export const getGrasonConfirmationsForEvent = (
+  event: Event,
+  confirmations: GrasonEventConfirmation[] = [],
+): GrasonEventConfirmation[] => {
+  const eventJobNumber = normalizeGrasonJobNumber(event.job);
+  const eventName = normalizeGrasonMatchText(event.name);
+
+  return confirmations
+    .filter((confirmation) => {
+      if (event.supabaseId && confirmation.eventId === event.supabaseId) {
+        return true;
+      }
+
+      if (confirmation.eventId) {
+        return false;
+      }
+
+      const confirmationJobNumber = normalizeGrasonJobNumber(confirmation.jobNumber);
+      const confirmationEventName = normalizeGrasonMatchText(confirmation.eventName);
+      return Boolean(
+        confirmation.shiftDate
+        && event.startDate <= confirmation.shiftDate
+        && event.endDate >= confirmation.shiftDate
+        && eventJobNumber
+        && confirmationJobNumber === eventJobNumber
+        && eventName
+        && confirmationEventName === eventName,
+      );
+    })
+    .sort((left, right) => (
+      `${left.shiftDate}|${left.sourceTitle}|${left.confirmedName}`
+        .localeCompare(`${right.shiftDate}|${right.sourceTitle}|${right.confirmedName}`, 'cs')
+    ));
+};
+
+const countGrasonConfirmedCrew = (confirmations: GrasonEventConfirmation[]): number => (
+  new Set(confirmations.map(getGrasonConfirmationIdentity).filter(Boolean)).size
+);
+
+const EVENT_PHASES = new Set<TimelogType>(['instal', 'provoz', 'deinstal']);
+
+const toEventPhase = (value: string | null): TimelogType => (
+  value && EVENT_PHASES.has(value as TimelogType) ? value as TimelogType : 'provoz'
+);
+
+const mapGrasonConfirmationRow = (row: GrasonEventConfirmationRow): GrasonEventConfirmation => ({
+  id: row.id,
+  source: 'grason',
+  sourceMonth: row.source_month ?? '',
+  sourceKey: row.source_key ?? '',
+  eventId: row.event_id,
+  profileId: row.profile_id,
+  shiftDate: row.shift_date ?? '',
+  sourceTitle: row.source_title ?? '',
+  eventName: row.event_name ?? '',
+  jobNumber: row.job_number ?? '',
+  phase: toEventPhase(row.phase),
+  confirmedName: row.confirmed_name ?? '',
+  sourceOccurrenceCount: row.source_occurrence_count ?? 1,
+  rawPayload: row.raw_payload ?? null,
+  importedAt: row.imported_at ?? '',
+  updatedAt: row.updated_at ?? '',
+});
 
 const requestSupabaseTimelogsHydration = () => {
   void import('../../timelogs/services/timelogs.service')
@@ -47,11 +160,13 @@ export const fetchEventsSnapshot = async (): Promise<Event[]> => {
     return getLocalAppState().events ?? [];
   }
 
-  const [eventsResult, projectsResult, clientsResult, timelogsResult] = await Promise.all([
+  const supabaseGrason = supabase as unknown as SupabaseGrasonClient;
+  const [eventsResult, projectsResult, clientsResult, timelogsResult, grasonConfirmationsResult] = await Promise.all([
     supabase.from('events').select('*').order('date_from').order('name'),
     supabase.from('projects').select('*').order('job_number'),
     supabase.from('clients').select('*').order('name'),
     supabase.from('timelogs').select('event_id,contractor_id'),
+    supabaseGrason.from('grason_event_confirmations').select('*').order('shift_date'),
   ]);
 
   const firstError = eventsResult.error ?? projectsResult.error ?? clientsResult.error ?? timelogsResult.error;
@@ -63,6 +178,13 @@ export const fetchEventsSnapshot = async (): Promise<Event[]> => {
   const projectRows = projectsResult.data ?? [];
   const eventRows = eventsResult.data ?? [];
   const timelogRows = (timelogsResult.data ?? []) as TimelogAssignmentRow[];
+  const grasonEventConfirmations = grasonConfirmationsResult.error
+    ? []
+    : ((grasonConfirmationsResult.data ?? []) as GrasonEventConfirmationRow[]).map(mapGrasonConfirmationRow);
+
+  if (grasonConfirmationsResult.error) {
+    console.warn('Nepodarilo se nacist potvrzeni z Grasonu.', grasonConfirmationsResult.error.message);
+  }
 
   const clientsByUuid = new Map(
     clientRows.map((row, index) => [row.id, { ...mapClient(row), id: index + 1 }]),
@@ -87,7 +209,7 @@ export const fetchEventsSnapshot = async (): Promise<Event[]> => {
       id: index + 1,
       job: row.job_number ?? project?.job_number ?? '',
       client: row.client_name ?? client?.name ?? '',
-      filled: assignedProfilesByEventRowId.get(row.id)?.size ?? 0,
+      filled: assignedProfilesByEventRowId.get(row.id)?.size ?? row.crew_filled ?? 0,
     };
   });
 
@@ -99,6 +221,7 @@ export const fetchEventsSnapshot = async (): Promise<Event[]> => {
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     events: supabaseEvents,
+    grasonEventConfirmations,
   }));
 
   return supabaseEvents;
@@ -307,6 +430,7 @@ export const getEventDetailData = (eventId: EventIdentifier | null): {
   timelogs: Timelog[];
   contractors: Contractor[];
   receipts: ReceiptItem[];
+  grasonConfirmations: GrasonEventConfirmation[];
 } => {
   ensureSupabaseEventsLoaded();
   requestSupabaseTimelogsHydration();
@@ -319,19 +443,25 @@ export const getEventDetailData = (eventId: EventIdentifier | null): {
       timelogs: [],
       contractors: snapshot.contractors ?? [],
       receipts: [],
+      grasonConfirmations: [],
     };
   }
 
   const eventTimelogs = (snapshot.timelogs ?? []).filter((timelog) => timelog.eid === event.id);
+  const grasonConfirmations = getGrasonConfirmationsForEvent(event, snapshot.grasonEventConfirmations ?? []);
+  const grasonConfirmedCount = countGrasonConfirmedCrew(grasonConfirmations);
 
   return {
     event: {
       ...event,
-      filled: eventTimelogs.length > 0 ? countAssignedCrewForEvent(eventTimelogs, event.id) : event.filled,
+      filled: eventTimelogs.length > 0
+        ? countAssignedCrewForEvent(eventTimelogs, event.id)
+        : Math.max(event.filled, grasonConfirmedCount),
     },
     timelogs: eventTimelogs,
     contractors: snapshot.contractors ?? [],
     receipts: (snapshot.receipts ?? []).filter((receipt) => receipt.eid === event.id),
+    grasonConfirmations,
   };
 };
 

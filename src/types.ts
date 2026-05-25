@@ -111,8 +111,69 @@ export interface Timelog {
   status: TimelogStatus;
 }
 
+/** Prirazeni crew k akci bez detailnich vykazanych dni */
+export interface EventCrewAssignment {
+  eventId: number;
+  eventSupabaseId?: string | null;
+  contractorProfileId: string;
+  name: string;
+}
+
 /** Status faktury */
 export type InvoiceStatus = 'draft' | 'sent' | 'paid';
+
+export type InvoiceApprovalSource = 'powerapps_document_approval';
+export type PowerAppsApprovalStatus = 'pending' | 'approved' | 'rejected' | 'unknown';
+
+export type InvoiceApprovalIndicatorStatus = 'not_found' | 'pending' | 'approved' | 'rejected' | 'needs_review';
+
+export interface InvoiceApprovalDocument {
+  id: string;
+  source: InvoiceApprovalSource;
+  externalId: string | null;
+  documentName: string;
+  company: string;
+  jobNumber: string;
+  invoiceNumber: string;
+  supplierName: string;
+  approvalStatus: PowerAppsApprovalStatus;
+  approvalStatusLabel: string;
+  comment: string;
+  approvers: string[];
+  requester: string;
+  rawPayload: Record<string, unknown> | null;
+  matchedInvoiceId: string | null;
+  lastSyncedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface InvoiceApprovalIndicator {
+  status: InvoiceApprovalIndicatorStatus;
+  label: string;
+  document?: InvoiceApprovalDocument;
+  documents?: InvoiceApprovalDocument[];
+  reason?: string;
+}
+
+export interface GrasonEventConfirmation {
+  id: string;
+  source: 'grason';
+  sourceMonth: string;
+  sourceKey: string;
+  eventId: string | null;
+  profileId: string | null;
+  shiftDate: string;
+  sourceTitle: string;
+  eventName: string;
+  jobNumber: string;
+  phase: TimelogType;
+  confirmedName: string;
+  sourceOccurrenceCount: number;
+  rawPayload: Record<string, unknown> | null;
+  importedAt: string;
+  updatedAt: string;
+}
 
 export interface InvoiceSupplierSnapshot {
   profileId: string;

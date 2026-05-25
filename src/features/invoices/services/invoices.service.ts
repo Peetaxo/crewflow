@@ -956,13 +956,14 @@ export const getInvoiceCreatePreview = (contractorProfileId: string): InvoiceCre
   return batchToPreview(batch, contractors);
 };
 
-export const getInvoiceDependencies = (): { events: Event[]; contractors: Contractor[] } => {
+export const getInvoiceDependencies = (): { events: Event[]; contractors: Contractor[]; timelogs: Timelog[] } => {
   ensureSupabaseInvoicesLoaded();
   const snapshot = getLocalAppState();
 
   return {
     events: snapshot.events ?? [],
     contractors: snapshot.contractors ?? [],
+    timelogs: snapshot.timelogs ?? [],
   };
 };
 

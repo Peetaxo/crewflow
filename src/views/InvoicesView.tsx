@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { useAuth } from '../app/providers/useAuth';
 import { useAppContext } from '../context/useAppContext';
-import { Contractor, Event, Invoice } from '../types';
+import { Contractor, Event, Invoice, InvoiceApprovalDocument, InvoiceApprovalIndicator, Timelog } from '../types';
 import { formatCurrency, formatShortDate, getCountdown } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';
 import InvoiceCreateModal from '../components/modals/InvoiceCreateModal';
@@ -27,6 +27,8 @@ import {
   sendInvoice,
 } from '../features/invoices/services/invoices.service';
 import { useInvoicesQuery } from '../features/invoices/queries/useInvoicesQuery';
+import { useInvoiceApprovalsQuery } from '../features/invoices/queries/useInvoiceApprovalsQuery';
+import { buildInvoiceApprovalIndicators } from '../features/invoices/services/invoice-approval-sync.service';
 import { generateInvoicePdf, getInvoicePdfDownloadUrl } from '../features/invoices/services/invoice-pdf.service';
 import { openInvoicePdfUrl } from '../features/invoices/services/invoice-pdf-download';
 
@@ -34,12 +36,26 @@ interface InvoicesViewProps {
   scope?: 'all' | 'mine';
 }
 
+const getApprovalDocumentStatusLabel = (document: InvoiceApprovalDocument) => {
+  if (document.approvalStatus === 'pending') return 'Ve schvalování';
+  if (document.approvalStatus === 'approved') return 'Schváleno v approval systému';
+  if (document.approvalStatus === 'rejected') return 'Zamítnuto';
+  return 'Ke kontrole';
+};
+
+const getApprovalDocumentStatusCounts = (documents: InvoiceApprovalDocument[]) => documents.reduce((acc, document) => {
+  acc[document.approvalStatus] = (acc[document.approvalStatus] ?? 0) + 1;
+  return acc;
+}, {} as Record<InvoiceApprovalDocument['approvalStatus'], number>);
+
 const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
   const { currentProfileId } = useAuth();
   const { role, searchQuery, setNavigationGuardMessage } = useAppContext();
   const invoicesQuery = useInvoicesQuery();
+  const invoiceApprovalsQuery = useInvoiceApprovalsQuery();
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
+  const [timelogs, setTimelogs] = useState<Timelog[]>([]);
   const [pendingBatchCount, setPendingBatchCount] = useState(0);
   const [isCreateMode, setIsCreateMode] = useState(false);
   const [hasUnsavedCreate, setHasUnsavedCreate] = useState(false);
@@ -50,6 +66,7 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
     const dependencies = getInvoiceDependencies();
     setContractors(dependencies.contractors ?? []);
     setEvents(dependencies.events ?? []);
+    setTimelogs(dependencies.timelogs ?? []);
     setPendingBatchCount(getPendingInvoiceBatchCount());
   }, []);
 
@@ -103,7 +120,30 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
   const visibleInvoices = scope === 'mine'
     ? invoices.filter((invoice) => invoice.contractorProfileId === currentProfileId)
     : invoices;
+  const approvalIndicators = useMemo(() => buildInvoiceApprovalIndicators({
+    invoices,
+    approvalDocuments: invoiceApprovalsQuery.data ?? [],
+    contractors,
+    events,
+    timelogs,
+  }), [contractors, events, invoiceApprovalsQuery.data, invoices, timelogs]);
+  const approvalDocuments = useMemo(() => (
+    [...(invoiceApprovalsQuery.data ?? [])]
+      .sort((left, right) => right.lastSyncedAt.localeCompare(left.lastSyncedAt))
+  ), [invoiceApprovalsQuery.data]);
+  const approvalDocumentCounts = useMemo(
+    () => getApprovalDocumentStatusCounts(approvalDocuments),
+    [approvalDocuments],
+  );
   const isCrew = role === 'crew';
+
+  const getApprovalIndicator = (invoiceId: string): InvoiceApprovalIndicator => (
+    approvalIndicators.get(invoiceId) ?? {
+      status: 'not_found',
+      label: 'Nenalezeno v PowerApps',
+      reason: 'K této faktuře zatím není spárovaný dokument z approval systému.',
+    }
+  );
 
   const handleSendInvoice = async (invoiceId: string) => {
     try {
@@ -248,12 +288,71 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
         </p>
       </div>
 
+      {scope === 'all' && !isCrew && approvalDocuments.length > 0 && (
+        <div className="mb-4 rounded-[24px] border border-[color:var(--nodu-border)] bg-white p-4 shadow-[0_14px_34px_rgba(47,38,31,0.06)]">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-[color:var(--nodu-text)]">SharePoint schvalovani ({approvalDocuments.length})</h2>
+              <p className="mt-1 text-[11px] text-[color:var(--nodu-text-soft)]">
+                Importovana metadata z knihovny Faktury / ApprovalDocuments.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {approvalDocumentCounts.approved ? <StatusBadge status="approved" label={`Schvaleno ${approvalDocumentCounts.approved}`} /> : null}
+              {approvalDocumentCounts.pending ? <StatusBadge status="pending" label={`Ve schvalovani ${approvalDocumentCounts.pending}`} /> : null}
+              {approvalDocumentCounts.unknown ? <StatusBadge status="needs_review" label={`Ke kontrole ${approvalDocumentCounts.unknown}`} /> : null}
+            </div>
+          </div>
+
+          <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
+            {approvalDocuments.map((document) => (
+              <div
+                key={document.id}
+                className="rounded-[18px] border border-[color:rgb(var(--nodu-text-rgb)/0.08)] bg-[color:var(--nodu-paper-strong)] p-3"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate text-xs font-semibold text-[color:var(--nodu-text)]">{document.documentName}</span>
+                      <StatusBadge status={document.approvalStatus === 'unknown' ? 'needs_review' : document.approvalStatus} label={getApprovalDocumentStatusLabel(document)} />
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[color:var(--nodu-text-soft)]">
+                      {document.jobNumber && <span>Zakazka: <strong className="text-[color:var(--nodu-text)]">{document.jobNumber}</strong></span>}
+                      {document.invoiceNumber && <span>Faktura: <strong className="text-[color:var(--nodu-text)]">{document.invoiceNumber}</strong></span>}
+                      {document.supplierName && <span>Dodavatel: <strong className="text-[color:var(--nodu-text)]">{document.supplierName}</strong></span>}
+                    </div>
+                    {document.comment && (
+                      <div className="mt-2 line-clamp-2 text-[11px] leading-relaxed text-[color:var(--nodu-text-soft)]">
+                        {document.comment}
+                      </div>
+                    )}
+                  </div>
+                  {document.approvers.length > 0 && (
+                    <div className="flex max-w-[240px] flex-wrap justify-end gap-1">
+                      {document.approvers.slice(0, 3).map((approver) => (
+                        <span
+                          key={`${document.id}-${approver}`}
+                          className="rounded-full bg-[color:rgb(var(--nodu-text-rgb)/0.06)] px-2 py-0.5 text-[10px] font-medium text-[color:var(--nodu-text-soft)]"
+                        >
+                          {approver}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="space-y-2">
         {visibleInvoices.map((invoice) => {
           const contractor = findContractor(invoice.contractorProfileId);
           const event = invoice.eid ? findEvent(invoice.eid) : null;
           if (!contractor) return null;
           const countdown = invoice.status === 'sent' ? getCountdown(invoice.sentAt) : null;
+          const approvalIndicator = getApprovalIndicator(invoice.id);
 
           return (
             <div key={invoice.id} className="nodu-panel rounded-[28px] p-5">
@@ -263,6 +362,7 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
                     <span className="font-mono text-xs font-semibold text-[color:var(--nodu-text)]">{invoice.id}</span>
                     <span className="jn nodu-job-badge">{invoice.job}</span>
                     <StatusBadge status={invoice.status} />
+                    <StatusBadge status={approvalIndicator.status} label={approvalIndicator.label} />
                     {countdown && (
                       <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${countdown.exp ? 'bg-[rgba(212,93,55,0.12)] text-[#c45c39]' : 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)]'}`}>
                         ⏱ {countdown.text}

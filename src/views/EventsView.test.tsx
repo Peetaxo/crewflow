@@ -140,6 +140,108 @@ describe('EventsView', () => {
     expect(screen.getByText('AK001')).toBeInTheDocument();
   });
 
+  it('filters the event list to the selected month and keeps month boundary events visible', async () => {
+    const setEventsCalendarDate = vi.fn();
+    const monthEvents = [
+      {
+        id: 10,
+        name: 'Akce duben',
+        job: 'APR001',
+        startDate: '2026-04-20',
+        endDate: '2026-04-20',
+        city: 'Praha',
+        needed: 1,
+        filled: 0,
+        status: 'upcoming' as const,
+        client: 'Klient Duben',
+      },
+      {
+        id: 11,
+        name: 'Akce kveten',
+        job: 'MAY001',
+        startDate: '2026-05-10',
+        endDate: '2026-05-10',
+        city: 'Brno',
+        needed: 1,
+        filled: 0,
+        status: 'upcoming' as const,
+        client: 'Klient Kveten',
+      },
+      {
+        id: 12,
+        name: 'Prelom mesice',
+        job: 'MIX001',
+        startDate: '2026-04-30',
+        endDate: '2026-05-02',
+        city: 'Praha',
+        needed: 1,
+        filled: 0,
+        status: 'upcoming' as const,
+        client: 'Klient Mix',
+      },
+    ];
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockAppContext,
+        eventsCalendarDate: '2026-05-15',
+        setEventsCalendarDate,
+      }),
+    }));
+
+    vi.doMock('../features/events/queries/useEventsQuery', () => ({
+      useEventsQuery: () => ({ data: monthEvents, isLoading: false, error: null }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      createEmptyEvent: vi.fn(),
+      filterEventsByStatus: (items: typeof monthEvents) => items.map((item) => ({ ...item, derivedStatus: 'upcoming' as const })),
+      getEventsWithDerivedStatus: (items: typeof monthEvents) => items.map((item) => ({ ...item, derivedStatus: 'upcoming' as const })),
+      getReferenceDate: () => new Date('2026-05-15'),
+      getEventCrew: () => [],
+      getEventDetailData: () => ({
+        timelogs: [],
+        contractors: [],
+        receipts: [],
+        event: monthEvents[0],
+      }),
+    }));
+
+    vi.doMock('./EventDetailView', () => ({
+      default: () => <div>detail</div>,
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventsView } = await import('./EventsView');
+    const queryClient = new QueryClient();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <EventsView />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByText('květen 2026')).toBeInTheDocument();
+    expect(screen.getByText('Akce kveten')).toBeInTheDocument();
+    expect(screen.getAllByText('Prelom mesice')).toHaveLength(2);
+    expect(screen.queryByText('Akce duben')).not.toBeInTheDocument();
+    expect(screen.queryByText(/30\..*dubna/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/1\..*května/i)).toBeInTheDocument();
+    expect(screen.getByText(/2\..*května/i)).toBeInTheDocument();
+    expect(screen.getByText('2 akci')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('Predchozi mesic'));
+
+    expect(setEventsCalendarDate).toHaveBeenCalledWith('2026-04-01');
+  });
+
   it('keeps selected event id while events are still loading', async () => {
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => ({

@@ -3,7 +3,6 @@ import { CalendarDays, ChevronLeft, ChevronRight, List, Trash2 } from 'lucide-re
 import { motion } from 'framer-motion';
 import {
   addMonths,
-  addWeeks,
   eachDayOfInterval,
   endOfMonth,
   endOfWeek,
@@ -14,7 +13,6 @@ import {
   startOfMonth,
   startOfWeek,
   subMonths,
-  subWeeks,
 } from 'date-fns';
 import { cs } from 'date-fns/locale';
 import { useAppContext } from '../context/useAppContext';
@@ -135,6 +133,12 @@ const getEventColorStyle = (index: number, status: CalendarEvent['derivedStatus'
 
 const formatOccurrenceDate = (date: string) => format(parseISO(date), 'd. M. yyyy', { locale: cs });
 
+const formatSelectedMonthLabel = (monthDate: Date) => format(monthDate, 'LLLL yyyy', { locale: cs });
+
+const eventOverlapsMonth = (event: Event, monthStartKey: string, monthEndKey: string) => (
+  event.startDate <= monthEndKey && event.endDate >= monthStartKey
+);
+
 const formatTimelogShift = (from: string, to: string) => `${from} - ${to}`;
 
 const getTimeSortValue = (time: string) => {
@@ -244,6 +248,12 @@ const EventsView = () => {
     return isValid(parsedCalendarDate) ? parsedCalendarDate : getReferenceDate(events);
   }, [eventsCalendarDate, events]);
 
+  const selectedMonthStart = startOfMonth(calendarDate);
+  const selectedMonthKey = format(selectedMonthStart, 'yyyy-MM-dd');
+  const selectedMonthEndKey = format(endOfMonth(selectedMonthStart), 'yyyy-MM-dd');
+  const selectedMonthPrefix = format(selectedMonthStart, 'yyyy-MM');
+  const selectedMonthLabel = formatSelectedMonthLabel(selectedMonthStart);
+
   useEffect(() => {
     if (didInitCalendarDate) return;
     if (eventsCalendarDate) {
@@ -262,7 +272,8 @@ const EventsView = () => {
 
   const visibleEvents = useMemo(() => (
     filterEventsByStatus(eventsWithDerivedStatus, eventFilter)
-  ), [eventFilter, eventsWithDerivedStatus]);
+      .filter((event) => eventOverlapsMonth(event, selectedMonthKey, selectedMonthEndKey))
+  ), [eventFilter, eventsWithDerivedStatus, selectedMonthEndKey, selectedMonthKey]);
 
   const eventColorMap = useMemo(() => (
     new Map(
@@ -274,21 +285,23 @@ const EventsView = () => {
 
   const groupedEventOccurrences = useMemo(() => (
     visibleEvents.reduce((acc, event) => {
-      getDatesBetween(event.startDate, event.endDate).forEach((date) => {
-        if (!acc[date]) acc[date] = [];
-        acc[date].push({ event, date });
-      });
+      getDatesBetween(event.startDate, event.endDate)
+        .filter((date) => date.startsWith(selectedMonthPrefix))
+        .forEach((date) => {
+          if (!acc[date]) acc[date] = [];
+          acc[date].push({ event, date });
+        });
       return acc;
     }, {} as Record<string, EventListOccurrence[]>)
-  ), [visibleEvents]);
+  ), [selectedMonthPrefix, visibleEvents]);
 
   const sortedDates = Object.keys(groupedEventOccurrences).sort();
 
   const calendarStart = calendarMode === 'month'
-    ? startOfWeek(startOfMonth(calendarDate), { weekStartsOn: 1 })
+    ? startOfWeek(selectedMonthStart, { weekStartsOn: 1 })
     : startOfWeek(calendarDate, { weekStartsOn: 1 });
   const calendarEnd = calendarMode === 'month'
-    ? endOfWeek(endOfMonth(calendarDate), { weekStartsOn: 1 })
+    ? endOfWeek(endOfMonth(selectedMonthStart), { weekStartsOn: 1 })
     : endOfWeek(calendarDate, { weekStartsOn: 1 });
   const calendarDays = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
 
@@ -305,12 +318,12 @@ const EventsView = () => {
     setEventTab('overview');
   };
 
-  const moveCalendar = (direction: 'prev' | 'next') => {
-    const nextDate = calendarMode === 'month'
-      ? (direction === 'next' ? addMonths(calendarDate, 1) : subMonths(calendarDate, 1))
-      : (direction === 'next' ? addWeeks(calendarDate, 1) : subWeeks(calendarDate, 1));
+  const moveMonth = (direction: 'prev' | 'next') => {
+    const nextMonth = direction === 'next'
+      ? addMonths(selectedMonthStart, 1)
+      : subMonths(selectedMonthStart, 1);
 
-    setEventsCalendarDate(format(nextDate, 'yyyy-MM-dd'));
+    setEventsCalendarDate(format(nextMonth, 'yyyy-MM-dd'));
   };
 
   if (selectedEventId && selectedEvent) {
@@ -367,38 +380,45 @@ const EventsView = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {viewMode === 'calendar' && (
-            <>
-              <div className="flex items-center rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
-                {[
-                  { id: 'month' as const, label: 'Mesic' },
-                  { id: 'week' as const, label: 'Tyden' },
-                ].map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => setEventsCalendarMode(item.id)}
-                    className={`rounded-[14px] px-3 py-2 text-xs font-medium transition-all ${calendarMode === item.id ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)] shadow-[inset_0_0_0_1px_rgba(255,128,13,0.16)]' : 'text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-              <div className="flex items-center gap-1 rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.96)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
-                <button onClick={() => moveCalendar('prev')} className="rounded-[14px] p-2 text-[color:var(--nodu-text-soft)] hover:bg-[color:rgb(var(--nodu-accent-rgb)/0.08)] hover:text-[color:var(--nodu-accent)]">
-                  <ChevronLeft size={14} />
+            <div className="flex items-center rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
+              {[
+                { id: 'month' as const, label: 'Mesic' },
+                { id: 'week' as const, label: 'Tyden' },
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => setEventsCalendarMode(item.id)}
+                  className={`rounded-[14px] px-3 py-2 text-xs font-medium transition-all ${calendarMode === item.id ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)] shadow-[inset_0_0_0_1px_rgba(255,128,13,0.16)]' : 'text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
+                >
+                  {item.label}
                 </button>
-                <div className="min-w-[160px] px-2 text-center text-xs font-semibold text-[color:var(--nodu-text)]">
-                  {calendarMode === 'month'
-                    ? format(calendarDate, 'LLLL yyyy', { locale: cs })
-                    : `${format(calendarStart, 'd. M.', { locale: cs })} - ${format(calendarEnd, 'd. M. yyyy', { locale: cs })}`}
-                </div>
-                <button onClick={() => moveCalendar('next')} className="rounded-[14px] p-2 text-[color:var(--nodu-text-soft)] hover:bg-[color:rgb(var(--nodu-accent-rgb)/0.08)] hover:text-[color:var(--nodu-accent)]">
-                  <ChevronRight size={14} />
-                </button>
-              </div>
-            </>
+              ))}
+            </div>
           )}
+
+          <div className="flex items-center gap-1 rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.96)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
+            <button
+              type="button"
+              aria-label="Predchozi mesic"
+              onClick={() => moveMonth('prev')}
+              className="rounded-[14px] p-2 text-[color:var(--nodu-text-soft)] hover:bg-[color:rgb(var(--nodu-accent-rgb)/0.08)] hover:text-[color:var(--nodu-accent)]"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <div className="min-w-[160px] px-2 text-center text-xs font-semibold text-[color:var(--nodu-text)]">
+              {selectedMonthLabel}
+            </div>
+            <button
+              type="button"
+              aria-label="Dalsi mesic"
+              onClick={() => moveMonth('next')}
+              className="rounded-[14px] p-2 text-[color:var(--nodu-text-soft)] hover:bg-[color:rgb(var(--nodu-accent-rgb)/0.08)] hover:text-[color:var(--nodu-accent)]"
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
 
           {canManageEvents && (
             <Button
@@ -414,7 +434,7 @@ const EventsView = () => {
 
       {visibleEvents.length === 0 ? (
         <div className="rounded-[28px] border border-dashed border-[color:rgb(var(--nodu-accent-rgb)/0.24)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] px-6 py-12 text-center shadow-[0_18px_42px_rgba(47,38,31,0.08)]">
-          <div className="text-sm font-semibold text-[color:var(--nodu-text)]">Pro tento filtr tu zatim nejsou zadne akce.</div>
+          <div className="text-sm font-semibold text-[color:var(--nodu-text)]">Pro tento mesic a filtr tu zatim nejsou zadne akce.</div>
           <div className="mt-1 text-xs text-[color:var(--nodu-text-soft)]">
             Zkuste prepnout filtr nebo vytvorit novou akci.
           </div>
@@ -583,7 +603,7 @@ const EventsView = () => {
                     {weekDays.map((day) => {
                       const dayKey = format(day, 'yyyy-MM-dd');
                       const dayEvents = visibleEvents.filter((event) => eventOccursOnDate(event, dayKey));
-                      const isCurrentMonth = isSameMonth(day, calendarDate);
+                      const isCurrentMonth = isSameMonth(day, selectedMonthStart);
 
                       return (
                         <div key={dayKey} className={`relative border-r border-[color:rgb(var(--nodu-text-rgb)/0.08)] p-3 last:border-r-0 ${isCurrentMonth || calendarMode === 'week' ? 'bg-[color:rgb(var(--nodu-surface-rgb)/0.98)]' : 'bg-[color:rgb(var(--nodu-text-rgb)/0.03)]'}`}>

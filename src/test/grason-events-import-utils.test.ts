@@ -65,7 +65,7 @@ describe('Grason event import utilities', () => {
     });
   });
 
-  it('generates SQL that imports events and Grason confirmations without creating timelogs or invoices', () => {
+  it('generates SQL that imports events and matched Grason people as event crew assignments', () => {
     const sql = buildGrasonEventsImportSql([
       {
         sourceKey: '2026-05-12|Miss Agro / JTI001',
@@ -89,10 +89,14 @@ describe('Grason event import utilities', () => {
     expect(sql).toContain('insert into public.events');
     expect(sql).toContain('inserted_event_ids as');
     expect(sql).toContain('upserted_event_ids as');
-    expect(sql).toContain("when coalesce(target.description, '') like");
+    expect(sql).toContain('inserted_event_assignments as');
+    expect(sql).toContain('insert into public.event_assignments');
+    expect(sql).toContain('where resolved_confirmations.profile_id is not null');
     expect(sql).toContain('insert into public.grason_event_confirmations');
     expect(sql).toContain('Miss Agro');
     expect(sql).toContain('JTI001');
+    expect(sql).not.toContain("'Grason import: ' || incoming_events.source_title");
+    expect(sql).not.toContain("' | potvrzeni: ' ||");
     expect(sql).not.toContain('insert into public.timelogs');
     expect(sql).not.toContain('insert into public.timelog_days');
     expect(sql).not.toContain('insert into public.invoices');

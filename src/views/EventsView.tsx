@@ -18,7 +18,7 @@ import {
 } from 'date-fns';
 import { cs } from 'date-fns/locale';
 import { useAppContext } from '../context/useAppContext';
-import { Event, GrasonEventConfirmation, Timelog } from '../types';
+import { Event, Timelog } from '../types';
 import type { SelectedEventId } from '../context/app-context';
 import { calculateTotalHours, eventOccursOnDate, getDatesBetween } from '../utils';
 import { Button } from '../components/ui/button';
@@ -33,6 +33,7 @@ import { getEventPersonApprovalState } from '../features/invoices/services/invoi
 import {
   createEmptyEvent,
   filterEventsByStatus,
+  getEventCrew,
   getEventDetailData,
   getEventsWithDerivedStatus,
   getReferenceDate,
@@ -178,38 +179,6 @@ const getEventOccurrenceTimeLabel = (event: Event, date: string, timelogs: Timel
 };
 
 const getEventSelectionId = (event: Event): SelectedEventId => event.supabaseId ?? event.id;
-
-type GrasonCrewChip = {
-  key: string;
-  profileId: string | null;
-  name: string;
-};
-
-const getGrasonCrewChips = (
-  confirmations: GrasonEventConfirmation[] = [],
-  assignedProfileIds = new Set<string>(),
-): GrasonCrewChip[] => {
-  const chips = new Map<string, GrasonCrewChip>();
-
-  confirmations.forEach((confirmation) => {
-    if (confirmation.profileId && assignedProfileIds.has(confirmation.profileId)) {
-      return;
-    }
-
-    const key = confirmation.profileId || confirmation.confirmedName.toLowerCase();
-    if (!key || chips.has(key)) {
-      return;
-    }
-
-    chips.set(key, {
-      key,
-      profileId: confirmation.profileId,
-      name: confirmation.confirmedName,
-    });
-  });
-
-  return [...chips.values()].sort((left, right) => left.name.localeCompare(right.name, 'cs'));
-};
 
 const EventsView = () => {
   const {
@@ -466,16 +435,13 @@ const EventsView = () => {
                 {groupedEventOccurrences[date].map(({ event, date: occurrenceDate }) => {
                   const eventDetail = getEventDetailData(getEventSelectionId(event));
                   const eventTimelogs: Timelog[] = eventDetail.timelogs;
-                  const assignedCrew = eventTimelogs.reduce<Array<{ profileId: string; name: string }>>((crew, timelog) => {
-                    if (!timelog.contractorProfileId || crew.some((item) => item.profileId === timelog.contractorProfileId)) {
+                  const assignedCrew = getEventCrew(event.id).reduce<Array<{ profileId: string; name: string }>>((crew, contractor) => {
+                    if (!contractor.profileId || crew.some((item) => item.profileId === contractor.profileId)) {
                       return crew;
                     }
 
-                    const contractor = eventDetail.contractors.find((item) => item.profileId === timelog.contractorProfileId);
-                    return contractor ? [...crew, { profileId: timelog.contractorProfileId, name: contractor.name }] : crew;
+                    return [...crew, { profileId: contractor.profileId, name: contractor.name }];
                   }, []);
-                  const assignedProfileIds = new Set(assignedCrew.map((contractor) => contractor.profileId));
-                  const grasonCrew = getGrasonCrewChips(eventDetail.grasonConfirmations ?? [], assignedProfileIds);
                   const totalHours = eventTimelogs.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
                   const daysCount = getDatesBetween(event.startDate, event.endDate).length;
                   const isFullyStaffed = event.needed > 0 && event.filled >= event.needed;
@@ -549,44 +515,6 @@ const EventsView = () => {
                                       <ApprovalStatusDot status={approvalState.status} label={approvalState.label} />
                                       {contractor.name}
                                     </button>
-                                  );
-                                })}
-                              </div>
-                            )}
-                            {grasonCrew.length > 0 && (
-                              <div className={`flex min-w-0 flex-wrap content-start items-start justify-start gap-1.5 ${assignedCrew.length > 0 ? 'mt-2' : 'pt-1'}`}>
-                                <span className="rounded-full border border-[color:rgb(var(--nodu-accent-rgb)/0.22)] bg-[color:rgb(var(--nodu-accent-rgb)/0.08)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-[color:var(--nodu-accent)]">
-                                  Grason
-                                </span>
-                                {grasonCrew.map((person) => {
-                                  const approvalState = getEventPersonApprovalState({
-                                    event,
-                                    personName: person.name,
-                                    approvalDocuments,
-                                  });
-
-                                  return person.profileId ? (
-                                    <button
-                                      key={person.key}
-                                      type="button"
-                                      onClick={(clickEvent) => {
-                                        clickEvent.stopPropagation();
-                                        setSelectedContractorProfileId(person.profileId ?? undefined);
-                                        setCurrentTab('crew');
-                                      }}
-                                      className="inline-flex items-center gap-1.5 rounded-full border border-[color:rgb(var(--nodu-text-rgb)/0.12)] bg-white px-2.5 py-1 text-[11px] font-semibold text-[color:var(--nodu-text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] transition hover:border-[color:rgb(var(--nodu-accent-rgb)/0.24)] hover:text-[color:var(--nodu-accent)]"
-                                    >
-                                      <ApprovalStatusDot status={approvalState.status} label={approvalState.label} />
-                                      {person.name}
-                                    </button>
-                                  ) : (
-                                    <span
-                                      key={person.key}
-                                      className="inline-flex items-center gap-1.5 rounded-full border border-[color:rgb(var(--nodu-text-rgb)/0.12)] bg-white px-2.5 py-1 text-[11px] font-semibold text-[color:var(--nodu-text)]"
-                                    >
-                                      <ApprovalStatusDot status={approvalState.status} label={approvalState.label} />
-                                      {person.name}
-                                    </span>
                                   );
                                 })}
                               </div>

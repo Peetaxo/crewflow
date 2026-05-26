@@ -11,7 +11,7 @@ import StatusBadge from '../components/shared/StatusBadge';
 import ApprovalStatusDot from '../components/shared/ApprovalStatusDot';
 import EventEditModal from '../components/modals/EventEditModal';
 import AssignCrewModal from '../components/modals/AssignCrewModal';
-import { Event, GrasonEventConfirmation, InvoiceApprovalDocument } from '../types';
+import { Event, InvoiceApprovalDocument } from '../types';
 import {
   getEventCrew,
   getEventDetailData,
@@ -25,42 +25,7 @@ import {
 } from '../features/invoices/services/invoice-approval-sync.service';
 import { updateTimelogStatus } from '../features/timelogs/services/timelogs.service';
 
-type GrasonConfirmedPerson = {
-  key: string;
-  name: string;
-  phase: GrasonEventConfirmation['phase'];
-  shiftDate: string;
-  sourceTitle: string;
-};
-
 const EMPTY_APPROVAL_DOCUMENTS: InvoiceApprovalDocument[] = [];
-
-const getGrasonConfirmedPeople = (
-  confirmations: GrasonEventConfirmation[] = [],
-): GrasonConfirmedPerson[] => {
-  const people = new Map<string, GrasonConfirmedPerson>();
-
-  confirmations.forEach((confirmation) => {
-    const key = confirmation.profileId || confirmation.confirmedName.toLowerCase();
-    if (!key || people.has(key)) {
-      return;
-    }
-
-    people.set(key, {
-      key,
-      name: confirmation.confirmedName,
-      phase: confirmation.phase,
-      shiftDate: confirmation.shiftDate,
-      sourceTitle: confirmation.sourceTitle,
-    });
-  });
-
-  return [...people.values()].sort((left, right) => left.name.localeCompare(right.name, 'cs'));
-};
-
-const getPhaseLabel = (phase: GrasonEventConfirmation['phase']) => (
-  PHASE_CONFIG.find((item) => item.type === phase)?.label ?? phase
-);
 
 const getApprovalDocumentBadgeStatus = (document: InvoiceApprovalDocument) => (
   document.approvalStatus === 'unknown' ? 'needs_review' : document.approvalStatus
@@ -120,7 +85,6 @@ const EventDetailView = () => {
   const eventTimelogs = detail.timelogs;
   const eventReceipts = detail.receipts;
   const contractors = detail.contractors;
-  const grasonConfirmations = detail.grasonConfirmations ?? [];
   const totalHours = eventTimelogs.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
   const totalCrewCost = eventTimelogs.reduce((sum, timelog) => {
     const contractor = contractors.find((item) => item.profileId === timelog.contractorProfileId);
@@ -130,13 +94,9 @@ const EventDetailView = () => {
   const totalReceiptCost = eventReceipts.reduce((sum, receipt) => sum + receipt.amount, 0);
   const days = getDatesBetween(event.startDate, event.endDate);
   const eventCrew = getEventCrew(event.id);
-  const grasonConfirmedPeople = getGrasonConfirmedPeople(grasonConfirmations);
   const dayTimelogs = eventTab === 'overview'
     ? []
     : eventTimelogs.filter((timelog) => timelog.days.some((day) => day.d === eventTab));
-  const dayGrasonPeople = eventTab === 'overview'
-    ? []
-    : getGrasonConfirmedPeople(grasonConfirmations.filter((confirmation) => confirmation.shiftDate === eventTab));
   const canManageEvents = role !== 'crew';
   const eventApprovalTimelogs = canManageEvents
     ? eventTimelogs.filter((timelog) => (
@@ -465,33 +425,6 @@ const EventDetailView = () => {
                   )}
                 </div>
 
-                {grasonConfirmedPeople.length > 0 && (
-                  <div>
-                    <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold">
-                      <Users size={16} className="text-[color:var(--nodu-text-soft)]" />
-                      Potvrzeni z Grasonu ({grasonConfirmedPeople.length})
-                    </h3>
-                    <div className="flex flex-wrap gap-2 rounded-[24px] border border-[color:rgb(var(--nodu-accent-rgb)/0.18)] bg-[color:rgb(var(--nodu-accent-rgb)/0.06)] p-4">
-                      {grasonConfirmedPeople.map((person) => {
-                        const approvalState = getApprovalStateForPerson(person.name);
-
-                        return (
-                          <span
-                            key={person.key}
-                            title={person.sourceTitle}
-                            className="inline-flex items-center gap-1.5 rounded-full border border-[color:rgb(var(--nodu-accent-rgb)/0.18)] bg-white px-3 py-1.5 text-xs font-semibold text-[color:var(--nodu-text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.65)]"
-                          >
-                            <ApprovalStatusDot status={approvalState.status} label={approvalState.label} />
-                            {person.name}
-                            <span className="text-[10px] font-bold uppercase text-[color:var(--nodu-text-soft)]">
-                              {getPhaseLabel(person.phase)}
-                            </span>
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
               </div>
 
               <div className="space-y-4">
@@ -696,32 +629,7 @@ const EventDetailView = () => {
                   );
                 })}
 
-                {dayGrasonPeople.length > 0 && (
-                  <div className="col-span-full rounded-[24px] border border-[color:rgb(var(--nodu-accent-rgb)/0.18)] bg-[color:rgb(var(--nodu-accent-rgb)/0.06)] p-4">
-                    <h4 className="mb-3 text-[10px] font-bold uppercase tracking-wider text-[color:var(--nodu-accent)]">Potvrzeni z Grasonu</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {dayGrasonPeople.map((person) => {
-                        const approvalState = getApprovalStateForPerson(person.name);
-
-                        return (
-                          <span
-                            key={person.key}
-                            title={person.sourceTitle}
-                            className="inline-flex items-center gap-1.5 rounded-full border border-[color:rgb(var(--nodu-accent-rgb)/0.18)] bg-white px-3 py-1.5 text-xs font-semibold text-[color:var(--nodu-text)]"
-                          >
-                            <ApprovalStatusDot status={approvalState.status} label={approvalState.label} />
-                            {person.name}
-                            <span className="text-[10px] font-bold uppercase text-[color:var(--nodu-text-soft)]">
-                              {getPhaseLabel(person.phase)}
-                            </span>
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {dayTimelogs.length === 0 && dayGrasonPeople.length === 0 && (
+                {dayTimelogs.length === 0 && (
                   <div className="col-span-full rounded-[24px] border border-dashed border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] py-12 text-center text-sm text-[color:var(--nodu-text-soft)]">
                     Na tento den neni nikdo naplanovan.
                   </div>

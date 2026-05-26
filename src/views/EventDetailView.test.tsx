@@ -106,7 +106,7 @@ describe('EventDetailView', () => {
     expect(setEditingTimelog).toHaveBeenCalledWith(timelog);
   });
 
-  it('shows confirmed Grason people separately from assigned timelog crew', async () => {
+  it('shows imported Grason people as assigned crew without a separate Grason section', async () => {
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => ({
         role: 'coo',
@@ -121,7 +121,7 @@ describe('EventDetailView', () => {
     }));
 
     vi.doMock('../features/events/services/events.service', () => ({
-      getEventCrew: () => [],
+      getEventCrew: () => [contractor],
       getEventDetailData: () => ({
         event: { ...event, filled: 2 },
         timelogs: [],
@@ -182,10 +182,11 @@ describe('EventDetailView', () => {
 
     render(<EventDetailView />);
 
-    expect(screen.getByText('Potvrzeni z Grasonu (2)')).toBeInTheDocument();
+    expect(screen.queryByText('Potvrzeni z Grasonu (2)')).not.toBeInTheDocument();
+    expect(screen.queryByText('Potvrzeni z Grasonu')).not.toBeInTheDocument();
     expect(screen.getByText('Petr Heitzer')).toBeInTheDocument();
-    expect(screen.getByText('Klara Novakova')).toBeInTheDocument();
-    expect(screen.getByText('Prirazena Crew (0)')).toBeInTheDocument();
+    expect(screen.queryByText('Klara Novakova')).not.toBeInTheDocument();
+    expect(screen.getByText('Prirazena Crew (1)')).toBeInTheDocument();
   });
 
   it('shows approval dots and the approval table in the event detail', async () => {

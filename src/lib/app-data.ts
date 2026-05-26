@@ -19,6 +19,7 @@ import type {
   Client,
   Contractor,
   Event,
+  EventCrewAssignment,
   BudgetItem,
   BudgetPackage,
   FleetReservation,
@@ -43,6 +44,7 @@ export interface AppDataSnapshot {
   timelogs: Timelog[];
   invoices: Invoice[];
   invoiceApprovalDocuments: InvoiceApprovalDocument[];
+  eventCrewAssignments: EventCrewAssignment[];
   grasonEventConfirmations: GrasonEventConfirmation[];
   receipts: ReceiptItem[];
   budgetPackages: BudgetPackage[];
@@ -68,6 +70,7 @@ let localAppState = cloneSnapshot({
   timelogs: INITIAL_TIMELOGS,
   invoices: INITIAL_INVOICES,
   invoiceApprovalDocuments: [],
+  eventCrewAssignments: [],
   grasonEventConfirmations: [],
   receipts: INITIAL_RECEIPTS,
   budgetPackages: INITIAL_BUDGET_PACKAGES,
@@ -90,6 +93,7 @@ export function getLocalAppData(): AppDataSnapshot {
     timelogs: INITIAL_TIMELOGS,
     invoices: INITIAL_INVOICES,
     invoiceApprovalDocuments: [],
+    eventCrewAssignments: [],
     grasonEventConfirmations: [],
     receipts: INITIAL_RECEIPTS,
     budgetPackages: INITIAL_BUDGET_PACKAGES,
@@ -204,6 +208,13 @@ interface GrasonEventConfirmationRow {
   updated_at: string | null;
 }
 
+interface EventAssignmentRow {
+  id: string;
+  event_id: string;
+  profile_id: string;
+  assigned_at: string;
+}
+
 const TIMELOG_PHASES = new Set<TimelogType>(['instal', 'provoz', 'deinstal']);
 
 const toGrasonPhase = (value: string | null): TimelogType => {
@@ -315,6 +326,7 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     profilesResult,
     eventsResult,
     timelogsResult,
+    eventAssignmentsResult,
     timelogDaysResult,
     invoicesResult,
     receiptsResult,
@@ -334,6 +346,7 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     supabase.from('profiles').select('*').order('last_name').order('first_name'),
     supabase.from('events').select('*').order('date_from').order('name'),
     supabase.from('timelogs').select('*').order('created_at'),
+    supabase.from('event_assignments').select('*').order('assigned_at'),
     supabase.from('timelog_days').select('*').order('date'),
     supabase.from('invoices').select('*').order('created_at'),
     supabase.from('receipts').select('*').order('created_at'),
@@ -355,6 +368,7 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     profilesResult,
     eventsResult,
     timelogsResult,
+    eventAssignmentsResult,
     timelogDaysResult,
     invoicesResult,
     receiptsResult,
@@ -384,6 +398,7 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
   const profileRows = profilesResult.data ?? [];
   const eventRows = eventsResult.data ?? [];
   const timelogRows = timelogsResult.data ?? [];
+  const eventAssignmentRows = (eventAssignmentsResult.data ?? []) as EventAssignmentRow[];
   const timelogDayRows = timelogDaysResult.data ?? [];
   const invoiceRows = invoicesResult.data ?? [];
   const receiptRows = receiptsResult.data ?? [];
@@ -446,6 +461,25 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     eid: eventIdMap.get(row.event_id) ?? Number.NaN,
     contractorProfileId: row.contractor_id,
   }));
+
+  const contractorsByProfileId = new Map(
+    contractors
+      .filter((contractor) => contractor.profileId)
+      .map((contractor) => [contractor.profileId as string, contractor]),
+  );
+  const eventCrewAssignments = eventAssignmentRows
+    .map((row) => {
+      const localEventId = eventIdMap.get(row.event_id);
+      if (!localEventId) return null;
+
+      return {
+        eventId: localEventId,
+        eventSupabaseId: row.event_id,
+        contractorProfileId: row.profile_id,
+        name: contractorsByProfileId.get(row.profile_id)?.name ?? row.profile_id,
+      } satisfies EventCrewAssignment;
+    })
+    .filter((assignment): assignment is EventCrewAssignment => Boolean(assignment));
 
   const invoices = invoiceRows.map((row) => ({
     ...mapInvoice(row),
@@ -524,6 +558,7 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     timelogs,
     invoices,
     invoiceApprovalDocuments: getLocalAppState().invoiceApprovalDocuments ?? [],
+    eventCrewAssignments,
     grasonEventConfirmations: grasonEventConfirmationRows.map(mapGrasonEventConfirmation),
     receipts,
     budgetPackages,

@@ -217,6 +217,7 @@ export function buildGrasonEventsImportSql(rows) {
   if (rows.length === 0) {
     return '-- No Grason rows to import.\n';
   }
+  const sourceMonth = rows[0]?.sourceMonth ?? '';
 
   const eventRows = rows.map((row) => [
     row.sourceKey,
@@ -237,7 +238,7 @@ export function buildGrasonEventsImportSql(rows) {
     .join(',\n');
 
   return `-- Generated Grason May import.
--- Imports only events and confirmed Grason people.
+-- Imports events, confirmed Grason metadata, and matched people as event crew assignments.
 -- Does not create timelogs, timelog days, invoices, or paid statuses.
 
 begin;
@@ -313,24 +314,8 @@ ${valuesSql}
 ), updated_events as (
   update public.events as target set
     crew_needed = greatest(coalesce(target.crew_needed, 0), incoming_events.confirmed_count),
-    crew_filled = greatest(coalesce(target.crew_filled, 0), incoming_events.confirmed_count),
     show_day_types = true,
     day_types = coalesce(target.day_types, '{}'::jsonb) || jsonb_build_object(incoming_events.shift_date, incoming_events.phase),
-    description = case
-      when coalesce(target.description, '') like '%' || (
-        'Grason import: ' || incoming_events.source_title || ' | potvrzeni: ' || (
-          select string_agg(person->>'name', ', ' order by person->>'name')
-          from jsonb_array_elements(incoming_events.confirmed_people) as person
-        )
-      ) || '%' then target.description
-      else concat_ws(E'\\n',
-        nullif(target.description, ''),
-        'Grason import: ' || incoming_events.source_title || ' | potvrzeni: ' || (
-          select string_agg(person->>'name', ', ' order by person->>'name')
-          from jsonb_array_elements(incoming_events.confirmed_people) as person
-        )
-      )
-    end,
     updated_at = now()
   from incoming_events
   join matched_events on matched_events.source_key = incoming_events.source_key
@@ -363,17 +348,14 @@ ${valuesSql}
     null,
     '',
     incoming_events.confirmed_count,
-    incoming_events.confirmed_count,
+    0,
     (
       case
         when incoming_events.shift_date::date < current_date then 'past'
         else 'upcoming'
       end
     )::event_status,
-    'Grason import: ' || incoming_events.source_title || ' | potvrzeni: ' || (
-      select string_agg(person->>'name', ', ' order by person->>'name')
-      from jsonb_array_elements(incoming_events.confirmed_people) as person
-    ),
+    null,
     true,
     jsonb_build_object(incoming_events.shift_date, incoming_events.phase)
   from incoming_events
@@ -454,6 +436,20 @@ ${valuesSql}
       profiles.created_at
     limit 1
   ) as profile_match on true
+), inserted_event_assignments as (
+  insert into public.event_assignments (event_id, profile_id)
+  select distinct
+    resolved_confirmations.event_id,
+    resolved_confirmations.profile_id
+  from resolved_confirmations
+  where resolved_confirmations.profile_id is not null
+    and not exists (
+      select 1
+      from public.event_assignments as existing_assignment
+      where existing_assignment.event_id = resolved_confirmations.event_id
+        and existing_assignment.profile_id = resolved_confirmations.profile_id
+    )
+  returning event_id, profile_id
 )
 insert into public.grason_event_confirmations (
   source,
@@ -485,6 +481,7 @@ select
   source_occurrence_count,
   raw_payload
 from resolved_confirmations
+cross join (select count(*) as inserted_assignment_count from inserted_event_assignments) as assignment_insert_checkpoint
 on conflict (source, source_key, confirmed_name) do update set
   event_id = excluded.event_id,
   profile_id = excluded.profile_id,
@@ -497,6 +494,36 @@ on conflict (source, source_key, confirmed_name) do update set
   source_occurrence_count = excluded.source_occurrence_count,
   raw_payload = excluded.raw_payload,
   updated_at = now();
+
+update public.events as target
+set
+  crew_filled = coalesce(assignment_counts.assigned_count, 0),
+  description = nullif(
+    btrim(
+      regexp_replace(
+        coalesce(target.description, ''),
+        E'(^|\\n)Grason import: [^\\n]* \\\\| potvrzeni: [^\\n]*(\\n|$)',
+        E'\\1',
+        'g'
+      ),
+      E'\\n'
+    ),
+    ''
+  ),
+  updated_at = now()
+from (
+  select
+    confirmations.event_id,
+    count(distinct assignments.profile_id)::integer as assigned_count
+  from public.grason_event_confirmations as confirmations
+  left join public.event_assignments as assignments
+    on assignments.event_id = confirmations.event_id
+  where confirmations.source = 'grason'
+    and confirmations.source_month = ${sqlTextLiteral(sourceMonth)}
+    and confirmations.event_id is not null
+  group by confirmations.event_id
+) as assignment_counts
+where target.id = assignment_counts.event_id;
 
 commit;
 `;

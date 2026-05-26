@@ -111,6 +111,7 @@ describe('EventsView', () => {
       filterEventsByStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'upcoming' as const })),
       getEventsWithDerivedStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'upcoming' as const })),
       getReferenceDate: () => new Date('2026-04-20'),
+      getEventCrew: () => eventDetail.contractors,
       getEventDetailData: () => eventDetail,
     }));
 
@@ -156,6 +157,7 @@ describe('EventsView', () => {
       filterEventsByStatus: (items: typeof events) => items,
       getEventsWithDerivedStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'upcoming' as const })),
       getReferenceDate: () => new Date('2026-04-20'),
+      getEventCrew: () => eventDetail.contractors,
       getEventDetailData: () => eventDetail,
     }));
 
@@ -197,6 +199,7 @@ describe('EventsView', () => {
       filterEventsByStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'full' as const })),
       getEventsWithDerivedStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'full' as const })),
       getReferenceDate: () => new Date('2026-04-20'),
+      getEventCrew: () => eventDetail.contractors,
       getEventDetailData: () => eventDetail,
     }));
 
@@ -246,6 +249,7 @@ describe('EventsView', () => {
       filterEventsByStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'full' as const })),
       getEventsWithDerivedStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'full' as const })),
       getReferenceDate: () => new Date('2026-04-20'),
+      getEventCrew: () => eventDetail.contractors,
       getEventDetailData: () => eventDetail,
     }));
 
@@ -277,7 +281,7 @@ describe('EventsView', () => {
     expect(mockAppContext.setSelectedEventId).not.toHaveBeenCalled();
   });
 
-  it('shows confirmed Grason people on event cards when timelogs are not created yet', async () => {
+  it('shows imported Grason people as assigned crew when timelogs are not created yet', async () => {
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => mockAppContext,
     }));
@@ -291,6 +295,7 @@ describe('EventsView', () => {
       filterEventsByStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'full' as const })),
       getEventsWithDerivedStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'full' as const })),
       getReferenceDate: () => new Date('2026-04-20'),
+      getEventCrew: () => eventDetail.contractors,
       getEventDetailData: () => ({
         event: { ...events[0], filled: 2 },
         timelogs: [],
@@ -358,7 +363,7 @@ describe('EventsView', () => {
       </QueryClientProvider>,
     );
 
-    expect(screen.getByText('Grason')).toBeInTheDocument();
+    expect(screen.queryByText('Grason')).not.toBeInTheDocument();
     expect(screen.getByText('Marek Rebroš')).toBeInTheDocument();
     expect(screen.getByText('Jaroslav Macháč')).toBeInTheDocument();
     expect(screen.getByText('0 timelogy · 0.0 h')).toBeInTheDocument();
@@ -378,6 +383,7 @@ describe('EventsView', () => {
       filterEventsByStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'full' as const })),
       getEventsWithDerivedStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'full' as const })),
       getReferenceDate: () => new Date('2026-04-20'),
+      getEventCrew: () => eventDetail.contractors,
       getEventDetailData: () => eventDetail,
     }));
 
@@ -449,6 +455,7 @@ describe('EventsView', () => {
       filterEventsByStatus: (items: typeof multiDayEvents) => items.map((item) => ({ ...item, derivedStatus: 'upcoming' as const })),
       getEventsWithDerivedStatus: (items: typeof multiDayEvents) => items.map((item) => ({ ...item, derivedStatus: 'upcoming' as const })),
       getReferenceDate: () => new Date('2026-04-16'),
+      getEventCrew: () => [],
       getEventDetailData: () => ({
         timelogs: [
           {
@@ -510,6 +517,7 @@ describe('EventsView', () => {
       filterEventsByStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'full' as const })),
       getEventsWithDerivedStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'full' as const })),
       getReferenceDate: () => new Date('2026-04-20'),
+      getEventCrew: () => eventDetail.contractors,
       getEventDetailData: () => ({
         ...eventDetail,
         timelogs: [

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Event, Timelog } from '../../../types';
+import type { Event, EventCrewAssignment, Timelog } from '../../../types';
 
 describe('events.service fetch snapshot', () => {
   beforeEach(() => {
@@ -82,6 +82,12 @@ describe('events.service fetch snapshot', () => {
       ],
       error: null,
     });
+    const eventAssignmentsSelect = vi.fn(() => ({
+      order: vi.fn().mockResolvedValue({
+        data: [],
+        error: null,
+      }),
+    }));
     const grasonConfirmationsSelect = vi.fn(() => ({
       order: vi.fn().mockResolvedValue({
         data: [
@@ -119,6 +125,7 @@ describe('events.service fetch snapshot', () => {
           if (table === 'projects') return { select: projectsSelect };
           if (table === 'clients') return { select: clientsSelect };
           if (table === 'timelogs') return { select: timelogsSelect };
+          if (table === 'event_assignments') return { select: eventAssignmentsSelect };
           if (table === 'grason_event_confirmations') return { select: grasonConfirmationsSelect };
           throw new Error(`Unexpected table ${table}`);
         }),
@@ -199,6 +206,7 @@ describe('events.service fetch snapshot', () => {
           client: 'Klient A',
         },
       ],
+      eventCrewAssignments: [],
       grasonEventConfirmations: [
         {
           id: 'grason-confirmation-1',
@@ -230,6 +238,7 @@ const createSnapshot = (overrides?: Partial<{
   clients: Array<{ id: number; name: string }>;
   contractors: Array<{ id: number; profileId?: string; name: string; ii: string; bg: string; fg: string; tags: string[]; events: number; rate: number; phone: string; email: string; ico: string; dic: string; bank: string; city: string; reliable: boolean; note: string }>;
   timelogs: Timelog[];
+  eventCrewAssignments: EventCrewAssignment[];
   receipts: Array<{ id: number; eid: number }>;
 }>) => ({
   events: [],
@@ -261,6 +270,7 @@ const createSnapshot = (overrides?: Partial<{
     },
   ],
   timelogs: [],
+  eventCrewAssignments: [],
   receipts: [],
   invoices: [],
   candidates: [],
@@ -329,7 +339,7 @@ describe('events.service write flow', () => {
     });
   });
 
-  it('returns Grason confirmations in event detail without requiring timelogs', async () => {
+  it('treats imported Grason crew assignments as normal assigned crew without requiring timelogs', async () => {
     const ensureSupabaseTimelogsLoaded = vi.fn();
     const snapshot = createSnapshot({
       events: [
@@ -346,6 +356,14 @@ describe('events.service write flow', () => {
           status: 'upcoming',
           client: 'Klient A',
           showDayTypes: true,
+        },
+      ],
+      eventCrewAssignments: [
+        {
+          eventId: 1,
+          eventSupabaseId: 'event-uuid-1',
+          contractorProfileId: 'profile-uuid-1',
+          name: 'Test User',
         },
       ],
       grasonEventConfirmations: [
@@ -412,12 +430,13 @@ describe('events.service write flow', () => {
       mapEvent: vi.fn(),
     }));
 
-    const { getEventDetailData, getGrasonConfirmationsForEvent } = await import('./events.service');
+    const { getEventCrew, getEventDetailData, getGrasonConfirmationsForEvent } = await import('./events.service');
 
     const detail = getEventDetailData('event-uuid-1');
 
     expect(detail.timelogs).toEqual([]);
-    expect(detail.event?.filled).toBe(2);
+    expect(detail.event?.filled).toBe(1);
+    expect(getEventCrew(1).map((contractor) => contractor.name)).toEqual(['Test User']);
     expect(detail.grasonConfirmations.map((confirmation) => confirmation.confirmedName)).toEqual([
       'Externi Clovek',
       'Test User',

@@ -5,13 +5,14 @@ import { queryKeys } from '../../../lib/query-keys';
 import { mapClient, mapEvent } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { getDatesBetween, getEventStatus } from '../../../utils';
-import { Client, Contractor, Event, EventPhaseSlot, GrasonEventConfirmation, Project, ReceiptItem, Timelog, TimelogType } from '../../../types';
+import { Client, Contractor, Event, EventCrewAssignment, EventPhaseSlot, GrasonEventConfirmation, Project, ReceiptItem, Timelog, TimelogType } from '../../../types';
 import { EventAssignmentResult, EventConflictDetail, EventFilter, EventWithDerivedStatus } from '../types/events.types';
 
 const DEFAULT_TIME_FROM = '08:00';
 const DEFAULT_TIME_TO = '17:00';
 const EVENT_PHASE_TYPES: TimelogType[] = ['instal', 'provoz', 'deinstal'];
 type TimelogAssignmentRow = { event_id: string | null; contractor_id: string | null };
+type EventAssignmentRow = { event_id: string | null; profile_id: string | null; assigned_at?: string | null };
 type EventIdentifier = number | string;
 type GrasonEventConfirmationRow = {
   id: string;
@@ -48,13 +49,46 @@ let eventsHydrationPromise: Promise<void> | null = null;
 let eventsLoaded = false;
 const eventRowIdByLocalId = new Map<number, string>();
 
-const countAssignedCrewForEvent = (timelogs: Timelog[], eventId: number): number => (
-  new Set(
-    timelogs
-      .filter((timelog) => timelog.eid === eventId && timelog.contractorProfileId)
-      .map((timelog) => timelog.contractorProfileId as string),
-  ).size
+const assignmentMatchesEvent = (assignment: EventCrewAssignment, event: Event): boolean => (
+  assignment.eventId === event.id
+  || Boolean(event.supabaseId && assignment.eventSupabaseId === event.supabaseId)
 );
+
+const getAssignedProfileIdsForEvent = (
+  event: Event,
+  timelogs: Timelog[] = [],
+  eventCrewAssignments: EventCrewAssignment[] = [],
+): Set<string> => {
+  const assignedProfileIds = new Set<string>();
+
+  timelogs
+    .filter((timelog) => timelog.eid === event.id && timelog.contractorProfileId)
+    .forEach((timelog) => assignedProfileIds.add(timelog.contractorProfileId as string));
+
+  eventCrewAssignments
+    .filter((assignment) => assignmentMatchesEvent(assignment, event))
+    .forEach((assignment) => assignedProfileIds.add(assignment.contractorProfileId));
+
+  return assignedProfileIds;
+};
+
+const countAssignedCrewForEvent = (
+  timelogs: Timelog[],
+  eventId: number,
+  eventCrewAssignments: EventCrewAssignment[] = [],
+  eventOverride?: Event,
+): number => {
+  const event = eventOverride ?? (getLocalAppState().events ?? []).find((item) => item.id === eventId);
+  if (!event) {
+    return new Set(
+      timelogs
+        .filter((timelog) => timelog.eid === eventId && timelog.contractorProfileId)
+        .map((timelog) => timelog.contractorProfileId as string),
+    ).size;
+  }
+
+  return getAssignedProfileIdsForEvent(event, timelogs, eventCrewAssignments).size;
+};
 
 const normalizeGrasonMatchText = (value: string | null | undefined): string => (
   String(value ?? '')
@@ -71,10 +105,6 @@ const normalizeGrasonJobNumber = (value: string | null | undefined): string => (
     .toUpperCase()
     .replace(/\s+/g, '')
     .trim()
-);
-
-const getGrasonConfirmationIdentity = (confirmation: GrasonEventConfirmation): string => (
-  confirmation.profileId || normalizeGrasonMatchText(confirmation.confirmedName)
 );
 
 const matchesEventIdentifier = (event: Event, eventId: EventIdentifier): boolean => (
@@ -118,10 +148,6 @@ export const getGrasonConfirmationsForEvent = (
     ));
 };
 
-const countGrasonConfirmedCrew = (confirmations: GrasonEventConfirmation[]): number => (
-  new Set(confirmations.map(getGrasonConfirmationIdentity).filter(Boolean)).size
-);
-
 const EVENT_PHASES = new Set<TimelogType>(['instal', 'provoz', 'deinstal']);
 
 const toEventPhase = (value: string | null): TimelogType => (
@@ -161,15 +187,16 @@ export const fetchEventsSnapshot = async (): Promise<Event[]> => {
   }
 
   const supabaseGrason = supabase as unknown as SupabaseGrasonClient;
-  const [eventsResult, projectsResult, clientsResult, timelogsResult, grasonConfirmationsResult] = await Promise.all([
+  const [eventsResult, projectsResult, clientsResult, timelogsResult, eventAssignmentsResult, grasonConfirmationsResult] = await Promise.all([
     supabase.from('events').select('*').order('date_from').order('name'),
     supabase.from('projects').select('*').order('job_number'),
     supabase.from('clients').select('*').order('name'),
     supabase.from('timelogs').select('event_id,contractor_id'),
+    supabase.from('event_assignments').select('event_id,profile_id,assigned_at').order('assigned_at'),
     supabaseGrason.from('grason_event_confirmations').select('*').order('shift_date'),
   ]);
 
-  const firstError = eventsResult.error ?? projectsResult.error ?? clientsResult.error ?? timelogsResult.error;
+  const firstError = eventsResult.error ?? projectsResult.error ?? clientsResult.error ?? timelogsResult.error ?? eventAssignmentsResult.error;
   if (firstError) {
     throw new Error(firstError.message);
   }
@@ -178,6 +205,7 @@ export const fetchEventsSnapshot = async (): Promise<Event[]> => {
   const projectRows = projectsResult.data ?? [];
   const eventRows = eventsResult.data ?? [];
   const timelogRows = (timelogsResult.data ?? []) as TimelogAssignmentRow[];
+  const eventAssignmentRows = (eventAssignmentsResult.data ?? []) as EventAssignmentRow[];
   const grasonEventConfirmations = grasonConfirmationsResult.error
     ? []
     : ((grasonConfirmationsResult.data ?? []) as GrasonEventConfirmationRow[]).map(mapGrasonConfirmationRow);
@@ -191,12 +219,26 @@ export const fetchEventsSnapshot = async (): Promise<Event[]> => {
   );
   const projectRowsByUuid = new Map(projectRows.map((row) => [row.id, row]));
   const assignedProfilesByEventRowId = new Map<string, Set<string>>();
+  const eventRowIdToLocalId = new Map(eventRows.map((row, index) => [row.id, index + 1]));
+  const contractorsByProfileId = new Map(
+    (getLocalAppState().contractors ?? [])
+      .filter((contractor) => contractor.profileId)
+      .map((contractor) => [contractor.profileId as string, contractor]),
+  );
 
   timelogRows.forEach((row) => {
     if (!row.event_id || !row.contractor_id) return;
 
     const assignedProfiles = assignedProfilesByEventRowId.get(row.event_id) ?? new Set<string>();
     assignedProfiles.add(row.contractor_id);
+    assignedProfilesByEventRowId.set(row.event_id, assignedProfiles);
+  });
+
+  eventAssignmentRows.forEach((row) => {
+    if (!row.event_id || !row.profile_id) return;
+
+    const assignedProfiles = assignedProfilesByEventRowId.get(row.event_id) ?? new Set<string>();
+    assignedProfiles.add(row.profile_id);
     assignedProfilesByEventRowId.set(row.event_id, assignedProfiles);
   });
 
@@ -213,6 +255,21 @@ export const fetchEventsSnapshot = async (): Promise<Event[]> => {
     };
   });
 
+  const eventCrewAssignments = eventAssignmentRows
+    .map((row) => {
+      if (!row.event_id || !row.profile_id) return null;
+      const localEventId = eventRowIdToLocalId.get(row.event_id);
+      if (!localEventId) return null;
+
+      return {
+        eventId: localEventId,
+        eventSupabaseId: row.event_id,
+        contractorProfileId: row.profile_id,
+        name: contractorsByProfileId.get(row.profile_id)?.name ?? row.profile_id,
+      } satisfies EventCrewAssignment;
+    })
+    .filter((assignment): assignment is EventCrewAssignment => Boolean(assignment));
+
   eventRowIdByLocalId.clear();
   eventRows.forEach((row, index) => {
     eventRowIdByLocalId.set(index + 1, row.id);
@@ -221,6 +278,7 @@ export const fetchEventsSnapshot = async (): Promise<Event[]> => {
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     events: supabaseEvents,
+    eventCrewAssignments,
     grasonEventConfirmations,
   }));
 
@@ -449,14 +507,16 @@ export const getEventDetailData = (eventId: EventIdentifier | null): {
 
   const eventTimelogs = (snapshot.timelogs ?? []).filter((timelog) => timelog.eid === event.id);
   const grasonConfirmations = getGrasonConfirmationsForEvent(event, snapshot.grasonEventConfirmations ?? []);
-  const grasonConfirmedCount = countGrasonConfirmedCrew(grasonConfirmations);
+  const assignedCrewCount = getAssignedProfileIdsForEvent(
+    event,
+    eventTimelogs,
+    snapshot.eventCrewAssignments ?? [],
+  ).size;
 
   return {
     event: {
       ...event,
-      filled: eventTimelogs.length > 0
-        ? countAssignedCrewForEvent(eventTimelogs, event.id)
-        : Math.max(event.filled, grasonConfirmedCount),
+      filled: assignedCrewCount > 0 ? assignedCrewCount : event.filled,
     },
     timelogs: eventTimelogs,
     contractors: snapshot.contractors ?? [],
@@ -798,18 +858,30 @@ export const getEventCrew = (eventId: number): Contractor[] => {
   ensureSupabaseEventsLoaded();
   requestSupabaseTimelogsHydration();
   const snapshot = getLocalAppState();
+  const event = (snapshot.events ?? []).find((item) => item.id === eventId);
+  if (!event) return [];
+
+  const assignedProfileIds = getAssignedProfileIdsForEvent(
+    event,
+    snapshot.timelogs ?? [],
+    snapshot.eventCrewAssignments ?? [],
+  );
+
   return (snapshot.contractors ?? []).filter((contractor) => (
-    (snapshot.timelogs ?? []).some((timelog) => (
-      timelog.eid === eventId
-      && timelog.contractorProfileId === contractor.profileId
-    ))
+    Boolean(contractor.profileId && assignedProfileIds.has(contractor.profileId))
   ));
 };
 
 export const removeContractorFromEvent = async (eventId: number, contractorProfileId: string) => {
   let nextEvent: Event | null = null;
   let nextTimelogs: Timelog[] = [];
-  const contractor = getContractorByProfileId(contractorProfileId);
+  let nextEventCrewAssignments: EventCrewAssignment[] = [];
+  const currentSnapshot = getLocalAppState();
+  const currentEvent = (currentSnapshot.events ?? []).find((item) => item.id === eventId);
+  const hasCrewAssignment = Boolean(currentEvent && (currentSnapshot.eventCrewAssignments ?? []).some((assignment) => (
+    assignment.contractorProfileId === contractorProfileId
+    && assignmentMatchesEvent(assignment, currentEvent)
+  )));
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
     const eventRowId = await getSupabaseEventRowId(eventId);
@@ -845,6 +917,18 @@ export const removeContractorFromEvent = async (eventId: number, contractorProfi
         throw new Error(timelogDelete.error.message);
       }
     }
+
+    if (hasCrewAssignment) {
+      const assignmentDelete = await supabase
+        .from('event_assignments')
+        .delete()
+        .eq('event_id', eventRowId)
+        .eq('profile_id', contractorProfileId);
+
+      if (assignmentDelete.error) {
+        throw new Error(assignmentDelete.error.message);
+      }
+    }
   }
 
   updateLocalAppState((snapshot) => {
@@ -857,15 +941,20 @@ export const removeContractorFromEvent = async (eventId: number, contractorProfi
       timelog.eid === eventId
       && timelog.contractorProfileId === contractorProfileId
     ));
+    nextEventCrewAssignments = (snapshot.eventCrewAssignments ?? []).filter((assignment) => !(
+      assignment.contractorProfileId === contractorProfileId
+      && assignmentMatchesEvent(assignment, event)
+    ));
     nextEvent = {
       ...event,
-      filled: countAssignedCrewForEvent(nextTimelogs, eventId),
+      filled: countAssignedCrewForEvent(nextTimelogs, eventId, nextEventCrewAssignments, event),
     };
 
     return {
       ...snapshot,
       events: snapshot.events.map((item) => item.id === eventId ? nextEvent as Event : item),
       timelogs: nextTimelogs,
+      eventCrewAssignments: nextEventCrewAssignments,
     };
   });
 
@@ -1028,7 +1117,7 @@ export const assignCrewToEvent = async (
   const assignment: EventAssignmentResult = {
     event: {
       ...event,
-      filled: countAssignedCrewForEvent(nextTimelogs, event.id),
+      filled: countAssignedCrewForEvent(nextTimelogs, event.id, snapshot.eventCrewAssignments ?? [], event),
     },
     timelog,
   };

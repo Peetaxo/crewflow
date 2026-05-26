@@ -332,7 +332,7 @@ const EventsView = () => {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="mb-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-end">
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-3">
             <div>
@@ -380,24 +380,7 @@ const EventsView = () => {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {viewMode === 'calendar' && (
-            <div className="flex items-center rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
-              {[
-                { id: 'month' as const, label: 'Mesic' },
-                { id: 'week' as const, label: 'Tyden' },
-              ].map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => setEventsCalendarMode(item.id)}
-                  className={`rounded-[14px] px-3 py-2 text-xs font-medium transition-all ${calendarMode === item.id ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)] shadow-[inset_0_0_0_1px_rgba(255,128,13,0.16)]' : 'text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          )}
-
+        <div className="flex justify-start lg:justify-center">
           <div className="flex items-center gap-1 rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.96)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
             <button
               type="button"
@@ -419,6 +402,25 @@ const EventsView = () => {
               <ChevronRight size={14} />
             </button>
           </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end lg:self-start lg:pt-5">
+          {viewMode === 'calendar' && (
+            <div className="flex items-center rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
+              {[
+                { id: 'month' as const, label: 'Mesic' },
+                { id: 'week' as const, label: 'Tyden' },
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => setEventsCalendarMode(item.id)}
+                  className={`rounded-[14px] px-3 py-2 text-xs font-medium transition-all ${calendarMode === item.id ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)] shadow-[inset_0_0_0_1px_rgba(255,128,13,0.16)]' : 'text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          )}
 
           {canManageEvents && (
             <Button

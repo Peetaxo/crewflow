@@ -12,9 +12,10 @@ import { useInvoicesQuery } from '../../features/invoices/queries/useInvoicesQue
 const navButtonBaseClass = 'relative flex w-full items-center rounded-xl px-3 py-2.5 text-[13px] transition-all';
 const navButtonIdleClass = 'border border-transparent nodu-nav-idle';
 const navButtonActiveClass = 'nodu-nav-active font-medium text-[color:var(--nodu-accent)]';
+const roleOptions = ['crew', 'crewhead', 'coo'] as const;
 
 const Sidebar: React.FC = () => {
-  const { currentProfileId, isAuthRequired, profile, role: authRole, signOut } = useAuth();
+  const { currentProfileId, isAuthRequired, isRoleSwitching, profile, role: authRole, signOut, switchRole } = useAuth();
   const timelogsQuery = useTimelogsQuery();
   const receiptsQuery = useReceiptsQuery();
   const invoicesQuery = useInvoicesQuery();
@@ -51,6 +52,60 @@ const Sidebar: React.FC = () => {
   const navItems = getNavItemsForRole(role);
   const effectiveRole = authRole ?? role;
   const profileName = profile ? `${profile.firstName} ${profile.lastName}`.trim() || profile.email : 'Petr Heitzer';
+
+  const handleRoleChange = useCallback(async (roleOption: typeof roleOptions[number]) => {
+    if (roleOption === effectiveRole || (isAuthRequired && isRoleSwitching)) return;
+
+    if (!isAuthRequired) {
+      setRole(roleOption);
+      return;
+    }
+
+    try {
+      await switchRole(roleOption);
+      toast.success(`Role zmenena na ${ROLE_LABELS[roleOption]}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Zmena role se nepodarila.';
+      toast.error(message);
+    }
+  }, [effectiveRole, isAuthRequired, isRoleSwitching, setRole, switchRole]);
+
+  const renderExpandedRoleSwitcher = () => (
+    <div className="nodu-sidebar-surface grid grid-cols-3 gap-1 rounded-xl border border-[color:var(--nodu-border)] p-1">
+      {roleOptions.map((roleOption) => (
+        <button
+          key={roleOption}
+          type="button"
+          onClick={() => { void handleRoleChange(roleOption); }}
+          disabled={isAuthRequired && isRoleSwitching}
+          aria-label={ROLE_LABELS[roleOption]}
+          aria-pressed={effectiveRole === roleOption}
+          className={`rounded-lg border py-1.5 text-[11px] font-medium transition-all disabled:cursor-not-allowed disabled:opacity-60 ${effectiveRole === roleOption ? 'nodu-role-toggle-active' : 'border-transparent text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
+        >
+          {ROLE_SHORT_LABELS[roleOption]}
+        </button>
+      ))}
+    </div>
+  );
+
+  const renderCollapsedRoleSwitcher = () => (
+    <div className="space-y-2">
+      {roleOptions.map((roleOption) => (
+        <button
+          key={roleOption}
+          type="button"
+          onClick={() => { void handleRoleChange(roleOption); }}
+          disabled={isAuthRequired && isRoleSwitching}
+          aria-label={ROLE_LABELS[roleOption]}
+          aria-pressed={effectiveRole === roleOption}
+          className={`flex w-full items-center justify-center rounded-xl border px-2 py-2 text-[11px] font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-60 ${effectiveRole === roleOption ? 'nodu-role-toggle-active' : 'nodu-sidebar-surface border-[color:var(--nodu-border)] text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
+          title={ROLE_LABELS[roleOption]}
+        >
+          {ROLE_SHORT_LABELS[roleOption]}
+        </button>
+      ))}
+    </div>
+  );
 
   const badgeCounts: Record<string, number> = useMemo(() => ({
     timelogs: timelogs.filter((t) => t.status === 'pending_ch' || t.status === 'pending_coo').length,
@@ -182,43 +237,10 @@ const Sidebar: React.FC = () => {
             <div className="mb-2 text-[10px] uppercase tracking-[0.24em] text-[color:var(--nodu-text-soft)]">
               {isAuthRequired ? 'Prihlasena role' : 'Zobrazuji jako'}
             </div>
-            {isAuthRequired ? (
-              <div className="nodu-sidebar-surface rounded-xl border border-[color:var(--nodu-border)] px-3 py-2 text-[11px] font-semibold text-[color:var(--nodu-accent)]">
-                {ROLE_LABELS[effectiveRole]}
-              </div>
-            ) : (
-              <div className="nodu-sidebar-surface grid grid-cols-3 gap-1 rounded-xl border border-[color:var(--nodu-border)] p-1">
-                {(['crew', 'crewhead', 'coo'] as const).map((roleOption) => (
-                  <button
-                    key={roleOption}
-                    onClick={() => setRole(roleOption)}
-                    className={`rounded-lg py-1.5 text-[11px] font-medium transition-all ${role === roleOption ? 'nodu-role-toggle-active border' : 'border border-transparent text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
-                  >
-                    {ROLE_SHORT_LABELS[roleOption]}
-                  </button>
-                ))}
-              </div>
-            )}
+            {renderExpandedRoleSwitcher()}
           </>
         ) : (
-          isAuthRequired ? (
-            <div className="nodu-sidebar-surface flex items-center justify-center rounded-xl border border-[color:var(--nodu-border)] px-2 py-2 text-[11px] font-semibold text-[color:var(--nodu-accent)]">
-              {ROLE_SHORT_LABELS[effectiveRole]}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {(['crew', 'crewhead', 'coo'] as const).map((roleOption) => (
-                <button
-                  key={roleOption}
-                  onClick={() => setRole(roleOption)}
-                  className={`flex w-full items-center justify-center rounded-xl border px-2 py-2 text-[11px] font-semibold transition-all ${role === roleOption ? 'nodu-role-toggle-active' : 'nodu-sidebar-surface border-[color:var(--nodu-border)] text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
-                  title={ROLE_LABELS[roleOption]}
-                >
-                  {ROLE_SHORT_LABELS[roleOption]}
-                </button>
-              ))}
-            </div>
-          )
+          renderCollapsedRoleSwitcher()
         )}
       </div>
 

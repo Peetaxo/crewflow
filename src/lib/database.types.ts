@@ -14,6 +14,7 @@ export type InvoiceStatus = 'draft' | 'sent' | 'paid';
 export type ReceiptStatus = 'draft' | 'submitted' | 'approved' | 'attached' | 'reimbursed' | 'rejected';
 export type RecruitmentStage = 'new' | 'interview_scheduled' | 'decision' | 'accepted' | 'rejected';
 export type FleetVehicleStatus = 'available' | 'reserved' | 'service' | 'out_of_order';
+export type CrewRatingSource = 'initial' | 'event';
 
 export interface Database {
   public: {
@@ -115,11 +116,26 @@ export interface Database {
           last_name: string;
           phone: string | null;
           email: string | null;
+          tally_submission_id: string | null;
+          tally_respondent_id: string | null;
+          submitted_at: string | null;
+          is_adult: boolean | null;
+          has_ico: boolean | null;
+          has_driving_license: boolean | null;
+          can_drive_van: boolean | null;
+          has_event_experience: boolean | null;
           source: string | null;
+          utm_source: string | null;
+          utm_content: string | null;
           cal_booking_url: string | null;
+          cal_booking_uid: string | null;
+          cal_booking_status: string | null;
+          cal_event_type: string | null;
           stage: RecruitmentStage;
           interview_date: string | null;
           note: string | null;
+          raw_payload: Json | null;
+          cal_raw_payload: Json | null;
           created_at: string;
           updated_at: string;
         };
@@ -141,12 +157,60 @@ export interface Database {
           updated_at: string;
         };
       };
+      crew_ratings: {
+        Row: {
+          id: string;
+          profile_id: string;
+          event_id: string | null;
+          source: CrewRatingSource;
+          rating: number;
+          note: string | null;
+          rated_by_profile_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          profile_id: string;
+          event_id?: string | null;
+          source: CrewRatingSource;
+          rating: number;
+          note?: string | null;
+          rated_by_profile_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          profile_id?: string;
+          event_id?: string | null;
+          source?: CrewRatingSource;
+          rating?: number;
+          note?: string | null;
+          rated_by_profile_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
       event_assignments: {
         Row: {
           id: string;
           event_id: string;
           profile_id: string;
           assigned_at: string;
+        };
+      };
+      event_applications: {
+        Row: {
+          id: string;
+          event_id: string;
+          profile_id: string;
+          status: 'pending' | 'approved' | 'rejected' | 'withdrawn' | 'withdrawal_requested';
+          note: string | null;
+          planned_from: string | null;
+          planned_to: string | null;
+          created_at: string;
+          updated_at: string;
         };
       };
       events: {
@@ -171,6 +235,7 @@ export interface Database {
           dresscode: string | null;
           meeting_point: string | null;
           show_day_types: boolean | null;
+          allow_crew_time_proposal: boolean | null;
           day_types: Json | null;
           phase_times: Json | null;
           phase_schedules: Json | null;
@@ -370,12 +435,27 @@ export interface Database {
       };
     };
     Functions: {
+      list_event_crew_assignments: {
+        Args: Record<string, never>;
+        Returns: Array<{
+          event_id: string;
+          profile_id: string;
+          first_name: string | null;
+          last_name: string | null;
+        }>;
+      };
       next_self_billing_invoice_sequence: {
         Args: {
           p_invoice_year: number;
           p_supplier_profile_id: string;
         };
         Returns: number;
+      };
+      set_current_user_role: {
+        Args: {
+          p_role: AppRole;
+        };
+        Returns: void;
       };
       save_budget_package_events: {
         Args: {

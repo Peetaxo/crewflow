@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Contractor, Event, Invoice, ReceiptItem, Timelog } from '../types';
 
@@ -7,10 +7,12 @@ let mockAuth = {
   isAuthRequired: true,
   isAuthenticated: true,
   isLoading: false,
+  hasKnownSession: true,
   isDevSession: false,
   session: null,
   user: null,
   role: 'crew' as const,
+  isRoleSwitching: false,
   profile: { firstName: 'Test', lastName: 'User', email: 'test@example.com' },
   currentProfileId: 'profile-uuid-2',
   currentUserId: 'user-uuid-2',
@@ -18,6 +20,7 @@ let mockAuth = {
   devLoginOptions: [],
   signIn: vi.fn(),
   signInAsDevUser: vi.fn(),
+  switchRole: vi.fn(),
   signOut: vi.fn(),
 };
 
@@ -107,8 +110,8 @@ const events: Event[] = [
     id: 1,
     name: 'Akce prvni',
     job: 'JOB-1',
-    startDate: '2026-04-20',
-    endDate: '2026-04-20',
+    startDate: '2999-04-20',
+    endDate: '2999-04-20',
     city: 'Praha',
     needed: 1,
     filled: 1,
@@ -119,8 +122,8 @@ const events: Event[] = [
     id: 2,
     name: 'Akce moje',
     job: 'JOB-2',
-    startDate: '2026-04-21',
-    endDate: '2026-04-21',
+    startDate: '2999-04-21',
+    endDate: '2999-04-21',
     city: 'Brno',
     needed: 1,
     filled: 1,
@@ -130,8 +133,8 @@ const events: Event[] = [
 ];
 
 const timelogs: Timelog[] = [
-  { id: 1, eid: 1, contractorProfileId: 'profile-uuid-1', days: [{ d: '2026-04-20', f: '08:00', t: '12:00', type: 'provoz' }], km: 0, note: '', status: 'draft' },
-  { id: 2, eid: 2, contractorProfileId: 'profile-uuid-2', days: [{ d: '2026-04-21', f: '09:00', t: '15:00', type: 'provoz' }], km: 12, note: '', status: 'draft' },
+  { id: 1, eid: 1, contractorProfileId: 'profile-uuid-1', days: [{ d: '2999-04-20', f: '08:00', t: '12:00', type: 'provoz' }], km: 0, note: '', status: 'draft' },
+  { id: 2, eid: 2, contractorProfileId: 'profile-uuid-2', days: [{ d: '2999-04-21', f: '09:00', t: '15:00', type: 'provoz' }], km: 12, note: '', status: 'draft' },
 ];
 
 const receipts: ReceiptItem[] = [
@@ -284,6 +287,9 @@ describe('UUID mine-scope identity', () => {
       currentProfileId: 'profile-uuid-2',
       currentUserId: 'user-uuid-2',
       currentContractorId: 2,
+      role: 'crew',
+      isRoleSwitching: false,
+      switchRole: vi.fn(),
     };
     mockAppContext = {
       ...mockAppContext,
@@ -361,11 +367,34 @@ describe('UUID mine-scope identity', () => {
 
     expect(screen.getByAltText('Nodu')).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/Hledat akci, job nebo jmeno/i)).toHaveClass('nodu-sidebar-search');
-    expect(screen.getAllByText('Crew')[0]).toHaveClass('nodu-sidebar-surface');
+    expect(screen.getByRole('button', { name: 'Crew' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByTitle('Profil')).toHaveClass('nodu-sidebar-hover-surface');
     expect(screen.getByRole('button', { name: /Moje timelogy/i })).toHaveClass('nodu-nav-active');
     expect(screen.getByRole('button', { name: /Moje timelogy/i })).toHaveTextContent('1');
     expect(screen.getByRole('button', { name: /Moje faktury/i })).toHaveTextContent('1');
     expect(screen.getByRole('button', { name: /Moje účtenky/i })).toHaveTextContent('1');
+  });
+
+  it('persists authenticated role switches from the sidebar', async () => {
+    const switchRole = vi.fn(async () => undefined);
+    const { default: Sidebar } = await import('../components/layout/Sidebar');
+    mockAuth = {
+      ...mockAuth,
+      role: 'coo',
+      switchRole,
+    };
+    mockAppContext = {
+      ...mockAppContext,
+      role: 'coo',
+    };
+
+    render(<Sidebar />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'CrewHead' }));
+
+    await waitFor(() => {
+      expect(switchRole).toHaveBeenCalledWith('crewhead');
+    });
+    expect(setRole).not.toHaveBeenCalled();
   });
 });

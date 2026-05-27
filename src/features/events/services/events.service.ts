@@ -5,16 +5,75 @@ import { queryKeys } from '../../../lib/query-keys';
 import { mapClient, mapEvent } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { getDatesBetween, getEventStatus } from '../../../utils';
-import { Client, Contractor, Event, EventPhaseSlot, Project, ReceiptItem, Timelog, TimelogType } from '../../../types';
+import { Client, Contractor, Event, EventApplication, EventApplicationStatus, EventCrewAssignment, EventPhaseSlot, Project, ReceiptItem, Timelog, TimelogType } from '../../../types';
 import { EventAssignmentResult, EventConflictDetail, EventFilter, EventWithDerivedStatus } from '../types/events.types';
 
 const DEFAULT_TIME_FROM = '08:00';
 const DEFAULT_TIME_TO = '17:00';
 const EVENT_PHASE_TYPES: TimelogType[] = ['instal', 'provoz', 'deinstal'];
-type TimelogAssignmentRow = { event_id: string | null; contractor_id: string | null };
+type EventApplicationRow = {
+  id: string;
+  event_id: string;
+  profile_id: string;
+  status: EventApplicationStatus;
+  note: string | null;
+  planned_from: string | null;
+  planned_to: string | null;
+  created_at: string;
+};
+type EventCrewAssignmentRow = {
+  event_id: string;
+  profile_id: string;
+  first_name: string | null;
+  last_name: string | null;
+};
+type EventTimelogRow = {
+  id: string;
+  contractor_id: string | null;
+};
 type EventIdentifier = number | string;
 
 const createSlotId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+
+const addDaysToDateKey = (date: string, days: number): string => {
+  const parsed = new Date(`${date}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return date;
+  parsed.setUTCDate(parsed.getUTCDate() + days);
+  return parsed.toISOString().slice(0, 10);
+};
+
+const getDaysBetweenDateKeys = (from: string, to: string): number => {
+  const start = new Date(`${from}T00:00:00Z`);
+  const end = new Date(`${to}T00:00:00Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 0;
+  return Math.round((end.getTime() - start.getTime()) / 86_400_000);
+};
+
+const shiftDateRecordKeys = <T,>(record: Record<string, T> | undefined, days: number): Record<string, T> | undefined => {
+  if (!record) return undefined;
+
+  return Object.fromEntries(
+    Object.entries(record).map(([date, value]) => [addDaysToDateKey(date, days), value]),
+  );
+};
+
+const shiftPhaseSchedules = (
+  schedules: Event['phaseSchedules'],
+  days: number,
+): Event['phaseSchedules'] => {
+  if (!schedules) return undefined;
+
+  return Object.fromEntries(
+    Object.entries(schedules).map(([phaseType, slots]) => [
+      phaseType,
+      (slots ?? []).map((slot) => ({
+        ...slot,
+        id: createSlotId(),
+        dates: slot.dates.map((date) => addDaysToDateKey(date, days)),
+      })),
+    ]),
+  ) as Event['phaseSchedules'];
+};
 
 let eventsHydrationPromise: Promise<void> | null = null;
 let eventsLoaded = false;
@@ -47,14 +106,15 @@ export const fetchEventsSnapshot = async (): Promise<Event[]> => {
     return getLocalAppState().events ?? [];
   }
 
-  const [eventsResult, projectsResult, clientsResult, timelogsResult] = await Promise.all([
+  const [eventsResult, projectsResult, clientsResult, applicationsResult, crewAssignmentsResult] = await Promise.all([
     supabase.from('events').select('*').order('date_from').order('name'),
     supabase.from('projects').select('*').order('job_number'),
     supabase.from('clients').select('*').order('name'),
-    supabase.from('timelogs').select('event_id,contractor_id'),
+    supabase.from('event_applications').select('*').order('created_at'),
+    supabase.rpc('list_event_crew_assignments'),
   ]);
 
-  const firstError = eventsResult.error ?? projectsResult.error ?? clientsResult.error ?? timelogsResult.error;
+  const firstError = eventsResult.error ?? projectsResult.error ?? clientsResult.error ?? applicationsResult.error ?? crewAssignmentsResult.error;
   if (firstError) {
     throw new Error(firstError.message);
   }
@@ -62,22 +122,13 @@ export const fetchEventsSnapshot = async (): Promise<Event[]> => {
   const clientRows = clientsResult.data ?? [];
   const projectRows = projectsResult.data ?? [];
   const eventRows = eventsResult.data ?? [];
-  const timelogRows = (timelogsResult.data ?? []) as TimelogAssignmentRow[];
+  const applicationRows = (applicationsResult.data ?? []) as EventApplicationRow[];
+  const crewAssignmentRows = (crewAssignmentsResult.data ?? []) as EventCrewAssignmentRow[];
 
   const clientsByUuid = new Map(
     clientRows.map((row, index) => [row.id, { ...mapClient(row), id: index + 1 }]),
   );
   const projectRowsByUuid = new Map(projectRows.map((row) => [row.id, row]));
-  const assignedProfilesByEventRowId = new Map<string, Set<string>>();
-
-  timelogRows.forEach((row) => {
-    if (!row.event_id || !row.contractor_id) return;
-
-    const assignedProfiles = assignedProfilesByEventRowId.get(row.event_id) ?? new Set<string>();
-    assignedProfiles.add(row.contractor_id);
-    assignedProfilesByEventRowId.set(row.event_id, assignedProfiles);
-  });
-
   const supabaseEvents = eventRows.map((row, index) => {
     const project = row.project_id ? projectRowsByUuid.get(row.project_id) : undefined;
     const client = project?.client_id ? clientsByUuid.get(project.client_id) : undefined;
@@ -87,7 +138,6 @@ export const fetchEventsSnapshot = async (): Promise<Event[]> => {
       id: index + 1,
       job: row.job_number ?? project?.job_number ?? '',
       client: row.client_name ?? client?.name ?? '',
-      filled: assignedProfilesByEventRowId.get(row.id)?.size ?? 0,
     };
   });
 
@@ -96,9 +146,44 @@ export const fetchEventsSnapshot = async (): Promise<Event[]> => {
     eventRowIdByLocalId.set(index + 1, row.id);
   });
 
+  const eventLocalIdByRowId = new Map(eventRows.map((row, index) => [row.id, index + 1]));
+  const eventApplications = applicationRows
+    .map((row, index) => {
+      const eventId = eventLocalIdByRowId.get(row.event_id);
+      if (!eventId) return null;
+      return {
+        id: index + 1,
+        supabaseId: row.id,
+        eventId,
+        eventSupabaseId: row.event_id,
+        contractorProfileId: row.profile_id,
+        status: row.status,
+        note: row.note ?? '',
+        plannedFrom: row.planned_from ?? null,
+        plannedTo: row.planned_to ?? null,
+        createdAt: row.created_at,
+      } satisfies EventApplication;
+    })
+    .filter((application): application is EventApplication => Boolean(application));
+  const eventCrewAssignments = crewAssignmentRows
+    .map((row) => {
+      const eventId = eventLocalIdByRowId.get(row.event_id);
+      if (!eventId) return null;
+      const name = `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim();
+      return {
+        eventId,
+        eventSupabaseId: row.event_id,
+        contractorProfileId: row.profile_id,
+        name: name || 'Clen crew',
+      } satisfies EventCrewAssignment;
+    })
+    .filter((assignment): assignment is EventCrewAssignment => Boolean(assignment));
+
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     events: supabaseEvents,
+    eventApplications,
+    eventCrewAssignments,
   }));
 
   return supabaseEvents;
@@ -278,6 +363,7 @@ const toSupabaseEventPayload = async (event: Event) => ({
   dresscode: event.dresscode ?? null,
   meeting_point: event.meetingLocation ?? null,
   show_day_types: event.showDayTypes ?? false,
+  allow_crew_time_proposal: event.allowCrewTimeProposal ?? false,
   day_types: event.dayTypes ?? null,
   phase_times: event.phaseTimes ?? null,
   phase_schedules: event.phaseSchedules ?? null,
@@ -307,6 +393,8 @@ export const getEventDetailData = (eventId: EventIdentifier | null): {
   timelogs: Timelog[];
   contractors: Contractor[];
   receipts: ReceiptItem[];
+  applications: EventApplication[];
+  crewAssignments: EventCrewAssignment[];
 } => {
   ensureSupabaseEventsLoaded();
   requestSupabaseTimelogsHydration();
@@ -319,20 +407,318 @@ export const getEventDetailData = (eventId: EventIdentifier | null): {
       timelogs: [],
       contractors: snapshot.contractors ?? [],
       receipts: [],
+      applications: [],
+      crewAssignments: [],
     };
   }
 
   const eventTimelogs = (snapshot.timelogs ?? []).filter((timelog) => timelog.eid === event.id);
+  const eventReceipts = appDataSource === 'supabase' && event.supabaseId
+    ? (snapshot.receipts ?? []).filter((receipt) => receipt.eventSupabaseId === event.supabaseId)
+    : (snapshot.receipts ?? []).filter((receipt) => receipt.eid === event.id);
+  const storedCrewAssignments = (snapshot.eventCrewAssignments ?? []).filter((assignment) => assignment.eventId === event.id);
+  const crewAssignments = storedCrewAssignments.length > 0
+    ? storedCrewAssignments
+    : eventTimelogs.reduce<EventCrewAssignment[]>((assignments, timelog) => {
+        if (!timelog.contractorProfileId || assignments.some((item) => item.contractorProfileId === timelog.contractorProfileId)) {
+          return assignments;
+        }
+        const contractor = (snapshot.contractors ?? []).find((item) => item.profileId === timelog.contractorProfileId);
+        return contractor
+          ? [...assignments, {
+              eventId: event.id,
+              eventSupabaseId: event.supabaseId,
+              contractorProfileId: timelog.contractorProfileId,
+              name: contractor.name,
+            }]
+          : assignments;
+      }, []);
 
   return {
     event: {
       ...event,
-      filled: eventTimelogs.length > 0 ? countAssignedCrewForEvent(eventTimelogs, event.id) : event.filled,
+      filled: event.filled,
     },
     timelogs: eventTimelogs,
     contractors: snapshot.contractors ?? [],
-    receipts: (snapshot.receipts ?? []).filter((receipt) => receipt.eid === event.id),
+    receipts: eventReceipts,
+    applications: (snapshot.eventApplications ?? []).filter((application) => application.eventId === event.id),
+    crewAssignments,
   };
+};
+
+export const getPendingEventApplications = (eventId?: EventIdentifier | null): EventApplication[] => {
+  ensureSupabaseEventsLoaded();
+  const snapshot = getLocalAppState();
+  const applications = snapshot.eventApplications ?? [];
+  if (eventId == null) return applications.filter((application) => application.status === 'pending');
+
+  const event = (snapshot.events ?? []).find((item) => matchesEventIdentifier(item, eventId));
+  if (!event) return [];
+  return applications.filter((application) => application.eventId === event.id && application.status === 'pending');
+};
+
+export const applyForEvent = async (
+  eventId: EventIdentifier,
+  contractorProfileId: string,
+  plannedTimes?: { from?: string; to?: string },
+): Promise<EventApplication> => {
+  const snapshot = getLocalAppState();
+  const event = (snapshot.events ?? []).find((item) => matchesEventIdentifier(item, eventId));
+  if (!event) {
+    throw new Error('Akce nebyla nalezena.');
+  }
+
+  if (!contractorProfileId) {
+    throw new Error('Nepodarilo se dohledat prihlaseneho clena crew.');
+  }
+
+  const isAlreadyAssigned = (snapshot.timelogs ?? []).some((timelog) => (
+    timelog.eid === event.id && timelog.contractorProfileId === contractorProfileId
+  ));
+  if (isAlreadyAssigned) {
+    throw new Error('Na tuto akci uz jste prirazeny.');
+  }
+
+  const existingApplication = (snapshot.eventApplications ?? []).find((application) => (
+    application.eventId === event.id && application.contractorProfileId === contractorProfileId
+  ));
+  if (existingApplication?.status === 'pending') {
+    return existingApplication;
+  }
+  if (existingApplication?.status === 'approved' || existingApplication?.status === 'withdrawal_requested') {
+    throw new Error('Na tuto akci uz jste prirazeny.');
+  }
+
+  const plannedFrom = event.allowCrewTimeProposal ? (plannedTimes?.from || null) : null;
+  const plannedTo = event.allowCrewTimeProposal ? (plannedTimes?.to || null) : null;
+
+  let nextApplication: EventApplication = {
+    id: existingApplication?.id ?? Math.max(0, ...(snapshot.eventApplications ?? []).map((item) => item.id)) + 1,
+    supabaseId: existingApplication?.supabaseId,
+    eventId: event.id,
+    eventSupabaseId: event.supabaseId,
+    contractorProfileId,
+    status: 'pending',
+    note: existingApplication?.note ?? '',
+    plannedFrom,
+    plannedTo,
+    createdAt: existingApplication?.createdAt ?? new Date().toISOString(),
+  };
+
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    const eventRowId = await getSupabaseEventRowId(event.id);
+    const applicationResult = await supabase
+      .from('event_applications')
+      .upsert({
+        event_id: eventRowId,
+        profile_id: contractorProfileId,
+        status: 'pending',
+        note: null,
+        planned_from: plannedFrom,
+        planned_to: plannedTo,
+      }, { onConflict: 'event_id,profile_id' })
+      .select('*')
+      .single();
+
+    if (applicationResult.error) {
+      throw new Error(applicationResult.error.message);
+    }
+
+    nextApplication = {
+      ...nextApplication,
+      supabaseId: applicationResult.data.id,
+      eventSupabaseId: applicationResult.data.event_id,
+      status: applicationResult.data.status,
+      note: applicationResult.data.note ?? '',
+      plannedFrom: applicationResult.data.planned_from ?? null,
+      plannedTo: applicationResult.data.planned_to ?? null,
+      createdAt: applicationResult.data.created_at,
+    };
+  }
+
+  updateLocalAppState((currentSnapshot) => {
+    const otherApplications = (currentSnapshot.eventApplications ?? []).filter((application) => !(
+      application.eventId === event.id && application.contractorProfileId === contractorProfileId
+    ));
+
+    return {
+      ...currentSnapshot,
+      eventApplications: [...otherApplications, nextApplication],
+    };
+  });
+
+  invalidateEventQueries();
+  return nextApplication;
+};
+
+export const updateEventApplicationStatus = async (
+  applicationId: number,
+  status: EventApplicationStatus,
+): Promise<EventApplication | null> => {
+  const snapshot = getLocalAppState();
+  const application = (snapshot.eventApplications ?? []).find((item) => item.id === applicationId);
+  if (!application) {
+    throw new Error('Prihlaska nebyla nalezena.');
+  }
+
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    if (!application.supabaseId) {
+      throw new Error('Prihlaska nema UUID zaznam v Supabase.');
+    }
+
+    const updateResult = await supabase
+      .from('event_applications')
+      .update({ status })
+      .eq('id', application.supabaseId)
+      .select('*')
+      .single();
+
+    if (updateResult.error) {
+      throw new Error(updateResult.error.message);
+    }
+  }
+
+  const nextApplication = { ...application, status };
+  updateLocalAppState((currentSnapshot) => ({
+    ...currentSnapshot,
+    eventApplications: (currentSnapshot.eventApplications ?? []).map((item) => (
+      item.id === applicationId ? nextApplication : item
+    )),
+  }));
+
+  invalidateEventQueries();
+  return nextApplication;
+};
+
+export const withdrawEventApplication = async (
+  eventId: EventIdentifier,
+  contractorProfileId: string,
+): Promise<EventApplication | null> => {
+  const snapshot = getLocalAppState();
+  const event = (snapshot.events ?? []).find((item) => matchesEventIdentifier(item, eventId));
+  if (!event) {
+    throw new Error('Akce nebyla nalezena.');
+  }
+
+  const application = (snapshot.eventApplications ?? []).find((item) => (
+    item.eventId === event.id && item.contractorProfileId === contractorProfileId
+  ));
+  if (!application || application.status !== 'pending') {
+    throw new Error('Odhlasit se lze primo jen pred schvalenim prihlasky.');
+  }
+
+  return updateEventApplicationStatus(application.id, 'withdrawn');
+};
+
+export const requestEventWithdrawal = async (
+  eventId: EventIdentifier,
+  contractorProfileId: string,
+): Promise<EventApplication> => {
+  const snapshot = getLocalAppState();
+  const event = (snapshot.events ?? []).find((item) => matchesEventIdentifier(item, eventId));
+  if (!event) {
+    throw new Error('Akce nebyla nalezena.');
+  }
+
+  const isAssigned = (snapshot.timelogs ?? []).some((timelog) => (
+    timelog.eid === event.id && timelog.contractorProfileId === contractorProfileId
+  ));
+  if (!isAssigned) {
+    throw new Error('O odhlaseni lze pozadat az po schvaleni na akci.');
+  }
+
+  const existingApplication = (snapshot.eventApplications ?? []).find((application) => (
+    application.eventId === event.id && application.contractorProfileId === contractorProfileId
+  ));
+  if (existingApplication?.status === 'withdrawal_requested') {
+    return existingApplication;
+  }
+
+  let nextApplication: EventApplication = {
+    id: existingApplication?.id ?? Math.max(0, ...(snapshot.eventApplications ?? []).map((item) => item.id)) + 1,
+    supabaseId: existingApplication?.supabaseId,
+    eventId: event.id,
+    eventSupabaseId: event.supabaseId,
+    contractorProfileId,
+    status: 'withdrawal_requested',
+    note: existingApplication?.note ?? '',
+    plannedFrom: existingApplication?.plannedFrom ?? null,
+    plannedTo: existingApplication?.plannedTo ?? null,
+    createdAt: existingApplication?.createdAt ?? new Date().toISOString(),
+  };
+
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    const eventRowId = await getSupabaseEventRowId(event.id);
+    const applicationResult = await supabase
+      .from('event_applications')
+      .upsert({
+        event_id: eventRowId,
+        profile_id: contractorProfileId,
+        status: 'withdrawal_requested',
+        note: existingApplication?.note ?? null,
+        planned_from: existingApplication?.plannedFrom ?? null,
+        planned_to: existingApplication?.plannedTo ?? null,
+      }, { onConflict: 'event_id,profile_id' })
+      .select('*')
+      .single();
+
+    if (applicationResult.error) {
+      throw new Error(applicationResult.error.message);
+    }
+
+    nextApplication = {
+      ...nextApplication,
+      supabaseId: applicationResult.data.id,
+      eventSupabaseId: applicationResult.data.event_id,
+      status: applicationResult.data.status,
+      note: applicationResult.data.note ?? '',
+      plannedFrom: applicationResult.data.planned_from ?? null,
+      plannedTo: applicationResult.data.planned_to ?? null,
+      createdAt: applicationResult.data.created_at,
+    };
+  }
+
+  updateLocalAppState((currentSnapshot) => {
+    const otherApplications = (currentSnapshot.eventApplications ?? []).filter((application) => !(
+      application.eventId === event.id && application.contractorProfileId === contractorProfileId
+    ));
+
+    return {
+      ...currentSnapshot,
+      eventApplications: [...otherApplications, nextApplication],
+    };
+  });
+
+  invalidateEventQueries();
+  return nextApplication;
+};
+
+export const approveEventApplication = async (applicationId: number): Promise<void> => {
+  const snapshot = getLocalAppState();
+  const application = (snapshot.eventApplications ?? []).find((item) => item.id === applicationId);
+  if (!application) {
+    throw new Error('Prihlaska nebyla nalezena.');
+  }
+
+  const event = (snapshot.events ?? []).find((item) => item.id === application.eventId);
+  await assignCrewToEvent(
+    application.eventId,
+    application.contractorProfileId,
+    event?.showDayTypes ? ['all'] : undefined,
+  );
+  await updateEventApplicationStatus(applicationId, 'approved');
+};
+
+export const approveEventWithdrawal = async (applicationId: number): Promise<void> => {
+  const snapshot = getLocalAppState();
+  const application = (snapshot.eventApplications ?? []).find((item) => item.id === applicationId);
+  if (!application) {
+    throw new Error('Zadost o odhlaseni nebyla nalezena.');
+  }
+
+  await removeContractorFromEvent(application.eventId, application.contractorProfileId);
+  await updateEventApplicationStatus(applicationId, 'withdrawn');
 };
 
 export const getEventFormOptions = (): { projects: Project[]; clients: Client[] } => {
@@ -361,6 +747,31 @@ export const createEmptyEvent = (): Event => {
     status: 'upcoming',
     client: '',
     showDayTypes: false,
+    allowCrewTimeProposal: false,
+  };
+};
+
+export const createEventCopy = (event: Event): Event => {
+  const { events } = getLocalAppState();
+  const newStartDate = event.endDate ? addDaysToDateKey(event.endDate, 1) : event.startDate;
+  const eventDurationDays = event.startDate && event.endDate
+    ? getDaysBetweenDateKeys(event.startDate, event.endDate)
+    : 0;
+  const newEndDate = newStartDate ? addDaysToDateKey(newStartDate, eventDurationDays) : event.endDate;
+  const dateShift = event.startDate && newStartDate
+    ? getDaysBetweenDateKeys(event.startDate, newStartDate)
+    : 0;
+
+  return {
+    ...event,
+    id: Math.max(0, ...events.map((item) => item.id)) + 1,
+    supabaseId: undefined,
+    startDate: newStartDate,
+    endDate: newEndDate,
+    filled: 0,
+    status: 'upcoming',
+    dayTypes: shiftDateRecordKeys(event.dayTypes, dateShift),
+    phaseSchedules: shiftPhaseSchedules(event.phaseSchedules, dateShift),
   };
 };
 
@@ -461,6 +872,7 @@ const normalizeEvent = (event: Event): Event => ({
   job: event.job.trim().toUpperCase(),
   name: event.name.trim(),
   client: event.client.trim(),
+  allowCrewTimeProposal: event.allowCrewTimeProposal ?? false,
 });
 
 export const ensureProjectForEvent = (projects: Project[], event: Event): Project[] => {
@@ -515,16 +927,72 @@ export const syncEventTimelogs = (timelogs: Timelog[], event: Event): Timelog[] 
   })
 );
 
+const syncSupabaseEventTimelogDays = async (eventRowId: string, timelogs: Timelog[]) => {
+  if (!supabase || timelogs.length === 0) return;
+
+  const timelogRowsResult = await supabase
+    .from('timelogs')
+    .select('id,contractor_id')
+    .eq('event_id', eventRowId);
+
+  if (timelogRowsResult.error) {
+    throw new Error(timelogRowsResult.error.message);
+  }
+
+  const timelogRows = (timelogRowsResult.data ?? []) as EventTimelogRow[];
+  const timelogsByContractor = timelogs.reduce((acc, timelog) => {
+    if (!timelog.contractorProfileId) return acc;
+    const current = acc.get(timelog.contractorProfileId) ?? [];
+    current.push(timelog);
+    acc.set(timelog.contractorProfileId, current);
+    return acc;
+  }, new Map<string, Timelog[]>());
+
+  for (const row of timelogRows) {
+    if (!row.contractor_id) continue;
+    const contractorTimelogs = timelogsByContractor.get(row.contractor_id);
+    const timelog = contractorTimelogs?.shift();
+    if (!timelog) continue;
+
+    const timelogDaysDelete = await supabase
+      .from('timelog_days')
+      .delete()
+      .eq('timelog_id', row.id);
+
+    if (timelogDaysDelete.error) {
+      throw new Error(timelogDaysDelete.error.message);
+    }
+
+    if (timelog.days.length === 0) continue;
+
+    const timelogDaysInsert = await supabase
+      .from('timelog_days')
+      .insert(timelog.days.map((day) => ({
+        timelog_id: row.id,
+        date: day.d,
+        time_from: day.f,
+        time_to: day.t,
+        day_type: day.type,
+      })));
+
+    if (timelogDaysInsert.error) {
+      throw new Error(timelogDaysInsert.error.message);
+    }
+  }
+};
+
 export const saveEvent = async (event: Event): Promise<Event> => {
   const normalized = normalizeEvent(event);
   validateEvent(normalized);
+  const syncedTimelogs = syncEventTimelogs(getLocalAppState().timelogs ?? [], normalized);
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
     const exists = (getLocalAppState().events ?? []).some((item) => item.id === normalized.id);
     const payload = await toSupabaseEventPayload(normalized);
+    let eventRowId: string | null = null;
 
     if (exists) {
-      const eventRowId = await getSupabaseEventRowId(normalized.id);
+      eventRowId = await getSupabaseEventRowId(normalized.id);
       const eventUpdate = await supabase
         .from('events')
         .update(payload)
@@ -545,8 +1013,16 @@ export const saveEvent = async (event: Event): Promise<Event> => {
       }
 
       if (eventInsert.data?.id) {
-        eventRowIdByLocalId.set(normalized.id, eventInsert.data.id);
+        eventRowId = eventInsert.data.id;
+        eventRowIdByLocalId.set(normalized.id, eventRowId);
       }
+    }
+
+    if (eventRowId) {
+      await syncSupabaseEventTimelogDays(
+        eventRowId,
+        syncedTimelogs.filter((timelog) => timelog.eid === normalized.id),
+      );
     }
   }
 
@@ -560,7 +1036,7 @@ export const saveEvent = async (event: Event): Promise<Event> => {
       ...snapshot,
       events: nextEvents,
       projects: ensureProjectForEvent(snapshot.projects, normalized),
-      timelogs: syncEventTimelogs(snapshot.timelogs, normalized),
+      timelogs: syncedTimelogs,
     };
   });
 
@@ -668,6 +1144,33 @@ export const getEventCrew = (eventId: number): Contractor[] => {
   ensureSupabaseEventsLoaded();
   requestSupabaseTimelogsHydration();
   const snapshot = getLocalAppState();
+  const storedAssignments = (snapshot.eventCrewAssignments ?? []).filter((assignment) => assignment.eventId === eventId);
+  if (storedAssignments.length > 0) {
+    return storedAssignments
+      .map((assignment) => (
+        (snapshot.contractors ?? []).find((contractor) => contractor.profileId === assignment.contractorProfileId)
+        ?? {
+          id: Number.NaN,
+          profileId: assignment.contractorProfileId,
+          name: assignment.name,
+          ii: assignment.name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'C',
+          bg: '#E6F1FB',
+          fg: '#185FA5',
+          tags: [],
+          events: 0,
+          rate: 0,
+          phone: '',
+          email: '',
+          ico: '',
+          dic: '',
+          bank: '',
+          city: '',
+          reliable: true,
+          note: '',
+        }
+      ));
+  }
+
   return (snapshot.contractors ?? []).filter((contractor) => (
     (snapshot.timelogs ?? []).some((timelog) => (
       timelog.eid === eventId

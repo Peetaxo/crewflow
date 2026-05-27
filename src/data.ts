@@ -1,6 +1,7 @@
-﻿import { Event, Contractor, Timelog, Invoice, Candidate, Project, Client, ReceiptItem, FleetReservation, FleetVehicle } from './types';
+﻿import { Event, Contractor, Timelog, Invoice, Candidate, Project, Client, ReceiptItem, FleetReservation, FleetVehicle, EventApplication, EventCrewAssignment, CrewRating } from './types';
 import type { BudgetItem, BudgetPackage, WarehouseItem, WarehouseReservation } from './types';
 
+export const INITIAL_CREW_RATINGS: CrewRating[] = [];
 
 export const INITIAL_EVENTS: Event[] = [
   {
@@ -289,6 +290,10 @@ export const INITIAL_EVENTS: Event[] = [
   { id: 257, name: 'Kunratick\u00e9 vinobran\u00ed', job: 'Kunratick\u00e9 vinobran\u00ed', startDate: '2026-09-18', endDate: '2026-09-20', city: 'Praha', needed: 1, filled: 0, status: 'upcoming', client: 'Next Level', contactPerson: '' },
   { id: 258, name: 'Design Blok', job: 'Design Blok', startDate: '2026-10-07', endDate: '2026-10-11', city: 'Praha', needed: 1, filled: 0, status: 'upcoming', client: 'Next Level', contactPerson: '' },
 ];
+
+export const INITIAL_EVENT_APPLICATIONS: EventApplication[] = [];
+
+export const INITIAL_EVENT_CREW_ASSIGNMENTS: EventCrewAssignment[] = [];
 
 export const INITIAL_PROJECTS: Project[] = [
   { id: 'TEST001', name: 'TEST projekt', client: 'Next Level', createdAt: '2026-04-01' },
@@ -602,10 +607,10 @@ export const INITIAL_WAREHOUSE_ITEMS: WarehouseItem[] = [
 export const INITIAL_WAREHOUSE_RESERVATIONS: WarehouseReservation[] = [];
 
 export const INITIAL_CANDIDATES: Candidate[] = [
-  { id: 1, name: 'Pavel Horák', phone: '603 222 333', email: 'pavel.horak@email.cz', src: 'Tally', calBooked: true, stage: 'interview_scheduled', interviewAt: '2026-04-07 14:00', note: 'Zájem o víkendové akce, má ŘP.' },
-  { id: 2, name: 'Eva Klimešová', phone: '776 444 555', email: 'eva.klimesova@email.cz', src: 'Tally', calBooked: false, stage: 'new', interviewAt: null, note: 'Doporučena Kateřinou P.' },
-  { id: 3, name: 'Radek Šimek', phone: '602 666 777', email: 'radek.simek@email.cz', src: 'Tally', calBooked: true, stage: 'decision', interviewAt: '2026-04-03 10:00', note: 'Zkušenosti z cateringu.' },
-  { id: 4, name: 'Tereza Nováčková', phone: '608 888 999', email: 'tereza.novackova@email.cz', src: 'Tally', calBooked: true, stage: 'accepted', interviewAt: '2026-03-28 11:00', note: 'Nasazena na první akci.' },
+  { id: 1, name: 'Pavel Horák', phone: '603 222 333', email: 'pavel.horak@email.cz', src: 'Tally', hasIco: true, hasDrivingLicense: true, canDriveVan: true, hasEventExperience: false, isAdult: true, calBooked: true, stage: 'interview_scheduled', interviewAt: '2026-04-07 14:00', note: 'Zájem o víkendové akce, má ŘP.' },
+  { id: 2, name: 'Eva Klimešová', phone: '776 444 555', email: 'eva.klimesova@email.cz', src: 'Tally', hasIco: false, hasDrivingLicense: false, canDriveVan: false, hasEventExperience: false, isAdult: true, calBooked: false, stage: 'new', interviewAt: null, note: 'Doporučena Kateřinou P.' },
+  { id: 3, name: 'Radek Šimek', phone: '602 666 777', email: 'radek.simek@email.cz', src: 'Tally', hasIco: true, hasDrivingLicense: true, canDriveVan: false, hasEventExperience: true, isAdult: true, calBooked: true, stage: 'decision', interviewAt: '2026-04-03 10:00', note: 'Zkušenosti z cateringu.' },
+  { id: 4, name: 'Tereza Nováčková', phone: '608 888 999', email: 'tereza.novackova@email.cz', src: 'Tally', hasIco: true, hasDrivingLicense: false, canDriveVan: false, hasEventExperience: true, isAdult: true, calBooked: true, stage: 'accepted', interviewAt: '2026-03-28 11:00', note: 'Nasazena na první akci.' },
 ];
 
 /** Sazba za km (Kc) - presunout do nastaveni/DB pri migraci na Supabase */

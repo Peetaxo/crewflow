@@ -88,7 +88,8 @@ describe('UUID write flows integration', () => {
     let profileSelectCalls = 0;
     const invalidateQueries = vi.fn().mockResolvedValue(undefined);
     const setQueryData = vi.fn();
-    const timelogStatusEq = vi.fn().mockResolvedValue({ error: null });
+    const timelogStatusSelect = vi.fn().mockResolvedValue({ data: [{ id: 'timelog-row-1' }], error: null });
+    const timelogStatusEq = vi.fn(() => ({ select: timelogStatusSelect }));
     const timelogStatusIn = vi.fn().mockResolvedValue({ error: null });
     const timelogUpdateEq = vi.fn().mockResolvedValue({ error: null });
     const timelogDaysDeleteEq = vi.fn().mockResolvedValue({ error: null });

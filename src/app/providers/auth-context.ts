@@ -24,6 +24,7 @@ export interface AuthContextType {
   session: Session | null;
   user: User | null;
   role: Role | null;
+  isRoleSwitching: boolean;
   profile: AuthProfile | null;
   currentProfileId: string | null;
   currentUserId: string | null;
@@ -31,6 +32,7 @@ export interface AuthContextType {
   devLoginOptions: DevLoginOption[];
   signIn: (email: string, password: string) => Promise<void>;
   signInAsDevUser: (profileId: string, role: Role) => void;
+  switchRole: (role: Role) => Promise<void>;
   signOut: () => Promise<void>;
 }
 

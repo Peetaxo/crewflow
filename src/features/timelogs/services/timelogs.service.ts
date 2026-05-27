@@ -85,12 +85,19 @@ export const fetchTimelogsSnapshot = async (): Promise<Timelog[]> => {
     throw new Error(firstError.message);
   }
 
-  return mapSupabaseTimelogs(
+  const supabaseTimelogs = mapSupabaseTimelogs(
     timelogsResult.data ?? [],
     timelogDaysResult.data ?? [],
     profilesResult.data ?? [],
     eventsResult.data ?? [],
   );
+
+  updateLocalAppState((snapshot) => ({
+    ...snapshot,
+    timelogs: supabaseTimelogs,
+  }));
+
+  return supabaseTimelogs;
 };
 
 const hydrateTimelogsFromSupabase = async (): Promise<void> => {
@@ -202,10 +209,15 @@ const persistSupabaseTimelogStatus = async (
     const result = await supabase
       .from('timelogs')
       .update({ status: nextStatus })
-      .eq('id', rowId);
+      .eq('id', rowId)
+      .select('id');
 
     if (result.error) {
       throw new Error(result.error.message);
+    }
+
+    if ((result.data ?? []).length === 0) {
+      throw new Error('Nepodarilo se aktualizovat vykaz v databazi.');
     }
   }));
 };

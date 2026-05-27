@@ -2,7 +2,7 @@ import React from 'react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockAppContext = {
@@ -138,6 +138,27 @@ describe('DashboardView', () => {
     expect(upcomingEventRow.querySelector('.nodu-dashboard-progress-track')).not.toBeNull();
     expect(timelogRow.className).not.toContain('border-[#f1e4d6]');
     expect(upcomingEventRow.className).not.toContain('border-[#f1e4d6]');
+  });
+
+  it('opens the event detail approval tab from a dashboard approval row', async () => {
+    const { default: DashboardView } = await import('./DashboardView');
+    const queryClient = new QueryClient();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <DashboardView />
+      </QueryClientProvider>,
+    );
+
+    const timelogsHeading = screen.getByRole('heading', { name: 'Ke schválení' });
+    const timelogPanel = timelogsHeading.closest('.nodu-dashboard-panel');
+    const timelogRow = within(timelogPanel as HTMLElement).getByRole('button', { name: /Alex Novak/i });
+
+    fireEvent.click(timelogRow);
+
+    expect(mockAppContext.setCurrentTab).toHaveBeenCalledWith('events');
+    expect(mockAppContext.setSelectedEventId).toHaveBeenCalledWith(101);
+    expect(mockAppContext.setEventTab).toHaveBeenCalledWith('approval');
+    expect(mockAppContext.setTimelogFilter).not.toHaveBeenCalled();
   });
 
   it('keeps dashboard helper styles wired to nodu tokens and preserves row borders for dark mode', () => {

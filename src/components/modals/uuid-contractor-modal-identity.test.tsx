@@ -22,17 +22,23 @@ type MockAppContext = {
   role: 'crewhead';
   editingTimelog: Timelog | null;
   setEditingTimelog: (value: Timelog | null) => void;
+  setCurrentTab: (value: string) => void;
+  setSelectedContractorProfileId: (value: string | null) => void;
   editingReceipt: ReceiptItem | null;
   setEditingReceipt: (value: ReceiptItem | null) => void;
 };
 
 const setEditingTimelog = vi.fn();
 const setEditingReceipt = vi.fn();
+const setCurrentTab = vi.fn();
+const setSelectedContractorProfileId = vi.fn();
 
 let mockAppContext: MockAppContext = {
   role: 'crewhead' as const,
   editingTimelog: null,
   setEditingTimelog,
+  setCurrentTab,
+  setSelectedContractorProfileId,
   editingReceipt: null,
   setEditingReceipt,
 };
@@ -101,6 +107,8 @@ describe('modal contractor identity handling', () => {
       role: 'crewhead',
       editingTimelog: null,
       setEditingTimelog,
+      setCurrentTab,
+      setSelectedContractorProfileId,
       editingReceipt: null,
       setEditingReceipt,
     };
@@ -139,6 +147,43 @@ describe('modal contractor identity handling', () => {
     render(<TimelogEditModal />);
 
     expect(screen.getByText(/UUID Contractor · Test Event/)).toBeInTheDocument();
+  });
+
+  it('opens contractor detail from the timelog modal avatar', () => {
+    mockAppContext.editingTimelog = {
+      id: 1,
+      eid: 1,
+      contractorProfileId: 'profile-uuid-1',
+      days: [{ d: '2026-04-24', f: '08:00', t: '16:00', type: 'instal' }],
+      km: 0,
+      note: '',
+      status: 'draft',
+    };
+    mockTimelogDependencies = {
+      contractors: [{
+        id: 1,
+        profileId: 'profile-uuid-1',
+        name: 'UUID Contractor',
+        rate: 250,
+        ii: 'UC',
+        bg: '#dbeafe',
+        fg: '#1d4ed8',
+      }],
+      events: [{
+        id: 1,
+        name: 'Test Event',
+        startDate: '2026-04-24',
+        endDate: '2026-04-24',
+      }],
+    };
+
+    render(<TimelogEditModal />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Otevrit detail clena crew UUID Contractor/i }));
+
+    expect(setEditingTimelog).toHaveBeenCalledWith(null);
+    expect(setSelectedContractorProfileId).toHaveBeenCalledWith('profile-uuid-1');
+    expect(setCurrentTab).toHaveBeenCalledWith('crew');
   });
 
   it('updates receipt contractor using contractorProfileId from the selected crew member', () => {

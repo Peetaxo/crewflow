@@ -27,7 +27,7 @@ const getInitials = (name: string) => (
 
 const clampRating = (rating?: number | null) => {
   if (rating == null || Number.isNaN(Number(rating))) return null;
-  return Math.min(5, Math.max(1, Number(rating)));
+  return Math.round(Math.min(10, Math.max(0, Number(rating))) * 10) / 10;
 };
 
 const normalizeText = (value?: string) => value?.trim() ?? '';
@@ -39,7 +39,6 @@ const normalizeTags = (tags: string[] = []) => (
 );
 
 const toProfilePayload = (member: CreateCrewInput | UpdateCrewInput) => {
-  const rating = clampRating(member.rating);
   return {
     first_name: member.name.trim().split(/\s+/).slice(0, -1).join(' ') || member.name.trim(),
     last_name: member.name.trim().split(/\s+/).slice(-1).join(''),
@@ -56,7 +55,7 @@ const toProfilePayload = (member: CreateCrewInput | UpdateCrewInput) => {
     hourly_rate: Number(member.rate) || 0,
     tags: member.tags.includes('Ridic') ? ['Ridic'] : normalizeTags(member.tags),
     note: member.note || null,
-    reliability: rating ?? (member.reliable ? 4 : 1),
+    reliability: member.reliable ? 4 : 1,
     avatar_color: member.fg || null,
     avatar_bg: member.bg || null,
   };

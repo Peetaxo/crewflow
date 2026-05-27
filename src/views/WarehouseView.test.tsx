@@ -4,6 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getLocalAppData, updateLocalAppState } from '../lib/app-data';
 import WarehouseView from './WarehouseView';
 
+vi.mock('../lib/app-config', () => ({
+  appDataSource: 'local',
+  isLocalDataEnabled: true,
+}));
+
 vi.mock('sonner', () => ({
   toast: {
     success: vi.fn(),

@@ -3,6 +3,11 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import FleetView from './FleetView';
 
+vi.mock('../lib/app-config', () => ({
+  appDataSource: 'local',
+  isLocalDataEnabled: true,
+}));
+
 vi.mock('../app/providers/useAuth', () => ({
   useAuth: () => ({
     currentProfileId: 'profile-local-1',

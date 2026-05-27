@@ -1,6 +1,9 @@
 export type AppDataSource = 'local' | 'supabase';
 
-const rawDataSource = import.meta.env.VITE_APP_DATA_SOURCE;
+export const resolveAppDataSource = (rawDataSource: unknown): AppDataSource => (
+  String(rawDataSource ?? '').trim().toLowerCase() === 'local' ? 'local' : 'supabase'
+);
 
-export const appDataSource: AppDataSource =
-  rawDataSource === 'supabase' ? 'supabase' : 'local';
+export const appDataSource: AppDataSource = resolveAppDataSource(import.meta.env.VITE_APP_DATA_SOURCE);
+
+export const isLocalDataEnabled = appDataSource === 'local';

@@ -13,6 +13,26 @@ const mockAuthState = {
   signInAsDevUser: vi.fn(),
 };
 
+const runtimeConfig = vi.hoisted(() => ({
+  appDataSource: 'supabase' as 'local' | 'supabase',
+  isSupabaseConfigured: true,
+}));
+
+vi.mock('../lib/app-config', () => ({
+  get appDataSource() {
+    return runtimeConfig.appDataSource;
+  },
+  get isLocalDataEnabled() {
+    return runtimeConfig.appDataSource === 'local';
+  },
+}));
+
+vi.mock('../lib/supabase', () => ({
+  get isSupabaseConfigured() {
+    return runtimeConfig.isSupabaseConfigured;
+  },
+}));
+
 vi.mock('../app/providers/useAuth', () => ({
   useAuth: () => mockAuthState,
 }));
@@ -33,6 +53,8 @@ describe('Index unauthenticated routing', () => {
       isAuthenticated: false,
       isLoading: false,
     });
+    runtimeConfig.appDataSource = 'supabase';
+    runtimeConfig.isSupabaseConfigured = true;
   });
 
   it('shows the public Nodu welcome page before login on the homepage', () => {
@@ -89,5 +111,23 @@ describe('Index unauthenticated routing', () => {
 
     expect(screen.getByText('App layout')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: /Cely provoz od akce po fakturu/i })).not.toBeInTheDocument();
+  });
+
+  it('shows a configuration error instead of loading local data when Supabase env is missing', () => {
+    runtimeConfig.isSupabaseConfigured = false;
+    Object.assign(mockAuthState, {
+      hasKnownSession: true,
+      isAuthenticated: true,
+      isAuthRequired: false,
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/app']}>
+        <AppShell />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Chybi Supabase konfigurace')).toBeInTheDocument();
+    expect(screen.queryByText('App layout')).not.toBeInTheDocument();
   });
 });

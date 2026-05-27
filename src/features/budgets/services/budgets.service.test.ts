@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mockLocalRuntime = () => {
   vi.doMock('../../../lib/app-config', () => ({
     appDataSource: 'local',
+    isLocalDataEnabled: true,
   }));
   vi.doMock('../../../lib/supabase', () => ({
     isSupabaseConfigured: false,
@@ -418,6 +419,7 @@ describe('budgets service data shape', () => {
 
     vi.doMock('../../../lib/app-config', () => ({
       appDataSource: 'supabase',
+      isLocalDataEnabled: false,
     }));
 
     vi.doMock('../../../lib/supabase', () => ({
@@ -480,6 +482,7 @@ describe('budgets service data shape', () => {
 
     vi.doMock('../../../lib/app-config', () => ({
       appDataSource: 'supabase',
+      isLocalDataEnabled: false,
     }));
     vi.doMock('../../../lib/supabase', () => ({
       isSupabaseConfigured: true,
@@ -533,6 +536,7 @@ describe('budgets service data shape', () => {
 
     vi.doMock('../../../lib/app-config', () => ({
       appDataSource: 'supabase',
+      isLocalDataEnabled: false,
     }));
     vi.doMock('../../../lib/supabase', () => ({
       isSupabaseConfigured: true,

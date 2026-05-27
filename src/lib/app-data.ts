@@ -42,6 +42,7 @@ import type {
 } from '@/types';
 import type { Database } from './database.types';
 import { mapBudgetItem, mapBudgetPackage, mapCandidate, mapClient, mapContractor, mapEvent, mapFleetReservation, mapFleetVehicle, mapInvoice, mapProject, mapReceipt, mapTimelog } from './supabase-mappers';
+import { appDataSource } from './app-config';
 import { isSupabaseConfigured, supabase } from './supabase';
 
 export interface AppDataSnapshot {
@@ -72,7 +73,29 @@ const cloneSnapshot = (snapshot: AppDataSnapshot): AppDataSnapshot => (
 
 type AppDataListener = (snapshot: AppDataSnapshot) => void;
 
-let localAppState = cloneSnapshot({
+const emptyAppData: AppDataSnapshot = {
+  events: [],
+  eventApplications: [],
+  eventCrewAssignments: [],
+  crewRatings: [],
+  contractors: [],
+  timelogs: [],
+  invoices: [],
+  invoiceApprovalDocuments: [],
+  grasonEventConfirmations: [],
+  receipts: [],
+  budgetPackages: [],
+  budgetItems: [],
+  fleetVehicles: [],
+  fleetReservations: [],
+  warehouseItems: [],
+  warehouseReservations: [],
+  candidates: [],
+  projects: [],
+  clients: [],
+};
+
+const localBackupAppData: AppDataSnapshot = {
   events: INITIAL_EVENTS,
   eventApplications: INITIAL_EVENT_APPLICATIONS,
   eventCrewAssignments: INITIAL_EVENT_CREW_ASSIGNMENTS,
@@ -92,32 +115,18 @@ let localAppState = cloneSnapshot({
   candidates: INITIAL_CANDIDATES,
   projects: INITIAL_PROJECTS,
   clients: INITIAL_CLIENTS,
-});
+};
+
+const getInitialLocalAppData = (): AppDataSnapshot => (
+  appDataSource === 'local' ? localBackupAppData : emptyAppData
+);
+
+let localAppState = cloneSnapshot(getInitialLocalAppData());
 
 const localAppListeners = new Set<AppDataListener>();
 
 export function getLocalAppData(): AppDataSnapshot {
-  return {
-    events: INITIAL_EVENTS,
-    eventApplications: INITIAL_EVENT_APPLICATIONS,
-    eventCrewAssignments: INITIAL_EVENT_CREW_ASSIGNMENTS,
-    crewRatings: INITIAL_CREW_RATINGS,
-    contractors: INITIAL_CONTRACTORS,
-    timelogs: INITIAL_TIMELOGS,
-    invoices: INITIAL_INVOICES,
-    invoiceApprovalDocuments: [],
-    grasonEventConfirmations: [],
-    receipts: INITIAL_RECEIPTS,
-    budgetPackages: INITIAL_BUDGET_PACKAGES,
-    budgetItems: INITIAL_BUDGET_ITEMS,
-    fleetVehicles: INITIAL_FLEET_VEHICLES,
-    fleetReservations: INITIAL_FLEET_RESERVATIONS,
-    warehouseItems: INITIAL_WAREHOUSE_ITEMS,
-    warehouseReservations: INITIAL_WAREHOUSE_RESERVATIONS,
-    candidates: INITIAL_CANDIDATES,
-    projects: INITIAL_PROJECTS,
-    clients: INITIAL_CLIENTS,
-  };
+  return cloneSnapshot(getInitialLocalAppData());
 }
 
 export function getLocalAppState(): AppDataSnapshot {

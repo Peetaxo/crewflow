@@ -12,6 +12,11 @@ const supabaseMockState = vi.hoisted(() => ({
   supabase: null as unknown,
 }));
 
+vi.mock('../../../lib/app-config', () => ({
+  appDataSource: 'local',
+  isLocalDataEnabled: true,
+}));
+
 vi.mock('../../../lib/supabase', () => ({
   get isSupabaseConfigured() {
     return supabaseMockState.isSupabaseConfigured;

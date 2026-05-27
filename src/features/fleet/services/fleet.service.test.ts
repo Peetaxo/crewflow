@@ -7,6 +7,11 @@ import {
   saveFleetReservation,
 } from './fleet.service';
 
+vi.mock('../../../lib/app-config', () => ({
+  appDataSource: 'local',
+  isLocalDataEnabled: true,
+}));
+
 describe('fleet service', () => {
   it('shows STK warning only when a vehicle needs attention', () => {
     const rows = getFleetOverviewRows('2026-04-28');
@@ -196,6 +201,7 @@ describe('fleet service Supabase writes', () => {
 
     vi.doMock('../../../lib/app-config', () => ({
       appDataSource: 'supabase',
+      isLocalDataEnabled: false,
     }));
 
     vi.doMock('../../../lib/supabase', () => ({
@@ -301,6 +307,7 @@ describe('fleet service Supabase writes', () => {
 
     vi.doMock('../../../lib/app-config', () => ({
       appDataSource: 'supabase',
+      isLocalDataEnabled: false,
     }));
 
     vi.doMock('../../../lib/supabase', () => ({

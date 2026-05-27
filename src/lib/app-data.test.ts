@@ -6,6 +6,32 @@ describe('app-data Supabase loading', () => {
     vi.clearAllMocks();
   });
 
+  it('starts from an empty in-memory snapshot when local backup data is disabled', async () => {
+    vi.doMock('./app-config', () => ({
+      appDataSource: 'supabase',
+      isLocalDataEnabled: false,
+    }));
+
+    const { getLocalAppData, getLocalAppState } = await import('./app-data');
+
+    expect(getLocalAppData().events).toEqual([]);
+    expect(getLocalAppState().events).toEqual([]);
+    expect(getLocalAppState().contractors).toEqual([]);
+    expect(getLocalAppState().warehouseItems).toEqual([]);
+  });
+
+  it('keeps local seed data available as an explicit backup mode', async () => {
+    vi.doMock('./app-config', () => ({
+      appDataSource: 'local',
+      isLocalDataEnabled: true,
+    }));
+
+    const { getLocalAppData } = await import('./app-data');
+
+    expect(getLocalAppData().events.length).toBeGreaterThan(0);
+    expect(getLocalAppData().warehouseItems.length).toBeGreaterThan(0);
+  });
+
   it('loads fleet vehicles and reservations from Supabase app data', async () => {
     const rowsByTable = {
       clients: [],

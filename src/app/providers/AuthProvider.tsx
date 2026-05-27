@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { appDataSource } from '../../lib/app-config';
 import { getContractors, subscribeToCrewChanges } from '../../features/crew/services/crew.service';
@@ -77,6 +77,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentContractorId, setCurrentContractorId] = useState<number | null>(null);
   const [isDevSession, setIsDevSession] = useState(false);
+  const [isRoleSwitching, setIsRoleSwitching] = useState(false);
   const [devLoginOptions, setDevLoginOptions] = useState<DevLoginOption[]>([]);
 
   useEffect(() => {
@@ -104,6 +105,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setCurrentUserId(null);
       setCurrentContractorId(null);
       setIsDevSession(false);
+      setIsRoleSwitching(false);
       return;
     }
 
@@ -117,6 +119,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       if (!nextSession?.user) {
         setCurrentUserId(null);
+        setIsRoleSwitching(false);
         const storedDevSession = readStoredDevSession();
         if (storedDevSession) {
           const { firstName, lastName } = splitName(storedDevSession.name);
@@ -146,6 +149,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       writeStoredDevSession(null);
       setIsDevSession(false);
+      setIsRoleSwitching(false);
       setIsLoading(true);
       setCurrentUserId(nextSession.user.id);
 
@@ -221,6 +225,37 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return subscribeToCrewChanges(syncCurrentContractorId);
   }, [currentProfileId, isAuthRequired]);
 
+  const switchRole = useCallback(async (nextRole: Role) => {
+    if (isRoleSwitching || role === nextRole) return;
+
+    if (!isAuthRequired || isDevSession) {
+      setRole(nextRole);
+      const storedDevSession = readStoredDevSession();
+      if (storedDevSession) {
+        writeStoredDevSession({ ...storedDevSession, role: nextRole });
+      }
+      return;
+    }
+
+    if (!supabase || !currentUserId) {
+      throw new Error('Roli nelze zmenit bez prihlaseneho uzivatele.');
+    }
+
+    const previousRole = role;
+    setIsRoleSwitching(true);
+    setRole(nextRole);
+
+    try {
+      const { error } = await supabase.rpc('set_current_user_role', { p_role: nextRole });
+      if (error) {
+        setRole(previousRole);
+        throw new Error(error.message);
+      }
+    } finally {
+      setIsRoleSwitching(false);
+    }
+  }, [currentUserId, isAuthRequired, isDevSession, isRoleSwitching, role]);
+
   const value = useMemo<AuthContextType>(() => ({
     isAuthRequired,
     isAuthenticated: !isAuthRequired || Boolean(session?.user) || isDevSession,
@@ -230,6 +265,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     session,
     user,
     role,
+    isRoleSwitching,
     profile,
     currentProfileId,
     currentUserId,
@@ -275,10 +311,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       });
       setIsLoading(false);
     },
+    switchRole,
     signOut: async () => {
       writeStoredDevSession(null);
       clearPersistedUiSession();
       setIsDevSession(false);
+      setIsRoleSwitching(false);
       setCurrentProfileId(null);
       setCurrentUserId(null);
       setCurrentContractorId(null);
@@ -290,7 +328,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         throw new Error(error.message);
       }
     },
-  }), [currentContractorId, currentProfileId, currentUserId, devLoginOptions, isAuthRequired, isDevSession, isLoading, profile, role, session, user]);
+  }), [currentContractorId, currentProfileId, currentUserId, devLoginOptions, isAuthRequired, isDevSession, isLoading, isRoleSwitching, profile, role, session, switchRole, user]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

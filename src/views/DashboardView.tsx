@@ -21,7 +21,6 @@ const DashboardView = () => {
     role,
     searchQuery,
     setCurrentTab,
-    setTimelogFilter,
     setSelectedEventId,
     setEventTab,
   } = useAppContext();
@@ -144,15 +143,10 @@ const DashboardView = () => {
     .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.endDate.localeCompare(b.endDate) || a.name.localeCompare(b.name))
     .slice(0, 10);
 
-  const openTimelogs = () => {
-    setTimelogFilter(approvalStatus);
-    setCurrentTab('timelogs');
-  };
-
-  const openEventDetail = (event: Event) => {
+  const openEventDetail = (event: Event, tab = 'overview') => {
     setCurrentTab('events');
     setSelectedEventId(event.supabaseId ?? event.id);
-    setEventTab('overview');
+    setEventTab(tab);
   };
 
   return (
@@ -214,7 +208,7 @@ const DashboardView = () => {
                 return (
                   <button
                     key={timelog.id}
-                    onClick={openTimelogs}
+                    onClick={() => openEventDetail(event, 'approval')}
                     className="nodu-dashboard-row flex w-full items-center gap-3 rounded-[20px] border-b px-3 py-3 text-left transition-colors last:border-0"
                   >
                     <div className="av h-8 w-8 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>

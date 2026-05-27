@@ -9,15 +9,27 @@ interface ShiftCardProps {
   timelog: Timelog;
   event: Event;
   project: Project;
+  onClick?: () => void;
 }
 
 /** Karta směny — používá se v MyShifts i CrewDetail */
-const ShiftCard = ({ timelog, event, project }: ShiftCardProps) => {
+const ShiftCard = ({ timelog, event, project, onClick }: ShiftCardProps) => {
+  const handleKeyDown = (keyboardEvent: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!onClick) return;
+    if (keyboardEvent.key !== 'Enter' && keyboardEvent.key !== ' ') return;
+    keyboardEvent.preventDefault();
+    onClick();
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="rounded-[24px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] p-4 shadow-[0_18px_42px_rgba(47,38,31,0.08)] transition-shadow hover:shadow-[0_22px_48px_rgba(47,38,31,0.12)]"
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={handleKeyDown}
+      className={`rounded-[24px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] p-4 shadow-[0_18px_42px_rgba(47,38,31,0.08)] transition-shadow hover:shadow-[0_22px_48px_rgba(47,38,31,0.12)] ${onClick ? 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-[rgba(var(--nodu-accent-rgb),0.22)]' : ''}`}
     >
       <div className="flex justify-between items-start mb-3">
         <div>

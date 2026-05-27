@@ -6,15 +6,17 @@ import { useAuth } from './useAuth';
 
 const signOutMock = vi.fn(async () => ({ error: null }));
 const getSessionMock = vi.fn();
+const rpcMock = vi.fn(async () => ({ data: null, error: null }));
 const onAuthStateChangeMock = vi.fn(() => ({
   data: { subscription: { unsubscribe: vi.fn() } },
 }));
 const clearPersistedUiSessionMock = vi.fn();
+let rolesData: Array<{ role: string }> = [];
 const fromMock = vi.fn((table: string) => ({
   select: () => ({
     eq: () => (table === 'profiles'
       ? { maybeSingle: async () => ({ data: null, error: null }) }
-      : Promise.resolve({ data: [], error: null })),
+      : Promise.resolve({ data: rolesData, error: null })),
   }),
 }));
 const mockSession = {
@@ -37,6 +39,7 @@ vi.mock('../../lib/supabase', () => ({
   isSupabaseConfigured: true,
   supabase: {
     from: (...args: unknown[]) => fromMock(...args),
+    rpc: (...args: unknown[]) => rpcMock(...args),
     auth: {
       getSession: () => getSessionMock(),
       onAuthStateChange: (...args: unknown[]) => onAuthStateChangeMock(...args),
@@ -50,14 +53,21 @@ vi.mock('../../context/ui-session-storage', () => ({
 }));
 
 const Probe = () => {
-  const { signOut } = useAuth();
+  const { role, signOut, switchRole } = useAuth();
 
-  return <button onClick={() => { void signOut(); }}>Sign out</button>;
+  return (
+    <>
+      <div data-testid="role">{role ?? 'none'}</div>
+      <button onClick={() => { void switchRole('crewhead'); }}>Switch to CrewHead</button>
+      <button onClick={() => { void signOut(); }}>Sign out</button>
+    </>
+  );
 };
 
-describe('AuthProvider signOut', () => {
+describe('AuthProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    rolesData = [{ role: 'coo' }];
     getSessionMock.mockResolvedValue({ data: { session: mockSession } });
     fromMock.mockClear();
   });
@@ -88,6 +98,25 @@ describe('AuthProvider signOut', () => {
 
     await waitFor(() => {
       expect(clearPersistedUiSessionMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('persists role switches through the authenticated role RPC', async () => {
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('role')).toHaveTextContent('coo');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Switch to CrewHead' }));
+
+    await waitFor(() => {
+      expect(rpcMock).toHaveBeenCalledWith('set_current_user_role', { p_role: 'crewhead' });
+      expect(screen.getByTestId('role')).toHaveTextContent('crewhead');
     });
   });
 });

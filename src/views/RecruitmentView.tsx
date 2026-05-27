@@ -6,8 +6,22 @@ import type { Candidate } from '../types';
 import {
   advanceCandidate,
   getCandidates,
+  refreshCandidatesFromSupabase,
   subscribeToCandidateChanges,
 } from '../features/recruitment/services/candidates.service';
+
+const renderCandidateBadges = (candidate: Candidate) => (
+  <div className="mb-2 flex flex-wrap gap-1">
+    {candidate.hasIco === true && <StatusBadge status="accepted" label="IČO" />}
+    {candidate.hasIco === false && <StatusBadge status="rejected" label="Bez IČO" />}
+    {candidate.hasIco == null && <StatusBadge status="pending_ch" label="Ověřit IČO" />}
+    {candidate.isAdult === false && <StatusBadge status="rejected" label="Není 18+" />}
+    {candidate.isAdult == null && <StatusBadge status="pending_ch" label="Ověřit věk" />}
+    {candidate.hasDrivingLicense && <StatusBadge status="accepted" label="ŘP B" />}
+    {candidate.canDriveVan && <StatusBadge status="accepted" label="Dodávka" />}
+    {candidate.hasEventExperience && <StatusBadge status="accepted" label="Event zkušenost" />}
+  </div>
+);
 
 const RecruitmentView = () => {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -18,6 +32,26 @@ const RecruitmentView = () => {
 
   useEffect(() => {
     loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    let active = true;
+    const refresh = () => {
+      refreshCandidatesFromSupabase()
+        .then(() => {
+          if (active) loadData();
+        })
+        .catch((error) => {
+          console.warn('Nepodarilo se obnovit kandidatni pipeline.', error);
+        });
+    };
+
+    refresh();
+    const timer = window.setInterval(refresh, 15000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
   }, [loadData]);
 
   useEffect(() => subscribeToCandidateChanges(loadData), [loadData]);
@@ -63,11 +97,11 @@ const RecruitmentView = () => {
                 {cc.map((candidate) => (
                   <div key={candidate.id} className="rounded-[24px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] p-3 shadow-[0_14px_32px_rgba(47,38,31,0.08)]">
                     <div className="text-[13px] font-semibold text-[color:var(--nodu-text)]">{candidate.name}</div>
-                    <div className="mb-2 text-[11px] text-[color:var(--nodu-text-soft)]">{candidate.phone}</div>
-                    <div className="mb-2 flex gap-1">
-                      <StatusBadge status="decision" label="Tally" />
-                      {candidate.calBooked && <StatusBadge status="pending_coo" label="Cal.com" />}
+                    <div className="mb-2 space-y-0.5 text-[11px] text-[color:var(--nodu-text-soft)]">
+                      <div>{candidate.phone || 'Telefon není vyplněný'}</div>
+                      {candidate.email && <div>{candidate.email}</div>}
                     </div>
+                    {renderCandidateBadges(candidate)}
                     {candidate.interviewAt && (
                       <div className="mb-2 text-[10px] leading-relaxed text-[color:var(--nodu-text-soft)]">
                         Pohovor: {candidate.interviewAt}

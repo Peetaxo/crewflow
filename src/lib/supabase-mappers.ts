@@ -24,16 +24,33 @@ function initials(firstName: string, lastName: string): string {
 }
 
 export function mapCandidate(row: CandidateRow): Candidate {
+  const calBookingStatus = row.cal_booking_status ?? null;
+  const calBooked = Boolean(row.cal_booking_url || row.cal_booking_uid || row.interview_date)
+    && calBookingStatus !== 'cancelled';
+
   return {
     id: Number.NaN,
+    tallySubmissionId: row.tally_submission_id ?? null,
+    tallyRespondentId: row.tally_respondent_id ?? null,
+    submittedAt: row.submitted_at ?? row.created_at ?? null,
     name: `${row.first_name} ${row.last_name}`.trim(),
     phone: row.phone ?? '',
     email: row.email ?? '',
-    src: row.source ?? '',
-    calBooked: Boolean(row.cal_booking_url),
+    src: row.utm_source ?? row.source ?? '',
+    sourceContent: row.utm_content ?? null,
+    isAdult: row.is_adult ?? null,
+    hasIco: row.has_ico ?? null,
+    hasDrivingLicense: row.has_driving_license ?? null,
+    canDriveVan: row.can_drive_van ?? null,
+    hasEventExperience: row.has_event_experience ?? null,
+    calBooked,
+    calBookingUid: row.cal_booking_uid ?? null,
+    calBookingStatus,
+    calEventType: row.cal_event_type ?? null,
     stage: row.stage,
     interviewAt: row.interview_date,
     note: row.note ?? '',
+    rawPayload: row.raw_payload ?? null,
   };
 }
 
@@ -91,7 +108,7 @@ export function mapContractor(row: ProfileRow): Contractor {
     billingCity: row.billing_city ?? '',
     billingCountry: row.billing_country ?? '',
     reliable: row.reliable ?? Boolean((row.reliability ?? 0) >= 4),
-    rating: row.rating ?? row.reliability ?? null,
+    rating: row.rating ?? null,
     note: row.note ?? '',
   };
 }
@@ -117,6 +134,7 @@ export function mapEvent(row: EventRow): Event {
     dresscode: row.dresscode ?? undefined,
     meetingLocation: row.meeting_point ?? undefined,
     showDayTypes: row.show_day_types ?? undefined,
+    allowCrewTimeProposal: row.allow_crew_time_proposal ?? undefined,
     dayTypes: asRecord(row.day_types) as Event['dayTypes'],
     phaseTimes: asRecord(row.phase_times) as Event['phaseTimes'],
     phaseSchedules: asRecord(row.phase_schedules) as Event['phaseSchedules'],
@@ -257,6 +275,7 @@ export function mapInvoice(row: InvoiceRow): Invoice {
 export function mapReceipt(row: ReceiptRow): ReceiptItem {
   return {
     id: Number.NaN,
+    eventSupabaseId: row.event_id ?? undefined,
     contractorProfileId: row.contractor_id,
     eid: Number.NaN,
     job: row.job_number ?? '',

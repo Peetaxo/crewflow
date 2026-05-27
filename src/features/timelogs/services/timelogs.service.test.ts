@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Timelog } from '../../../types';
 
@@ -25,7 +27,8 @@ describe('timelogs.service write flow', () => {
     const setQueryData = vi.fn();
     const invalidateQueries = vi.fn();
 
-    const updateEq = vi.fn().mockResolvedValue({ error: null });
+    const updateSelect = vi.fn().mockResolvedValue({ data: [{ id: 'timelog-uuid-1' }], error: null });
+    const updateEq = vi.fn(() => ({ select: updateSelect }));
     const updateMock = vi.fn(() => ({ eq: updateEq }));
     const selectMock = vi.fn(() => ({
       order: vi.fn(() => Promise.resolve({
@@ -91,11 +94,87 @@ describe('timelogs.service write flow', () => {
     expect(selectMock).toHaveBeenCalledWith('id');
     expect(updateMock).toHaveBeenCalledWith({ status: 'pending_ch' });
     expect(updateEq).toHaveBeenCalledWith('id', 'timelog-uuid-1');
+    expect(updateSelect).toHaveBeenCalledWith('id');
     expect(result.status).toBe('pending_ch');
     expect(snapshot.timelogs[0].contractorProfileId).toBe('profile-uuid-1');
     expect(snapshot.timelogs[0].status).toBe('pending_ch');
     expect(setQueryData).toHaveBeenCalledWith(['timelogs'], snapshot.timelogs);
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['timelogs'] });
+  });
+
+  it('does not update local state when Supabase status update affects no rows', async () => {
+    let snapshot = createSnapshot([
+      { id: 1, eid: 1, contractorProfileId: 'profile-uuid-1', days: [], km: 0, note: '', status: 'draft' },
+    ]);
+    const setQueryData = vi.fn();
+    const invalidateQueries = vi.fn();
+
+    const updateSelect = vi.fn().mockResolvedValue({ data: [], error: null });
+    const updateEq = vi.fn(() => ({ select: updateSelect }));
+    const updateMock = vi.fn(() => ({ eq: updateEq }));
+    const selectMock = vi.fn(() => ({
+      order: vi.fn(() => Promise.resolve({
+        data: [{ id: 'timelog-uuid-1' }],
+        error: null,
+      })),
+    }));
+
+    vi.doMock('../../../lib/app-config', () => ({
+      appDataSource: 'supabase',
+    }));
+
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: vi.fn((table: string) => {
+          if (table !== 'timelogs') {
+            throw new Error(`Unexpected table ${table}`);
+          }
+
+          return {
+            select: selectMock,
+            update: updateMock,
+          };
+        }),
+      },
+    }));
+
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapTimelog: vi.fn(),
+    }));
+
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    vi.doMock('../../../lib/query-client', () => ({
+      queryClient: {
+        setQueryData,
+        invalidateQueries,
+      },
+    }));
+
+    vi.doMock('../../../lib/query-keys', () => ({
+      queryKeys: {
+        timelogs: {
+          all: ['timelogs'],
+        },
+      },
+    }));
+
+    const { updateTimelogStatus } = await import('./timelogs.service');
+
+    await expect(updateTimelogStatus(1, 'sub')).rejects.toThrow('Nepodarilo se aktualizovat vykaz v databazi.');
+
+    expect(updateSelect).toHaveBeenCalledWith('id');
+    expect(snapshot.timelogs[0].status).toBe('draft');
+    expect(setQueryData).not.toHaveBeenCalled();
+    expect(invalidateQueries).not.toHaveBeenCalled();
   });
 
   it('approves all matching event timelogs in Supabase and updates local state', async () => {
@@ -109,7 +188,9 @@ describe('timelogs.service write flow', () => {
     const updateMock = vi.fn(() => ({
       eq: vi.fn((field: string, value: string) => {
         eqCalls.push([field, value]);
-        return Promise.resolve({ error: null });
+        return {
+          select: vi.fn().mockResolvedValue({ data: [{ id: value }], error: null }),
+        };
       }),
     }));
     const selectMock = vi.fn(() => ({
@@ -592,5 +673,13 @@ describe('timelogs.service write flow', () => {
       note: 'Legacy cid only',
     })).rejects.toThrow('Nepodarilo se dohledat UUID identitu clena crew.');
     expect(timelogUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe('timelog Supabase policies', () => {
+  it('allows CrewHead to submit draft timelogs to CH review', () => {
+    const sql = readFileSync(resolve(process.cwd(), 'supabase/crewhead-timelog-approval-policy.sql'), 'utf8');
+
+    expect(sql).toContain("status in ('draft'::timelog_status, 'pending_ch'::timelog_status)");
   });
 });

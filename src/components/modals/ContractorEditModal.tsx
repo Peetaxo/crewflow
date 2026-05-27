@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { Contractor } from '../../types';
 import { createCrew, getCrew, updateCrew } from '../../features/crew/services/crew.service';
+import { upsertCrewRating } from '../../features/crew/services/crew-ratings.service';
 
 interface ContractorEditModalProps {
   editingContractor: Contractor | null;
@@ -25,10 +26,18 @@ const ContractorEditModal = ({
 
   const handleSave = async () => {
     try {
-      if (isExisting) {
-        await updateCrew(editingContractor);
-      } else {
-        createCrew(editingContractor);
+      const savedContractor = isExisting
+        ? await updateCrew(editingContractor)
+        : createCrew(editingContractor);
+
+      if (savedContractor.profileId && editingContractor.rating != null) {
+        await upsertCrewRating({
+          profileId: savedContractor.profileId,
+          source: 'initial',
+          rating: editingContractor.rating,
+          note: '',
+          ratedByProfileId: null,
+        });
       }
 
       onClose();
@@ -239,19 +248,19 @@ const ContractorEditModal = ({
                 </label>
 
                 <div>
-                  <label className={labelClass}>Hodnoceni 1-5</label>
+                  <label className={labelClass}>Uvodni hodnoceni 0-10</label>
                   <input
                     type="number"
-                    min="1"
-                    max="5"
-                    step="0.5"
+                    min="0"
+                    max="10"
+                    step="1"
                     value={editingContractor.rating ?? ''}
                     onChange={(e) => onChange({
                       ...editingContractor,
                       rating: e.target.value === '' ? null : Number(e.target.value),
                     })}
                     className={`${inputClass} mb-4`}
-                    placeholder="napr. 4.5"
+                    placeholder="napr. 8"
                   />
                   <label className={labelClass}>Poznamka</label>
                   <textarea

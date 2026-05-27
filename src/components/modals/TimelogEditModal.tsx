@@ -14,6 +14,8 @@ const TimelogEditModal = () => {
   const {
     editingTimelog,
     setEditingTimelog,
+    setCurrentTab,
+    setSelectedContractorProfileId,
   } = useAppContext();
 
   if (!editingTimelog) return null;
@@ -25,6 +27,13 @@ const TimelogEditModal = () => {
   if (!contractor || !event) return null;
 
   const totalHours = calculateTotalHours(editingTimelog.days);
+  const openContractorDetail = () => {
+    if (!contractor.profileId) return;
+    setEditingTimelog(null);
+    setSelectedContractorProfileId(contractor.profileId);
+    setCurrentTab('crew');
+  };
+
   const resolveExpectedDay = (day: typeof editingTimelog.days[number]) => {
     if (!event.showDayTypes) {
       return {
@@ -54,16 +63,30 @@ const TimelogEditModal = () => {
           exit={{ opacity: 0, scale: 0.95 }}
           className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] shadow-[0_28px_80px_rgba(47,38,31,0.18)]"
         >
-          <div className="flex items-center justify-between border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] p-5">
+          <div className="flex items-center justify-between gap-4 border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] p-5">
             <div>
               <h3 className="text-xl font-semibold tracking-[-0.03em] text-[color:var(--nodu-text)]">Upravit výkaz</h3>
               <p className="mt-1 text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">
                 {contractor.name} · {event.name}
               </p>
             </div>
-            <button onClick={() => setEditingTimelog(null)} className="rounded-xl border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-2 text-[color:var(--nodu-text-soft)] transition-all hover:border-[color:rgb(var(--nodu-accent-rgb)/0.24)] hover:text-[color:var(--nodu-accent)]">
-              <X size={20} />
-            </button>
+            <div className="flex items-center gap-2">
+              {contractor.profileId && (
+                <button
+                  type="button"
+                  onClick={openContractorDetail}
+                  className="av h-11 w-11 shrink-0 text-sm font-bold shadow-sm transition hover:ring-2 hover:ring-[rgba(var(--nodu-accent-rgb),0.22)] focus:outline-none focus:ring-2 focus:ring-[rgba(var(--nodu-accent-rgb),0.28)]"
+                  style={{ backgroundColor: contractor.bg, color: contractor.fg }}
+                  title={`Otevrit detail: ${contractor.name}`}
+                  aria-label={`Otevrit detail clena crew ${contractor.name}`}
+                >
+                  {contractor.ii}
+                </button>
+              )}
+              <button onClick={() => setEditingTimelog(null)} className="rounded-xl border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-2 text-[color:var(--nodu-text-soft)] transition-all hover:border-[color:rgb(var(--nodu-accent-rgb)/0.24)] hover:text-[color:var(--nodu-accent)]">
+                <X size={20} />
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 space-y-4 overflow-y-auto p-5">

@@ -1,13 +1,46 @@
 import { describe, expect, it } from 'vitest';
 import type { Database } from './database.types';
-import { mapEvent, mapFleetReservation, mapFleetVehicle, mapProject } from './supabase-mappers';
+import { mapContractor, mapEvent, mapFleetReservation, mapFleetVehicle, mapProject } from './supabase-mappers';
 
 type EventRow = Database['public']['Tables']['events']['Row'];
 type FleetReservationRow = Database['public']['Tables']['fleet_reservations']['Row'];
 type FleetVehicleRow = Database['public']['Tables']['fleet_vehicles']['Row'];
+type ProfileRow = Database['public']['Tables']['profiles']['Row'];
 type ProjectRow = Database['public']['Tables']['projects']['Row'];
 
 describe('supabase mappers', () => {
+  it('maps contractor rating only from the aggregated profile rating', () => {
+    const row: ProfileRow = {
+      id: 'profile-uuid-1',
+      user_id: 'user-uuid-1',
+      first_name: 'Petr',
+      last_name: 'Heitzer',
+      phone: null,
+      email: null,
+      ico: null,
+      dic: null,
+      bank_account: null,
+      iban: null,
+      billing_street: null,
+      billing_zip: null,
+      billing_city: 'Praha',
+      billing_country: null,
+      hourly_rate: null,
+      tags: null,
+      avatar_color: null,
+      avatar_bg: null,
+      note: null,
+      reliable: true,
+      rating: null,
+      reliability: 4,
+      created_at: '2026-04-27T00:00:00Z',
+      updated_at: '2026-04-27T00:00:00Z',
+    };
+
+    expect(mapContractor(row).rating).toBeNull();
+    expect(mapContractor({ ...row, rating: 8.5 }).rating).toBe(8.5);
+  });
+
   it('preserves project_id on mapped events', () => {
     const row: EventRow = {
       id: 'event-uuid-1',

@@ -354,6 +354,30 @@ const EventEditModal = ({
                   className={nativeFieldClass}
                 />
               </div>
+              <div>
+                <label className={fieldLabelClass}>Navrh casu prichodu/odchodu</label>
+                <label
+                  htmlFor="allowCrewTimeProposal"
+                  className="flex min-h-[44px] cursor-pointer select-none items-center justify-between gap-3 rounded-[16px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] px-3 py-2"
+                >
+                  <span className="text-xs font-semibold leading-snug text-[color:var(--nodu-text)]">
+                    {editingEvent.allowCrewTimeProposal ? 'Povolit' : 'Zamitnout'}
+                  </span>
+                  <input
+                    type="checkbox"
+                    id="allowCrewTimeProposal"
+                    checked={editingEvent.allowCrewTimeProposal || false}
+                    onChange={(e) => updateEventDraft({
+                      ...editingEvent,
+                      allowCrewTimeProposal: e.target.checked,
+                    })}
+                    className="peer sr-only"
+                  />
+                  <span className="relative h-6 w-11 shrink-0 rounded-full border border-[color:rgb(var(--nodu-text-rgb)/0.14)] bg-[color:rgb(var(--nodu-text-rgb)/0.08)] transition peer-checked:border-[color:var(--nodu-success-border)] peer-checked:bg-[color:var(--nodu-success-bg)]">
+                    <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-[0_2px_8px_rgba(47,38,31,0.16)] transition peer-checked:translate-x-5" />
+                  </span>
+                </label>
+              </div>
             </div>
 
             <div className="flex items-center gap-2 rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] p-3">

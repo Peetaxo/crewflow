@@ -10,11 +10,17 @@ import StatusBadge from '../components/shared/StatusBadge';
 import ShiftCard from '../components/shared/ShiftCard';
 import { calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
 import { getCrewDetailData, subscribeToCrewChanges, updateCrew } from '../features/crew/services/crew.service';
+import { categorizeCrewTimelogs, resolveShiftProject } from '../features/crew/services/crew-shift-display';
+import type { Event } from '../types';
 
 const CrewDetailView = () => {
   const {
+    role,
     selectedContractorProfileId,
     setSelectedContractorProfileId,
+    setCurrentTab,
+    setSelectedEventId,
+    setEventTab,
     setEditingTimelog,
     darkMode,
   } = useAppContext();
@@ -50,11 +56,7 @@ const CrewDetailView = () => {
     setMetaForm({ rate: String(c.rate), note: c.note ?? '' });
   }, [c]);
 
-  const categorized = useMemo(() => ({
-    upcoming: cTls.filter((t) => t.status === 'draft'),
-    processing: cTls.filter((t) => t.status === 'pending_ch' || t.status === 'pending_coo'),
-    invoiced: cTls.filter((t) => t.status === 'approved' || t.status === 'invoiced' || t.status === 'paid'),
-  }), [cTls]);
+  const categorized = useMemo(() => categorizeCrewTimelogs(cTls, events), [cTls, events]);
 
   const stats = useMemo(() => ({
     totalEarned: cInvoices.filter((i) => i.status === 'paid').reduce((s, i) => s + i.total, 0),
@@ -107,6 +109,12 @@ const CrewDetailView = () => {
     }
   };
 
+  const openEventDetail = (event: Event) => {
+    setCurrentTab('events');
+    setSelectedEventId(event.supabaseId ?? event.id);
+    setEventTab('overview');
+  };
+
   const personalRows: [string, string][] = [
     ['Telefon', c.phone || '-'],
     ['E-mail', c.email || '-'],
@@ -146,6 +154,8 @@ const CrewDetailView = () => {
   }, [activeTab, categorized, cInvoices.length]);
 
   if (!c) return null;
+  const canViewCrewRatings = role !== 'crew';
+  const ratingLabel = typeof c.rating === 'number' ? `${c.rating.toFixed(1).replace('.0', '')}/10` : 'Bez hodnoceni';
 
   return (
     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
@@ -222,8 +232,15 @@ const CrewDetailView = () => {
           <div className="rounded-[24px] border border-[var(--nodu-border)] bg-white p-5 shadow-[0_18px_40px_rgba(var(--nodu-text-rgb),0.06)]">
             <div className="mb-4 flex items-center gap-3 border-b border-[rgba(var(--nodu-text-rgb),0.06)] pb-4">
               <div className="av h-12 w-12 text-lg" style={{ backgroundColor: c.bg, color: c.fg }}>{c.ii}</div>
-              <div>
-                <div className="text-base font-semibold text-[var(--nodu-text)]">{c.name}</div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="text-base font-semibold text-[var(--nodu-text)]">{c.name}</div>
+                  {canViewCrewRatings && (
+                    <span className="rounded-full border border-[var(--nodu-border)] bg-[var(--nodu-paper-strong)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--nodu-text-soft)]">
+                      {ratingLabel}
+                    </span>
+                  )}
+                </div>
                 <div className="text-xs text-[var(--nodu-text-soft)]">{c.city || 'Bez mesta'}</div>
               </div>
             </div>
@@ -231,13 +248,6 @@ const CrewDetailView = () => {
             <div className="mb-4 flex flex-wrap gap-1">
               {c.tags.includes('Ridic') && <StatusBadge status="bg" label="Ridic" />}
               {c.reliable ? <StatusBadge status="full" label="Spolehlivy" /> : <StatusBadge status="pending_ch" label="Overit" />}
-            </div>
-
-            <div className="mb-4 rounded-xl border border-[var(--nodu-border)] bg-[var(--nodu-paper-strong)] px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wider text-[var(--nodu-text-soft)]">Hodnoceni</div>
-              <div className="mt-1 text-sm font-semibold text-[var(--nodu-text)]">
-                {typeof c.rating === 'number' ? `${c.rating.toFixed(1).replace('.0', '')} / 5` : 'Bez hodnoceni'}
-              </div>
             </div>
 
             <div className="mb-4 flex gap-1 rounded-xl border border-[var(--nodu-border)] bg-white p-1">
@@ -369,9 +379,9 @@ const CrewDetailView = () => {
                 >
                   {categorized[activeTab].map((t) => {
                     const ev = events.find((e) => e.id === t.eid);
-                    const pr = projects.find((p) => p.id === ev?.job);
+                    const pr = resolveShiftProject(ev, projects);
                     if (!ev || !pr) return null;
-                    return <ShiftCard key={t.id} timelog={t} event={ev} project={pr} />;
+                    return <ShiftCard key={t.id} timelog={t} event={ev} project={pr} onClick={() => openEventDetail(ev)} />;
                   })}
                   {categorized[activeTab].length === 0 && (
                     <div className="col-span-full rounded-2xl border border-dashed border-[var(--nodu-border)] bg-[var(--nodu-paper-strong)] py-12 text-center text-sm text-[var(--nodu-text-soft)]">

@@ -1,6 +1,10 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../app/providers/useAuth', () => ({
+  useAuth: () => ({ currentProfileId: 'profile-1' }),
+}));
 
 const setEditingTimelog = vi.fn();
 const setSelectedEventId = vi.fn();
@@ -31,6 +35,16 @@ const timelog = {
   status: 'draft' as const,
 };
 
+const pendingApprovalTimelog = {
+  id: 8,
+  eid: 1,
+  contractorProfileId: 'profile-2',
+  days: [{ d: '2026-04-17', f: '09:00', t: '15:00', type: 'provoz' as const }],
+  km: 0,
+  note: '',
+  status: 'pending_coo' as const,
+};
+
 const contractor = {
   id: 1,
   profileId: 'profile-1',
@@ -51,15 +65,20 @@ const contractor = {
   note: '',
 };
 
+const applicant = {
+  ...contractor,
+  id: 2,
+  profileId: 'profile-2',
+  name: 'Jana Nova',
+  ii: 'JN',
+};
+
 describe('EventDetailView', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
     vi.doMock('../features/invoices/queries/useInvoiceApprovalsQuery', () => ({
       useInvoiceApprovalsQuery: () => ({ data: [] }),
-    }));
-    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
-      updateTimelogStatus,
     }));
   });
 
@@ -84,9 +103,22 @@ describe('EventDetailView', () => {
         timelogs: [timelog],
         contractors: [contractor],
         receipts: [],
+        applications: [],
+        crewAssignments: [{ eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: contractor.profileId, name: contractor.name }],
       }),
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
       removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
       subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatus,
     }));
 
     vi.doMock('../components/modals/EventEditModal', () => ({
@@ -101,7 +133,7 @@ describe('EventDetailView', () => {
 
     render(<EventDetailView />);
 
-    fireEvent.click(within(screen.getByRole('table')).getByText('Petr Heitzer'));
+    fireEvent.click(screen.getAllByText('Petr Heitzer')[0]);
 
     expect(setEditingTimelog).toHaveBeenCalledWith(timelog);
   });
@@ -127,6 +159,8 @@ describe('EventDetailView', () => {
         timelogs: [],
         contractors: [contractor],
         receipts: [],
+        applications: [],
+        crewAssignments: [{ eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: contractor.profileId, name: contractor.name }],
         grasonConfirmations: [
           {
             id: 'confirmation-1',
@@ -166,8 +200,19 @@ describe('EventDetailView', () => {
           },
         ],
       }),
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
       removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
       subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatus,
     }));
 
     vi.doMock('../components/modals/EventEditModal', () => ({
@@ -184,7 +229,7 @@ describe('EventDetailView', () => {
 
     expect(screen.queryByText('Potvrzeni z Grasonu (2)')).not.toBeInTheDocument();
     expect(screen.queryByText('Potvrzeni z Grasonu')).not.toBeInTheDocument();
-    expect(screen.getByText('Petr Heitzer')).toBeInTheDocument();
+    expect(screen.getAllByText('Petr Heitzer').length).toBeGreaterThan(0);
     expect(screen.queryByText('Klara Novakova')).not.toBeInTheDocument();
     expect(screen.getByText('Prirazena Crew (1)')).toBeInTheDocument();
   });
@@ -210,10 +255,19 @@ describe('EventDetailView', () => {
         timelogs: [timelog],
         contractors: [contractor],
         receipts: [],
+        applications: [],
+        crewAssignments: [{ eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: contractor.profileId, name: contractor.name }],
         grasonConfirmations: [],
       }),
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
       removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
       subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
     }));
 
     vi.doMock('../features/invoices/queries/useInvoiceApprovalsQuery', () => ({
@@ -247,6 +301,10 @@ describe('EventDetailView', () => {
       }),
     }));
 
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatus,
+    }));
+
     vi.doMock('../components/modals/EventEditModal', () => ({
       default: () => null,
     }));
@@ -265,13 +323,160 @@ describe('EventDetailView', () => {
     expect(screen.getByText('Schváleno')).toBeInTheDocument();
   });
 
-  it('shows timelog approvals in the event detail and lets COO approve them', async () => {
-    const pendingCooTimelog = {
-      ...timelog,
-      id: 8,
-      status: 'pending_coo' as const,
-    };
-    updateTimelogStatus.mockResolvedValue(pendingCooTimelog);
+  it('shows pending applicants and hides applicants that are already assigned', async () => {
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        role: 'coo',
+        selectedEventId: 'event-uuid-1',
+        setSelectedEventId,
+        eventTab: 'overview',
+        setEventTab: vi.fn(),
+        setEditingReceipt: vi.fn(),
+        setDeleteConfirm: vi.fn(),
+        setEditingTimelog,
+      }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [contractor],
+      getEventDetailData: () => ({
+        event,
+        timelogs: [timelog],
+        contractors: [contractor, applicant],
+        receipts: [],
+        applications: [
+          {
+            id: 1,
+            eventId: event.id,
+            eventSupabaseId: event.supabaseId,
+            contractorProfileId: contractor.profileId,
+            status: 'pending',
+            plannedFrom: '08:00',
+            plannedTo: '14:00',
+          },
+          {
+            id: 2,
+            eventId: event.id,
+            eventSupabaseId: event.supabaseId,
+            contractorProfileId: applicant.profileId,
+            status: 'pending',
+            plannedFrom: '09:00',
+            plannedTo: '15:00',
+          },
+        ],
+        crewAssignments: [{ eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: contractor.profileId, name: contractor.name }],
+      }),
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
+      subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatus,
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventDetailView } = await import('./EventDetailView');
+
+    render(<EventDetailView />);
+
+    expect(screen.getByText('Prihlaseni na akci (1)')).toBeInTheDocument();
+    expect(screen.getByText('Jana Nova')).toBeInTheDocument();
+    expect(screen.getByText('09:00 - 15:00')).toBeInTheDocument();
+  });
+
+  it('shows event-scoped approvals and approves a pending timelog from the event detail', async () => {
+    updateTimelogStatus.mockResolvedValue({ ...pendingApprovalTimelog, status: 'approved' });
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        role: 'coo',
+        selectedEventId: 'event-uuid-1',
+        setSelectedEventId,
+        eventTab: 'overview',
+        setEventTab: vi.fn(),
+        setEditingReceipt: vi.fn(),
+        setDeleteConfirm: vi.fn(),
+        setEditingTimelog,
+      }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [contractor, applicant],
+      getEventDetailData: () => ({
+        event,
+        timelogs: [timelog, pendingApprovalTimelog],
+        contractors: [contractor, applicant],
+        receipts: [],
+        applications: [],
+        crewAssignments: [
+          { eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: contractor.profileId, name: contractor.name },
+          { eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: applicant.profileId, name: applicant.name },
+        ],
+      }),
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
+      subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatus,
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventDetailView } = await import('./EventDetailView');
+
+    render(<EventDetailView />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Schvalovani timelogu \(2\)/ }));
+    expect(screen.getAllByText('Petr Heitzer').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Jana Nova').length).toBeGreaterThan(0);
+    expect(screen.getByText('09:00 - 15:00')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Schvalit' }));
+
+    expect(updateTimelogStatus).toHaveBeenCalledWith(8, 'coo');
+  });
+
+  it('lets managers rate assigned crew after a past event', async () => {
+    const upsertCrewRating = vi.fn().mockResolvedValue({
+      id: 'rating-1',
+      profileId: 'profile-1',
+      eventId: 1,
+      eventSupabaseId: 'event-uuid-1',
+      source: 'event',
+      rating: 9,
+      note: '',
+      ratedByProfileId: 'profile-1',
+      createdAt: '2026-05-20T00:00:00Z',
+      updatedAt: '2026-05-20T00:00:00Z',
+    });
 
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => ({
@@ -290,13 +495,30 @@ describe('EventDetailView', () => {
       getEventCrew: () => [contractor],
       getEventDetailData: () => ({
         event,
-        timelogs: [pendingCooTimelog],
+        timelogs: [timelog],
         contractors: [contractor],
         receipts: [],
-        grasonConfirmations: [],
+        applications: [],
+        crewAssignments: [{ eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: contractor.profileId, name: contractor.name }],
       }),
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
       removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
       subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+    }));
+
+    vi.doMock('../features/crew/services/crew-ratings.service', () => ({
+      getCrewRatingsForEvent: () => [],
+      upsertCrewRating,
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatus,
     }));
 
     vi.doMock('../components/modals/EventEditModal', () => ({
@@ -311,14 +533,81 @@ describe('EventDetailView', () => {
 
     render(<EventDetailView />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Schvalovani timelogu (1)' }));
+    expect(screen.getByText('Hodnoceni crew')).toBeInTheDocument();
+    expect(screen.getByText('Chybi hodnoceni')).toBeInTheDocument();
 
-    expect(screen.getByText('Čeká COO')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Schvalit' }));
+    fireEvent.change(screen.getByLabelText('Hodnoceni Petr Heitzer'), { target: { value: '9' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Ulozit hodnoceni pro Petr Heitzer' }));
 
     await waitFor(() => {
-      expect(updateTimelogStatus).toHaveBeenCalledWith(8, 'coo');
+      expect(upsertCrewRating).toHaveBeenCalledWith({
+        profileId: 'profile-1',
+        eventId: 1,
+        eventSupabaseId: 'event-uuid-1',
+        source: 'event',
+        rating: 9,
+        note: '',
+        ratedByProfileId: 'profile-1',
+      });
     });
+  });
+
+  it('hides post-event ratings from crew users', async () => {
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        role: 'crew',
+        selectedEventId: 'event-uuid-1',
+        setSelectedEventId,
+        eventTab: 'overview',
+        setEventTab: vi.fn(),
+        setEditingReceipt: vi.fn(),
+        setDeleteConfirm: vi.fn(),
+        setEditingTimelog,
+      }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [contractor],
+      getEventDetailData: () => ({
+        event,
+        timelogs: [timelog],
+        contractors: [contractor],
+        receipts: [],
+        applications: [],
+        crewAssignments: [{ eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: contractor.profileId, name: contractor.name }],
+      }),
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
+      subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+    }));
+
+    vi.doMock('../features/crew/services/crew-ratings.service', () => ({
+      getCrewRatingsForEvent: () => [],
+      upsertCrewRating: vi.fn(),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatus,
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventDetailView } = await import('./EventDetailView');
+
+    render(<EventDetailView />);
+
+    expect(screen.queryByText('Hodnoceni crew')).not.toBeInTheDocument();
   });
 });

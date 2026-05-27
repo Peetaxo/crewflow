@@ -48,6 +48,30 @@ export interface Event {
   phaseTimes?: Partial<Record<TimelogType, EventPhaseTime>>;
   /** Konkretni bloky casu pro jednotlive typy dnů */
   phaseSchedules?: Partial<Record<TimelogType, EventPhaseSlot[]>>;
+  /** Povoli clenovi crew doplnit planovany prichod/odchod pri prihlasce */
+  allowCrewTimeProposal?: boolean;
+}
+
+export type EventApplicationStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn' | 'withdrawal_requested';
+
+export interface EventApplication {
+  id: number;
+  supabaseId?: string;
+  eventId: number;
+  eventSupabaseId?: string;
+  contractorProfileId: string;
+  status: EventApplicationStatus;
+  note?: string;
+  plannedFrom?: string | null;
+  plannedTo?: string | null;
+  createdAt?: string;
+}
+
+export interface EventCrewAssignment {
+  eventId: number;
+  eventSupabaseId?: string;
+  contractorProfileId: string;
+  name: string;
 }
 
 /** Kontraktor - clen crew */
@@ -82,6 +106,21 @@ export interface Contractor {
   reliable: boolean;
   rating?: number | null;
   note: string;
+}
+
+export type CrewRatingSource = 'initial' | 'event';
+
+export interface CrewRating {
+  id: string;
+  profileId: string;
+  eventId: number | null;
+  eventSupabaseId?: string | null;
+  source: CrewRatingSource;
+  rating: number;
+  note: string;
+  ratedByProfileId?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /** Status vykazu prace */
@@ -244,6 +283,7 @@ export type ReceiptStatus = 'draft' | 'submitted' | 'approved' | 'attached' | 'r
 /** Účtenka / výdaj crew k akci */
 export interface ReceiptItem {
   id: number;
+  eventSupabaseId?: string;
   contractorProfileId?: string;
   eid: number;
   job: string;
@@ -261,16 +301,29 @@ export type RecruitmentStage = 'new' | 'interview_scheduled' | 'decision' | 'acc
 /** Kandidat v naboru */
 export interface Candidate {
   id: number;
+  tallySubmissionId?: string | null;
+  tallyRespondentId?: string | null;
+  submittedAt?: string | null;
   name: string;
   phone: string;
   email: string;
   /** Zdroj (Tally.so apod.) */
   src: string;
+  sourceContent?: string | null;
+  isAdult?: boolean | null;
+  hasIco?: boolean | null;
+  hasDrivingLicense?: boolean | null;
+  canDriveVan?: boolean | null;
+  hasEventExperience?: boolean | null;
   /** Cal.com booking potvrzen */
   calBooked: boolean;
+  calBookingUid?: string | null;
+  calBookingStatus?: string | null;
+  calEventType?: string | null;
   stage: RecruitmentStage;
   interviewAt: string | null;
   note: string;
+  rawPayload?: Json | null;
 }
 
 export type FleetVehicleStatus = 'available' | 'reserved' | 'service' | 'out_of_order';

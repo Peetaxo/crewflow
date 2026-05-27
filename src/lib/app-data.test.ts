@@ -73,6 +73,17 @@ describe('app-data Supabase loading', () => {
       }],
       timelogs: [],
       timelog_days: [],
+      crew_ratings: [{
+        id: 'rating-uuid-1',
+        profile_id: 'profile-uuid-1',
+        event_id: 'event-uuid-1',
+        source: 'event',
+        rating: 9,
+        note: 'Skvela prace',
+        rated_by_profile_id: 'profile-uuid-1',
+        created_at: '2026-04-28T00:00:00Z',
+        updated_at: '2026-04-28T00:00:00Z',
+      }],
       invoices: [],
       receipts: [],
       candidates: [],
@@ -141,10 +152,26 @@ describe('app-data Supabase loading', () => {
         return { order };
       }),
     }));
+    const rpc = vi.fn((fn: string) => {
+      if (fn !== 'list_event_crew_assignments') {
+        throw new Error(`Unexpected rpc ${fn}`);
+      }
+      return Promise.resolve({
+        data: [
+          {
+            event_id: 'event-uuid-1',
+            profile_id: 'profile-uuid-1',
+            first_name: 'Petr',
+            last_name: 'Heitzer',
+          },
+        ],
+        error: null,
+      });
+    });
 
     vi.doMock('./supabase', () => ({
       isSupabaseConfigured: true,
-      supabase: { from },
+      supabase: { from, rpc },
     }));
 
     const { getSupabaseAppData } = await import('./app-data');
@@ -154,6 +181,17 @@ describe('app-data Supabase loading', () => {
       expect.objectContaining({
         id: 'crafter-1',
         supabaseId: 'vehicle-uuid-1',
+      }),
+    ]);
+    expect(snapshot.crewRatings).toEqual([
+      expect.objectContaining({
+        id: 'rating-uuid-1',
+        profileId: 'profile-uuid-1',
+        eventId: 1,
+        eventSupabaseId: 'event-uuid-1',
+        source: 'event',
+        rating: 9,
+        note: 'Skvela prace',
       }),
     ]);
     expect(snapshot.fleetReservations).toEqual([
@@ -183,6 +221,14 @@ describe('app-data Supabase loading', () => {
         eventId: 1,
         unitPrice: 100,
       }),
+    ]);
+    expect(snapshot.eventCrewAssignments).toEqual([
+      {
+        eventId: 1,
+        eventSupabaseId: 'event-uuid-1',
+        contractorProfileId: 'profile-uuid-1',
+        name: 'Petr Heitzer',
+      },
     ]);
   });
 });

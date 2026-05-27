@@ -2,7 +2,10 @@ import {
   INITIAL_CANDIDATES,
   INITIAL_CLIENTS,
   INITIAL_CONTRACTORS,
+  INITIAL_CREW_RATINGS,
   INITIAL_EVENTS,
+  INITIAL_EVENT_APPLICATIONS,
+  INITIAL_EVENT_CREW_ASSIGNMENTS,
   INITIAL_BUDGET_ITEMS,
   INITIAL_BUDGET_PACKAGES,
   INITIAL_FLEET_RESERVATIONS,
@@ -18,7 +21,9 @@ import type {
   Candidate,
   Client,
   Contractor,
+  CrewRating,
   Event,
+  EventApplication,
   EventCrewAssignment,
   BudgetItem,
   BudgetPackage,
@@ -35,16 +40,19 @@ import type {
   WarehouseReservation,
   WarehouseReservationItem,
 } from '@/types';
+import type { Database } from './database.types';
 import { mapBudgetItem, mapBudgetPackage, mapCandidate, mapClient, mapContractor, mapEvent, mapFleetReservation, mapFleetVehicle, mapInvoice, mapProject, mapReceipt, mapTimelog } from './supabase-mappers';
 import { isSupabaseConfigured, supabase } from './supabase';
 
 export interface AppDataSnapshot {
   events: Event[];
+  eventApplications: EventApplication[];
+  eventCrewAssignments: EventCrewAssignment[];
+  crewRatings: CrewRating[];
   contractors: Contractor[];
   timelogs: Timelog[];
   invoices: Invoice[];
   invoiceApprovalDocuments: InvoiceApprovalDocument[];
-  eventCrewAssignments: EventCrewAssignment[];
   grasonEventConfirmations: GrasonEventConfirmation[];
   receipts: ReceiptItem[];
   budgetPackages: BudgetPackage[];
@@ -66,11 +74,13 @@ type AppDataListener = (snapshot: AppDataSnapshot) => void;
 
 let localAppState = cloneSnapshot({
   events: INITIAL_EVENTS,
+  eventApplications: INITIAL_EVENT_APPLICATIONS,
+  eventCrewAssignments: INITIAL_EVENT_CREW_ASSIGNMENTS,
+  crewRatings: INITIAL_CREW_RATINGS,
   contractors: INITIAL_CONTRACTORS,
   timelogs: INITIAL_TIMELOGS,
   invoices: INITIAL_INVOICES,
   invoiceApprovalDocuments: [],
-  eventCrewAssignments: [],
   grasonEventConfirmations: [],
   receipts: INITIAL_RECEIPTS,
   budgetPackages: INITIAL_BUDGET_PACKAGES,
@@ -89,11 +99,13 @@ const localAppListeners = new Set<AppDataListener>();
 export function getLocalAppData(): AppDataSnapshot {
   return {
     events: INITIAL_EVENTS,
+    eventApplications: INITIAL_EVENT_APPLICATIONS,
+    eventCrewAssignments: INITIAL_EVENT_CREW_ASSIGNMENTS,
+    crewRatings: INITIAL_CREW_RATINGS,
     contractors: INITIAL_CONTRACTORS,
     timelogs: INITIAL_TIMELOGS,
     invoices: INITIAL_INVOICES,
     invoiceApprovalDocuments: [],
-    eventCrewAssignments: [],
     grasonEventConfirmations: [],
     receipts: INITIAL_RECEIPTS,
     budgetPackages: INITIAL_BUDGET_PACKAGES,
@@ -137,13 +149,28 @@ type SupabaseUntypedResult = {
   error: { message: string } | null;
 };
 
+type SupabaseUntypedSingleResult = {
+  data: unknown[] | null;
+  error: { message: string } | null;
+};
+
 type SupabaseUntyped = {
   from: (table: string) => {
     select: (columns: string) => {
       order: (column: string) => Promise<SupabaseUntypedResult>;
     };
   };
+  rpc?: (fn: string) => Promise<SupabaseUntypedSingleResult>;
 };
+
+interface EventCrewAssignmentRow {
+  event_id: string;
+  profile_id: string;
+  first_name: string | null;
+  last_name: string | null;
+}
+
+type CrewRatingRow = Database['public']['Tables']['crew_ratings']['Row'];
 
 interface WarehouseItemRow {
   id: string;
@@ -325,6 +352,7 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     projectsResult,
     profilesResult,
     eventsResult,
+    eventApplicationsResult,
     timelogsResult,
     eventAssignmentsResult,
     timelogDaysResult,
@@ -340,11 +368,14 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     warehouseReservationsResult,
     warehouseReservationItemsResult,
     grasonEventConfirmationsResult,
+    eventCrewAssignmentsResult,
+    crewRatingsResult,
   ] = await Promise.all([
     supabase.from('clients').select('*').order('name'),
     supabase.from('projects').select('*').order('job_number'),
     supabase.from('profiles').select('*').order('last_name').order('first_name'),
     supabase.from('events').select('*').order('date_from').order('name'),
+    supabase.from('event_applications').select('*').order('created_at'),
     supabase.from('timelogs').select('*').order('created_at'),
     supabase.from('event_assignments').select('*').order('assigned_at'),
     supabase.from('timelog_days').select('*').order('date'),
@@ -360,6 +391,8 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     supabaseUntyped.from('warehouse_reservations').select('*').order('starts_at'),
     supabaseUntyped.from('warehouse_reservation_items').select('*').order('created_at'),
     supabaseUntyped.from('grason_event_confirmations').select('*').order('shift_date'),
+    supabaseUntyped.rpc?.('list_event_crew_assignments') ?? Promise.resolve({ data: [], error: null }),
+    supabase.from('crew_ratings').select('*').order('updated_at'),
   ]);
 
   const results = [
@@ -367,6 +400,7 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     projectsResult,
     profilesResult,
     eventsResult,
+    eventApplicationsResult,
     timelogsResult,
     eventAssignmentsResult,
     timelogDaysResult,
@@ -378,6 +412,8 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     budgetItemsResult,
     fleetVehiclesResult,
     fleetReservationsResult,
+    eventCrewAssignmentsResult,
+    crewRatingsResult,
   ];
 
   const firstError = results.find((result) => result.error)?.error;
@@ -397,6 +433,7 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
   const projectRows = projectsResult.data ?? [];
   const profileRows = profilesResult.data ?? [];
   const eventRows = eventsResult.data ?? [];
+  const eventApplicationRows = eventApplicationsResult.data ?? [];
   const timelogRows = timelogsResult.data ?? [];
   const eventAssignmentRows = (eventAssignmentsResult.data ?? []) as EventAssignmentRow[];
   const timelogDayRows = timelogDaysResult.data ?? [];
@@ -414,6 +451,8 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
   const grasonEventConfirmationRows = (useGrasonConfirmationsFallback
     ? []
     : (grasonEventConfirmationsResult.data ?? [])) as GrasonEventConfirmationRow[];
+  const eventCrewAssignmentRows = (eventCrewAssignmentsResult.data ?? []) as EventCrewAssignmentRow[];
+  const crewRatingRows = (crewRatingsResult.data ?? []) as CrewRatingRow[];
 
   const clients = clientRows.map((row, index) => ({
     ...mapClient(row),
@@ -462,12 +501,33 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     contractorProfileId: row.contractor_id,
   }));
 
+  const eventApplicationIdMap = indexById(eventApplicationRows);
+  const eventApplications = eventApplicationRows
+    .map((row) => {
+      const eventId = eventIdMap.get(row.event_id);
+      if (!eventId) return null;
+      return {
+        id: eventApplicationIdMap.get(row.id) ?? Number.NaN,
+        supabaseId: row.id,
+        eventId,
+        eventSupabaseId: row.event_id,
+        contractorProfileId: row.profile_id,
+        status: row.status,
+        note: row.note ?? '',
+        plannedFrom: row.planned_from ?? null,
+        plannedTo: row.planned_to ?? null,
+        createdAt: row.created_at,
+      } satisfies EventApplication;
+    })
+    .filter((application): application is EventApplication => Boolean(application));
+
   const contractorsByProfileId = new Map(
     contractors
       .filter((contractor) => contractor.profileId)
       .map((contractor) => [contractor.profileId as string, contractor]),
   );
-  const eventCrewAssignments = eventAssignmentRows
+
+  const explicitEventCrewAssignments = eventAssignmentRows
     .map((row) => {
       const localEventId = eventIdMap.get(row.event_id);
       if (!localEventId) return null;
@@ -481,6 +541,43 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     })
     .filter((assignment): assignment is EventCrewAssignment => Boolean(assignment));
 
+  const timelogEventCrewAssignments = eventCrewAssignmentRows
+    .map((row) => {
+      const eventId = eventIdMap.get(row.event_id);
+      if (!eventId) return null;
+      const name = `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim();
+      return {
+        eventId,
+        eventSupabaseId: row.event_id,
+        contractorProfileId: row.profile_id,
+        name: name || 'Clen crew',
+      } satisfies EventCrewAssignment;
+    })
+    .filter((assignment): assignment is EventCrewAssignment => Boolean(assignment));
+
+  const eventCrewAssignments = [
+    ...explicitEventCrewAssignments,
+    ...timelogEventCrewAssignments.filter((assignment) => (
+      !explicitEventCrewAssignments.some((existing) => (
+        existing.eventSupabaseId === assignment.eventSupabaseId
+        && existing.contractorProfileId === assignment.contractorProfileId
+      ))
+    )),
+  ];
+
+  const crewRatings = crewRatingRows.map((row) => ({
+    id: row.id,
+    profileId: row.profile_id,
+    eventId: row.event_id ? (eventIdMap.get(row.event_id) ?? null) : null,
+    eventSupabaseId: row.event_id,
+    source: row.source,
+    rating: row.rating,
+    note: row.note ?? '',
+    ratedByProfileId: row.rated_by_profile_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  } satisfies CrewRating));
+
   const invoices = invoiceRows.map((row) => ({
     ...mapInvoice(row),
     contractorProfileId: row.contractor_id,
@@ -491,6 +588,7 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
   const receipts = receiptRows.map((row) => ({
     ...mapReceipt(row),
     id: receiptIdMap.get(row.id) ?? Number.NaN,
+    eventSupabaseId: row.event_id ?? undefined,
     contractorProfileId: row.contractor_id,
     eid: row.event_id ? (eventIdMap.get(row.event_id) ?? Number.NaN) : Number.NaN,
   }));
@@ -554,11 +652,13 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
 
   return {
     events,
+    eventApplications,
+    eventCrewAssignments,
+    crewRatings,
     contractors,
     timelogs,
     invoices,
     invoiceApprovalDocuments: getLocalAppState().invoiceApprovalDocuments ?? [],
-    eventCrewAssignments,
     grasonEventConfirmations: grasonEventConfirmationRows.map(mapGrasonEventConfirmation),
     receipts,
     budgetPackages,

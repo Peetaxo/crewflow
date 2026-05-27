@@ -54,6 +54,7 @@ const getContractorDetailKey = (contractor: Contractor) => (
 
 const CrewView = () => {
   const {
+    role,
     selectedContractorProfileId,
     setSelectedContractorProfileId,
     searchQuery,
@@ -89,6 +90,7 @@ const CrewView = () => {
   const formatRating = (rating?: number | null) => (
     typeof rating === 'number' ? rating.toFixed(1).replace('.0', '') : 'Bez hodnoceni'
   );
+  const canViewCrewRatings = role !== 'crew';
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -147,9 +149,11 @@ const CrewView = () => {
                       <div className="text-[10px] text-[var(--nodu-text-soft)]">{contractor.city}</div>
                     </div>
                   </div>
-                  <div className="mt-1 text-[10px] text-[var(--nodu-text-soft)]">
-                    Hodnoceni: {formatRating(contractor.rating)} / 5
-                  </div>
+                  {canViewCrewRatings && (
+                    <div className="mt-1 text-[10px] text-[var(--nodu-text-soft)]">
+                      Hodnoceni: {formatRating(contractor.rating)} / 10
+                    </div>
+                  )}
                 </td>
                 <td className="px-4 py-3 transition-colors group-hover:!bg-[var(--nodu-accent-soft)]">
                   <div className="flex flex-wrap gap-1">

@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Clock, FileText, MapPin, Receipt, Shirt, Trash2, User, Users } from 'lucide-react';
+import { ArrowLeft, Clock, Copy, FileText, MapPin, Receipt, Shirt, Trash2, User, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { useAppContext } from '../context/useAppContext';
+import { useAuth } from '../app/providers/useAuth';
 import { KM_RATE } from '../data';
 import { PHASE_CONFIG } from '../constants';
 import { calculateDayHours, calculateTotalHours, formatCurrency, formatDateRange, formatShortDate, getDatesBetween, getEventStatus } from '../utils';
@@ -11,12 +12,21 @@ import StatusBadge from '../components/shared/StatusBadge';
 import ApprovalStatusDot from '../components/shared/ApprovalStatusDot';
 import EventEditModal from '../components/modals/EventEditModal';
 import AssignCrewModal from '../components/modals/AssignCrewModal';
+import EventCrewRatingPanel from '../features/crew/components/EventCrewRatingPanel';
+import { getCrewRatingsForEvent } from '../features/crew/services/crew-ratings.service';
 import { Event, InvoiceApprovalDocument } from '../types';
 import {
   getEventCrew,
   getEventDetailData,
+  applyForEvent,
+  approveEventApplication,
+  approveEventWithdrawal,
+  createEventCopy,
   removeContractorFromEvent,
+  requestEventWithdrawal,
   subscribeToEventChanges,
+  updateEventApplicationStatus,
+  withdrawEventApplication,
 } from '../features/events/services/events.service';
 import { useInvoiceApprovalsQuery } from '../features/invoices/queries/useInvoiceApprovalsQuery';
 import {
@@ -51,10 +61,12 @@ const EventDetailView = () => {
     setDeleteConfirm,
     setEditingTimelog,
   } = useAppContext();
+  const { currentProfileId } = useAuth();
   const [detail, setDetail] = useState(() => getEventDetailData(selectedEventId));
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const [assigningEvent, setAssigningEvent] = useState<Event | null>(null);
-  const [crewPanelTab, setCrewPanelTab] = useState<'assigned' | 'timelogApproval'>('assigned');
+  const [applicationDraftTimes, setApplicationDraftTimes] = useState({ from: '', to: '' });
+  const [crewPanelTab, setCrewPanelTab] = useState<'assigned' | 'approval'>('assigned');
   const invoiceApprovalsQuery = useInvoiceApprovalsQuery();
 
   const loadDetail = useCallback(() => {
@@ -72,6 +84,12 @@ const EventDetailView = () => {
       setSelectedEventId(null);
     }
   }, [detail.event, selectedEventId, setSelectedEventId]);
+
+  useEffect(() => {
+    if (eventTab === 'approval') {
+      setCrewPanelTab('approval');
+    }
+  }, [eventTab]);
 
   const event = detail.event;
   const approvalDocuments = invoiceApprovalsQuery.data ?? EMPTY_APPROVAL_DOCUMENTS;
@@ -94,10 +112,60 @@ const EventDetailView = () => {
   const totalReceiptCost = eventReceipts.reduce((sum, receipt) => sum + receipt.amount, 0);
   const days = getDatesBetween(event.startDate, event.endDate);
   const eventCrew = getEventCrew(event.id);
-  const dayTimelogs = eventTab === 'overview'
-    ? []
-    : eventTimelogs.filter((timelog) => timelog.days.some((day) => day.d === eventTab));
+  const eventCrewRatings = getCrewRatingsForEvent(event.id);
   const canManageEvents = role !== 'crew';
+  const isCrewRole = role === 'crew';
+  const currentContractor = currentProfileId
+    ? contractors.find((item) => item.profileId === currentProfileId) ?? null
+    : null;
+  const visibleEventCrew = isCrewRole && currentProfileId
+    ? eventCrew.filter((contractor) => contractor.profileId === currentProfileId)
+    : eventCrew;
+  const assignedCrewProfileIds = new Set(
+    eventCrew
+      .map((contractor) => contractor.profileId)
+      .filter((profileId): profileId is string => Boolean(profileId)),
+  );
+  const myTimelogs = currentProfileId
+    ? eventTimelogs.filter((timelog) => timelog.contractorProfileId === currentProfileId)
+    : [];
+  const myReceipts = currentProfileId
+    ? eventReceipts.filter((receipt) => receipt.contractorProfileId === currentProfileId)
+    : [];
+  const visibleReceipts = isCrewRole ? myReceipts : eventReceipts;
+  const myHours = myTimelogs.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
+  const myTravelCost = myTimelogs.reduce((sum, timelog) => sum + timelog.km * KM_RATE, 0);
+  const myProjectedProfit = myHours * (currentContractor?.rate ?? 0) + myTravelCost;
+  const pendingApplications = (detail.applications ?? [])
+    .filter((application) => (
+      application.status === 'pending'
+      && !assignedCrewProfileIds.has(application.contractorProfileId)
+    ))
+    .map((application) => {
+      const contractor = contractors.find((item) => item.profileId === application.contractorProfileId);
+      return contractor ? { application, contractor } : null;
+    })
+    .filter((item): item is { application: typeof detail.applications[number]; contractor: typeof contractors[number] } => Boolean(item));
+  const hasMyPendingApplication = currentProfileId
+    ? pendingApplications.some(({ application }) => application.contractorProfileId === currentProfileId)
+    : false;
+  const withdrawalRequests = (detail.applications ?? [])
+    .filter((application) => application.status === 'withdrawal_requested')
+    .map((application) => {
+      const contractor = contractors.find((item) => item.profileId === application.contractorProfileId);
+      return contractor ? { application, contractor } : null;
+    })
+    .filter((item): item is { application: typeof detail.applications[number]; contractor: typeof contractors[number] } => Boolean(item));
+  const hasMyWithdrawalRequest = currentProfileId
+    ? withdrawalRequests.some(({ application }) => application.contractorProfileId === currentProfileId)
+    : false;
+  const isMeAssigned = currentProfileId
+    ? eventCrew.some((contractor) => contractor.profileId === currentProfileId)
+    : false;
+  const effectiveDraftTimes = {
+    from: applicationDraftTimes.from || event.startTime || '08:00',
+    to: applicationDraftTimes.to || event.endTime || '17:00',
+  };
   const eventApprovalTimelogs = canManageEvents
     ? eventTimelogs.filter((timelog) => (
         timelog.status === 'draft'
@@ -109,6 +177,7 @@ const EventDetailView = () => {
   const getApprovalStateForPerson = (personName: string) => (
     getEventPersonApprovalState({ event, personName, approvalDocuments })
   );
+  const shouldShowCrewRatings = canManageEvents && eventStatus === 'past';
 
   const getPhasesForDate = (date: string) => (
     event.showDayTypes
@@ -130,11 +199,86 @@ const EventDetailView = () => {
     });
   };
 
+  const handleApplyForEvent = () => {
+    if (!currentProfileId) {
+      toast.error('Nepodarilo se dohledat prihlaseneho clena crew.');
+      return;
+    }
+
+    void applyForEvent(event.supabaseId ?? event.id, currentProfileId, event.allowCrewTimeProposal ? effectiveDraftTimes : undefined)
+      .then(() => toast.success('Prihlaska na akci byla odeslana ke schvaleni.'))
+      .catch((error) => {
+        toast.error(error instanceof Error ? error.message : 'Prihlaseni na akci se nepodarilo.');
+      });
+  };
+
+  const handleWithdrawApplication = () => {
+    if (!currentProfileId) {
+      toast.error('Nepodarilo se dohledat prihlaseneho clena crew.');
+      return;
+    }
+
+    void withdrawEventApplication(event.supabaseId ?? event.id, currentProfileId)
+      .then(() => toast.success('Odhlaseni z akce bylo ulozeno.'))
+      .catch((error) => {
+        toast.error(error instanceof Error ? error.message : 'Odhlaseni z akce se nepodarilo.');
+      });
+  };
+
+  const handleRequestWithdrawal = () => {
+    if (!currentProfileId) {
+      toast.error('Nepodarilo se dohledat prihlaseneho clena crew.');
+      return;
+    }
+
+    void requestEventWithdrawal(event.supabaseId ?? event.id, currentProfileId)
+      .then(() => toast.success('Zadost o odhlaseni byla odeslana ke schvaleni.'))
+      .catch((error) => {
+        toast.error(error instanceof Error ? error.message : 'Zadost o odhlaseni se nepodarila.');
+      });
+  };
+
+  const handleApproveApplication = (applicationId: number) => {
+    void approveEventApplication(applicationId)
+      .then(() => toast.success('Crew byla prirazena na akci.'))
+      .catch((error) => {
+        toast.error(error instanceof Error ? error.message : 'Prihlasku se nepodarilo schvalit.');
+      });
+  };
+
+  const handleRejectApplication = (applicationId: number) => {
+    void updateEventApplicationStatus(applicationId, 'rejected')
+      .then(() => toast.success('Prihlaska byla zamitnuta.'))
+      .catch((error) => {
+        toast.error(error instanceof Error ? error.message : 'Prihlasku se nepodarilo zamitnout.');
+      });
+  };
+
+  const handleApproveWithdrawal = (applicationId: number) => {
+    void approveEventWithdrawal(applicationId)
+      .then(() => toast.success('Crew byla odhlasena z akce.'))
+      .catch((error) => {
+        toast.error(error instanceof Error ? error.message : 'Odhlaseni se nepodarilo schvalit.');
+      });
+  };
+
+  const handleRejectWithdrawal = (applicationId: number) => {
+    void updateEventApplicationStatus(applicationId, 'approved')
+      .then(() => toast.success('Zadost o odhlaseni byla zamitnuta.'))
+      .catch((error) => {
+        toast.error(error instanceof Error ? error.message : 'Zadost o odhlaseni se nepodarilo zamitnout.');
+      });
+  };
+
+  const handleCopyEvent = () => {
+    setEditingEvent(createEventCopy(event));
+  };
+
   const handleTimelogApprovalAction = (timelogId: number, action: 'sub' | 'ch' | 'coo' | 'rej') => {
     void updateTimelogStatus(timelogId, action)
       .then(loadDetail)
       .catch((error) => {
-        toast.error(error instanceof Error ? error.message : 'Nepodařilo se aktualizovat výkaz.');
+        toast.error(error instanceof Error ? error.message : 'Nepodarilo se aktualizovat vykaz.');
       });
   };
 
@@ -181,7 +325,7 @@ const EventDetailView = () => {
             <Button
               onClick={() => setEditingReceipt({
                 id: Math.max(0, ...eventReceipts.map((receipt) => receipt.id)) + 1,
-                contractorProfileId: undefined,
+                contractorProfileId: isCrewRole ? currentProfileId : undefined,
                 eid: event.id,
                 job: event.job,
                 title: '',
@@ -198,6 +342,10 @@ const EventDetailView = () => {
 
             {canManageEvents && (
               <>
+                <Button aria-label="Kopirovat akci na jiny den" onClick={handleCopyEvent} variant="outline">
+                  <Copy size={16} />
+                  Kopirovat
+                </Button>
                 <Button onClick={() => setAssigningEvent(event)}>
                   Obsadit crew
                 </Button>
@@ -214,13 +362,54 @@ const EventDetailView = () => {
                 </Button>
               </>
             )}
+            {role === 'crew' && !isMeAssigned && !hasMyPendingApplication && (
+              <>
+                {event.allowCrewTimeProposal && (
+                  <div className="flex items-center gap-1 rounded-xl border border-[color:var(--nodu-border)] bg-white px-2 py-1">
+                    <input
+                      type="time"
+                      value={effectiveDraftTimes.from}
+                      onChange={(changeEvent) => setApplicationDraftTimes((current) => ({ ...current, from: changeEvent.target.value }))}
+                      className="w-20 bg-transparent text-[11px] font-semibold text-[color:var(--nodu-text)] outline-none"
+                      aria-label="Planovany prichod"
+                    />
+                    <span className="text-[color:var(--nodu-text-soft)]">-</span>
+                    <input
+                      type="time"
+                      value={effectiveDraftTimes.to}
+                      onChange={(changeEvent) => setApplicationDraftTimes((current) => ({ ...current, to: changeEvent.target.value }))}
+                      className="w-20 bg-transparent text-[11px] font-semibold text-[color:var(--nodu-text)] outline-none"
+                      aria-label="Planovany odchod"
+                    />
+                  </div>
+                )}
+                <Button onClick={handleApplyForEvent} variant="outline">
+                  Prihlasit na akci
+                </Button>
+              </>
+            )}
+            {role === 'crew' && hasMyPendingApplication && (
+              <Button onClick={handleWithdrawApplication} variant="outline">
+                Odhlasit se z akce
+              </Button>
+            )}
+            {role === 'crew' && isMeAssigned && !hasMyWithdrawalRequest && (
+              <Button onClick={handleRequestWithdrawal} variant="outline">
+                Pozadat o odhlaseni
+              </Button>
+            )}
+            {role === 'crew' && hasMyWithdrawalRequest && (
+              <div className="rounded-xl border border-[color:rgb(var(--nodu-text-rgb)/0.14)] bg-[color:rgb(var(--nodu-text-rgb)/0.07)] px-4 py-2 text-xs font-semibold text-[color:var(--nodu-text-soft)]">
+                Odhlaseni ceka na schvaleni
+              </div>
+            )}
           </div>
         </div>
 
         <div className="-mx-6 flex gap-1 border-b border-[color:var(--nodu-border)] px-6">
           <button
             onClick={() => setEventTab('overview')}
-            className={`border-b-2 px-4 py-2 text-sm font-medium transition-all ${eventTab === 'overview' ? 'border-[color:var(--nodu-accent)] text-[color:var(--nodu-accent)]' : 'border-transparent text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
+            className={`border-b-2 px-4 py-2 text-sm font-medium transition-all ${eventTab === 'overview' || eventTab === 'approval' ? 'border-[color:var(--nodu-accent)] text-[color:var(--nodu-accent)]' : 'border-transparent text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
           >
             Prehled
           </button>
@@ -251,7 +440,7 @@ const EventDetailView = () => {
         </div>
 
         <div className="mt-6">
-          {eventTab === 'overview' ? (
+          {eventTab === 'overview' || eventTab === 'approval' ? (
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
               <div className="space-y-6 lg:col-span-2">
                 <div>
@@ -262,13 +451,13 @@ const EventDetailView = () => {
                       className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-semibold transition-all ${crewPanelTab === 'assigned' ? 'border-[color:var(--nodu-accent)] bg-[color:var(--nodu-accent-soft)] text-[color:var(--nodu-accent)]' : 'border-[color:var(--nodu-border)] bg-white text-[color:var(--nodu-text)] hover:border-[color:rgb(var(--nodu-accent-rgb)/0.34)] hover:text-[color:var(--nodu-accent)]'}`}
                     >
                       <Users size={16} className="text-current" />
-                      Prirazena Crew ({eventCrew.length})
+                      Prirazena Crew ({visibleEventCrew.length})
                     </button>
                     {canManageEvents && (
                       <button
                         type="button"
-                        onClick={() => setCrewPanelTab('timelogApproval')}
-                        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-semibold transition-all ${crewPanelTab === 'timelogApproval' ? 'border-[color:var(--nodu-accent)] bg-[color:var(--nodu-accent-soft)] text-[color:var(--nodu-accent)]' : 'border-[color:var(--nodu-border)] bg-white text-[color:var(--nodu-text)] hover:border-[color:rgb(var(--nodu-accent-rgb)/0.34)] hover:text-[color:var(--nodu-accent)]'}`}
+                        onClick={() => setCrewPanelTab('approval')}
+                        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-semibold transition-all ${crewPanelTab === 'approval' ? 'border-[color:var(--nodu-accent)] bg-[color:var(--nodu-accent-soft)] text-[color:var(--nodu-accent)]' : 'border-[color:var(--nodu-border)] bg-white text-[color:var(--nodu-text)] hover:border-[color:rgb(var(--nodu-accent-rgb)/0.34)] hover:text-[color:var(--nodu-accent)]'}`}
                       >
                         <FileText size={16} className="text-current" />
                         Schvalovani timelogu ({eventApprovalTimelogs.length})
@@ -276,89 +465,102 @@ const EventDetailView = () => {
                     )}
                   </div>
 
-                  {crewPanelTab === 'assigned' || !canManageEvents ? (
-                    <div className="overflow-hidden rounded-[24px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)]">
-                      <table className="w-full border-collapse text-left">
-                        <thead>
-                          <tr className="border-b border-[color:var(--nodu-border)] text-[10px] uppercase tracking-wider text-[color:var(--nodu-text-soft)]">
-                            <th className="px-4 py-3 text-left font-medium">Jmeno</th>
-                            {event.showDayTypes && <th className="px-4 py-3 text-left font-medium">Faze</th>}
-                            <th className="px-4 py-3 text-left font-medium">Hodiny</th>
-                            <th className="px-4 py-3 text-right font-medium">Celkem</th>
-                            <th className="px-4 py-3 text-right font-medium">Akce</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[color:rgb(var(--nodu-text-rgb)/0.06)]">
-                          {eventCrew.map((contractor) => {
-                            const timelog = eventTimelogs.find((item) => item.contractorProfileId === contractor.profileId);
-                            const hours = timelog ? calculateTotalHours(timelog.days) : 0;
-                            const approvalState = getApprovalStateForPerson(contractor.name);
+                  {crewPanelTab === 'assigned' ? (
+                    <>
+                      <div className="overflow-hidden rounded-[24px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)]">
+                        <table className="w-full border-collapse text-left">
+                          <thead>
+                            <tr className="border-b border-[color:var(--nodu-border)] text-[10px] uppercase tracking-wider text-[color:var(--nodu-text-soft)]">
+                              <th className="px-4 py-3 text-left font-medium">Jmeno</th>
+                              {event.showDayTypes && <th className="px-4 py-3 text-left font-medium">Faze</th>}
+                              <th className="px-4 py-3 text-left font-medium">Hodiny</th>
+                              {canManageEvents && <th className="px-4 py-3 text-right font-medium">Celkem</th>}
+                              <th className="px-4 py-3 text-right font-medium">Akce</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[color:rgb(var(--nodu-text-rgb)/0.06)]">
+                            {visibleEventCrew.map((contractor) => {
+                              const timelog = eventTimelogs.find((item) => item.contractorProfileId === contractor.profileId);
+                              const hours = timelog ? calculateTotalHours(timelog.days) : 0;
+                              const approvalState = getApprovalStateForPerson(contractor.name);
 
-                            return (
-                              <tr
-                                key={contractor.id}
-                                onClick={() => {
-                                  if (timelog) setEditingTimelog(timelog);
-                                }}
-                                className={`bg-white transition-colors hover:bg-[color:var(--nodu-accent-soft)] ${timelog ? 'cursor-pointer' : ''}`}
-                              >
-                                <td className="px-4 py-3">
-                                  <div className="flex items-center gap-2">
-                                    <div className="av h-7 w-7 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
-                                    <ApprovalStatusDot status={approvalState.status} label={approvalState.label} />
-                                    <span className="text-xs font-medium text-[color:var(--nodu-text)]">{contractor.name}</span>
-                                  </div>
-                                </td>
-                                {event.showDayTypes && (
+                              return (
+                                <tr
+                                  key={contractor.id}
+                                  onClick={() => {
+                                    if (timelog) setEditingTimelog(timelog);
+                                  }}
+                                  className={`bg-white transition-colors hover:bg-[color:var(--nodu-accent-soft)] ${timelog ? 'cursor-pointer' : ''}`}
+                                >
                                   <td className="px-4 py-3">
-                                    <div className="flex gap-1">
-                                      {PHASE_CONFIG.map((phase) => {
-                                        const isActive = timelog?.days.some((day) => day.type === phase.type);
-                                        return (
-                                          <div key={phase.id} className={`flex h-5 w-5 items-center justify-center rounded border text-[8px] font-black transition-all ${isActive ? `${phase.color} text-white shadow-sm` : 'border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-text-rgb)/0.06)] text-[color:var(--nodu-text-soft)]'}`} title={phase.label}>
-                                            {phase.id}
-                                          </div>
-                                        );
-                                      })}
+                                    <div className="flex items-center gap-2">
+                                      <div className="av h-7 w-7 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
+                                      <ApprovalStatusDot status={approvalState.status} label={approvalState.label} />
+                                      <span className="text-xs font-medium text-[color:var(--nodu-text)]">{contractor.name}</span>
                                     </div>
                                   </td>
-                                )}
-                                <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text)]">{hours.toFixed(1)}h</td>
-                                <td className="px-4 py-3 text-right text-xs font-bold text-[color:var(--nodu-text)]">{formatCurrency(hours * contractor.rate)}</td>
-                                <td className="px-4 py-3 text-right">
+                                  {event.showDayTypes && (
+                                    <td className="px-4 py-3">
+                                      <div className="flex gap-1">
+                                        {PHASE_CONFIG.map((phase) => {
+                                          const isActive = timelog?.days.some((day) => day.type === phase.type);
+                                          return (
+                                            <div key={phase.id} className={`flex h-5 w-5 items-center justify-center rounded border text-[8px] font-black transition-all ${isActive ? `${phase.color} text-white shadow-sm` : 'border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-text-rgb)/0.06)] text-[color:var(--nodu-text-soft)]'}`} title={phase.label}>
+                                              {phase.id}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </td>
+                                  )}
+                                  <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text)]">{hours.toFixed(1)}h</td>
                                   {canManageEvents && (
-                                    <div className="flex items-center justify-end gap-1">
-                                      {timelog && (
+                                    <td className="px-4 py-3 text-right text-xs font-bold text-[color:var(--nodu-text)]">{formatCurrency(hours * contractor.rate)}</td>
+                                  )}
+                                  <td className="px-4 py-3 text-right">
+                                    {canManageEvents && (
+                                      <div className="flex items-center justify-end gap-1">
+                                        {timelog && (
+                                          <button
+                                            onClick={(clickEvent) => {
+                                              clickEvent.stopPropagation();
+                                              setEditingTimelog(timelog);
+                                            }}
+                                            className="rounded-lg p-1.5 text-[color:var(--nodu-text-soft)] transition-all hover:bg-[color:var(--nodu-success-bg)] hover:text-[color:var(--nodu-success-text)]"
+                                            title="Upravit timelog"
+                                          >
+                                            <FileText size={14} />
+                                          </button>
+                                        )}
                                         <button
                                           onClick={(clickEvent) => {
                                             clickEvent.stopPropagation();
-                                            setEditingTimelog(timelog);
+                                            handleRemoveFromEvent(contractor.profileId);
                                           }}
-                                          className="rounded-lg p-1.5 text-[color:var(--nodu-text-soft)] transition-all hover:bg-[color:var(--nodu-success-bg)] hover:text-[color:var(--nodu-success-text)]"
-                                          title="Upravit timelog"
+                                          className="rounded-lg p-1.5 text-[color:var(--nodu-text-soft)] transition-all hover:bg-[color:var(--nodu-error-bg)] hover:text-[color:var(--nodu-error-text)]"
+                                          title="Odebrat z akce"
                                         >
-                                          <FileText size={14} />
+                                          <Trash2 size={14} />
                                         </button>
-                                      )}
-                                      <button
-                                        onClick={(clickEvent) => {
-                                          clickEvent.stopPropagation();
-                                          handleRemoveFromEvent(contractor.profileId);
-                                        }}
-                                        className="rounded-lg p-1.5 text-[color:var(--nodu-text-soft)] transition-all hover:bg-[color:var(--nodu-error-bg)] hover:text-[color:var(--nodu-error-text)]"
-                                        title="Odebrat z akce"
-                                      >
-                                        <Trash2 size={14} />
-                                      </button>
-                                    </div>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                                      </div>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {shouldShowCrewRatings && (
+                        <EventCrewRatingPanel
+                          event={event}
+                          crew={eventCrew}
+                          ratings={eventCrewRatings}
+                          ratedByProfileId={currentProfileId}
+                        />
+                      )}
+                    </>
                   ) : (
                     <div className="rounded-[24px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] p-4">
                       {eventApprovalTimelogs.length > 0 ? (
@@ -425,114 +627,245 @@ const EventDetailView = () => {
                   )}
                 </div>
 
-              </div>
+                {canManageEvents && (
+                  <div>
+                    <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold">
+                      <Users size={16} className="text-[color:var(--nodu-text-soft)]" />
+                      Prihlaseni na akci ({pendingApplications.length})
+                    </h3>
+                    <div className="overflow-hidden rounded-[24px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)]">
+                      {pendingApplications.length > 0 ? (
+                        <table className="w-full border-collapse text-left">
+                          <thead>
+                            <tr className="border-b border-[color:var(--nodu-border)] text-[10px] uppercase tracking-wider text-[color:var(--nodu-text-soft)]">
+                              <th className="px-4 py-3 text-left font-medium">Jmeno</th>
+                              <th className="px-4 py-3 text-left font-medium">Plan</th>
+                              <th className="px-4 py-3 text-left font-medium">Stav</th>
+                              <th className="px-4 py-3 text-right font-medium">Akce</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[color:rgb(var(--nodu-text-rgb)/0.06)]">
+                            {pendingApplications.map(({ application, contractor }) => (
+                              <tr key={application.id} className="bg-white">
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center gap-2">
+                                    <div className="av h-7 w-7 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
+                                    <span className="text-xs font-medium text-[color:var(--nodu-text)]">{contractor.name}</span>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text-soft)]">
+                                  {application.plannedFrom && application.plannedTo ? `${application.plannedFrom} - ${application.plannedTo}` : '-'}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className="rounded-full border border-[color:rgb(var(--nodu-text-rgb)/0.16)] bg-[color:rgb(var(--nodu-text-rgb)/0.08)] px-2.5 py-1 text-[10px] font-semibold text-[color:var(--nodu-text-soft)]">
+                                    Ceka na schvaleni
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  {canManageEvents && (
+                                    <div className="flex justify-end gap-1.5">
+                                      <Button size="sm" className="h-8 text-[11px]" onClick={() => handleApproveApplication(application.id)}>
+                                        Schvalit
+                                      </Button>
+                                      <Button size="sm" variant="outline" className="h-8 border-[#e8b4a3] text-[11px] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]" onClick={() => handleRejectApplication(application.id)}>
+                                        Zamitnout
+                                      </Button>
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <div className="rounded-[24px] border border-dashed border-[color:var(--nodu-border)] bg-white px-4 py-10 text-center text-sm text-[color:var(--nodu-text-soft)]">
+                          Zadne dalsi prihlasky ke schvaleni.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
-              <div className="space-y-4">
-                <div className="rounded-[22px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] p-4">
-                  <h4 className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-[color:var(--nodu-text-soft)]">
-                    <FileText size={12} className="text-[color:var(--nodu-text-soft)]" />
-                    Schvalovani faktur
-                  </h4>
-                  {eventApprovalDocuments.length > 0 ? (
-                    <div className="overflow-hidden rounded-[16px] border border-[color:rgb(var(--nodu-text-rgb)/0.08)] bg-white">
-                      <table className="w-full table-fixed border-collapse text-left">
+                {canManageEvents && withdrawalRequests.length > 0 && (
+                  <div>
+                    <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold">
+                      <Users size={16} className="text-[color:var(--nodu-text-soft)]" />
+                      Zadosti o odhlaseni ({withdrawalRequests.length})
+                    </h3>
+                    <div className="overflow-hidden rounded-[24px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)]">
+                      <table className="w-full border-collapse text-left">
                         <thead>
-                          <tr className="border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] text-[9px] uppercase tracking-wider text-[color:var(--nodu-text-soft)]">
-                            <th className="w-[72%] px-3 py-2 font-medium">Dokument</th>
-                            <th className="w-[28%] px-3 py-2 text-right font-medium">Stav</th>
+                          <tr className="border-b border-[color:var(--nodu-border)] text-[10px] uppercase tracking-wider text-[color:var(--nodu-text-soft)]">
+                            <th className="px-4 py-3 text-left font-medium">Jmeno</th>
+                            <th className="px-4 py-3 text-left font-medium">Stav</th>
+                            <th className="px-4 py-3 text-right font-medium">Akce</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[color:rgb(var(--nodu-text-rgb)/0.06)]">
-                          {eventApprovalDocuments.map((document) => (
-                            <tr key={document.id}>
-                              <td className="min-w-0 px-3 py-2">
-                                <div className="truncate text-[11px] font-semibold text-[color:var(--nodu-text)]">{document.documentName}</div>
-                                <div className="mt-0.5 truncate text-[10px] text-[color:var(--nodu-text-soft)]">
-                                  {document.invoiceNumber || '-'} · {document.comment.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)[0] || event.name}
-                                </div>
-                                <div className="mt-1 truncate text-[10px] font-semibold text-[color:var(--nodu-text)]">
-                                  {getApprovalDocumentPersonLabel(document)}
+                          {withdrawalRequests.map(({ application, contractor }) => (
+                            <tr key={application.id} className="bg-white">
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2">
+                                  <div className="av h-7 w-7 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
+                                  <span className="text-xs font-medium text-[color:var(--nodu-text)]">{contractor.name}</span>
                                 </div>
                               </td>
-                              <td className="px-3 py-2 text-right">
-                                <StatusBadge status={getApprovalDocumentBadgeStatus(document)} />
+                              <td className="px-4 py-3">
+                                <span className="rounded-full border border-[color:rgb(var(--nodu-text-rgb)/0.16)] bg-[color:rgb(var(--nodu-text-rgb)/0.08)] px-2.5 py-1 text-[10px] font-semibold text-[color:var(--nodu-text-soft)]">
+                                  Ceka na schvaleni odhlaseni
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                <div className="flex justify-end gap-1.5">
+                                  <Button size="sm" className="h-8 text-[11px]" onClick={() => handleApproveWithdrawal(application.id)}>
+                                    Schvalit odhlaseni
+                                  </Button>
+                                  <Button size="sm" variant="outline" className="h-8 border-[#e8b4a3] text-[11px] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]" onClick={() => handleRejectWithdrawal(application.id)}>
+                                    Zamitnout
+                                  </Button>
+                                </div>
                               </td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
-                  ) : (
-                    <div className="rounded-[16px] border border-dashed border-[color:var(--nodu-border)] bg-white px-3 py-6 text-center text-xs text-[color:var(--nodu-text-soft)]">
-                      K teto akci zatim neni sparovany zadny dokument z PowerApps.
-                    </div>
-                  )}
-                </div>
-
-                <div className="rounded-[22px] border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] p-4">
-                  <h4 className="mb-3 text-[10px] font-bold uppercase tracking-wider text-[color:var(--nodu-success-text)]">Financni souhrn</h4>
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-[color:var(--nodu-success-text)]">Celkem hodiny</span>
-                      <span className="font-bold text-[color:var(--nodu-text)]">{totalHours.toFixed(1)}h</span>
-                    </div>
-                    <div className="flex justify-between text-xs">
-                      <span className="text-[color:var(--nodu-success-text)]">Naklady na crew</span>
-                      <span className="font-bold text-[color:var(--nodu-text)]">{formatCurrency(totalCrewCost)}</span>
-                    </div>
-                    <div className="flex justify-between text-xs">
-                      <span className="text-[color:var(--nodu-success-text)]">Cestovne</span>
-                      <span className="font-bold text-[color:var(--nodu-text)]">{formatCurrency(totalTravelCost)}</span>
-                    </div>
-                    <div className="flex justify-between text-xs">
-                      <span className="text-[color:var(--nodu-success-text)]">Uctenky</span>
-                      <span className="font-bold text-[color:var(--nodu-text)]">{formatCurrency(totalReceiptCost)}</span>
-                    </div>
-                    <div className="mt-2 flex justify-between border-t border-[color:var(--nodu-success-border)] pt-2 text-sm">
-                      <span className="font-bold text-[color:var(--nodu-success-text)]">Celkovy rozpocet</span>
-                      <span className="font-black text-[color:var(--nodu-text)]">{formatCurrency(totalCrewCost + totalTravelCost + totalReceiptCost)}</span>
-                    </div>
                   </div>
-                </div>
+                )}
+              </div>
 
-                <div className="rounded-[22px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] p-4">
-                  <h4 className="mb-3 text-[10px] font-bold uppercase tracking-wider text-[color:var(--nodu-text-soft)]">Statistiky akce</h4>
-                  <div className="space-y-3">
-                    <div>
-                      <div className="mb-1 flex justify-between text-[11px]">
-                        <span className="text-[color:var(--nodu-text-soft)]">Obsazenost</span>
-                        <span className="font-semibold text-[color:var(--nodu-text)]">{event.filled}/{event.needed}</span>
+              <div className="space-y-4">
+                {isCrewRole ? (
+                  <div className="rounded-[22px] border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] p-4">
+                    <h4 className="mb-3 text-[10px] font-bold uppercase tracking-wider text-[color:var(--nodu-success-text)]">Predpokladany zisk</h4>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-[color:var(--nodu-success-text)]">Moje hodiny</span>
+                        <span className="font-bold text-[color:var(--nodu-text)]">{myHours.toFixed(1)}h</span>
                       </div>
-                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-[color:rgb(var(--nodu-text-rgb)/0.08)]">
-                        <div
-                          className="h-full rounded-full"
-                          style={{
-                            width: `${Math.min(100, Math.round((event.filled / event.needed) * 100))}%`,
-                            backgroundColor: event.filled >= event.needed ? 'var(--nodu-success-text)' : 'var(--nodu-warning-text)',
-                          }}
-                        />
+                      <div className="flex justify-between text-xs">
+                        <span className="text-[color:var(--nodu-success-text)]">Hodinova sazba</span>
+                        <span className="font-bold text-[color:var(--nodu-text)]">{formatCurrency(currentContractor?.rate ?? 0)}</span>
                       </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="rounded-xl border border-[color:var(--nodu-border)] bg-white p-2 text-center">
-                        <div className="text-[9px] uppercase text-[color:var(--nodu-text-soft)]">Dny</div>
-                        <div className="text-sm font-bold text-[color:var(--nodu-text)]">{days.length}</div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-[color:var(--nodu-success-text)]">Cestovne</span>
+                        <span className="font-bold text-[color:var(--nodu-text)]">{formatCurrency(myTravelCost)}</span>
                       </div>
-                      <div className="rounded-xl border border-[color:var(--nodu-border)] bg-white p-2 text-center">
-                        <div className="text-[9px] uppercase text-[color:var(--nodu-text-soft)]">Vykazy</div>
-                        <div className="text-sm font-bold text-[color:var(--nodu-text)]">{eventTimelogs.length}</div>
+                      <div className="mt-2 flex justify-between border-t border-[color:var(--nodu-success-border)] pt-2 text-sm">
+                        <span className="font-bold text-[color:var(--nodu-success-text)]">Odhad celkem</span>
+                        <span className="font-black text-[color:var(--nodu-text)]">{formatCurrency(myProjectedProfit)}</span>
                       </div>
                     </div>
                   </div>
-                </div>
+                ) : (
+                  <>
+                    <div className="rounded-[22px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] p-4">
+                      <h4 className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-[color:var(--nodu-text-soft)]">
+                        <FileText size={12} className="text-[color:var(--nodu-text-soft)]" />
+                        Schvalovani faktur
+                      </h4>
+                      {eventApprovalDocuments.length > 0 ? (
+                        <div className="overflow-hidden rounded-[16px] border border-[color:rgb(var(--nodu-text-rgb)/0.08)] bg-white">
+                          <table className="w-full table-fixed border-collapse text-left">
+                            <thead>
+                              <tr className="border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] text-[9px] uppercase tracking-wider text-[color:var(--nodu-text-soft)]">
+                                <th className="w-[72%] px-3 py-2 font-medium">Dokument</th>
+                                <th className="w-[28%] px-3 py-2 text-right font-medium">Stav</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-[color:rgb(var(--nodu-text-rgb)/0.06)]">
+                              {eventApprovalDocuments.map((document) => (
+                                <tr key={document.id}>
+                                  <td className="min-w-0 px-3 py-2">
+                                    <div className="truncate text-[11px] font-semibold text-[color:var(--nodu-text)]">{document.documentName}</div>
+                                    <div className="mt-0.5 truncate text-[10px] text-[color:var(--nodu-text-soft)]">
+                                      {document.invoiceNumber || '-'} · {document.comment.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)[0] || event.name}
+                                    </div>
+                                    <div className="mt-1 truncate text-[10px] font-semibold text-[color:var(--nodu-text)]">
+                                      {getApprovalDocumentPersonLabel(document)}
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-2 text-right">
+                                    <StatusBadge status={getApprovalDocumentBadgeStatus(document)} />
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <div className="rounded-[16px] border border-dashed border-[color:var(--nodu-border)] bg-white px-3 py-6 text-center text-xs text-[color:var(--nodu-text-soft)]">
+                          K teto akci zatim neni sparovany zadny dokument z PowerApps.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-[22px] border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] p-4">
+                      <h4 className="mb-3 text-[10px] font-bold uppercase tracking-wider text-[color:var(--nodu-success-text)]">Financni souhrn</h4>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-[color:var(--nodu-success-text)]">Celkem hodiny</span>
+                          <span className="font-bold text-[color:var(--nodu-text)]">{totalHours.toFixed(1)}h</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-[color:var(--nodu-success-text)]">Naklady na crew</span>
+                          <span className="font-bold text-[color:var(--nodu-text)]">{formatCurrency(totalCrewCost)}</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-[color:var(--nodu-success-text)]">Cestovne</span>
+                          <span className="font-bold text-[color:var(--nodu-text)]">{formatCurrency(totalTravelCost)}</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-[color:var(--nodu-success-text)]">Uctenky</span>
+                          <span className="font-bold text-[color:var(--nodu-text)]">{formatCurrency(totalReceiptCost)}</span>
+                        </div>
+                        <div className="mt-2 flex justify-between border-t border-[color:var(--nodu-success-border)] pt-2 text-sm">
+                          <span className="font-bold text-[color:var(--nodu-success-text)]">Celkovy rozpocet</span>
+                          <span className="font-black text-[color:var(--nodu-text)]">{formatCurrency(totalCrewCost + totalTravelCost + totalReceiptCost)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[22px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] p-4">
+                      <h4 className="mb-3 text-[10px] font-bold uppercase tracking-wider text-[color:var(--nodu-text-soft)]">Statistiky akce</h4>
+                      <div className="space-y-3">
+                        <div>
+                          <div className="mb-1 flex justify-between text-[11px]">
+                            <span className="text-[color:var(--nodu-text-soft)]">Obsazenost</span>
+                            <span className="font-semibold text-[color:var(--nodu-text)]">{event.filled}/{event.needed}</span>
+                          </div>
+                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-[color:rgb(var(--nodu-text-rgb)/0.08)]">
+                            <div
+                              className="h-full rounded-full"
+                              style={{
+                                width: `${Math.min(100, Math.round((event.filled / event.needed) * 100))}%`,
+                                backgroundColor: event.filled >= event.needed ? 'var(--nodu-success-text)' : 'var(--nodu-warning-text)',
+                              }}
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="rounded-xl border border-[color:var(--nodu-border)] bg-white p-2 text-center">
+                            <div className="text-[9px] uppercase text-[color:var(--nodu-text-soft)]">Dny</div>
+                            <div className="text-sm font-bold text-[color:var(--nodu-text)]">{days.length}</div>
+                          </div>
+                          <div className="rounded-xl border border-[color:var(--nodu-border)] bg-white p-2 text-center">
+                            <div className="text-[9px] uppercase text-[color:var(--nodu-text-soft)]">Vykazy</div>
+                            <div className="text-sm font-bold text-[color:var(--nodu-text)]">{eventTimelogs.length}</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
 
                 <div className="rounded-[22px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] p-4">
                   <h4 className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-[color:var(--nodu-text-soft)]">
                     <Receipt size={12} className="text-[color:var(--nodu-text-soft)]" />
-                    Uctenky ({eventReceipts.length})
+                    {isCrewRole ? 'Moje uctenky' : 'Uctenky'} ({visibleReceipts.length})
                   </h4>
                   <div className="space-y-2">
-                    {eventReceipts.slice(0, 4).map((receipt) => {
+                    {visibleReceipts.slice(0, 4).map((receipt) => {
                       const contractor = contractors.find((item) => item.profileId === receipt.contractorProfileId);
                       return (
                         <div key={receipt.id} className="rounded-xl border border-[color:var(--nodu-border)] bg-white p-3">
@@ -549,9 +882,9 @@ const EventDetailView = () => {
                         </div>
                       );
                     })}
-                    {eventReceipts.length === 0 && (
+                    {visibleReceipts.length === 0 && (
                       <div className="rounded-xl border border-dashed border-[color:var(--nodu-border)] bg-white px-3 py-6 text-center text-xs text-[color:var(--nodu-text-soft)]">
-                        K teto akci zatim nejsou zadane zadne uctenky.
+                        {isCrewRole ? 'K teto akci zatim nemate zadane zadne uctenky.' : 'K teto akci zatim nejsou zadane zadne uctenky.'}
                       </div>
                     )}
                   </div>
@@ -580,7 +913,7 @@ const EventDetailView = () => {
               </div>
 
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {dayTimelogs.map((timelog) => {
+                {eventTimelogs.filter((timelog) => timelog.days.some((day) => day.d === eventTab)).map((timelog) => {
                   const contractor = contractors.find((item) => item.profileId === timelog.contractorProfileId);
                   if (!contractor) return null;
                   const matchingDays = timelog.days.filter((day) => day.d === eventTab);
@@ -629,7 +962,7 @@ const EventDetailView = () => {
                   );
                 })}
 
-                {dayTimelogs.length === 0 && (
+                {eventTimelogs.filter((timelog) => timelog.days.some((day) => day.d === eventTab)).length === 0 && (
                   <div className="col-span-full rounded-[24px] border border-dashed border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] py-12 text-center text-sm text-[color:var(--nodu-text-soft)]">
                     Na tento den neni nikdo naplanovan.
                   </div>

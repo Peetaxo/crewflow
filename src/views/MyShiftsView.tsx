@@ -15,9 +15,10 @@ import { useReceiptsQuery } from '../features/receipts/queries/useReceiptsQuery'
 import { getProjects, subscribeToProjectChanges } from '../features/projects/services/projects.service';
 import { getContractors, subscribeToCrewChanges } from '../features/crew/services/crew.service';
 import { useInvoicesQuery } from '../features/invoices/queries/useInvoicesQuery';
+import { categorizeCrewTimelogs, resolveShiftProject } from '../features/crew/services/crew-shift-display';
 
 const MyShiftsView = () => {
-  const { darkMode, searchQuery } = useAppContext();
+  const { darkMode, searchQuery, setCurrentTab, setEventTab, setSelectedEventId } = useAppContext();
   const { currentProfileId, profile } = useAuth();
   const eventsQuery = useEventsQuery();
   const timelogsQuery = useTimelogsQuery();
@@ -49,11 +50,7 @@ const MyShiftsView = () => {
   const myInvoices = invoices.filter((invoice) => invoice.contractorProfileId === meProfileId);
   const myReceipts = receipts.filter((receipt) => receipt.contractorProfileId === meProfileId);
 
-  const categorized = useMemo(() => ({
-    upcoming: myTimelogs.filter((timelog) => timelog.status === 'draft'),
-    processing: myTimelogs.filter((timelog) => timelog.status === 'pending_ch' || timelog.status === 'pending_coo'),
-    invoiced: myTimelogs.filter((timelog) => timelog.status === 'approved' || timelog.status === 'invoiced' || timelog.status === 'paid'),
-  }), [myTimelogs]);
+  const categorized = useMemo(() => categorizeCrewTimelogs(myTimelogs, events), [myTimelogs, events]);
 
   const stats = useMemo(() => ({
     totalEarned: myInvoices.filter((invoice) => invoice.status === 'paid').reduce((sum, invoice) => sum + invoice.total, 0),
@@ -124,6 +121,12 @@ const MyShiftsView = () => {
     };
   }, [searchQuery, categorized, myInvoices, events, projects]);
 
+  const openEventDetail = (event: Event) => {
+    setCurrentTab('events');
+    setSelectedEventId(event.supabaseId ?? event.id);
+    setEventTab('overview');
+  };
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <div className="mb-8 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
@@ -179,9 +182,9 @@ const MyShiftsView = () => {
           <motion.div key={activeTab} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {filteredData[activeTab].map((timelog) => {
               const event = events.find((item) => item.id === timelog.eid);
-              const project = projects.find((item) => item.id === event?.job);
+              const project = resolveShiftProject(event, projects);
               if (!event || !project) return null;
-              return <ShiftCard key={timelog.id} timelog={timelog} event={event} project={project} />;
+              return <ShiftCard key={timelog.id} timelog={timelog} event={event} project={project} onClick={() => openEventDetail(event)} />;
             })}
             {filteredData[activeTab].length === 0 && <div className="col-span-full rounded-2xl border border-dashed border-[var(--nodu-border)] bg-[var(--nodu-paper-strong)] py-12 text-center text-sm text-[var(--nodu-text-soft)]">{searchQuery ? 'Nebyly nalezeny zadne vysledky' : 'Zadne zaznamy'}</div>}
           </motion.div>

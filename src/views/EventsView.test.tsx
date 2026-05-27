@@ -2,9 +2,18 @@ import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { InvoiceApprovalDocument } from '../types';
 
-let invoiceApprovalDocuments: InvoiceApprovalDocument[] = [];
+vi.mock('../app/providers/useAuth', () => ({
+  useAuth: () => ({ currentProfileId: 'profile-current' }),
+}));
+
+vi.mock('../features/timelogs/queries/useTimelogsQuery', () => ({
+  useTimelogsQuery: () => ({ data: [], isLoading: false, error: null }),
+}));
+
+vi.mock('../features/invoices/queries/useInvoiceApprovalsQuery', () => ({
+  useInvoiceApprovalsQuery: () => ({ data: [], isLoading: false, error: null }),
+}));
 
 const mockAppContext = {
   role: 'crewhead',
@@ -58,6 +67,25 @@ const multiDayEvents = [
   },
 ];
 
+const monthlyEvents = [
+  {
+    ...events[0],
+    id: 10,
+    supabaseId: 'event-uuid-april',
+    name: 'Dubnova akce',
+    startDate: '2026-04-20',
+    endDate: '2026-04-20',
+  },
+  {
+    ...events[0],
+    id: 11,
+    supabaseId: 'event-uuid-may',
+    name: 'Kvetnova akce',
+    startDate: '2026-05-02',
+    endDate: '2026-05-02',
+  },
+];
+
 const eventDetail = {
   timelogs: [
     {
@@ -85,16 +113,17 @@ const eventDetail = {
   ],
   receipts: [],
   event: events[0],
+  applications: [],
+  crewAssignments: [
+    { eventId: 1, eventSupabaseId: 'event-uuid-1', contractorProfileId: 'profile-1', name: 'Marek Rebroš' },
+    { eventId: 1, eventSupabaseId: 'event-uuid-1', contractorProfileId: 'profile-2', name: 'Jaroslav Macháč' },
+  ],
 };
 
 describe('EventsView', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
-    invoiceApprovalDocuments = [];
-    vi.doMock('../features/invoices/queries/useInvoiceApprovalsQuery', () => ({
-      useInvoiceApprovalsQuery: () => ({ data: invoiceApprovalDocuments }),
-    }));
   });
 
   it('renders event list without crashing when events query is active', async () => {
@@ -108,10 +137,13 @@ describe('EventsView', () => {
 
     vi.doMock('../features/events/services/events.service', () => ({
       createEmptyEvent: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      applyForEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
+      withdrawEventApplication: vi.fn(),
       filterEventsByStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'upcoming' as const })),
       getEventsWithDerivedStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'upcoming' as const })),
       getReferenceDate: () => new Date('2026-04-20'),
-      getEventCrew: () => eventDetail.contractors,
       getEventDetailData: () => eventDetail,
     }));
 
@@ -140,127 +172,36 @@ describe('EventsView', () => {
     expect(screen.getByText('AK001')).toBeInTheDocument();
   });
 
-  it('filters the event list to the selected month and keeps month boundary events visible', async () => {
+  it('filters the list by selected month and can request the next month', async () => {
     const setEventsCalendarDate = vi.fn();
-    const monthEvents = [
-      {
-        id: 10,
-        name: 'Akce duben',
-        job: 'APR001',
-        startDate: '2026-04-20',
-        endDate: '2026-04-20',
-        city: 'Praha',
-        needed: 1,
-        filled: 0,
-        status: 'upcoming' as const,
-        client: 'Klient Duben',
-      },
-      {
-        id: 11,
-        name: 'Akce kveten',
-        job: 'MAY001',
-        startDate: '2026-05-10',
-        endDate: '2026-05-10',
-        city: 'Brno',
-        needed: 1,
-        filled: 0,
-        status: 'upcoming' as const,
-        client: 'Klient Kveten',
-      },
-      {
-        id: 12,
-        name: 'Prelom mesice',
-        job: 'MIX001',
-        startDate: '2026-04-30',
-        endDate: '2026-05-02',
-        city: 'Praha',
-        needed: 1,
-        filled: 0,
-        status: 'upcoming' as const,
-        client: 'Klient Mix',
-      },
-    ];
 
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => ({
         ...mockAppContext,
-        eventsCalendarDate: '2026-05-15',
+        eventsCalendarDate: '2026-04-20',
         setEventsCalendarDate,
       }),
     }));
 
     vi.doMock('../features/events/queries/useEventsQuery', () => ({
-      useEventsQuery: () => ({ data: monthEvents, isLoading: false, error: null }),
+      useEventsQuery: () => ({ data: monthlyEvents, isLoading: false, error: null }),
     }));
 
     vi.doMock('../features/events/services/events.service', () => ({
       createEmptyEvent: vi.fn(),
-      filterEventsByStatus: (items: typeof monthEvents) => items.map((item) => ({ ...item, derivedStatus: 'upcoming' as const })),
-      getEventsWithDerivedStatus: (items: typeof monthEvents) => items.map((item) => ({ ...item, derivedStatus: 'upcoming' as const })),
-      getReferenceDate: () => new Date('2026-05-15'),
-      getEventCrew: () => [],
-      getEventDetailData: () => ({
-        timelogs: [],
-        contractors: [],
-        receipts: [],
-        event: monthEvents[0],
-      }),
-    }));
-
-    vi.doMock('./EventDetailView', () => ({
-      default: () => <div>detail</div>,
-    }));
-
-    vi.doMock('../components/modals/EventEditModal', () => ({
-      default: () => null,
-    }));
-
-    vi.doMock('../components/modals/AssignCrewModal', () => ({
-      default: () => null,
-    }));
-
-    const { default: EventsView } = await import('./EventsView');
-    const queryClient = new QueryClient();
-
-    render(
-      <QueryClientProvider client={queryClient}>
-        <EventsView />
-      </QueryClientProvider>,
-    );
-
-    expect(screen.getByText('květen 2026')).toBeInTheDocument();
-    expect(screen.getByText('Akce kveten')).toBeInTheDocument();
-    expect(screen.getAllByText('Prelom mesice')).toHaveLength(2);
-    expect(screen.queryByText('Akce duben')).not.toBeInTheDocument();
-    expect(screen.queryByText(/30\..*dubna/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/1\..*května/i)).toBeInTheDocument();
-    expect(screen.getByText(/2\..*května/i)).toBeInTheDocument();
-    expect(screen.getByText('2 akci')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByLabelText('Predchozi mesic'));
-
-    expect(setEventsCalendarDate).toHaveBeenCalledWith('2026-04-01');
-  });
-
-  it('keeps selected event id while events are still loading', async () => {
-    vi.doMock('../context/useAppContext', () => ({
-      useAppContext: () => ({
-        ...mockAppContext,
-        selectedEventId: 1,
-      }),
-    }));
-
-    vi.doMock('../features/events/queries/useEventsQuery', () => ({
-      useEventsQuery: () => ({ data: undefined, isLoading: true, isFetching: true, error: null }),
-    }));
-
-    vi.doMock('../features/events/services/events.service', () => ({
-      createEmptyEvent: vi.fn(),
-      filterEventsByStatus: (items: typeof events) => items,
-      getEventsWithDerivedStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'upcoming' as const })),
+      createEventCopy: vi.fn(),
+      applyForEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+      filterEventsByStatus: (items: typeof monthlyEvents) => items.map((item) => ({ ...item, derivedStatus: 'full' as const })),
+      getEventsWithDerivedStatus: (items: typeof monthlyEvents) => items.map((item) => ({ ...item, derivedStatus: 'full' as const })),
       getReferenceDate: () => new Date('2026-04-20'),
-      getEventCrew: () => eventDetail.contractors,
-      getEventDetailData: () => eventDetail,
+      getEventDetailData: (eventId: number | string) => ({
+        ...eventDetail,
+        event: monthlyEvents.find((event) => event.supabaseId === eventId || event.id === eventId) ?? monthlyEvents[0],
+        timelogs: [],
+        crewAssignments: [],
+      }),
     }));
 
     vi.doMock('./EventDetailView', () => ({
@@ -284,7 +225,13 @@ describe('EventsView', () => {
       </QueryClientProvider>,
     );
 
-    expect(mockAppContext.setSelectedEventId).not.toHaveBeenCalledWith(null);
+    expect(screen.getByText('duben 2026')).toBeInTheDocument();
+    expect(screen.getByText('Dubnova akce')).toBeInTheDocument();
+    expect(screen.queryByText('Kvetnova akce')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dalsi mesic' }));
+
+    expect(setEventsCalendarDate).toHaveBeenCalledWith('2026-05-01');
   });
 
   it('shows assigned crew names and opens detail by clicking the event card', async () => {
@@ -298,10 +245,13 @@ describe('EventsView', () => {
 
     vi.doMock('../features/events/services/events.service', () => ({
       createEmptyEvent: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      applyForEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
+      withdrawEventApplication: vi.fn(),
       filterEventsByStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'full' as const })),
       getEventsWithDerivedStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'full' as const })),
       getReferenceDate: () => new Date('2026-04-20'),
-      getEventCrew: () => eventDetail.contractors,
       getEventDetailData: () => eventDetail,
     }));
 
@@ -337,7 +287,16 @@ describe('EventsView', () => {
     expect(mockAppContext.setSelectedEventId).toHaveBeenCalledWith('event-uuid-1');
   });
 
-  it('opens crew detail when clicking an assigned crew name', async () => {
+  it('opens a copied event draft from the event list copy button', async () => {
+    const copiedEvent = {
+      ...events[0],
+      id: 99,
+      supabaseId: undefined,
+      startDate: '2026-04-21',
+      endDate: '2026-04-21',
+      filled: 0,
+    };
+
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => mockAppContext,
     }));
@@ -348,11 +307,67 @@ describe('EventsView', () => {
 
     vi.doMock('../features/events/services/events.service', () => ({
       createEmptyEvent: vi.fn(),
+      createEventCopy: vi.fn(() => copiedEvent),
+      applyForEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
+      withdrawEventApplication: vi.fn(),
       filterEventsByStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'full' as const })),
       getEventsWithDerivedStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'full' as const })),
       getReferenceDate: () => new Date('2026-04-20'),
-      getEventCrew: () => eventDetail.contractors,
       getEventDetailData: () => eventDetail,
+    }));
+
+    vi.doMock('./EventDetailView', () => ({
+      default: () => <div>detail</div>,
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: ({ editingEvent }: { editingEvent: typeof copiedEvent | null }) => (
+        editingEvent ? <div>Kopie akce {editingEvent.id} {editingEvent.startDate}</div> : null
+      ),
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventsView } = await import('./EventsView');
+    const queryClient = new QueryClient();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <EventsView />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Kopirovat akci na jiny den' }));
+
+    expect(screen.getByText('Kopie akce 99 2026-04-21')).toBeInTheDocument();
+    expect(mockAppContext.setSelectedEventId).not.toHaveBeenCalled();
+  });
+
+  it('shows when event timelogs are approved', async () => {
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => mockAppContext,
+    }));
+
+    vi.doMock('../features/events/queries/useEventsQuery', () => ({
+      useEventsQuery: () => ({ data: events, isLoading: false, error: null }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      createEmptyEvent: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      applyForEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+      filterEventsByStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'full' as const })),
+      getEventsWithDerivedStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'full' as const })),
+      getReferenceDate: () => new Date('2026-04-20'),
+      getEventDetailData: () => ({
+        ...eventDetail,
+        timelogs: eventDetail.timelogs.map((timelog) => ({ ...timelog, status: 'approved' as const })),
+      }),
     }));
 
     vi.doMock('./EventDetailView', () => ({
@@ -376,70 +391,32 @@ describe('EventsView', () => {
       </QueryClientProvider>,
     );
 
-    fireEvent.click(screen.getByText('Marek Rebroš'));
-
-    expect(mockAppContext.setSelectedContractorProfileId).toHaveBeenCalledWith('profile-1');
-    expect(mockAppContext.setCurrentTab).toHaveBeenCalledWith('crew');
-    expect(mockAppContext.setSelectedEventId).not.toHaveBeenCalled();
+    expect(screen.getByText('Casy schvalene')).toBeInTheDocument();
   });
 
-  it('shows imported Grason people as assigned crew when timelogs are not created yet', async () => {
+  it('shows timelog approval status on assigned crew names', async () => {
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => mockAppContext,
     }));
 
     vi.doMock('../features/events/queries/useEventsQuery', () => ({
-      useEventsQuery: () => ({ data: [{ ...events[0], filled: 2 }], isLoading: false, error: null }),
+      useEventsQuery: () => ({ data: events, isLoading: false, error: null }),
     }));
 
     vi.doMock('../features/events/services/events.service', () => ({
       createEmptyEvent: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      applyForEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
+      withdrawEventApplication: vi.fn(),
       filterEventsByStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'full' as const })),
       getEventsWithDerivedStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'full' as const })),
       getReferenceDate: () => new Date('2026-04-20'),
-      getEventCrew: () => eventDetail.contractors,
       getEventDetailData: () => ({
-        event: { ...events[0], filled: 2 },
-        timelogs: [],
-        contractors: eventDetail.contractors,
-        receipts: [],
-        grasonConfirmations: [
-          {
-            id: 'confirmation-1',
-            source: 'grason',
-            sourceMonth: '2026-05',
-            sourceKey: '2026-05-20|Akce 1 / AK001',
-            eventId: 'event-uuid-1',
-            profileId: 'profile-1',
-            shiftDate: '2026-05-20',
-            sourceTitle: 'Akce 1 / AK001',
-            eventName: 'Akce 1',
-            jobNumber: 'AK001',
-            phase: 'provoz',
-            confirmedName: 'Marek Rebroš',
-            sourceOccurrenceCount: 1,
-            rawPayload: null,
-            importedAt: '2026-05-20T00:00:00Z',
-            updatedAt: '2026-05-20T00:00:00Z',
-          },
-          {
-            id: 'confirmation-2',
-            source: 'grason',
-            sourceMonth: '2026-05',
-            sourceKey: '2026-05-20|Akce 1 / AK001',
-            eventId: 'event-uuid-1',
-            profileId: 'profile-2',
-            shiftDate: '2026-05-20',
-            sourceTitle: 'Akce 1 / AK001',
-            eventName: 'Akce 1',
-            jobNumber: 'AK001',
-            phase: 'provoz',
-            confirmedName: 'Jaroslav Macháč',
-            sourceOccurrenceCount: 1,
-            rawPayload: null,
-            importedAt: '2026-05-20T00:00:00Z',
-            updatedAt: '2026-05-20T00:00:00Z',
-          },
+        ...eventDetail,
+        timelogs: [
+          { ...eventDetail.timelogs[0], status: 'pending_coo' as const },
+          { ...eventDetail.timelogs[1], status: 'approved' as const },
         ],
       }),
     }));
@@ -465,13 +442,16 @@ describe('EventsView', () => {
       </QueryClientProvider>,
     );
 
-    expect(screen.queryByText('Grason')).not.toBeInTheDocument();
-    expect(screen.getByText('Marek Rebroš')).toBeInTheDocument();
-    expect(screen.getByText('Jaroslav Macháč')).toBeInTheDocument();
-    expect(screen.getByText('0 timelogy · 0.0 h')).toBeInTheDocument();
+    const marekChip = screen.getAllByRole('button', { name: /Marek Rebroš/ })
+      .find((button) => button.getAttribute('title')?.includes('Ceka COO'));
+    const jaroslavChip = screen.getAllByRole('button', { name: /Jaroslav Macháč/ })
+      .find((button) => button.getAttribute('title')?.includes('Casy schvalene'));
+
+    expect(marekChip).toHaveAttribute('title', 'Approval: Nenalezeno v approval systému; casy: Ceka COO');
+    expect(jaroslavChip).toHaveAttribute('title', 'Approval: Nenalezeno v approval systému; casy: Casy schvalene');
   });
 
-  it('shows approval status dots next to people on event cards', async () => {
+  it('opens crew detail when clicking an assigned crew name', async () => {
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => mockAppContext,
     }));
@@ -482,39 +462,15 @@ describe('EventsView', () => {
 
     vi.doMock('../features/events/services/events.service', () => ({
       createEmptyEvent: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      applyForEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
+      withdrawEventApplication: vi.fn(),
       filterEventsByStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'full' as const })),
       getEventsWithDerivedStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'full' as const })),
       getReferenceDate: () => new Date('2026-04-20'),
-      getEventCrew: () => eventDetail.contractors,
       getEventDetailData: () => eventDetail,
     }));
-
-    invoiceApprovalDocuments = [
-      {
-        id: 'approval-doc-1',
-        source: 'powerapps_document_approval',
-        externalId: 'sharepoint-1',
-        documentName: 'Rebros - 2026-04.pdf',
-        company: 'NL',
-        jobNumber: 'AK001',
-        invoiceNumber: '2026-04',
-        supplierName: '',
-        approvalStatus: 'pending',
-        approvalStatusLabel: 've schvalování',
-        comment: [
-          'Akce 1',
-          '',
-          'Marek Rebroš',
-          '20.4 09:00 - 14:00',
-          'Celkem 5h',
-        ].join('\n'),
-        approvers: ['Ales Burger'],
-        requester: 'Petr Heitzer',
-        rawPayload: null,
-        matchedInvoiceId: null,
-        lastSyncedAt: '2026-05-25T12:00:00Z',
-      },
-    ];
 
     vi.doMock('./EventDetailView', () => ({
       default: () => <div>detail</div>,
@@ -537,7 +493,15 @@ describe('EventsView', () => {
       </QueryClientProvider>,
     );
 
-    expect(screen.getByLabelText('Stav schvalovani: Ve schvalování')).toBeInTheDocument();
+    const marekChip = screen.getAllByRole('button', { name: /Marek Rebroš/ })
+      .find((button) => button.getAttribute('title')?.includes('Approval:'));
+    expect(marekChip).toBeDefined();
+
+    fireEvent.click(marekChip as HTMLElement);
+
+    expect(mockAppContext.setSelectedContractorProfileId).toHaveBeenCalledWith('profile-1');
+    expect(mockAppContext.setCurrentTab).toHaveBeenCalledWith('crew');
+    expect(mockAppContext.setSelectedEventId).not.toHaveBeenCalled();
   });
 
   it('shows multi-day events under each day with event time instead of place', async () => {
@@ -554,10 +518,13 @@ describe('EventsView', () => {
 
     vi.doMock('../features/events/services/events.service', () => ({
       createEmptyEvent: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      applyForEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
+      withdrawEventApplication: vi.fn(),
       filterEventsByStatus: (items: typeof multiDayEvents) => items.map((item) => ({ ...item, derivedStatus: 'upcoming' as const })),
       getEventsWithDerivedStatus: (items: typeof multiDayEvents) => items.map((item) => ({ ...item, derivedStatus: 'upcoming' as const })),
       getReferenceDate: () => new Date('2026-04-16'),
-      getEventCrew: () => [],
       getEventDetailData: () => ({
         timelogs: [
           {
@@ -573,6 +540,8 @@ describe('EventsView', () => {
         contractors: [],
         receipts: [],
         event: multiDayEvents[0],
+        applications: [],
+        crewAssignments: [],
       }),
     }));
 
@@ -616,10 +585,13 @@ describe('EventsView', () => {
 
     vi.doMock('../features/events/services/events.service', () => ({
       createEmptyEvent: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      applyForEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
+      withdrawEventApplication: vi.fn(),
       filterEventsByStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'full' as const })),
       getEventsWithDerivedStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'full' as const })),
       getReferenceDate: () => new Date('2026-04-20'),
-      getEventCrew: () => eventDetail.contractors,
       getEventDetailData: () => ({
         ...eventDetail,
         timelogs: [

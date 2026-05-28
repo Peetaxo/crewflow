@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Event, ReceiptItem, Timelog } from '../../types';
 
@@ -303,5 +303,49 @@ describe('modal contractor identity handling', () => {
     fireEvent.click(screen.getByRole('button', { name: /Free Contractor/i }));
 
     expect(assignCrewToEvent).toHaveBeenCalledWith(1, 'profile-uuid-2', undefined);
+  });
+
+  it('assigns the only available day type immediately on typed single-phase events', async () => {
+    mockCrew = [
+      {
+        id: 2,
+        profileId: 'profile-uuid-2',
+        name: 'David Hora',
+        ii: 'DH',
+        bg: '#111',
+        fg: '#fff',
+        tags: [],
+        reliable: true,
+        city: '',
+      },
+    ];
+
+    render(
+      <AssignCrewModal
+        event={{
+          id: 1,
+          name: 'Nadace',
+          job: 'ORL064',
+          startDate: '2026-05-28',
+          endDate: '2026-05-28',
+          city: 'Praha',
+          needed: 2,
+          filled: 1,
+          status: 'upcoming',
+          client: 'NEXT LEVEL',
+          showDayTypes: true,
+          dayTypes: {
+            '2026-05-28': 'provoz',
+          },
+        }}
+        onClose={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /David Hora/i }));
+
+    await waitFor(() => {
+      expect(assignCrewToEvent).toHaveBeenCalledWith(1, 'profile-uuid-2', ['provoz']);
+    });
   });
 });

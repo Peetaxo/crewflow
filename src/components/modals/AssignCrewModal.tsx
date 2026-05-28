@@ -17,6 +17,25 @@ interface AssignCrewModalProps {
 
 const getContractorSelectionValue = (contractor: { profileId?: string }) => contractor.profileId ?? null;
 
+const getOnlyAvailablePhaseType = (event: Event): TimelogType | null => {
+  if (!event.showDayTypes) return null;
+
+  const availableTypes = new Set<TimelogType>();
+  Object.values(event.dayTypes ?? {}).forEach((dayType) => {
+    if (PHASE_CONFIG.some((phase) => phase.type === dayType)) {
+      availableTypes.add(dayType);
+    }
+  });
+
+  PHASE_CONFIG.forEach((phase) => {
+    if ((event.phaseSchedules?.[phase.type] ?? []).length > 0) {
+      availableTypes.add(phase.type);
+    }
+  });
+
+  return availableTypes.size === 1 ? [...availableTypes][0] : null;
+};
+
 const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
   const [pendingContractorSelection, setPendingContractorSelection] = useState<string | null>(null);
   const [selectedPhaseOptions, setSelectedPhaseOptions] = useState<Array<TimelogType | 'all'>>([]);
@@ -30,6 +49,7 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
 
   if (!event) return null;
 
+  const onlyAvailablePhaseType = getOnlyAvailablePhaseType(event);
   const contractorConflicts = getContractorConflictsForEvent(event, contractors);
   const assignedContractorIds = new Set(
     getEventDetailData(event.id).timelogs
@@ -191,6 +211,11 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
 
                     if (!contractor.profileId) {
                       toast.error('Tento clen crew nema prirazene UUID profileId.');
+                      return;
+                    }
+
+                    if (onlyAvailablePhaseType) {
+                      void assignContractor(contractor.profileId, [onlyAvailablePhaseType]);
                       return;
                     }
 

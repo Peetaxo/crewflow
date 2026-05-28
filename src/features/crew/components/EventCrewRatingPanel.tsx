@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useMemo, useState } from 'react';
-import { ChevronDown, Star } from 'lucide-react';
+import { CheckCircle2, ChevronDown, Pencil, Star } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../../../components/ui/button';
 import type { Contractor, CrewRating, Event } from '../../../types';
@@ -13,10 +13,13 @@ interface EventCrewRatingPanelProps {
 }
 
 type RatingDraft = Record<string, { rating: string; note: string }>;
+type RatingByProfileId = Record<string, CrewRating>;
 
 const formatRating = (rating?: CrewRating) => (
   rating ? `${rating.rating}/10` : 'Chybi hodnoceni'
 );
+
+const formatReviewedLabel = (rating: CrewRating) => `Ohodnoceno ${rating.rating}/10`;
 
 const EventCrewRatingPanel = ({
   event,
@@ -24,10 +27,20 @@ const EventCrewRatingPanel = ({
   ratings,
   ratedByProfileId,
 }: EventCrewRatingPanelProps) => {
-  const ratingsByProfileId = useMemo(() => new Map(
-    ratings.map((rating) => [rating.profileId, rating]),
-  ), [ratings]);
+  const [savedRatings, setSavedRatings] = useState<RatingByProfileId>({});
+  const ratingsByProfileId = useMemo(() => {
+    const nextRatingsByProfileId = new Map(
+      ratings.map((rating) => [rating.profileId, rating]),
+    );
+
+    for (const rating of Object.values(savedRatings)) {
+      nextRatingsByProfileId.set(rating.profileId, rating);
+    }
+
+    return nextRatingsByProfileId;
+  }, [ratings, savedRatings]);
   const [drafts, setDrafts] = useState<RatingDraft>({});
+  const [editingProfileIds, setEditingProfileIds] = useState<Set<string>>(() => new Set());
   const [isExpanded, setIsExpanded] = useState(false);
   const bodyId = useId();
 
@@ -60,7 +73,7 @@ const EventCrewRatingPanel = ({
     const parsedRating = Number(draft.rating);
 
     try {
-      await upsertCrewRating({
+      const savedRating = await upsertCrewRating({
         profileId: contractor.profileId,
         eventId: event.id,
         eventSupabaseId: event.supabaseId ?? null,
@@ -68,6 +81,15 @@ const EventCrewRatingPanel = ({
         rating: parsedRating,
         note: draft.note,
         ratedByProfileId,
+      });
+      setSavedRatings((current) => ({
+        ...current,
+        [contractor.profileId as string]: savedRating,
+      }));
+      setEditingProfileIds((current) => {
+        const next = new Set(current);
+        next.delete(contractor.profileId as string);
+        return next;
       });
       toast.success('Hodnoceni crew ulozeno.');
     } catch (error) {
@@ -116,6 +138,41 @@ const EventCrewRatingPanel = ({
 
           const existing = ratingsByProfileId.get(contractor.profileId);
           const draft = drafts[contractor.profileId] ?? { rating: '', note: '' };
+          const isEditing = !existing || editingProfileIds.has(contractor.profileId);
+
+          if (existing && !isEditing) {
+            return (
+              <div key={contractor.profileId} className="rounded-[18px] border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] p-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="av h-8 w-8 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>
+                    {contractor.ii}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold text-[color:var(--nodu-text)]">{contractor.name}</div>
+                    <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-[color:var(--nodu-success-text)]">
+                      <CheckCircle2 size={14} />
+                      {formatReviewedLabel(existing)}
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={() => setEditingProfileIds((current) => new Set(current).add(contractor.profileId as string))}
+                    size="sm"
+                    variant="outline"
+                    aria-label={`Upravit hodnoceni pro ${contractor.name}`}
+                  >
+                    <Pencil size={14} />
+                    Upravit
+                  </Button>
+                </div>
+                {existing.note && (
+                  <div className="mt-3 rounded-xl border border-[color:var(--nodu-success-border)] bg-white px-3 py-2 text-xs text-[color:var(--nodu-text-soft)]">
+                    {existing.note}
+                  </div>
+                )}
+              </div>
+            );
+          }
 
           return (
             <div key={contractor.profileId} className="rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] p-3">

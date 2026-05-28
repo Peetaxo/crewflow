@@ -24,13 +24,10 @@ import { Event, Timelog } from '../types';
 import type { SelectedEventId } from '../context/app-context';
 import { calculateTotalHours, eventOccursOnDate, getDatesBetween } from '../utils';
 import { Button } from '../components/ui/button';
-import ApprovalStatusDot from '../components/shared/ApprovalStatusDot';
 import EventDetailView from './EventDetailView';
 import EventEditModal from '../components/modals/EventEditModal';
 import AssignCrewModal from '../components/modals/AssignCrewModal';
 import { useEventsQuery } from '../features/events/queries/useEventsQuery';
-import { useInvoiceApprovalsQuery } from '../features/invoices/queries/useInvoiceApprovalsQuery';
-import { getEventPersonApprovalState } from '../features/invoices/services/invoice-approval-sync.service';
 import { useTimelogsQuery } from '../features/timelogs/queries/useTimelogsQuery';
 import {
   createEmptyEvent,
@@ -265,7 +262,6 @@ const EventsView = () => {
   } = useAppContext();
   const { currentProfileId } = useAuth();
   const eventsQuery = useEventsQuery();
-  const invoiceApprovalsQuery = useInvoiceApprovalsQuery();
   const timelogsQuery = useTimelogsQuery();
   void timelogsQuery.data;
   const [didInitCalendarDate, setDidInitCalendarDate] = useState(false);
@@ -276,7 +272,6 @@ const EventsView = () => {
   const viewMode = eventsViewMode as EventsViewMode;
   const calendarMode = eventsCalendarMode as CalendarMode;
   const eventFilter = eventsFilter as EventFilter;
-  const approvalDocuments = invoiceApprovalsQuery.data ?? [];
   const selectedEvent = useMemo(
     () => (eventsQuery.data ?? []).find((event) => (
       selectedEventId == null
@@ -697,31 +692,22 @@ const EventsView = () => {
                           <div className="hidden min-h-[72px] border-l border-[color:rgb(var(--nodu-text-rgb)/0.1)] pl-6 md:block">
                             {(assignedCrew.length > 0 || visiblePendingApplications.length > 0 || visibleWithdrawalRequests.length > 0) && (
                               <div className="flex min-w-0 flex-wrap content-start items-start justify-start gap-1.5 pt-1">
-                                {assignedCrew.map((contractor) => {
-                                  const approvalState = getEventPersonApprovalState({
-                                    event,
-                                    personName: contractor.name,
-                                    approvalDocuments,
-                                  });
-
-                                  return (
-                                    <button
-                                      key={`${event.id}-${contractor.profileId}`}
-                                      type="button"
-                                      onClick={(clickEvent) => {
-                                        clickEvent.stopPropagation();
-                                        setSelectedContractorProfileId(contractor.profileId);
-                                        setCurrentTab('crew');
-                                      }}
-                                      className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] px-2.5 py-1 text-[11px] font-semibold text-[color:var(--nodu-text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] transition hover:bg-[color:var(--nodu-success-bg-hover)]"
-                                      title={`Approval: ${approvalState.label}; casy: ${contractor.approvalMeta.label}`}
-                                    >
-                                      <ApprovalStatusDot status={approvalState.status} label={approvalState.label} />
-                                      {contractor.name}
-                                      <span className={`h-2 w-2 shrink-0 rounded-full border border-white shadow-[0_0_0_1px_rgba(47,38,31,0.08)] ${contractor.approvalMeta.dotClassName}`} />
-                                    </button>
-                                  );
-                                })}
+                                {assignedCrew.map((contractor) => (
+                                  <button
+                                    key={`${event.id}-${contractor.profileId}`}
+                                    type="button"
+                                    onClick={(clickEvent) => {
+                                      clickEvent.stopPropagation();
+                                      setSelectedContractorProfileId(contractor.profileId);
+                                      setCurrentTab('crew');
+                                    }}
+                                    className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] px-2.5 py-1 text-[11px] font-semibold text-[color:var(--nodu-text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] transition hover:bg-[color:var(--nodu-success-bg-hover)]"
+                                    title={`Casy: ${contractor.approvalMeta.label}`}
+                                  >
+                                    {contractor.name}
+                                    <span className={`h-2 w-2 shrink-0 rounded-full border border-white shadow-[0_0_0_1px_rgba(47,38,31,0.08)] ${contractor.approvalMeta.dotClassName}`} />
+                                  </button>
+                                ))}
                                 {visiblePendingApplications.map((application) => (
                                   <button
                                     key={`${event.id}-application-${application.applicationId}`}

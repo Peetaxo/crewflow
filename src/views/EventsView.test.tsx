@@ -447,8 +447,9 @@ describe('EventsView', () => {
     const jaroslavChip = screen.getAllByRole('button', { name: /Jaroslav Macháč/ })
       .find((button) => button.getAttribute('title')?.includes('Casy schvalene'));
 
-    expect(marekChip).toHaveAttribute('title', 'Approval: Nenalezeno v approval systému; casy: Ceka COO');
-    expect(jaroslavChip).toHaveAttribute('title', 'Approval: Nenalezeno v approval systému; casy: Casy schvalene');
+    expect(marekChip).toHaveAttribute('title', 'Casy: Ceka COO');
+    expect(jaroslavChip).toHaveAttribute('title', 'Casy: Casy schvalene');
+    expect(screen.queryAllByLabelText(/Stav schvalovani:/)).toHaveLength(0);
   });
 
   it('opens crew detail when clicking an assigned crew name', async () => {
@@ -494,7 +495,7 @@ describe('EventsView', () => {
     );
 
     const marekChip = screen.getAllByRole('button', { name: /Marek Rebroš/ })
-      .find((button) => button.getAttribute('title')?.includes('Approval:'));
+      .find((button) => button.getAttribute('title')?.startsWith('Casy:'));
     expect(marekChip).toBeDefined();
 
     fireEvent.click(marekChip as HTMLElement);

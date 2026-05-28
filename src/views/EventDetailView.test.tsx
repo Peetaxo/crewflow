@@ -234,7 +234,7 @@ describe('EventDetailView', () => {
     expect(screen.getByText('Prirazena Crew (1)')).toBeInTheDocument();
   });
 
-  it('shows approval dots and the approval table in the event detail', async () => {
+  it('shows the approval table without duplicating approval dots on crew rows', async () => {
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => ({
         role: 'coo',
@@ -317,7 +317,7 @@ describe('EventDetailView', () => {
 
     render(<EventDetailView />);
 
-    expect(screen.getByLabelText('Stav schvalovani: Uzavřeno v approval systému')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Stav schvalovani: Uzavřeno v approval systému')).not.toBeInTheDocument();
     expect(screen.getByText('Schvalovani faktur')).toBeInTheDocument();
     expect(screen.getByText('Heitzer - 2026-04.pdf')).toBeInTheDocument();
     expect(screen.getByText('Schváleno')).toBeInTheDocument();

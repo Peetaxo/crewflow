@@ -9,7 +9,6 @@ import { PHASE_CONFIG } from '../constants';
 import { calculateDayHours, calculateTotalHours, formatCurrency, formatDateRange, formatShortDate, getDatesBetween, getEventStatus } from '../utils';
 import { Button } from '../components/ui/button';
 import StatusBadge from '../components/shared/StatusBadge';
-import ApprovalStatusDot from '../components/shared/ApprovalStatusDot';
 import EventEditModal from '../components/modals/EventEditModal';
 import AssignCrewModal from '../components/modals/AssignCrewModal';
 import EventCrewRatingPanel from '../features/crew/components/EventCrewRatingPanel';
@@ -29,10 +28,7 @@ import {
   withdrawEventApplication,
 } from '../features/events/services/events.service';
 import { useInvoiceApprovalsQuery } from '../features/invoices/queries/useInvoiceApprovalsQuery';
-import {
-  getEventApprovalDocuments,
-  getEventPersonApprovalState,
-} from '../features/invoices/services/invoice-approval-sync.service';
+import { getEventApprovalDocuments } from '../features/invoices/services/invoice-approval-sync.service';
 import { updateTimelogStatus } from '../features/timelogs/services/timelogs.service';
 
 const EMPTY_APPROVAL_DOCUMENTS: InvoiceApprovalDocument[] = [];
@@ -174,9 +170,6 @@ const EventDetailView = () => {
           : timelog.status === 'pending_ch' || timelog.status === 'pending_coo')
       ))
     : [];
-  const getApprovalStateForPerson = (personName: string) => (
-    getEventPersonApprovalState({ event, personName, approvalDocuments })
-  );
   const shouldShowCrewRatings = canManageEvents && eventStatus === 'past';
 
   const getPhasesForDate = (date: string) => (
@@ -482,7 +475,6 @@ const EventDetailView = () => {
                             {visibleEventCrew.map((contractor) => {
                               const timelog = eventTimelogs.find((item) => item.contractorProfileId === contractor.profileId);
                               const hours = timelog ? calculateTotalHours(timelog.days) : 0;
-                              const approvalState = getApprovalStateForPerson(contractor.name);
 
                               return (
                                 <tr
@@ -495,7 +487,6 @@ const EventDetailView = () => {
                                   <td className="px-4 py-3">
                                     <div className="flex items-center gap-2">
                                       <div className="av h-7 w-7 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
-                                      <ApprovalStatusDot status={approvalState.status} label={approvalState.label} />
                                       <span className="text-xs font-medium text-[color:var(--nodu-text)]">{contractor.name}</span>
                                     </div>
                                   </td>
@@ -917,7 +908,6 @@ const EventDetailView = () => {
                   const contractor = contractors.find((item) => item.profileId === timelog.contractorProfileId);
                   if (!contractor) return null;
                   const matchingDays = timelog.days.filter((day) => day.d === eventTab);
-                  const approvalState = getApprovalStateForPerson(contractor.name);
 
                   return (
                     <div key={timelog.id} className="rounded-[22px] border border-[color:var(--nodu-border)] bg-white p-4 shadow-[0_14px_34px_rgba(47,38,31,0.06)] transition-shadow hover:shadow-[0_18px_42px_rgba(47,38,31,0.1)]">
@@ -925,7 +915,6 @@ const EventDetailView = () => {
                         <div className="av h-10 w-10 text-xs" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
                         <div>
                           <div className="flex items-center gap-1.5 text-sm font-bold text-[color:var(--nodu-text)]">
-                            <ApprovalStatusDot status={approvalState.status} label={approvalState.label} />
                             {contractor.name}
                           </div>
                           <div className="mt-0.5 flex items-center gap-1.5">

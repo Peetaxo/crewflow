@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Star } from 'lucide-react';
+import React, { useEffect, useId, useMemo, useState } from 'react';
+import { ChevronDown, Star } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../../../components/ui/button';
 import type { Contractor, CrewRating, Event } from '../../../types';
@@ -28,6 +28,8 @@ const EventCrewRatingPanel = ({
     ratings.map((rating) => [rating.profileId, rating]),
   ), [ratings]);
   const [drafts, setDrafts] = useState<RatingDraft>({});
+  const [isExpanded, setIsExpanded] = useState(false);
+  const bodyId = useId();
 
   useEffect(() => {
     setDrafts((current) => {
@@ -77,7 +79,13 @@ const EventCrewRatingPanel = ({
 
   return (
     <div className="mt-4 rounded-[24px] border border-[color:var(--nodu-border)] bg-white p-4 shadow-[0_16px_34px_rgba(var(--nodu-text-rgb),0.05)]">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <button
+        type="button"
+        aria-expanded={isExpanded}
+        aria-controls={bodyId}
+        onClick={() => setIsExpanded((current) => !current)}
+        className="flex w-full flex-wrap items-center justify-between gap-3 text-left"
+      >
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold text-[color:var(--nodu-text)]">
             <Star size={16} className="text-[color:var(--nodu-accent)]" />
@@ -87,12 +95,22 @@ const EventCrewRatingPanel = ({
             {missingCount > 0 ? `${missingCount} chybi vyplnit` : 'Vsechna hodnoceni jsou vyplnena'}
           </div>
         </div>
-        <div className="rounded-full border border-[color:var(--nodu-border)] px-3 py-1 text-xs font-semibold text-[color:var(--nodu-text-soft)]">
-          0-10
+        <div className="flex items-center gap-2">
+          <span className="rounded-full border border-[color:var(--nodu-border)] px-3 py-1 text-xs font-semibold text-[color:var(--nodu-text-soft)]">
+            0-10
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full border border-[color:var(--nodu-border)] px-3 py-1 text-xs font-semibold text-[color:var(--nodu-text-soft)]">
+            {isExpanded ? 'Sbalit' : 'Rozbalit'}
+            <ChevronDown
+              size={14}
+              className={`transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+            />
+          </span>
         </div>
-      </div>
+      </button>
 
-      <div className="space-y-3">
+      {isExpanded && (
+      <div id={bodyId} className="mt-4 space-y-3">
         {crew.map((contractor) => {
           if (!contractor.profileId) return null;
 
@@ -166,6 +184,7 @@ const EventCrewRatingPanel = ({
           );
         })}
       </div>
+      )}
     </div>
   );
 };

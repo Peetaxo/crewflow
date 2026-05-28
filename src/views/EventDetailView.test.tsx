@@ -534,6 +534,10 @@ describe('EventDetailView', () => {
     render(<EventDetailView />);
 
     expect(screen.getByText('Hodnoceni crew')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Hodnoceni Petr Heitzer')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Hodnoceni crew/ }));
+
     expect(screen.getByText('Chybi hodnoceni')).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Hodnoceni Petr Heitzer'), { target: { value: '9' } });

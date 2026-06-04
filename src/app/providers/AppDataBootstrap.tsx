@@ -11,6 +11,7 @@ import { resetSupabaseProjectsHydration } from '../../features/projects/services
 import { resetSupabaseReceiptsHydration } from '../../features/receipts/services/receipts.service';
 import { resetSupabaseCandidatesHydration } from '../../features/recruitment/services/candidates.service';
 import { resetSupabaseTimelogsHydration } from '../../features/timelogs/services/timelogs.service';
+import { resetSupabaseWarehouseHydration } from '../../features/warehouse/services/warehouse.service';
 import { useAuth } from './useAuth';
 
 const resetSupabaseHydrationState = () => {
@@ -24,6 +25,7 @@ const resetSupabaseHydrationState = () => {
   resetSupabaseInvoicesHydration();
   resetSupabaseCandidatesHydration();
   resetSupabaseFleetHydration();
+  resetSupabaseWarehouseHydration();
 };
 
 const AppDataBootstrap = () => {

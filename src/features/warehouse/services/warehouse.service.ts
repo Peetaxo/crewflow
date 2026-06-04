@@ -1,3 +1,4 @@
+import { appDataSource } from '../../../lib/app-config';
 import { getLocalAppState, subscribeToLocalAppState, updateLocalAppState } from '../../../lib/app-data';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import type {
@@ -37,12 +38,59 @@ export interface WarehouseDependencies {
 
 type SupabaseInsertClient = {
   from: (table: string) => {
+    select: (columns: string) => {
+      order: (column: string) => Promise<{ data: unknown[] | null; error: { message: string } | null }>;
+    };
     insert: (payload: unknown) => Promise<{ error: { message: string } | null }>;
     delete: () => {
       eq: (column: string, value: string) => Promise<{ error: { message: string } | null }>;
     };
   };
 };
+
+interface WarehouseItemRow {
+  id: string;
+  name: string;
+  category: string | null;
+  description: string | null;
+  image_url: string | null;
+  price_cents: number;
+  currency: string | null;
+  price_period_label: string | null;
+  quantity_total: number;
+  owner_client_id: string | null;
+  owner_label: string | null;
+  status: WarehouseItem['status'];
+  booqable_product_id: string | null;
+  booqable_product_path: string | null;
+}
+
+interface WarehouseReservationRow {
+  id: string;
+  project_id: string | null;
+  project_job_number: string;
+  event_id: string | null;
+  event_local_id: number | null;
+  reserved_by_profile_id: string | null;
+  starts_at: string;
+  ends_at: string;
+  status: WarehouseReservation['status'];
+  note: string | null;
+  total_cents: number;
+  currency: string | null;
+  booqable_order_id: string | null;
+}
+
+interface WarehouseReservationItemRow {
+  id: string;
+  reservation_id: string;
+  warehouse_item_id: string;
+  quantity: number;
+  unit_price_cents: number;
+  price_period_label: string | null;
+  line_total_cents: number;
+  item_name_snapshot: string;
+}
 
 const getTime = (value: string) => new Date(value).getTime();
 
@@ -84,7 +132,130 @@ const getAggregatedDraftItems = (draft: WarehouseReservationDraft) => {
 
 export const subscribeToWarehouseChanges = subscribeToLocalAppState;
 
+const normalizeWarehouseCurrency = (currency: string | null): 'CZK' => (
+  currency === 'CZK' ? currency : 'CZK'
+);
+
+const mapWarehouseItem = (row: WarehouseItemRow): WarehouseItem => ({
+  id: row.id,
+  name: row.name,
+  category: row.category,
+  description: row.description,
+  imageUrl: row.image_url,
+  priceCents: row.price_cents,
+  currency: normalizeWarehouseCurrency(row.currency),
+  pricePeriodLabel: row.price_period_label,
+  quantityTotal: row.quantity_total,
+  ownerClientId: row.owner_client_id,
+  ownerLabel: row.owner_label,
+  status: row.status,
+  booqableProductId: row.booqable_product_id,
+  booqableProductPath: row.booqable_product_path,
+});
+
+const mapWarehouseReservationItem = (row: WarehouseReservationItemRow): WarehouseReservationItem => ({
+  id: row.id,
+  reservationId: row.reservation_id,
+  warehouseItemId: row.warehouse_item_id,
+  quantity: row.quantity,
+  unitPriceCents: row.unit_price_cents,
+  pricePeriodLabel: row.price_period_label,
+  lineTotalCents: row.line_total_cents,
+  itemNameSnapshot: row.item_name_snapshot,
+});
+
+const mapWarehouseReservation = (
+  row: WarehouseReservationRow,
+  items: WarehouseReservationItemRow[],
+): WarehouseReservation => ({
+  id: row.id,
+  projectId: row.project_id,
+  projectJobNumber: row.project_job_number,
+  eventId: row.event_id,
+  eventLocalId: row.event_local_id,
+  reservedByProfileId: row.reserved_by_profile_id,
+  startsAt: row.starts_at,
+  endsAt: row.ends_at,
+  status: row.status,
+  note: row.note ?? '',
+  totalCents: row.total_cents,
+  currency: normalizeWarehouseCurrency(row.currency),
+  booqableOrderId: row.booqable_order_id,
+  items: items.map(mapWarehouseReservationItem),
+});
+
+let warehouseHydrationPromise: Promise<void> | null = null;
+let warehouseLoaded = false;
+
+const hydrateWarehouseFromSupabase = async (): Promise<void> => {
+  if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
+    return;
+  }
+
+  const supabaseUntyped = supabase as unknown as SupabaseInsertClient;
+  const [
+    itemsResult,
+    reservationsResult,
+    reservationItemsResult,
+  ] = await Promise.all([
+    supabaseUntyped.from('warehouse_items').select('*').order('name'),
+    supabaseUntyped.from('warehouse_reservations').select('*').order('starts_at'),
+    supabaseUntyped.from('warehouse_reservation_items').select('*').order('created_at'),
+  ]);
+
+  const firstError = itemsResult.error ?? reservationsResult.error ?? reservationItemsResult.error;
+  if (firstError) {
+    throw new Error(firstError.message);
+  }
+
+  const reservationItemRows = (reservationItemsResult.data ?? []) as WarehouseReservationItemRow[];
+  const reservationItemsByReservationId = new Map<string, WarehouseReservationItemRow[]>();
+  for (const row of reservationItemRows) {
+    const current = reservationItemsByReservationId.get(row.reservation_id) ?? [];
+    current.push(row);
+    reservationItemsByReservationId.set(row.reservation_id, current);
+  }
+
+  const warehouseItems = ((itemsResult.data ?? []) as WarehouseItemRow[]).map(mapWarehouseItem);
+  const warehouseReservations = ((reservationsResult.data ?? []) as WarehouseReservationRow[])
+    .map((row) => mapWarehouseReservation(row, reservationItemsByReservationId.get(row.id) ?? []));
+
+  updateLocalAppState((snapshot) => ({
+    ...snapshot,
+    warehouseItems,
+    warehouseReservations,
+  }));
+};
+
+const ensureSupabaseWarehouseLoaded = () => {
+  if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
+    return;
+  }
+
+  if (warehouseLoaded || warehouseHydrationPromise) {
+    return;
+  }
+
+  warehouseHydrationPromise = hydrateWarehouseFromSupabase()
+    .then(() => {
+      warehouseLoaded = true;
+    })
+    .catch((error) => {
+      console.warn('Nepodarilo se nacist sklad ze Supabase.', error);
+    })
+    .finally(() => {
+      warehouseHydrationPromise = null;
+    });
+};
+
+export const resetSupabaseWarehouseHydration = () => {
+  warehouseLoaded = false;
+  warehouseHydrationPromise = null;
+};
+
 export const getWarehouseDependencies = (): WarehouseDependencies => {
+  ensureSupabaseWarehouseLoaded();
+
   const snapshot = getLocalAppState();
 
   return {

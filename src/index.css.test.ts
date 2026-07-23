@@ -32,6 +32,7 @@ describe('nodu CSS helpers', () => {
     const mobileTimelogAddDayConfirmRule = css.match(/\.nodu-mobile-timelog-add-day-confirm\s*\{[\s\S]*?\}/)?.[0];
     const mobileEventDetailRule = css.match(/\.nodu-mobile-event-detail\s*\{[\s\S]*?\}/)?.[0];
     const mobileEventFloatingPanelRule = css.match(/\.nodu-mobile-event-floating-panel\s*\{[\s\S]*?\}/)?.[0];
+    const mobileEventFloatingPanelCompactRule = css.match(/\.nodu-mobile-event-floating-panel--compact\s*\{[\s\S]*?\}/)?.[0];
     const mobileEventWithdrawalDialogRule = css.match(/\.nodu-mobile-event-withdrawal-dialog\s*\{[\s\S]*?\}/)?.[0];
 
     [
@@ -68,6 +69,7 @@ describe('nodu CSS helpers', () => {
       '.nodu-mobile-timelog-add-day-cell--selected',
       '.nodu-mobile-timelog-add-day-confirm',
       '.nodu-mobile-event-floating-panel',
+      '.nodu-mobile-event-floating-panel--compact',
       '.nodu-mobile-event-withdrawal-dialog',
       '.nodu-stat-card',
       '.nodu-dashboard-action',
@@ -113,6 +115,8 @@ describe('nodu CSS helpers', () => {
     expect(mobileEventDetailRule).toContain('padding-bottom');
     expect(mobileEventFloatingPanelRule).toContain('position: fixed;');
     expect(mobileEventFloatingPanelRule).toContain('backdrop-filter: blur');
+    expect(mobileEventFloatingPanelCompactRule).toContain('grid-template-areas: "primary";');
+    expect(mobileEventFloatingPanelCompactRule).toContain('padding: 0.35rem;');
     expect(mobileEventWithdrawalDialogRule).toContain('position: fixed;');
     expect(css).not.toContain('.nodu-mobile-timelog-date-input');
     expect(css).not.toContain('.nodu-mobile-timelog-report-editor {\n  border-color: rgb(var(--nodu-text-rgb) / 0.1);');

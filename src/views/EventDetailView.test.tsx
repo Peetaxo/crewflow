@@ -189,6 +189,77 @@ describe('EventDetailView', () => {
     expect(setEditingTimelog).toHaveBeenCalledWith(timelog);
   });
 
+  it('shows mobile event start and end separately and keeps free action panel compact', async () => {
+    mobileMockState.isMobile = true;
+    const multiDayEvent = {
+      ...event,
+      status: 'upcoming' as const,
+      startDate: '2026-07-29',
+      endDate: '2026-08-01',
+      startTime: '08:00',
+      endTime: '17:00',
+    };
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        role: 'crew',
+        selectedEventId: 'event-uuid-1',
+        setSelectedEventId,
+        eventTab: 'overview',
+        setEventTab: vi.fn(),
+        setEditingReceipt: vi.fn(),
+        setDeleteConfirm: vi.fn(),
+        setEditingTimelog,
+      }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [],
+      getEventDetailData: () => ({
+        event: multiDayEvent,
+        timelogs: [],
+        contractors: [contractor],
+        receipts: [],
+        applications: [],
+        crewAssignments: [],
+      }),
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: requestEventWithdrawalMock,
+      subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatus,
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventDetailView } = await import('./EventDetailView');
+
+    const { container } = render(<EventDetailView />);
+
+    expect(screen.getByText('Od')).toBeInTheDocument();
+    expect(screen.getByText('29. 7. 2026 · 08:00')).toBeInTheDocument();
+    expect(screen.getByText('Do')).toBeInTheDocument();
+    expect(screen.getByText('1. 8. 2026 · 17:00')).toBeInTheDocument();
+    expect(screen.queryByText('29. 7. - 1. 8. 2026 · 08:00 - 17:00')).not.toBeInTheDocument();
+    expect(screen.queryByText('Akce je volná')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Přihlásit se' })).toBeInTheDocument();
+    expect(container.querySelector('.nodu-mobile-event-floating-panel--compact')).toBeInTheDocument();
+  });
+
   it('opens a confirmation dialog before requesting mobile Crew withdrawal', async () => {
     mobileMockState.isMobile = true;
     vi.doMock('../context/useAppContext', () => ({

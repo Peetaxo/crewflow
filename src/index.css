@@ -655,6 +655,30 @@ tbody tr:hover td {
   line-height: 1.3;
 }
 
+.nodu-mobile-event-date-range {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.nodu-mobile-event-date-range div {
+  display: grid;
+  grid-template-columns: 1.7rem minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: baseline;
+}
+
+.nodu-mobile-event-date-range span {
+  color: var(--nodu-text-soft);
+  font-size: 0.66rem;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.nodu-mobile-event-date-range p {
+  margin: 0;
+}
+
 .nodu-mobile-event-time-field {
   display: flex;
   min-width: 0;
@@ -791,6 +815,13 @@ tbody tr:hover td {
   padding: 0.55rem;
 }
 
+.nodu-mobile-event-floating-panel--compact {
+  grid-template-columns: 1fr;
+  grid-template-areas: "primary";
+  gap: 0;
+  padding: 0.35rem;
+}
+
 .nodu-mobile-event-floating-summary {
   grid-area: summary;
   display: flex;
@@ -836,6 +867,11 @@ tbody tr:hover td {
 
 .nodu-mobile-event-evidence-button--secondary {
   grid-column: 1 / -1;
+}
+
+.nodu-mobile-event-floating-panel--compact .nodu-mobile-event-evidence-button--secondary {
+  grid-area: primary;
+  min-height: 3.45rem;
 }
 
 .nodu-mobile-event-withdraw-button {

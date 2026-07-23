@@ -333,10 +333,15 @@ const EventDetailView = () => {
           ? 'Odhlášení čeká'
           : 'Volná akce';
     const mobilePlace = event.meetingLocation || event.city || 'Místo bude doplněno';
-    const mobileTime = event.startTime || event.endTime
-      ? `${event.startTime || '??:??'} - ${event.endTime || '??:??'}`
-      : 'Čas bude doplněn';
-    const mobileDateTime = `${formatDateRange(event.startDate, event.endDate)} · ${mobileTime}`;
+    const formatMobileBoundaryDate = (date: string) => (
+      new Date(date).toLocaleDateString('cs-CZ', { day: 'numeric', month: 'numeric', year: 'numeric' })
+    );
+    const mobileStartDateTime = `${formatMobileBoundaryDate(event.startDate)} · ${event.startTime || 'čas bude doplněn'}`;
+    const mobileEndDateTime = `${formatMobileBoundaryDate(event.endDate)} · ${event.endTime || 'čas bude doplněn'}`;
+    const floatingPanelClassName = [
+      'nodu-mobile-event-floating-panel',
+      !isMeAssigned ? 'nodu-mobile-event-floating-panel--compact' : '',
+    ].filter(Boolean).join(' ');
     const handleOpenEvidence = () => {
       if (!currentContractor) return;
       openCrewTimelog(currentContractor, ownTimelog);
@@ -389,7 +394,16 @@ const EventDetailView = () => {
               <Clock size={18} />
               <div>
                 <span className="nodu-mobile-event-info-label">Datum a čas</span>
-                <p>{mobileDateTime}</p>
+                <div className="nodu-mobile-event-date-range">
+                  <div>
+                    <span>Od</span>
+                    <p>{mobileStartDateTime}</p>
+                  </div>
+                  <div>
+                    <span>Do</span>
+                    <p>{mobileEndDateTime}</p>
+                  </div>
+                </div>
               </div>
             </div>
             {event.contactPerson && (
@@ -481,7 +495,7 @@ const EventDetailView = () => {
           )}
         </div>
 
-        <div className="nodu-mobile-event-floating-panel" aria-label="Akce k události">
+        <div className={floatingPanelClassName} aria-label="Akce k události">
           {isMeAssigned ? (
             <>
               <div className="nodu-mobile-event-floating-summary">
@@ -522,9 +536,6 @@ const EventDetailView = () => {
             </button>
           ) : (
             <>
-              <div className="nodu-mobile-event-floating-summary">
-                <span>Akce je volná</span>
-              </div>
               <button type="button" className="nodu-mobile-event-evidence-button nodu-mobile-event-evidence-button--secondary" onClick={handleApplyForEvent}>
                 Přihlásit se
               </button>

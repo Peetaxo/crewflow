@@ -332,7 +332,11 @@ const EventDetailView = () => {
         : hasMyWithdrawalRequest
           ? 'Odhlášení čeká'
           : 'Volná akce';
-    const mobilePlace = event.meetingLocation || event.city || 'Místo bude doplněno';
+    const mobilePlace = event.city || event.meetingLocation || 'Místo bude doplněno';
+    const mobileMeetingLocation = event.meetingLocation?.trim();
+    const shouldShowMeetingLocation = Boolean(
+      mobileMeetingLocation && mobileMeetingLocation !== mobilePlace,
+    );
     const formatMobileBoundaryDate = (date: string) => (
       new Date(date).toLocaleDateString('cs-CZ', { day: 'numeric', month: 'numeric', year: 'numeric' })
     );
@@ -340,8 +344,10 @@ const EventDetailView = () => {
     const mobileEndDateTime = `${formatMobileBoundaryDate(event.endDate)} · ${event.endTime || 'čas bude doplněn'}`;
     const floatingPanelClassName = [
       'nodu-mobile-event-floating-panel',
+      isMeAssigned ? 'nodu-mobile-event-floating-panel--actions-only' : '',
       !isMeAssigned ? 'nodu-mobile-event-floating-panel--compact' : '',
     ].filter(Boolean).join(' ');
+    const formatMobileCrewHours = (hours: number) => (hours > 0 ? `${hours.toFixed(1)}h` : '0h');
     const handleOpenEvidence = () => {
       if (!currentContractor) return;
       openCrewTimelog(currentContractor, ownTimelog);
@@ -415,6 +421,15 @@ const EventDetailView = () => {
                 </div>
               </div>
             )}
+            {shouldShowMeetingLocation && (
+              <div className="nodu-mobile-event-info-row">
+                <MapPin size={18} />
+                <div>
+                  <span className="nodu-mobile-event-info-label">Sraz</span>
+                  <p>{mobileMeetingLocation}</p>
+                </div>
+              </div>
+            )}
           </section>
 
           {!isMeAssigned && !hasMyPendingApplication && event.allowCrewTimeProposal && (
@@ -442,45 +457,6 @@ const EventDetailView = () => {
             </section>
           )}
 
-          {(event.meetingLocation || event.city) && (
-            <section className="nodu-mobile-event-section" aria-labelledby="mobile-event-meeting-title">
-              <h2 id="mobile-event-meeting-title">Kde se potkáme</h2>
-              <p>{event.meetingLocation || event.city}</p>
-            </section>
-          )}
-
-          <section className="nodu-mobile-event-section" aria-labelledby="mobile-event-assigned-crew-title">
-            <h2 id="mobile-event-assigned-crew-title">Přiřazená crew</h2>
-            {eventCrew.length > 0 ? (
-              <div className="nodu-mobile-event-crew-list">
-                {eventCrew.map((contractor) => {
-                  const timelog = eventTimelogs.find((item) => item.contractorProfileId === contractor.profileId);
-                  const hours = timelog ? calculateTotalHours(timelog.days) : 0;
-                  const phaseType = timelog?.days[0]?.type;
-                  const phaseLabel = phaseType
-                    ? PHASE_CONFIG.find((phase) => phase.type === phaseType)?.label ?? phaseType
-                    : 'Přiřazen/a';
-
-                  return (
-                    <div key={contractor.id} className="nodu-mobile-event-crew-row">
-                      <div className="av h-10 w-10 text-[12px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
-                      <div>
-                        <div className="nodu-mobile-event-crew-name">{contractor.name}</div>
-                        <div className="nodu-mobile-event-crew-meta">
-                          {phaseLabel}
-                          {hours > 0 ? ` · ${hours.toFixed(1)}h` : ''}
-                        </div>
-                      </div>
-                      {contractor.profileId === currentProfileId && <span className="nodu-mobile-event-crew-chip">Ty</span>}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="nodu-mobile-event-empty-state">Zatím není přiřazená žádná crew.</div>
-            )}
-          </section>
-
           {(event.description || event.dresscode) && (
             <section className="nodu-mobile-event-section" aria-labelledby="mobile-event-description-title">
               <h2 id="mobile-event-description-title">Popis akce</h2>
@@ -493,21 +469,36 @@ const EventDetailView = () => {
               )}
             </section>
           )}
+
+          <section className="nodu-mobile-event-section" aria-labelledby="mobile-event-assigned-crew-title">
+            <h2 id="mobile-event-assigned-crew-title">Přiřazená crew</h2>
+            {eventCrew.length > 0 ? (
+              <div className="nodu-mobile-event-crew-list">
+                {eventCrew.map((contractor) => {
+                  const timelog = eventTimelogs.find((item) => item.contractorProfileId === contractor.profileId);
+                  const hours = timelog ? calculateTotalHours(timelog.days) : 0;
+
+                  return (
+                    <div key={contractor.id} className="nodu-mobile-event-crew-row">
+                      <div className="av h-10 w-10 text-[12px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
+                      <div>
+                        <div className="nodu-mobile-event-crew-name">{contractor.name}</div>
+                        <div className="nodu-mobile-event-crew-meta">{formatMobileCrewHours(hours)}</div>
+                      </div>
+                      {contractor.profileId === currentProfileId && <span className="nodu-mobile-event-crew-chip">Ty</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="nodu-mobile-event-empty-state">Zatím není přiřazená žádná crew.</div>
+            )}
+          </section>
         </div>
 
         <div className={floatingPanelClassName} aria-label="Akce k události">
           {isMeAssigned ? (
             <>
-              <div className="nodu-mobile-event-floating-summary">
-                {ownTimelog ? (
-                  <>
-                    <strong>{myHours.toFixed(1)}h</strong>
-                    <span>v evidenci</span>
-                  </>
-                ) : (
-                  <span>Výkaz zatím není vytvořený</span>
-                )}
-              </div>
               <button
                 type="button"
                 className="nodu-mobile-event-evidence-button"

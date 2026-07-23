@@ -181,6 +181,7 @@ describe('EventDetailView', () => {
     expect(screen.getByText('Přiřazená crew')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Evidence práce' })).toBeInTheDocument();
     expect(screen.getAllByText('12.0h').length).toBeGreaterThan(0);
+    expect(screen.queryByText('v evidenci')).not.toBeInTheDocument();
     expect(screen.queryByText(/Prirazena Crew/)).not.toBeInTheDocument();
     expect(crewRatingsMockState.getCrewRatingsForEvent).not.toHaveBeenCalled();
 
@@ -258,6 +259,85 @@ describe('EventDetailView', () => {
     expect(screen.queryByText('Akce je volná')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Přihlásit se' })).toBeInTheDocument();
     expect(container.querySelector('.nodu-mobile-event-floating-panel--compact')).toBeInTheDocument();
+  });
+
+  it('places meeting details in the info card and moves assigned crew below description', async () => {
+    mobileMockState.isMobile = true;
+    const eventWithMeeting = {
+      ...event,
+      city: 'Praha',
+      meetingLocation: 'H15',
+      description: 'Sraz u hlavniho vstupu a po akci uklid skladu.',
+    };
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        role: 'crew',
+        selectedEventId: 'event-uuid-1',
+        setSelectedEventId,
+        eventTab: 'overview',
+        setEventTab: vi.fn(),
+        setEditingReceipt: vi.fn(),
+        setDeleteConfirm: vi.fn(),
+        setEditingTimelog,
+      }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [contractor, applicant],
+      getEventDetailData: () => ({
+        event: eventWithMeeting,
+        timelogs: [timelog],
+        contractors: [contractor, applicant],
+        receipts: [],
+        applications: [],
+        crewAssignments: [
+          { eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: contractor.profileId, name: contractor.name },
+          { eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: applicant.profileId, name: applicant.name },
+        ],
+      }),
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: requestEventWithdrawalMock,
+      subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatus,
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventDetailView } = await import('./EventDetailView');
+
+    render(<EventDetailView />);
+
+    expect(screen.getByText('Místo')).toBeInTheDocument();
+    expect(screen.getByText('Praha')).toBeInTheDocument();
+    expect(screen.getByText('Sraz')).toBeInTheDocument();
+    expect(screen.getByText('H15')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Kde se potkáme' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Provoz · 12.0h')).not.toBeInTheDocument();
+    expect(screen.getByText('12.0h')).toBeInTheDocument();
+    expect(screen.getByText('0h')).toBeInTheDocument();
+
+    const descriptionSection = screen.getByRole('heading', { name: 'Popis akce' }).closest('section');
+    const crewSection = screen.getByRole('heading', { name: 'Přiřazená crew' }).closest('section');
+
+    expect(descriptionSection).not.toBeNull();
+    expect(crewSection).not.toBeNull();
+    expect(descriptionSection!.compareDocumentPosition(crewSection!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('opens a confirmation dialog before requesting mobile Crew withdrawal', async () => {

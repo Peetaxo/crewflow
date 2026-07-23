@@ -822,6 +822,11 @@ tbody tr:hover td {
   padding: 0.35rem;
 }
 
+.nodu-mobile-event-floating-panel--actions-only {
+  grid-template-areas: "primary secondary";
+  gap: 0.6rem;
+}
+
 .nodu-mobile-event-floating-summary {
   grid-area: summary;
   display: flex;

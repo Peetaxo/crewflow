@@ -79,6 +79,29 @@ const normalizeJobNumber = (value: string | null | undefined): string => (
     .replace(/^([a-z]+)0+(\d+)$/, '$1$2')
 );
 
+const EVENT_NAME_STOP_TOKENS = new Set([
+  'bednak',
+  'cas',
+  'deinstal',
+  'deinstalace',
+  'dekorater',
+  'helper',
+  'instal',
+  'instalace',
+  'nakladka',
+  'pausal',
+  'provoz',
+  'ridic',
+  'uklid',
+  'upresneno',
+]);
+
+const getMeaningfulEventTokens = (value: string | undefined): string[] => (
+  normalizeAscii(value ?? '')
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length >= 4 && !EVENT_NAME_STOP_TOKENS.has(token))
+);
+
 const parseDecimal = (value: string | undefined): number | undefined => {
   if (!value) return undefined;
   const parsed = Number(value.replace(',', '.'));
@@ -192,10 +215,20 @@ const documentMatchesEvent = (document: InvoiceApprovalDocument, event: Event): 
   }
 
   const parsed = parsePowerAppsApprovalComment(document.comment);
-  return (
+  const hasNameEvidence = (
     eventNameMatches(parsed.eventName, event)
-    || eventDateMatches(parsed.eventDate, event)
     || eventCommentContainsName(document.comment, event)
+  );
+  const documentHasSpecificEventName = getMeaningfulEventTokens(parsed.eventName).length > 0;
+  const eventHasSpecificName = getMeaningfulEventTokens(event.name).length > 0;
+
+  if (documentHasSpecificEventName && eventHasSpecificName && !hasNameEvidence) {
+    return false;
+  }
+
+  return (
+    hasNameEvidence
+    || eventDateMatches(parsed.eventDate, event)
   );
 };
 

@@ -227,10 +227,12 @@ export function mapBudgetItem(
 
 export function mapTimelogDay(row: TimelogDayRow): TimelogDay {
   return {
+    id: row.id,
     d: row.date,
     f: row.time_from ?? '',
     t: row.time_to ?? '',
     type: row.day_type,
+    note: row.note ?? '',
   };
 }
 

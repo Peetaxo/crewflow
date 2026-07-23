@@ -92,7 +92,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [eventTab, setEventTab] = useState<string>(initialUiSession?.eventTab ?? 'overview');
   const [eventsViewMode, setEventsViewMode] = useState<'list' | 'calendar'>(initialUiSession?.eventsViewMode ?? 'list');
   const [eventsCalendarMode, setEventsCalendarMode] = useState<'month' | 'week'>(initialUiSession?.eventsCalendarMode ?? 'month');
-  const [eventsFilter, setEventsFilter] = useState<'upcoming' | 'past' | 'all'>(initialUiSession?.eventsFilter ?? 'upcoming');
+  const [eventsFilter, setEventsFilter] = useState<'upcoming' | 'past' | 'all'>(initialUiSession?.eventsFilter ?? 'all');
   const [eventsCalendarDate, setEventsCalendarDate] = useState<string>(initialUiSession?.eventsCalendarDate ?? '');
 
   const setCurrentTab = useCallback((tab: string) => {

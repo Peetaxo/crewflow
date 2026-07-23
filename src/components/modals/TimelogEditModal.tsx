@@ -3,12 +3,14 @@ import { Plus, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { useAppContext } from '../../context/useAppContext';
+import { useIsMobile } from '../../hooks/use-mobile';
 import { KM_RATE } from '../../data';
 import { calculateTotalHours, formatCurrency } from '../../utils';
 import { getTimelogDependencies, saveTimelog } from '../../features/timelogs/services/timelogs.service';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
+import MobileTimelogEditModal from './MobileTimelogEditModal';
 
 const TimelogEditModal = () => {
   const {
@@ -16,7 +18,13 @@ const TimelogEditModal = () => {
     setEditingTimelog,
     setCurrentTab,
     setSelectedContractorProfileId,
+    role,
   } = useAppContext();
+  const isMobile = useIsMobile();
+
+  if (isMobile && role === 'crew') {
+    return <MobileTimelogEditModal />;
+  }
 
   if (!editingTimelog) return null;
 
@@ -27,6 +35,7 @@ const TimelogEditModal = () => {
   if (!contractor || !event) return null;
 
   const totalHours = calculateTotalHours(editingTimelog.days);
+  const isCrewHeadCorrection = role === 'crewhead' && editingTimelog.status === 'pending_ch';
   const openContractorDetail = () => {
     if (!contractor.profileId) return;
     setEditingTimelog(null);
@@ -124,65 +133,77 @@ const TimelogEditModal = () => {
                   return (
                     <div
                       key={`${day.d}-${idx}`}
-                      className={`flex items-center gap-2 rounded-lg border p-2.5 ${
+                      className={`rounded-lg border p-2.5 ${
                         isDifferent
                           ? 'border-[color:rgb(var(--nodu-accent-rgb)/0.18)] bg-[color:rgb(var(--nodu-accent-rgb)/0.08)]'
                           : 'border-[color:rgb(var(--nodu-text-rgb)/0.08)] bg-[color:rgb(var(--nodu-surface-rgb)/0.9)]'
                       }`}
                     >
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="date"
+                          value={day.d}
+                          onChange={(e) => {
+                            const newDays = [...editingTimelog.days];
+                            newDays[idx] = { ...newDays[idx], d: e.target.value };
+                            setEditingTimelog({ ...editingTimelog, days: newDays });
+                          }}
+                          className="flex-1 text-xs"
+                        />
+                        <Input
+                          type="time"
+                          value={day.f}
+                          onChange={(e) => {
+                            const newDays = [...editingTimelog.days];
+                            newDays[idx] = { ...newDays[idx], f: e.target.value };
+                            setEditingTimelog({ ...editingTimelog, days: newDays });
+                          }}
+                          className="w-24 text-xs"
+                        />
+                        <span className="text-xs text-[color:var(--nodu-text-soft)]">-</span>
+                        <Input
+                          type="time"
+                          value={day.t}
+                          onChange={(e) => {
+                            const newDays = [...editingTimelog.days];
+                            newDays[idx] = { ...newDays[idx], t: e.target.value };
+                            setEditingTimelog({ ...editingTimelog, days: newDays });
+                          }}
+                          className="w-24 text-xs"
+                        />
+                        <select
+                          value={day.type}
+                          onChange={(e) => {
+                            const newDays = [...editingTimelog.days];
+                            newDays[idx] = { ...newDays[idx], type: e.target.value as typeof day.type };
+                            setEditingTimelog({ ...editingTimelog, days: newDays });
+                          }}
+                          className="w-28 rounded-xl border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.88)] px-2 py-2 text-[10px] text-[color:var(--nodu-text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] outline-none focus:border-[color:rgb(var(--nodu-accent-rgb)/0.32)]"
+                        >
+                          <option value="instal">Instal</option>
+                          <option value="provoz">Provoz</option>
+                          <option value="deinstal">Deinstal</option>
+                        </select>
+                        <button
+                          onClick={() => {
+                            const newDays = editingTimelog.days.filter((_, dayIndex) => dayIndex !== idx);
+                            setEditingTimelog({ ...editingTimelog, days: newDays });
+                          }}
+                          className="p-1 text-[color:var(--nodu-text-soft)] transition-colors hover:text-[#c45c39]"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                       <Input
-                        type="date"
-                        value={day.d}
+                        value={day.note ?? ''}
                         onChange={(e) => {
                           const newDays = [...editingTimelog.days];
-                          newDays[idx] = { ...newDays[idx], d: e.target.value };
+                          newDays[idx] = { ...newDays[idx], note: e.target.value };
                           setEditingTimelog({ ...editingTimelog, days: newDays });
                         }}
-                        className="flex-1 text-xs"
+                        className="mt-2 text-xs"
+                        placeholder="Poznámka ke dni (volitelně)"
                       />
-                      <Input
-                        type="time"
-                        value={day.f}
-                        onChange={(e) => {
-                          const newDays = [...editingTimelog.days];
-                          newDays[idx] = { ...newDays[idx], f: e.target.value };
-                          setEditingTimelog({ ...editingTimelog, days: newDays });
-                        }}
-                        className="w-24 text-xs"
-                      />
-                      <span className="text-xs text-[color:var(--nodu-text-soft)]">-</span>
-                      <Input
-                        type="time"
-                        value={day.t}
-                        onChange={(e) => {
-                          const newDays = [...editingTimelog.days];
-                          newDays[idx] = { ...newDays[idx], t: e.target.value };
-                          setEditingTimelog({ ...editingTimelog, days: newDays });
-                        }}
-                        className="w-24 text-xs"
-                      />
-                      <select
-                        value={day.type}
-                        onChange={(e) => {
-                          const newDays = [...editingTimelog.days];
-                          newDays[idx] = { ...newDays[idx], type: e.target.value as typeof day.type };
-                          setEditingTimelog({ ...editingTimelog, days: newDays });
-                        }}
-                        className="w-28 rounded-xl border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.88)] px-2 py-2 text-[10px] text-[color:var(--nodu-text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] outline-none focus:border-[color:rgb(var(--nodu-accent-rgb)/0.32)]"
-                      >
-                        <option value="instal">Instal</option>
-                        <option value="provoz">Provoz</option>
-                        <option value="deinstal">Deinstal</option>
-                      </select>
-                      <button
-                        onClick={() => {
-                          const newDays = editingTimelog.days.filter((_, dayIndex) => dayIndex !== idx);
-                          setEditingTimelog({ ...editingTimelog, days: newDays });
-                        }}
-                        className="p-1 text-[color:var(--nodu-text-soft)] transition-colors hover:text-[#c45c39]"
-                      >
-                        <Trash2 size={14} />
-                      </button>
                     </div>
                   );
                 })}
@@ -205,6 +226,7 @@ const TimelogEditModal = () => {
                           f: matchingSlot?.from || event.phaseTimes?.[defaultType]?.from || event.startTime || '08:00',
                           t: matchingSlot?.to || event.phaseTimes?.[defaultType]?.to || event.endTime || '17:00',
                           type: defaultType,
+                          note: '',
                         },
                       ],
                     });
@@ -228,12 +250,14 @@ const TimelogEditModal = () => {
             </div>
 
             <div>
-              <label className="mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">Poznámka</label>
+              <label className="mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">
+                {isCrewHeadCorrection ? 'Poznámka pro Crew' : 'Poznámka'}
+              </label>
               <Textarea
                 value={editingTimelog.note}
                 onChange={(e) => setEditingTimelog({ ...editingTimelog, note: e.target.value })}
                 className="h-20 resize-none"
-                placeholder="Doplňte detaily..."
+                placeholder={isCrewHeadCorrection ? 'Doplňte komentář k úpravě pro člena Crew...' : 'Doplňte detaily...'}
               />
             </div>
           </div>

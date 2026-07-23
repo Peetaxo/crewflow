@@ -79,6 +79,7 @@ function ContextProbe() {
       <div data-testid="searchQuery">{context.searchQuery}</div>
       <div data-testid="selectedEventId">{context.selectedEventId ?? 'null'}</div>
       <div data-testid="eventTab">{context.eventTab}</div>
+      <div data-testid="eventsFilter">{context.eventsFilter}</div>
       <div data-testid="editingReceiptTitle">{context.editingReceipt?.title ?? 'null'}</div>
       <button onClick={() => context.setCurrentTab('events')}>set-events-tab</button>
       <button onClick={() => context.setCurrentTab('dashboard')}>set-dashboard-tab</button>
@@ -178,6 +179,16 @@ describe('AppProvider UI session restore', () => {
     );
 
     expect(screen.getByTestId('searchQuery')).toHaveTextContent('rozdelane');
+  });
+
+  it('defaults the events filter to all events when no UI session is restored', () => {
+    render(
+      <AppProvider>
+        <ContextProbe />
+      </AppProvider>,
+    );
+
+    expect(screen.getByTestId('eventsFilter')).toHaveTextContent('all');
   });
 
   it('saves only persisted UI fields when context changes', async () => {

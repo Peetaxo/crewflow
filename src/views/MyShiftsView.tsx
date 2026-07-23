@@ -158,7 +158,7 @@ const MyShiftsView = () => {
       </div>
 
       <div className="mb-6 space-y-4">
-        <div className="flex w-fit flex-nowrap items-center gap-1 overflow-x-auto rounded-xl border border-[var(--nodu-border)] bg-white p-1">
+        <div className="flex w-fit max-w-full flex-nowrap items-center gap-1 overflow-x-auto rounded-xl border border-[var(--nodu-border)] bg-white p-1">
           {[
             { id: 'upcoming' as const, lbl: 'Nadchazejici', count: categorized.upcoming.length },
             { id: 'processing' as const, lbl: 'Zpracovava se', count: categorized.processing.length },
@@ -168,7 +168,7 @@ const MyShiftsView = () => {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-all ${activeTab === tab.id ? 'bg-[var(--nodu-accent)] text-white shadow-sm' : 'text-[var(--nodu-text-soft)] hover:bg-[var(--nodu-accent-soft)] hover:text-[var(--nodu-text)]'}`}
+              className={`flex shrink-0 items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-all ${activeTab === tab.id ? 'bg-[var(--nodu-accent)] text-white shadow-sm' : 'text-[var(--nodu-text-soft)] hover:bg-[var(--nodu-accent-soft)] hover:text-[var(--nodu-text)]'}`}
             >
               {tab.lbl}
               {tab.count > 0 && <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${activeTab === tab.id ? 'bg-white/22' : 'bg-[rgba(var(--nodu-text-rgb),0.06)]'}`}>{tab.count}</span>}

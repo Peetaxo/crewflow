@@ -1,13 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, ChevronsLeft, ChevronsRight, LogOut, Search, Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../app/providers/useAuth';
 import { useAppContext } from '../../context/useAppContext';
 import { getNavItemsForRole, ROLE_LABELS, ROLE_SHORT_LABELS } from '../../constants';
-import { getCandidates, subscribeToCandidateChanges } from '../../features/recruitment/services/candidates.service';
-import { useTimelogsQuery } from '../../features/timelogs/queries/useTimelogsQuery';
-import { useReceiptsQuery } from '../../features/receipts/queries/useReceiptsQuery';
-import { useInvoicesQuery } from '../../features/invoices/queries/useInvoicesQuery';
+import { useNavBadgeCounts } from './useNavBadgeCounts';
 
 const navButtonBaseClass = 'relative flex w-full items-center rounded-xl px-3 py-2.5 text-[13px] transition-all';
 const navButtonIdleClass = 'border border-transparent nodu-nav-idle';
@@ -15,10 +12,7 @@ const navButtonActiveClass = 'nodu-nav-active font-medium text-[color:var(--nodu
 const roleOptions = ['crew', 'crewhead', 'coo'] as const;
 
 const Sidebar: React.FC = () => {
-  const { currentProfileId, isAuthRequired, isRoleSwitching, profile, role: authRole, signOut, switchRole } = useAuth();
-  const timelogsQuery = useTimelogsQuery();
-  const receiptsQuery = useReceiptsQuery();
-  const invoicesQuery = useInvoicesQuery();
+  const { isAuthRequired, isRoleSwitching, profile, role: authRole, signOut, switchRole } = useAuth();
   const {
     sidebarCollapsed, setSidebarCollapsed,
     role, setRole,
@@ -31,23 +25,10 @@ const Sidebar: React.FC = () => {
     setSelectedClientIdForStats,
   } = useAppContext();
 
-  const [candidates, setCandidates] = useState(() => getCandidates() ?? []);
   const navRef = useRef<HTMLElement | null>(null);
   const [showScrollHintTop, setShowScrollHintTop] = useState(false);
   const [showScrollHintBottom, setShowScrollHintBottom] = useState(false);
-
-  const loadData = useCallback(() => {
-    setCandidates(getCandidates() ?? []);
-  }, []);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  useEffect(() => subscribeToCandidateChanges(loadData), [loadData]);
-  const timelogs = useMemo(() => timelogsQuery.data ?? [], [timelogsQuery.data]);
-  const receipts = useMemo(() => receiptsQuery.data ?? [], [receiptsQuery.data]);
-  const invoices = useMemo(() => invoicesQuery.data ?? [], [invoicesQuery.data]);
+  const badgeCounts = useNavBadgeCounts();
 
   const navItems = getNavItemsForRole(role);
   const effectiveRole = authRole ?? role;
@@ -106,16 +87,6 @@ const Sidebar: React.FC = () => {
       ))}
     </div>
   );
-
-  const badgeCounts: Record<string, number> = useMemo(() => ({
-    timelogs: timelogs.filter((t) => t.status === 'pending_ch' || t.status === 'pending_coo').length,
-    'my-timelogs': timelogs.filter((t) => t.contractorProfileId === currentProfileId && (t.status === 'draft' || t.status === 'pending_ch' || t.status === 'pending_coo' || t.status === 'rejected')).length,
-    invoices: invoices.filter((i) => i.status === 'sent').length,
-    'my-invoices': invoices.filter((i) => i.contractorProfileId === currentProfileId && i.status !== 'paid').length,
-    receipts: receipts.filter((r) => r.status === 'submitted' || r.status === 'approved').length,
-    'my-receipts': receipts.filter((r) => r.contractorProfileId === currentProfileId && r.status !== 'reimbursed').length,
-    recruitment: candidates.filter((c) => c.stage === 'new').length,
-  }), [candidates, currentProfileId, invoices, receipts, timelogs]);
 
   const updateScrollHints = useCallback(() => {
     const node = navRef.current;

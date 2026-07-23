@@ -16,6 +16,20 @@ describe('nodu CSS helpers', () => {
     const statCardRule = css.match(/\.nodu-stat-card\s*\{[\s\S]*?\}/)?.[0];
     const darkStatCardRule = css.match(/\.dark \.nodu-stat-card\s*\{[\s\S]*?\}/)?.[0];
     const dashboardActionRule = css.match(/\.nodu-dashboard-action\s*\{[\s\S]*?\}/)?.[0];
+    const mobileCrewScrollbarRule = css.match(/\.nodu-app-shell--mobile-crew \*[\s\S]*?scrollbar-width:\s*none;[\s\S]*?\}/)?.[0];
+    const mobileCrewWebkitScrollbarRule = css.match(/\.nodu-app-shell--mobile-crew \*::-webkit-scrollbar\s*\{[\s\S]*?\}/)?.[0];
+    const mobileTimelogModalRule = css.match(/\.nodu-mobile-timelog-modal\s*\{[\s\S]*?\}/)?.[0];
+    const mobileTimelogHeaderRule = css.match(/\.nodu-mobile-timelog-header\s*\{[\s\S]*?\}/)?.[0];
+    const mobileTimelogFooterRule = css.match(/\.nodu-mobile-timelog-footer\s*\{[\s\S]*?\}/)?.[0];
+    const mobileTimelogPanelRule = css.match(/\.nodu-mobile-timelog-summary,\s*\.nodu-mobile-timelog-day-editor,\s*\.nodu-mobile-timelog-report-editor\s*\{[\s\S]*?\}/)?.[0];
+    const mobileTimelogTimeLabelRule = css.match(/\.nodu-mobile-timelog-time-label\s*\{[\s\S]*?\}/)?.[0];
+    const mobileTimelogTimeConfirmRule = css.match(/\.nodu-mobile-timelog-time-confirm\s*\{[\s\S]*?\}/)?.[0];
+    const mobileTimelogTimeWheelRule = css.match(/\.nodu-mobile-timelog-time-wheel\s*\{[\s\S]*?\}/)?.[0];
+    const mobileTimelogTimeColumnRule = css.match(/\.nodu-mobile-timelog-time-column\s*\{[\s\S]*?\}/)?.[0];
+    const mobileTimelogAddDayPickerRule = css.match(/\.nodu-mobile-timelog-add-day-picker\s*\{[\s\S]*?\}/)?.[0];
+    const mobileTimelogAddDayPickerGridRule = css.match(/\.nodu-mobile-timelog-add-day-picker-grid\s*\{[\s\S]*?\}/)?.[0];
+    const mobileTimelogAddDayCellRule = css.match(/\.nodu-mobile-timelog-add-day-cell\s*\{[\s\S]*?\}/)?.[0];
+    const mobileTimelogAddDayConfirmRule = css.match(/\.nodu-mobile-timelog-add-day-confirm\s*\{[\s\S]*?\}/)?.[0];
 
     [
       '--nodu-paper',
@@ -25,6 +39,31 @@ describe('nodu CSS helpers', () => {
       '.nodu-surface',
       '.nodu-panel',
       '.nodu-sidebar-shell',
+      '.nodu-app-shell--mobile-crew',
+      '.nodu-page-frame--mobile-crew',
+      '.nodu-mobile-crew-nav',
+      '.nodu-mobile-crew-nav-item',
+      '.nodu-mobile-timelog-modal',
+      '.nodu-mobile-timelog-calendar',
+      '.nodu-mobile-timelog-day-count',
+      '.nodu-mobile-timelog-day--outside',
+      '.nodu-mobile-timelog-entry-card',
+      '.nodu-mobile-timelog-entry-heading',
+      '.nodu-mobile-timelog-entry-hours',
+      '.nodu-mobile-timelog-overnight-chip',
+      '.nodu-mobile-timelog-report-editor',
+      '.nodu-mobile-timelog-time-picker',
+      '.nodu-mobile-timelog-time-label',
+      '.nodu-mobile-timelog-time-confirm',
+      '.nodu-mobile-timelog-time-trigger',
+      '.nodu-mobile-timelog-time-wheel',
+      '.nodu-mobile-timelog-time-wheel-selection',
+      '.nodu-mobile-timelog-time-column',
+      '.nodu-mobile-timelog-add-day-picker',
+      '.nodu-mobile-timelog-add-day-picker-grid',
+      '.nodu-mobile-timelog-add-day-cell',
+      '.nodu-mobile-timelog-add-day-cell--selected',
+      '.nodu-mobile-timelog-add-day-confirm',
       '.nodu-stat-card',
       '.nodu-dashboard-action',
       '.dark .nodu-sidebar-shell',
@@ -47,6 +86,27 @@ describe('nodu CSS helpers', () => {
     expect(darkJobBadgeRule).toContain('var(--nodu-accent-rgb)');
     expect(darkMetaBadgeRule).toContain('var(--nodu-surface-muted-rgb)');
     expect(darkMetaBadgeRule).toContain('var(--nodu-text-soft)');
+    expect(mobileCrewScrollbarRule).toContain('-ms-overflow-style: none;');
+    expect(mobileCrewWebkitScrollbarRule).toContain('display: none;');
+    expect(mobileTimelogModalRule).toContain('height: 100dvh;');
+    expect(mobileTimelogModalRule).toContain('border-radius: 0;');
+    expect(mobileTimelogHeaderRule).toContain('position: sticky;');
+    expect(mobileTimelogFooterRule).toContain('position: sticky;');
+    expect(mobileTimelogPanelRule).toContain('background: rgb(var(--nodu-accent-rgb) / 0.07);');
+    expect(mobileTimelogTimeLabelRule).toContain('text-align: center;');
+    expect(mobileTimelogTimeConfirmRule).toContain('position: absolute;');
+    expect(mobileTimelogTimeConfirmRule).toContain('border-radius: 999px;');
+    expect(mobileTimelogTimeWheelRule).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
+    expect(mobileTimelogTimeWheelRule).toContain('overflow: hidden;');
+    expect(mobileTimelogTimeColumnRule).toContain('scroll-snap-type: y mandatory;');
+    expect(mobileTimelogTimeColumnRule).toContain('scrollbar-width: none;');
+    expect(mobileTimelogAddDayPickerRule).toContain('border: 1px solid rgb(var(--nodu-accent-rgb) / 0.16);');
+    expect(mobileTimelogAddDayPickerRule).toContain('background: rgb(var(--nodu-accent-rgb) / 0.07);');
+    expect(mobileTimelogAddDayPickerGridRule).toContain('grid-template-columns: repeat(7, minmax(0, 1fr));');
+    expect(mobileTimelogAddDayCellRule).toContain('aspect-ratio: 1;');
+    expect(mobileTimelogAddDayConfirmRule).toContain('border-radius: 999px;');
+    expect(css).not.toContain('.nodu-mobile-timelog-date-input');
+    expect(css).not.toContain('.nodu-mobile-timelog-report-editor {\n  border-color: rgb(var(--nodu-text-rgb) / 0.1);');
     expect(sidebarShellRule).not.toContain('255, 250, 244');
     expect(sidebarSurfaceRule).not.toContain('255, 255, 255');
   });

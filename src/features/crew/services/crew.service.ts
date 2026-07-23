@@ -261,22 +261,45 @@ export const getCrewDetailData = (profileId: string | null): {
   };
 };
 
-export const createCrew = (input: CreateCrewInput): CrewMember => {
+export const createCrew = async (input: CreateCrewInput): Promise<CrewMember> => {
   const normalized = normalizeCrewMember(input);
   validateCrewMember(normalized);
 
-  updateLocalAppState((snapshot) => {
-    if (snapshot.contractors.some((member) => member.id === normalized.id)) {
-      throw new Error('Clen crew s timto ID uz existuje.');
+  if (getLocalAppState().contractors.some((member) => member.id === normalized.id)) {
+    throw new Error('Clen crew s timto ID uz existuje.');
+  }
+
+  let created = normalized;
+
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    const profileInsert = await supabase
+      .from('profiles')
+      .insert(toProfilePayload(normalized))
+      .select('*')
+      .single();
+
+    if (profileInsert.error) {
+      throw new Error(profileInsert.error.message);
     }
 
-    return {
-      ...snapshot,
-      contractors: [...snapshot.contractors, normalized],
-    };
-  });
+    if (!profileInsert.data) {
+      throw new Error('Supabase nevratil vytvoreny profil crew.');
+    }
 
-  return normalized;
+    created = {
+      ...normalized,
+      ...mapContractor(profileInsert.data),
+      id: normalized.id,
+      events: normalized.events,
+    };
+  }
+
+  updateLocalAppState((snapshot) => ({
+    ...snapshot,
+    contractors: [...snapshot.contractors, created],
+  }));
+
+  return created;
 };
 
 export const updateCrew = async (input: UpdateCrewInput): Promise<CrewMember> => {

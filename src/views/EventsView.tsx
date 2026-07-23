@@ -353,6 +353,9 @@ const EventsView = () => {
   ), [listVisibleEvents, selectedMonthEnd, selectedMonthStart]);
 
   const sortedDates = Object.keys(groupedEventOccurrences).sort();
+  const hasNoVisibleEventsForView = viewMode === 'list'
+    ? listVisibleEvents.length === 0
+    : visibleEvents.length === 0;
 
   const calendarStart = calendarMode === 'month'
     ? startOfWeek(startOfMonth(calendarDate), { weekStartsOn: 1 })
@@ -434,16 +437,24 @@ const EventsView = () => {
       });
   };
 
+  const revealAllEventsForDateNavigation = useCallback(() => {
+    if (eventFilter === 'upcoming') {
+      setEventsFilter('all');
+    }
+  }, [eventFilter, setEventsFilter]);
+
   const moveCalendar = (direction: 'prev' | 'next') => {
     const nextDate = calendarMode === 'month'
       ? (direction === 'next' ? addMonths(calendarDate, 1) : subMonths(calendarDate, 1))
       : (direction === 'next' ? addWeeks(calendarDate, 1) : subWeeks(calendarDate, 1));
 
+    revealAllEventsForDateNavigation();
     setEventsCalendarDate(format(nextDate, 'yyyy-MM-dd'));
   };
 
   const moveSelectedMonth = (direction: 'prev' | 'next') => {
     const nextDate = direction === 'next' ? addMonths(calendarDate, 1) : subMonths(calendarDate, 1);
+    revealAllEventsForDateNavigation();
     setEventsCalendarDate(format(startOfMonth(nextDate), 'yyyy-MM-dd'));
   };
 
@@ -570,7 +581,7 @@ const EventsView = () => {
         </div>
       </div>
 
-      {visibleEvents.length === 0 ? (
+      {hasNoVisibleEventsForView ? (
         <div className="rounded-[28px] border border-dashed border-[color:rgb(var(--nodu-accent-rgb)/0.24)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] px-6 py-12 text-center shadow-[0_18px_42px_rgba(47,38,31,0.08)]">
           <div className="text-sm font-semibold text-[color:var(--nodu-text)]">Pro tento mesic a filtr tu zatim nejsou zadne akce.</div>
           <div className="mt-1 text-xs text-[color:var(--nodu-text-soft)]">

@@ -28,7 +28,7 @@ const ContractorEditModal = ({
     try {
       const savedContractor = isExisting
         ? await updateCrew(editingContractor)
-        : createCrew(editingContractor);
+        : await createCrew(editingContractor);
 
       if (savedContractor.profileId && editingContractor.rating != null) {
         await upsertCrewRating({

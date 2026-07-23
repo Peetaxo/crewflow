@@ -8,6 +8,7 @@ import { BudgetItem, Contractor, Invoice, ReceiptItem, Timelog } from '../types'
 import { calculateDayHours, calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';
 import { getTimelogDependencies, getTimelogs, subscribeToTimelogChanges } from '../features/timelogs/services/timelogs.service';
+import { canSeeTimelogNote } from '../features/timelogs/services/timelog-permissions';
 import { getReceipts, subscribeToReceiptChanges } from '../features/receipts/services/receipts.service';
 import { getProjectById, getProjectDependencies, subscribeToProjectChanges } from '../features/projects/services/projects.service';
 import {
@@ -48,7 +49,7 @@ const formatBudgetCurrency = (amount: number): string => (
 );
 
 const ProjectStatsView = () => {
-  const { selectedProjectIdForStats, setSelectedProjectIdForStats } = useAppContext();
+  const { selectedProjectIdForStats, setSelectedProjectIdForStats, role } = useAppContext();
 
   const [project, setProject] = useState(() => getProjectById(selectedProjectIdForStats));
   const [events, setEvents] = useState<ReturnType<typeof getProjectDependencies>['events']>([]);
@@ -66,6 +67,7 @@ const ProjectStatsView = () => {
   const [isTimelogsOpen, setIsTimelogsOpen] = useState(true);
   const [isReceiptsOpen, setIsReceiptsOpen] = useState(false);
   const [isInvoicesOpen, setIsInvoicesOpen] = useState(false);
+  const showTimelogNotes = canSeeTimelogNote(role);
 
   const loadData = useCallback(() => {
     setProject(getProjectById(selectedProjectIdForStats));
@@ -680,10 +682,12 @@ const ProjectStatsView = () => {
                         <div className="text-[var(--nodu-text-soft)]">
                           {event.city || 'Bez mesta'}
                         </div>
-                        {timelog.note ? (
-                          <p className="min-w-0 flex-1 text-right italic text-[var(--nodu-text-soft)]">"{timelog.note}"</p>
-                        ) : (
-                          <span className="text-[var(--nodu-text-soft)]">Bez poznamky</span>
+                        {showTimelogNotes && (
+                          timelog.note ? (
+                            <p className="min-w-0 flex-1 text-right italic text-[var(--nodu-text-soft)]">"{timelog.note}"</p>
+                          ) : (
+                            <span className="text-[var(--nodu-text-soft)]">Bez poznamky</span>
+                          )
                         )}
                       </div>
                     </div>

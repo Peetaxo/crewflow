@@ -473,6 +473,7 @@ export interface Database {
           time_from: string | null;
           time_to: string | null;
           day_type: TimelogType;
+          note: string | null;
           created_at: string;
         };
       };

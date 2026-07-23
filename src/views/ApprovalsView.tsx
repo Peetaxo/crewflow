@@ -12,6 +12,7 @@ import {
   updateTimelogStatus,
 } from '../features/timelogs/services/timelogs.service';
 import { useTimelogsQuery } from '../features/timelogs/queries/useTimelogsQuery';
+import { canEditTimelog } from '../features/timelogs/services/timelog-permissions';
 
 const ApprovalsView = () => {
   const {
@@ -147,7 +148,9 @@ const ApprovalsView = () => {
                 <div className="flex gap-2">
                   <button onClick={() => handleTimelogAction(timelog.id, 'ch')} className="rounded-xl border border-[var(--nodu-success-border)] bg-[var(--nodu-success-bg)] px-4 py-1.5 text-xs font-semibold text-[var(--nodu-success-text)] shadow-[0_14px_28px_rgba(47,125,79,0.10)] hover:bg-[var(--nodu-success-bg-hover)] hover:shadow-[0_16px_32px_rgba(47,125,79,0.14)]">Schvalit a poslat COO</button>
                   <button onClick={() => handleTimelogAction(timelog.id, 'rej')} className="rounded-xl border border-[var(--nodu-error-border)] px-4 py-1.5 text-xs font-medium text-[var(--nodu-error-text)] hover:bg-[var(--nodu-error-bg)]">Zamitnout</button>
-                  <button onClick={() => setEditingTimelog(timelog)} className="ml-auto rounded-xl border border-[var(--nodu-border)] px-4 py-1.5 text-xs font-medium text-[var(--nodu-text)] hover:bg-[var(--nodu-accent-soft)]">Upravit</button>
+                  {canEditTimelog(timelog, role) && (
+                    <button onClick={() => setEditingTimelog(timelog)} className="ml-auto rounded-xl border border-[var(--nodu-border)] px-4 py-1.5 text-xs font-medium text-[var(--nodu-text)] hover:bg-[var(--nodu-accent-soft)]">Upravit</button>
+                  )}
                 </div>
               </div>
             );

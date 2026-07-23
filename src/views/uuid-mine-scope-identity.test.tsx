@@ -202,7 +202,7 @@ vi.mock('../components/ui/alert-dialog', () => ({
 
 vi.mock('../constants', () => ({
   getNavItemsForRole: () => [
-    { id: 'my-timelogs', label: 'Moje timelogy', icon: () => <span>T</span> },
+    { id: 'my-timelogs', label: 'Schvalování', icon: () => <span>T</span> },
     { id: 'my-invoices', label: 'Moje faktury', icon: () => <span>I</span> },
     { id: 'my-receipts', label: 'Moje účtenky', icon: () => <span>R</span> },
   ],
@@ -373,8 +373,8 @@ describe('UUID mine-scope identity', () => {
     expect(screen.getByPlaceholderText(/Hledat akci, job nebo jmeno/i)).toHaveClass('nodu-sidebar-search');
     expect(screen.getByRole('button', { name: 'Crew' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByTitle('Profil')).toHaveClass('nodu-sidebar-hover-surface');
-    expect(screen.getByRole('button', { name: /Moje timelogy/i })).toHaveClass('nodu-nav-active');
-    expect(screen.getByRole('button', { name: /Moje timelogy/i })).toHaveTextContent('1');
+    expect(screen.getByRole('button', { name: /Schvalování/i })).toHaveClass('nodu-nav-active');
+    expect(screen.getByRole('button', { name: /Schvalování/i })).toHaveTextContent('1');
     expect(screen.getByRole('button', { name: /Moje faktury/i })).toHaveTextContent('1');
     expect(screen.getByRole('button', { name: /Moje účtenky/i })).toHaveTextContent('1');
   });

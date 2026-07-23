@@ -1209,6 +1209,7 @@ const syncSupabaseEventTimelogDays = async (eventRowId: string, timelogs: Timelo
         time_from: day.f,
         time_to: day.t,
         day_type: day.type,
+        note: day.note?.trim() || null,
       })));
 
     if (timelogDaysInsert.error) {

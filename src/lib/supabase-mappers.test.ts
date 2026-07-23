@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { Database } from './database.types';
-import { mapContractor, mapEvent, mapFleetReservation, mapFleetVehicle, mapProject } from './supabase-mappers';
+import { mapContractor, mapEvent, mapFleetReservation, mapFleetVehicle, mapProject, mapTimelog } from './supabase-mappers';
 
 type EventRow = Database['public']['Tables']['events']['Row'];
 type FleetReservationRow = Database['public']['Tables']['fleet_reservations']['Row'];
 type FleetVehicleRow = Database['public']['Tables']['fleet_vehicles']['Row'];
 type ProfileRow = Database['public']['Tables']['profiles']['Row'];
 type ProjectRow = Database['public']['Tables']['projects']['Row'];
+type TimelogRow = Database['public']['Tables']['timelogs']['Row'];
+type TimelogDayRow = Database['public']['Tables']['timelog_days']['Row'];
 
 describe('supabase mappers', () => {
   it('maps contractor rating only from the aggregated profile rating', () => {
@@ -149,5 +151,37 @@ describe('supabase mappers', () => {
       endsAt: '2026-05-02T18:00:00+00:00',
       hasConflict: true,
     });
+  });
+
+  it('maps optional Supabase timelog day notes', () => {
+    const timelogRow: TimelogRow = {
+      id: 'timelog-uuid-1',
+      event_id: 'event-uuid-1',
+      contractor_id: 'profile-uuid-1',
+      km: 0,
+      note: null,
+      status: 'draft',
+      submitted_at: null,
+      approved_at: null,
+      created_at: '2026-04-28T00:00:00Z',
+      updated_at: '2026-04-28T00:00:00Z',
+    };
+    const dayRow: TimelogDayRow = {
+      id: 'day-uuid-1',
+      timelog_id: 'timelog-uuid-1',
+      date: '2026-07-13',
+      time_from: '08:00',
+      time_to: '17:00',
+      day_type: 'instal',
+      note: 'Příprava mimo standardní plán',
+      created_at: '2026-04-28T00:00:00Z',
+    };
+
+    expect(mapTimelog(timelogRow, [dayRow]).days[0]).toMatchObject({
+      id: 'day-uuid-1',
+      d: '2026-07-13',
+      note: 'Příprava mimo standardní plán',
+    });
+    expect(mapTimelog(timelogRow, [{ ...dayRow, note: null }]).days[0].note).toBe('');
   });
 });

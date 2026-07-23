@@ -11,6 +11,7 @@ import ShiftCard from '../components/shared/ShiftCard';
 import { calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
 import { getCrewDetailData, subscribeToCrewChanges, updateCrew } from '../features/crew/services/crew.service';
 import { categorizeCrewTimelogs, resolveShiftProject } from '../features/crew/services/crew-shift-display';
+import { canEditTimelog } from '../features/timelogs/services/timelog-permissions';
 import type { Event } from '../types';
 
 const CrewDetailView = () => {
@@ -482,9 +483,11 @@ const CrewDetailView = () => {
                       <StatusBadge status={t.status} />
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <button onClick={() => setEditingTimelog(t)} className="rounded p-1 text-[var(--nodu-text-soft)] hover:bg-[var(--nodu-accent-soft)] hover:text-[var(--nodu-accent)]">
-                        <FileText size={14} />
-                      </button>
+                      {canEditTimelog(t, role) && (
+                        <button onClick={() => setEditingTimelog(t)} className="rounded p-1 text-[var(--nodu-text-soft)] hover:bg-[var(--nodu-accent-soft)] hover:text-[var(--nodu-accent)]">
+                          <FileText size={14} />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );

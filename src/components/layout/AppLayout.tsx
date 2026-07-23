@@ -1,7 +1,10 @@
 import React from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { useAppContext } from '../../context/useAppContext';
+import { useIsMobile } from '../../hooks/use-mobile';
 import Sidebar from './Sidebar';
+import MobileCrewNav from './MobileCrewNav';
+import { useNavBadgeCounts } from './useNavBadgeCounts';
 
 import DashboardView from '../../views/DashboardView';
 import MyShiftsView from '../../views/MyShiftsView';
@@ -27,7 +30,11 @@ const AppLayout: React.FC = () => {
   const {
     darkMode,
     currentTab,
+    role,
   } = useAppContext();
+  const isMobile = useIsMobile();
+  const badgeCounts = useNavBadgeCounts();
+  const isMobileCrewShell = isMobile && role === 'crew';
 
   const renderCurrentView = () => {
     if (currentTab === 'settings') return <SettingsView key="settings" />;
@@ -70,14 +77,16 @@ const AppLayout: React.FC = () => {
   };
 
   return (
-    <div className={`nodu-app-shell ${darkMode ? 'dark' : ''}`}>
-      <Sidebar />
+    <div className={`nodu-app-shell ${isMobileCrewShell ? 'nodu-app-shell--mobile-crew' : ''} ${darkMode ? 'dark' : ''}`}>
+      {!isMobileCrewShell && <Sidebar />}
 
-      <main className="nodu-page-frame">
+      <main className={`nodu-page-frame ${isMobileCrewShell ? 'nodu-page-frame--mobile-crew' : ''}`}>
         <div className="mx-auto max-w-6xl">
           <AnimatePresence mode="wait">{renderCurrentView()}</AnimatePresence>
         </div>
       </main>
+
+      {isMobileCrewShell && <MobileCrewNav badgeCounts={badgeCounts} />}
 
       <TimelogEditModal />
       <ProjectEditModal />

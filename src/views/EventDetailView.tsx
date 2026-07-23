@@ -13,7 +13,7 @@ import EventEditModal from '../components/modals/EventEditModal';
 import AssignCrewModal from '../components/modals/AssignCrewModal';
 import EventCrewRatingPanel from '../features/crew/components/EventCrewRatingPanel';
 import { getCrewRatingsForEvent } from '../features/crew/services/crew-ratings.service';
-import { Event, InvoiceApprovalDocument } from '../types';
+import { Contractor, Event, InvoiceApprovalDocument, Timelog } from '../types';
 import {
   getEventCrew,
   getEventDetailData,
@@ -30,6 +30,7 @@ import {
 import { useInvoiceApprovalsQuery } from '../features/invoices/queries/useInvoiceApprovalsQuery';
 import { getEventApprovalDocuments } from '../features/invoices/services/invoice-approval-sync.service';
 import { updateTimelogStatus } from '../features/timelogs/services/timelogs.service';
+import { canCreateTimelog, canEditTimelog } from '../features/timelogs/services/timelog-permissions';
 
 const EMPTY_APPROVAL_DOCUMENTS: InvoiceApprovalDocument[] = [];
 
@@ -164,10 +165,9 @@ const EventDetailView = () => {
   };
   const eventApprovalTimelogs = canManageEvents
     ? eventTimelogs.filter((timelog) => (
-        timelog.status === 'draft'
-        || (role === 'crewhead'
-          ? timelog.status === 'pending_ch'
-          : timelog.status === 'pending_ch' || timelog.status === 'pending_coo')
+        role === 'crewhead'
+          ? timelog.status === 'draft' || timelog.status === 'pending_ch'
+          : timelog.status === 'pending_coo'
       ))
     : [];
   const shouldShowCrewRatings = canManageEvents && eventStatus === 'past';
@@ -190,6 +190,49 @@ const EventDetailView = () => {
     void removeContractorFromEvent(event.id, contractorProfileId).catch((error) => {
       toast.error(error instanceof Error ? error.message : 'Nepodařilo se odebrat člena crew.');
     });
+  };
+
+  const buildDraftTimelogForCrew = (contractor: Contractor): Timelog | null => {
+    if (!contractor.profileId) {
+      toast.error('Nepodařilo se dohledat UUID identitu člena crew.');
+      return null;
+    }
+
+    const eventDates = getDatesBetween(event.startDate, event.endDate);
+    if (eventDates.length === 0) {
+      toast.error('Akce nemá platné datum pro nový výkaz.');
+      return null;
+    }
+
+    return {
+      id: Math.min(0, ...eventTimelogs.map((item) => item.id)) - 1,
+      eid: event.id,
+      contractorProfileId: contractor.profileId,
+      days: eventDates.map((date) => ({
+        d: date,
+        f: event.startTime || '08:00',
+        t: event.endTime || '17:00',
+        type: event.dayTypes?.[date] ?? 'provoz',
+      })),
+      km: 0,
+      note: '',
+      status: 'draft',
+    };
+  };
+
+  const openCrewTimelog = (contractor: Contractor, timelog?: Timelog) => {
+    if (timelog) {
+      if (!canEditTimelog(timelog, role)) return;
+      setEditingTimelog(timelog);
+      return;
+    }
+
+    if (!canCreateTimelog(role)) return;
+
+    const draftTimelog = buildDraftTimelogForCrew(contractor);
+    if (draftTimelog) {
+      setEditingTimelog(draftTimelog);
+    }
   };
 
   const handleApplyForEvent = () => {
@@ -475,14 +518,13 @@ const EventDetailView = () => {
                             {visibleEventCrew.map((contractor) => {
                               const timelog = eventTimelogs.find((item) => item.contractorProfileId === contractor.profileId);
                               const hours = timelog ? calculateTotalHours(timelog.days) : 0;
+                              const canOpenTimelog = timelog ? canEditTimelog(timelog, role) : canCreateTimelog(role);
 
                               return (
                                 <tr
                                   key={contractor.id}
-                                  onClick={() => {
-                                    if (timelog) setEditingTimelog(timelog);
-                                  }}
-                                  className={`bg-white transition-colors hover:bg-[color:var(--nodu-accent-soft)] ${timelog ? 'cursor-pointer' : ''}`}
+                                  onClick={() => openCrewTimelog(contractor, timelog)}
+                                  className={`${canOpenTimelog ? 'cursor-pointer hover:bg-[color:var(--nodu-accent-soft)]' : 'cursor-default'} bg-white transition-colors`}
                                 >
                                   <td className="px-4 py-3">
                                     <div className="flex items-center gap-2">
@@ -511,14 +553,14 @@ const EventDetailView = () => {
                                   <td className="px-4 py-3 text-right">
                                     {canManageEvents && (
                                       <div className="flex items-center justify-end gap-1">
-                                        {timelog && (
+                                        {canOpenTimelog && (
                                           <button
                                             onClick={(clickEvent) => {
                                               clickEvent.stopPropagation();
-                                              setEditingTimelog(timelog);
+                                              openCrewTimelog(contractor, timelog);
                                             }}
                                             className="rounded-lg p-1.5 text-[color:var(--nodu-text-soft)] transition-all hover:bg-[color:var(--nodu-success-bg)] hover:text-[color:var(--nodu-success-text)]"
-                                            title="Upravit timelog"
+                                            title={timelog ? 'Upravit timelog' : 'Vytvorit timelog'}
                                           >
                                             <FileText size={14} />
                                           </button>
@@ -566,7 +608,7 @@ const EventDetailView = () => {
                             const approveLabel = timelog.status === 'draft'
                               ? 'Odeslat ke kontrole CH'
                               : timelog.status === 'pending_ch'
-                                ? (role === 'coo' ? 'Schvalit za CH' : 'Schvalit a poslat COO')
+                                ? 'Schvalit a poslat COO'
                                 : 'Schvalit';
 
                             return (
@@ -601,9 +643,11 @@ const EventDetailView = () => {
                                       Zamitnout
                                     </Button>
                                   )}
-                                  <Button size="sm" variant="outline" className="ml-auto h-8 text-[11px]" onClick={() => setEditingTimelog(timelog)}>
-                                    Upravit
-                                  </Button>
+                                  {canEditTimelog(timelog, role) && (
+                                    <Button size="sm" variant="outline" className="ml-auto h-8 text-[11px]" onClick={() => setEditingTimelog(timelog)}>
+                                      Upravit
+                                    </Button>
+                                  )}
                                 </div>
                               </div>
                             );

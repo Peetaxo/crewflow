@@ -314,4 +314,44 @@ describe('invoice approval sync service', () => {
 
     expect(eventDocuments.map((document) => document.id)).toEqual(['matching-doc']);
   });
+
+  it('does not list a document for another named event that only shares job number and date', () => {
+    const eventDocuments = getEventApprovalDocuments({
+      ...events[0],
+      id: 20,
+      name: 'Elimon Fresh Festival Pardubice',
+      job: 'JTI001',
+      startDate: '2026-05-24',
+      endDate: '2026-05-24',
+    }, [
+      createApprovalDocument({
+        id: 'pivni-doc',
+        documentName: 'Vladar - 2026-16.pdf',
+        jobNumber: 'JTI001',
+        comment: 'Deinstal Pivní slavnosti Třebíč Daniel Vladař 24.5. 23:00-05:00 (6h)',
+      }),
+    ]);
+
+    expect(eventDocuments).toEqual([]);
+  });
+
+  it('keeps date fallback for generic role events when the PowerApps comment has the real event name', () => {
+    const eventDocuments = getEventApprovalDocuments({
+      ...events[0],
+      id: 21,
+      name: 'Řidič B',
+      job: 'JTI001',
+      startDate: '2026-05-24',
+      endDate: '2026-05-24',
+    }, [
+      createApprovalDocument({
+        id: 'pivni-doc',
+        documentName: 'Vladar - 2026-16.pdf',
+        jobNumber: 'JTI001',
+        comment: 'Deinstal Pivní slavnosti Třebíč Daniel Vladař 24.5. 23:00-05:00 (6h)',
+      }),
+    ]);
+
+    expect(eventDocuments.map((document) => document.id)).toEqual(['pivni-doc']);
+  });
 });

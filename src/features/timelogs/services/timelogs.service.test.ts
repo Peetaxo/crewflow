@@ -456,7 +456,7 @@ describe('timelogs.service write flow', () => {
       note: 'Aktualizovano',
       days: [
         { d: '2026-04-11', f: '09:00', t: '15:00', type: 'provoz' },
-        { d: '2026-04-10', f: '08:00', t: '18:00', type: 'instal' },
+        { d: '2026-04-10', f: '08:00', t: '18:00', type: 'instal', note: 'Ranni priprava' },
       ],
     });
 
@@ -477,6 +477,7 @@ describe('timelogs.service write flow', () => {
         time_from: '08:00',
         time_to: '18:00',
         day_type: 'instal',
+        note: 'Ranni priprava',
       },
       {
         timelog_id: 'timelog-row-1',
@@ -484,15 +485,80 @@ describe('timelogs.service write flow', () => {
         time_from: '09:00',
         time_to: '15:00',
         day_type: 'provoz',
+        note: null,
       },
     ]);
     expect(updated.days).toEqual([
-      { d: '2026-04-10', f: '08:00', t: '18:00', type: 'instal' },
+      { d: '2026-04-10', f: '08:00', t: '18:00', type: 'instal', note: 'Ranni priprava' },
       { d: '2026-04-11', f: '09:00', t: '15:00', type: 'provoz' },
     ]);
     expect(snapshot.timelogs[0].days).toEqual(updated.days);
     expect(snapshot.timelogs[0].note).toBe('Aktualizovano');
     expect(snapshot.timelogs[0].km).toBe(25);
+  });
+
+  it('creates a new timelog when saving an unsaved draft', async () => {
+    let snapshot = createSnapshot([
+      {
+        id: 1,
+        eid: 1,
+        contractorProfileId: 'profile-uuid-1',
+        days: [{ d: '2026-04-10', f: '08:00', t: '16:00', type: 'instal' }],
+        km: 0,
+        note: '',
+        status: 'approved',
+      },
+    ]);
+    const setQueryData = vi.fn();
+    const invalidateQueries = vi.fn();
+
+    vi.doMock('../../../lib/app-config', () => ({
+      appDataSource: 'local',
+    }));
+
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: false,
+      supabase: null,
+    }));
+
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapTimelog: vi.fn(),
+    }));
+
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    vi.doMock('../../../lib/query-client', () => ({
+      queryClient: {
+        setQueryData,
+        invalidateQueries,
+      },
+    }));
+
+    const { saveTimelog } = await import('./timelogs.service');
+
+    const created = await saveTimelog({
+      id: -1,
+      eid: 1,
+      contractorProfileId: 'profile-uuid-1',
+      days: [{ d: '2026-04-11', f: '14:00', t: '17:00', type: 'provoz' }],
+      km: 0,
+      note: 'Novy koncept',
+      status: 'draft',
+    });
+
+    expect(created.id).toBe(2);
+    expect(snapshot.timelogs).toHaveLength(2);
+    expect(snapshot.timelogs[1]).toEqual(created);
+    expect(snapshot.timelogs[1].days).toEqual([
+      { d: '2026-04-11', f: '14:00', t: '17:00', type: 'provoz' },
+    ]);
   });
 
   it('deletes the timelog when saving it without any days', async () => {

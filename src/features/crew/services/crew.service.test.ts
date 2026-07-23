@@ -165,6 +165,114 @@ describe('crew.service', () => {
     expect(detail.invoices).toHaveLength(1);
   });
 
+  it('creates a crew member in Supabase and keeps the returned profile UUID locally', async () => {
+    let snapshot = {
+      contractors: [],
+      timelogs: [],
+      invoices: [],
+      receipts: [],
+      events: [],
+      projects: [],
+      clients: [],
+      candidates: [],
+    };
+
+    const insertedProfile = {
+      id: 'profile-uuid-new',
+      user_id: null,
+      first_name: 'Nova',
+      last_name: 'Crew',
+      phone: '777111222',
+      email: null,
+      ico: null,
+      dic: null,
+      bank_account: null,
+      iban: null,
+      billing_street: null,
+      billing_zip: null,
+      billing_city: 'Praha',
+      billing_country: 'Ceska republika',
+      hourly_rate: 260,
+      tags: [],
+      note: null,
+      reliability: 1,
+      reliable: false,
+      avatar_color: '#fff',
+      avatar_bg: '#000',
+      rating: null,
+    };
+
+    const single = vi.fn().mockResolvedValue({ data: insertedProfile, error: null });
+    const select = vi.fn(() => ({ single }));
+    const insert = vi.fn(() => ({ select }));
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: vi.fn((table: string) => {
+          if (table !== 'profiles') {
+            throw new Error(`Unexpected table ${table}`);
+          }
+
+          return { insert };
+        }),
+      },
+    }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    const { createCrew } = await import('./crew.service');
+
+    const created = await createCrew({
+      id: 1,
+      name: 'Nova Crew',
+      ii: '',
+      bg: '#000',
+      fg: '#fff',
+      tags: [],
+      events: 0,
+      rate: 260,
+      phone: '777111222',
+      email: '',
+      ico: '',
+      dic: '',
+      bank: '',
+      iban: '',
+      city: 'Praha',
+      billingName: '',
+      billingStreet: '',
+      billingZip: '',
+      billingCity: '',
+      billingCountry: '',
+      reliable: false,
+      rating: null,
+      note: '',
+    });
+
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
+      first_name: 'Nova',
+      last_name: 'Crew',
+      phone: '777111222',
+      hourly_rate: 260,
+      billing_city: 'Praha',
+    }));
+    expect(select).toHaveBeenCalledWith('*');
+    expect(created.profileId).toBe('profile-uuid-new');
+    expect(snapshot.contractors[0]).toEqual(expect.objectContaining({
+      id: 1,
+      profileId: 'profile-uuid-new',
+      userId: null,
+      name: 'Nova Crew',
+    }));
+  });
+
   it('updates an existing crew member in Supabase by profileId', async () => {
     let snapshot = {
       contractors: [

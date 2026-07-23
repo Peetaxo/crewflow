@@ -5,9 +5,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const defaultAppContext = {
   darkMode: false,
   currentTab: 'dashboard',
+  role: 'crewhead',
 };
 
 let mockAppContext = { ...defaultAppContext };
+let mockIsMobile = false;
 
 vi.mock('framer-motion', () => ({
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -17,8 +19,22 @@ vi.mock('../../context/useAppContext', () => ({
   useAppContext: () => mockAppContext,
 }));
 
+vi.mock('../../hooks/use-mobile', () => ({
+  useIsMobile: () => mockIsMobile,
+}));
+
+vi.mock('./useNavBadgeCounts', () => ({
+  useNavBadgeCounts: () => ({ 'my-timelogs': 2 }),
+}));
+
 vi.mock('./Sidebar', () => ({
   default: () => <aside data-testid="sidebar" />,
+}));
+
+vi.mock('./MobileCrewNav', () => ({
+  default: ({ badgeCounts }: { badgeCounts: Record<string, number> }) => (
+    <nav data-testid="mobile-crew-nav">{badgeCounts['my-timelogs']}</nav>
+  ),
 }));
 
 vi.mock('../../views/DashboardView', () => ({
@@ -98,6 +114,7 @@ import AppLayout from './AppLayout';
 describe('AppLayout shell', () => {
   beforeEach(() => {
     mockAppContext = { ...defaultAppContext };
+    mockIsMobile = false;
   });
 
   it('applies nodu shell classes to the dashboard layout wrapper', () => {
@@ -140,5 +157,33 @@ describe('AppLayout shell', () => {
     render(<AppLayout />);
 
     expect(screen.getByTestId('warehouse-view')).toBeInTheDocument();
+  });
+
+  it('uses the mobile Crew shell only for Crew on mobile', () => {
+    mockAppContext = {
+      ...mockAppContext,
+      role: 'crew',
+    };
+    mockIsMobile = true;
+
+    const { container } = render(<AppLayout />);
+
+    expect(container.firstElementChild).toHaveClass('nodu-app-shell--mobile-crew');
+    expect(screen.getByRole('main')).toHaveClass('nodu-page-frame--mobile-crew');
+    expect(screen.queryByTestId('sidebar')).not.toBeInTheDocument();
+    expect(screen.getByTestId('mobile-crew-nav')).toHaveTextContent('2');
+  });
+
+  it('keeps the desktop sidebar for management roles on mobile', () => {
+    mockAppContext = {
+      ...mockAppContext,
+      role: 'crewhead',
+    };
+    mockIsMobile = true;
+
+    render(<AppLayout />);
+
+    expect(screen.getByTestId('sidebar')).toBeInTheDocument();
+    expect(screen.queryByTestId('mobile-crew-nav')).not.toBeInTheDocument();
   });
 });

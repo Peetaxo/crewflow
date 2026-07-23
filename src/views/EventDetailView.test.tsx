@@ -45,6 +45,12 @@ const pendingApprovalTimelog = {
   status: 'pending_coo' as const,
 };
 
+const pendingCrewheadTimelog = {
+  ...pendingApprovalTimelog,
+  id: 9,
+  status: 'pending_ch' as const,
+};
+
 const contractor = {
   id: 1,
   profileId: 'profile-1',
@@ -77,6 +83,8 @@ describe('EventDetailView', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    vi.doUnmock('../features/invoices/queries/useInvoiceApprovalsQuery');
+    vi.doUnmock('../features/invoices/services/invoice-approval-sync.service');
     vi.doMock('../features/invoices/queries/useInvoiceApprovalsQuery', () => ({
       useInvoiceApprovalsQuery: () => ({ data: [] }),
     }));
@@ -85,7 +93,7 @@ describe('EventDetailView', () => {
   it('opens timelog detail when clicking an assigned crew row', async () => {
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => ({
-        role: 'coo',
+        role: 'crewhead',
         selectedEventId: 'event-uuid-1',
         setSelectedEventId,
         eventTab: 'overview',
@@ -136,6 +144,185 @@ describe('EventDetailView', () => {
     fireEvent.click(screen.getAllByText('Petr Heitzer')[0]);
 
     expect(setEditingTimelog).toHaveBeenCalledWith(timelog);
+  });
+
+  it('does not open an assigned crew timelog for editing after it is submitted', async () => {
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        role: 'coo',
+        selectedEventId: 'event-uuid-1',
+        setSelectedEventId,
+        eventTab: 'overview',
+        setEventTab: vi.fn(),
+        setEditingReceipt: vi.fn(),
+        setDeleteConfirm: vi.fn(),
+        setEditingTimelog,
+      }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [applicant],
+      getEventDetailData: () => ({
+        event,
+        timelogs: [pendingApprovalTimelog],
+        contractors: [applicant],
+        receipts: [],
+        applications: [],
+        crewAssignments: [{ eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: applicant.profileId, name: applicant.name }],
+      }),
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
+      subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatus,
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventDetailView } = await import('./EventDetailView');
+
+    render(<EventDetailView />);
+
+    fireEvent.click(screen.getAllByText('Jana Nova')[0]);
+
+    expect(setEditingTimelog).not.toHaveBeenCalled();
+  });
+
+  it('lets CrewHead open a pending CH timelog for correction', async () => {
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        role: 'crewhead',
+        selectedEventId: 'event-uuid-1',
+        setSelectedEventId,
+        eventTab: 'overview',
+        setEventTab: vi.fn(),
+        setEditingReceipt: vi.fn(),
+        setDeleteConfirm: vi.fn(),
+        setEditingTimelog,
+      }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [applicant],
+      getEventDetailData: () => ({
+        event,
+        timelogs: [pendingCrewheadTimelog],
+        contractors: [applicant],
+        receipts: [],
+        applications: [],
+        crewAssignments: [{ eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: applicant.profileId, name: applicant.name }],
+      }),
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
+      subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatus,
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventDetailView } = await import('./EventDetailView');
+
+    render(<EventDetailView />);
+
+    fireEvent.click(screen.getAllByText('Jana Nova')[0]);
+
+    expect(setEditingTimelog).toHaveBeenCalledWith(pendingCrewheadTimelog);
+  });
+
+  it('opens a new draft timelog when assigned crew has no timelog yet', async () => {
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        role: 'crewhead',
+        selectedEventId: 'event-uuid-1',
+        setSelectedEventId,
+        eventTab: 'overview',
+        setEventTab: vi.fn(),
+        setEditingReceipt: vi.fn(),
+        setDeleteConfirm: vi.fn(),
+        setEditingTimelog,
+      }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [contractor],
+      getEventDetailData: () => ({
+        event: { ...event, startTime: '14:00', endTime: '17:00' },
+        timelogs: [],
+        contractors: [contractor],
+        receipts: [],
+        applications: [],
+        crewAssignments: [{ eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: contractor.profileId, name: contractor.name }],
+      }),
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
+      subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatus,
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventDetailView } = await import('./EventDetailView');
+
+    render(<EventDetailView />);
+
+    fireEvent.click(screen.getByText('Petr Heitzer'));
+
+    expect(setEditingTimelog).toHaveBeenCalledWith(expect.objectContaining({
+      id: expect.any(Number),
+      eid: 1,
+      contractorProfileId: 'profile-1',
+      days: [
+        { d: '2026-04-16', f: '14:00', t: '17:00', type: 'provoz' },
+        { d: '2026-04-17', f: '14:00', t: '17:00', type: 'provoz' },
+      ],
+      km: 0,
+      note: '',
+      status: 'draft',
+    }));
   });
 
   it('shows imported Grason people as assigned crew without a separate Grason section', async () => {
@@ -235,6 +422,31 @@ describe('EventDetailView', () => {
   });
 
   it('shows the approval table without duplicating approval dots on crew rows', async () => {
+    const approvalDocument = {
+      id: 'approval-doc-1',
+      source: 'powerapps_document_approval',
+      externalId: 'sharepoint-1',
+      documentName: 'Heitzer - 2026-04.pdf',
+      company: 'NL',
+      jobNumber: 'JTI001',
+      invoiceNumber: '2026-04',
+      supplierName: '',
+      approvalStatus: 'approved',
+      approvalStatusLabel: 'schváleno',
+      comment: [
+        'TEST',
+        '',
+        'Petr Heitzer',
+        '17.4 05:00 - 17:00',
+        'Celkem 12h',
+      ].join('\n'),
+      approvers: ['Ales Burger'],
+      requester: 'Petr Heitzer',
+      rawPayload: null,
+      matchedInvoiceId: null,
+      lastSyncedAt: '2026-05-25T12:00:00Z',
+    };
+
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => ({
         role: 'coo',
@@ -272,33 +484,12 @@ describe('EventDetailView', () => {
 
     vi.doMock('../features/invoices/queries/useInvoiceApprovalsQuery', () => ({
       useInvoiceApprovalsQuery: () => ({
-        data: [
-          {
-            id: 'approval-doc-1',
-            source: 'powerapps_document_approval',
-            externalId: 'sharepoint-1',
-            documentName: 'Heitzer - 2026-04.pdf',
-            company: 'NL',
-            jobNumber: 'JTI001',
-            invoiceNumber: '2026-04',
-            supplierName: '',
-            approvalStatus: 'approved',
-            approvalStatusLabel: 'schváleno',
-            comment: [
-              'TEST',
-              '',
-              'Petr Heitzer',
-              '17.4 05:00 - 17:00',
-              'Celkem 12h',
-            ].join('\n'),
-            approvers: ['Ales Burger'],
-            requester: 'Petr Heitzer',
-            rawPayload: null,
-            matchedInvoiceId: null,
-            lastSyncedAt: '2026-05-25T12:00:00Z',
-          },
-        ],
+        data: [approvalDocument],
       }),
+    }));
+
+    vi.doMock('../features/invoices/services/invoice-approval-sync.service', () => ({
+      getEventApprovalDocuments: () => [approvalDocument],
     }));
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
@@ -454,8 +645,8 @@ describe('EventDetailView', () => {
 
     render(<EventDetailView />);
 
-    fireEvent.click(screen.getByRole('button', { name: /Schvalovani timelogu \(2\)/ }));
-    expect(screen.getAllByText('Petr Heitzer').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: /Schvalovani timelogu \(1\)/ }));
+    expect(screen.queryByText('Petr Heitzer')).not.toBeInTheDocument();
     expect(screen.getAllByText('Jana Nova').length).toBeGreaterThan(0);
     expect(screen.getByText('09:00 - 15:00')).toBeInTheDocument();
 

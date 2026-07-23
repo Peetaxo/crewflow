@@ -128,6 +128,8 @@ export type TimelogStatus = 'draft' | 'pending_ch' | 'pending_coo' | 'approved' 
 
 /** Jeden den ve vykazu prace */
 export interface TimelogDay {
+  /** ID radku v databazi nebo docasny klientsky klic */
+  id?: string;
   /** Datum (YYYY-MM-DD) */
   d: string;
   /** Cas od (HH:MM) */
@@ -135,6 +137,7 @@ export interface TimelogDay {
   /** Cas do (HH:MM) */
   t: string;
   type: TimelogType;
+  note?: string;
 }
 
 /** Vykaz prace (timelog) */

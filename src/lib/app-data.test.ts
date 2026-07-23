@@ -20,16 +20,27 @@ describe('app-data Supabase loading', () => {
     expect(getLocalAppState().warehouseItems).toEqual([]);
   });
 
-  it('keeps local seed data available as an explicit backup mode', async () => {
+  it('keeps local seed data available without local event clutter', async () => {
     vi.doMock('./app-config', () => ({
       appDataSource: 'local',
       isLocalDataEnabled: true,
     }));
 
     const { getLocalAppData } = await import('./app-data');
+    const localAppData = getLocalAppData();
 
-    expect(getLocalAppData().events.length).toBeGreaterThan(0);
-    expect(getLocalAppData().warehouseItems.length).toBeGreaterThan(0);
+    expect(localAppData.events).toEqual([]);
+    expect(localAppData.projects).toEqual([]);
+    expect(localAppData.timelogs).toEqual([]);
+    expect(localAppData.invoices).toEqual([]);
+    expect(localAppData.receipts).toEqual([]);
+    expect(localAppData.fleetReservations).toEqual([]);
+    expect(localAppData.eventApplications).toEqual([]);
+    expect(localAppData.eventCrewAssignments).toEqual([]);
+    expect(localAppData.crewRatings).toEqual([]);
+    expect(localAppData.contractors.length).toBeGreaterThan(0);
+    expect(localAppData.contractors.every((contractor) => contractor.events === 0)).toBe(true);
+    expect(localAppData.warehouseItems.length).toBeGreaterThan(0);
   });
 
   it('loads fleet vehicles and reservations from Supabase app data', async () => {

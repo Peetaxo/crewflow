@@ -311,11 +311,86 @@ export const approveAllTimelogsForEvent = async (eventId: number): Promise<Timel
   return approvedTimelogs;
 };
 
+export const createTimelog = async (timelog: Omit<Timelog, 'id'>): Promise<Timelog> => {
+  const normalizedTimelog: Timelog = {
+    ...timelog,
+    id: Math.max(0, ...(getLocalAppState().timelogs ?? []).map((item) => item.id)) + 1,
+    days: sortTimelogDays(timelog.days),
+  };
+
+  if (normalizedTimelog.days.length === 0) {
+    throw new Error('Vykaz musi obsahovat alespon jeden den.');
+  }
+
+  if (!normalizedTimelog.contractorProfileId) {
+    throw new Error('Nepodarilo se dohledat UUID identitu clena crew.');
+  }
+
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    const eventIdMap = await getSupabaseEventIdMap();
+    const eventRowId = eventIdMap.get(normalizedTimelog.eid);
+
+    if (!eventRowId) {
+      throw new Error('Nepodarilo se sparovat akci s databazovym zaznamem.');
+    }
+
+    const timelogInsert = await supabase
+      .from('timelogs')
+      .insert({
+        event_id: eventRowId,
+        contractor_id: normalizedTimelog.contractorProfileId,
+        km: normalizedTimelog.km,
+        note: normalizedTimelog.note,
+        status: normalizedTimelog.status,
+      })
+      .select('id')
+      .single();
+
+    if (timelogInsert.error) {
+      throw new Error(timelogInsert.error.message);
+    }
+
+    const timelogRowId = timelogInsert.data?.id;
+    if (!timelogRowId) {
+      throw new Error('Nepodarilo se vytvorit vykaz v databazi.');
+    }
+
+    const timelogDaysInsert = await supabase
+      .from('timelog_days')
+      .insert(normalizedTimelog.days.map((day) => ({
+        timelog_id: timelogRowId,
+        date: day.d,
+        time_from: day.f,
+        time_to: day.t,
+        day_type: day.type,
+        note: day.note?.trim() || null,
+      })));
+
+    if (timelogDaysInsert.error) {
+      throw new Error(timelogDaysInsert.error.message);
+    }
+  }
+
+  updateLocalAppState((snapshot) => ({
+    ...snapshot,
+    timelogs: [...(snapshot.timelogs ?? []), normalizedTimelog],
+  }));
+
+  invalidateTimelogQueries();
+  return normalizedTimelog;
+};
+
 export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
   const normalizedTimelog = {
     ...updated,
     days: sortTimelogDays(updated.days),
   };
+  const existingTimelog = (getLocalAppState().timelogs ?? []).some((timelog) => timelog.id === updated.id);
+
+  if (!existingTimelog) {
+    const { id: _unsavedId, ...timelogToCreate } = normalizedTimelog;
+    return createTimelog(timelogToCreate);
+  }
 
   if (normalizedTimelog.days.length === 0) {
     await deleteTimelog(normalizedTimelog.id);
@@ -371,6 +446,7 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
           time_from: day.f,
           time_to: day.t,
           day_type: day.type,
+          note: day.note?.trim() || null,
         })));
 
       if (timelogDaysInsert.error) {

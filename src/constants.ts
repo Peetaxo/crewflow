@@ -30,7 +30,7 @@ export const NAV_ITEMS = [
   { id: 'timelogs', label: 'Schvalování', icon: FileText },
   { id: 'fleet', label: 'Flotila', icon: Car },
   { id: 'warehouse', label: 'Sklad', icon: Boxes },
-  { id: 'my-timelogs', label: 'Moje timelogy', icon: FileText },
+  { id: 'my-timelogs', label: 'Schvalování', icon: FileText },
   { id: 'invoices', label: 'Faktury', icon: Receipt },
   { id: 'my-invoices', label: 'Moje faktury', icon: Receipt },
   { id: 'receipts', label: 'Účtenky', icon: Receipt },
@@ -38,6 +38,8 @@ export const NAV_ITEMS = [
   { id: 'recruitment', label: 'Nábor', icon: UserPlus },
   { id: 'settings', label: 'Nastavení', icon: Settings },
 ] as const;
+
+export type NavItemId = typeof NAV_ITEMS[number]['id'];
 
 export const NAV_BY_ROLE: Record<Role, string[]> = {
   crew: ['my-shifts', 'events', 'my-timelogs', 'my-invoices', 'my-receipts'],

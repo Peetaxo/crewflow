@@ -234,6 +234,147 @@ describe('EventsView', () => {
     expect(setEventsCalendarDate).toHaveBeenCalledWith('2026-05-01');
   });
 
+  it('switches to all events when browsing months from the upcoming filter', async () => {
+    const setEventsCalendarDate = vi.fn();
+    const setEventsFilter = vi.fn();
+    const monthNavigationEvents = [
+      {
+        ...events[0],
+        id: 20,
+        supabaseId: 'event-uuid-may-past',
+        name: 'Kvetnova minula akce',
+        startDate: '2026-05-12',
+        endDate: '2026-05-12',
+      },
+      {
+        ...events[0],
+        id: 21,
+        supabaseId: 'event-uuid-june-upcoming',
+        name: 'Cervnova budouci akce',
+        startDate: '2026-06-20',
+        endDate: '2026-06-20',
+      },
+    ];
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockAppContext,
+        eventsFilter: 'upcoming',
+        eventsCalendarDate: '2026-06-15',
+        setEventsCalendarDate,
+        setEventsFilter,
+      }),
+    }));
+
+    vi.doMock('../features/events/queries/useEventsQuery', () => ({
+      useEventsQuery: () => ({ data: monthNavigationEvents, isLoading: false, error: null }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      createEmptyEvent: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      applyForEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+      filterEventsByStatus: (items: Array<typeof monthNavigationEvents[number] & { derivedStatus: string }>, filter: string) => (
+        filter === 'upcoming' ? items.filter((item) => item.derivedStatus !== 'past') : items
+      ),
+      getEventsWithDerivedStatus: (items: typeof monthNavigationEvents) => items.map((item) => ({
+        ...item,
+        derivedStatus: item.id === 20 ? 'past' as const : 'upcoming' as const,
+      })),
+      getReferenceDate: () => new Date('2026-06-15'),
+      getEventDetailData: (eventId: number | string) => ({
+        ...eventDetail,
+        event: monthNavigationEvents.find((event) => event.supabaseId === eventId || event.id === eventId) ?? monthNavigationEvents[0],
+        timelogs: [],
+        crewAssignments: [],
+      }),
+    }));
+
+    vi.doMock('./EventDetailView', () => ({
+      default: () => <div>detail</div>,
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventsView } = await import('./EventsView');
+    const queryClient = new QueryClient();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <EventsView />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByText('Cervnova budouci akce')).toBeInTheDocument();
+    expect(screen.queryByText('Kvetnova minula akce')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Predchozi mesic' }));
+
+    expect(setEventsFilter).toHaveBeenCalledWith('all');
+    expect(setEventsCalendarDate).toHaveBeenCalledWith('2026-05-01');
+  });
+
+  it('shows the empty state when the selected list month has no matching events', async () => {
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockAppContext,
+        eventsCalendarDate: '2026-06-01',
+      }),
+    }));
+
+    vi.doMock('../features/events/queries/useEventsQuery', () => ({
+      useEventsQuery: () => ({ data: monthlyEvents, isLoading: false, error: null }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      createEmptyEvent: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      applyForEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+      filterEventsByStatus: (items: typeof monthlyEvents) => items.map((item) => ({ ...item, derivedStatus: 'full' as const })),
+      getEventsWithDerivedStatus: (items: typeof monthlyEvents) => items.map((item) => ({ ...item, derivedStatus: 'full' as const })),
+      getReferenceDate: () => new Date('2026-06-01'),
+      getEventDetailData: (eventId: number | string) => ({
+        ...eventDetail,
+        event: monthlyEvents.find((event) => event.supabaseId === eventId || event.id === eventId) ?? monthlyEvents[0],
+        timelogs: [],
+        crewAssignments: [],
+      }),
+    }));
+
+    vi.doMock('./EventDetailView', () => ({
+      default: () => <div>detail</div>,
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventsView } = await import('./EventsView');
+    const queryClient = new QueryClient();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <EventsView />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByText('Pro tento mesic a filtr tu zatim nejsou zadne akce.')).toBeInTheDocument();
+  });
+
   it('shows assigned crew names and opens detail by clicking the event card', async () => {
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => mockAppContext,

@@ -6,6 +6,7 @@ const defaultAppContext = {
   darkMode: false,
   currentTab: 'dashboard',
   role: 'crewhead',
+  selectedEventId: null as string | null,
 };
 
 let mockAppContext = { ...defaultAppContext };
@@ -172,6 +173,21 @@ describe('AppLayout shell', () => {
     expect(screen.getByRole('main')).toHaveClass('nodu-page-frame--mobile-crew');
     expect(screen.queryByTestId('sidebar')).not.toBeInTheDocument();
     expect(screen.getByTestId('mobile-crew-nav')).toHaveTextContent('2');
+  });
+
+  it('hides the mobile Crew nav while a Crew event detail is open', () => {
+    mockAppContext = {
+      ...mockAppContext,
+      currentTab: 'events',
+      role: 'crew',
+      selectedEventId: 'event-uuid-1',
+    };
+    mockIsMobile = true;
+
+    render(<AppLayout />);
+
+    expect(screen.queryByTestId('mobile-crew-nav')).not.toBeInTheDocument();
+    expect(screen.getByTestId('events-view')).toBeInTheDocument();
   });
 
   it('keeps the desktop sidebar for management roles on mobile', () => {

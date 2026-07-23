@@ -2,6 +2,12 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('framer-motion', () => ({
+  motion: {
+    div: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div>,
+  },
+}));
+
 vi.mock('../app/providers/useAuth', () => ({
   useAuth: () => ({ currentProfileId: 'profile-1' }),
 }));
@@ -9,6 +15,26 @@ vi.mock('../app/providers/useAuth', () => ({
 const setEditingTimelog = vi.fn();
 const setSelectedEventId = vi.fn();
 const updateTimelogStatus = vi.fn();
+const requestEventWithdrawalMock = vi.fn();
+const mobileMockState = vi.hoisted(() => ({ isMobile: false }));
+const invoiceApprovalSyncMockState = vi.hoisted(() => ({ eventDocuments: [] as unknown[] }));
+const crewRatingsMockState = vi.hoisted(() => ({
+  getCrewRatingsForEvent: vi.fn(() => [] as unknown[]),
+  upsertCrewRating: vi.fn(),
+}));
+
+vi.mock('../hooks/use-mobile', () => ({
+  useIsMobile: () => mobileMockState.isMobile,
+}));
+
+vi.mock('../features/invoices/services/invoice-approval-sync.service', () => ({
+  getEventApprovalDocuments: () => invoiceApprovalSyncMockState.eventDocuments,
+}));
+
+vi.mock('../features/crew/services/crew-ratings.service', () => ({
+  getCrewRatingsForEvent: crewRatingsMockState.getCrewRatingsForEvent,
+  upsertCrewRating: crewRatingsMockState.upsertCrewRating,
+}));
 
 const event = {
   id: 1,
@@ -83,11 +109,205 @@ describe('EventDetailView', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    mobileMockState.isMobile = false;
+    invoiceApprovalSyncMockState.eventDocuments = [];
+    crewRatingsMockState.getCrewRatingsForEvent.mockReset();
+    crewRatingsMockState.getCrewRatingsForEvent.mockReturnValue([]);
+    crewRatingsMockState.upsertCrewRating.mockReset();
+    requestEventWithdrawalMock.mockReset();
+    requestEventWithdrawalMock.mockResolvedValue(undefined);
     vi.doUnmock('../features/invoices/queries/useInvoiceApprovalsQuery');
-    vi.doUnmock('../features/invoices/services/invoice-approval-sync.service');
     vi.doMock('../features/invoices/queries/useInvoiceApprovalsQuery', () => ({
       useInvoiceApprovalsQuery: () => ({ data: [] }),
     }));
+  });
+
+  it('renders an info-first mobile Crew event detail with floating evidence action', async () => {
+    mobileMockState.isMobile = true;
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        role: 'crew',
+        selectedEventId: 'event-uuid-1',
+        setSelectedEventId,
+        eventTab: 'overview',
+        setEventTab: vi.fn(),
+        setEditingReceipt: vi.fn(),
+        setDeleteConfirm: vi.fn(),
+        setEditingTimelog,
+      }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [contractor],
+      getEventDetailData: () => ({
+        event,
+        timelogs: [timelog],
+        contractors: [contractor],
+        receipts: [],
+        applications: [],
+        crewAssignments: [{ eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: contractor.profileId, name: contractor.name }],
+      }),
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: requestEventWithdrawalMock,
+      subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatus,
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventDetailView } = await import('./EventDetailView');
+
+    const { container } = render(<EventDetailView />);
+
+    expect(container.querySelector('.nodu-mobile-event-detail')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'TEST' })).toBeInTheDocument();
+    expect(screen.getByText('Jsi přiřazen')).toBeInTheDocument();
+    expect(screen.queryByText('Moje výkazy')).not.toBeInTheDocument();
+    expect(screen.getByText('Přiřazená crew')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Evidence práce' })).toBeInTheDocument();
+    expect(screen.getAllByText('12.0h').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Prirazena Crew/)).not.toBeInTheDocument();
+    expect(crewRatingsMockState.getCrewRatingsForEvent).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Evidence práce' }));
+
+    expect(setEditingTimelog).toHaveBeenCalledWith(timelog);
+  });
+
+  it('opens a confirmation dialog before requesting mobile Crew withdrawal', async () => {
+    mobileMockState.isMobile = true;
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        role: 'crew',
+        selectedEventId: 'event-uuid-1',
+        setSelectedEventId,
+        eventTab: 'overview',
+        setEventTab: vi.fn(),
+        setEditingReceipt: vi.fn(),
+        setDeleteConfirm: vi.fn(),
+        setEditingTimelog,
+      }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [contractor],
+      getEventDetailData: () => ({
+        event,
+        timelogs: [timelog],
+        contractors: [contractor],
+        receipts: [],
+        applications: [],
+        crewAssignments: [{ eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: contractor.profileId, name: contractor.name }],
+      }),
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: requestEventWithdrawalMock,
+      subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatus,
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventDetailView } = await import('./EventDetailView');
+
+    render(<EventDetailView />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Požádat o odhlášení' }));
+
+    expect(screen.getByRole('dialog', { name: 'Opravdu požádat o odhlášení?' })).toBeInTheDocument();
+    expect(requestEventWithdrawalMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Zůstat na akci' }));
+
+    expect(screen.queryByRole('dialog', { name: 'Opravdu požádat o odhlášení?' })).not.toBeInTheDocument();
+    expect(requestEventWithdrawalMock).not.toHaveBeenCalled();
+  });
+
+  it('submits the mobile Crew withdrawal request only after confirmation', async () => {
+    mobileMockState.isMobile = true;
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        role: 'crew',
+        selectedEventId: 'event-uuid-1',
+        setSelectedEventId,
+        eventTab: 'overview',
+        setEventTab: vi.fn(),
+        setEditingReceipt: vi.fn(),
+        setDeleteConfirm: vi.fn(),
+        setEditingTimelog,
+      }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [contractor],
+      getEventDetailData: () => ({
+        event,
+        timelogs: [timelog],
+        contractors: [contractor],
+        receipts: [],
+        applications: [],
+        crewAssignments: [{ eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: contractor.profileId, name: contractor.name }],
+      }),
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: requestEventWithdrawalMock,
+      subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatus,
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventDetailView } = await import('./EventDetailView');
+
+    render(<EventDetailView />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Požádat o odhlášení' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Požádat' }));
+
+    await waitFor(() => expect(requestEventWithdrawalMock).toHaveBeenCalledWith('event-uuid-1', 'profile-1'));
   });
 
   it('opens timelog detail when clicking an assigned crew row', async () => {
@@ -487,10 +707,7 @@ describe('EventDetailView', () => {
         data: [approvalDocument],
       }),
     }));
-
-    vi.doMock('../features/invoices/services/invoice-approval-sync.service', () => ({
-      getEventApprovalDocuments: () => [approvalDocument],
-    }));
+    invoiceApprovalSyncMockState.eventDocuments = [approvalDocument];
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       updateTimelogStatus,
@@ -652,11 +869,13 @@ describe('EventDetailView', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Schvalit' }));
 
-    expect(updateTimelogStatus).toHaveBeenCalledWith(8, 'coo');
+    await waitFor(() => {
+      expect(updateTimelogStatus).toHaveBeenCalledWith(8, 'coo');
+    });
   });
 
   it('lets managers rate assigned crew after a past event', async () => {
-    const upsertCrewRating = vi.fn().mockResolvedValue({
+    crewRatingsMockState.upsertCrewRating.mockResolvedValue({
       id: 'rating-1',
       profileId: 'profile-1',
       eventId: 1,
@@ -703,11 +922,6 @@ describe('EventDetailView', () => {
       withdrawEventApplication: vi.fn(),
     }));
 
-    vi.doMock('../features/crew/services/crew-ratings.service', () => ({
-      getCrewRatingsForEvent: () => [],
-      upsertCrewRating,
-    }));
-
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       updateTimelogStatus,
     }));
@@ -735,7 +949,7 @@ describe('EventDetailView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Ulozit hodnoceni pro Petr Heitzer' }));
 
     await waitFor(() => {
-      expect(upsertCrewRating).toHaveBeenCalledWith({
+      expect(crewRatingsMockState.upsertCrewRating).toHaveBeenCalledWith({
         profileId: 'profile-1',
         eventId: 1,
         eventSupabaseId: 'event-uuid-1',
@@ -780,11 +994,6 @@ describe('EventDetailView', () => {
       subscribeToEventChanges: vi.fn(() => () => undefined),
       updateEventApplicationStatus: vi.fn(),
       withdrawEventApplication: vi.fn(),
-    }));
-
-    vi.doMock('../features/crew/services/crew-ratings.service', () => ({
-      getCrewRatingsForEvent: () => [],
-      upsertCrewRating: vi.fn(),
     }));
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({

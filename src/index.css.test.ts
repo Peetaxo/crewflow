@@ -30,6 +30,9 @@ describe('nodu CSS helpers', () => {
     const mobileTimelogAddDayPickerGridRule = css.match(/\.nodu-mobile-timelog-add-day-picker-grid\s*\{[\s\S]*?\}/)?.[0];
     const mobileTimelogAddDayCellRule = css.match(/\.nodu-mobile-timelog-add-day-cell\s*\{[\s\S]*?\}/)?.[0];
     const mobileTimelogAddDayConfirmRule = css.match(/\.nodu-mobile-timelog-add-day-confirm\s*\{[\s\S]*?\}/)?.[0];
+    const mobileEventDetailRule = css.match(/\.nodu-mobile-event-detail\s*\{[\s\S]*?\}/)?.[0];
+    const mobileEventFloatingPanelRule = css.match(/\.nodu-mobile-event-floating-panel\s*\{[\s\S]*?\}/)?.[0];
+    const mobileEventWithdrawalDialogRule = css.match(/\.nodu-mobile-event-withdrawal-dialog\s*\{[\s\S]*?\}/)?.[0];
 
     [
       '--nodu-paper',
@@ -64,6 +67,8 @@ describe('nodu CSS helpers', () => {
       '.nodu-mobile-timelog-add-day-cell',
       '.nodu-mobile-timelog-add-day-cell--selected',
       '.nodu-mobile-timelog-add-day-confirm',
+      '.nodu-mobile-event-floating-panel',
+      '.nodu-mobile-event-withdrawal-dialog',
       '.nodu-stat-card',
       '.nodu-dashboard-action',
       '.dark .nodu-sidebar-shell',
@@ -105,6 +110,10 @@ describe('nodu CSS helpers', () => {
     expect(mobileTimelogAddDayPickerGridRule).toContain('grid-template-columns: repeat(7, minmax(0, 1fr));');
     expect(mobileTimelogAddDayCellRule).toContain('aspect-ratio: 1;');
     expect(mobileTimelogAddDayConfirmRule).toContain('border-radius: 999px;');
+    expect(mobileEventDetailRule).toContain('padding-bottom');
+    expect(mobileEventFloatingPanelRule).toContain('position: fixed;');
+    expect(mobileEventFloatingPanelRule).toContain('backdrop-filter: blur');
+    expect(mobileEventWithdrawalDialogRule).toContain('position: fixed;');
     expect(css).not.toContain('.nodu-mobile-timelog-date-input');
     expect(css).not.toContain('.nodu-mobile-timelog-report-editor {\n  border-color: rgb(var(--nodu-text-rgb) / 0.1);');
     expect(sidebarShellRule).not.toContain('255, 250, 244');

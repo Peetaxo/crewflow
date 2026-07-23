@@ -31,10 +31,12 @@ const AppLayout: React.FC = () => {
     darkMode,
     currentTab,
     role,
+    selectedEventId,
   } = useAppContext();
   const isMobile = useIsMobile();
   const badgeCounts = useNavBadgeCounts();
   const isMobileCrewShell = isMobile && role === 'crew';
+  const isMobileCrewEventDetail = isMobileCrewShell && currentTab === 'events' && Boolean(selectedEventId);
 
   const renderCurrentView = () => {
     if (currentTab === 'settings') return <SettingsView key="settings" />;
@@ -86,7 +88,7 @@ const AppLayout: React.FC = () => {
         </div>
       </main>
 
-      {isMobileCrewShell && <MobileCrewNav badgeCounts={badgeCounts} />}
+      {isMobileCrewShell && !isMobileCrewEventDetail && <MobileCrewNav badgeCounts={badgeCounts} />}
 
       <TimelogEditModal />
       <ProjectEditModal />

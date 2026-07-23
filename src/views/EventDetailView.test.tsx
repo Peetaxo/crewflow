@@ -124,6 +124,15 @@ describe('EventDetailView', () => {
 
   it('renders an info-first mobile Crew event detail with floating evidence action', async () => {
     mobileMockState.isMobile = true;
+    const upcomingAssignedEvent = {
+      ...event,
+      status: 'upcoming' as const,
+      startDate: '2026-07-29',
+      endDate: '2026-08-01',
+      startTime: '08:00',
+      endTime: '17:00',
+    };
+
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => ({
         role: 'crew',
@@ -140,12 +149,12 @@ describe('EventDetailView', () => {
     vi.doMock('../features/events/services/events.service', () => ({
       getEventCrew: () => [contractor],
       getEventDetailData: () => ({
-        event,
+        event: upcomingAssignedEvent,
         timelogs: [timelog],
         contractors: [contractor],
         receipts: [],
         applications: [],
-        crewAssignments: [{ eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: contractor.profileId, name: contractor.name }],
+        crewAssignments: [{ eventId: upcomingAssignedEvent.id, eventSupabaseId: upcomingAssignedEvent.supabaseId, contractorProfileId: contractor.profileId, name: contractor.name }],
       }),
       applyForEvent: vi.fn(),
       approveEventApplication: vi.fn(),
@@ -177,6 +186,9 @@ describe('EventDetailView', () => {
     expect(container.querySelector('.nodu-mobile-event-detail')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'TEST' })).toBeInTheDocument();
     expect(screen.getByText('Jsi přiřazen')).toBeInTheDocument();
+    expect(screen.queryByText('Nadcházející')).not.toBeInTheDocument();
+    expect(container.querySelector('.nodu-mobile-event-topbar')).not.toHaveTextContent('Jsi přiřazen');
+    expect(container.querySelector('.nodu-mobile-event-hero')).toHaveTextContent('Jsi přiřazen');
     expect(screen.queryByText('Moje výkazy')).not.toBeInTheDocument();
     expect(screen.getByText('Přiřazená crew')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Evidence práce' })).toBeInTheDocument();

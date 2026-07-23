@@ -369,13 +369,12 @@ const EventDetailView = () => {
               <ArrowLeft size={18} />
               <span className="sr-only">Zpět na akce</span>
             </button>
-            <span className="nodu-mobile-event-participation-chip">{participationLabel}</span>
           </header>
 
           <section className="nodu-mobile-event-hero" aria-labelledby="mobile-event-title">
             <div className="mb-3 flex items-center justify-between gap-3">
               <span className="jn nodu-job-badge px-2 py-0.5 text-sm">{event.job}</span>
-              <StatusBadge status={eventStatus} />
+              <span className="nodu-mobile-event-participation-chip">{participationLabel}</span>
             </div>
             <h1 id="mobile-event-title" className="text-2xl font-bold text-[color:var(--nodu-text)]">{event.name}</h1>
             <div className="mt-2 text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--nodu-text-soft)]">

@@ -2,97 +2,118 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import EventAddressField from './EventAddressField';
-import type { EventAddressSuggestion } from '../services/event-location-google.service';
+import type { EventGeocodingCandidate } from '../services/event-geocoding.service';
 
-const selectedSuggestion: EventAddressSuggestion = {
-  id: 'place-1',
+const candidate: EventGeocodingCandidate = {
+  id: 'way-123',
   label: 'Rohanské nábřeží 678/23, Praha',
-  placeId: 'place-1',
+  locationLat: 50.0929,
+  locationLng: 14.4502,
+  provider: 'nominatim',
 };
 
 describe('EventAddressField', () => {
-  it('keeps manual address entry available and clears precise map metadata', () => {
+  it('keeps manual address entry editable and clears precise map metadata', () => {
     const onChange = vi.fn();
+    const geocodeAddress = vi.fn();
 
     render(
       <EventAddressField
-        value={{ address: 'Praha', city: 'Praha' }}
+        value={{ address: 'Praha', city: 'Praha', placeId: 'old-place', locationLat: 50.08, locationLng: 14.42 }}
         onChange={onChange}
-        autocompleteEnabled={false}
+        geocodeAddress={geocodeAddress}
       />,
     );
 
-    fireEvent.change(screen.getByLabelText('Adresa'), {
-      target: { value: 'Roudnice nad Labem' },
+    const addressInput = screen.getByLabelText('Adresa');
+    expect(addressInput).toHaveValue('Praha');
+
+    fireEvent.change(addressInput, {
+      target: { value: 'Ro' },
     });
 
     expect(onChange).toHaveBeenCalledWith({
-      address: 'Roudnice nad Labem',
+      address: 'Ro',
       placeId: undefined,
       locationLat: null,
       locationLng: null,
     });
-    expect(screen.getByText('Našeptávání adres není nakonfigurované. Adresu lze zadat ručně.')).toBeInTheDocument();
+    expect(geocodeAddress).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Najít na mapě' })).toBeDisabled();
   });
 
-  it('shows mocked suggestions after at least three typed characters', async () => {
-    const fetchSuggestions = vi.fn().mockResolvedValue([selectedSuggestion]);
+  it('searches only after clicking Najít na mapě and shows candidates', async () => {
+    const geocodeAddress = vi.fn().mockResolvedValue([candidate]);
 
     render(
       <EventAddressField
         value={{ address: '' }}
         onChange={vi.fn()}
-        autocompleteEnabled
-        fetchSuggestions={fetchSuggestions}
+        geocodeAddress={geocodeAddress}
       />,
     );
 
     fireEvent.change(screen.getByLabelText('Adresa'), {
-      target: { value: 'Ro' },
+      target: { value: '  Rohanské nábřeží  ' },
     });
 
-    expect(fetchSuggestions).not.toHaveBeenCalled();
+    expect(geocodeAddress).not.toHaveBeenCalled();
 
-    fireEvent.change(screen.getByLabelText('Adresa'), {
-      target: { value: 'Roh' },
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Najít na mapě' }));
 
-    await waitFor(() => expect(fetchSuggestions).toHaveBeenCalledWith('Roh'));
+    await waitFor(() => expect(geocodeAddress).toHaveBeenCalledWith('Rohanské nábřeží'));
     expect(await screen.findByRole('button', { name: 'Rohanské nábřeží 678/23, Praha' })).toBeInTheDocument();
   });
 
-  it('stores precise address metadata when selecting a suggestion', async () => {
+  it('stores precise coordinates and clears placeId when selecting a geocoding candidate', async () => {
     const onChange = vi.fn();
-    const fetchSuggestions = vi.fn().mockResolvedValue([selectedSuggestion]);
-    const resolveSuggestion = vi.fn().mockResolvedValue({
-      address: 'Rohanské nábřeží 678/23, 186 00 Praha 8',
-      placeId: 'place-1',
-      locationLat: 50.0929,
-      locationLng: 14.4502,
-    });
+    const geocodeAddress = vi.fn().mockResolvedValue([candidate]);
 
     render(
       <EventAddressField
         value={{ address: '' }}
         onChange={onChange}
-        autocompleteEnabled
-        fetchSuggestions={fetchSuggestions}
-        resolveSuggestion={resolveSuggestion}
+        geocodeAddress={geocodeAddress}
       />,
     );
 
     fireEvent.change(screen.getByLabelText('Adresa'), {
-      target: { value: 'Roh' },
+      target: { value: 'Rohanské nábřeží' },
     });
+    fireEvent.click(screen.getByRole('button', { name: 'Najít na mapě' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Rohanské nábřeží 678/23, Praha' }));
 
-    await waitFor(() => expect(resolveSuggestion).toHaveBeenCalledWith(selectedSuggestion));
     expect(onChange).toHaveBeenLastCalledWith({
-      address: 'Rohanské nábřeží 678/23, 186 00 Praha 8',
-      placeId: 'place-1',
+      address: 'Rohanské nábřeží 678/23, Praha',
+      placeId: undefined,
       locationLat: 50.0929,
       locationLng: 14.4502,
     });
-    expect(screen.getByDisplayValue('Rohanské nábřeží 678/23, 186 00 Praha 8')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Rohanské nábřeží 678/23, Praha')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Rohanské nábřeží 678/23, Praha' })).not.toBeInTheDocument();
+    expect(screen.getByText('Poloha je vybraná z mapových podkladů.')).toBeInTheDocument();
+  });
+
+  it('shows no-result and provider failure statuses in Czech', async () => {
+    const geocodeAddress = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error('Vyhledávání adres je dostupné za chvíli. Zkuste to prosím znovu.'));
+
+    render(
+      <EventAddressField
+        value={{ address: 'Rohanské nábřeží' }}
+        onChange={vi.fn()}
+        geocodeAddress={geocodeAddress}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Najít na mapě' }));
+
+    expect(await screen.findByText('Poloha nebyla nalezena. Adresu lze uložit ručně.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Najít na mapě' }));
+
+    expect(await screen.findByText('Vyhledávání adres je dostupné za chvíli. Zkuste to prosím znovu.')).toBeInTheDocument();
   });
 });

@@ -67,6 +67,23 @@ const multiDayEvents = [
   },
 ];
 
+const longMultiDayEvents = [
+  {
+    id: 3,
+    name: 'Pětidenní akce',
+    job: 'AK003',
+    startDate: '2026-04-16',
+    endDate: '2026-04-20',
+    startTime: '08:00',
+    endTime: '18:00',
+    city: 'Brno',
+    needed: 4,
+    filled: 3,
+    status: 'upcoming' as const,
+    client: 'Klient C',
+  },
+];
+
 const monthlyEvents = [
   {
     ...events[0],
@@ -646,7 +663,7 @@ describe('EventsView', () => {
     expect(mockAppContext.setSelectedEventId).not.toHaveBeenCalled();
   });
 
-  it('shows multi-day events under each day with event time instead of place', async () => {
+  it('shows multi-day events under each day for managers with event time instead of place', async () => {
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => ({
         ...mockAppContext,
@@ -711,9 +728,131 @@ describe('EventsView', () => {
     expect(screen.getAllByText('Dvoudenni akce')).toHaveLength(2);
     expect(screen.getByText(/16\..*dubna/i)).toBeInTheDocument();
     expect(screen.getByText(/17\..*dubna/i)).toBeInTheDocument();
-    expect(screen.getByText(/16\. 4\. 2026.*09:00.*17:00.*Klient B/)).toBeInTheDocument();
-    expect(screen.getByText(/17\. 4\. 2026.*10:00.*15:00.*Klient B/)).toBeInTheDocument();
+    expect(screen.getByText(/16\. 4\. - 17\. 4\. 2026.*09:00.*17:00.*Klient B/)).toBeInTheDocument();
+    expect(screen.getByText(/16\. 4\. - 17\. 4\. 2026.*10:00.*15:00.*Klient B/)).toBeInTheDocument();
+    expect(screen.getByText('Začíná dnes')).toBeInTheDocument();
+    expect(screen.getByText('Končí dnes')).toBeInTheDocument();
     expect(screen.queryByText(/Praha/)).not.toBeInTheDocument();
+  });
+
+  it('shows multi-day events only on the start day for Crew users', async () => {
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockAppContext,
+        role: 'crew',
+        eventsCalendarDate: '2026-04-16',
+      }),
+    }));
+
+    vi.doMock('../features/events/queries/useEventsQuery', () => ({
+      useEventsQuery: () => ({ data: multiDayEvents, isLoading: false, error: null }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      createEmptyEvent: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      applyForEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+      filterEventsByStatus: (items: typeof multiDayEvents) => items.map((item) => ({ ...item, derivedStatus: 'upcoming' as const })),
+      getEventsWithDerivedStatus: (items: typeof multiDayEvents) => items.map((item) => ({ ...item, derivedStatus: 'upcoming' as const })),
+      getReferenceDate: () => new Date('2026-04-16'),
+      getEventDetailData: () => ({
+        timelogs: [],
+        contractors: [],
+        receipts: [],
+        event: multiDayEvents[0],
+        applications: [],
+        crewAssignments: [],
+      }),
+    }));
+
+    vi.doMock('./EventDetailView', () => ({
+      default: () => <div>detail</div>,
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventsView } = await import('./EventsView');
+    const queryClient = new QueryClient();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <EventsView />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getAllByText('Dvoudenni akce')).toHaveLength(1);
+    expect(screen.getByText(/16\. 4\. - 17\. 4\. 2026.*09:00.*17:00.*Klient B/)).toBeInTheDocument();
+    expect(screen.getByText('Začíná dnes')).toBeInTheDocument();
+    expect(screen.getByText('2 dny')).toBeInTheDocument();
+    expect(screen.queryByText(/17\..*dubna/i)).not.toBeInTheDocument();
+  });
+
+  it('marks continuation days differently for CH and COO users', async () => {
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockAppContext,
+        role: 'coo',
+        eventsCalendarDate: '2026-04-16',
+      }),
+    }));
+
+    vi.doMock('../features/events/queries/useEventsQuery', () => ({
+      useEventsQuery: () => ({ data: longMultiDayEvents, isLoading: false, error: null }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      createEmptyEvent: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      applyForEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+      filterEventsByStatus: (items: typeof longMultiDayEvents) => items.map((item) => ({ ...item, derivedStatus: 'upcoming' as const })),
+      getEventsWithDerivedStatus: (items: typeof longMultiDayEvents) => items.map((item) => ({ ...item, derivedStatus: 'upcoming' as const })),
+      getReferenceDate: () => new Date('2026-04-16'),
+      getEventDetailData: () => ({
+        timelogs: [],
+        contractors: [],
+        receipts: [],
+        event: longMultiDayEvents[0],
+        applications: [],
+        crewAssignments: [],
+      }),
+    }));
+
+    vi.doMock('./EventDetailView', () => ({
+      default: () => <div>detail</div>,
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventsView } = await import('./EventsView');
+    const queryClient = new QueryClient();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <EventsView />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getAllByText('Pětidenní akce')).toHaveLength(5);
+    expect(screen.getByText('Začíná dnes')).toBeInTheDocument();
+    expect(screen.getAllByText('Probíhá od 16. 4.')).toHaveLength(3);
+    expect(screen.getByText('Končí dnes')).toBeInTheDocument();
+    expect(screen.getAllByText('5 dní')).toHaveLength(5);
   });
 
   it('shows multiple unique timelog shifts for the event day', async () => {

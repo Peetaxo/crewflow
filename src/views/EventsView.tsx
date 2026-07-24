@@ -22,7 +22,7 @@ import { useAppContext } from '../context/useAppContext';
 import { useAuth } from '../app/providers/useAuth';
 import { Event, Timelog } from '../types';
 import type { SelectedEventId } from '../context/app-context';
-import { calculateTotalHours, eventOccursOnDate, getDatesBetween } from '../utils';
+import { calculateTotalHours, eventOccursOnDate, formatDateRange, getDatesBetween } from '../utils';
 import { Button } from '../components/ui/button';
 import EventDetailView from './EventDetailView';
 import EventEditModal from '../components/modals/EventEditModal';
@@ -61,9 +61,14 @@ type CalendarSegment = {
   lane: number;
 };
 
+type EventListOccurrenceKind = 'single' | 'start' | 'continuation' | 'end';
+
 type EventListOccurrence = {
   event: CalendarEvent;
   date: string;
+  kind: EventListOccurrenceKind;
+  dayIndex: number;
+  dayCount: number;
 };
 
 type EventColorStyle = {
@@ -145,6 +150,53 @@ const eventOverlapsDateRange = (event: Event, startDate: string, endDate: string
 );
 
 const formatOccurrenceDate = (date: string) => format(parseISO(date), 'd. M. yyyy', { locale: cs });
+const formatShortOccurrenceDate = (date: string) => format(parseISO(date), 'd. M.', { locale: cs });
+
+const formatEventDayCount = (dayCount: number) => {
+  if (dayCount === 1) return '1 den';
+  if (dayCount >= 2 && dayCount <= 4) return `${dayCount} dny`;
+  return `${dayCount} dní`;
+};
+
+const getListOccurrencesForEvent = (event: CalendarEvent, canManageEvents: boolean): EventListOccurrence[] => {
+  const dates = getDatesBetween(event.startDate, event.endDate);
+  const dayCount = dates.length || 1;
+
+  if (dayCount === 1 || !dates[0]) {
+    return [{
+      event,
+      date: dates[0] ?? event.startDate,
+      kind: 'single',
+      dayIndex: 1,
+      dayCount,
+    }];
+  }
+
+  if (!canManageEvents) {
+    return [{
+      event,
+      date: dates[0],
+      kind: 'start',
+      dayIndex: 1,
+      dayCount,
+    }];
+  }
+
+  return dates.map((date, index) => ({
+    event,
+    date,
+    kind: index === 0 ? 'start' : (index === dates.length - 1 ? 'end' : 'continuation'),
+    dayIndex: index + 1,
+    dayCount,
+  }));
+};
+
+const getOccurrenceStatusLabel = (occurrence: EventListOccurrence) => {
+  if (occurrence.kind === 'single') return null;
+  if (occurrence.kind === 'start') return 'Začíná dnes';
+  if (occurrence.kind === 'end') return 'Končí dnes';
+  return `Probíhá od ${formatShortOccurrenceDate(occurrence.event.startDate)}`;
+};
 
 const formatTimelogShift = (from: string, to: string) => `${from} - ${to}`;
 
@@ -343,18 +395,18 @@ const EventsView = () => {
 
   const groupedEventOccurrences = useMemo(() => (
     listVisibleEvents.reduce((acc, event) => {
-      getDatesBetween(event.startDate, event.endDate).forEach((date) => {
-        if (date < selectedMonthStart || date > selectedMonthEnd) return;
-        if (!acc[date]) acc[date] = [];
-        acc[date].push({ event, date });
+      getListOccurrencesForEvent(event, canManageEvents).forEach((occurrence) => {
+        if (occurrence.date < selectedMonthStart || occurrence.date > selectedMonthEnd) return;
+        if (!acc[occurrence.date]) acc[occurrence.date] = [];
+        acc[occurrence.date].push(occurrence);
       });
       return acc;
     }, {} as Record<string, EventListOccurrence[]>)
-  ), [listVisibleEvents, selectedMonthEnd, selectedMonthStart]);
+  ), [canManageEvents, listVisibleEvents, selectedMonthEnd, selectedMonthStart]);
 
   const sortedDates = Object.keys(groupedEventOccurrences).sort();
   const hasNoVisibleEventsForView = viewMode === 'list'
-    ? listVisibleEvents.length === 0
+    ? sortedDates.length === 0
     : visibleEvents.length === 0;
 
   const calendarStart = calendarMode === 'month'
@@ -601,7 +653,8 @@ const EventsView = () => {
               </div>
 
               <div className="grid grid-cols-1 gap-3">
-                {groupedEventOccurrences[date].map(({ event, date: occurrenceDate }) => {
+                {groupedEventOccurrences[date].map((occurrence) => {
+                  const { event, date: occurrenceDate } = occurrence;
                   const eventDetail = getEventDetailData(getEventSelectionId(event));
                   const eventTimelogs: Timelog[] = eventDetail.timelogs;
                   const assignedCrew = eventDetail.crewAssignments.map((assignment) => ({
@@ -647,9 +700,13 @@ const EventsView = () => {
                     ? assignedCrew.some((contractor) => contractor.profileId === currentProfileId)
                     : false;
                   const totalHours = eventTimelogs.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
-                  const daysCount = getDatesBetween(event.startDate, event.endDate).length;
                   const isFullyStaffed = event.needed > 0 && event.filled >= event.needed;
                   const occurrenceTimeLabel = getEventOccurrenceTimeLabel(event, occurrenceDate, eventTimelogs);
+                  const occurrenceDateLabel = occurrence.dayCount > 1
+                    ? formatDateRange(event.startDate, event.endDate)
+                    : formatOccurrenceDate(occurrenceDate);
+                  const occurrenceStatusLabel = getOccurrenceStatusLabel(occurrence);
+                  const isContinuationOccurrence = occurrence.kind === 'continuation' || occurrence.kind === 'end';
                   const approvalMeta = getEventTimelogApprovalMeta(eventTimelogs);
 
                   return (
@@ -664,7 +721,11 @@ const EventsView = () => {
                           openEventDetail(event);
                         }
                       }}
-                      className="relative cursor-pointer overflow-hidden rounded-[28px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] shadow-[0_18px_42px_rgba(47,38,31,0.08)] transition-shadow hover:shadow-[0_22px_48px_rgba(47,38,31,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:rgb(var(--nodu-accent-rgb)/0.22)]"
+                      className={`relative cursor-pointer overflow-hidden rounded-[28px] border transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:rgb(var(--nodu-accent-rgb)/0.22)] ${
+                        isContinuationOccurrence
+                          ? 'border-dashed border-[color:rgb(var(--nodu-text-rgb)/0.16)] bg-[color:rgb(var(--nodu-text-rgb)/0.035)] shadow-none hover:shadow-[0_12px_28px_rgba(47,38,31,0.06)]'
+                          : 'border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] shadow-[0_18px_42px_rgba(47,38,31,0.08)] hover:shadow-[0_22px_48px_rgba(47,38,31,0.12)]'
+                      }`}
                     >
                       {canManageEvents && (
                         <button
@@ -688,13 +749,23 @@ const EventsView = () => {
                                   {approvalMeta.label}
                                 </span>
                               )}
+                              {occurrenceStatusLabel && (
+                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                                  isContinuationOccurrence
+                                    ? 'border-[color:rgb(var(--nodu-text-rgb)/0.14)] bg-[color:rgb(var(--nodu-text-rgb)/0.06)] text-[color:var(--nodu-text-soft)]'
+                                    : 'border-[color:rgb(var(--nodu-accent-rgb)/0.18)] bg-[color:rgb(var(--nodu-accent-rgb)/0.1)] text-[color:var(--nodu-accent)]'
+                                }`}
+                                >
+                                  {occurrenceStatusLabel}
+                                </span>
+                              )}
                             </div>
                             <h3 className="text-base font-semibold text-[color:var(--nodu-text)]">{event.name}</h3>
                             <div className="mt-1 flex items-center gap-1.5 text-xs text-[color:var(--nodu-text-soft)]">
-                              {formatOccurrenceDate(occurrenceDate)} - {occurrenceTimeLabel} - {event.client}
-                              {daysCount > 1 && (
+                              {occurrenceDateLabel} - {occurrenceTimeLabel} - {event.client}
+                              {occurrence.dayCount > 1 && (
                                 <span className="rounded bg-[color:rgb(var(--nodu-text-rgb)/0.08)] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-tighter text-[color:var(--nodu-text-soft)]">
-                                  {daysCount} dny
+                                  {formatEventDayCount(occurrence.dayCount)}
                                 </span>
                               )}
                             </div>

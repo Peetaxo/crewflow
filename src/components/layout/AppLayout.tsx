@@ -1,7 +1,11 @@
 import React from 'react';
 import { AnimatePresence } from 'framer-motion';
+import { toast } from 'sonner';
+import { useAuth } from '../../app/providers/useAuth';
 import { useAppContext } from '../../context/useAppContext';
 import { useIsMobile } from '../../hooks/use-mobile';
+import { ROLE_LABELS, ROLE_SHORT_LABELS } from '../../constants';
+import type { Role } from '../../types';
 import Sidebar from './Sidebar';
 import MobileCrewNav from './MobileCrewNav';
 import { useNavBadgeCounts } from './useNavBadgeCounts';
@@ -26,17 +30,41 @@ import ClientEditModal from '../modals/ClientEditModal';
 import ReceiptEditModal from '../modals/ReceiptEditModal';
 import DeleteConfirmModal from '../modals/DeleteConfirmModal';
 
+const mobileRoleOptions = ['crew', 'crewhead', 'coo'] as const;
+
 const AppLayout: React.FC = () => {
   const {
     darkMode,
     currentTab,
     role,
+    setRole,
     selectedEventId,
   } = useAppContext();
+  const { isAuthRequired, isDevSession, isRoleSwitching, role: authRole, switchRole } = useAuth();
   const isMobile = useIsMobile();
   const badgeCounts = useNavBadgeCounts();
-  const isMobileCrewShell = isMobile && role === 'crew';
-  const isMobileCrewEventDetail = isMobileCrewShell && currentTab === 'events' && Boolean(selectedEventId);
+  const isMobileAppShell = isMobile;
+  const isMobileCrewRole = role === 'crew';
+  const isMobileEventDetail = isMobileAppShell && currentTab === 'events' && Boolean(selectedEventId);
+  const effectiveRole = authRole ?? role;
+  const showMobileRolePreviewSwitch = isMobileAppShell && (!isAuthRequired || isDevSession);
+
+  const handleMobileRoleChange = React.useCallback(async (roleOption: Role) => {
+    if (roleOption === effectiveRole || (isAuthRequired && isRoleSwitching)) return;
+
+    if (!isAuthRequired) {
+      setRole(roleOption);
+      return;
+    }
+
+    try {
+      await switchRole(roleOption);
+      toast.success(`Role zmenena na ${ROLE_LABELS[roleOption]}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Zmena role se nepodarila.';
+      toast.error(message);
+    }
+  }, [effectiveRole, isAuthRequired, isRoleSwitching, setRole, switchRole]);
 
   const renderCurrentView = () => {
     if (currentTab === 'settings') return <SettingsView key="settings" />;
@@ -79,16 +107,34 @@ const AppLayout: React.FC = () => {
   };
 
   return (
-    <div className={`nodu-app-shell ${isMobileCrewShell ? 'nodu-app-shell--mobile-crew' : ''} ${darkMode ? 'dark' : ''}`}>
-      {!isMobileCrewShell && <Sidebar />}
+    <div className={`nodu-app-shell ${isMobileAppShell ? 'nodu-app-shell--mobile-crew' : ''} ${darkMode ? 'dark' : ''}`}>
+      {!isMobileAppShell && <Sidebar />}
 
-      <main className={`nodu-page-frame ${isMobileCrewShell ? 'nodu-page-frame--mobile-crew' : ''}`}>
+      {showMobileRolePreviewSwitch && (
+        <div className="nodu-mobile-role-switcher" aria-label="Přepnutí role v mobilním preview">
+          {mobileRoleOptions.map((roleOption) => (
+            <button
+              key={roleOption}
+              type="button"
+              onClick={() => { void handleMobileRoleChange(roleOption); }}
+              disabled={isAuthRequired && isRoleSwitching}
+              aria-label={ROLE_LABELS[roleOption]}
+              aria-pressed={effectiveRole === roleOption}
+              className={`nodu-mobile-role-switcher__button ${effectiveRole === roleOption ? 'nodu-mobile-role-switcher__button--active' : ''}`}
+            >
+              {ROLE_SHORT_LABELS[roleOption]}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <main className={`nodu-page-frame ${isMobileAppShell ? 'nodu-page-frame--mobile-crew' : ''}`}>
         <div className="mx-auto max-w-6xl">
           <AnimatePresence mode="wait">{renderCurrentView()}</AnimatePresence>
         </div>
       </main>
 
-      {isMobileCrewShell && !isMobileCrewEventDetail && <MobileCrewNav badgeCounts={badgeCounts} />}
+      {isMobileAppShell && isMobileCrewRole && !isMobileEventDetail && <MobileCrewNav badgeCounts={badgeCounts} />}
 
       <TimelogEditModal />
       <ProjectEditModal />

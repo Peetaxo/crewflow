@@ -1,9 +1,6 @@
-export interface EventAddressSelection {
-  address: string;
-  placeId?: string;
-  locationLat: number | null;
-  locationLng: number | null;
-}
+import { getManualAddressSelection, type EventAddressSelection } from './event-location.service';
+
+export { getManualAddressSelection, type EventAddressSelection };
 
 export interface EventAddressSuggestion {
   id: string;
@@ -34,13 +31,6 @@ const clean = (value: string | null | undefined) => value?.trim() ?? '';
 const getConfiguredGoogleMapsApiKey = () => clean(import.meta.env.VITE_GOOGLE_MAPS_API_KEY);
 
 export const isGooglePlacesConfigured = (apiKey = getConfiguredGoogleMapsApiKey()) => clean(apiKey).length > 0;
-
-export const getManualAddressSelection = (address: string): EventAddressSelection => ({
-  address: clean(address),
-  placeId: undefined,
-  locationLat: null,
-  locationLng: null,
-});
 
 const getString = (value: unknown): string => (
   typeof value === 'string' ? value : value?.toString?.() ?? ''

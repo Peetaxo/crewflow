@@ -33,7 +33,9 @@ export const getManualAddressSelection = (address: string): EventAddressSelectio
   locationLng: null,
 });
 
-export const hasEventCoordinates = (location: Pick<EventLocationInput, 'locationLat' | 'locationLng'>): boolean => (
+export const hasEventCoordinates = <T extends Pick<EventLocationInput, 'locationLat' | 'locationLng'>>(
+  location: T,
+): location is T & { locationLat: number; locationLng: number } => (
   hasCoordinatePair(location.locationLat, location.locationLng)
 );
 

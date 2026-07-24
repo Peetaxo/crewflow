@@ -16,6 +16,8 @@ const EVENT_MAP_ZOOM = 15;
 const EVENT_MAP_FALLBACK_LABEL = 'Místo bude doplněno';
 const OSM_TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 const OSM_ATTRIBUTION = '&copy; OpenStreetMap contributors';
+const MARKER_ICON_ANCHOR: L.PointExpression = [12, 32];
+const MARKER_ICON_SIZE: L.PointExpression = [24, 32];
 
 const roundCoordinate = (value: number) => Math.round(value * 1_000_000) / 1_000_000;
 
@@ -59,7 +61,9 @@ const EventMapPreview = ({
       return undefined;
     }
 
-    const map = L.map(mapElementRef.current);
+    const map = L.map(mapElementRef.current, {
+      zoomControl: editable,
+    });
     mapRef.current = map;
     map.setView(initialCoordinates, EVENT_MAP_ZOOM);
 
@@ -69,8 +73,8 @@ const EventMapPreview = ({
 
     const markerIcon = L.divIcon({
       className: 'nodu-event-map-marker',
-      iconAnchor: [12, 24],
-      iconSize: [24, 24],
+      iconAnchor: MARKER_ICON_ANCHOR,
+      iconSize: MARKER_ICON_SIZE,
     });
     const marker = L.marker(initialCoordinates, {
       draggable: editable,

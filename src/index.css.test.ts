@@ -123,4 +123,14 @@ describe('nodu CSS helpers', () => {
     expect(sidebarShellRule).not.toContain('255, 250, 244');
     expect(sidebarSurfaceRule).not.toContain('255, 255, 255');
   });
+
+  it('keeps event map marker anchoring and external link placement clear of Leaflet controls', () => {
+    const css = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8');
+    const eventMapLinkRule = css.match(/\.nodu-event-map-preview__link\s*\{[\s\S]*?\}/)?.[0];
+    const eventMapMarkerRule = css.match(/\.nodu-event-map-marker\s*\{[\s\S]*?\}/)?.[0];
+
+    expect(eventMapLinkRule).toContain('left: 0.75rem;');
+    expect(eventMapLinkRule).not.toContain('right: 0.75rem;');
+    expect(eventMapMarkerRule).not.toMatch(/margin\s*:/);
+  });
 });

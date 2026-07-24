@@ -135,6 +135,8 @@ describe('EventMapPreview', () => {
     );
     expect(divIconMock).toHaveBeenCalledWith(expect.objectContaining({
       className: 'nodu-event-map-marker',
+      iconAnchor: [12, 32],
+      iconSize: [24, 32],
     }));
     expect(markerMock).toHaveBeenCalledWith(
       [50.0929, 14.4502],
@@ -149,6 +151,9 @@ describe('EventMapPreview', () => {
   it('disables map interactions in read-only mode', () => {
     render(<EventMapPreview address="Praha" locationLat={50.0929} locationLng={14.4502} />);
 
+    expect(mapMock).toHaveBeenCalledWith(expect.any(HTMLElement), expect.objectContaining({
+      zoomControl: false,
+    }));
     expect(lastMap.dragging.disable).toHaveBeenCalledOnce();
     expect(lastMap.scrollWheelZoom.disable).toHaveBeenCalledOnce();
     expect(lastMap.touchZoom.disable).toHaveBeenCalledOnce();
@@ -170,6 +175,9 @@ describe('EventMapPreview', () => {
       />,
     );
 
+    expect(mapMock).toHaveBeenCalledWith(expect.any(HTMLElement), expect.objectContaining({
+      zoomControl: true,
+    }));
     expect(markerMock).toHaveBeenCalledWith(
       [50.0929, 14.4502],
       expect.objectContaining({ draggable: true }),

@@ -15,6 +15,7 @@ import {
   saveEvent,
 } from '../../features/events/services/events.service';
 import EventAddressField from '../../features/events/components/EventAddressField';
+import EventMapPreview from '../../features/events/components/EventMapPreview';
 
 interface EventEditModalProps {
   editingEvent: Event | null;
@@ -242,6 +243,21 @@ const EventEditModal = ({
                   })}
                 />
               </div>
+            </div>
+
+            <div className="w-full">
+              <EventMapPreview
+                address={editingEvent.address || editingEvent.city}
+                locationLat={editingEvent.locationLat}
+                locationLng={editingEvent.locationLng}
+                editable
+                onLocationChange={({ locationLat, locationLng }) => updateEventDraft({
+                  ...editingEvent,
+                  locationLat,
+                  locationLng,
+                  placeId: undefined,
+                })}
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-4">

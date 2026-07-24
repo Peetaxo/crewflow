@@ -36,6 +36,35 @@ vi.mock('../features/crew/services/crew-ratings.service', () => ({
   upsertCrewRating: crewRatingsMockState.upsertCrewRating,
 }));
 
+type MockEventMapPreviewProps = {
+  address?: string | null;
+  locationLat?: number | null;
+  locationLng?: number | null;
+  googleMapsUrl?: string;
+};
+
+const eventMapPreviewMock = vi.hoisted(() => vi.fn());
+
+vi.mock('../features/events/components/EventMapPreview', () => ({
+  default: (props: MockEventMapPreviewProps) => {
+    eventMapPreviewMock(props);
+
+    return (
+      <a
+        data-testid="event-map-preview"
+        href={props.googleMapsUrl}
+        target="_blank"
+        rel="noreferrer"
+        data-address={props.address ?? ''}
+        data-location-lat={props.locationLat ?? ''}
+        data-location-lng={props.locationLng ?? ''}
+      >
+        Otevřít mapu
+      </a>
+    );
+  },
+}));
+
 const event = {
   id: 1,
   supabaseId: 'event-uuid-1',
@@ -114,6 +143,7 @@ describe('EventDetailView', () => {
     crewRatingsMockState.getCrewRatingsForEvent.mockReset();
     crewRatingsMockState.getCrewRatingsForEvent.mockReturnValue([]);
     crewRatingsMockState.upsertCrewRating.mockReset();
+    eventMapPreviewMock.mockClear();
     requestEventWithdrawalMock.mockReset();
     requestEventWithdrawalMock.mockResolvedValue(undefined);
     vi.doUnmock('../features/invoices/queries/useInvoiceApprovalsQuery');
@@ -339,6 +369,18 @@ describe('EventDetailView', () => {
 
     render(<EventDetailView />);
 
+    const mapPreview = screen.getByTestId('event-map-preview');
+
+    expect(eventMapPreviewMock).toHaveBeenCalledWith(expect.objectContaining({
+      address: 'Rohanske nabrezi 678/23, Praha',
+      locationLat: 50.0929,
+      locationLng: 14.4502,
+      googleMapsUrl: 'https://www.google.com/maps/search/?api=1&query=50.0929%2C14.4502&query_place_id=ChIJ-event-place',
+    }));
+    expect(mapPreview).toHaveAttribute(
+      'href',
+      'https://www.google.com/maps/search/?api=1&query=50.0929%2C14.4502&query_place_id=ChIJ-event-place',
+    );
     expect(screen.getByText('Adresa')).toBeInTheDocument();
     expect(screen.getByText('Rohanske nabrezi 678/23, Praha')).toBeInTheDocument();
     expect(screen.getByText('Sraz')).toBeInTheDocument();

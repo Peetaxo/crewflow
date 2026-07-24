@@ -13,6 +13,7 @@ import StatusBadge from '../components/shared/StatusBadge';
 import EventEditModal from '../components/modals/EventEditModal';
 import AssignCrewModal from '../components/modals/AssignCrewModal';
 import EventCrewRatingPanel from '../features/crew/components/EventCrewRatingPanel';
+import EventMapPreview from '../features/events/components/EventMapPreview';
 import { getCrewRatingsForEvent } from '../features/crew/services/crew-ratings.service';
 import { Contractor, Event, InvoiceApprovalDocument, Timelog } from '../types';
 import {
@@ -384,16 +385,12 @@ const EventDetailView = () => {
             </div>
           </section>
 
-          <a
-            href={mobileMapUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="nodu-mobile-event-map"
-            aria-label={`Otevřít mapu: ${mobileAddress}`}
-          >
-            <div className="nodu-mobile-event-map-pin" aria-hidden="true" />
-            <span>Otevřít mapu</span>
-          </a>
+          <EventMapPreview
+            address={mobileAddress}
+            locationLat={event.locationLat}
+            locationLng={event.locationLng}
+            googleMapsUrl={mobileMapUrl}
+          />
 
           <section className="nodu-mobile-event-card nodu-mobile-event-info-card" aria-label="Informace k akci">
             <div className="nodu-mobile-event-info-row">

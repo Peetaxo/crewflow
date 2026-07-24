@@ -31,6 +31,7 @@ interface NominatimSearchResult {
 const NOMINATIM_SEARCH_BASE_URL = 'https://nominatim.openstreetmap.org/search';
 const DEFAULT_PROVIDER_COOLDOWN_MS = 1100;
 const EVENT_GEOCODING_RATE_LIMIT_MESSAGE = 'Vyhledávání adres je dostupné za chvíli. Zkuste to prosím znovu.';
+const EVENT_GEOCODING_FAILURE_MESSAGE = 'Adresu se nepodařilo najít.';
 
 const cache = new Map<string, EventGeocodingCandidate[]>();
 let lastProviderCallAt: number | null = null;
@@ -109,15 +110,29 @@ export const searchFreeEventLocations = async (
 
   lastProviderCallAt = currentTime;
 
-  const response = await getFetcher(options.fetcher)(buildNominatimSearchUrl(trimmedQuery), {
-    headers: { Accept: 'application/json' },
-  });
+  let response: Awaited<ReturnType<EventGeocodingFetcher>>;
 
-  if (!response.ok) {
-    throw new Error('Adresu se nepodařilo najít.');
+  try {
+    response = await getFetcher(options.fetcher)(buildNominatimSearchUrl(trimmedQuery), {
+      headers: { Accept: 'application/json' },
+    });
+  } catch {
+    throw new Error(EVENT_GEOCODING_FAILURE_MESSAGE);
   }
 
-  const candidates = normalizeNominatimResults(await response.json());
+  if (!response.ok) {
+    throw new Error(EVENT_GEOCODING_FAILURE_MESSAGE);
+  }
+
+  let providerItems: unknown;
+
+  try {
+    providerItems = await response.json();
+  } catch {
+    throw new Error(EVENT_GEOCODING_FAILURE_MESSAGE);
+  }
+
+  const candidates = normalizeNominatimResults(providerItems);
   cache.set(normalizedQuery, candidates);
 
   return candidates;

@@ -123,4 +123,23 @@ describe('event geocoding service', () => {
       'Adresu se nepodařilo najít.',
     );
   });
+
+  it('throws a Czech failure message when the provider request rejects', async () => {
+    const fetcher = vi.fn().mockRejectedValue(new Error('Failed to fetch'));
+
+    await expect(searchFreeEventLocations('Praha Dejvice', { fetcher, cooldownMs: 0 })).rejects.toThrow(
+      'Adresu se nepodařilo najít.',
+    );
+  });
+
+  it('throws a Czech failure message when the provider JSON cannot be parsed', async () => {
+    const fetcher = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockRejectedValue(new SyntaxError('Unexpected token < in JSON at position 0')),
+    });
+
+    await expect(searchFreeEventLocations('Praha Dejvice', { fetcher, cooldownMs: 0 })).rejects.toThrow(
+      'Adresu se nepodařilo najít.',
+    );
+  });
 });

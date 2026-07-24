@@ -47,6 +47,10 @@ CrewHead zustava primarne desktopova role. V prvni mobilni etape neni nutne pres
 
 COO zustava primarne desktopova role pro finalni schvaleni a financni prehled. V prvni etape se nemeni princip, ze COO vidi az hodiny posunute po CH kontrole a neresi vnitrni kompromisy mezi CH a Crew.
 
+### Budouci Mobilni Rozsah Pro CH A COO
+
+Mobilni aplikace nema zustat pouze pro Crew. Po stabilizaci Crew workflow musi postupne vzniknout i mobilni pohledy pro CH a COO. CH potrebuje na telefonu minimalne kontrolovat a schvalovat prihlasene crew na akce, resit zadosti o odhlaseni a schvalovat nebo vracet vykazy. COO potrebuje mobilne videt finalni frontu ke schvaleni a provadet finalni rozhodnuti bez nutnosti plne desktopove administrace. Tento rozsah neni soucast prvni Crew etapy, ale je povazovany za navazujici produktovy smer.
+
 ## Mobilni Navigace
 
 Mobilni navigace pro Crew muze mit vlastni kratke popisky nez desktop. Desktopove nazvy zustavaji plne a popisne, mobilni taby mohou byt kratke kvuli sirce displeje.

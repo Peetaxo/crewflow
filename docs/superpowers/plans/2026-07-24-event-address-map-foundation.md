@@ -8,7 +8,7 @@
 
 **Tech Stack:** React, TypeScript, Vitest, Testing Library, Supabase SQL migrations, Google Maps URLs.
 
-**Supabase deployment note:** `supabase db push --dry-run` is currently blocked because remote migration history contains `20260408103107`, `20260513104914`, and `20260514081155`, but those migration files are missing locally. The address SQL was applied directly with `supabase db query --linked -f supabase/migrations/20260724065642_add_event_address_location.sql`, and remote `information_schema` confirms the columns exist. A separate cleanup should reconcile Supabase migration history before relying on `db push`.
+**Supabase deployment note:** The address SQL was applied directly with `supabase db query --linked -f supabase/migrations/20260724065642_add_event_address_location.sql`, and remote `information_schema` confirmed the columns exist. Migration history was reconciled afterward in commit `37cb8fd`; `supabase db push --dry-run` now reports `Remote database is up to date.`
 
 ---
 
@@ -148,7 +148,7 @@ npm run build
 npm run lint
 ```
 
-- [ ] **Step 3: Check diff and commit**
+- [x] **Step 3: Check diff and commit**
 
 Stage only files from this plan, commit:
 
@@ -156,7 +156,7 @@ Stage only files from this plan, commit:
 git commit -m "feat: add event address map foundation"
 ```
 
-- [ ] **Step 4: Push**
+- [x] **Step 4: Push**
 
 Run:
 

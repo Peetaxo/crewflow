@@ -59,6 +59,8 @@ Use Google Maps Platform for the enhanced behavior:
 - Maps JavaScript API for the in-app map preview and marker.
 - Google Maps URLs for the external click target.
 
+The autocomplete UI should use the programmatic Places Autocomplete Data API (`AutocompleteSuggestion.fetchAutocompleteSuggestions`) rather than the hosted widget. This keeps the address field visually consistent with the rest of the Nodu form, lets us control mobile behavior, and still allows manual fallback when Google is unavailable.
+
 Configuration should use `VITE_GOOGLE_MAPS_API_KEY`. The key should be browser-restricted to the production domains and local development origins. The app must render without this key.
 
 The Google Maps URL should prefer precise data:
@@ -110,5 +112,6 @@ Run targeted tests around event services, modal, detail view, mappers, then buil
 ## Sources
 
 - Google Place Autocomplete: https://developers.google.com/maps/documentation/javascript/place-autocomplete-new
+- Google Place Autocomplete Data API: https://developers.google.com/maps/documentation/javascript/place-autocomplete-data
 - Google Maps URLs: https://developers.google.com/maps/documentation/urls/get-started
 - Google Maps markers: https://developers.google.com/maps/documentation/javascript/advanced-markers/overview

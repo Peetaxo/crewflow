@@ -14,6 +14,7 @@ import {
   normalizeEventSchedules,
   saveEvent,
 } from '../../features/events/services/events.service';
+import EventAddressField from '../../features/events/components/EventAddressField';
 
 interface EventEditModalProps {
   editingEvent: Event | null;
@@ -229,19 +230,16 @@ const EventEditModal = ({
                 </select>
               </div>
               <div>
-                <label className={fieldLabelClass}>Adresa</label>
-                <input
-                  type="text"
-                  value={editingEvent.address ?? editingEvent.city}
-                  onChange={(e) => updateEventDraft({
+                <EventAddressField
+                  value={editingEvent}
+                  onChange={(selection) => updateEventDraft({
                     ...editingEvent,
-                    address: e.target.value,
-                    city: e.target.value,
-                    placeId: undefined,
-                    locationLat: null,
-                    locationLng: null,
+                    address: selection.address,
+                    city: selection.address,
+                    placeId: selection.placeId,
+                    locationLat: selection.locationLat,
+                    locationLng: selection.locationLng,
                   })}
-                  className={nativeFieldClass}
                 />
               </div>
             </div>

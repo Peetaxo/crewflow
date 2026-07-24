@@ -627,6 +627,128 @@ tbody tr:hover td {
   background: var(--nodu-accent);
 }
 
+.nodu-event-map-preview {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: clamp(13rem, 34vw, 20rem);
+  min-height: 13rem;
+  overflow: hidden;
+  border: 1px solid rgb(var(--nodu-text-rgb) / 0.08);
+  border-radius: 20px;
+  background: rgb(var(--nodu-surface-muted-rgb) / 0.92);
+  box-shadow: inset 0 0 0 1px rgb(var(--nodu-surface-rgb) / 0.48);
+}
+
+.nodu-event-map-preview__canvas,
+.nodu-event-map-preview .leaflet-container {
+  width: 100%;
+  height: 100%;
+  min-height: 13rem;
+  font: inherit;
+}
+
+.nodu-event-map-preview--placeholder {
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  text-align: center;
+  background:
+    linear-gradient(90deg, rgb(var(--nodu-text-rgb) / 0.04) 1px, transparent 1px),
+    linear-gradient(0deg, rgb(var(--nodu-text-rgb) / 0.04) 1px, transparent 1px),
+    rgb(var(--nodu-surface-muted-rgb) / 0.92);
+  background-size: 2rem 2rem;
+}
+
+.nodu-event-map-preview__placeholder-content {
+  max-width: min(22rem, 100%);
+  border: 1px solid rgb(var(--nodu-text-rgb) / 0.08);
+  border-radius: 18px;
+  background: rgb(var(--nodu-surface-rgb) / 0.9);
+  padding: 0.9rem 1rem;
+  box-shadow: 0 12px 30px rgb(var(--nodu-text-rgb) / 0.08);
+}
+
+.nodu-event-map-preview__placeholder-title {
+  margin: 0;
+  color: var(--nodu-text);
+  font-size: 0.9rem;
+  font-weight: 850;
+  line-height: 1.35;
+}
+
+.nodu-event-map-preview__placeholder-address {
+  margin: 0.3rem 0 0;
+  color: var(--nodu-text-soft);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.nodu-event-map-preview__link {
+  position: absolute;
+  z-index: 500;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  display: inline-flex;
+  min-height: 2.1rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(var(--nodu-text-rgb) / 0.08);
+  border-radius: 999px;
+  background: rgb(var(--nodu-surface-rgb) / 0.94);
+  color: var(--nodu-text);
+  padding: 0 0.85rem;
+  font-size: 0.75rem;
+  font-weight: 850;
+  text-decoration: none;
+  box-shadow: 0 12px 28px rgb(var(--nodu-text-rgb) / 0.12);
+}
+
+.nodu-event-map-preview__link:hover {
+  color: var(--nodu-accent);
+}
+
+.nodu-event-map-preview .leaflet-control-attribution {
+  background: rgb(var(--nodu-surface-rgb) / 0.86);
+  color: var(--nodu-text-soft);
+  font-size: 0.65rem;
+}
+
+.nodu-event-map-marker {
+  position: relative;
+  width: 1.5rem !important;
+  height: 1.5rem !important;
+  margin: 0 !important;
+  border: 3px solid rgb(var(--nodu-surface-rgb) / 0.98);
+  border-radius: 999px;
+  background: var(--nodu-accent);
+  box-shadow:
+    0 8px 18px rgb(var(--nodu-text-rgb) / 0.22),
+    0 0 0 6px rgb(var(--nodu-accent-rgb) / 0.16);
+}
+
+.nodu-event-map-marker::before {
+  content: "";
+  position: absolute;
+  inset: 0.35rem;
+  border-radius: 999px;
+  background: rgb(var(--nodu-surface-rgb) / 0.96);
+}
+
+.nodu-event-map-marker::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -0.42rem;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-right: 3px solid rgb(var(--nodu-surface-rgb) / 0.98);
+  border-bottom: 3px solid rgb(var(--nodu-surface-rgb) / 0.98);
+  background: var(--nodu-accent);
+  transform: translateX(-50%) rotate(45deg);
+}
+
 .nodu-mobile-event-info-card {
   padding: 0;
   overflow: hidden;

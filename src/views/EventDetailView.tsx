@@ -323,7 +323,7 @@ const EventDetailView = () => {
       });
   };
 
-  if (isCrewRole && isMobile) {
+  if (isMobile) {
     const canOpenNewTimelog = Boolean(currentContractor && isMeAssigned && canCreateTimelog(role));
     const ownTimelog = myTimelogs[0];
     const canUseEvidence = Boolean(currentContractor && isMeAssigned && (ownTimelog || canOpenNewTimelog));
@@ -334,6 +334,7 @@ const EventDetailView = () => {
         : hasMyWithdrawalRequest
           ? 'Odhlášení čeká'
           : 'Volná akce';
+    const crewCapacityLabel = `${event.filled}/${event.needed}`;
     const mobileAddress = getEventAddressLabel(event);
     const mobileMapUrl = buildGoogleMapsSearchUrl(event);
     const mobileMeetingLocation = event.meetingLocation?.trim();
@@ -347,8 +348,9 @@ const EventDetailView = () => {
     const mobileEndDateTime = `${formatMobileBoundaryDate(event.endDate)} · ${event.endTime || 'čas bude doplněn'}`;
     const floatingPanelClassName = [
       'nodu-mobile-event-floating-panel',
-      isMeAssigned ? 'nodu-mobile-event-floating-panel--actions-only' : '',
-      !isMeAssigned ? 'nodu-mobile-event-floating-panel--compact' : '',
+      canManageEvents ? 'nodu-mobile-event-floating-panel--manager' : '',
+      !canManageEvents && isMeAssigned ? 'nodu-mobile-event-floating-panel--actions-only' : '',
+      !canManageEvents && !isMeAssigned ? 'nodu-mobile-event-floating-panel--compact' : '',
     ].filter(Boolean).join(' ');
     const formatMobileCrewHours = (hours: number) => (hours > 0 ? `${hours.toFixed(1)}h` : '0h');
     const handleOpenEvidence = () => {
@@ -358,6 +360,12 @@ const EventDetailView = () => {
     const handleConfirmWithdrawal = () => {
       setShowWithdrawalConfirm(false);
       handleRequestWithdrawal();
+    };
+    const handleOpenMobileApproval = () => {
+      const approvalSection = document.getElementById('mobile-event-management-approval');
+      if (typeof approvalSection?.scrollIntoView === 'function') {
+        approvalSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     };
 
     return (
@@ -377,7 +385,13 @@ const EventDetailView = () => {
           <section className="nodu-mobile-event-hero" aria-labelledby="mobile-event-title">
             <div className="mb-3 flex items-center justify-between gap-3">
               <span className="jn nodu-job-badge px-2 py-0.5 text-sm">{event.job}</span>
-              <span className="nodu-mobile-event-participation-chip">{participationLabel}</span>
+              {canManageEvents ? (
+                <button type="button" className="nodu-mobile-event-participation-chip nodu-mobile-event-hero-action" onClick={() => setEditingEvent(event)}>
+                  Upravit
+                </button>
+              ) : (
+                <span className="nodu-mobile-event-participation-chip">{participationLabel}</span>
+              )}
             </div>
             <h1 id="mobile-event-title" className="text-2xl font-bold text-[color:var(--nodu-text)]">{event.name}</h1>
             <div className="mt-2 text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--nodu-text-soft)]">
@@ -436,7 +450,7 @@ const EventDetailView = () => {
             )}
           </section>
 
-          {!isMeAssigned && !hasMyPendingApplication && event.allowCrewTimeProposal && (
+          {!canManageEvents && !isMeAssigned && !hasMyPendingApplication && event.allowCrewTimeProposal && (
             <section className="nodu-mobile-event-card" aria-label="Čas přihlášky">
               <div className="grid grid-cols-2 gap-2">
                 <label className="nodu-mobile-event-time-field">
@@ -475,7 +489,10 @@ const EventDetailView = () => {
           )}
 
           <section className="nodu-mobile-event-section" aria-labelledby="mobile-event-assigned-crew-title">
-            <h2 id="mobile-event-assigned-crew-title">Přiřazená crew</h2>
+            <div className="nodu-mobile-event-section-heading">
+              <h2 id="mobile-event-assigned-crew-title">Přiřazená crew</h2>
+              <span className="nodu-mobile-event-capacity-chip">{crewCapacityLabel}</span>
+            </div>
             {eventCrew.length > 0 ? (
               <div className="nodu-mobile-event-crew-list">
                 {eventCrew.map((contractor) => {
@@ -498,10 +515,143 @@ const EventDetailView = () => {
               <div className="nodu-mobile-event-empty-state">Zatím není přiřazená žádná crew.</div>
             )}
           </section>
+
+          {canManageEvents && (
+            <section id="mobile-event-management-approval" className="nodu-mobile-event-section" aria-labelledby="mobile-event-management-approval-title">
+              <h2 id="mobile-event-management-approval-title">Schvalování</h2>
+
+              <div className="nodu-mobile-event-management-block">
+                <div className="nodu-mobile-event-management-title">
+                  <Users size={16} />
+                  <span>Přihlášky crew</span>
+                  <strong>{pendingApplications.length}</strong>
+                </div>
+                {pendingApplications.length > 0 ? (
+                  <div className="nodu-mobile-event-management-list">
+                    {pendingApplications.map(({ application, contractor }) => (
+                      <div key={application.id} className="nodu-mobile-event-management-row">
+                        <div className="av h-10 w-10 text-[12px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
+                        <div className="min-w-0">
+                          <div className="nodu-mobile-event-crew-name">{contractor.name}</div>
+                          <div className="nodu-mobile-event-crew-meta">
+                            {application.plannedFrom && application.plannedTo ? `${application.plannedFrom} - ${application.plannedTo}` : 'Čas není navržen'}
+                          </div>
+                        </div>
+                        <div className="nodu-mobile-event-management-actions">
+                          <button
+                            type="button"
+                            aria-label={`Schválit přihlášku ${contractor.name}`}
+                            className="nodu-mobile-event-icon-action nodu-mobile-event-icon-action--success"
+                            onClick={() => handleApproveApplication(application.id)}
+                          >
+                            Schválit
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Zamítnout přihlášku ${contractor.name}`}
+                            className="nodu-mobile-event-icon-action nodu-mobile-event-icon-action--danger"
+                            onClick={() => handleRejectApplication(application.id)}
+                          >
+                            Zamítnout
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="nodu-mobile-event-empty-state">Žádné přihlášky teď nečekají.</div>
+                )}
+              </div>
+
+              <div className="nodu-mobile-event-management-block">
+                <div className="nodu-mobile-event-management-title">
+                  <FileText size={16} />
+                  <span>Výkazy práce</span>
+                  <strong>{eventApprovalTimelogs.length}</strong>
+                </div>
+                {eventApprovalTimelogs.length > 0 ? (
+                  <div className="nodu-mobile-event-management-list">
+                    {eventApprovalTimelogs.map((timelog) => {
+                      const contractor = contractors.find((item) => item.profileId === timelog.contractorProfileId);
+                      const totalTimelogHours = calculateTotalHours(timelog.days);
+                      const approveAction = timelog.status === 'draft'
+                        ? 'sub'
+                        : timelog.status === 'pending_ch' ? 'ch' : 'coo';
+                      const contractorName = contractor?.name ?? 'Neznámý člen crew';
+
+                      return (
+                        <div key={timelog.id} className="nodu-mobile-event-management-row">
+                          <div className="av h-10 w-10 text-[12px]" style={{ backgroundColor: contractor?.bg ?? '#f3f4f6', color: contractor?.fg ?? '#6b7280' }}>{contractor?.ii ?? '?'}</div>
+                          <div className="min-w-0">
+                            <div className="nodu-mobile-event-crew-name">{contractorName}</div>
+                            <div className="nodu-mobile-event-crew-meta">
+                              {timelog.days.map((day) => `${formatShortDate(day.d)} ${day.f} - ${day.t}`).join(', ')}
+                            </div>
+                          </div>
+                          <div className="nodu-mobile-event-management-hours">{totalTimelogHours.toFixed(1)}h</div>
+                          <div className="nodu-mobile-event-management-actions">
+                            <button
+                              type="button"
+                              aria-label={`Schválit výkaz ${contractorName}`}
+                              className="nodu-mobile-event-icon-action nodu-mobile-event-icon-action--success"
+                              onClick={() => handleTimelogApprovalAction(timelog.id, approveAction)}
+                            >
+                              Schválit
+                            </button>
+                            {timelog.status !== 'draft' && (
+                              <button
+                                type="button"
+                                aria-label={`Zamítnout výkaz ${contractorName}`}
+                                className="nodu-mobile-event-icon-action nodu-mobile-event-icon-action--danger"
+                                onClick={() => handleTimelogApprovalAction(timelog.id, 'rej')}
+                              >
+                                Vrátit
+                              </button>
+                            )}
+                            {canEditTimelog(timelog, role) && (
+                              <button
+                                type="button"
+                                aria-label={`Upravit výkaz ${contractorName}`}
+                                className="nodu-mobile-event-icon-action"
+                                onClick={() => setEditingTimelog(timelog)}
+                              >
+                                Upravit
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="nodu-mobile-event-empty-state">Žádné výkazy této akce teď nečekají na schválení.</div>
+                )}
+              </div>
+            </section>
+          )}
         </div>
 
         <div className={floatingPanelClassName} aria-label="Akce k události">
-          {isMeAssigned ? (
+          {canManageEvents ? (
+            <>
+              <button
+                type="button"
+                className="nodu-mobile-event-evidence-button"
+                onClick={() => setAssigningEvent(event)}
+              >
+                <Users size={18} />
+                Přiřadit crew
+              </button>
+              <button
+                type="button"
+                className="nodu-mobile-event-evidence-button nodu-mobile-event-evidence-button--secondary"
+                onClick={handleOpenMobileApproval}
+              >
+                <FileText size={18} />
+                Schvalování
+              </button>
+            </>
+          ) : isMeAssigned ? (
             <>
               <button
                 type="button"
@@ -559,6 +709,16 @@ const EventDetailView = () => {
             </div>
           </div>
         )}
+
+        <EventEditModal
+          editingEvent={editingEvent}
+          onClose={() => setEditingEvent(null)}
+          onChange={setEditingEvent}
+        />
+        <AssignCrewModal
+          event={assigningEvent}
+          onClose={() => setAssigningEvent(null)}
+        />
       </motion.div>
     );
   }

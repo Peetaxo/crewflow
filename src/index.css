@@ -553,6 +553,7 @@ tbody tr:hover td {
   display: inline-flex;
   min-height: 2.4rem;
   align-items: center;
+  justify-content: center;
   border: 1px solid var(--nodu-success-border);
   border-radius: 999px;
   background: rgb(47 125 79 / 0.12);
@@ -560,6 +561,12 @@ tbody tr:hover td {
   padding: 0 0.9rem;
   font-size: 0.78rem;
   font-weight: 850;
+}
+
+.nodu-mobile-event-hero-action {
+  border-color: rgb(var(--nodu-accent-rgb) / 0.28);
+  background: rgb(var(--nodu-accent-rgb) / 0.1);
+  color: var(--nodu-accent);
 }
 
 .nodu-mobile-event-hero,
@@ -865,6 +872,32 @@ tbody tr:hover td {
   font-weight: 900;
 }
 
+.nodu-mobile-event-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+
+.nodu-mobile-event-section-heading h2 {
+  margin-bottom: 0;
+}
+
+.nodu-mobile-event-capacity-chip {
+  display: inline-flex;
+  min-height: 1.9rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(var(--nodu-accent-rgb) / 0.18);
+  border-radius: 999px;
+  background: rgb(var(--nodu-accent-rgb) / 0.1);
+  color: var(--nodu-accent);
+  padding: 0 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 900;
+}
+
 .nodu-mobile-event-section p {
   color: var(--nodu-text-soft);
   font-size: 0.88rem;
@@ -952,6 +985,17 @@ tbody tr:hover td {
   gap: 0.6rem;
 }
 
+.nodu-mobile-event-floating-panel--manager {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas: "primary secondary";
+  gap: 0.6rem;
+}
+
+.nodu-mobile-event-floating-panel--manager .nodu-mobile-event-evidence-button--secondary {
+  grid-area: secondary;
+  grid-column: auto;
+}
+
 .nodu-mobile-event-floating-summary {
   grid-area: summary;
   display: flex;
@@ -1020,6 +1064,92 @@ tbody tr:hover td {
   border-radius: 18px;
   padding: 0 0.5rem;
   text-align: center;
+}
+
+.nodu-mobile-event-management-block {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+}
+
+.nodu-mobile-event-management-title {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--nodu-text);
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
+.nodu-mobile-event-management-title svg {
+  color: var(--nodu-accent);
+}
+
+.nodu-mobile-event-management-title strong {
+  margin-left: auto;
+  border-radius: 999px;
+  background: rgb(var(--nodu-text-rgb) / 0.08);
+  color: var(--nodu-text-soft);
+  padding: 0.2rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.nodu-mobile-event-management-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.nodu-mobile-event-management-row {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  gap: 0.7rem;
+  align-items: center;
+  border: 1px solid rgb(var(--nodu-text-rgb) / 0.08);
+  border-radius: 17px;
+  background: rgb(var(--nodu-surface-rgb) / 0.94);
+  padding: 0.7rem;
+}
+
+.nodu-mobile-event-management-hours {
+  grid-column: 2;
+  width: fit-content;
+  border-radius: 999px;
+  background: rgb(var(--nodu-accent-rgb) / 0.1);
+  color: var(--nodu-accent);
+  padding: 0.25rem 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.nodu-mobile-event-management-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.nodu-mobile-event-icon-action {
+  min-height: 2.35rem;
+  border: 1px solid var(--nodu-border);
+  border-radius: 999px;
+  background: rgb(var(--nodu-surface-rgb) / 0.94);
+  color: var(--nodu-text);
+  padding: 0 0.75rem;
+  font-size: 0.74rem;
+  font-weight: 850;
+}
+
+.nodu-mobile-event-icon-action--success {
+  border-color: var(--nodu-success-border);
+  background: var(--nodu-success-bg);
+  color: var(--nodu-success-text);
+}
+
+.nodu-mobile-event-icon-action--danger {
+  border-color: var(--nodu-error-border);
+  background: var(--nodu-error-bg);
+  color: var(--nodu-error-text);
 }
 
 .nodu-mobile-event-withdrawal-dialog {

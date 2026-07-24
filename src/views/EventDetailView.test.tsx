@@ -402,6 +402,174 @@ describe('EventDetailView', () => {
     expect(descriptionSection!.compareDocumentPosition(crewSection!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it('shows assigned crew capacity next to the mobile assigned crew heading for Crew users', async () => {
+    mobileMockState.isMobile = true;
+    const capacityEvent = {
+      ...event,
+      status: 'upcoming' as const,
+      needed: 5,
+      filled: 2,
+    };
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        role: 'crew',
+        selectedEventId: 'event-uuid-1',
+        setSelectedEventId,
+        eventTab: 'overview',
+        setEventTab: vi.fn(),
+        setEditingReceipt: vi.fn(),
+        setDeleteConfirm: vi.fn(),
+        setEditingTimelog,
+      }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [contractor, applicant],
+      getEventDetailData: () => ({
+        event: capacityEvent,
+        timelogs: [timelog],
+        contractors: [contractor, applicant],
+        receipts: [],
+        applications: [],
+        crewAssignments: [
+          { eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: contractor.profileId, name: contractor.name },
+          { eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: applicant.profileId, name: applicant.name },
+        ],
+      }),
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: requestEventWithdrawalMock,
+      subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatus,
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventDetailView } = await import('./EventDetailView');
+
+    render(<EventDetailView />);
+
+    const crewSection = screen.getByRole('heading', { name: 'Přiřazená crew' }).closest('section');
+
+    expect(crewSection).toHaveTextContent('2/5');
+  });
+
+  it('renders mobile management detail for CH and COO with edit, assignment, and approval actions', async () => {
+    mobileMockState.isMobile = true;
+    updateTimelogStatus.mockResolvedValue({ ...pendingCrewheadTimelog, status: 'pending_coo' });
+    const approveEventApplication = vi.fn().mockResolvedValue(undefined);
+    const updateEventApplicationStatus = vi.fn().mockResolvedValue(undefined);
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        role: 'crewhead',
+        selectedEventId: 'event-uuid-1',
+        setSelectedEventId,
+        eventTab: 'overview',
+        setEventTab: vi.fn(),
+        setEditingReceipt: vi.fn(),
+        setDeleteConfirm: vi.fn(),
+        setEditingTimelog,
+      }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [contractor],
+      getEventDetailData: () => ({
+        event: { ...event, status: 'upcoming' as const, needed: 5, filled: 1, allowCrewTimeProposal: true },
+        timelogs: [pendingCrewheadTimelog],
+        contractors: [contractor, applicant],
+        receipts: [],
+        applications: [
+          {
+            id: 12,
+            eventId: event.id,
+            eventSupabaseId: event.supabaseId,
+            contractorProfileId: applicant.profileId,
+            status: 'pending',
+            plannedFrom: '09:00',
+            plannedTo: '15:00',
+          },
+        ],
+        crewAssignments: [{ eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: contractor.profileId, name: contractor.name }],
+      }),
+      applyForEvent: vi.fn(),
+      approveEventApplication,
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: requestEventWithdrawalMock,
+      subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus,
+      withdrawEventApplication: vi.fn(),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatus,
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: ({ editingEvent }: { editingEvent: typeof event | null }) => (
+        editingEvent ? <div role="dialog" aria-label={`Editace akce ${editingEvent.name}`}>Editace akce {editingEvent.name}</div> : null
+      ),
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: ({ event: assignedEvent }: { event: typeof event | null }) => (
+        assignedEvent ? <div role="dialog" aria-label={`Přiřazení crew ${assignedEvent.name}`}>Přiřazení crew {assignedEvent.name}</div> : null
+      ),
+    }));
+
+    const { default: EventDetailView } = await import('./EventDetailView');
+
+    const { container } = render(<EventDetailView />);
+
+    expect(container.querySelector('.nodu-mobile-event-detail')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Upravit' })).toBeInTheDocument();
+    expect(screen.queryByText('Jsi přiřazen')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Přihlásit se' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Čas přihlášky' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Přiřadit crew' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Schvalování' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Přiřazená crew' }).closest('section')).toHaveTextContent('1/5');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Upravit' }));
+    expect(screen.getByRole('dialog', { name: /Editace akce TEST/ })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Přiřadit crew' }));
+    expect(screen.getByRole('dialog', { name: /Přiřazení crew TEST/ })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Schvalování' }));
+
+    expect(screen.getByRole('heading', { name: 'Schvalování' })).toBeInTheDocument();
+    expect(screen.getByText('Přihlášky crew')).toBeInTheDocument();
+    expect(screen.getAllByText('Jana Nova').length).toBeGreaterThan(0);
+    expect(screen.getByText('09:00 - 15:00')).toBeInTheDocument();
+    expect(screen.getByText('Výkazy práce')).toBeInTheDocument();
+    expect(screen.getByText('6.0h')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Schválit přihlášku Jana Nova' }));
+    await waitFor(() => expect(approveEventApplication).toHaveBeenCalledWith(12));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Schválit výkaz Jana Nova' }));
+    await waitFor(() => expect(updateTimelogStatus).toHaveBeenCalledWith(9, 'ch'));
+  });
+
   it('opens a confirmation dialog before requesting mobile Crew withdrawal', async () => {
     mobileMockState.isMobile = true;
     vi.doMock('../context/useAppContext', () => ({

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const setRole = vi.fn();
 const authMockState = vi.hoisted(() => ({
   isAuthRequired: false,
+  isDevSession: false,
   isRoleSwitching: false,
   profile: null,
   role: null as 'crew' | 'crewhead' | 'coo' | null,
@@ -132,6 +133,7 @@ describe('AppLayout shell', () => {
     mockIsMobile = false;
     setRole.mockClear();
     authMockState.isAuthRequired = false;
+    authMockState.isDevSession = false;
     authMockState.isRoleSwitching = false;
     authMockState.profile = null;
     authMockState.role = null;
@@ -240,5 +242,22 @@ describe('AppLayout shell', () => {
     fireEvent.click(screen.getByRole('button', { name: 'CrewHead' }));
 
     expect(setRole).toHaveBeenCalledWith('crewhead');
+  });
+
+  it('switches roles from the mobile role switcher in auth mode', () => {
+    mockAppContext = {
+      ...mockAppContext,
+      role: 'crew',
+    };
+    authMockState.isAuthRequired = true;
+    authMockState.role = 'crew';
+    mockIsMobile = true;
+
+    render(<AppLayout />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'CrewHead' }));
+
+    expect(authMockState.switchRole).toHaveBeenCalledWith('crewhead');
+    expect(setRole).not.toHaveBeenCalled();
   });
 });

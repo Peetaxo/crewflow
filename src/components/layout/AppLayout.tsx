@@ -40,14 +40,14 @@ const AppLayout: React.FC = () => {
     setRole,
     selectedEventId,
   } = useAppContext();
-  const { isAuthRequired, isDevSession, isRoleSwitching, role: authRole, switchRole } = useAuth();
+  const { isAuthRequired, isRoleSwitching, role: authRole, switchRole } = useAuth();
   const isMobile = useIsMobile();
   const badgeCounts = useNavBadgeCounts();
   const isMobileAppShell = isMobile;
   const isMobileCrewRole = role === 'crew';
   const isMobileEventDetail = isMobileAppShell && currentTab === 'events' && Boolean(selectedEventId);
   const effectiveRole = authRole ?? role;
-  const showMobileRolePreviewSwitch = isMobileAppShell && (!isAuthRequired || isDevSession);
+  const showMobileRolePreviewSwitch = isMobileAppShell;
 
   const handleMobileRoleChange = React.useCallback(async (roleOption: Role) => {
     if (roleOption === effectiveRole || (isAuthRequired && isRoleSwitching)) return;

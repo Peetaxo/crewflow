@@ -26,6 +26,7 @@ interface EventAddressFieldProps {
 const fieldLabelClass = 'mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]';
 const nativeFieldClass = 'w-full rounded-xl border border-[color:var(--nodu-border)] bg-white px-3 py-2 text-sm text-[color:var(--nodu-text)] outline-none transition-all focus:border-[color:var(--nodu-accent)] focus:ring-2 focus:ring-[color:rgb(var(--nodu-accent-rgb)/0.14)]';
 const actionClass = 'inline-flex items-center justify-center gap-2 rounded-xl border border-[color:var(--nodu-border)] bg-white px-3 py-2 text-xs font-bold text-[color:var(--nodu-text)] transition-all hover:border-[color:rgb(var(--nodu-accent-rgb)/0.32)] hover:text-[color:var(--nodu-accent)] disabled:cursor-not-allowed disabled:opacity-60';
+const geocodingFailureStatus = 'Vyhledávání polohy se nepodařilo. Zkuste to prosím znovu.';
 
 const clean = (value: string | null | undefined) => value?.trim() ?? '';
 
@@ -41,16 +42,27 @@ const EventAddressField = ({
   const [candidates, setCandidates] = React.useState<EventGeocodingCandidate[]>([]);
   const [status, setStatus] = React.useState('');
   const [isSearching, setIsSearching] = React.useState(false);
+  const inputValueRef = React.useRef(addressFromProps);
   const searchRequestId = React.useRef(0);
 
   React.useEffect(() => {
+    if (addressFromProps === inputValueRef.current) {
+      return;
+    }
+
+    searchRequestId.current += 1;
+    inputValueRef.current = addressFromProps;
     setInputValue(addressFromProps);
+    setIsSearching(false);
+    setCandidates([]);
+    setStatus('');
   }, [addressFromProps]);
 
   const handleManualChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const nextAddress = event.target.value;
     const nextQuery = nextAddress.trim();
     searchRequestId.current += 1;
+    inputValueRef.current = nextAddress;
     setInputValue(nextAddress);
     setIsSearching(false);
     setCandidates([]);
@@ -83,13 +95,13 @@ const EventAddressField = ({
       setStatus(nextCandidates.length > 0
         ? 'Vyberte správnou polohu z výsledků.'
         : 'Poloha nebyla nalezena. Adresu lze uložit ručně.');
-    } catch (error) {
+    } catch {
       if (searchRequestId.current !== requestId) {
         return;
       }
 
       setCandidates([]);
-      setStatus(error instanceof Error ? error.message : 'Vyhledávání polohy se nepodařilo. Zkuste to prosím znovu.');
+      setStatus(geocodingFailureStatus);
     } finally {
       if (searchRequestId.current === requestId) {
         setIsSearching(false);
@@ -99,6 +111,7 @@ const EventAddressField = ({
 
   const handleSelectCandidate = (candidate: EventGeocodingCandidate) => {
     searchRequestId.current += 1;
+    inputValueRef.current = candidate.label;
     setInputValue(candidate.label);
     setCandidates([]);
     setStatus('Poloha je vybraná z mapových podkladů.');

@@ -125,11 +125,62 @@ describe('EventAddressField', () => {
     expect(screen.queryByText('Vyberte správnou polohu z výsledků.')).not.toBeInTheDocument();
   });
 
+  it('does not apply stale geocode results after value props change mid-search', async () => {
+    let resolveSearch!: (candidates: EventGeocodingCandidate[]) => void;
+    const geocodeAddress = vi.fn(() => new Promise<EventGeocodingCandidate[]>((resolve) => {
+      resolveSearch = resolve;
+    }));
+    const { rerender } = render(
+      <EventAddressField
+        value={{ address: 'Rohanské nábřeží' }}
+        onChange={vi.fn()}
+        geocodeAddress={geocodeAddress}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Najít na mapě' }));
+
+    rerender(
+      <EventAddressField
+        value={{ address: 'Nová adresa' }}
+        onChange={vi.fn()}
+        geocodeAddress={geocodeAddress}
+      />,
+    );
+
+    await act(async () => {
+      resolveSearch([candidate]);
+    });
+
+    expect(screen.getByLabelText('Adresa')).toHaveValue('Nová adresa');
+    expect(screen.getByRole('button', { name: 'Najít na mapě' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Rohanské nábřeží 678/23, Praha' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Vyberte správnou polohu z výsledků.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Hledám polohu na mapě...')).not.toBeInTheDocument();
+  });
+
+  it('shows a safe Czech fallback when geocoding fails with a technical error', async () => {
+    const geocodeAddress = vi.fn().mockRejectedValue(new Error('Failed to fetch'));
+
+    render(
+      <EventAddressField
+        value={{ address: 'Rohanské nábřeží' }}
+        onChange={vi.fn()}
+        geocodeAddress={geocodeAddress}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Najít na mapě' }));
+
+    expect(await screen.findByText('Vyhledávání polohy se nepodařilo. Zkuste to prosím znovu.')).toBeInTheDocument();
+    expect(screen.queryByText('Failed to fetch')).not.toBeInTheDocument();
+  });
+
   it('shows no-result and provider failure statuses in Czech', async () => {
     const geocodeAddress = vi
       .fn()
       .mockResolvedValueOnce([])
-      .mockRejectedValueOnce(new Error('Vyhledávání adres je dostupné za chvíli. Zkuste to prosím znovu.'));
+      .mockRejectedValueOnce(new Error('Failed to fetch'));
 
     render(
       <EventAddressField
@@ -145,6 +196,6 @@ describe('EventAddressField', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Najít na mapě' }));
 
-    expect(await screen.findByText('Vyhledávání adres je dostupné za chvíli. Zkuste to prosím znovu.')).toBeInTheDocument();
+    expect(await screen.findByText('Vyhledávání polohy se nepodařilo. Zkuste to prosím znovu.')).toBeInTheDocument();
   });
 });

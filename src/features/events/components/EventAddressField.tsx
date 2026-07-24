@@ -52,6 +52,7 @@ const EventAddressField = ({
     const nextQuery = nextAddress.trim();
     searchRequestId.current += 1;
     setInputValue(nextAddress);
+    setIsSearching(false);
     setCandidates([]);
     setStatus(nextQuery && nextQuery.length < 3 ? 'Zadejte alespoň 3 znaky pro vyhledání na mapě.' : '');
     onChange(getManualAddressSelection(nextAddress));

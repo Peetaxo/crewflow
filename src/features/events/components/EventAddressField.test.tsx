@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import EventAddressField from './EventAddressField';
 import type { EventGeocodingCandidate } from '../services/event-geocoding.service';
@@ -92,6 +92,37 @@ describe('EventAddressField', () => {
     expect(screen.getByDisplayValue('Rohanské nábřeží 678/23, Praha')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Rohanské nábřeží 678/23, Praha' })).not.toBeInTheDocument();
     expect(screen.getByText('Poloha je vybraná z mapových podkladů.')).toBeInTheDocument();
+  });
+
+  it('ignores stale geocode results after the address changes mid-search', async () => {
+    let resolveSearch!: (candidates: EventGeocodingCandidate[]) => void;
+    const geocodeAddress = vi.fn(() => new Promise<EventGeocodingCandidate[]>((resolve) => {
+      resolveSearch = resolve;
+    }));
+
+    render(
+      <EventAddressField
+        value={{ address: 'Rohanské nábřeží' }}
+        onChange={vi.fn()}
+        geocodeAddress={geocodeAddress}
+      />,
+    );
+
+    const searchButton = screen.getByRole('button', { name: 'Najít na mapě' });
+    fireEvent.click(searchButton);
+    expect(searchButton).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('Adresa'), {
+      target: { value: 'Nová adresa' },
+    });
+
+    await act(async () => {
+      resolveSearch([candidate]);
+    });
+
+    expect(screen.getByRole('button', { name: 'Najít na mapě' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Rohanské nábřeží 678/23, Praha' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Vyberte správnou polohu z výsledků.')).not.toBeInTheDocument();
   });
 
   it('shows no-result and provider failure statuses in Czech', async () => {

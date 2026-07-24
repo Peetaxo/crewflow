@@ -227,6 +227,10 @@ export interface Database {
           time_from: string | null;
           time_to: string | null;
           city: string | null;
+          address: string | null;
+          place_id: string | null;
+          location_lat: number | null;
+          location_lng: number | null;
           crew_needed: number | null;
           crew_filled: number | null;
           status: EventStatus;

@@ -278,6 +278,10 @@ describe('EventDetailView', () => {
     const eventWithMeeting = {
       ...event,
       city: 'Praha',
+      address: 'Rohanske nabrezi 678/23, Praha',
+      placeId: 'ChIJ-event-place',
+      locationLat: 50.0929,
+      locationLng: 14.4502,
       meetingLocation: 'H15',
       description: 'Sraz u hlavniho vstupu a po akci uklid skladu.',
     };
@@ -335,10 +339,14 @@ describe('EventDetailView', () => {
 
     render(<EventDetailView />);
 
-    expect(screen.getByText('Místo')).toBeInTheDocument();
-    expect(screen.getByText('Praha')).toBeInTheDocument();
+    expect(screen.getByText('Adresa')).toBeInTheDocument();
+    expect(screen.getByText('Rohanske nabrezi 678/23, Praha')).toBeInTheDocument();
     expect(screen.getByText('Sraz')).toBeInTheDocument();
     expect(screen.getByText('H15')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Otevřít mapu/i })).toHaveAttribute(
+      'href',
+      'https://www.google.com/maps/search/?api=1&query=50.0929%2C14.4502&query_place_id=ChIJ-event-place',
+    );
     expect(screen.queryByRole('heading', { name: 'Kde se potkáme' })).not.toBeInTheDocument();
     expect(screen.queryByText('Provoz · 12.0h')).not.toBeInTheDocument();
     expect(screen.getByText('12.0h')).toBeInTheDocument();

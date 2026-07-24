@@ -55,6 +55,10 @@ describe('supabase mappers', () => {
       time_from: null,
       time_to: null,
       city: 'Praha',
+      address: 'Rohanske nabrezi 678/23, Praha',
+      place_id: 'ChIJ-event-place',
+      location_lat: 50.0929,
+      location_lng: 14.4502,
       crew_needed: 1,
       crew_filled: 0,
       status: 'upcoming',
@@ -73,6 +77,12 @@ describe('supabase mappers', () => {
     };
 
     expect(mapEvent(row).projectId).toBe('project-uuid-1');
+    expect(mapEvent(row)).toMatchObject({
+      address: 'Rohanske nabrezi 678/23, Praha',
+      placeId: 'ChIJ-event-place',
+      locationLat: 50.0929,
+      locationLng: 14.4502,
+    });
   });
 
   it('preserves client_id and supabase id on mapped projects', () => {

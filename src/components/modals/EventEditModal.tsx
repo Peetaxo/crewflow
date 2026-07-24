@@ -229,11 +229,18 @@ const EventEditModal = ({
                 </select>
               </div>
               <div>
-                <label className={fieldLabelClass}>Mesto</label>
+                <label className={fieldLabelClass}>Adresa</label>
                 <input
                   type="text"
-                  value={editingEvent.city}
-                  onChange={(e) => updateEventDraft({ ...editingEvent, city: e.target.value })}
+                  value={editingEvent.address ?? editingEvent.city}
+                  onChange={(e) => updateEventDraft({
+                    ...editingEvent,
+                    address: e.target.value,
+                    city: e.target.value,
+                    placeId: undefined,
+                    locationLat: null,
+                    locationLng: null,
+                  })}
                   className={nativeFieldClass}
                 />
               </div>

@@ -30,6 +30,10 @@ export interface Event {
   startTime?: string;
   endTime?: string;
   city: string;
+  address?: string;
+  placeId?: string;
+  locationLat?: number | null;
+  locationLng?: number | null;
   /** Kolik crew clenu je potreba */
   needed: number;
   /** Kolik crew clenu je aktualne obsazeno */

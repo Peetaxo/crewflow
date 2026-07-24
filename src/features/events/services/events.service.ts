@@ -581,6 +581,10 @@ const toSupabaseEventPayload = async (event: Event) => ({
   time_from: event.startTime ?? null,
   time_to: event.endTime ?? null,
   city: event.city,
+  address: event.address ?? null,
+  place_id: event.placeId ?? null,
+  location_lat: event.locationLat ?? null,
+  location_lng: event.locationLng ?? null,
   crew_needed: event.needed,
   crew_filled: event.filled,
   status: event.status,
@@ -1108,6 +1112,11 @@ const normalizeEvent = (event: Event): Event => ({
   job: event.job.trim().toUpperCase(),
   name: event.name.trim(),
   client: event.client.trim(),
+  city: (event.address?.trim() || event.city.trim()),
+  address: event.address?.trim() || event.city.trim() || undefined,
+  placeId: event.placeId?.trim() || undefined,
+  locationLat: typeof event.locationLat === 'number' && Number.isFinite(event.locationLat) ? event.locationLat : null,
+  locationLng: typeof event.locationLng === 'number' && Number.isFinite(event.locationLng) ? event.locationLng : null,
   allowCrewTimeProposal: event.allowCrewTimeProposal ?? false,
 });
 

@@ -622,6 +622,10 @@ describe('events.service write flow', () => {
       startTime: '08:00',
       endTime: '17:00',
       city: 'Praha',
+      address: 'Rohanske nabrezi 678/23, Praha',
+      placeId: 'ChIJ-event-place',
+      locationLat: 50.0929,
+      locationLng: 14.4502,
       needed: 2,
       filled: 0,
       status: 'upcoming',
@@ -638,7 +642,11 @@ describe('events.service write flow', () => {
       date_to: '2026-04-21',
       time_from: '08:00',
       time_to: '17:00',
-      city: 'Praha',
+      city: 'Rohanske nabrezi 678/23, Praha',
+      address: 'Rohanske nabrezi 678/23, Praha',
+      place_id: 'ChIJ-event-place',
+      location_lat: 50.0929,
+      location_lng: 14.4502,
       crew_needed: 2,
       crew_filled: 0,
       status: 'upcoming',
@@ -654,6 +662,8 @@ describe('events.service write flow', () => {
     });
     expect(saved.job).toBe('AK001');
     expect(saved.client).toBe('Klient A');
+    expect(saved.city).toBe('Rohanske nabrezi 678/23, Praha');
+    expect(saved.address).toBe('Rohanske nabrezi 678/23, Praha');
     expect(snapshot.events).toHaveLength(1);
   });
 
@@ -760,6 +770,7 @@ describe('events.service write flow', () => {
         time_from: '10:00',
         time_to: '16:00',
         day_type: 'instal',
+        note: null,
       },
     ]);
     expect(snapshot.timelogs[0].days).toEqual([

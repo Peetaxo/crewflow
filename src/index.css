@@ -582,9 +582,11 @@ tbody tr:hover td {
 
 .nodu-mobile-event-map {
   position: relative;
+  display: block;
   min-height: 8.5rem;
   overflow: hidden;
   border-radius: 20px;
+  text-decoration: none;
   background:
     linear-gradient(135deg, rgb(106 177 100 / 0.52), transparent 44%),
     linear-gradient(45deg, transparent 45%, rgb(77 138 200 / 0.32) 45%, rgb(77 138 200 / 0.32) 52%, transparent 52%),

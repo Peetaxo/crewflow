@@ -28,6 +28,7 @@ import {
   updateEventApplicationStatus,
   withdrawEventApplication,
 } from '../features/events/services/events.service';
+import { buildGoogleMapsSearchUrl, getEventAddressLabel } from '../features/events/services/event-location.service';
 import { useInvoiceApprovalsQuery } from '../features/invoices/queries/useInvoiceApprovalsQuery';
 import { getEventApprovalDocuments } from '../features/invoices/services/invoice-approval-sync.service';
 import { updateTimelogStatus } from '../features/timelogs/services/timelogs.service';
@@ -332,10 +333,11 @@ const EventDetailView = () => {
         : hasMyWithdrawalRequest
           ? 'Odhlášení čeká'
           : 'Volná akce';
-    const mobilePlace = event.city || event.meetingLocation || 'Místo bude doplněno';
+    const mobileAddress = getEventAddressLabel(event);
+    const mobileMapUrl = buildGoogleMapsSearchUrl(event);
     const mobileMeetingLocation = event.meetingLocation?.trim();
     const shouldShowMeetingLocation = Boolean(
-      mobileMeetingLocation && mobileMeetingLocation !== mobilePlace,
+      mobileMeetingLocation && mobileMeetingLocation !== mobileAddress,
     );
     const formatMobileBoundaryDate = (date: string) => (
       new Date(date).toLocaleDateString('cs-CZ', { day: 'numeric', month: 'numeric', year: 'numeric' })
@@ -382,17 +384,23 @@ const EventDetailView = () => {
             </div>
           </section>
 
-          <section className="nodu-mobile-event-map" aria-label={`Mapa akce ${mobilePlace}`}>
+          <a
+            href={mobileMapUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="nodu-mobile-event-map"
+            aria-label={`Otevřít mapu: ${mobileAddress}`}
+          >
             <div className="nodu-mobile-event-map-pin" aria-hidden="true" />
             <span>Otevřít mapu</span>
-          </section>
+          </a>
 
           <section className="nodu-mobile-event-card nodu-mobile-event-info-card" aria-label="Informace k akci">
             <div className="nodu-mobile-event-info-row">
               <MapPin size={18} />
               <div>
-                <span className="nodu-mobile-event-info-label">Místo</span>
-                <p>{mobilePlace}</p>
+                <span className="nodu-mobile-event-info-label">Adresa</span>
+                <p>{mobileAddress}</p>
               </div>
             </div>
             <div className="nodu-mobile-event-info-row">

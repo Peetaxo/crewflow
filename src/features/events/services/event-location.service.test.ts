@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { Event } from '../../../types';
-import { buildGoogleMapsSearchUrl, getEventAddressLabel } from './event-location.service';
+import {
+  buildGoogleMapsSearchUrl,
+  getEventAddressLabel,
+  getManualAddressSelection,
+  hasEventCoordinates,
+} from './event-location.service';
 
 const baseEvent: Event = {
   id: 1,
@@ -44,5 +49,23 @@ describe('event location service', () => {
       locationLat: null,
       locationLng: null,
     })).toBe('https://www.google.com/maps/search/?api=1&query=Roudnice%20nad%20Labem');
+  });
+
+  it('trims manual address selections and clears precise location metadata', () => {
+    expect(getManualAddressSelection('  Rohanske nabrezi 678/23, Praha  ')).toEqual({
+      address: 'Rohanske nabrezi 678/23, Praha',
+      placeId: undefined,
+      locationLat: null,
+      locationLng: null,
+    });
+  });
+
+  it('detects coordinates only when a complete finite coordinate pair is present', () => {
+    expect(hasEventCoordinates({ locationLat: 50.0929, locationLng: 14.4502 })).toBe(true);
+
+    expect(hasEventCoordinates({ locationLat: 50.0929, locationLng: null })).toBe(false);
+    expect(hasEventCoordinates({ locationLat: null, locationLng: 14.4502 })).toBe(false);
+    expect(hasEventCoordinates({ locationLat: Number.NaN, locationLng: 14.4502 })).toBe(false);
+    expect(hasEventCoordinates({ locationLat: 50.0929, locationLng: Number.POSITIVE_INFINITY })).toBe(false);
   });
 });

@@ -22,7 +22,7 @@ import { useAppContext } from '../context/useAppContext';
 import { useAuth } from '../app/providers/useAuth';
 import { Event, Timelog } from '../types';
 import type { SelectedEventId } from '../context/app-context';
-import { calculateTotalHours, eventOccursOnDate, formatDateRange, getDatesBetween } from '../utils';
+import { eventOccursOnDate, getDatesBetween } from '../utils';
 import { Button } from '../components/ui/button';
 import EventDetailView from './EventDetailView';
 import EventEditModal from '../components/modals/EventEditModal';
@@ -151,6 +151,9 @@ const eventOverlapsDateRange = (event: Event, startDate: string, endDate: string
 
 const formatOccurrenceDate = (date: string) => format(parseISO(date), 'd. M. yyyy', { locale: cs });
 const formatShortOccurrenceDate = (date: string) => format(parseISO(date), 'd. M.', { locale: cs });
+const formatEventBoundaryDateTime = (date: string, time?: string) => (
+  `${formatOccurrenceDate(date)} · ${time?.trim() || 'čas bude doplněn'}`
+);
 
 const formatEventDayCount = (dayCount: number) => {
   if (dayCount === 1) return '1 den';
@@ -699,12 +702,9 @@ const EventsView = () => {
                   const isMeAssigned = currentProfileId
                     ? assignedCrew.some((contractor) => contractor.profileId === currentProfileId)
                     : false;
-                  const totalHours = eventTimelogs.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
                   const isFullyStaffed = event.needed > 0 && event.filled >= event.needed;
                   const occurrenceTimeLabel = getEventOccurrenceTimeLabel(event, occurrenceDate, eventTimelogs);
-                  const occurrenceDateLabel = occurrence.dayCount > 1
-                    ? formatDateRange(event.startDate, event.endDate)
-                    : formatOccurrenceDate(occurrenceDate);
+                  const isMultiDayOccurrence = occurrence.dayCount > 1;
                   const occurrenceStatusLabel = getOccurrenceStatusLabel(occurrence);
                   const isContinuationOccurrence = occurrence.kind === 'continuation' || occurrence.kind === 'end';
                   const approvalMeta = getEventTimelogApprovalMeta(eventTimelogs);
@@ -761,14 +761,26 @@ const EventsView = () => {
                               )}
                             </div>
                             <h3 className="text-base font-semibold text-[color:var(--nodu-text)]">{event.name}</h3>
-                            <div className="mt-1 flex items-center gap-1.5 text-xs text-[color:var(--nodu-text-soft)]">
-                              {occurrenceDateLabel} - {occurrenceTimeLabel} - {event.client}
-                              {occurrence.dayCount > 1 && (
-                                <span className="rounded bg-[color:rgb(var(--nodu-text-rgb)/0.08)] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-tighter text-[color:var(--nodu-text-soft)]">
-                                  {formatEventDayCount(occurrence.dayCount)}
-                                </span>
-                              )}
-                            </div>
+                            {isMultiDayOccurrence ? (
+                              <div className="mt-1 space-y-0.5 text-xs text-[color:var(--nodu-text-soft)]">
+                                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                                  <span className="min-w-5 text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--nodu-text-soft)]">Od</span>
+                                  <span className="font-medium text-[color:var(--nodu-text)]">{formatEventBoundaryDateTime(event.startDate, event.startTime)}</span>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                                  <span className="min-w-5 text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--nodu-text-soft)]">Do</span>
+                                  <span className="font-medium text-[color:var(--nodu-text)]">{formatEventBoundaryDateTime(event.endDate, event.endTime)}</span>
+                                  <span className="rounded bg-[color:rgb(var(--nodu-text-rgb)/0.08)] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-tighter text-[color:var(--nodu-text-soft)]">
+                                    {formatEventDayCount(occurrence.dayCount)}
+                                  </span>
+                                </div>
+                                <div>{event.client}</div>
+                              </div>
+                            ) : (
+                              <div className="mt-1 flex items-center gap-1.5 text-xs text-[color:var(--nodu-text-soft)]">
+                                {formatOccurrenceDate(occurrenceDate)} - {occurrenceTimeLabel} - {event.client}
+                              </div>
+                            )}
                           </div>
 
                           <div className="hidden min-h-[72px] border-l border-[color:rgb(var(--nodu-text-rgb)/0.1)] pl-6 md:block">
@@ -839,12 +851,6 @@ const EventsView = () => {
                             <span className="text-xs font-semibold text-[color:var(--nodu-text)]">{event.filled}/{event.needed}</span>
                           </div>
                         </div>
-                        {canManageEvents && (
-                          <div>
-                            <div className="mb-1 text-[10px] uppercase tracking-wider text-[color:var(--nodu-text-soft)]">Crew hodiny celkem</div>
-                            <div className="text-xs font-semibold text-[color:var(--nodu-text)]">{eventTimelogs.length} timelogy · {totalHours.toFixed(1)} h</div>
-                          </div>
-                        )}
                         <div className="ml-auto flex gap-2">
                           {canManageEvents && (
                             <>

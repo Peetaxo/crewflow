@@ -436,8 +436,8 @@ describe('EventsView', () => {
 
     expect(screen.getByText('Marek Rebroš')).toBeInTheDocument();
     expect(screen.getByText('Jaroslav Macháč')).toBeInTheDocument();
-    expect(screen.getByText('Crew hodiny celkem')).toBeInTheDocument();
-    expect(screen.getByText('2 timelogy · 10.0 h')).toBeInTheDocument();
+    expect(screen.queryByText('Crew hodiny celkem')).not.toBeInTheDocument();
+    expect(screen.queryByText('2 timelogy · 10.0 h')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Detail' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByText('Akce 1'));
@@ -728,8 +728,13 @@ describe('EventsView', () => {
     expect(screen.getAllByText('Dvoudenni akce')).toHaveLength(2);
     expect(screen.getByText(/16\..*dubna/i)).toBeInTheDocument();
     expect(screen.getByText(/17\..*dubna/i)).toBeInTheDocument();
-    expect(screen.getByText(/16\. 4\. - 17\. 4\. 2026.*09:00.*17:00.*Klient B/)).toBeInTheDocument();
-    expect(screen.getByText(/16\. 4\. - 17\. 4\. 2026.*10:00.*15:00.*Klient B/)).toBeInTheDocument();
+    expect(screen.getAllByText('Od')).toHaveLength(2);
+    expect(screen.getAllByText('16. 4. 2026 · 09:00')).toHaveLength(2);
+    expect(screen.getAllByText('Do')).toHaveLength(2);
+    expect(screen.getAllByText('17. 4. 2026 · 17:00')).toHaveLength(2);
+    expect(screen.getAllByText('Klient B')).toHaveLength(2);
+    expect(screen.queryByText(/16\. 4\. - 17\. 4\. 2026.*09:00.*17:00.*Klient B/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/16\. 4\. - 17\. 4\. 2026.*10:00.*15:00.*Klient B/)).not.toBeInTheDocument();
     expect(screen.getByText('Začíná dnes')).toBeInTheDocument();
     expect(screen.getByText('Končí dnes')).toBeInTheDocument();
     expect(screen.queryByText(/Praha/)).not.toBeInTheDocument();
@@ -789,7 +794,12 @@ describe('EventsView', () => {
     );
 
     expect(screen.getAllByText('Dvoudenni akce')).toHaveLength(1);
-    expect(screen.getByText(/16\. 4\. - 17\. 4\. 2026.*09:00.*17:00.*Klient B/)).toBeInTheDocument();
+    expect(screen.getByText('Od')).toBeInTheDocument();
+    expect(screen.getByText('16. 4. 2026 · 09:00')).toBeInTheDocument();
+    expect(screen.getByText('Do')).toBeInTheDocument();
+    expect(screen.getByText('17. 4. 2026 · 17:00')).toBeInTheDocument();
+    expect(screen.getByText('Klient B')).toBeInTheDocument();
+    expect(screen.queryByText(/16\. 4\. - 17\. 4\. 2026.*09:00.*17:00.*Klient B/)).not.toBeInTheDocument();
     expect(screen.getByText('Začíná dnes')).toBeInTheDocument();
     expect(screen.getByText('2 dny')).toBeInTheDocument();
     expect(screen.queryByText(/17\..*dubna/i)).not.toBeInTheDocument();
@@ -853,6 +863,10 @@ describe('EventsView', () => {
     expect(screen.getAllByText('Probíhá od 16. 4.')).toHaveLength(3);
     expect(screen.getByText('Končí dnes')).toBeInTheDocument();
     expect(screen.getAllByText('5 dní')).toHaveLength(5);
+    expect(screen.getAllByText('Od')).toHaveLength(5);
+    expect(screen.getAllByText('16. 4. 2026 · 08:00')).toHaveLength(5);
+    expect(screen.getAllByText('Do')).toHaveLength(5);
+    expect(screen.getAllByText('20. 4. 2026 · 18:00')).toHaveLength(5);
   });
 
   it('shows multiple unique timelog shifts for the event day', async () => {

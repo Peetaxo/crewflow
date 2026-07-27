@@ -30,6 +30,7 @@ describe('nodu CSS helpers', () => {
     const mobileTimelogAddDayPickerGridRule = css.match(/\.nodu-mobile-timelog-add-day-picker-grid\s*\{[\s\S]*?\}/)?.[0];
     const mobileTimelogAddDayCellRule = css.match(/\.nodu-mobile-timelog-add-day-cell\s*\{[\s\S]*?\}/)?.[0];
     const mobileTimelogAddDayConfirmRule = css.match(/\.nodu-mobile-timelog-add-day-confirm\s*\{[\s\S]*?\}/)?.[0];
+    const mobilePageFrameRule = css.match(/\.nodu-page-frame--mobile-crew\s*\{[\s\S]*?\}/)?.[0];
     const mobileEventDetailRule = css.match(/\.nodu-mobile-event-detail\s*\{[\s\S]*?\}/)?.[0];
     const mobileEventFloatingPanelRule = css.match(/\.nodu-mobile-event-floating-panel\s*\{[\s\S]*?\}/)?.[0];
     const mobileEventFloatingPanelCompactRule = css.match(/\.nodu-mobile-event-floating-panel--compact\s*\{[\s\S]*?\}/)?.[0];
@@ -112,6 +113,7 @@ describe('nodu CSS helpers', () => {
     expect(mobileTimelogAddDayPickerGridRule).toContain('grid-template-columns: repeat(7, minmax(0, 1fr));');
     expect(mobileTimelogAddDayCellRule).toContain('aspect-ratio: 1;');
     expect(mobileTimelogAddDayConfirmRule).toContain('border-radius: 999px;');
+    expect(mobilePageFrameRule).toContain('padding-top: calc(1rem + env(safe-area-inset-top));');
     expect(mobileEventDetailRule).toContain('padding-bottom');
     expect(mobileEventFloatingPanelRule).toContain('position: fixed;');
     expect(mobileEventFloatingPanelRule).toContain('backdrop-filter: blur');

@@ -444,6 +444,7 @@ tbody tr:hover td {
 .nodu-page-frame--mobile-crew {
   height: 100dvh;
   padding: 1rem;
+  padding-top: calc(1rem + env(safe-area-inset-top));
   padding-bottom: calc(5.75rem + env(safe-area-inset-bottom));
 }
 

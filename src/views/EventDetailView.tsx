@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Clock, Copy, FileText, MapPin, Phone, Receipt, Shirt, Trash2, User, Users, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -36,6 +36,9 @@ import { updateTimelogStatus } from '../features/timelogs/services/timelogs.serv
 import { canCreateTimelog, canEditTimelog } from '../features/timelogs/services/timelog-permissions';
 
 const EMPTY_APPROVAL_DOCUMENTS: InvoiceApprovalDocument[] = [];
+const MOBILE_EDGE_SWIPE_START_MAX_X = 28;
+const MOBILE_EDGE_SWIPE_MIN_DISTANCE = 64;
+const MOBILE_EDGE_SWIPE_MAX_VERTICAL_DRIFT = 48;
 
 const normalizeContactName = (name: string) => (
   name.trim().toLocaleLowerCase('cs-CZ')
@@ -123,6 +126,7 @@ const EventDetailView = () => {
   const [showWithdrawalConfirm, setShowWithdrawalConfirm] = useState(false);
   const [showContactDialog, setShowContactDialog] = useState(false);
   const [showMobileApprovalDialog, setShowMobileApprovalDialog] = useState(false);
+  const mobileEdgeSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const invoiceApprovalsQuery = useInvoiceApprovalsQuery();
 
   const loadDetail = useCallback(() => {
@@ -146,6 +150,12 @@ const EventDetailView = () => {
       setCrewPanelTab('approval');
     }
   }, [eventTab]);
+
+  useEffect(() => {
+    if (!isMobile || !selectedEventId || !detail.event) return;
+
+    document.querySelector<HTMLElement>('.nodu-page-frame--mobile-crew')?.scrollTo({ top: 0, left: 0 });
+  }, [detail.event, isMobile, selectedEventId]);
 
   const event = detail.event;
   const approvalDocuments = invoiceApprovalsQuery.data ?? EMPTY_APPROVAL_DOCUMENTS;
@@ -393,6 +403,32 @@ const EventDetailView = () => {
       });
   };
 
+  const handleMobileDetailTouchStart = (touchEvent: React.TouchEvent<HTMLDivElement>) => {
+    const touch = touchEvent.touches[0];
+
+    if (!touch || touch.clientX > MOBILE_EDGE_SWIPE_START_MAX_X) {
+      mobileEdgeSwipeStartRef.current = null;
+      return;
+    }
+
+    mobileEdgeSwipeStartRef.current = { x: touch.clientX, y: touch.clientY };
+  };
+
+  const handleMobileDetailTouchEnd = (touchEvent: React.TouchEvent<HTMLDivElement>) => {
+    const touchStart = mobileEdgeSwipeStartRef.current;
+    const touch = touchEvent.changedTouches[0];
+    mobileEdgeSwipeStartRef.current = null;
+
+    if (!touchStart || !touch) return;
+
+    const deltaX = touch.clientX - touchStart.x;
+    const deltaY = Math.abs(touch.clientY - touchStart.y);
+
+    if (deltaX >= MOBILE_EDGE_SWIPE_MIN_DISTANCE && deltaY <= MOBILE_EDGE_SWIPE_MAX_VERTICAL_DRIFT) {
+      setSelectedEventId(null);
+    }
+  };
+
   if (isMobile) {
     const canOpenNewTimelog = Boolean(currentContractor && isMeAssigned && canCreateTimelog(role));
     const ownTimelog = myTimelogs[0];
@@ -561,7 +597,16 @@ const EventDetailView = () => {
     ) : null;
 
     return (
-      <motion.div className="nodu-mobile-event-detail" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
+      <motion.div
+        className="nodu-mobile-event-detail"
+        initial={{ opacity: 0, x: 20 }}
+        animate={{ opacity: 1, x: 0 }}
+        onTouchStart={handleMobileDetailTouchStart}
+        onTouchEnd={handleMobileDetailTouchEnd}
+        onTouchCancel={() => {
+          mobileEdgeSwipeStartRef.current = null;
+        }}
+      >
         <div className="nodu-mobile-event-scroll">
           <header className="nodu-mobile-event-topbar">
             <button

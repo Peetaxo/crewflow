@@ -232,6 +232,157 @@ describe('EventDetailView', () => {
     expect(setEditingTimelog).toHaveBeenCalledWith(timelog);
   });
 
+  it('returns from mobile event detail after a left-edge swipe', async () => {
+    mobileMockState.isMobile = true;
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        role: 'crew',
+        selectedEventId: 'event-uuid-1',
+        setSelectedEventId,
+        eventTab: 'overview',
+        setEventTab: vi.fn(),
+        setEditingReceipt: vi.fn(),
+        setDeleteConfirm: vi.fn(),
+        setEditingTimelog,
+      }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [contractor],
+      getEventDetailData: () => ({
+        event: { ...event, status: 'upcoming' as const },
+        timelogs: [timelog],
+        contractors: [contractor],
+        receipts: [],
+        applications: [],
+        crewAssignments: [{ eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: contractor.profileId, name: contractor.name }],
+      }),
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: requestEventWithdrawalMock,
+      subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatus,
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventDetailView } = await import('./EventDetailView');
+
+    const { container } = render(<EventDetailView />);
+    const mobileDetail = container.querySelector('.nodu-mobile-event-detail');
+
+    expect(mobileDetail).toBeInTheDocument();
+
+    fireEvent.touchStart(mobileDetail!, {
+      touches: [{ clientX: 84, clientY: 160 }],
+    });
+    fireEvent.touchEnd(mobileDetail!, {
+      changedTouches: [{ clientX: 172, clientY: 164 }],
+    });
+
+    expect(setSelectedEventId).not.toHaveBeenCalled();
+
+    fireEvent.touchStart(mobileDetail!, {
+      touches: [{ clientX: 12, clientY: 160 }],
+    });
+    fireEvent.touchEnd(mobileDetail!, {
+      changedTouches: [{ clientX: 92, clientY: 166 }],
+    });
+
+    expect(setSelectedEventId).toHaveBeenCalledWith(null);
+  });
+
+  it('resets the mobile page scroll when opening event detail', async () => {
+    mobileMockState.isMobile = true;
+    const scrollToMock = vi.fn();
+    const originalScrollTo = HTMLElement.prototype.scrollTo;
+
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+      configurable: true,
+      value: scrollToMock,
+    });
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        role: 'crew',
+        selectedEventId: 'event-uuid-1',
+        setSelectedEventId,
+        eventTab: 'overview',
+        setEventTab: vi.fn(),
+        setEditingReceipt: vi.fn(),
+        setDeleteConfirm: vi.fn(),
+        setEditingTimelog,
+      }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [contractor],
+      getEventDetailData: () => ({
+        event: { ...event, status: 'upcoming' as const },
+        timelogs: [timelog],
+        contractors: [contractor],
+        receipts: [],
+        applications: [],
+        crewAssignments: [{ eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: contractor.profileId, name: contractor.name }],
+      }),
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: requestEventWithdrawalMock,
+      subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatus,
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventDetailView } = await import('./EventDetailView');
+
+    try {
+      render(
+        <main className="nodu-page-frame nodu-page-frame--mobile-crew">
+          <EventDetailView />
+        </main>,
+      );
+
+      await waitFor(() => {
+        expect(scrollToMock).toHaveBeenCalledWith({ top: 0, left: 0 });
+      });
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+        configurable: true,
+        value: originalScrollTo,
+      });
+    }
+  });
+
   it('shows mobile event start and end separately and keeps free action panel compact', async () => {
     mobileMockState.isMobile = true;
     const multiDayEvent = {

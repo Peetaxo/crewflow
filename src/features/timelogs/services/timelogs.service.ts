@@ -20,6 +20,19 @@ const sortTimelogDays = (days: Timelog['days']) => (
   [...days].sort((a, b) => `${a.d}${a.f}${a.type}`.localeCompare(`${b.d}${b.f}${b.type}`))
 );
 
+const findExistingEventContractorTimelog = (
+  candidate: Pick<Timelog, 'id' | 'eid' | 'contractorProfileId'>,
+  timelogs: Timelog[],
+) => {
+  if (!candidate.contractorProfileId) return undefined;
+
+  return timelogs.find((timelog) => (
+    timelog.id !== candidate.id
+    && timelog.eid === candidate.eid
+    && timelog.contractorProfileId === candidate.contractorProfileId
+  ));
+};
+
 const matchesSearch = (
   timelog: Timelog,
   query: string,
@@ -326,6 +339,18 @@ export const createTimelog = async (timelog: Omit<Timelog, 'id'>): Promise<Timel
     throw new Error('Nepodarilo se dohledat UUID identitu clena crew.');
   }
 
+  const existingEventContractorTimelog = findExistingEventContractorTimelog(
+    normalizedTimelog,
+    getLocalAppState().timelogs ?? [],
+  );
+
+  if (existingEventContractorTimelog) {
+    return saveTimelog({
+      ...normalizedTimelog,
+      id: existingEventContractorTimelog.id,
+    });
+  }
+
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
     const eventIdMap = await getSupabaseEventIdMap();
     const eventRowId = eventIdMap.get(normalizedTimelog.eid);
@@ -385,9 +410,19 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
     ...updated,
     days: sortTimelogDays(updated.days),
   };
-  const existingTimelog = (getLocalAppState().timelogs ?? []).some((timelog) => timelog.id === updated.id);
+  const currentTimelogs = getLocalAppState().timelogs ?? [];
+  const existingTimelog = currentTimelogs.find((timelog) => timelog.id === updated.id);
 
   if (!existingTimelog) {
+    const existingEventContractorTimelog = findExistingEventContractorTimelog(normalizedTimelog, currentTimelogs);
+
+    if (existingEventContractorTimelog) {
+      return saveTimelog({
+        ...normalizedTimelog,
+        id: existingEventContractorTimelog.id,
+      });
+    }
+
     const { id: _unsavedId, ...timelogToCreate } = normalizedTimelog;
     return createTimelog(timelogToCreate);
   }

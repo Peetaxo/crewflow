@@ -1,5 +1,5 @@
 import React from 'react';
-import { LocateFixed } from 'lucide-react';
+import { MapPinned } from 'lucide-react';
 import {
   searchFreeEventLocations,
 } from '../services/event-geocoding.service';
@@ -21,12 +21,14 @@ interface EventAddressFieldProps {
   value: EventAddressFieldValue;
   onChange: (selection: EventAddressSelection) => void;
   geocodeAddress?: (input: string) => Promise<EventGeocodingCandidate[]>;
+  onPickMap?: () => void;
 }
 
 const fieldLabelClass = 'mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]';
 const nativeFieldClass = 'w-full rounded-xl border border-[color:var(--nodu-border)] bg-white px-3 py-2 text-sm text-[color:var(--nodu-text)] outline-none transition-all focus:border-[color:var(--nodu-accent)] focus:ring-2 focus:ring-[color:rgb(var(--nodu-accent-rgb)/0.14)]';
 const actionClass = 'inline-flex items-center justify-center gap-2 rounded-xl border border-[color:var(--nodu-border)] bg-white px-3 py-2 text-xs font-bold text-[color:var(--nodu-text)] transition-all hover:border-[color:rgb(var(--nodu-accent-rgb)/0.32)] hover:text-[color:var(--nodu-accent)] disabled:cursor-not-allowed disabled:opacity-60';
 const geocodingFailureStatus = 'Vyhledávání polohy se nepodařilo. Zkuste to prosím znovu.';
+const autocompleteDelayMs = 650;
 
 const clean = (value: string | null | undefined) => value?.trim() ?? '';
 
@@ -36,14 +38,15 @@ const EventAddressField = ({
   value,
   onChange,
   geocodeAddress = searchFreeEventLocations,
+  onPickMap,
 }: EventAddressFieldProps) => {
   const addressFromProps = getInitialAddress(value);
   const [inputValue, setInputValue] = React.useState(addressFromProps);
   const [candidates, setCandidates] = React.useState<EventGeocodingCandidate[]>([]);
   const [status, setStatus] = React.useState('');
-  const [isSearching, setIsSearching] = React.useState(false);
   const inputValueRef = React.useRef(addressFromProps);
   const searchRequestId = React.useRef(0);
+  const hasManualInputRef = React.useRef(false);
 
   React.useEffect(() => {
     if (addressFromProps === inputValueRef.current) {
@@ -52,66 +55,72 @@ const EventAddressField = ({
 
     searchRequestId.current += 1;
     inputValueRef.current = addressFromProps;
+    hasManualInputRef.current = false;
     setInputValue(addressFromProps);
-    setIsSearching(false);
     setCandidates([]);
     setStatus('');
   }, [addressFromProps]);
+
+  React.useEffect(() => {
+    if (!hasManualInputRef.current) {
+      return undefined;
+    }
+
+    const query = inputValue.trim();
+    if (query.length < 3) {
+      setCandidates([]);
+      setStatus(query ? 'Zadejte alespoň 3 znaky pro našeptání adresy.' : '');
+      return undefined;
+    }
+
+    const requestId = searchRequestId.current + 1;
+    searchRequestId.current = requestId;
+    const timeout = window.setTimeout(() => {
+      setCandidates([]);
+      setStatus('Hledám adresy...');
+
+      void geocodeAddress(query)
+        .then((nextCandidates) => {
+          if (searchRequestId.current !== requestId) {
+            return;
+          }
+
+          setCandidates(nextCandidates);
+          setStatus(nextCandidates.length > 0
+            ? 'Vyberte správnou adresu z výsledků.'
+            : 'Poloha nebyla nalezena. Adresu lze uložit ručně.');
+        })
+        .catch(() => {
+          if (searchRequestId.current !== requestId) {
+            return;
+          }
+
+          setCandidates([]);
+          setStatus(geocodingFailureStatus);
+        })
+    }, autocompleteDelayMs);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [geocodeAddress, inputValue]);
 
   const handleManualChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const nextAddress = event.target.value;
     const nextQuery = nextAddress.trim();
     searchRequestId.current += 1;
     inputValueRef.current = nextAddress;
+    hasManualInputRef.current = true;
     setInputValue(nextAddress);
-    setIsSearching(false);
     setCandidates([]);
-    setStatus(nextQuery && nextQuery.length < 3 ? 'Zadejte alespoň 3 znaky pro vyhledání na mapě.' : '');
+    setStatus(nextQuery && nextQuery.length < 3 ? 'Zadejte alespoň 3 znaky pro našeptání adresy.' : '');
     onChange(getManualAddressSelection(nextAddress));
-  };
-
-  const handleSearch = async () => {
-    const query = inputValue.trim();
-
-    if (query.length < 3) {
-      setStatus('Zadejte alespoň 3 znaky pro vyhledání na mapě.');
-      return;
-    }
-
-    const requestId = searchRequestId.current + 1;
-    searchRequestId.current = requestId;
-    setIsSearching(true);
-    setCandidates([]);
-    setStatus('Hledám polohu na mapě...');
-
-    try {
-      const nextCandidates = await geocodeAddress(query);
-
-      if (searchRequestId.current !== requestId) {
-        return;
-      }
-
-      setCandidates(nextCandidates);
-      setStatus(nextCandidates.length > 0
-        ? 'Vyberte správnou polohu z výsledků.'
-        : 'Poloha nebyla nalezena. Adresu lze uložit ručně.');
-    } catch {
-      if (searchRequestId.current !== requestId) {
-        return;
-      }
-
-      setCandidates([]);
-      setStatus(geocodingFailureStatus);
-    } finally {
-      if (searchRequestId.current === requestId) {
-        setIsSearching(false);
-      }
-    }
   };
 
   const handleSelectCandidate = (candidate: EventGeocodingCandidate) => {
     searchRequestId.current += 1;
     inputValueRef.current = candidate.label;
+    hasManualInputRef.current = false;
     setInputValue(candidate.label);
     setCandidates([]);
     setStatus('Poloha je vybraná z mapových podkladů.');
@@ -122,8 +131,6 @@ const EventAddressField = ({
       locationLng: candidate.locationLng,
     });
   };
-
-  const isSearchDisabled = inputValue.trim().length < 3 || isSearching;
 
   return (
     <div className="relative">
@@ -137,15 +144,16 @@ const EventAddressField = ({
           className={nativeFieldClass}
           autoComplete="off"
         />
-        <button
-          type="button"
-          onClick={() => void handleSearch()}
-          className={actionClass}
-          disabled={isSearchDisabled}
-        >
-          <LocateFixed size={14} aria-hidden="true" />
-          Najít na mapě
-        </button>
+        {onPickMap && (
+          <button
+            type="button"
+            onClick={onPickMap}
+            className={actionClass}
+          >
+            <MapPinned size={14} aria-hidden="true" />
+            Vybrat na mapě
+          </button>
+        )}
       </div>
 
       {candidates.length > 0 && (

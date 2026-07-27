@@ -44,7 +44,7 @@ describe('supabase mappers', () => {
   });
 
   it('preserves project_id on mapped events', () => {
-    const row: EventRow = {
+    const row = {
       id: 'event-uuid-1',
       name: 'Akce',
       project_id: 'project-uuid-1',
@@ -64,6 +64,7 @@ describe('supabase mappers', () => {
       status: 'upcoming',
       description: null,
       contact_person: null,
+      contact_profile_id: 'profile-contact-uuid-1',
       contact_phone: null,
       contact_email: null,
       dresscode: null,
@@ -74,7 +75,7 @@ describe('supabase mappers', () => {
       phase_schedules: null,
       created_at: '2026-04-27T00:00:00Z',
       updated_at: '2026-04-27T00:00:00Z',
-    };
+    } satisfies EventRow & { contact_profile_id: string | null };
 
     expect(mapEvent(row).projectId).toBe('project-uuid-1');
     expect(mapEvent(row)).toMatchObject({
@@ -82,6 +83,7 @@ describe('supabase mappers', () => {
       placeId: 'ChIJ-event-place',
       locationLat: 50.0929,
       locationLng: 14.4502,
+      contactProfileId: 'profile-contact-uuid-1',
     });
   });
 

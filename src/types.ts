@@ -41,7 +41,9 @@ export interface Event {
   status: EventStatus;
   client: string;
   description?: string;
+  contactProfileId?: string | null;
   contactPerson?: string;
+  contactPhone?: string;
   dresscode?: string;
   meetingLocation?: string;
   /** Zobrazovat typy dnů (Instal/Provoz/Deinstal) */

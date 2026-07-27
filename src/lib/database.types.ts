@@ -235,6 +235,7 @@ export interface Database {
           crew_filled: number | null;
           status: EventStatus;
           description: string | null;
+          contact_profile_id: string | null;
           contact_person: string | null;
           contact_phone: string | null;
           contact_email: string | null;

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Clock, Copy, FileText, MapPin, Receipt, Shirt, Trash2, User, Users, X } from 'lucide-react';
+import { ArrowLeft, Clock, Copy, FileText, MapPin, Phone, Receipt, Shirt, Trash2, User, Users, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { useAppContext } from '../context/useAppContext';
@@ -37,6 +37,15 @@ import { canCreateTimelog, canEditTimelog } from '../features/timelogs/services/
 
 const EMPTY_APPROVAL_DOCUMENTS: InvoiceApprovalDocument[] = [];
 
+const normalizeContactName = (name: string) => (
+  name.trim().toLocaleLowerCase('cs-CZ')
+);
+
+const buildPhoneHref = (phone: string) => {
+  const normalizedPhone = phone.replace(/[^\d+]/g, '');
+  return normalizedPhone ? `tel:${normalizedPhone}` : null;
+};
+
 const getApprovalDocumentBadgeStatus = (document: InvoiceApprovalDocument) => (
   document.approvalStatus === 'unknown' ? 'needs_review' : document.approvalStatus
 );
@@ -48,6 +57,49 @@ const getApprovalDocumentPersonLabel = (document: InvoiceApprovalDocument) => {
     .filter(Boolean)[1];
 
   return parsedPerson || document.supplierName || '-';
+};
+
+type TimelogApprovalAction = 'sub' | 'ch' | 'coo' | 'rej';
+type ApprovalTimelog = Timelog & { sourceTimelogs: Timelog[] };
+
+const getTimelogApprovalAction = (timelog: Timelog): Exclude<TimelogApprovalAction, 'rej'> => (
+  timelog.status === 'draft'
+    ? 'sub'
+    : timelog.status === 'pending_ch' ? 'ch' : 'coo'
+);
+
+const sortTimelogDaysForDisplay = (days: Timelog['days']) => (
+  [...days].sort((first, second) => (
+    `${first.d}${first.f}${first.t}${first.type}`.localeCompare(`${second.d}${second.f}${second.t}${second.type}`)
+  ))
+);
+
+const mergeApprovalTimelogsByContractor = (timelogs: Timelog[]): ApprovalTimelog[] => {
+  const groupsByContractor = new Map<string, ApprovalTimelog>();
+
+  timelogs.forEach((timelog) => {
+    const contractorKey = timelog.contractorProfileId ?? `timelog-${timelog.id}`;
+    const existingGroup = groupsByContractor.get(contractorKey);
+
+    if (!existingGroup) {
+      groupsByContractor.set(contractorKey, {
+        ...timelog,
+        days: sortTimelogDaysForDisplay(timelog.days),
+        sourceTimelogs: [timelog],
+      });
+      return;
+    }
+
+    groupsByContractor.set(contractorKey, {
+      ...existingGroup,
+      days: sortTimelogDaysForDisplay([...existingGroup.days, ...timelog.days]),
+      km: existingGroup.km + timelog.km,
+      note: [existingGroup.note, timelog.note].filter(Boolean).join('\n'),
+      sourceTimelogs: [...existingGroup.sourceTimelogs, timelog],
+    });
+  });
+
+  return Array.from(groupsByContractor.values());
 };
 
 const EventDetailView = () => {
@@ -69,6 +121,8 @@ const EventDetailView = () => {
   const [applicationDraftTimes, setApplicationDraftTimes] = useState({ from: '', to: '' });
   const [crewPanelTab, setCrewPanelTab] = useState<'assigned' | 'approval'>('assigned');
   const [showWithdrawalConfirm, setShowWithdrawalConfirm] = useState(false);
+  const [showContactDialog, setShowContactDialog] = useState(false);
+  const [showMobileApprovalDialog, setShowMobileApprovalDialog] = useState(false);
   const invoiceApprovalsQuery = useInvoiceApprovalsQuery();
 
   const loadDetail = useCallback(() => {
@@ -121,6 +175,17 @@ const EventDetailView = () => {
   const currentContractor = currentProfileId
     ? contractors.find((item) => item.profileId === currentProfileId) ?? null
     : null;
+  const rawContactPersonName = event.contactPerson?.trim() ?? '';
+  const contactProfileFromId = event.contactProfileId
+    ? contractors.find((item) => item.profileId === event.contactProfileId) ?? null
+    : null;
+  const contactProfileFromName = !contactProfileFromId && rawContactPersonName
+    ? contractors.find((item) => normalizeContactName(item.name) === normalizeContactName(rawContactPersonName)) ?? null
+    : null;
+  const contactPersonProfile = contactProfileFromId ?? contactProfileFromName;
+  const contactPersonName = contactPersonProfile?.name ?? rawContactPersonName;
+  const contactPhone = contactPersonProfile?.phone.trim() || event.contactPhone?.trim() || '';
+  const contactPhoneHref = contactPhone ? buildPhoneHref(contactPhone) : null;
   const visibleEventCrew = isCrewRole && currentProfileId
     ? eventCrew.filter((contractor) => contractor.profileId === currentProfileId)
     : eventCrew;
@@ -170,11 +235,11 @@ const EventDetailView = () => {
     to: applicationDraftTimes.to || event.endTime || '17:00',
   };
   const eventApprovalTimelogs = canManageEvents
-    ? eventTimelogs.filter((timelog) => (
+    ? mergeApprovalTimelogsByContractor(eventTimelogs.filter((timelog) => (
         role === 'crewhead'
           ? timelog.status === 'draft' || timelog.status === 'pending_ch'
           : timelog.status === 'pending_coo'
-      ))
+      )))
     : [];
 
   const getPhasesForDate = (date: string) => (
@@ -315,8 +380,13 @@ const EventDetailView = () => {
     setEditingEvent(createEventCopy(event));
   };
 
-  const handleTimelogApprovalAction = (timelogId: number, action: 'sub' | 'ch' | 'coo' | 'rej') => {
-    void updateTimelogStatus(timelogId, action)
+  const handleTimelogApprovalGroupAction = (timelog: ApprovalTimelog, action?: TimelogApprovalAction) => {
+    const sourceTimelogs = timelog.sourceTimelogs.length > 0 ? timelog.sourceTimelogs : [timelog];
+    const updates = sourceTimelogs
+      .filter((sourceTimelog) => action !== 'rej' || sourceTimelog.status !== 'draft')
+      .map((sourceTimelog) => updateTimelogStatus(sourceTimelog.id, action ?? getTimelogApprovalAction(sourceTimelog)));
+
+    void Promise.all(updates)
       .then(loadDetail)
       .catch((error) => {
         toast.error(error instanceof Error ? error.message : 'Nepodarilo se aktualizovat vykaz.');
@@ -362,11 +432,133 @@ const EventDetailView = () => {
       handleRequestWithdrawal();
     };
     const handleOpenMobileApproval = () => {
-      const approvalSection = document.getElementById('mobile-event-management-approval');
-      if (typeof approvalSection?.scrollIntoView === 'function') {
-        approvalSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
+      setShowMobileApprovalDialog(true);
     };
+    const mobilePendingApplicationsContent = canManageEvents && pendingApplications.length > 0 ? (
+      <section className="nodu-mobile-event-section" aria-labelledby="mobile-event-pending-applications-title">
+        <div className="nodu-mobile-event-section-heading">
+          <h2 id="mobile-event-pending-applications-title">Přihlášky crew</h2>
+          <span className="nodu-mobile-event-capacity-chip">{pendingApplications.length}</span>
+        </div>
+        <div className="nodu-mobile-event-management-block">
+          <div className="nodu-mobile-event-management-list">
+            {pendingApplications.map(({ application, contractor }) => (
+              <div key={application.id} className="nodu-mobile-event-management-row">
+                <div className="av h-10 w-10 text-[12px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
+                <div className="min-w-0">
+                  <div className="nodu-mobile-event-crew-name">{contractor.name}</div>
+                  <div className="nodu-mobile-event-crew-meta">
+                    {application.plannedFrom && application.plannedTo ? `${application.plannedFrom} - ${application.plannedTo}` : 'Čas není navržen'}
+                  </div>
+                </div>
+                <div className="nodu-mobile-event-management-actions">
+                  <button
+                    type="button"
+                    aria-label={`Schválit přihlášku ${contractor.name}`}
+                    className="nodu-mobile-event-icon-action nodu-mobile-event-icon-action--success"
+                    onClick={() => handleApproveApplication(application.id)}
+                  >
+                    Schválit
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Zamítnout přihlášku ${contractor.name}`}
+                    className="nodu-mobile-event-icon-action nodu-mobile-event-icon-action--danger"
+                    onClick={() => handleRejectApplication(application.id)}
+                  >
+                    Zamítnout
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    ) : null;
+    const mobileManagementApprovalContent = canManageEvents ? (
+      <section id="mobile-event-management-approval" className="nodu-mobile-event-section" aria-labelledby="mobile-event-management-approval-title">
+        <h2 id="mobile-event-management-approval-title">Schvalování</h2>
+
+        <div className="nodu-mobile-event-management-block">
+          <div className="nodu-mobile-event-management-title">
+            <FileText size={16} />
+            <span>Výkazy práce</span>
+            <strong>{eventApprovalTimelogs.length}</strong>
+          </div>
+          {eventApprovalTimelogs.length > 0 ? (
+            <div className="nodu-mobile-event-management-list">
+              {eventApprovalTimelogs.map((timelog) => {
+                const contractor = contractors.find((item) => item.profileId === timelog.contractorProfileId);
+                const totalTimelogHours = calculateTotalHours(timelog.days);
+                const approveAction = getTimelogApprovalAction(timelog);
+                const contractorName = contractor?.name ?? 'Neznámý člen crew';
+
+                return (
+                  <div key={timelog.id} className="nodu-mobile-event-management-row nodu-mobile-event-management-row--timelog">
+                    <div className="av h-10 w-10 text-[12px]" style={{ backgroundColor: contractor?.bg ?? '#f3f4f6', color: contractor?.fg ?? '#6b7280' }}>{contractor?.ii ?? '?'}</div>
+                    <div className="min-w-0">
+                      <div className="nodu-mobile-event-management-report-header">
+                        <div className="min-w-0">
+                          <div className="nodu-mobile-event-crew-name">{contractorName}</div>
+                          <div className="nodu-mobile-event-management-report-label">Výkaz</div>
+                        </div>
+                        <div className="nodu-mobile-event-management-hours">{totalTimelogHours.toFixed(1)}h</div>
+                      </div>
+                    </div>
+                    <div className="nodu-mobile-event-management-day-list">
+                      {timelog.days.map((day, index) => (
+                        <div key={`${timelog.id}-${day.d}-${index}`} className="nodu-mobile-event-management-day-row">
+                          <div className="nodu-mobile-event-management-day-main">
+                            <span className="nodu-mobile-event-management-day-date">{formatShortDate(day.d)}</span>
+                            <span className="nodu-mobile-event-management-day-time">{day.f} - {day.t}</span>
+                          </div>
+                          <span className="nodu-mobile-event-management-day-hours">{calculateDayHours(day.f, day.t).toFixed(1)}h</span>
+                          <div className="nodu-mobile-event-management-day-phase">
+                            <StatusBadge status={day.type} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="nodu-mobile-event-management-actions">
+                      <button
+                        type="button"
+                        aria-label={`Schválit výkaz ${contractorName}`}
+                        className="nodu-mobile-event-icon-action nodu-mobile-event-icon-action--success"
+                        onClick={() => handleTimelogApprovalGroupAction(timelog, approveAction)}
+                      >
+                        Schválit
+                      </button>
+                      {timelog.status !== 'draft' && (
+                        <button
+                          type="button"
+                          aria-label={`Zamítnout výkaz ${contractorName}`}
+                          className="nodu-mobile-event-icon-action nodu-mobile-event-icon-action--danger"
+                          onClick={() => handleTimelogApprovalGroupAction(timelog, 'rej')}
+                        >
+                          Vrátit
+                        </button>
+                      )}
+                      {canEditTimelog(timelog, role) && (
+                        <button
+                          type="button"
+                          aria-label={`Upravit výkaz ${contractorName}`}
+                          className="nodu-mobile-event-icon-action"
+                          onClick={() => setEditingTimelog(timelog)}
+                        >
+                          Upravit
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="nodu-mobile-event-empty-state">Žádné výkazy této akce teď nečekají na schválení.</div>
+          )}
+        </div>
+      </section>
+    ) : null;
 
     return (
       <motion.div className="nodu-mobile-event-detail" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
@@ -430,14 +622,22 @@ const EventDetailView = () => {
                 </div>
               </div>
             </div>
-            {event.contactPerson && (
-              <div className="nodu-mobile-event-info-row">
+            {contactPersonName && (
+              <button
+                type="button"
+                className="nodu-mobile-event-info-row nodu-mobile-event-info-row--button"
+                aria-label={`Kontakt ${contactPersonName}`}
+                onClick={() => setShowContactDialog(true)}
+              >
                 <User size={18} />
-                <div>
-                  <span className="nodu-mobile-event-info-label">Kontakt</span>
-                  <p>{event.contactPerson}</p>
+                <div className="nodu-mobile-event-info-action">
+                  <div>
+                    <span className="nodu-mobile-event-info-label">Kontakt</span>
+                    <p>{contactPersonName}</p>
+                  </div>
+                  <Phone size={17} aria-hidden="true" />
                 </div>
-              </div>
+              </button>
             )}
             {shouldShowMeetingLocation && (
               <div className="nodu-mobile-event-info-row">
@@ -516,119 +716,8 @@ const EventDetailView = () => {
             )}
           </section>
 
-          {canManageEvents && (
-            <section id="mobile-event-management-approval" className="nodu-mobile-event-section" aria-labelledby="mobile-event-management-approval-title">
-              <h2 id="mobile-event-management-approval-title">Schvalování</h2>
+          {mobilePendingApplicationsContent}
 
-              <div className="nodu-mobile-event-management-block">
-                <div className="nodu-mobile-event-management-title">
-                  <Users size={16} />
-                  <span>Přihlášky crew</span>
-                  <strong>{pendingApplications.length}</strong>
-                </div>
-                {pendingApplications.length > 0 ? (
-                  <div className="nodu-mobile-event-management-list">
-                    {pendingApplications.map(({ application, contractor }) => (
-                      <div key={application.id} className="nodu-mobile-event-management-row">
-                        <div className="av h-10 w-10 text-[12px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
-                        <div className="min-w-0">
-                          <div className="nodu-mobile-event-crew-name">{contractor.name}</div>
-                          <div className="nodu-mobile-event-crew-meta">
-                            {application.plannedFrom && application.plannedTo ? `${application.plannedFrom} - ${application.plannedTo}` : 'Čas není navržen'}
-                          </div>
-                        </div>
-                        <div className="nodu-mobile-event-management-actions">
-                          <button
-                            type="button"
-                            aria-label={`Schválit přihlášku ${contractor.name}`}
-                            className="nodu-mobile-event-icon-action nodu-mobile-event-icon-action--success"
-                            onClick={() => handleApproveApplication(application.id)}
-                          >
-                            Schválit
-                          </button>
-                          <button
-                            type="button"
-                            aria-label={`Zamítnout přihlášku ${contractor.name}`}
-                            className="nodu-mobile-event-icon-action nodu-mobile-event-icon-action--danger"
-                            onClick={() => handleRejectApplication(application.id)}
-                          >
-                            Zamítnout
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="nodu-mobile-event-empty-state">Žádné přihlášky teď nečekají.</div>
-                )}
-              </div>
-
-              <div className="nodu-mobile-event-management-block">
-                <div className="nodu-mobile-event-management-title">
-                  <FileText size={16} />
-                  <span>Výkazy práce</span>
-                  <strong>{eventApprovalTimelogs.length}</strong>
-                </div>
-                {eventApprovalTimelogs.length > 0 ? (
-                  <div className="nodu-mobile-event-management-list">
-                    {eventApprovalTimelogs.map((timelog) => {
-                      const contractor = contractors.find((item) => item.profileId === timelog.contractorProfileId);
-                      const totalTimelogHours = calculateTotalHours(timelog.days);
-                      const approveAction = timelog.status === 'draft'
-                        ? 'sub'
-                        : timelog.status === 'pending_ch' ? 'ch' : 'coo';
-                      const contractorName = contractor?.name ?? 'Neznámý člen crew';
-
-                      return (
-                        <div key={timelog.id} className="nodu-mobile-event-management-row">
-                          <div className="av h-10 w-10 text-[12px]" style={{ backgroundColor: contractor?.bg ?? '#f3f4f6', color: contractor?.fg ?? '#6b7280' }}>{contractor?.ii ?? '?'}</div>
-                          <div className="min-w-0">
-                            <div className="nodu-mobile-event-crew-name">{contractorName}</div>
-                            <div className="nodu-mobile-event-crew-meta">
-                              {timelog.days.map((day) => `${formatShortDate(day.d)} ${day.f} - ${day.t}`).join(', ')}
-                            </div>
-                          </div>
-                          <div className="nodu-mobile-event-management-hours">{totalTimelogHours.toFixed(1)}h</div>
-                          <div className="nodu-mobile-event-management-actions">
-                            <button
-                              type="button"
-                              aria-label={`Schválit výkaz ${contractorName}`}
-                              className="nodu-mobile-event-icon-action nodu-mobile-event-icon-action--success"
-                              onClick={() => handleTimelogApprovalAction(timelog.id, approveAction)}
-                            >
-                              Schválit
-                            </button>
-                            {timelog.status !== 'draft' && (
-                              <button
-                                type="button"
-                                aria-label={`Zamítnout výkaz ${contractorName}`}
-                                className="nodu-mobile-event-icon-action nodu-mobile-event-icon-action--danger"
-                                onClick={() => handleTimelogApprovalAction(timelog.id, 'rej')}
-                              >
-                                Vrátit
-                              </button>
-                            )}
-                            {canEditTimelog(timelog, role) && (
-                              <button
-                                type="button"
-                                aria-label={`Upravit výkaz ${contractorName}`}
-                                className="nodu-mobile-event-icon-action"
-                                onClick={() => setEditingTimelog(timelog)}
-                              >
-                                Upravit
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="nodu-mobile-event-empty-state">Žádné výkazy této akce teď nečekají na schválení.</div>
-                )}
-              </div>
-            </section>
-          )}
         </div>
 
         <div className={floatingPanelClassName} aria-label="Akce k události">
@@ -688,6 +777,27 @@ const EventDetailView = () => {
           )}
         </div>
 
+        {showMobileApprovalDialog && canManageEvents && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mobile-event-management-approval-title"
+            className="nodu-mobile-event-approval-dialog"
+          >
+            <div className="nodu-mobile-event-approval-panel">
+              <button
+                type="button"
+                aria-label="Zavřít schvalování"
+                className="nodu-mobile-event-approval-close"
+                onClick={() => setShowMobileApprovalDialog(false)}
+              >
+                <X size={18} />
+              </button>
+              {mobileManagementApprovalContent}
+            </div>
+          </div>
+        )}
+
         {showWithdrawalConfirm && (
           <div
             role="dialog"
@@ -706,6 +816,39 @@ const EventDetailView = () => {
                   Požádat
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {showContactDialog && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mobile-event-contact-title"
+            className="nodu-mobile-event-contact-dialog"
+          >
+            <div className="nodu-mobile-event-contact-panel">
+              <div className="nodu-mobile-event-contact-header">
+                <div>
+                  <span>Kontakt na akci</span>
+                  <h2 id="mobile-event-contact-title">Kontakt na akci</h2>
+                </div>
+                <button type="button" aria-label="Zavřít kontakt" onClick={() => setShowContactDialog(false)}>
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="nodu-mobile-event-contact-person">
+                <strong>{contactPersonName}</strong>
+                <span>{contactPhone || 'Telefon není doplněný'}</span>
+              </div>
+              {contactPhoneHref ? (
+                <a className="nodu-mobile-event-contact-call" href={contactPhoneHref}>
+                  <Phone size={18} />
+                  Zavolat {contactPhone}
+                </a>
+              ) : (
+                <p className="nodu-mobile-event-contact-empty">Telefon k této kontaktní osobě zatím není vyplněný.</p>
+              )}
             </div>
           </div>
         )}
@@ -1007,9 +1150,7 @@ const EventDetailView = () => {
                             const contractor = contractors.find((item) => item.profileId === timelog.contractorProfileId);
                             const totalTimelogHours = calculateTotalHours(timelog.days);
                             const amount = contractor ? totalTimelogHours * contractor.rate + timelog.km * KM_RATE : 0;
-                            const approveAction = timelog.status === 'draft'
-                              ? 'sub'
-                              : timelog.status === 'pending_ch' ? 'ch' : 'coo';
+                            const approveAction = getTimelogApprovalAction(timelog);
                             const approveLabel = timelog.status === 'draft'
                               ? 'Odeslat ke kontrole CH'
                               : timelog.status === 'pending_ch'
@@ -1040,11 +1181,11 @@ const EventDetailView = () => {
                                   ))}
                                 </div>
                                 <div className="mt-3 flex flex-wrap gap-2">
-                                  <Button size="sm" className="h-8 text-[11px]" onClick={() => handleTimelogApprovalAction(timelog.id, approveAction)}>
+                                  <Button size="sm" className="h-8 text-[11px]" onClick={() => handleTimelogApprovalGroupAction(timelog, approveAction)}>
                                     {approveLabel}
                                   </Button>
                                   {timelog.status !== 'draft' && (
-                                    <Button size="sm" variant="outline" className="h-8 border-[#e8b4a3] text-[11px] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]" onClick={() => handleTimelogApprovalAction(timelog.id, 'rej')}>
+                                    <Button size="sm" variant="outline" className="h-8 border-[#e8b4a3] text-[11px] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]" onClick={() => handleTimelogApprovalGroupAction(timelog, 'rej')}>
                                       Zamitnout
                                     </Button>
                                   )}

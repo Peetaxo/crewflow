@@ -269,6 +269,14 @@ describe('MobileTimelogEditModal', () => {
 
   it('autosaves draft time changes after the user pauses on a value', async () => {
     vi.useFakeTimers();
+    testState.editingTimelog = {
+      ...testState.editingTimelog!,
+      id: -1,
+    };
+    testMocks.saveTimelog.mockResolvedValueOnce({
+      ...testState.editingTimelog,
+      id: 12,
+    });
     render(<MobileTimelogEditModal />);
 
     fireEvent.click(screen.getByRole('button', { name: '14.07.2026' }));
@@ -288,6 +296,7 @@ describe('MobileTimelogEditModal', () => {
     });
 
     expect(testMocks.saveTimelog).toHaveBeenCalledWith(expect.objectContaining({
+      id: -1,
       status: 'draft',
       days: expect.arrayContaining([
         expect.objectContaining({
@@ -297,7 +306,54 @@ describe('MobileTimelogEditModal', () => {
         }),
       ]),
     }));
+    expect(testMocks.setEditingTimelog).toHaveBeenCalledWith(expect.objectContaining({
+      id: 12,
+      status: 'draft',
+    }));
     expect(screen.getByText('Uloženo v návrhu')).toBeInTheDocument();
+  });
+
+  it('waits for an in-flight autosave before closing an unsaved draft', async () => {
+    vi.useFakeTimers();
+    let resolveAutosave: (timelog: Timelog) => void = () => undefined;
+    testState.editingTimelog = {
+      ...testState.editingTimelog!,
+      id: -1,
+    };
+    const savedTimelog = {
+      ...testState.editingTimelog,
+      id: 12,
+      days: [
+        { d: '2026-07-13', f: '08:00', t: '17:00', type: 'instal' as const },
+        { d: '2026-07-14', f: '10:15', t: '18:00', type: 'provoz' as const },
+      ],
+    };
+    testMocks.saveTimelog.mockImplementationOnce(() => new Promise<Timelog>((resolve) => {
+      resolveAutosave = resolve;
+    }));
+    render(<MobileTimelogEditModal />);
+
+    fireEvent.click(screen.getByRole('button', { name: '14.07.2026' }));
+    selectTime('Od', '10:15');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800);
+    });
+
+    expect(testMocks.saveTimelog).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Uložit výkaz' }));
+
+    expect(testMocks.saveTimelog).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveAutosave(savedTimelog);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(testMocks.setEditingTimelog).toHaveBeenCalledWith(null);
+    expect(testMocks.saveTimelog).toHaveBeenCalledTimes(1);
   });
 
   it('does not autosave timelogs that are no longer drafts', async () => {

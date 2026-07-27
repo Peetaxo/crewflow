@@ -379,6 +379,7 @@ const MobileTimelogEditModal: React.FC = () => {
   const [activeTimePicker, setActiveTimePicker] = React.useState<ActiveTimePicker | null>(null);
   const [autosaveState, setAutosaveState] = React.useState<AutosaveState>('idle');
   const autosaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autosavePromiseRef = React.useRef<Promise<Timelog> | null>(null);
   const autosaveRequestRef = React.useRef(0);
   const lastAutosavedSignatureRef = React.useRef<string | null>(null);
   const calendarDates = React.useMemo(() => (
@@ -538,15 +539,25 @@ const MobileTimelogEditModal: React.FC = () => {
       autosaveRequestRef.current = requestId;
       autosaveTimerRef.current = null;
 
-      void saveTimelog(nextTimelog)
-        .then(() => {
+      const autosavePromise = saveTimelog(nextTimelog);
+      autosavePromiseRef.current = autosavePromise;
+
+      void autosavePromise
+        .then((savedTimelog) => {
           if (autosaveRequestRef.current !== requestId) return;
           lastAutosavedSignatureRef.current = nextSignature;
+          if (savedTimelog) {
+            setEditingTimelog(savedTimelog);
+          }
           setAutosaveState('saved');
         })
         .catch(() => {
           if (autosaveRequestRef.current !== requestId) return;
           setAutosaveState('error');
+        })
+        .finally(() => {
+          if (autosaveRequestRef.current !== requestId) return;
+          autosavePromiseRef.current = null;
         });
     }, autosaveDelayMs);
   };
@@ -1038,6 +1049,23 @@ const MobileTimelogEditModal: React.FC = () => {
             onClick={async () => {
               try {
                 clearAutosaveTimer();
+                const pendingAutosave = autosavePromiseRef.current;
+
+                if (pendingAutosave) {
+                  const savedTimelog = await pendingAutosave;
+                  const timelogToSave = buildTimelogWithCurrentDraft();
+
+                  if (getTimelogDraftSignature(timelogToSave) !== lastAutosavedSignatureRef.current) {
+                    await saveTimelog({
+                      ...timelogToSave,
+                      id: savedTimelog?.id ?? timelogToSave.id,
+                    });
+                  }
+
+                  setEditingTimelog(null);
+                  return;
+                }
+
                 const timelogToSave = buildTimelogWithCurrentDraft();
                 await saveTimelog(timelogToSave);
                 setEditingTimelog(null);

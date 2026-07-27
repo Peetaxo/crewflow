@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('framer-motion', () => ({
@@ -469,11 +469,90 @@ describe('EventDetailView', () => {
     expect(crewSection).toHaveTextContent('2/5');
   });
 
+  it('opens a mobile contact call dialog from the event info contact row', async () => {
+    mobileMockState.isMobile = true;
+    const contactContractor = {
+      ...contractor,
+      phone: '721 250 034',
+    };
+    const eventWithContact = {
+      ...event,
+      status: 'upcoming' as const,
+      contactProfileId: contactContractor.profileId,
+      contactPerson: 'Stary kontakt',
+      contactPhone: '000 000 000',
+    };
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        role: 'crew',
+        selectedEventId: 'event-uuid-1',
+        setSelectedEventId,
+        eventTab: 'overview',
+        setEventTab: vi.fn(),
+        setEditingReceipt: vi.fn(),
+        setDeleteConfirm: vi.fn(),
+        setEditingTimelog,
+      }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [contactContractor],
+      getEventDetailData: () => ({
+        event: eventWithContact,
+        timelogs: [timelog],
+        contractors: [contactContractor],
+        receipts: [],
+        applications: [],
+        crewAssignments: [{ eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: contactContractor.profileId, name: contactContractor.name }],
+      }),
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: requestEventWithdrawalMock,
+      subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatus,
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventDetailView } = await import('./EventDetailView');
+
+    render(<EventDetailView />);
+
+    fireEvent.click(screen.getByRole('button', { name: `Kontakt ${contactContractor.name}` }));
+
+    const contactDialog = screen.getByRole('dialog', { name: 'Kontakt na akci' });
+
+    expect(contactDialog).toBeInTheDocument();
+    expect(within(contactDialog).getByText(contactContractor.name)).toBeInTheDocument();
+    expect(within(contactDialog).queryByText('Stary kontakt')).not.toBeInTheDocument();
+    expect(within(contactDialog).getByRole('link', { name: `Zavolat ${contactContractor.phone}` })).toHaveAttribute('href', 'tel:721250034');
+  });
+
   it('renders mobile management detail for CH and COO with edit, assignment, and approval actions', async () => {
     mobileMockState.isMobile = true;
     updateTimelogStatus.mockResolvedValue({ ...pendingCrewheadTimelog, status: 'pending_coo' });
     const approveEventApplication = vi.fn().mockResolvedValue(undefined);
     const updateEventApplicationStatus = vi.fn().mockResolvedValue(undefined);
+    const secondPendingCrewheadTimelog = {
+      ...pendingCrewheadTimelog,
+      id: 10,
+      days: [{ d: '2026-04-16', f: '12:00', t: '17:00', type: 'instal' as const }],
+    };
 
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => ({
@@ -492,7 +571,7 @@ describe('EventDetailView', () => {
       getEventCrew: () => [contractor],
       getEventDetailData: () => ({
         event: { ...event, status: 'upcoming' as const, needed: 5, filled: 1, allowCrewTimeProposal: true },
-        timelogs: [pendingCrewheadTimelog],
+        timelogs: [pendingCrewheadTimelog, secondPendingCrewheadTimelog],
         contractors: [contractor, applicant],
         receipts: [],
         applications: [
@@ -547,6 +626,11 @@ describe('EventDetailView', () => {
     expect(screen.getByRole('button', { name: 'Přiřadit crew' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Schvalování' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Přiřazená crew' }).closest('section')).toHaveTextContent('1/5');
+    const applicationsSection = screen.getByRole('heading', { name: 'Přihlášky crew' }).closest('section');
+    expect(applicationsSection).toHaveTextContent('Jana Nova');
+    expect(applicationsSection).toHaveTextContent('09:00 - 15:00');
+    expect(screen.queryByRole('heading', { name: 'Schvalování' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Výkazy práce')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Upravit' }));
     expect(screen.getByRole('dialog', { name: /Editace akce TEST/ })).toBeInTheDocument();
@@ -556,17 +640,23 @@ describe('EventDetailView', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Schvalování' }));
 
-    expect(screen.getByRole('heading', { name: 'Schvalování' })).toBeInTheDocument();
-    expect(screen.getByText('Přihlášky crew')).toBeInTheDocument();
-    expect(screen.getAllByText('Jana Nova').length).toBeGreaterThan(0);
-    expect(screen.getByText('09:00 - 15:00')).toBeInTheDocument();
-    expect(screen.getByText('Výkazy práce')).toBeInTheDocument();
-    expect(screen.getByText('6.0h')).toBeInTheDocument();
+    const approvalDialog = screen.getByRole('dialog', { name: 'Schvalování' });
+    expect(within(approvalDialog).getByRole('heading', { name: 'Schvalování' })).toBeInTheDocument();
+    expect(within(approvalDialog).queryByText('Přihlášky crew')).not.toBeInTheDocument();
+    expect(within(approvalDialog).getByText('Výkazy práce')).toBeInTheDocument();
+    expect(within(approvalDialog).getByText('Výkaz')).toBeInTheDocument();
+    expect(within(approvalDialog).queryByText('Výkaz 1/2')).not.toBeInTheDocument();
+    expect(within(approvalDialog).queryByText('Výkaz 2/2')).not.toBeInTheDocument();
+    expect(within(approvalDialog).getByText('17. 4.')).toBeInTheDocument();
+    expect(within(approvalDialog).getByText('16. 4.')).toBeInTheDocument();
+    expect(within(approvalDialog).getByText('12:00 - 17:00')).toBeInTheDocument();
+    expect(within(approvalDialog).getAllByText('6.0h').length).toBeGreaterThan(0);
+    expect(within(approvalDialog).getAllByText('5.0h').length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Schválit přihlášku Jana Nova' }));
+    fireEvent.click(within(applicationsSection as HTMLElement).getByRole('button', { name: 'Schválit přihlášku Jana Nova' }));
     await waitFor(() => expect(approveEventApplication).toHaveBeenCalledWith(12));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Schválit výkaz Jana Nova' }));
+    fireEvent.click(within(approvalDialog).getAllByRole('button', { name: 'Schválit výkaz Jana Nova' })[0]);
     await waitFor(() => expect(updateTimelogStatus).toHaveBeenCalledWith(9, 'ch'));
   });
 

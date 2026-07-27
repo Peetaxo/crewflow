@@ -589,7 +589,9 @@ const toSupabaseEventPayload = async (event: Event) => ({
   crew_filled: event.filled,
   status: event.status,
   description: event.description ?? null,
+  contact_profile_id: event.contactProfileId ?? null,
   contact_person: event.contactPerson ?? null,
+  contact_phone: event.contactPhone ?? null,
   dresscode: event.dresscode ?? null,
   meeting_point: event.meetingLocation ?? null,
   show_day_types: event.showDayTypes ?? false,
@@ -961,12 +963,13 @@ export const approveEventWithdrawal = async (applicationId: number): Promise<voi
   await updateEventApplicationStatus(applicationId, 'withdrawn');
 };
 
-export const getEventFormOptions = (): { projects: Project[]; clients: Client[] } => {
+export const getEventFormOptions = (): { projects: Project[]; clients: Client[]; contractors: Contractor[] } => {
   ensureSupabaseEventsLoaded();
   const snapshot = getLocalAppState();
   return {
     projects: snapshot.projects ?? [],
     clients: snapshot.clients ?? [],
+    contractors: snapshot.contractors ?? [],
   };
 };
 
@@ -1117,6 +1120,9 @@ const normalizeEvent = (event: Event): Event => ({
   placeId: event.placeId?.trim() || undefined,
   locationLat: typeof event.locationLat === 'number' && Number.isFinite(event.locationLat) ? event.locationLat : null,
   locationLng: typeof event.locationLng === 'number' && Number.isFinite(event.locationLng) ? event.locationLng : null,
+  contactProfileId: event.contactProfileId?.trim() || null,
+  contactPerson: event.contactPerson?.trim() || undefined,
+  contactPhone: event.contactPhone?.trim() || undefined,
   allowCrewTimeProposal: event.allowCrewTimeProposal ?? false,
 });
 

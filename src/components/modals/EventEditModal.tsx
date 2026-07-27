@@ -15,6 +15,7 @@ import {
   saveEvent,
 } from '../../features/events/services/events.service';
 import EventAddressField from '../../features/events/components/EventAddressField';
+import EventLocationPickerModal from '../../features/events/components/EventLocationPickerModal';
 import EventMapPreview from '../../features/events/components/EventMapPreview';
 
 interface EventEditModalProps {
@@ -42,8 +43,15 @@ const EventEditModal = ({
   onChange,
 }: EventEditModalProps) => {
   const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
+  const [isLocationPickerOpen, setIsLocationPickerOpen] = useState(false);
   const projectMenuRef = useRef<HTMLDivElement | null>(null);
-  const { projects, clients } = useMemo(() => getEventFormOptions(), []);
+  const { projects, clients, contractors } = useMemo(() => {
+    const options = getEventFormOptions();
+    return {
+      ...options,
+      contractors: options.contractors ?? [],
+    };
+  }, []);
   const clientOptions = useMemo(() => {
     if (!editingEvent?.client || clients.some((client) => client.name === editingEvent.client)) {
       return clients;
@@ -57,6 +65,11 @@ const EventEditModal = ({
       },
     ];
   }, [clients, editingEvent?.client]);
+  const contactOptions = useMemo(() => (
+    contractors
+      .filter((contractor) => contractor.profileId)
+      .sort((left, right) => left.name.localeCompare(right.name, 'cs'))
+  ), [contractors]);
 
   const filteredProjects = useMemo(() => {
     const query = editingEvent?.job.trim().toLowerCase() ?? '';
@@ -88,6 +101,30 @@ const EventEditModal = ({
     setIsProjectMenuOpen(false);
   };
 
+  const selectContactProfile = (profileId: string) => {
+    if (!editingEvent) return;
+
+    if (!profileId) {
+      updateEventDraft({
+        ...editingEvent,
+        contactProfileId: null,
+        contactPerson: '',
+        contactPhone: '',
+      });
+      return;
+    }
+
+    const selectedContact = contactOptions.find((contractor) => contractor.profileId === profileId);
+    if (!selectedContact) return;
+
+    updateEventDraft({
+      ...editingEvent,
+      contactProfileId: selectedContact.profileId ?? null,
+      contactPerson: selectedContact.name,
+      contactPhone: selectedContact.phone,
+    });
+  };
+
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
       if (!projectMenuRef.current?.contains(event.target as Node)) {
@@ -107,6 +144,12 @@ const EventEditModal = ({
   const phaseSchedules = normalizeEventSchedules(editingEvent);
   const globalFrom = editingEvent.startTime || '08:00';
   const globalTo = editingEvent.endTime || '17:00';
+  const selectedContactProfile = editingEvent.contactProfileId
+    ? contactOptions.find((contractor) => contractor.profileId === editingEvent.contactProfileId) ?? null
+    : null;
+  const legacyContactName = editingEvent.contactPerson?.trim() ?? '';
+  const hasLegacyContact = Boolean(legacyContactName && !selectedContactProfile);
+  const contactSelectValue = selectedContactProfile?.profileId ?? (hasLegacyContact ? '__legacy_contact__' : '');
 
   const patchPhaseSlots = (phaseType: TimelogType, updater: (slots: EventPhaseSlot[]) => EventPhaseSlot[]) => {
     const nextSlots = updater((phaseSchedules[phaseType] || []).map((slot) => ({ ...slot, dates: [...slot.dates] })));
@@ -233,6 +276,7 @@ const EventEditModal = ({
               <div>
                 <EventAddressField
                   value={editingEvent}
+                  onPickMap={() => setIsLocationPickerOpen(true)}
                   onChange={(selection) => updateEventDraft({
                     ...editingEvent,
                     address: selection.address,
@@ -337,13 +381,25 @@ const EventEditModal = ({
 
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <label className={fieldLabelClass}>Kontaktni osoba</label>
-                <input
-                  type="text"
-                  value={editingEvent.contactPerson || ''}
-                  onChange={(e) => updateEventDraft({ ...editingEvent, contactPerson: e.target.value })}
+                <label htmlFor="event-contact-profile" className={fieldLabelClass}>Kontaktní osoba</label>
+                <select
+                  id="event-contact-profile"
+                  value={contactSelectValue}
+                  onChange={(e) => selectContactProfile(e.target.value)}
                   className={nativeFieldClass}
-                />
+                >
+                  <option value="">Vyberte kontakt</option>
+                  {hasLegacyContact && (
+                    <option value="__legacy_contact__" disabled>
+                      {legacyContactName}
+                    </option>
+                  )}
+                  {contactOptions.map((contractor) => (
+                    <option key={contractor.profileId} value={contractor.profileId}>
+                      {contractor.name}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className={fieldLabelClass}>Dresscode</label>
@@ -578,6 +634,23 @@ const EventEditModal = ({
             </button>
           </div>
         </motion.div>
+        {isLocationPickerOpen && (
+          <EventLocationPickerModal
+            address={editingEvent.address || editingEvent.city}
+            initialLocationLat={editingEvent.locationLat}
+            initialLocationLng={editingEvent.locationLng}
+            onCancel={() => setIsLocationPickerOpen(false)}
+            onConfirm={({ locationLat, locationLng }) => {
+              updateEventDraft({
+                ...editingEvent,
+                locationLat,
+                locationLng,
+                placeId: undefined,
+              });
+              setIsLocationPickerOpen(false);
+            }}
+          />
+        )}
       </div>
     </AnimatePresence>
   );

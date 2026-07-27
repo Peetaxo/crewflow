@@ -613,7 +613,7 @@ describe('events.service write flow', () => {
 
     const { saveEvent } = await import('./events.service');
 
-    const saved = await saveEvent({
+    const eventWithContact = {
       id: 1,
       name: ' Akce 1 ',
       job: ' ak001 ',
@@ -630,8 +630,13 @@ describe('events.service write flow', () => {
       filled: 0,
       status: 'upcoming',
       client: ' Klient A ',
+      contactProfileId: 'profile-contact-uuid-1',
+      contactPerson: ' Petr Heitzer ',
+      contactPhone: ' 721 250 034 ',
       showDayTypes: false,
-    });
+    } satisfies Event & { contactProfileId: string; contactPhone: string };
+
+    const saved = await saveEvent(eventWithContact);
 
     expect(eventsInsert).toHaveBeenCalledWith({
       name: 'Akce 1',
@@ -651,7 +656,9 @@ describe('events.service write flow', () => {
       crew_filled: 0,
       status: 'upcoming',
       description: null,
-      contact_person: null,
+      contact_person: 'Petr Heitzer',
+      contact_profile_id: 'profile-contact-uuid-1',
+      contact_phone: '721 250 034',
       dresscode: null,
       meeting_point: null,
       show_day_types: false,

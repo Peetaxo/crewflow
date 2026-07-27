@@ -172,6 +172,7 @@ describe('fleet service Supabase writes', () => {
                 crew_filled: null,
                 status: 'upcoming',
                 description: null,
+                contact_profile_id: null,
                 contact_person: null,
                 contact_phone: null,
                 contact_email: null,

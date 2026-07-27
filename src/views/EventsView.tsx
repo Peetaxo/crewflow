@@ -26,7 +26,6 @@ import { eventOccursOnDate, getDatesBetween } from '../utils';
 import { Button } from '../components/ui/button';
 import EventDetailView from './EventDetailView';
 import EventEditModal from '../components/modals/EventEditModal';
-import AssignCrewModal from '../components/modals/AssignCrewModal';
 import { useEventsQuery } from '../features/events/queries/useEventsQuery';
 import { useTimelogsQuery } from '../features/timelogs/queries/useTimelogsQuery';
 import {
@@ -79,6 +78,56 @@ type EventColorStyle = {
   metaColor: string;
 };
 
+type EventListAccentStyle = React.CSSProperties & {
+  '--event-list-accent'?: string;
+  '--event-list-accent-border'?: string;
+};
+
+const EVENT_COLOR_TONES = [
+  {
+    accentColor: '#c98ca2',
+    backgroundColor: '#fff7f8',
+    borderColor: '#efced7',
+    textColor: '#5b4149',
+    metaColor: '#7f6770',
+  },
+  {
+    accentColor: '#88a79c',
+    backgroundColor: '#f6fbf8',
+    borderColor: '#cfe1da',
+    textColor: '#3e554d',
+    metaColor: '#687b74',
+  },
+  {
+    accentColor: '#7f9eb8',
+    backgroundColor: '#f6fafd',
+    borderColor: '#cbddeb',
+    textColor: '#3d5267',
+    metaColor: '#657789',
+  },
+  {
+    accentColor: '#a391bd',
+    backgroundColor: '#fbf8ff',
+    borderColor: '#d9d0e8',
+    textColor: '#51465f',
+    metaColor: '#746982',
+  },
+  {
+    accentColor: '#c79a70',
+    backgroundColor: '#fff9f3',
+    borderColor: '#ead5c0',
+    textColor: '#604a37',
+    metaColor: '#826d58',
+  },
+  {
+    accentColor: '#76aaa5',
+    backgroundColor: '#f5fbfa',
+    borderColor: '#c4dedb',
+    textColor: '#375957',
+    metaColor: '#627d7a',
+  },
+] as const;
+
 const buildWeekSegments = (weekDays: Date[], events: CalendarEvent[]): CalendarSegment[] => {
   const weekKeys = weekDays.map((day) => format(day, 'yyyy-MM-dd'));
   const weekStart = weekKeys[0];
@@ -127,21 +176,59 @@ const getWeekRowHeight = (segments: CalendarSegment[]) => {
   return 56 + Math.max(1, laneCount) * 58;
 };
 
-const getEventColorStyle = (index: number, status: CalendarEvent['derivedStatus']): EventColorStyle => {
-  const hue = Math.round((index * 137.508) % 360);
-  const saturation = status === 'past' ? 12 : 65;
-  const backgroundLightness = status === 'past' ? 96 : 97;
-  const borderLightness = status === 'past' ? 86 : 82;
-  const stripeLightness = status === 'past' ? 58 : 46;
-  const textLightness = status === 'past' ? 24 : 28;
-  const metaLightness = status === 'past' ? 36 : 38;
+const getStableEventColorSeed = (event: Event) => {
+  if (event.supabaseId) return event.supabaseId;
+
+  return [
+    event.projectId,
+    event.job,
+    event.name,
+    event.startDate,
+    event.endDate,
+  ].filter(Boolean).join('|') || String(event.id);
+};
+
+const getStableEventColorTone = (event: Event) => {
+  const seed = getStableEventColorSeed(event);
+  let hash = 0;
+
+  for (let index = 0; index < seed.length; index += 1) {
+    hash = (hash * 31 + seed.charCodeAt(index)) % EVENT_COLOR_TONES.length;
+  }
+
+  return EVENT_COLOR_TONES[hash];
+};
+
+const getEventColorStyle = (event: Event, status: CalendarEvent['derivedStatus']): EventColorStyle => {
+  const tone = getStableEventColorTone(event);
+
+  if (status === 'past') {
+    return {
+      backgroundColor: '#f7f5f2',
+      borderColor: '#ded8d1',
+      stripeColor: tone.accentColor,
+      textColor: '#4f4740',
+      metaColor: '#7a6f66',
+    };
+  }
 
   return {
-    backgroundColor: `hsl(${hue} ${saturation}% ${backgroundLightness}%)`,
-    borderColor: `hsl(${hue} ${Math.max(18, saturation - 18)}% ${borderLightness}%)`,
-    stripeColor: `hsl(${hue} ${Math.max(24, saturation)}% ${stripeLightness}%)`,
-    textColor: `hsl(${hue} ${Math.max(18, saturation - 20)}% ${textLightness}%)`,
-    metaColor: `hsl(${hue} ${Math.max(14, saturation - 28)}% ${metaLightness}%)`,
+    backgroundColor: tone.backgroundColor,
+    borderColor: tone.borderColor,
+    stripeColor: tone.accentColor,
+    textColor: tone.textColor,
+    metaColor: tone.metaColor,
+  };
+};
+
+const getEventListAccentStyle = (event: Event, dayCount: number): EventListAccentStyle | undefined => {
+  if (dayCount <= 1) return undefined;
+
+  const tone = getStableEventColorTone(event);
+
+  return {
+    '--event-list-accent': tone.accentColor,
+    '--event-list-accent-border': tone.borderColor,
   };
 };
 
@@ -150,9 +237,17 @@ const eventOverlapsDateRange = (event: Event, startDate: string, endDate: string
 );
 
 const formatOccurrenceDate = (date: string) => format(parseISO(date), 'd. M. yyyy', { locale: cs });
-const formatShortOccurrenceDate = (date: string) => format(parseISO(date), 'd. M.', { locale: cs });
 const formatEventBoundaryDateTime = (date: string, time?: string) => (
   `${formatOccurrenceDate(date)} · ${time?.trim() || 'čas bude doplněn'}`
+);
+const formatEventMetaParts = (...parts: Array<string | null | undefined>) => (
+  parts
+    .map((part) => part?.trim())
+    .filter((part): part is string => Boolean(part))
+    .join(' · ')
+);
+const formatSingleDayOccurrenceMeta = (date: string, timeLabel: string, client?: string) => (
+  formatEventMetaParts(formatOccurrenceDate(date), timeLabel, client)
 );
 
 const formatEventDayCount = (dayCount: number) => {
@@ -192,13 +287,6 @@ const getListOccurrencesForEvent = (event: CalendarEvent, canManageEvents: boole
     dayIndex: index + 1,
     dayCount,
   }));
-};
-
-const getOccurrenceStatusLabel = (occurrence: EventListOccurrence) => {
-  if (occurrence.kind === 'single') return null;
-  if (occurrence.kind === 'start') return 'Začíná dnes';
-  if (occurrence.kind === 'end') return 'Končí dnes';
-  return `Probíhá od ${formatShortOccurrenceDate(occurrence.event.startDate)}`;
 };
 
 const formatTimelogShift = (from: string, to: string) => `${from} - ${to}`;
@@ -321,7 +409,6 @@ const EventsView = () => {
   void timelogsQuery.data;
   const [didInitCalendarDate, setDidInitCalendarDate] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
-  const [assigningEvent, setAssigningEvent] = useState<Event | null>(null);
   const [applicationDraftTimes, setApplicationDraftTimes] = useState<Record<string, { from: string; to: string }>>({});
   const canManageEvents = role !== 'crew';
   const viewMode = eventsViewMode as EventsViewMode;
@@ -390,9 +477,10 @@ const EventsView = () => {
 
   const eventColorMap = useMemo(() => (
     new Map(
-      [...visibleEvents]
-        .sort((a, b) => a.id - b.id)
-        .map((event, index) => [event.id, getEventColorStyle(index, event.derivedStatus)]),
+      visibleEvents.map((event) => [
+        getEventSelectionId(event),
+        getEventColorStyle(event, event.derivedStatus),
+      ]),
     )
   ), [visibleEvents]);
 
@@ -628,13 +716,25 @@ const EventsView = () => {
             <Button
               onClick={() => setEditingEvent(createEmptyEvent())}
               size="sm"
-              className="text-xs"
+              className="hidden text-xs md:inline-flex"
             >
               + Nova akce
             </Button>
           )}
         </div>
       </div>
+
+      {canManageEvents && (
+        <Button
+          aria-label="Nova akce"
+          title="Nova akce"
+          onClick={() => setEditingEvent(createEmptyEvent())}
+          size="icon"
+          className="fixed bottom-6 right-5 z-40 h-10 w-10 rounded-full text-2xl font-semibold shadow-[0_14px_32px_rgba(255,128,13,0.24)] md:hidden"
+        >
+          +
+        </Button>
+      )}
 
       {hasNoVisibleEventsForView ? (
         <div className="rounded-[28px] border border-dashed border-[color:rgb(var(--nodu-accent-rgb)/0.24)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] px-6 py-12 text-center shadow-[0_18px_42px_rgba(47,38,31,0.08)]">
@@ -705,15 +805,24 @@ const EventsView = () => {
                   const isFullyStaffed = event.needed > 0 && event.filled >= event.needed;
                   const occurrenceTimeLabel = getEventOccurrenceTimeLabel(event, occurrenceDate, eventTimelogs);
                   const isMultiDayOccurrence = occurrence.dayCount > 1;
-                  const occurrenceStatusLabel = getOccurrenceStatusLabel(occurrence);
                   const isContinuationOccurrence = occurrence.kind === 'continuation' || occurrence.kind === 'end';
                   const approvalMeta = getEventTimelogApprovalMeta(eventTimelogs);
+                  const listAccentStyle = getEventListAccentStyle(event, occurrence.dayCount);
+                  const listBorderClass = isMultiDayOccurrence
+                    ? 'border-[color:var(--event-list-accent-border)]'
+                    : 'border-[color:var(--nodu-border)]';
+                  const continuationBorderClass = isMultiDayOccurrence
+                    ? 'border-dashed border-[color:var(--event-list-accent-border)]'
+                    : 'border-dashed border-[color:rgb(var(--nodu-text-rgb)/0.16)]';
 
                   return (
                     <div
                       key={`${event.supabaseId ?? event.id}-${occurrenceDate}`}
+                      data-testid="event-list-card"
+                      data-event-multiday={isMultiDayOccurrence ? 'true' : undefined}
                       role="button"
                       tabIndex={0}
+                      style={listAccentStyle}
                       onClick={() => openEventDetail(event)}
                       onKeyDown={(keyboardEvent) => {
                         if (keyboardEvent.key === 'Enter' || keyboardEvent.key === ' ') {
@@ -723,10 +832,17 @@ const EventsView = () => {
                       }}
                       className={`relative cursor-pointer overflow-hidden rounded-[28px] border transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:rgb(var(--nodu-accent-rgb)/0.22)] ${
                         isContinuationOccurrence
-                          ? 'border-dashed border-[color:rgb(var(--nodu-text-rgb)/0.16)] bg-[color:rgb(var(--nodu-text-rgb)/0.035)] shadow-none hover:shadow-[0_12px_28px_rgba(47,38,31,0.06)]'
-                          : 'border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] shadow-[0_18px_42px_rgba(47,38,31,0.08)] hover:shadow-[0_22px_48px_rgba(47,38,31,0.12)]'
+                          ? `${continuationBorderClass} bg-[color:rgb(var(--nodu-text-rgb)/0.035)] shadow-none hover:shadow-[0_12px_28px_rgba(47,38,31,0.06)]`
+                          : `${listBorderClass} bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] shadow-[0_18px_42px_rgba(47,38,31,0.08)] hover:shadow-[0_22px_48px_rgba(47,38,31,0.12)]`
                       }`}
                     >
+                      {isMultiDayOccurrence && (
+                        <span
+                          data-testid="event-list-accent"
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-y-4 left-0 w-1 rounded-r-full bg-[color:var(--event-list-accent)]"
+                        />
+                      )}
                       {canManageEvents && (
                         <button
                           onClick={(clickEvent) => {
@@ -749,16 +865,6 @@ const EventsView = () => {
                                   {approvalMeta.label}
                                 </span>
                               )}
-                              {occurrenceStatusLabel && (
-                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
-                                  isContinuationOccurrence
-                                    ? 'border-[color:rgb(var(--nodu-text-rgb)/0.14)] bg-[color:rgb(var(--nodu-text-rgb)/0.06)] text-[color:var(--nodu-text-soft)]'
-                                    : 'border-[color:rgb(var(--nodu-accent-rgb)/0.18)] bg-[color:rgb(var(--nodu-accent-rgb)/0.1)] text-[color:var(--nodu-accent)]'
-                                }`}
-                                >
-                                  {occurrenceStatusLabel}
-                                </span>
-                              )}
                             </div>
                             <h3 className="text-base font-semibold text-[color:var(--nodu-text)]">{event.name}</h3>
                             {isMultiDayOccurrence ? (
@@ -778,7 +884,7 @@ const EventsView = () => {
                               </div>
                             ) : (
                               <div className="mt-1 flex items-center gap-1.5 text-xs text-[color:var(--nodu-text-soft)]">
-                                {formatOccurrenceDate(occurrenceDate)} - {occurrenceTimeLabel} - {event.client}
+                                {formatSingleDayOccurrenceMeta(occurrenceDate, occurrenceTimeLabel, event.client)}
                               </div>
                             )}
                           </div>
@@ -853,32 +959,19 @@ const EventsView = () => {
                         </div>
                         <div className="ml-auto flex gap-2">
                           {canManageEvents && (
-                            <>
-                              <Button
-                                aria-label="Kopirovat akci na jiny den"
-                                onClick={(clickEvent) => {
-                                  clickEvent.stopPropagation();
-                                  setEditingEvent(createEventCopy(event));
-                                }}
-                                variant="outline"
-                                size="sm"
-                                className="text-[11px]"
-                              >
-                                <Copy size={13} />
-                                Kopirovat
-                              </Button>
-                              <Button
-                                onClick={(clickEvent) => {
-                                  clickEvent.stopPropagation();
-                                  setAssigningEvent(event);
-                                }}
-                                variant="outline"
-                                size="sm"
-                                className="text-[11px]"
-                              >
-                                Obsadit crew {'->'}
-                              </Button>
-                            </>
+                            <Button
+                              aria-label="Kopirovat akci na jiny den"
+                              onClick={(clickEvent) => {
+                                clickEvent.stopPropagation();
+                                setEditingEvent(createEventCopy(event));
+                              }}
+                              variant="outline"
+                              size="sm"
+                              className="text-[11px]"
+                            >
+                              <Copy size={13} />
+                              Kopirovat
+                            </Button>
                           )}
                           {role === 'crew' && !isMeAssigned && !hasMyPendingApplication && (
                             event.allowCrewTimeProposal ? (
@@ -1002,7 +1095,7 @@ const EventsView = () => {
                       const width = ((segment.endIndex - segment.startIndex + 1) / 7) * 100;
                       const left = (segment.startIndex / 7) * 100;
                       const spanDays = segment.endIndex - segment.startIndex + 1;
-                      const eventColor = eventColorMap.get(segment.event.id) || getEventColorStyle(segment.event.id, segment.event.derivedStatus);
+                      const eventColor = eventColorMap.get(getEventSelectionId(segment.event)) || getEventColorStyle(segment.event, segment.event.derivedStatus);
 
                       return (
                         <button
@@ -1060,10 +1153,6 @@ const EventsView = () => {
         editingEvent={editingEvent}
         onClose={() => setEditingEvent(null)}
         onChange={setEditingEvent}
-      />
-      <AssignCrewModal
-        event={assigningEvent}
-        onClose={() => setAssigningEvent(null)}
       />
     </motion.div>
   );

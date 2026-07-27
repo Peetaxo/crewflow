@@ -124,13 +124,29 @@ describe('nodu CSS helpers', () => {
     expect(sidebarSurfaceRule).not.toContain('255, 255, 255');
   });
 
-  it('keeps event map marker anchoring and external link placement clear of Leaflet controls', () => {
+  it('keeps event map pins upright and compact while link placement stays clear of map controls', () => {
     const css = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8');
     const eventMapLinkRule = css.match(/\.nodu-event-map-preview__link\s*\{[\s\S]*?\}/)?.[0];
     const eventMapMarkerRule = css.match(/\.nodu-event-map-marker\s*\{[\s\S]*?\}/)?.[0];
+    const eventMapFixedPinRule = css.match(/\.nodu-event-map-preview__fixed-pin\s*\{[\s\S]*?\}/)?.[0];
+    const eventLocationPickerPinRule = css.match(/\.nodu-event-location-picker-pin\s*\{[\s\S]*?\}/)?.[0];
 
     expect(eventMapLinkRule).toContain('left: 0.75rem;');
     expect(eventMapLinkRule).not.toContain('right: 0.75rem;');
-    expect(eventMapMarkerRule).not.toMatch(/margin\s*:/);
+    expect(eventMapMarkerRule).toContain('width: 1.25rem;');
+    expect(eventMapMarkerRule).toContain('height: 1.65rem;');
+    expect(eventMapMarkerRule).not.toContain('rotate(');
+    expect(eventMapFixedPinRule).toContain('width: 1.25rem;');
+    expect(eventMapFixedPinRule).not.toContain('rotate(');
+    expect(eventLocationPickerPinRule).toContain('width: 1.25rem;');
+    expect(eventLocationPickerPinRule).not.toContain('rotate(');
+  });
+
+  it('prevents iOS focus zoom by keeping mobile form controls at least 16px', () => {
+    const css = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8');
+    const mobileFormControlRule = css.match(/@media\s*\(max-width:\s*640px\)\s*\{[\s\S]*?\.nodu-app-shell--mobile-crew\s+:where\(input,\s*select,\s*textarea\)\s*\{[\s\S]*?\}[\s\S]*?\}/)?.[0];
+
+    expect(mobileFormControlRule).toBeDefined();
+    expect(mobileFormControlRule).toContain('font-size: 16px;');
   });
 });

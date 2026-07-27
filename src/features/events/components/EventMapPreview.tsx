@@ -1,7 +1,10 @@
 import React from 'react';
-import * as L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import { Map as MapLibreMap, Marker as MapLibreMarker, NavigationControl } from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
 import { hasEventCoordinates } from '../services/event-location.service';
+import { EVENT_MAP_ATTRIBUTION_CONTROL } from './event-map-attribution';
+import { EVENT_MAP_CANVAS_CONTEXT_ATTRIBUTES, scheduleEventMapRenderingSettle } from './event-map-rendering';
+import { EVENT_MAP_STYLE } from './event-map-style';
 
 interface EventMapPreviewProps {
   address?: string | null;
@@ -14,21 +17,10 @@ interface EventMapPreviewProps {
 
 const EVENT_MAP_ZOOM = 15;
 const EVENT_MAP_FALLBACK_LABEL = 'Místo bude doplněno';
-const OSM_TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-const OSM_ATTRIBUTION = '&copy; OpenStreetMap contributors';
-const MARKER_ICON_ANCHOR: L.PointExpression = [12, 32];
-const MARKER_ICON_SIZE: L.PointExpression = [24, 32];
 
 const roundCoordinate = (value: number) => Math.round(value * 1_000_000) / 1_000_000;
 
-const disableMapInteractions = (map: L.Map) => {
-  map.dragging.disable();
-  map.scrollWheelZoom.disable();
-  map.touchZoom.disable();
-  map.doubleClickZoom.disable();
-  map.boxZoom.disable();
-  map.keyboard.disable();
-};
+const toMapLibreCoordinates = ([lat, lng]: [number, number]): [number, number] => [lng, lat];
 
 const EventMapPreview = ({
   address,
@@ -39,8 +31,8 @@ const EventMapPreview = ({
   onLocationChange,
 }: EventMapPreviewProps) => {
   const mapElementRef = React.useRef<HTMLDivElement | null>(null);
-  const mapRef = React.useRef<L.Map | null>(null);
-  const markerRef = React.useRef<L.Marker | null>(null);
+  const mapRef = React.useRef<MapLibreMap | null>(null);
+  const markerRef = React.useRef<MapLibreMarker | null>(null);
   const onLocationChangeRef = React.useRef(onLocationChange);
   const hasCoordinates = hasEventCoordinates({ locationLat, locationLng });
   const coordinates: [number, number] | null = hasCoordinates ? [locationLat, locationLng] : null;
@@ -61,45 +53,63 @@ const EventMapPreview = ({
       return undefined;
     }
 
-    const map = L.map(mapElementRef.current, {
-      zoomControl: editable,
+    const map = new MapLibreMap({
+      attributionControl: EVENT_MAP_ATTRIBUTION_CONTROL,
+      center: toMapLibreCoordinates(initialCoordinates),
+      canvasContextAttributes: EVENT_MAP_CANVAS_CONTEXT_ATTRIBUTES,
+      container: mapElementRef.current,
+      interactive: editable,
+      style: EVENT_MAP_STYLE,
+      zoom: EVENT_MAP_ZOOM,
     });
     mapRef.current = map;
-    map.setView(initialCoordinates, EVENT_MAP_ZOOM);
-
-    L.tileLayer(OSM_TILE_URL, {
-      attribution: OSM_ATTRIBUTION,
-    }).addTo(map);
-
-    const markerIcon = L.divIcon({
-      className: 'nodu-event-map-marker',
-      iconAnchor: MARKER_ICON_ANCHOR,
-      iconSize: MARKER_ICON_SIZE,
-    });
-    const marker = L.marker(initialCoordinates, {
-      draggable: editable,
-      icon: markerIcon,
-    }).addTo(map);
-    markerRef.current = marker;
+    const cancelRenderingSettle = scheduleEventMapRenderingSettle(map);
 
     if (editable) {
-      marker.on('dragend', () => {
-        const nextCoordinates = marker.getLatLng();
+      map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
+    }
+
+    if (editable) {
+      map.on('moveend', () => {
+        const nextCoordinates = map.getCenter();
 
         if (!Number.isFinite(nextCoordinates.lat) || !Number.isFinite(nextCoordinates.lng)) {
           return;
         }
 
-        onLocationChangeRef.current?.({
+        const roundedCoordinates = {
           locationLat: roundCoordinate(nextCoordinates.lat),
           locationLng: roundCoordinate(nextCoordinates.lng),
+        };
+        const currentCoordinates = coordinatesRef.current;
+
+        if (
+          currentCoordinates
+          && roundCoordinate(currentCoordinates[0]) === roundedCoordinates.locationLat
+          && roundCoordinate(currentCoordinates[1]) === roundedCoordinates.locationLng
+        ) {
+          return;
+        }
+
+        onLocationChangeRef.current?.({
+          locationLat: roundedCoordinates.locationLat,
+          locationLng: roundedCoordinates.locationLng,
         });
       });
     } else {
-      disableMapInteractions(map);
+      const markerElement = document.createElement('div');
+      markerElement.className = 'nodu-event-map-marker';
+      const marker = new MapLibreMarker({
+        anchor: 'bottom',
+        element: markerElement,
+      });
+      marker.setLngLat(toMapLibreCoordinates(initialCoordinates)).addTo(map);
+      markerRef.current = marker;
     }
 
     return () => {
+      cancelRenderingSettle();
+      markerRef.current?.remove();
       map.remove();
       mapRef.current = null;
       markerRef.current = null;
@@ -109,13 +119,17 @@ const EventMapPreview = ({
   React.useEffect(() => {
     const nextCoordinates = coordinatesRef.current;
 
-    if (!hasCoordinates || !nextCoordinates || !mapRef.current || !markerRef.current) {
+    if (!hasCoordinates || !nextCoordinates || !mapRef.current) {
       return;
     }
 
-    mapRef.current.setView(nextCoordinates, EVENT_MAP_ZOOM);
-    markerRef.current.setLatLng(nextCoordinates);
-  }, [hasCoordinates, locationLat, locationLng]);
+    const nextCenter = toMapLibreCoordinates(nextCoordinates);
+    mapRef.current.jumpTo(editable ? { center: nextCenter } : {
+      center: nextCenter,
+      zoom: EVENT_MAP_ZOOM,
+    });
+    markerRef.current?.setLngLat(toMapLibreCoordinates(nextCoordinates));
+  }, [editable, hasCoordinates, locationLat, locationLng]);
 
   const googleMapsLink = googleMapsUrl ? (
     <a
@@ -132,7 +146,7 @@ const EventMapPreview = ({
     return (
       <div className="nodu-event-map-preview nodu-event-map-preview--placeholder">
         <div className="nodu-event-map-preview__placeholder-content">
-          <p className="nodu-event-map-preview__placeholder-title">Mapa se zobrazí po nalezení polohy.</p>
+          <p className="nodu-event-map-preview__placeholder-title">Mapa se zobrazí po výběru polohy.</p>
           <p className="nodu-event-map-preview__placeholder-address">{addressLabel}</p>
         </div>
         {googleMapsLink}
@@ -148,6 +162,9 @@ const EventMapPreview = ({
         role="img"
         aria-label={addressLabel}
       />
+      {editable && (
+        <div className="nodu-event-map-preview__fixed-pin" data-testid="event-map-fixed-pin" aria-hidden="true" />
+      )}
       {googleMapsLink}
     </div>
   );

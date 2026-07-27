@@ -13,6 +13,7 @@ type MockEventAddressSelection = {
 type MockEventAddressFieldProps = {
   value: Event;
   onChange: (selection: MockEventAddressSelection) => void;
+  onPickMap?: () => void;
 };
 
 type MockEventMapPreviewProps = {
@@ -21,6 +22,14 @@ type MockEventMapPreviewProps = {
   locationLng?: number | null;
   editable?: boolean;
   onLocationChange?: (coords: { locationLat: number; locationLng: number }) => void;
+};
+
+type MockEventLocationPickerModalProps = {
+  address?: string | null;
+  initialLocationLat?: number | null;
+  initialLocationLng?: number | null;
+  onCancel: () => void;
+  onConfirm: (coords: { locationLat: number; locationLng: number }) => void;
 };
 
 const event: Event = {
@@ -40,8 +49,10 @@ const event: Event = {
 
 const mockEventServices = ({
   clients = [{ id: 1, name: 'NextLevel s.r.o.' }],
+  contractors = [],
 }: {
   clients?: Array<{ id: number; name: string }>;
+  contractors?: Array<{ profileId?: string; name: string; phone: string }>;
 } = {}) => {
   vi.doMock('../../features/events/services/events.service', () => ({
     applyEventDraft: (nextEvent: Event) => nextEvent,
@@ -53,6 +64,7 @@ const mockEventServices = ({
     getEventFormOptions: () => ({
       projects: [{ id: 'JTI001', name: 'JTI', client: 'NextLevel s.r.o.' }],
       clients,
+      contractors,
     }),
     normalizeEventSchedules: () => ({}),
     saveEvent: vi.fn(),
@@ -61,7 +73,7 @@ const mockEventServices = ({
 
 const mockLocationComponents = () => {
   vi.doMock('../../features/events/components/EventAddressField', () => ({
-    default: ({ value, onChange }: MockEventAddressFieldProps) => (
+    default: ({ value, onChange, onPickMap }: MockEventAddressFieldProps) => (
       <div>
         <label htmlFor="mock-event-address">Adresa</label>
         <input
@@ -80,6 +92,11 @@ const mockLocationComponents = () => {
         >
           Select geocoded address
         </button>
+        {onPickMap && (
+          <button type="button" onClick={onPickMap}>
+            Vybrat na mapě
+          </button>
+        )}
       </div>
     ),
   }));
@@ -107,6 +124,35 @@ const mockLocationComponents = () => {
           })}
         >
           Move marker
+        </button>
+      </div>
+    ),
+  }));
+
+  vi.doMock('../../features/events/components/EventLocationPickerModal', () => ({
+    default: ({
+      address,
+      initialLocationLat,
+      initialLocationLng,
+      onCancel,
+      onConfirm,
+    }: MockEventLocationPickerModalProps) => (
+      <div
+        role="dialog"
+        aria-label="Vybrat polohu"
+        data-address={address || ''}
+        data-initial-location-lat={initialLocationLat ?? ''}
+        data-initial-location-lng={initialLocationLng ?? ''}
+      >
+        <button type="button" onClick={onCancel}>Cancel location picker</button>
+        <button
+          type="button"
+          onClick={() => onConfirm({
+            locationLat: 49.1951,
+            locationLng: 16.6068,
+          })}
+        >
+          Confirm picked location
         </button>
       </div>
     ),
@@ -174,7 +220,7 @@ describe('EventEditModal', () => {
     }));
   });
 
-  it('renders an editable map and updates only coordinates and placeId when marker moves', async () => {
+  it('renders an editable map preview and updates only coordinates when the map moves', async () => {
     mockEventServices();
     mockLocationComponents();
 
@@ -213,6 +259,37 @@ describe('EventEditModal', () => {
       placeId: undefined,
       locationLat: 49.1951,
       locationLng: 16.6068,
+    }));
+  });
+
+  it('stores selected contact as a profile link and readable snapshot', async () => {
+    mockEventServices({
+      contractors: [
+        { profileId: 'profile-contact-uuid-1', name: 'Petr Heitzer', phone: '721 250 034' },
+        { profileId: 'profile-contact-uuid-2', name: 'Jana Nova', phone: '777 111 222' },
+      ],
+    });
+    mockLocationComponents();
+
+    const onChange = vi.fn();
+    const { default: EventEditModal } = await import('./EventEditModal');
+
+    render(
+      <EventEditModal
+        editingEvent={event}
+        onClose={vi.fn()}
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Kontaktní osoba'), {
+      target: { value: 'profile-contact-uuid-1' },
+    });
+
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      contactProfileId: 'profile-contact-uuid-1',
+      contactPerson: 'Petr Heitzer',
+      contactPhone: '721 250 034',
     }));
   });
 });

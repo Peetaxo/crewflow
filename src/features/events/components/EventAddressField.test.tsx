@@ -1,6 +1,6 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import EventAddressField from './EventAddressField';
 import type { EventGeocodingCandidate } from '../services/event-geocoding.service';
 
@@ -12,7 +12,18 @@ const candidate: EventGeocodingCandidate = {
   provider: 'nominatim',
 };
 
+const runAutocomplete = async () => {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(700);
+    await Promise.resolve();
+  });
+};
+
 describe('EventAddressField', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('keeps manual address entry editable and clears precise map metadata', () => {
     const onChange = vi.fn();
     const geocodeAddress = vi.fn();
@@ -39,10 +50,11 @@ describe('EventAddressField', () => {
       locationLng: null,
     });
     expect(geocodeAddress).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Najít na mapě' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Najít na mapě' })).not.toBeInTheDocument();
   });
 
-  it('searches only after clicking Najít na mapě and shows candidates', async () => {
+  it('searches automatically while typing and shows candidates', async () => {
+    vi.useFakeTimers();
     const geocodeAddress = vi.fn().mockResolvedValue([candidate]);
 
     render(
@@ -59,13 +71,14 @@ describe('EventAddressField', () => {
 
     expect(geocodeAddress).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Najít na mapě' }));
+    await runAutocomplete();
 
-    await waitFor(() => expect(geocodeAddress).toHaveBeenCalledWith('Rohanské nábřeží'));
-    expect(await screen.findByRole('button', { name: 'Rohanské nábřeží 678/23, Praha' })).toBeInTheDocument();
+    expect(geocodeAddress).toHaveBeenCalledWith('Rohanské nábřeží');
+    expect(screen.getByRole('button', { name: 'Rohanské nábřeží 678/23, Praha' })).toBeInTheDocument();
   });
 
   it('stores precise coordinates and clears placeId when selecting a geocoding candidate', async () => {
+    vi.useFakeTimers();
     const onChange = vi.fn();
     const geocodeAddress = vi.fn().mockResolvedValue([candidate]);
 
@@ -80,8 +93,8 @@ describe('EventAddressField', () => {
     fireEvent.change(screen.getByLabelText('Adresa'), {
       target: { value: 'Rohanské nábřeží' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Najít na mapě' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Rohanské nábřeží 678/23, Praha' }));
+    await runAutocomplete();
+    fireEvent.click(screen.getByRole('button', { name: 'Rohanské nábřeží 678/23, Praha' }));
 
     expect(onChange).toHaveBeenLastCalledWith({
       address: 'Rohanské nábřeží 678/23, Praha',
@@ -95,6 +108,7 @@ describe('EventAddressField', () => {
   });
 
   it('ignores stale geocode results after the address changes mid-search', async () => {
+    vi.useFakeTimers();
     let resolveSearch!: (candidates: EventGeocodingCandidate[]) => void;
     const geocodeAddress = vi.fn(() => new Promise<EventGeocodingCandidate[]>((resolve) => {
       resolveSearch = resolve;
@@ -108,9 +122,11 @@ describe('EventAddressField', () => {
       />,
     );
 
-    const searchButton = screen.getByRole('button', { name: 'Najít na mapě' });
-    fireEvent.click(searchButton);
-    expect(searchButton).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Adresa'), {
+      target: { value: 'Rohanské nábřeží 1' },
+    });
+    await runAutocomplete();
+    expect(geocodeAddress).toHaveBeenCalledWith('Rohanské nábřeží 1');
 
     fireEvent.change(screen.getByLabelText('Adresa'), {
       target: { value: 'Nová adresa' },
@@ -120,12 +136,12 @@ describe('EventAddressField', () => {
       resolveSearch([candidate]);
     });
 
-    expect(screen.getByRole('button', { name: 'Najít na mapě' })).toBeEnabled();
     expect(screen.queryByRole('button', { name: 'Rohanské nábřeží 678/23, Praha' })).not.toBeInTheDocument();
     expect(screen.queryByText('Vyberte správnou polohu z výsledků.')).not.toBeInTheDocument();
   });
 
   it('does not apply stale geocode results after value props change mid-search', async () => {
+    vi.useFakeTimers();
     let resolveSearch!: (candidates: EventGeocodingCandidate[]) => void;
     const geocodeAddress = vi.fn(() => new Promise<EventGeocodingCandidate[]>((resolve) => {
       resolveSearch = resolve;
@@ -138,7 +154,10 @@ describe('EventAddressField', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Najít na mapě' }));
+    fireEvent.change(screen.getByLabelText('Adresa'), {
+      target: { value: 'Rohanské nábřeží 1' },
+    });
+    await runAutocomplete();
 
     rerender(
       <EventAddressField
@@ -153,13 +172,13 @@ describe('EventAddressField', () => {
     });
 
     expect(screen.getByLabelText('Adresa')).toHaveValue('Nová adresa');
-    expect(screen.getByRole('button', { name: 'Najít na mapě' })).toBeEnabled();
     expect(screen.queryByRole('button', { name: 'Rohanské nábřeží 678/23, Praha' })).not.toBeInTheDocument();
     expect(screen.queryByText('Vyberte správnou polohu z výsledků.')).not.toBeInTheDocument();
-    expect(screen.queryByText('Hledám polohu na mapě...')).not.toBeInTheDocument();
+    expect(screen.queryByText('Hledám adresy...')).not.toBeInTheDocument();
   });
 
   it('shows a safe Czech fallback when geocoding fails with a technical error', async () => {
+    vi.useFakeTimers();
     const geocodeAddress = vi.fn().mockRejectedValue(new Error('Failed to fetch'));
 
     render(
@@ -170,13 +189,17 @@ describe('EventAddressField', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Najít na mapě' }));
+    fireEvent.change(screen.getByLabelText('Adresa'), {
+      target: { value: 'Rohanské nábřeží 1' },
+    });
+    await runAutocomplete();
 
-    expect(await screen.findByText('Vyhledávání polohy se nepodařilo. Zkuste to prosím znovu.')).toBeInTheDocument();
+    expect(screen.getByText('Vyhledávání polohy se nepodařilo. Zkuste to prosím znovu.')).toBeInTheDocument();
     expect(screen.queryByText('Failed to fetch')).not.toBeInTheDocument();
   });
 
   it('shows no-result and provider failure statuses in Czech', async () => {
+    vi.useFakeTimers();
     const geocodeAddress = vi
       .fn()
       .mockResolvedValueOnce([])
@@ -190,12 +213,36 @@ describe('EventAddressField', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Najít na mapě' }));
+    fireEvent.change(screen.getByLabelText('Adresa'), {
+      target: { value: 'Rohanské nábřeží 1' },
+    });
+    await runAutocomplete();
 
-    expect(await screen.findByText('Poloha nebyla nalezena. Adresu lze uložit ručně.')).toBeInTheDocument();
+    expect(screen.getByText('Poloha nebyla nalezena. Adresu lze uložit ručně.')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Najít na mapě' }));
+    fireEvent.change(screen.getByLabelText('Adresa'), {
+      target: { value: 'Rohanské nábřeží 2' },
+    });
+    await runAutocomplete();
 
-    expect(await screen.findByText('Vyhledávání polohy se nepodařilo. Zkuste to prosím znovu.')).toBeInTheDocument();
+    expect(screen.getByText('Vyhledávání polohy se nepodařilo. Zkuste to prosím znovu.')).toBeInTheDocument();
+  });
+
+  it('offers a separate map picker action when provided', () => {
+    const onPickMap = vi.fn();
+
+    render(
+      <EventAddressField
+        value={{ address: 'Rohanské nábřeží' }}
+        onChange={vi.fn()}
+        onPickMap={onPickMap}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: 'Najít na mapě' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Vybrat na mapě' }));
+
+    expect(onPickMap).toHaveBeenCalledTimes(1);
   });
 });

@@ -1326,9 +1326,9 @@ button.nodu-mobile-event-info-row:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--nodu-border);
-  background: rgb(var(--nodu-surface-rgb) / 0.94);
-  color: var(--nodu-text-soft);
+  border: 1px solid rgb(220 38 38 / 0.22);
+  background: rgb(254 242 242 / 0.94);
+  color: rgb(185 28 28);
 }
 
 .nodu-mobile-event-withdraw-pending {

@@ -34,6 +34,9 @@ describe('nodu CSS helpers', () => {
     const mobileEventDetailRule = css.match(/\.nodu-mobile-event-detail\s*\{[\s\S]*?\}/)?.[0];
     const mobileEventFloatingPanelRule = css.match(/\.nodu-mobile-event-floating-panel\s*\{[\s\S]*?\}/)?.[0];
     const mobileEventFloatingPanelCompactRule = css.match(/\.nodu-mobile-event-floating-panel--compact\s*\{[\s\S]*?\}/)?.[0];
+    const mobileEventWithdrawButtonRule = Array.from(css.matchAll(/\.nodu-mobile-event-withdraw-button\s*\{[\s\S]*?\}/g))
+      .map((match) => match[0])
+      .find((rule) => rule.includes('grid-area: secondary;'));
     const mobileEventWithdrawalDialogRule = css.match(/\.nodu-mobile-event-withdrawal-dialog\s*\{[\s\S]*?\}/)?.[0];
 
     [
@@ -119,6 +122,9 @@ describe('nodu CSS helpers', () => {
     expect(mobileEventFloatingPanelRule).toContain('backdrop-filter: blur');
     expect(mobileEventFloatingPanelCompactRule).toContain('grid-template-areas: "primary";');
     expect(mobileEventFloatingPanelCompactRule).toContain('padding: 0.35rem;');
+    expect(mobileEventWithdrawButtonRule).toContain('border: 1px solid rgb(220 38 38 / 0.22);');
+    expect(mobileEventWithdrawButtonRule).toContain('background: rgb(254 242 242 / 0.94);');
+    expect(mobileEventWithdrawButtonRule).toContain('color: rgb(185 28 28);');
     expect(mobileEventWithdrawalDialogRule).toContain('position: fixed;');
     expect(css).not.toContain('.nodu-mobile-timelog-date-input');
     expect(css).not.toContain('.nodu-mobile-timelog-report-editor {\n  border-color: rgb(var(--nodu-text-rgb) / 0.1);');

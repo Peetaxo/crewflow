@@ -39,6 +39,7 @@ const EMPTY_APPROVAL_DOCUMENTS: InvoiceApprovalDocument[] = [];
 const MOBILE_EDGE_SWIPE_START_MAX_X = 96;
 const MOBILE_EDGE_SWIPE_MIN_DISTANCE = 64;
 const MOBILE_EDGE_SWIPE_MAX_VERTICAL_DRIFT = 48;
+const MOBILE_EVENT_DETAIL_CLOSE_ANIMATION_MS = 180;
 const MOBILE_EVENT_DETAIL_HISTORY_KEY = 'noduMobileEventDetailId';
 
 const normalizeContactName = (name: string) => (
@@ -111,9 +112,10 @@ const EventDetailView = () => {
   const [showContactDialog, setShowContactDialog] = useState(false);
   const [showMobileApprovalDialog, setShowMobileApprovalDialog] = useState(false);
   const [mobileEdgeSwipeOffset, setMobileEdgeSwipeOffset] = useState(0);
-  const [mobileEdgeSwipePhase, setMobileEdgeSwipePhase] = useState<'idle' | 'dragging'>('idle');
+  const [mobileEdgeSwipePhase, setMobileEdgeSwipePhase] = useState<'idle' | 'dragging' | 'closing'>('idle');
   const mobileEdgeSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const mobileHistoryEventIdRef = useRef<string | number | null>(null);
+  const mobileCloseTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const invoiceApprovalsQuery = useInvoiceApprovalsQuery();
 
   const loadDetail = useCallback(() => {
@@ -144,6 +146,32 @@ const EventDetailView = () => {
     document.querySelector<HTMLElement>('.nodu-page-frame--mobile-crew')?.scrollTo({ top: 0, left: 0 });
   }, [detail.event, isMobile, selectedEventId]);
 
+  const scheduleMobileEventDetailClose = useCallback((shouldPopHistory = false) => {
+    if (mobileCloseTimeoutRef.current) {
+      window.clearTimeout(mobileCloseTimeoutRef.current);
+    }
+
+    mobileEdgeSwipeStartRef.current = null;
+    setMobileEdgeSwipePhase('closing');
+    setMobileEdgeSwipeOffset(window.innerWidth || 390);
+
+    mobileCloseTimeoutRef.current = window.setTimeout(() => {
+      mobileCloseTimeoutRef.current = null;
+      setSelectedEventId(null);
+
+      if (shouldPopHistory) {
+        window.history.back();
+      }
+    }, MOBILE_EVENT_DETAIL_CLOSE_ANIMATION_MS);
+  }, [setSelectedEventId]);
+
+  useEffect(() => () => {
+    if (mobileCloseTimeoutRef.current) {
+      window.clearTimeout(mobileCloseTimeoutRef.current);
+      mobileCloseTimeoutRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
     if (!isMobile || selectedEventId == null || !detail.event) return undefined;
 
@@ -158,14 +186,14 @@ const EventDetailView = () => {
 
     const handlePopState = () => {
       mobileHistoryEventIdRef.current = null;
-      setSelectedEventId(null);
+      scheduleMobileEventDetailClose(false);
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => {
       window.removeEventListener('popstate', handlePopState);
     };
-  }, [detail.event, isMobile, selectedEventId, setSelectedEventId]);
+  }, [detail.event, isMobile, scheduleMobileEventDetailClose, selectedEventId]);
 
   const closeMobileEventDetail = useCallback(() => {
     const shouldPopHistory = (
@@ -174,12 +202,8 @@ const EventDetailView = () => {
       && window.history.state?.[MOBILE_EVENT_DETAIL_HISTORY_KEY] === selectedEventId
     );
 
-    setSelectedEventId(null);
-
-    if (shouldPopHistory) {
-      window.history.back();
-    }
-  }, [isMobile, selectedEventId, setSelectedEventId]);
+    scheduleMobileEventDetailClose(shouldPopHistory);
+  }, [isMobile, scheduleMobileEventDetailClose, selectedEventId]);
 
   const resetMobileEdgeSwipe = useCallback(() => {
     mobileEdgeSwipeStartRef.current = null;
@@ -645,6 +669,7 @@ const EventDetailView = () => {
     const mobileSwipeSurfaceClassName = [
       'nodu-mobile-event-swipe-surface',
       mobileEdgeSwipePhase === 'dragging' ? 'nodu-mobile-event-swipe-surface--dragging' : '',
+      mobileEdgeSwipePhase === 'closing' ? 'nodu-mobile-event-swipe-surface--closing' : '',
     ].filter(Boolean).join(' ');
     const mobileSwipeSurfaceStyle = {
       '--nodu-mobile-event-swipe-x': `${mobileEdgeSwipeOffset}px`,

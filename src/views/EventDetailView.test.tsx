@@ -136,6 +136,7 @@ const applicant = {
 
 describe('EventDetailView', () => {
   beforeEach(() => {
+    vi.useRealTimers();
     vi.resetModules();
     vi.clearAllMocks();
     mobileMockState.isMobile = false;
@@ -234,6 +235,7 @@ describe('EventDetailView', () => {
 
   it('returns from mobile event detail after a left-edge swipe', async () => {
     mobileMockState.isMobile = true;
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
 
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => ({
@@ -316,7 +318,11 @@ describe('EventDetailView', () => {
       changedTouches: [{ clientX: 104, clientY: 224 }],
     });
 
-    expect(setSelectedEventId).toHaveBeenCalledWith(null);
+    expect(mobileSwipeSurface).toHaveStyle({ '--nodu-mobile-event-swipe-x': '390px' });
+    expect(mobileSwipeSurface).toHaveClass('nodu-mobile-event-swipe-surface--closing');
+    expect(setSelectedEventId).not.toHaveBeenCalled();
+
+    await waitFor(() => expect(setSelectedEventId).toHaveBeenCalledWith(null));
 
     setSelectedEventId.mockClear();
 
@@ -334,7 +340,9 @@ describe('EventDetailView', () => {
       changedTouches: [{ clientX: 96, clientY: 164 }],
     });
 
-    expect(setSelectedEventId).toHaveBeenCalledWith(null);
+    expect(setSelectedEventId).not.toHaveBeenCalled();
+
+    await waitFor(() => expect(setSelectedEventId).toHaveBeenCalledWith(null));
 
     setSelectedEventId.mockClear();
 
@@ -361,7 +369,9 @@ describe('EventDetailView', () => {
       changedTouches: [{ clientX: 168, clientY: 166 }],
     });
 
-    expect(setSelectedEventId).toHaveBeenCalledWith(null);
+    expect(setSelectedEventId).not.toHaveBeenCalled();
+
+    await waitFor(() => expect(setSelectedEventId).toHaveBeenCalledWith(null));
 
     setSelectedEventId.mockClear();
 
@@ -372,7 +382,9 @@ describe('EventDetailView', () => {
       changedTouches: [{ clientX: 168, clientY: 166 }],
     });
 
-    expect(setSelectedEventId).toHaveBeenCalledWith(null);
+    expect(setSelectedEventId).not.toHaveBeenCalled();
+
+    await waitFor(() => expect(setSelectedEventId).toHaveBeenCalledWith(null));
 
     setSelectedEventId.mockClear();
 
@@ -399,7 +411,9 @@ describe('EventDetailView', () => {
       pointerType: 'mouse',
     });
 
-    expect(setSelectedEventId).toHaveBeenCalledWith(null);
+    expect(setSelectedEventId).not.toHaveBeenCalled();
+
+    await waitFor(() => expect(setSelectedEventId).toHaveBeenCalledWith(null));
   });
 
   it('returns from mobile event detail when the browser native back gesture pops history', async () => {
@@ -454,7 +468,7 @@ describe('EventDetailView', () => {
 
     const { default: EventDetailView } = await import('./EventDetailView');
 
-    render(<EventDetailView />);
+    const { container } = render(<EventDetailView />);
 
     expect(pushStateSpy).toHaveBeenCalledWith(
       expect.objectContaining({ noduMobileEventDetailId: 'event-uuid-1' }),
@@ -464,7 +478,10 @@ describe('EventDetailView', () => {
 
     fireEvent.popState(window);
 
-    expect(setSelectedEventId).toHaveBeenCalledWith(null);
+    expect(container.querySelector('.nodu-mobile-event-swipe-surface')).toHaveClass('nodu-mobile-event-swipe-surface--closing');
+    expect(setSelectedEventId).not.toHaveBeenCalled();
+
+    await waitFor(() => expect(setSelectedEventId).toHaveBeenCalledWith(null));
 
     pushStateSpy.mockRestore();
   });

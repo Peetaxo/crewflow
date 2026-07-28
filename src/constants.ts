@@ -15,6 +15,7 @@ import {
 import { Role } from './types';
 
 export const PHASE_CONFIG = [
+  { id: 'PR', type: 'pripravy' as const, color: 'bg-slate-500 border-slate-600 shadow-slate-100', label: 'Přípravy' },
   { id: 'I', type: 'instal' as const, color: 'bg-blue-500 border-blue-600 shadow-blue-100', label: 'Instal' },
   { id: 'P', type: 'provoz' as const, color: 'bg-emerald-500 border-emerald-600 shadow-emerald-100', label: 'Provoz' },
   { id: 'D', type: 'deinstal' as const, color: 'bg-orange-500 border-orange-600 shadow-orange-100', label: 'Deinstal' },

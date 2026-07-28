@@ -57,6 +57,7 @@ const mockEventServices = ({
   vi.doMock('../../features/events/services/events.service', () => ({
     applyEventDraft: (nextEvent: Event) => nextEvent,
     createDefaultPhaseTimes: (from: string, to: string) => ({
+      pripravy: { from, to },
       instal: { from, to },
       provoz: { from, to },
       deinstal: { from, to },

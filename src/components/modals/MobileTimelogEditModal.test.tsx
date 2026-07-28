@@ -37,6 +37,7 @@ const testData = vi.hoisted(() => ({
       '2026-07-15': 'deinstal',
     },
     phaseTimes: {
+      pripravy: { from: '06:00', to: '08:00' },
       instal: { from: '08:00', to: '17:00' },
       provoz: { from: '09:00', to: '18:00' },
       deinstal: { from: '10:00', to: '15:00' },
@@ -172,9 +173,9 @@ describe('MobileTimelogEditModal', () => {
       days: expect.arrayContaining([
         expect.objectContaining({
           d: '2026-07-11',
-          f: '09:00',
-          t: '18:00',
-          type: 'provoz',
+          f: '08:00',
+          t: '17:00',
+          type: 'instal',
         }),
       ]),
     })));
@@ -381,7 +382,7 @@ describe('MobileTimelogEditModal', () => {
     fireEvent.change(screen.getByLabelText('Poznámka k výkazu'), {
       target: { value: 'Změna fáze po telefonu' },
     });
-    fireEvent.change(screen.getByLabelText('Fáze'), { target: { value: 'deinstal' } });
+    fireEvent.click(within(screen.getByRole('group', { name: 'Fáze' })).getByRole('button', { name: 'Přípravy' }));
     fireEvent.click(screen.getByRole('button', { name: 'Uložit výkaz' }));
 
     await waitFor(() => expect(testMocks.saveTimelog).toHaveBeenCalledWith(expect.objectContaining({
@@ -389,12 +390,30 @@ describe('MobileTimelogEditModal', () => {
       days: expect.arrayContaining([
         expect.objectContaining({
           d: '2026-07-14',
-          f: '10:00',
-          t: '15:00',
-          type: 'deinstal',
+          f: '06:00',
+          t: '08:00',
+          type: 'pripravy',
         }),
       ]),
     })));
+  });
+
+  it('uses an in-app phase picker instead of a native system select', () => {
+    render(<MobileTimelogEditModal />);
+
+    const phasePicker = screen.getByRole('group', { name: 'Fáze' });
+
+    expect(screen.queryByRole('combobox', { name: 'Fáze' })).not.toBeInTheDocument();
+    expect(within(phasePicker).getAllByRole('button')).toHaveLength(4);
+    expect(within(phasePicker).getByRole('button', { name: 'Přípravy' })).toHaveAttribute('aria-pressed', 'false');
+    expect(within(phasePicker).getByRole('button', { name: 'Instal' })).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.click(within(phasePicker).getByRole('button', { name: 'Přípravy' }));
+
+    expect(within(phasePicker).getByRole('button', { name: 'Přípravy' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Otevřít výběr času Od 06:00' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Otevřít výběr času Do 08:00' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Upravit záznam 1' })).toHaveTextContent('Přípravy');
   });
 
   it('marks an overnight record as work přes půlnoc', () => {

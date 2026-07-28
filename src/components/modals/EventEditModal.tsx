@@ -25,6 +25,7 @@ interface EventEditModalProps {
 }
 
 const PHASES = [
+  { id: 'PR', type: 'pripravy' as const, color: 'bg-slate-500 border-slate-600', label: 'Přípravy' },
   { id: 'I', type: 'instal' as const, color: 'bg-blue-500 border-blue-600', label: 'Instalace' },
   { id: 'P', type: 'provoz' as const, color: 'bg-emerald-500 border-emerald-600', label: 'Provoz' },
   { id: 'D', type: 'deinstal' as const, color: 'bg-orange-500 border-orange-600', label: 'Deinstalace' },
@@ -475,14 +476,14 @@ const EventEditModal = ({
                 className="h-4 w-4 rounded border-[color:var(--nodu-border)] text-[color:var(--nodu-accent)] focus:ring-[color:var(--nodu-accent)]"
               />
               <label htmlFor="showDayTypes" className="cursor-pointer select-none text-xs font-bold text-[color:var(--nodu-text)]">
-                Zobrazovat typy dnu (I-P-D) na akci
+                Zobrazovat typy dnu (PR-I-P-D) na akci
               </label>
             </div>
 
             {editingEvent.showDayTypes && editingEvent.startDate && editingEvent.endDate && (
               <div className="space-y-4 rounded-[22px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] p-4">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-[10px] font-bold uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">Nastaveni typu dnu (I-P-D)</h4>
+                  <h4 className="text-[10px] font-bold uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">Nastaveni typu dnu (PR-I-P-D)</h4>
                   <button
                     type="button"
                     onClick={() => updateEventDraft({

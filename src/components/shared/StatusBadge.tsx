@@ -30,6 +30,7 @@ const StatusBadge = ({ status, label }: { status: string; label?: string }) => {
     interview_scheduled: [warning, 'Pohovor'],
     decision: [decision, 'Rozhodnutí'],
     accepted: [success, 'Přijat'],
+    pripravy: [neutral, 'Přípravy'],
     instal: [info, 'Instal'],
     provoz: [success, 'Provoz'],
     deinstal: [warning, 'Deinstal'],

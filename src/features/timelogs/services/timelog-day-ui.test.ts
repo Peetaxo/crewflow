@@ -30,6 +30,7 @@ const event: Event = {
     '2026-07-15': 'deinstal',
   },
   phaseTimes: {
+    pripravy: { from: '06:00', to: '08:00' },
     instal: { from: '07:00', to: '16:00' },
     provoz: { from: '09:00', to: '18:00' },
     deinstal: { from: '10:00', to: '15:00' },
@@ -75,12 +76,21 @@ describe('timelog day UI helpers', () => {
   });
 
   it('lets a manually selected phase override the event day type', () => {
-    expect(resolveTimelogDayDefaults('2026-07-14', event, 'instal')).toEqual({
+    expect(resolveTimelogDayDefaults('2026-07-14', event, 'pripravy')).toEqual({
       d: '2026-07-14',
+      f: '06:00',
+      t: '08:00',
+      type: 'pripravy',
+      note: '',
+    });
+  });
+
+  it('defaults newly added non-scheduled days to instal', () => {
+    expect(resolveTimelogDayDefaults('2026-07-20', event)).toMatchObject({
+      d: '2026-07-20',
       f: '07:00',
       t: '16:00',
       type: 'instal',
-      note: '',
     });
   });
 

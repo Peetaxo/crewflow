@@ -2,6 +2,7 @@ import React from 'react';
 import { Check, ChevronLeft, ChevronRight, Plus, Save, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppContext } from '../../context/useAppContext';
+import { PHASE_CONFIG } from '../../constants';
 import { KM_RATE } from '../../data';
 import { calculateDayHours, calculateTotalHours, formatCurrency, isOvernightTimeRange } from '../../utils';
 import { getTimelogDependencies, saveTimelog } from '../../features/timelogs/services/timelogs.service';
@@ -174,11 +175,10 @@ const getEventDefaultsSignature = (event: Event | null): string => {
   });
 };
 
-const phaseOptions: Array<{ value: TimelogType; label: string }> = [
-  { value: 'instal', label: 'Instal' },
-  { value: 'provoz', label: 'Provoz' },
-  { value: 'deinstal', label: 'Deinstal' },
-];
+const phaseOptions: Array<{ value: TimelogType; label: string }> = PHASE_CONFIG.map((phase) => ({
+  value: phase.type,
+  label: phase.label,
+}));
 
 type AutosaveState = 'idle' | 'pending' | 'saved' | 'error';
 
@@ -976,27 +976,38 @@ const MobileTimelogEditModal: React.FC = () => {
               />
             )}
 
-            <label className="mt-3 block space-y-1 text-[10px] uppercase tracking-[0.2em] text-[color:var(--nodu-text-soft)]">
-              <span>Fáze</span>
-              <select
-                aria-label="Fáze"
-                value={draftDay.type}
-                onChange={(e) => {
-                  const nextDefaults = resolveTimelogDayDefaults(selectedDate, event, e.target.value as TimelogType);
+            <div
+              className="mt-3"
+              role="group"
+              aria-label="Fáze"
+            >
+              <div className="mb-1 text-[10px] uppercase tracking-[0.2em] text-[color:var(--nodu-text-soft)]">Fáze</div>
+              <div className="nodu-mobile-timelog-phase-picker">
+                {phaseOptions.map((option) => {
+                  const isSelected = draftDay.type === option.value;
 
-                  updateDraftDay({
-                    ...nextDefaults,
-                    id: draftDay.id,
-                    note: draftDay.note ?? '',
-                  });
-                }}
-                className="nodu-mobile-timelog-select"
-              >
-                {phaseOptions.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            </label>
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-pressed={isSelected}
+                      className={`nodu-mobile-timelog-phase-option ${isSelected ? 'nodu-mobile-timelog-phase-option--active' : ''}`}
+                      onClick={() => {
+                        const nextDefaults = resolveTimelogDayDefaults(selectedDate, event, option.value);
+
+                        updateDraftDay({
+                          ...nextDefaults,
+                          id: draftDay.id,
+                          note: draftDay.note ?? '',
+                        });
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
             {selectedEntryExists && (
               <Button type="button" variant="outline" className="mt-4 w-full" onClick={deleteSelectedDay}>

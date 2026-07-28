@@ -90,6 +90,8 @@ const EVENT_NAME_STOP_TOKENS = new Set([
   'instalace',
   'nakladka',
   'pausal',
+  'priprava',
+  'pripravy',
   'provoz',
   'ridic',
   'uklid',

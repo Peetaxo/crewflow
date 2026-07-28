@@ -1,4 +1,5 @@
 import { appDataSource } from '../../../lib/app-config';
+import { PHASE_CONFIG } from '../../../constants';
 import { getLocalAppState, subscribeToLocalAppState, updateLocalAppState } from '../../../lib/app-data';
 import { queryClient } from '../../../lib/query-client';
 import { queryKeys } from '../../../lib/query-keys';
@@ -10,7 +11,7 @@ import { EventAssignmentResult, EventConflictDetail, EventFilter, EventWithDeriv
 
 const DEFAULT_TIME_FROM = '08:00';
 const DEFAULT_TIME_TO = '17:00';
-const EVENT_PHASE_TYPES: TimelogType[] = ['instal', 'provoz', 'deinstal'];
+const EVENT_PHASE_TYPES = PHASE_CONFIG.map((phase) => phase.type) as TimelogType[];
 type TimelogAssignmentRow = { event_id: string | null; contractor_id: string | null };
 type EventAssignmentRow = { event_id: string | null; profile_id: string | null; assigned_at?: string | null };
 type EventApplicationRow = {
@@ -208,7 +209,7 @@ export const getGrasonConfirmationsForEvent = (
     ));
 };
 
-const EVENT_PHASES = new Set<TimelogType>(['instal', 'provoz', 'deinstal']);
+const EVENT_PHASES = new Set<TimelogType>(EVENT_PHASE_TYPES);
 
 const toEventPhase = (value: string | null): TimelogType => (
   value && EVENT_PHASES.has(value as TimelogType) ? value as TimelogType : 'provoz'
@@ -1053,12 +1054,14 @@ export const filterEventsByStatus = (
 });
 
 export const createDefaultPhaseTimes = (from: string, to: string) => ({
+  pripravy: { from, to },
   instal: { from, to },
   provoz: { from, to },
   deinstal: { from, to },
 });
 
 const createEmptySchedules = (from: string, to: string) => ({
+  pripravy: [{ id: createSlotId(), from, to, dates: [] }],
   instal: [{ id: createSlotId(), from, to, dates: [] }],
   provoz: [{ id: createSlotId(), from, to, dates: [] }],
   deinstal: [{ id: createSlotId(), from, to, dates: [] }],

@@ -92,6 +92,8 @@ const EVENT_NAME_STOP_TOKENS = new Set([
   'instal',
   'instalace',
   'pausal',
+  'priprava',
+  'pripravy',
   'provoz',
   'upresneno',
 ]);
@@ -274,7 +276,7 @@ const findContractorForDocumentPerson = (
 
 const looksLikePersonName = (segment: string): boolean => {
   const normalized = normalizeAscii(segment);
-  if (!normalized || /festival|summit|hotel|instal|deinstal|provoz|nakladka|uklid|riegrovy|elimon/.test(normalized)) {
+  if (!normalized || /festival|summit|hotel|instal|deinstal|priprav|provoz|nakladka|uklid|riegrovy|elimon/.test(normalized)) {
     return false;
   }
 
@@ -637,6 +639,7 @@ const matchEventForEntry = (
 
 const inferPhase = (value: string): TimelogType => {
   const normalized = normalizeAscii(value);
+  if (normalized.includes('priprav')) return 'pripravy';
   if (normalized.includes('deinstal')) return 'deinstal';
   if (normalized.includes('provoz')) return 'provoz';
   return DEFAULT_PHASE;

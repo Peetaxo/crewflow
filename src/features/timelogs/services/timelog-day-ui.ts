@@ -1,7 +1,7 @@
 import { addDays, format, isAfter, parseISO } from 'date-fns';
 import type { Event, Timelog, TimelogDay, TimelogType } from '../../../types';
 
-const defaultType: TimelogType = 'provoz';
+const defaultType: TimelogType = 'instal';
 const fallbackFrom = '08:00';
 const fallbackTo = '17:00';
 

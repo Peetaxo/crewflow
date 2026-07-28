@@ -5,7 +5,7 @@ export type Role = 'crew' | 'crewhead' | 'coo';
 export type EventStatus = 'upcoming' | 'full' | 'past' | 'planning';
 
 /** Typ prace (faze akce) */
-export type TimelogType = 'instal' | 'provoz' | 'deinstal';
+export type TimelogType = 'pripravy' | 'instal' | 'provoz' | 'deinstal';
 
 export interface EventPhaseTime {
   from: string;

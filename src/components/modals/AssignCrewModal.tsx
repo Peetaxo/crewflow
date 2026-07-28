@@ -77,6 +77,7 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
     })),
     { id: 'all' as const, label: 'Vse', description: 'Vsechny typy dnu', activeClass: 'bg-slate-700 border-slate-800 shadow-slate-100' },
   ];
+  const allPhaseTypes = PHASE_CONFIG.map((phase) => phase.type);
 
   const isOptionSelected = (optionId: TimelogType | 'all') => {
     if (optionId === 'all') return selectedPhaseOptions.includes('all');
@@ -137,7 +138,7 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
                     onClick={() => {
                       setSelectedPhaseOptions((prev) => {
                         if (option.id === 'all') {
-                          return prev.includes('all') ? [] : ['all', 'instal', 'provoz', 'deinstal'];
+                          return prev.includes('all') ? [] : ['all', ...allPhaseTypes];
                         }
 
                         const withoutAll = prev.filter((item) => item !== 'all');
@@ -145,13 +146,10 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
                           ? withoutAll.filter((item) => item !== option.id)
                           : [...withoutAll, option.id];
 
-                        const includesEveryPhase =
-                          nextSelection.includes('instal')
-                          && nextSelection.includes('provoz')
-                          && nextSelection.includes('deinstal');
+                        const includesEveryPhase = allPhaseTypes.every((phaseType) => nextSelection.includes(phaseType));
 
                         return includesEveryPhase
-                          ? ['all', 'instal', 'provoz', 'deinstal']
+                          ? ['all', ...allPhaseTypes]
                           : nextSelection;
                       });
                     }}

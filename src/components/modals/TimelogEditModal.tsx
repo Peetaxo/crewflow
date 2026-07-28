@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { useAppContext } from '../../context/useAppContext';
 import { useIsMobile } from '../../hooks/use-mobile';
+import { PHASE_CONFIG } from '../../constants';
 import { KM_RATE } from '../../data';
 import { calculateTotalHours, formatCurrency } from '../../utils';
 import { getTimelogDependencies, saveTimelog } from '../../features/timelogs/services/timelogs.service';
@@ -180,9 +181,9 @@ const TimelogEditModal = () => {
                           }}
                           className="w-28 rounded-xl border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.88)] px-2 py-2 text-[10px] text-[color:var(--nodu-text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] outline-none focus:border-[color:rgb(var(--nodu-accent-rgb)/0.32)]"
                         >
-                          <option value="instal">Instal</option>
-                          <option value="provoz">Provoz</option>
-                          <option value="deinstal">Deinstal</option>
+                          {PHASE_CONFIG.map((phase) => (
+                            <option key={phase.type} value={phase.type}>{phase.label}</option>
+                          ))}
                         </select>
                         <button
                           onClick={() => {

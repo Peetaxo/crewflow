@@ -251,7 +251,7 @@ interface EventAssignmentRow {
   assigned_at: string;
 }
 
-const TIMELOG_PHASES = new Set<TimelogType>(['instal', 'provoz', 'deinstal']);
+const TIMELOG_PHASES = new Set<TimelogType>(['pripravy', 'instal', 'provoz', 'deinstal']);
 
 const toGrasonPhase = (value: string | null): TimelogType => {
   if (value && TIMELOG_PHASES.has(value as TimelogType)) {

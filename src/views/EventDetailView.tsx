@@ -557,11 +557,9 @@ const EventDetailView = () => {
       </section>
     ) : null;
     const mobileManagementApprovalContent = canManageEvents ? (
-      <section id="mobile-event-management-approval" className="nodu-mobile-event-section" aria-labelledby="mobile-event-management-approval-title">
-        <h2 id="mobile-event-management-approval-title">Schvalování</h2>
-
+      <section id="mobile-event-management-approval" className="nodu-mobile-event-section" aria-labelledby="mobile-event-management-workreports-title">
         <div className="nodu-mobile-event-management-block">
-          <div className="nodu-mobile-event-management-title">
+          <div id="mobile-event-management-workreports-title" className="nodu-mobile-event-management-title">
             <FileText size={16} />
             <span>Výkazy práce</span>
             <strong>{eventApprovalTimelogs.length}</strong>
@@ -880,15 +878,23 @@ const EventDetailView = () => {
             className="nodu-mobile-event-approval-dialog"
           >
             <div className="nodu-mobile-event-approval-panel">
-              <button
-                type="button"
-                aria-label="Zavřít schvalování"
-                className="nodu-mobile-event-approval-close"
-                onClick={() => setShowMobileApprovalDialog(false)}
-              >
-                <X size={18} />
-              </button>
-              {mobileManagementApprovalContent}
+              <header className="nodu-mobile-event-approval-header">
+                <div>
+                  <span>{event.name}</span>
+                  <h2 id="mobile-event-management-approval-title">Schvalování</h2>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Zavřít schvalování"
+                  className="nodu-mobile-event-approval-close"
+                  onClick={() => setShowMobileApprovalDialog(false)}
+                >
+                  <X size={18} />
+                </button>
+              </header>
+              <div className="nodu-mobile-event-approval-body">
+                {mobileManagementApprovalContent}
+              </div>
             </div>
           </div>
         )}

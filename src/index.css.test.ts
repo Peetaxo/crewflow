@@ -34,6 +34,8 @@ describe('nodu CSS helpers', () => {
     const mobileEventDetailRule = css.match(/\.nodu-mobile-event-detail\s*\{[\s\S]*?\}/)?.[0];
     const mobileEventFloatingPanelRule = css.match(/\.nodu-mobile-event-floating-panel\s*\{[\s\S]*?\}/)?.[0];
     const mobileEventFloatingPanelCompactRule = css.match(/\.nodu-mobile-event-floating-panel--compact\s*\{[\s\S]*?\}/)?.[0];
+    const mobileEventApprovalDialogRule = css.match(/\.nodu-mobile-event-approval-dialog\s*\{[\s\S]*?\}/)?.[0];
+    const mobileEventApprovalPanelRule = css.match(/\.nodu-mobile-event-approval-panel\s*\{[\s\S]*?\}/)?.[0];
     const mobileEventWithdrawButtonRule = Array.from(css.matchAll(/\.nodu-mobile-event-withdraw-button\s*\{[\s\S]*?\}/g))
       .map((match) => match[0])
       .find((rule) => rule.includes('grid-area: secondary;'));
@@ -74,6 +76,8 @@ describe('nodu CSS helpers', () => {
       '.nodu-mobile-timelog-add-day-confirm',
       '.nodu-mobile-event-floating-panel',
       '.nodu-mobile-event-floating-panel--compact',
+      '.nodu-mobile-event-approval-dialog',
+      '.nodu-mobile-event-approval-panel',
       '.nodu-mobile-event-withdrawal-dialog',
       '.nodu-stat-card',
       '.nodu-dashboard-action',
@@ -122,6 +126,12 @@ describe('nodu CSS helpers', () => {
     expect(mobileEventFloatingPanelRule).toContain('backdrop-filter: blur');
     expect(mobileEventFloatingPanelCompactRule).toContain('grid-template-areas: "primary";');
     expect(mobileEventFloatingPanelCompactRule).toContain('padding: 0.35rem;');
+    expect(mobileEventApprovalDialogRule).toContain('align-items: stretch;');
+    expect(mobileEventApprovalDialogRule).toContain('background: rgb(var(--nodu-paper-rgb) / 0.98);');
+    expect(mobileEventApprovalDialogRule).not.toContain('align-items: flex-end;');
+    expect(mobileEventApprovalPanelRule).toContain('height: 100dvh;');
+    expect(mobileEventApprovalPanelRule).toContain('border-radius: 0;');
+    expect(mobileEventApprovalPanelRule).toContain('box-shadow: none;');
     expect(mobileEventWithdrawButtonRule).toContain('border: 1px solid rgb(220 38 38 / 0.22);');
     expect(mobileEventWithdrawButtonRule).toContain('background: rgb(254 242 242 / 0.94);');
     expect(mobileEventWithdrawButtonRule).toContain('color: rgb(185 28 28);');

@@ -85,6 +85,18 @@ describe('timelog day UI helpers', () => {
     });
   });
 
+  it('lets a manually selected phase override the default instal phase when day types are disabled', () => {
+    expect(resolveTimelogDayDefaults('2026-07-14', {
+      ...event,
+      showDayTypes: false,
+    }, 'pripravy')).toMatchObject({
+      d: '2026-07-14',
+      f: '08:00',
+      t: '17:00',
+      type: 'pripravy',
+    });
+  });
+
   it('defaults newly added non-scheduled days to instal', () => {
     expect(resolveTimelogDayDefaults('2026-07-20', event)).toMatchObject({
       d: '2026-07-20',

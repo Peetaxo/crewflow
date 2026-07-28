@@ -70,11 +70,13 @@ export const resolveTimelogDayDefaults = (
   preferredType?: TimelogType,
 ): TimelogDay => {
   if (!event.showDayTypes) {
+    const resolvedType = preferredType ?? defaultType;
+
     return {
       d: date,
       f: event.startTime || fallbackFrom,
       t: event.endTime || fallbackTo,
-      type: 'instal',
+      type: resolvedType,
       note: '',
     };
   }

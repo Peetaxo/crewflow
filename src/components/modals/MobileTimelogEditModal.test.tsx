@@ -416,6 +416,27 @@ describe('MobileTimelogEditModal', () => {
     expect(screen.getByRole('button', { name: 'Upravit záznam 1' })).toHaveTextContent('Přípravy');
   });
 
+  it('keeps the selected phase after autosave updates the editing timelog', async () => {
+    vi.useFakeTimers();
+    syncEditingTimelogUpdates();
+    testMocks.saveTimelog.mockImplementation(async (timelog: Timelog) => timelog);
+    render(<MobileTimelogEditModal />);
+
+    const phasePicker = screen.getByRole('group', { name: 'Fáze' });
+    fireEvent.click(within(phasePicker).getByRole('button', { name: 'Přípravy' }));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText('Uloženo v návrhu')).toBeInTheDocument();
+    expect(within(phasePicker).getByRole('button', { name: 'Přípravy' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(phasePicker).getByRole('button', { name: 'Instal' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Upravit záznam 1' })).toHaveTextContent('Přípravy');
+  });
+
   it('marks an overnight record as work přes půlnoc', () => {
     testState.editingTimelog = {
       ...testState.editingTimelog!,

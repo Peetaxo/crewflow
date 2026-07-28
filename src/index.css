@@ -2311,6 +2311,16 @@ button.nodu-mobile-event-info-row:focus-visible {
   padding-bottom: calc(0.85rem + env(safe-area-inset-bottom));
 }
 
+.nodu-mobile-timelog-footer--split {
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+}
+
+@media (max-width: 360px) {
+  .nodu-mobile-timelog-footer--split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .nodu-surface {
   @apply rounded-xl border;
   background: var(--nodu-surface);

@@ -357,6 +357,43 @@ describe('MobileTimelogEditModal', () => {
     expect(testMocks.saveTimelog).toHaveBeenCalledTimes(1);
   });
 
+  it('lets Crew save a draft or submit the current report to CH review', async () => {
+    render(<MobileTimelogEditModal />);
+
+    expect(screen.getByRole('button', { name: 'Uložit výkaz' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Odeslat ke kontrole' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '14.07.2026' }));
+    selectTime('Od', '10:15');
+    fireEvent.click(screen.getByRole('button', { name: 'Odeslat ke kontrole' }));
+
+    await waitFor(() => expect(testMocks.saveTimelog).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'pending_ch',
+      days: expect.arrayContaining([
+        expect.objectContaining({
+          d: '2026-07-14',
+          f: '10:15',
+          t: '18:00',
+        }),
+      ]),
+    })));
+    expect(testMocks.setEditingTimelog).toHaveBeenCalledWith(null);
+  });
+
+  it('saves a rejected Crew report back as a draft without submitting it', async () => {
+    testState.editingTimelog = {
+      ...testState.editingTimelog!,
+      status: 'rejected',
+    };
+    render(<MobileTimelogEditModal />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Uložit výkaz' }));
+
+    await waitFor(() => expect(testMocks.saveTimelog).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'draft',
+    })));
+  });
+
   it('does not autosave timelogs that are no longer drafts', async () => {
     vi.useFakeTimers();
     testState.editingTimelog = {

@@ -1,11 +1,12 @@
 import React from 'react';
-import { Check, ChevronLeft, ChevronRight, Plus, Save, Trash2, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Plus, Save, Send, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppContext } from '../../context/useAppContext';
 import { PHASE_CONFIG } from '../../constants';
 import { KM_RATE } from '../../data';
 import { calculateDayHours, calculateTotalHours, formatCurrency, isOvernightTimeRange } from '../../utils';
 import { getTimelogDependencies, saveTimelog } from '../../features/timelogs/services/timelogs.service';
+import { canSubmitTimelog } from '../../features/timelogs/services/timelog-permissions';
 import {
   buildTimelogCalendarDates,
   createTimelogDayEntryId,
@@ -355,6 +356,7 @@ const MobileTimelogEditModal: React.FC = () => {
     setEditingTimelog,
     setCurrentTab,
     setSelectedContractorProfileId,
+    role,
   } = useAppContext();
   const { contractors, events } = getTimelogDependencies();
   const contractor = editingTimelog
@@ -474,6 +476,7 @@ const MobileTimelogEditModal: React.FC = () => {
     ? upsertTimelogDay(editingTimelog.days, committedDraftDay, currentEntryKey ?? undefined)
     : editingTimelog.days;
   const totalHours = calculateTotalHours(displayDays);
+  const canSubmitCurrentTimelog = canSubmitTimelog(editingTimelog, role);
 
   const openContractorDetail = () => {
     if (!contractor.profileId) return;
@@ -517,6 +520,54 @@ const MobileTimelogEditModal: React.FC = () => {
 
     clearTimeout(autosaveTimerRef.current);
     autosaveTimerRef.current = null;
+  };
+
+  const saveCurrentTimelog = async (status?: Timelog['status']) => {
+    clearAutosaveTimer();
+    const pendingAutosave = autosavePromiseRef.current;
+
+    if (pendingAutosave) {
+      const savedTimelog = await pendingAutosave;
+      const timelogToSave = {
+        ...buildTimelogWithCurrentDraft(),
+        ...(status ? { status } : {}),
+      };
+
+      if (
+        status
+        || getTimelogDraftSignature(timelogToSave) !== lastAutosavedSignatureRef.current
+      ) {
+        await saveTimelog({
+          ...timelogToSave,
+          id: savedTimelog?.id ?? timelogToSave.id,
+        });
+      }
+
+      setEditingTimelog(null);
+      return;
+    }
+
+    await saveTimelog({
+      ...buildTimelogWithCurrentDraft(),
+      ...(status ? { status } : {}),
+    });
+    setEditingTimelog(null);
+  };
+
+  const handleSaveDraft = async () => {
+    try {
+      await saveCurrentTimelog(editingTimelog.status === 'rejected' ? 'draft' : undefined);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Nepodařilo se uložit výkaz.');
+    }
+  };
+
+  const handleSubmitForReview = async () => {
+    try {
+      await saveCurrentTimelog('pending_ch');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Nepodařilo se odeslat výkaz ke kontrole.');
+    }
   };
 
   const scheduleAutosave = (nextTimelog: Timelog) => {
@@ -1054,39 +1105,24 @@ const MobileTimelogEditModal: React.FC = () => {
           </div>
         </div>
 
-        <footer className="nodu-mobile-timelog-footer">
+        <footer
+          className={`nodu-mobile-timelog-footer${canSubmitCurrentTimelog ? ' nodu-mobile-timelog-footer--split' : ''}`}
+        >
           <Button
             type="button"
-            onClick={async () => {
-              try {
-                clearAutosaveTimer();
-                const pendingAutosave = autosavePromiseRef.current;
-
-                if (pendingAutosave) {
-                  const savedTimelog = await pendingAutosave;
-                  const timelogToSave = buildTimelogWithCurrentDraft();
-
-                  if (getTimelogDraftSignature(timelogToSave) !== lastAutosavedSignatureRef.current) {
-                    await saveTimelog({
-                      ...timelogToSave,
-                      id: savedTimelog?.id ?? timelogToSave.id,
-                    });
-                  }
-
-                  setEditingTimelog(null);
-                  return;
-                }
-
-                const timelogToSave = buildTimelogWithCurrentDraft();
-                await saveTimelog(timelogToSave);
-                setEditingTimelog(null);
-              } catch (error) {
-                toast.error(error instanceof Error ? error.message : 'Nepodařilo se uložit výkaz.');
-              }
-            }}
+            variant={canSubmitCurrentTimelog ? 'outline' : 'default'}
+            onClick={handleSaveDraft}
           >
             <Save size={16} /> Uložit výkaz
           </Button>
+          {canSubmitCurrentTimelog && (
+            <Button
+              type="button"
+              onClick={handleSubmitForReview}
+            >
+              <Send size={16} /> Odeslat ke kontrole
+            </Button>
+          )}
         </footer>
       </section>
     </div>

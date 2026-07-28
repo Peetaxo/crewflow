@@ -32,6 +32,7 @@ describe('nodu CSS helpers', () => {
     const mobileTimelogAddDayConfirmRule = css.match(/\.nodu-mobile-timelog-add-day-confirm\s*\{[\s\S]*?\}/)?.[0];
     const mobilePageFrameRule = css.match(/\.nodu-page-frame--mobile-crew\s*\{[\s\S]*?\}/)?.[0];
     const mobileEventDetailRule = css.match(/\.nodu-mobile-event-detail\s*\{[\s\S]*?\}/)?.[0];
+    const mobileEventSwipeEdgeRule = css.match(/\.nodu-mobile-event-swipe-edge\s*\{[\s\S]*?\}/)?.[0];
     const mobileEventFloatingPanelRule = css.match(/\.nodu-mobile-event-floating-panel\s*\{[\s\S]*?\}/)?.[0];
     const mobileEventFloatingPanelCompactRule = css.match(/\.nodu-mobile-event-floating-panel--compact\s*\{[\s\S]*?\}/)?.[0];
     const mobileEventApprovalDialogRule = css.match(/\.nodu-mobile-event-approval-dialog\s*\{[\s\S]*?\}/)?.[0];
@@ -74,6 +75,7 @@ describe('nodu CSS helpers', () => {
       '.nodu-mobile-timelog-add-day-cell',
       '.nodu-mobile-timelog-add-day-cell--selected',
       '.nodu-mobile-timelog-add-day-confirm',
+      '.nodu-mobile-event-swipe-edge',
       '.nodu-mobile-event-floating-panel',
       '.nodu-mobile-event-floating-panel--compact',
       '.nodu-mobile-event-approval-dialog',
@@ -122,6 +124,9 @@ describe('nodu CSS helpers', () => {
     expect(mobileTimelogAddDayConfirmRule).toContain('border-radius: 999px;');
     expect(mobilePageFrameRule).toContain('padding-top: calc(1rem + env(safe-area-inset-top));');
     expect(mobileEventDetailRule).toContain('padding-bottom');
+    expect(mobileEventSwipeEdgeRule).toContain('position: fixed;');
+    expect(mobileEventSwipeEdgeRule).toContain('left: 0;');
+    expect(mobileEventSwipeEdgeRule).toContain('touch-action: none;');
     expect(mobileEventFloatingPanelRule).toContain('position: fixed;');
     expect(mobileEventFloatingPanelRule).toContain('backdrop-filter: blur');
     expect(mobileEventFloatingPanelCompactRule).toContain('grid-template-areas: "primary";');

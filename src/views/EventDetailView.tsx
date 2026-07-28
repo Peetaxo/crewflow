@@ -39,6 +39,7 @@ const EMPTY_APPROVAL_DOCUMENTS: InvoiceApprovalDocument[] = [];
 const MOBILE_EDGE_SWIPE_START_MAX_X = 96;
 const MOBILE_EDGE_SWIPE_MIN_DISTANCE = 64;
 const MOBILE_EDGE_SWIPE_MAX_VERTICAL_DRIFT = 48;
+const MOBILE_EVENT_DETAIL_HISTORY_KEY = 'noduMobileEventDetailId';
 
 const normalizeContactName = (name: string) => (
   name.trim().toLocaleLowerCase('cs-CZ')
@@ -110,6 +111,7 @@ const EventDetailView = () => {
   const [showContactDialog, setShowContactDialog] = useState(false);
   const [showMobileApprovalDialog, setShowMobileApprovalDialog] = useState(false);
   const mobileEdgeSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
+  const mobileHistoryEventIdRef = useRef<string | number | null>(null);
   const invoiceApprovalsQuery = useInvoiceApprovalsQuery();
 
   const loadDetail = useCallback(() => {
@@ -139,6 +141,43 @@ const EventDetailView = () => {
 
     document.querySelector<HTMLElement>('.nodu-page-frame--mobile-crew')?.scrollTo({ top: 0, left: 0 });
   }, [detail.event, isMobile, selectedEventId]);
+
+  useEffect(() => {
+    if (!isMobile || selectedEventId == null || !detail.event) return undefined;
+
+    if (mobileHistoryEventIdRef.current !== selectedEventId) {
+      window.history.pushState(
+        { ...(window.history.state ?? {}), [MOBILE_EVENT_DETAIL_HISTORY_KEY]: selectedEventId },
+        '',
+        window.location.href,
+      );
+      mobileHistoryEventIdRef.current = selectedEventId;
+    }
+
+    const handlePopState = () => {
+      mobileHistoryEventIdRef.current = null;
+      setSelectedEventId(null);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [detail.event, isMobile, selectedEventId, setSelectedEventId]);
+
+  const closeMobileEventDetail = useCallback(() => {
+    const shouldPopHistory = (
+      isMobile
+      && selectedEventId != null
+      && window.history.state?.[MOBILE_EVENT_DETAIL_HISTORY_KEY] === selectedEventId
+    );
+
+    setSelectedEventId(null);
+
+    if (shouldPopHistory) {
+      window.history.back();
+    }
+  }, [isMobile, selectedEventId, setSelectedEventId]);
 
   const event = detail.event;
   const approvalDocuments = invoiceApprovalsQuery.data ?? EMPTY_APPROVAL_DOCUMENTS;
@@ -407,7 +446,7 @@ const EventDetailView = () => {
 
     if (deltaX >= MOBILE_EDGE_SWIPE_MIN_DISTANCE && deltaY <= MOBILE_EDGE_SWIPE_MAX_VERTICAL_DRIFT) {
       mobileEdgeSwipeStartRef.current = null;
-      setSelectedEventId(null);
+      closeMobileEventDetail();
       return true;
     }
 
@@ -671,11 +710,27 @@ const EventDetailView = () => {
           mobileEdgeSwipeStartRef.current = null;
         }}
       >
+        <div
+          className="nodu-mobile-event-swipe-edge"
+          aria-hidden="true"
+          onTouchStart={handleMobileDetailTouchStart}
+          onTouchMove={handleMobileDetailTouchMove}
+          onTouchEnd={handleMobileDetailTouchEnd}
+          onTouchCancel={() => {
+            mobileEdgeSwipeStartRef.current = null;
+          }}
+          onPointerDown={handleMobileDetailPointerDown}
+          onPointerMove={handleMobileDetailPointerMove}
+          onPointerUp={handleMobileDetailPointerUp}
+          onPointerCancel={() => {
+            mobileEdgeSwipeStartRef.current = null;
+          }}
+        />
         <div className="nodu-mobile-event-scroll">
           <header className="nodu-mobile-event-topbar">
             <button
               type="button"
-              onClick={() => setSelectedEventId(null)}
+              onClick={closeMobileEventDetail}
               className="nodu-mobile-event-back"
             >
               <ArrowLeft size={18} />

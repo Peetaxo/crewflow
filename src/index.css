@@ -987,6 +987,18 @@ tbody tr:hover td {
   gap: 0.85rem;
 }
 
+.nodu-mobile-event-swipe-edge {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 45;
+  width: max(1.75rem, env(safe-area-inset-left));
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .nodu-mobile-event-topbar {
   display: flex;
   align-items: center;

@@ -561,7 +561,7 @@ describe('timelogs.service write flow', () => {
     ]);
   });
 
-  it('updates an existing event-contractor timelog instead of creating a duplicate report', async () => {
+  it('rejects creating a second event-contractor timelog instead of overwriting the existing report', async () => {
     let snapshot = createSnapshot([
       {
         id: 1,
@@ -607,7 +607,7 @@ describe('timelogs.service write flow', () => {
 
     const { saveTimelog } = await import('./timelogs.service');
 
-    const updated = await saveTimelog({
+    await expect(saveTimelog({
       id: -1,
       eid: 1,
       contractorProfileId: 'profile-uuid-1',
@@ -615,18 +615,190 @@ describe('timelogs.service write flow', () => {
       km: 12,
       note: 'Upraveny draft',
       status: 'pending_ch',
-    });
+    })).rejects.toThrow('Výkaz pro tohoto člena crew a akci už existuje.');
 
-    expect(updated.id).toBe(1);
     expect(snapshot.timelogs).toHaveLength(1);
-    expect(snapshot.timelogs[0]).toEqual(updated);
     expect(snapshot.timelogs[0].days).toEqual([
-      { d: '2026-04-10', f: '09:00', t: '17:00', type: 'provoz' },
+      { d: '2026-04-10', f: '08:00', t: '16:00', type: 'instal' },
     ]);
-    expect(snapshot.timelogs[0].km).toBe(12);
-    expect(snapshot.timelogs[0].note).toBe('Upraveny draft');
-    expect(setQueryData).toHaveBeenCalledWith(['timelogs'], snapshot.timelogs);
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['timelogs'] });
+    expect(snapshot.timelogs[0].km).toBe(0);
+    expect(snapshot.timelogs[0].note).toBe('');
+    expect(setQueryData).not.toHaveBeenCalled();
+    expect(invalidateQueries).not.toHaveBeenCalled();
+  });
+
+  it('rejects direct creation of a duplicate event-contractor timelog', async () => {
+    let snapshot = createSnapshot([
+      {
+        id: 1,
+        eid: 1,
+        contractorProfileId: 'profile-uuid-1',
+        days: [{ d: '2026-04-10', f: '08:00', t: '16:00', type: 'instal' }],
+        km: 0,
+        note: '',
+        status: 'draft',
+      },
+    ]);
+    const setQueryData = vi.fn();
+    const invalidateQueries = vi.fn();
+
+    vi.doMock('../../../lib/app-config', () => ({
+      appDataSource: 'local',
+    }));
+
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: false,
+      supabase: null,
+    }));
+
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapTimelog: vi.fn(),
+    }));
+
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    vi.doMock('../../../lib/query-client', () => ({
+      queryClient: {
+        setQueryData,
+        invalidateQueries,
+      },
+    }));
+
+    const { createTimelog } = await import('./timelogs.service');
+
+    await expect(createTimelog({
+      eid: 1,
+      contractorProfileId: 'profile-uuid-1',
+      days: [{ d: '2026-04-11', f: '08:00', t: '17:00', type: 'provoz' }],
+      km: 0,
+      note: '',
+      status: 'draft',
+    })).rejects.toThrow('Výkaz pro tohoto člena crew a akci už existuje.');
+
+    expect(snapshot.timelogs).toHaveLength(1);
+    expect(setQueryData).not.toHaveBeenCalled();
+    expect(invalidateQueries).not.toHaveBeenCalled();
+  });
+
+  it('rejects overlapping entries in one event-contractor timelog', async () => {
+    let snapshot = createSnapshot([
+      {
+        id: 1,
+        eid: 1,
+        contractorProfileId: 'profile-uuid-1',
+        days: [{ d: '2026-08-30', f: '08:00', t: '20:00', type: 'instal' }],
+        km: 0,
+        note: '',
+        status: 'draft',
+      },
+    ]);
+    const setQueryData = vi.fn();
+    const invalidateQueries = vi.fn();
+
+    vi.doMock('../../../lib/app-config', () => ({
+      appDataSource: 'local',
+    }));
+
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: false,
+      supabase: null,
+    }));
+
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapTimelog: vi.fn(),
+    }));
+
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    vi.doMock('../../../lib/query-client', () => ({
+      queryClient: {
+        setQueryData,
+        invalidateQueries,
+      },
+    }));
+
+    const { saveTimelog } = await import('./timelogs.service');
+
+    await expect(saveTimelog({
+      ...snapshot.timelogs[0],
+      days: [
+        { d: '2026-08-30', f: '08:00', t: '20:00', type: 'instal' },
+        { d: '2026-08-30', f: '15:00', t: '19:00', type: 'provoz' },
+      ],
+    })).rejects.toThrow('Časy ve výkazu se překrývají: 30. 8. 08:00-20:00 a 30. 8. 15:00-19:00.');
+
+    expect(snapshot.timelogs[0].days).toEqual([
+      { d: '2026-08-30', f: '08:00', t: '20:00', type: 'instal' },
+    ]);
+    expect(setQueryData).not.toHaveBeenCalled();
+    expect(invalidateQueries).not.toHaveBeenCalled();
+  });
+
+  it('rejects overlaps when an overnight entry reaches into the next day', async () => {
+    let snapshot = createSnapshot([
+      {
+        id: 1,
+        eid: 1,
+        contractorProfileId: 'profile-uuid-1',
+        days: [{ d: '2026-08-30', f: '20:00', t: '06:00', type: 'instal' }],
+        km: 0,
+        note: '',
+        status: 'draft',
+      },
+    ]);
+
+    vi.doMock('../../../lib/app-config', () => ({
+      appDataSource: 'local',
+    }));
+
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: false,
+      supabase: null,
+    }));
+
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapTimelog: vi.fn(),
+    }));
+
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    vi.doMock('../../../lib/query-client', () => ({
+      queryClient: {
+        setQueryData: vi.fn(),
+        invalidateQueries: vi.fn(),
+      },
+    }));
+
+    const { saveTimelog } = await import('./timelogs.service');
+
+    await expect(saveTimelog({
+      ...snapshot.timelogs[0],
+      days: [
+        { d: '2026-08-30', f: '20:00', t: '06:00', type: 'instal' },
+        { d: '2026-08-31', f: '02:00', t: '04:00', type: 'provoz' },
+      ],
+    })).rejects.toThrow('Časy ve výkazu se překrývají: 30. 8. 20:00-06:00 a 31. 8. 02:00-04:00.');
   });
 
   it('deletes the timelog when saving it without any days', async () => {

@@ -7,6 +7,7 @@ import { mapClient, mapEvent } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { getDatesBetween, getEventStatus } from '../../../utils';
 import { Client, Contractor, Event, EventApplication, EventApplicationStatus, EventCrewAssignment, EventPhaseSlot, GrasonEventConfirmation, Project, ReceiptItem, Timelog, TimelogType } from '../../../types';
+import { assertTimelogDaysDoNotOverlap } from '../../timelogs/services/timelog-validation';
 import { EventAssignmentResult, EventConflictDetail, EventFilter, EventWithDerivedStatus } from '../types/events.types';
 
 const DEFAULT_TIME_FROM = '08:00';
@@ -1662,6 +1663,8 @@ export const assignCrewToEvent = async (
   if (initialDays.length === 0) {
     throw new Error('Pro vybranou fazi nejsou na akci zadne dny.');
   }
+
+  assertTimelogDaysDoNotOverlap(initialDays);
 
   const hasCollision = snapshot.timelogs.some((timelog) => (
     timelog.contractorProfileId === contractorProfileId

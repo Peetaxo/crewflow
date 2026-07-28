@@ -63,7 +63,6 @@ const getApprovalDocumentPersonLabel = (document: InvoiceApprovalDocument) => {
 };
 
 type TimelogApprovalAction = 'sub' | 'ch' | 'coo' | 'rej';
-type ApprovalTimelog = Timelog & { sourceTimelogs: Timelog[] };
 
 const getTimelogApprovalAction = (timelog: Timelog): Exclude<TimelogApprovalAction, 'rej'> => (
   timelog.status === 'draft'
@@ -77,33 +76,17 @@ const sortTimelogDaysForDisplay = (days: Timelog['days']) => (
   ))
 );
 
-const mergeApprovalTimelogsByContractor = (timelogs: Timelog[]): ApprovalTimelog[] => {
-  const groupsByContractor = new Map<string, ApprovalTimelog>();
-
-  timelogs.forEach((timelog) => {
-    const contractorKey = timelog.contractorProfileId ?? `timelog-${timelog.id}`;
-    const existingGroup = groupsByContractor.get(contractorKey);
-
-    if (!existingGroup) {
-      groupsByContractor.set(contractorKey, {
-        ...timelog,
-        days: sortTimelogDaysForDisplay(timelog.days),
-        sourceTimelogs: [timelog],
-      });
-      return;
-    }
-
-    groupsByContractor.set(contractorKey, {
-      ...existingGroup,
-      days: sortTimelogDaysForDisplay([...existingGroup.days, ...timelog.days]),
-      km: existingGroup.km + timelog.km,
-      note: [existingGroup.note, timelog.note].filter(Boolean).join('\n'),
-      sourceTimelogs: [...existingGroup.sourceTimelogs, timelog],
-    });
-  });
-
-  return Array.from(groupsByContractor.values());
-};
+const prepareApprovalTimelogs = (timelogs: Timelog[]): Timelog[] => (
+  timelogs
+    .map((timelog) => ({
+      ...timelog,
+      days: sortTimelogDaysForDisplay(timelog.days),
+    }))
+    .sort((first, second) => (
+      (first.contractorProfileId ?? '').localeCompare(second.contractorProfileId ?? '')
+      || first.id - second.id
+    ))
+);
 
 const EventDetailView = () => {
   const {
@@ -245,7 +228,7 @@ const EventDetailView = () => {
     to: applicationDraftTimes.to || event.endTime || '17:00',
   };
   const eventApprovalTimelogs = canManageEvents
-    ? mergeApprovalTimelogsByContractor(eventTimelogs.filter((timelog) => (
+    ? prepareApprovalTimelogs(eventTimelogs.filter((timelog) => (
         role === 'crewhead'
           ? timelog.status === 'draft' || timelog.status === 'pending_ch'
           : timelog.status === 'pending_coo'
@@ -390,13 +373,10 @@ const EventDetailView = () => {
     setEditingEvent(createEventCopy(event));
   };
 
-  const handleTimelogApprovalGroupAction = (timelog: ApprovalTimelog, action?: TimelogApprovalAction) => {
-    const sourceTimelogs = timelog.sourceTimelogs.length > 0 ? timelog.sourceTimelogs : [timelog];
-    const updates = sourceTimelogs
-      .filter((sourceTimelog) => action !== 'rej' || sourceTimelog.status !== 'draft')
-      .map((sourceTimelog) => updateTimelogStatus(sourceTimelog.id, action ?? getTimelogApprovalAction(sourceTimelog)));
+  const handleTimelogApprovalAction = (timelog: Timelog, action?: TimelogApprovalAction) => {
+    if (action === 'rej' && timelog.status === 'draft') return;
 
-    void Promise.all(updates)
+    void updateTimelogStatus(timelog.id, action ?? getTimelogApprovalAction(timelog))
       .then(loadDetail)
       .catch((error) => {
         toast.error(error instanceof Error ? error.message : 'Nepodarilo se aktualizovat vykaz.');
@@ -637,7 +617,7 @@ const EventDetailView = () => {
                         type="button"
                         aria-label={`Schválit výkaz ${contractorName}`}
                         className="nodu-mobile-event-icon-action nodu-mobile-event-icon-action--success"
-                        onClick={() => handleTimelogApprovalGroupAction(timelog, approveAction)}
+                        onClick={() => handleTimelogApprovalAction(timelog, approveAction)}
                       >
                         Schválit
                       </button>
@@ -646,7 +626,7 @@ const EventDetailView = () => {
                           type="button"
                           aria-label={`Zamítnout výkaz ${contractorName}`}
                           className="nodu-mobile-event-icon-action nodu-mobile-event-icon-action--danger"
-                          onClick={() => handleTimelogApprovalGroupAction(timelog, 'rej')}
+                          onClick={() => handleTimelogApprovalAction(timelog, 'rej')}
                         >
                           Vrátit
                         </button>
@@ -1318,11 +1298,11 @@ const EventDetailView = () => {
                                   ))}
                                 </div>
                                 <div className="mt-3 flex flex-wrap gap-2">
-                                  <Button size="sm" className="h-8 text-[11px]" onClick={() => handleTimelogApprovalGroupAction(timelog, approveAction)}>
+                                  <Button size="sm" className="h-8 text-[11px]" onClick={() => handleTimelogApprovalAction(timelog, approveAction)}>
                                     {approveLabel}
                                   </Button>
                                   {timelog.status !== 'draft' && (
-                                    <Button size="sm" variant="outline" className="h-8 border-[#e8b4a3] text-[11px] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]" onClick={() => handleTimelogApprovalGroupAction(timelog, 'rej')}>
+                                    <Button size="sm" variant="outline" className="h-8 border-[#e8b4a3] text-[11px] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]" onClick={() => handleTimelogApprovalAction(timelog, 'rej')}>
                                       Zamitnout
                                     </Button>
                                   )}

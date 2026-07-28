@@ -5,6 +5,7 @@ import { queryKeys } from '../../../lib/query-keys';
 import { mapTimelog } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { Contractor, Event, Timelog, TimelogStatus } from '../../../types';
+import { assertTimelogDaysDoNotOverlap } from './timelog-validation';
 
 type TimelogAction = 'sub' | 'ch' | 'coo' | 'rej';
 let timelogsHydrationPromise: Promise<void> | null = null;
@@ -335,6 +336,8 @@ export const createTimelog = async (timelog: Omit<Timelog, 'id'>): Promise<Timel
     throw new Error('Vykaz musi obsahovat alespon jeden den.');
   }
 
+  assertTimelogDaysDoNotOverlap(normalizedTimelog.days);
+
   if (!normalizedTimelog.contractorProfileId) {
     throw new Error('Nepodarilo se dohledat UUID identitu clena crew.');
   }
@@ -345,10 +348,7 @@ export const createTimelog = async (timelog: Omit<Timelog, 'id'>): Promise<Timel
   );
 
   if (existingEventContractorTimelog) {
-    return saveTimelog({
-      ...normalizedTimelog,
-      id: existingEventContractorTimelog.id,
-    });
+    throw new Error('Výkaz pro tohoto člena crew a akci už existuje.');
   }
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
@@ -417,10 +417,7 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
     const existingEventContractorTimelog = findExistingEventContractorTimelog(normalizedTimelog, currentTimelogs);
 
     if (existingEventContractorTimelog) {
-      return saveTimelog({
-        ...normalizedTimelog,
-        id: existingEventContractorTimelog.id,
-      });
+      throw new Error('Výkaz pro tohoto člena crew a akci už existuje.');
     }
 
     const { id: _unsavedId, ...timelogToCreate } = normalizedTimelog;
@@ -431,6 +428,8 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
     await deleteTimelog(normalizedTimelog.id);
     return normalizedTimelog;
   }
+
+  assertTimelogDaysDoNotOverlap(normalizedTimelog.days);
 
   if (!normalizedTimelog.contractorProfileId) {
     throw new Error('Nepodarilo se dohledat UUID identitu clena crew.');

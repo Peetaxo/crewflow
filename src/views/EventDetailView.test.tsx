@@ -823,7 +823,7 @@ describe('EventDetailView', () => {
     expect(within(approvalDialog).getByRole('heading', { name: 'Schvalování' })).toBeInTheDocument();
     expect(within(approvalDialog).queryByText('Přihlášky crew')).not.toBeInTheDocument();
     expect(within(approvalDialog).getByText('Výkazy práce')).toBeInTheDocument();
-    expect(within(approvalDialog).getByText('Výkaz')).toBeInTheDocument();
+    expect(within(approvalDialog).getAllByText('Výkaz')).toHaveLength(2);
     expect(within(approvalDialog).queryByText('Výkaz 1/2')).not.toBeInTheDocument();
     expect(within(approvalDialog).queryByText('Výkaz 2/2')).not.toBeInTheDocument();
     expect(within(approvalDialog).getByText('17. 4.')).toBeInTheDocument();
@@ -1525,6 +1525,68 @@ describe('EventDetailView', () => {
     await waitFor(() => {
       expect(updateTimelogStatus).toHaveBeenCalledWith(8, 'coo');
     });
+  });
+
+  it('does not merge duplicate approval timelogs for the same contractor', async () => {
+    const duplicatePendingApprovalTimelog = {
+      ...pendingApprovalTimelog,
+      id: 88,
+      days: [{ d: '2026-04-18', f: '10:00', t: '12:00', type: 'instal' as const }],
+    };
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        role: 'coo',
+        selectedEventId: 'event-uuid-1',
+        setSelectedEventId,
+        eventTab: 'overview',
+        setEventTab: vi.fn(),
+        setEditingReceipt: vi.fn(),
+        setDeleteConfirm: vi.fn(),
+        setEditingTimelog,
+      }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [contractor, applicant],
+      getEventDetailData: () => ({
+        event,
+        timelogs: [pendingApprovalTimelog, duplicatePendingApprovalTimelog],
+        contractors: [contractor, applicant],
+        receipts: [],
+        applications: [],
+        crewAssignments: [
+          { eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: applicant.profileId, name: applicant.name },
+        ],
+      }),
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
+      subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatus,
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventDetailView } = await import('./EventDetailView');
+
+    render(<EventDetailView />);
+
+    expect(screen.getByRole('button', { name: /Schvalovani timelogu \(2\)/ })).toBeInTheDocument();
   });
 
   it('lets managers rate assigned crew after a past event', async () => {

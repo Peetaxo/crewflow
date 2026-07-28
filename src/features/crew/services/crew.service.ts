@@ -31,6 +31,12 @@ const clampRating = (rating?: number | null) => {
 };
 
 const normalizeText = (value?: string) => value?.trim() ?? '';
+const normalizeSearchValue = (value?: string) => (
+  normalizeText(value)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+);
 
 const normalizeTags = (tags: string[] = []) => (
   tags
@@ -109,11 +115,15 @@ const validateCrewMember = (member: CreateCrewInput | UpdateCrewInput) => {
 const matchesSearch = (member: CrewMember, search: string) => {
   if (!search) return true;
 
-  const query = search.toLowerCase();
+  const query = normalizeSearchValue(search);
   return (
-    member.name.toLowerCase().includes(query)
-    || member.city.toLowerCase().includes(query)
-    || member.tags.some((tag) => tag.toLowerCase().includes(query))
+    normalizeSearchValue(member.name).includes(query)
+    || normalizeSearchValue(member.city).includes(query)
+    || normalizeSearchValue(member.email).includes(query)
+    || normalizeSearchValue(member.phone).includes(query)
+    || normalizeSearchValue(member.ico).includes(query)
+    || normalizeSearchValue(member.ii).includes(query)
+    || member.tags.some((tag) => normalizeSearchValue(tag).includes(query))
   );
 };
 

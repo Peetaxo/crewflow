@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Event, ReceiptItem, Timelog } from '../../types';
 
@@ -54,6 +54,7 @@ let mockReceiptDependencies = {
 };
 
 let mockCrew = [] as ModalContractor[];
+let crewChangeListener: (() => void) | null = null;
 const assignCrewToEvent = vi.fn();
 const getContractorConflictsForEvent = vi.fn(() => new Map());
 const getEventDetailData = vi.fn(() => ({ timelogs: [] }));
@@ -87,7 +88,18 @@ vi.mock('../../features/receipts/services/receipts.service', () => ({
 }));
 
 vi.mock('../../features/crew/services/crew.service', () => ({
-  getCrew: () => mockCrew,
+  getCrew: ({ search }: { search?: string } = {}) => {
+    const query = search?.trim().toLowerCase() ?? '';
+    return query
+      ? mockCrew.filter((contractor) => contractor.name.toLowerCase().includes(query))
+      : mockCrew;
+  },
+  subscribeToCrewChanges: (listener: () => void) => {
+    crewChangeListener = listener;
+    return () => {
+      crewChangeListener = null;
+    };
+  },
 }));
 
 vi.mock('../../features/events/services/events.service', () => ({
@@ -115,6 +127,7 @@ describe('modal contractor identity handling', () => {
     mockTimelogDependencies = { contractors: [], events: [] };
     mockReceiptDependencies = { contractors: [], events: [] };
     mockCrew = [];
+    crewChangeListener = null;
     getContractorConflictsForEvent.mockReturnValue(new Map());
     getEventDetailData.mockReturnValue({ timelogs: [] });
   });
@@ -303,6 +316,48 @@ describe('modal contractor identity handling', () => {
     fireEvent.click(screen.getByRole('button', { name: /Free Contractor/i }));
 
     expect(assignCrewToEvent).toHaveBeenCalledWith(1, 'profile-uuid-2', undefined);
+  });
+
+  it('refreshes available crew while the assignment modal is open', () => {
+    render(
+      <AssignCrewModal
+        event={{
+          id: 1,
+          name: 'Test Event',
+          job: 'JOB-1',
+          startDate: '2026-04-24',
+          endDate: '2026-04-24',
+          city: 'Praha',
+          needed: 1,
+          filled: 0,
+          status: 'upcoming',
+          client: 'Client',
+        }}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText('Late Loaded Crew')).not.toBeInTheDocument();
+
+    mockCrew = [
+      {
+        id: 3,
+        profileId: 'profile-uuid-3',
+        name: 'Late Loaded Crew',
+        ii: 'LC',
+        bg: '#111',
+        fg: '#fff',
+        tags: [],
+        reliable: true,
+        city: 'Praha',
+      },
+    ];
+
+    act(() => {
+      crewChangeListener?.();
+    });
+
+    expect(screen.getByText('Late Loaded Crew')).toBeInTheDocument();
   });
 
   it('assigns the only available day type immediately on typed single-phase events', async () => {

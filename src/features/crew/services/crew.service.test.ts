@@ -165,6 +165,72 @@ describe('crew.service', () => {
     expect(detail.invoices).toHaveLength(1);
   });
 
+  it('matches crew search without requiring Czech diacritics', async () => {
+    const snapshot = {
+      contractors: [
+        {
+          id: 1,
+          profileId: 'profile-uuid-1',
+          name: 'Daniel Šilhavý',
+          ii: 'DŠ',
+          bg: '#000',
+          fg: '#fff',
+          tags: ['Řidič'],
+          events: 1,
+          rate: 250,
+          phone: '',
+          email: '',
+          ico: '',
+          dic: '',
+          bank: '',
+          city: 'Ústí nad Labem',
+          reliable: true,
+          note: '',
+        },
+        {
+          id: 2,
+          profileId: 'profile-uuid-2',
+          name: 'Vojtěch Laštovka',
+          ii: 'VL',
+          bg: '#111',
+          fg: '#fff',
+          tags: [],
+          events: 0,
+          rate: 250,
+          phone: '',
+          email: '',
+          ico: '',
+          dic: '',
+          bank: '',
+          city: 'Praha',
+          reliable: true,
+          note: '',
+        },
+      ],
+      timelogs: [],
+      invoices: [],
+      receipts: [],
+      events: [],
+      projects: [],
+      clients: [],
+      candidates: [],
+    };
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'local' }));
+    vi.doMock('../../../lib/supabase', () => ({ isSupabaseConfigured: false, supabase: null }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: vi.fn(),
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    const { getCrew } = await import('./crew.service');
+
+    expect(getCrew({ search: 'silhavy' }).map((member) => member.name)).toEqual(['Daniel Šilhavý']);
+    expect(getCrew({ search: 'ridic' }).map((member) => member.name)).toEqual(['Daniel Šilhavý']);
+    expect(getCrew({ search: 'lastovka' }).map((member) => member.name)).toEqual(['Vojtěch Laštovka']);
+  });
+
   it('creates a crew member in Supabase and keeps the returned profile UUID locally', async () => {
     let snapshot = {
       contractors: [],

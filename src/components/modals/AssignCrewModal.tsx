@@ -1,11 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Plus, Search, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { PHASE_CONFIG } from '../../constants';
 import { Event, TimelogType } from '../../types';
 import { formatDateRange } from '../../utils';
-import { getCrew } from '../../features/crew/services/crew.service';
+import { getCrew, subscribeToCrewChanges } from '../../features/crew/services/crew.service';
 import { assignCrewToEvent, getContractorConflictsForEvent, getEventDetailData } from '../../features/events/services/events.service';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -40,12 +40,21 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
   const [pendingContractorSelection, setPendingContractorSelection] = useState<string | null>(null);
   const [selectedPhaseOptions, setSelectedPhaseOptions] = useState<Array<TimelogType | 'all'>>([]);
   const [search, setSearch] = useState('');
+  const [, setCrewRefreshToken] = useState(0);
 
-  const contractors = useMemo(() => getCrew({ search }), [search]);
+  const contractors = getCrew({ search });
   const pendingContractor = useMemo(
     () => contractors.find((contractor) => getContractorSelectionValue(contractor) === pendingContractorSelection) ?? null,
     [contractors, pendingContractorSelection],
   );
+
+  useEffect(() => {
+    if (!event) return undefined;
+
+    return subscribeToCrewChanges(() => {
+      setCrewRefreshToken((value) => value + 1);
+    });
+  }, [event]);
 
   if (!event) return null;
 
@@ -188,6 +197,12 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
           )}
 
           <div className="flex-1 space-y-1 overflow-y-auto p-2">
+            {contractors.length === 0 && (
+              <div className="rounded-xl border border-dashed border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-text-rgb)/0.04)] p-4 text-center text-sm font-medium text-[color:var(--nodu-text-soft)]">
+                {search.trim() ? 'Zadne jmeno neodpovida hledani.' : 'Crew se nacita nebo zatim neni dostupna.'}
+              </div>
+            )}
+
             {contractors.map((contractor) => {
               const contractorSelectionValue = getContractorSelectionValue(contractor);
               const isAlreadyAssigned = contractorSelectionValue

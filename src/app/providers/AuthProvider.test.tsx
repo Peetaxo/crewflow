@@ -7,6 +7,8 @@ import { useAuth } from './useAuth';
 const signOutMock = vi.fn(async () => ({ error: null }));
 const getSessionMock = vi.fn();
 const rpcMock = vi.fn(async () => ({ data: null, error: null }));
+const getContractorsMock = vi.fn(() => []);
+const resetSupabaseCrewHydrationMock = vi.fn();
 const onAuthStateChangeMock = vi.fn(() => ({
   data: { subscription: { unsubscribe: vi.fn() } },
 }));
@@ -31,7 +33,8 @@ vi.mock('../../lib/app-config', () => ({
 }));
 
 vi.mock('../../features/crew/services/crew.service', () => ({
-  getContractors: () => [],
+  getContractors: () => getContractorsMock(),
+  resetSupabaseCrewHydration: () => resetSupabaseCrewHydrationMock(),
   subscribeToCrewChanges: () => () => {},
 }));
 
@@ -69,6 +72,7 @@ describe('AuthProvider', () => {
     vi.clearAllMocks();
     rolesData = [{ role: 'coo' }];
     getSessionMock.mockResolvedValue({ data: { session: mockSession } });
+    getContractorsMock.mockReturnValue([]);
     fromMock.mockClear();
   });
 
@@ -117,6 +121,26 @@ describe('AuthProvider', () => {
     await waitFor(() => {
       expect(rpcMock).toHaveBeenCalledWith('set_current_user_role', { p_role: 'crewhead' });
       expect(screen.getByTestId('role')).toHaveTextContent('crewhead');
+    });
+  });
+
+  it('reloads Supabase crew after an authenticated role switch changes RLS visibility', async () => {
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('role')).toHaveTextContent('coo');
+    });
+
+    getContractorsMock.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Switch to CrewHead' }));
+
+    await waitFor(() => {
+      expect(resetSupabaseCrewHydrationMock).toHaveBeenCalledTimes(1);
+      expect(getContractorsMock).toHaveBeenCalledTimes(1);
     });
   });
 });

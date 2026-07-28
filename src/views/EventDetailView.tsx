@@ -624,11 +624,11 @@ const EventDetailView = () => {
                           <div className="nodu-mobile-event-management-day-main">
                             <span className="nodu-mobile-event-management-day-date">{formatShortDate(day.d)}</span>
                             <span className="nodu-mobile-event-management-day-time">{day.f} - {day.t}</span>
+                            <span className="nodu-mobile-event-management-day-phase">
+                              <StatusBadge status={day.type} />
+                            </span>
                           </div>
                           <span className="nodu-mobile-event-management-day-hours">{calculateDayHours(day.f, day.t).toFixed(1)}h</span>
-                          <div className="nodu-mobile-event-management-day-phase">
-                            <StatusBadge status={day.type} />
-                          </div>
                         </div>
                       ))}
                     </div>

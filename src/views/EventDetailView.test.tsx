@@ -831,6 +831,9 @@ describe('EventDetailView', () => {
     expect(within(approvalDialog).getByText('12:00 - 17:00')).toBeInTheDocument();
     expect(within(approvalDialog).getAllByText('6.0h').length).toBeGreaterThan(0);
     expect(within(approvalDialog).getAllByText('5.0h').length).toBeGreaterThan(0);
+    const firstApprovalDayRow = approvalDialog.querySelector('.nodu-mobile-event-management-day-row');
+    expect(firstApprovalDayRow?.querySelector('.nodu-mobile-event-management-day-main .nodu-mobile-event-management-day-phase')).toBeInTheDocument();
+    expect(firstApprovalDayRow?.lastElementChild).toHaveClass('nodu-mobile-event-management-day-hours');
 
     fireEvent.click(within(applicationsSection as HTMLElement).getByRole('button', { name: 'Schválit přihlášku Jana Nova' }));
     await waitFor(() => expect(approveEventApplication).toHaveBeenCalledWith(12));

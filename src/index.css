@@ -1430,12 +1430,12 @@ button.nodu-mobile-event-info-row:focus-visible {
 .nodu-mobile-event-management-day-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.35rem 0.55rem;
+  gap: 0.25rem 0.55rem;
   align-items: center;
   border: 1px solid rgb(var(--nodu-text-rgb) / 0.08);
   border-radius: 13px;
   background: rgb(var(--nodu-bg-rgb) / 0.64);
-  padding: 0.55rem 0.6rem;
+  padding: 0.5rem 0.6rem;
 }
 
 .nodu-mobile-event-management-day-main {
@@ -1465,7 +1465,9 @@ button.nodu-mobile-event-info-row:focus-visible {
 }
 
 .nodu-mobile-event-management-day-phase {
-  grid-column: 1 / -1;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
 }
 
 .nodu-mobile-event-management-actions {

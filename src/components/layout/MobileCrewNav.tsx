@@ -3,7 +3,7 @@ import { getNavItemsForRole, type NavItemId } from '../../constants';
 import { useAppContext } from '../../context/useAppContext';
 
 const mobileLabels: Partial<Record<NavItemId, string>> = {
-  'my-shifts': 'Směny',
+  'my-shifts': 'Přehled',
   events: 'Akce',
   'my-timelogs': 'Výkazy',
   'my-invoices': 'Faktury',
@@ -44,7 +44,7 @@ const MobileCrewNav: React.FC<MobileCrewNavProps> = ({ badgeCounts }) => {
           <button
             key={item.id}
             type="button"
-            aria-label={item.label}
+            aria-label={item.id === 'my-shifts' ? label : item.label}
             aria-current={isActive ? 'page' : undefined}
             onClick={() => handleNavClick(item.id)}
             className={`nodu-mobile-crew-nav-item ${isActive ? 'nodu-mobile-crew-nav-item--active' : ''}`}

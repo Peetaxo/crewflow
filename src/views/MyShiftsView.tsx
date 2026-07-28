@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Calendar, Clock, CheckCircle2, Receipt } from 'lucide-react';
+import { ArrowRight, Calendar, CheckCircle2, Clock, FileText, Receipt, WalletCards } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { format, parseISO } from 'date-fns';
 import { useAuth } from '../app/providers/useAuth';
 import { useAppContext } from '../context/useAppContext';
-import { Contractor, Event, Invoice, ReceiptItem, Timelog } from '../types';
+import { Contractor, Event } from '../types';
 import { calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';
 import { useEventsQuery } from '../features/events/queries/useEventsQuery';
@@ -128,103 +128,231 @@ const MyShiftsView = () => {
     setEventTab('overview');
   };
 
+  const nextShift = useMemo(() => (
+    categorized.upcoming
+      .flatMap((timelog) => {
+        const event = events.find((item) => item.id === timelog.eid);
+        const project = resolveShiftProject(event, projects);
+        if (!event || !project) return [];
+
+        return [{
+          timelog,
+          event,
+          project,
+          hours: calculateTotalHours(timelog.days),
+        }];
+      })
+      .sort((a, b) => {
+        const firstDate = `${a.event.startDate}T${a.event.startTime ?? a.timelog.days[0]?.f ?? '00:00'}`;
+        const secondDate = `${b.event.startDate}T${b.event.startTime ?? b.timelog.days[0]?.f ?? '00:00'}`;
+
+        return firstDate.localeCompare(secondDate);
+      })[0] ?? null
+  ), [categorized.upcoming, events, projects]);
+
+  const overviewStats = [
+    {
+      label: 'Vyděláno',
+      value: formatCurrency(stats.totalEarned),
+      sub: 'Proplaceno',
+      icon: Receipt,
+      tone: 'success',
+    },
+    {
+      label: 'K vyplacení',
+      value: formatCurrency(stats.toPay),
+      sub: 'Odeslané faktury',
+      icon: WalletCards,
+      tone: 'info',
+    },
+    {
+      label: 'Ke schválení',
+      value: `${stats.pendingHours.toFixed(1)} h`,
+      sub: 'Čeká na kontrolu',
+      icon: CheckCircle2,
+      tone: 'warning',
+    },
+    {
+      label: 'Odpracováno',
+      value: `${stats.totalHours.toFixed(1)} h`,
+      sub: 'Schváleno',
+      icon: Calendar,
+      tone: 'neutral',
+    },
+    {
+      label: 'Účtenky',
+      value: formatCurrency(stats.receiptToPay),
+      sub: 'K proplacení',
+      icon: Receipt,
+      tone: 'receipt',
+    },
+  ];
+
+  const quickActions = [
+    { label: 'Akce', icon: Calendar, tab: 'events' },
+    { label: 'Výkazy', icon: FileText, tab: 'my-timelogs' },
+    { label: 'Faktury', icon: WalletCards, tab: 'my-invoices' },
+    { label: 'Účtenky', icon: Receipt, tab: 'my-receipts' },
+  ];
+
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      <div className="mb-8 flex items-start justify-between gap-4 md:items-center">
-        <div>
-          <h1 className="text-xl font-bold text-[var(--nodu-text)]">Moje smeny</h1>
-          <p className="text-sm text-[var(--nodu-text-soft)]">Vitejte zpet, {displayName}</p>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="nodu-my-shifts-shell">
+      <div className="nodu-my-shifts-hero">
+        <div className="min-w-0">
+          <div className="nodu-my-shifts-kicker">Crew</div>
+          <h1 className="nodu-my-shifts-title">Přehled</h1>
+          <p className="nodu-my-shifts-lead">Vítejte zpět, {displayName}</p>
         </div>
         <MobileSettingsButton />
       </div>
 
-      <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-5">
-        {[
-          { label: 'Vydelano celkem', value: formatCurrency(stats.totalEarned), sub: 'Z proplacenych faktur', bg: 'bg-white border-[var(--nodu-border)]', icon: Receipt, iconBg: 'bg-[var(--nodu-success-bg)] text-[var(--nodu-success-text)]', labelCls: 'text-[var(--nodu-success-text)]', valueCls: 'text-[var(--nodu-text)]', subCls: 'text-[var(--nodu-text-soft)]' },
-          { label: 'K vyplaceni', value: formatCurrency(stats.toPay), sub: 'Odeslane faktury', bg: 'bg-white border-[var(--nodu-border)]', icon: Clock, iconBg: 'bg-[var(--nodu-info-bg)] text-[var(--nodu-info-text)]', labelCls: 'text-[var(--nodu-info-text)]', valueCls: 'text-[var(--nodu-text)]', subCls: 'text-[var(--nodu-text-soft)]' },
-          { label: 'Uctenky k proplaceni', value: formatCurrency(stats.receiptToPay), sub: 'Schvalene uctenky', bg: 'bg-white border-[var(--nodu-border)]', icon: Receipt, iconBg: 'bg-[var(--nodu-warning-bg)] text-[var(--nodu-warning-text)]', labelCls: 'text-[var(--nodu-warning-text)]', valueCls: 'text-[var(--nodu-text)]', subCls: 'text-[var(--nodu-text-soft)]' },
-          { label: 'Ke schvaleni', value: `${stats.pendingHours.toFixed(1)} h`, sub: 'Ceka na schvaleni', bg: 'bg-white border-[var(--nodu-border)]', icon: CheckCircle2, iconBg: 'bg-[var(--nodu-warning-bg)] text-[var(--nodu-warning-text)]', labelCls: 'text-[var(--nodu-warning-text)]', valueCls: 'text-[var(--nodu-text)]', subCls: 'text-[var(--nodu-text-soft)]' },
-          { label: 'Celkem odpracovano', value: `${stats.totalHours.toFixed(1)} h`, sub: 'Schvalene smeny', bg: 'bg-white border-[var(--nodu-border)]', icon: Calendar, iconBg: 'bg-[rgba(var(--nodu-text-rgb),0.06)] text-[var(--nodu-text-soft)]', labelCls: 'text-[var(--nodu-text-soft)]', valueCls: 'text-[var(--nodu-text)]', subCls: 'text-[var(--nodu-text-soft)]' },
-        ].map((stat) => (
-          <div key={stat.label} className={`${stat.bg} rounded-[22px] border p-4 shadow-[0_16px_34px_rgba(var(--nodu-text-rgb),0.06)]`}>
-            <div className="mb-2 flex items-center gap-3">
-              <div className={`rounded-lg p-2 ${stat.iconBg}`}>
-                <stat.icon size={18} />
-              </div>
-              <span className={`text-[10px] font-bold uppercase tracking-wider ${stat.labelCls}`}>{stat.label}</span>
+      <section className="nodu-my-shifts-next-card" aria-labelledby="my-shifts-next-title">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="nodu-my-shifts-kicker">Nejbližší směna</div>
+            <h2 id="my-shifts-next-title" className="nodu-my-shifts-next-title">
+              {nextShift ? nextShift.event.name : 'Zatím žádná směna'}
+            </h2>
+            <p className="nodu-my-shifts-next-sub">
+              {nextShift ? nextShift.project.client : 'Nové možnosti najdete v akcích.'}
+            </p>
+          </div>
+          {nextShift && (
+            <span className="nodu-my-shifts-job-chip">{nextShift.project.id}</span>
+          )}
+        </div>
+
+        {nextShift ? (
+          <>
+            <div className="nodu-my-shifts-next-meta">
+              <span>
+                <Calendar size={15} aria-hidden="true" />
+                {formatShortDate(nextShift.event.startDate)} · {nextShift.event.startTime ?? nextShift.timelog.days[0]?.f}
+              </span>
+              <span>
+                <Clock size={15} aria-hidden="true" />
+                {nextShift.hours.toFixed(1)} h v evidenci
+              </span>
             </div>
-            <div className={`text-2xl font-bold ${stat.valueCls}`}>{stat.value}</div>
-            <p className={`mt-1 text-[10px] ${stat.subCls}`}>{stat.sub}</p>
+            <button type="button" className="nodu-my-shifts-primary-action" onClick={() => openEventDetail(nextShift.event)}>
+              Otevřít akci <ArrowRight size={16} aria-hidden="true" />
+            </button>
+          </>
+        ) : (
+          <button type="button" className="nodu-my-shifts-primary-action" onClick={() => setCurrentTab('events')}>
+            Procházet akce <ArrowRight size={16} aria-hidden="true" />
+          </button>
+        )}
+      </section>
+
+      <section className="nodu-my-shifts-quick-panel" aria-labelledby="my-shifts-quick-title">
+        <div className="flex items-center justify-between gap-3">
+          <h2 id="my-shifts-quick-title">Rychlý vstup</h2>
+          <span>{categorized.upcoming.length} aktivní</span>
+        </div>
+        <div className="nodu-my-shifts-quick-grid">
+          {quickActions.map((action) => (
+            <button
+              key={action.tab}
+              type="button"
+              className="nodu-my-shifts-quick-action"
+              onClick={() => setCurrentTab(action.tab)}
+            >
+              <action.icon size={18} aria-hidden="true" />
+              <span>{action.label}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <div className="nodu-my-shifts-stats-grid">
+        {overviewStats.map((stat) => (
+          <div key={stat.label} className={`nodu-my-shifts-stat-card nodu-my-shifts-stat-card--${stat.tone}`}>
+            <div className="nodu-my-shifts-stat-topline">
+              <div className="nodu-my-shifts-stat-icon">
+                <stat.icon size={17} aria-hidden="true" />
+              </div>
+              <span>{stat.label}</span>
+            </div>
+            <div className="nodu-my-shifts-stat-value">{stat.value}</div>
+            <p>{stat.sub}</p>
           </div>
         ))}
       </div>
 
-      <div className="mb-6 space-y-4">
-        <div className="flex w-fit max-w-full flex-nowrap items-center gap-1 overflow-x-auto rounded-xl border border-[var(--nodu-border)] bg-white p-1">
+      <section className="nodu-my-shifts-list-panel" aria-labelledby="my-shifts-list-title">
+        <div className="nodu-my-shifts-section-header">
+          <div>
+            <div className="nodu-my-shifts-kicker">Workflow</div>
+            <h2 id="my-shifts-list-title">Směny a výkazy</h2>
+          </div>
+        </div>
+
+        <div className="nodu-my-shifts-tabs">
           {[
-            { id: 'upcoming' as const, lbl: 'Nadchazejici', count: categorized.upcoming.length },
-            { id: 'processing' as const, lbl: 'Zpracovava se', count: categorized.processing.length },
-            { id: 'invoiced' as const, lbl: 'Vyuctovane', count: categorized.invoiced.length },
+            { id: 'upcoming' as const, lbl: 'Nadcházející', count: categorized.upcoming.length },
+            { id: 'processing' as const, lbl: 'Zpracování', count: categorized.processing.length },
+            { id: 'invoiced' as const, lbl: 'Vyúčtované', count: categorized.invoiced.length },
             { id: 'invoices' as const, lbl: 'Moje faktury', count: myInvoices.length },
           ].map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex shrink-0 items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-all ${activeTab === tab.id ? 'bg-[var(--nodu-accent)] text-white shadow-sm' : 'text-[var(--nodu-text-soft)] hover:bg-[var(--nodu-accent-soft)] hover:text-[var(--nodu-text)]'}`}
+              className={`nodu-my-shifts-tab ${activeTab === tab.id ? 'nodu-my-shifts-tab--active' : ''}`}
             >
               {tab.lbl}
-              {tab.count > 0 && <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${activeTab === tab.id ? 'bg-white/22' : 'bg-[rgba(var(--nodu-text-rgb),0.06)]'}`}>{tab.count}</span>}
+              {tab.count > 0 && <span>{tab.count}</span>}
             </button>
           ))}
         </div>
-      </div>
 
-      <AnimatePresence mode="wait">
-        {activeTab !== 'invoices' ? (
-          <motion.div key={activeTab} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {filteredData[activeTab].map((timelog) => {
-              const event = events.find((item) => item.id === timelog.eid);
-              const project = resolveShiftProject(event, projects);
-              if (!event || !project) return null;
-              return <ShiftCard key={timelog.id} timelog={timelog} event={event} project={project} onClick={() => openEventDetail(event)} />;
-            })}
-            {filteredData[activeTab].length === 0 && <div className="col-span-full rounded-2xl border border-dashed border-[var(--nodu-border)] bg-[var(--nodu-paper-strong)] py-12 text-center text-sm text-[var(--nodu-text-soft)]">{searchQuery ? 'Nebyly nalezeny zadne vysledky' : 'Zadne zaznamy'}</div>}
-          </motion.div>
-        ) : (
-          <motion.div key="invoices" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="space-y-3">
-            {filteredData.invoices.map((invoice) => (
-              <div key={invoice.id} className="flex items-center justify-between rounded-2xl border border-[var(--nodu-border)] bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
-                <div className="flex items-center gap-4">
-                  <div className="rounded-xl bg-[var(--nodu-accent-soft)] p-2 text-[var(--nodu-accent)]"><Receipt size={20} /></div>
-                  <div>
-                    <div className="text-xs font-bold text-[var(--nodu-text)]">{invoice.id}</div>
-                    <div className="text-[10px] text-[var(--nodu-text-soft)]">{invoice.job} · {invoice.sentAt ? formatShortDate(invoice.sentAt) : '-'}</div>
+        <AnimatePresence mode="wait">
+          {activeTab !== 'invoices' ? (
+            <motion.div key={activeTab} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="nodu-my-shifts-card-grid">
+              {filteredData[activeTab].map((timelog) => {
+                const event = events.find((item) => item.id === timelog.eid);
+                const project = resolveShiftProject(event, projects);
+                if (!event || !project) return null;
+                return <ShiftCard key={timelog.id} timelog={timelog} event={event} project={project} onClick={() => openEventDetail(event)} />;
+              })}
+              {filteredData[activeTab].length === 0 && <div className="nodu-my-shifts-empty">{searchQuery ? 'Nebyly nalezeny žádné výsledky' : 'Žádné záznamy'}</div>}
+            </motion.div>
+          ) : (
+            <motion.div key="invoices" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="space-y-3">
+              {filteredData.invoices.map((invoice) => (
+                <div key={invoice.id} className="nodu-my-shifts-invoice-row">
+                  <div className="flex items-center gap-3">
+                    <div className="nodu-my-shifts-invoice-icon"><Receipt size={18} aria-hidden="true" /></div>
+                    <div>
+                      <div className="text-xs font-bold text-[var(--nodu-text)]">{invoice.id}</div>
+                      <div className="text-[10px] text-[var(--nodu-text-soft)]">{invoice.job} · {invoice.sentAt ? formatShortDate(invoice.sentAt) : '-'}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <div className="text-xs font-bold text-[var(--nodu-text)]">{formatCurrency(invoice.total)}</div>
+                      <div className="text-[10px] text-[var(--nodu-text-soft)]">{invoice.hours}h + {invoice.km}km</div>
+                    </div>
+                    <StatusBadge status={invoice.status} />
                   </div>
                 </div>
-                <div className="flex items-center gap-6">
-                  <div className="text-right">
-                    <div className="text-xs font-bold text-[var(--nodu-text)]">{formatCurrency(invoice.total)}</div>
-                    <div className="text-[10px] text-[var(--nodu-text-soft)]">{invoice.hours}h + {invoice.km}km</div>
-                  </div>
-                  <StatusBadge status={invoice.status} />
-                </div>
-              </div>
-            ))}
-            {filteredData.invoices.length === 0 && <div className="rounded-2xl border border-dashed border-[var(--nodu-border)] bg-[var(--nodu-paper-strong)] py-12 text-center text-sm text-[var(--nodu-text-soft)]">{searchQuery ? 'Nebyly nalezeny zadne vysledky' : 'Zatim zadne faktury'}</div>}
-          </motion.div>
-        )}
-      </AnimatePresence>
+              ))}
+              {filteredData.invoices.length === 0 && <div className="nodu-my-shifts-empty">{searchQuery ? 'Nebyly nalezeny žádné výsledky' : 'Zatím žádné faktury'}</div>}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </section>
 
-      <div className="mt-8 rounded-[24px] border border-[var(--nodu-border)] bg-white p-6 shadow-[0_18px_40px_rgba(var(--nodu-text-rgb),0.06)]">
+      <div className="nodu-my-shifts-billing-panel">
         <div className="mb-6 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
           <div>
-            <h2 className="text-sm font-bold uppercase tracking-wider text-[var(--nodu-text)]">Fakturace za dane obdobi</h2>
-            <p className="text-xs text-[var(--nodu-text-soft)]">Prehled vasich prijmu</p>
+            <h2 className="text-sm font-bold uppercase tracking-wider text-[var(--nodu-text)]">Fakturace za dané období</h2>
+            <p className="text-xs text-[var(--nodu-text-soft)]">Přehled vašich příjmů</p>
           </div>
           <div className="flex gap-1 rounded-xl border border-[var(--nodu-border)] bg-white p-1">
             {(['month', 'quarter', 'year'] as const).map((period) => (
               <button key={period} onClick={() => setChartPeriod(period)} className={`rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase transition-all ${chartPeriod === period ? 'bg-[var(--nodu-accent)] text-white shadow-sm' : 'text-[var(--nodu-text-soft)] hover:bg-[var(--nodu-accent-soft)] hover:text-[var(--nodu-text)]'}`}>
-                {period === 'month' ? 'Mesice' : period === 'quarter' ? 'Kvartaly' : 'Roky'}
+                {period === 'month' ? 'Měsíce' : period === 'quarter' ? 'Kvartály' : 'Roky'}
               </button>
             ))}
           </div>

@@ -1,12 +1,13 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Event, Timelog } from '../../types';
+import type { Event, Role, Timelog } from '../../types';
 import MobileTimelogEditModal from './MobileTimelogEditModal';
 
 const testState = vi.hoisted(() => ({
   editingTimelog: null as Timelog | null,
   cloneDependencies: false,
+  role: 'crew' as Role,
 }));
 
 const testMocks = vi.hoisted(() => ({
@@ -51,7 +52,7 @@ vi.mock('../../context/useAppContext', () => ({
     setEditingTimelog: testMocks.setEditingTimelog,
     setCurrentTab: testMocks.setCurrentTab,
     setSelectedContractorProfileId: testMocks.setSelectedContractorProfileId,
-    role: 'crew',
+    role: testState.role,
   }),
 }));
 
@@ -105,6 +106,7 @@ describe('MobileTimelogEditModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     testState.cloneDependencies = false;
+    testState.role = 'crew';
     testState.editingTimelog = {
       id: 1,
       eid: 1,
@@ -135,6 +137,16 @@ describe('MobileTimelogEditModal', () => {
     expect(screen.getAllByRole('button', { name: 'Zavřít' })).toHaveLength(1);
     expect(screen.getByText('18.0h')).toBeInTheDocument();
     expect(screen.getByText('5 400 Kc')).toBeInTheDocument();
+  });
+
+  it('renders as a top-level modal above mobile event detail dialogs', () => {
+    render(<MobileTimelogEditModal />);
+
+    const dialog = screen.getByRole('dialog', { name: 'Upravit výkaz' });
+
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog.parentElement).toHaveClass('z-[90]');
+    expect(dialog.parentElement).not.toHaveClass('z-50');
   });
 
   it('adds a custom calendar day only after confirming the selected date', async () => {
@@ -378,6 +390,16 @@ describe('MobileTimelogEditModal', () => {
       ]),
     })));
     expect(testMocks.setEditingTimelog).toHaveBeenCalledWith(null);
+  });
+
+  it('keeps the review submission action out of the management edit workflow', () => {
+    testState.role = 'crewhead';
+
+    render(<MobileTimelogEditModal />);
+
+    expect(screen.getByRole('button', { name: 'Uložit změny' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Uložit výkaz' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Odeslat ke kontrole' })).not.toBeInTheDocument();
   });
 
   it('saves a rejected Crew report back as a draft without submitting it', async () => {

@@ -1,11 +1,11 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Timelog } from '../../types';
+import type { Role, Timelog } from '../../types';
 import TimelogEditModal from './TimelogEditModal';
 
 let mockIsMobile = false;
-let role = 'crew' as const;
+let role: Role = 'crew';
 let editingTimelog: Timelog | null = null;
 let setEditingTimelogMock = vi.fn();
 
@@ -91,6 +91,15 @@ describe('TimelogEditModal responsive switch', () => {
 
   it('uses the mobile timelog editor for Crew on mobile', () => {
     mockIsMobile = true;
+
+    render(<TimelogEditModal />);
+
+    expect(screen.getByTestId('mobile-timelog-modal')).toBeInTheDocument();
+  });
+
+  it.each(['crewhead', 'coo'] as const)('uses the mobile timelog editor for %s on mobile', (mobileRole) => {
+    mockIsMobile = true;
+    role = mobileRole;
 
     render(<TimelogEditModal />);
 

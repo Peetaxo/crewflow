@@ -476,7 +476,8 @@ const MobileTimelogEditModal: React.FC = () => {
     ? upsertTimelogDay(editingTimelog.days, committedDraftDay, currentEntryKey ?? undefined)
     : editingTimelog.days;
   const totalHours = calculateTotalHours(displayDays);
-  const canSubmitCurrentTimelog = canSubmitTimelog(editingTimelog, role);
+  const isCrewWorkflow = role === 'crew';
+  const canSubmitCurrentTimelog = isCrewWorkflow && canSubmitTimelog(editingTimelog, role);
 
   const openContractorDetail = () => {
     if (!contractor.profileId) return;
@@ -741,8 +742,13 @@ const MobileTimelogEditModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-[color:var(--nodu-paper)]">
-      <section className="nodu-mobile-timelog-modal" aria-labelledby="mobile-timelog-title">
+    <div className="fixed inset-0 z-[90] flex items-end bg-[color:var(--nodu-paper)]">
+      <section
+        className="nodu-mobile-timelog-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mobile-timelog-title"
+      >
         <header className="nodu-mobile-timelog-header">
           <div className="min-w-0">
             <h3 id="mobile-timelog-title" className="text-xl font-semibold tracking-[-0.03em] text-[color:var(--nodu-text)]">
@@ -1113,7 +1119,7 @@ const MobileTimelogEditModal: React.FC = () => {
             variant={canSubmitCurrentTimelog ? 'outline' : 'default'}
             onClick={handleSaveDraft}
           >
-            <Save size={16} /> Uložit výkaz
+            <Save size={16} /> {isCrewWorkflow ? 'Uložit výkaz' : 'Uložit změny'}
           </Button>
           {canSubmitCurrentTimelog && (
             <Button

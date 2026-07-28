@@ -23,7 +23,7 @@ const TimelogEditModal = () => {
   } = useAppContext();
   const isMobile = useIsMobile();
 
-  if (isMobile && role === 'crew') {
+  if (isMobile) {
     return <MobileTimelogEditModal />;
   }
 

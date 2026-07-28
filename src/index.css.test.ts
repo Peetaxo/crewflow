@@ -126,6 +126,8 @@ describe('nodu CSS helpers', () => {
     expect(mobileEventWithdrawButtonRule).toContain('background: rgb(254 242 242 / 0.94);');
     expect(mobileEventWithdrawButtonRule).toContain('color: rgb(185 28 28);');
     expect(mobileEventWithdrawalDialogRule).toContain('position: fixed;');
+    expect(mobileEventDetailRule).toContain('touch-action: pan-y;');
+    expect(mobileEventDetailRule).toContain('overscroll-behavior-x: contain;');
     expect(css).not.toContain('.nodu-mobile-timelog-date-input');
     expect(css).not.toContain('.nodu-mobile-timelog-report-editor {\n  border-color: rgb(var(--nodu-text-rgb) / 0.1);');
     expect(sidebarShellRule).not.toContain('255, 250, 244');

@@ -298,10 +298,27 @@ describe('EventDetailView', () => {
     expect(setSelectedEventId).not.toHaveBeenCalled();
 
     fireEvent.touchStart(mobileDetail!, {
-      touches: [{ clientX: 12, clientY: 160 }],
+      touches: [{ clientX: 52, clientY: 160 }],
     });
     fireEvent.touchEnd(mobileDetail!, {
-      changedTouches: [{ clientX: 92, clientY: 166 }],
+      changedTouches: [{ clientX: 132, clientY: 166 }],
+    });
+
+    expect(setSelectedEventId).toHaveBeenCalledWith(null);
+
+    setSelectedEventId.mockClear();
+
+    fireEvent.pointerDown(mobileDetail!, {
+      clientX: 52,
+      clientY: 160,
+      pointerId: 1,
+      pointerType: 'mouse',
+    });
+    fireEvent.pointerUp(mobileDetail!, {
+      clientX: 132,
+      clientY: 166,
+      pointerId: 1,
+      pointerType: 'mouse',
     });
 
     expect(setSelectedEventId).toHaveBeenCalledWith(null);

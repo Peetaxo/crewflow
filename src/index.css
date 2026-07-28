@@ -569,6 +569,8 @@ tbody tr:hover td {
   min-height: 100dvh;
   padding-bottom: calc(6.5rem + env(safe-area-inset-bottom));
   color: var(--nodu-text);
+  overscroll-behavior-x: contain;
+  touch-action: pan-y;
 }
 
 .nodu-mobile-event-scroll {

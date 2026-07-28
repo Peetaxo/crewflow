@@ -286,13 +286,32 @@ describe('EventDetailView', () => {
     const { container } = render(<EventDetailView />);
     const mobileDetail = container.querySelector('.nodu-mobile-event-detail');
     const mobileSwipeEdge = container.querySelector('.nodu-mobile-event-swipe-edge');
+    const mobileSwipeSurface = container.querySelector('.nodu-mobile-event-swipe-surface');
 
     expect(mobileDetail).toBeInTheDocument();
     expect(mobileSwipeEdge).toBeInTheDocument();
+    expect(mobileSwipeSurface).toBeInTheDocument();
 
     fireEvent.touchStart(mobileSwipeEdge!, {
       touches: [{ clientX: 8, clientY: 160 }],
     });
+    fireEvent.touchMove(mobileSwipeEdge!, {
+      touches: [{ clientX: 44, clientY: 162 }],
+    });
+
+    expect(mobileSwipeSurface).toHaveStyle({ '--nodu-mobile-event-swipe-x': '36px' });
+    expect(setSelectedEventId).not.toHaveBeenCalled();
+
+    fireEvent.touchStart(mobileSwipeEdge!, {
+      touches: [{ clientX: 8, clientY: 160 }],
+    });
+    fireEvent.touchMove(mobileSwipeEdge!, {
+      touches: [{ clientX: 96, clientY: 164 }],
+    });
+
+    expect(mobileSwipeSurface).toHaveStyle({ '--nodu-mobile-event-swipe-x': '88px' });
+    expect(setSelectedEventId).not.toHaveBeenCalled();
+
     fireEvent.touchEnd(mobileSwipeEdge!, {
       changedTouches: [{ clientX: 96, clientY: 164 }],
     });
@@ -317,6 +336,13 @@ describe('EventDetailView', () => {
       touches: [{ clientX: 168, clientY: 166 }],
     });
 
+    expect(mobileSwipeSurface).toHaveStyle({ '--nodu-mobile-event-swipe-x': '80px' });
+    expect(setSelectedEventId).not.toHaveBeenCalled();
+
+    fireEvent.touchEnd(mobileDetail!, {
+      changedTouches: [{ clientX: 168, clientY: 166 }],
+    });
+
     expect(setSelectedEventId).toHaveBeenCalledWith(null);
 
     setSelectedEventId.mockClear();
@@ -339,6 +365,16 @@ describe('EventDetailView', () => {
       pointerType: 'mouse',
     });
     fireEvent.pointerMove(mobileDetail!, {
+      clientX: 168,
+      clientY: 166,
+      pointerId: 1,
+      pointerType: 'mouse',
+    });
+
+    expect(mobileSwipeSurface).toHaveStyle({ '--nodu-mobile-event-swipe-x': '80px' });
+    expect(setSelectedEventId).not.toHaveBeenCalled();
+
+    fireEvent.pointerUp(mobileDetail!, {
       clientX: 168,
       clientY: 166,
       pointerId: 1,

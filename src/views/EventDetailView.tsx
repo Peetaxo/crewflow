@@ -110,6 +110,8 @@ const EventDetailView = () => {
   const [showWithdrawalConfirm, setShowWithdrawalConfirm] = useState(false);
   const [showContactDialog, setShowContactDialog] = useState(false);
   const [showMobileApprovalDialog, setShowMobileApprovalDialog] = useState(false);
+  const [mobileEdgeSwipeOffset, setMobileEdgeSwipeOffset] = useState(0);
+  const [mobileEdgeSwipePhase, setMobileEdgeSwipePhase] = useState<'idle' | 'dragging'>('idle');
   const mobileEdgeSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const mobileHistoryEventIdRef = useRef<string | number | null>(null);
   const invoiceApprovalsQuery = useInvoiceApprovalsQuery();
@@ -178,6 +180,12 @@ const EventDetailView = () => {
       window.history.back();
     }
   }, [isMobile, selectedEventId, setSelectedEventId]);
+
+  const resetMobileEdgeSwipe = useCallback(() => {
+    mobileEdgeSwipeStartRef.current = null;
+    setMobileEdgeSwipeOffset(0);
+    setMobileEdgeSwipePhase('idle');
+  }, []);
 
   const event = detail.event;
   const approvalDocuments = invoiceApprovalsQuery.data ?? EMPTY_APPROVAL_DOCUMENTS;
@@ -424,11 +432,13 @@ const EventDetailView = () => {
 
   const startMobileEdgeSwipe = (clientX: number, clientY: number) => {
     if (clientX > MOBILE_EDGE_SWIPE_START_MAX_X) {
-      mobileEdgeSwipeStartRef.current = null;
+      resetMobileEdgeSwipe();
       return;
     }
 
     mobileEdgeSwipeStartRef.current = { x: clientX, y: clientY };
+    setMobileEdgeSwipeOffset(0);
+    setMobileEdgeSwipePhase('dragging');
   };
 
   const completeMobileEdgeSwipe = (clientX: number, clientY: number, shouldFinalize = false) => {
@@ -440,21 +450,26 @@ const EventDetailView = () => {
     const deltaY = Math.abs(clientY - touchStart.y);
 
     if (deltaY > MOBILE_EDGE_SWIPE_MAX_VERTICAL_DRIFT) {
-      mobileEdgeSwipeStartRef.current = null;
+      resetMobileEdgeSwipe();
       return false;
     }
 
-    if (deltaX >= MOBILE_EDGE_SWIPE_MIN_DISTANCE && deltaY <= MOBILE_EDGE_SWIPE_MAX_VERTICAL_DRIFT) {
-      mobileEdgeSwipeStartRef.current = null;
-      closeMobileEventDetail();
-      return true;
-    }
+    const swipeOffset = Math.max(0, deltaX);
+    setMobileEdgeSwipeOffset(Math.min(swipeOffset, window.innerWidth || 390));
 
     if (shouldFinalize) {
       mobileEdgeSwipeStartRef.current = null;
+      setMobileEdgeSwipePhase('idle');
+
+      if (deltaX >= MOBILE_EDGE_SWIPE_MIN_DISTANCE && deltaY <= MOBILE_EDGE_SWIPE_MAX_VERTICAL_DRIFT) {
+        closeMobileEventDetail();
+        return true;
+      }
+
+      setMobileEdgeSwipeOffset(0);
     }
 
-    return false;
+    return swipeOffset > 0;
   };
 
   const finishMobileEdgeSwipe = (clientX: number, clientY: number) => {
@@ -465,7 +480,7 @@ const EventDetailView = () => {
     const touch = touchEvent.touches[0];
 
     if (!touch) {
-      mobileEdgeSwipeStartRef.current = null;
+      resetMobileEdgeSwipe();
       return;
     }
 
@@ -486,7 +501,7 @@ const EventDetailView = () => {
     const touch = touchEvent.changedTouches[0];
 
     if (!touch) {
-      mobileEdgeSwipeStartRef.current = null;
+      resetMobileEdgeSwipe();
       return;
     }
 
@@ -568,6 +583,18 @@ const EventDetailView = () => {
     const handleOpenMobileApproval = () => {
       setShowMobileApprovalDialog(true);
     };
+    const mobileSwipeOpacity = Math.max(0.86, 1 - (mobileEdgeSwipeOffset / 900));
+    const mobileSwipeSurfaceClassName = [
+      'nodu-mobile-event-swipe-surface',
+      mobileEdgeSwipePhase === 'dragging' ? 'nodu-mobile-event-swipe-surface--dragging' : '',
+    ].filter(Boolean).join(' ');
+    const mobileSwipeSurfaceStyle = {
+      '--nodu-mobile-event-swipe-x': `${mobileEdgeSwipeOffset}px`,
+      '--nodu-mobile-event-swipe-opacity': mobileSwipeOpacity.toFixed(3),
+      '--nodu-mobile-event-swipe-transition': mobileEdgeSwipePhase === 'dragging'
+        ? 'none'
+        : 'transform 180ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms ease',
+    } as React.CSSProperties;
     const mobilePendingApplicationsContent = canManageEvents && pendingApplications.length > 0 ? (
       <section className="nodu-mobile-event-section" aria-labelledby="mobile-event-pending-applications-title">
         <div className="nodu-mobile-event-section-heading">
@@ -707,7 +734,7 @@ const EventDetailView = () => {
         onPointerMove={handleMobileDetailPointerMove}
         onPointerUp={handleMobileDetailPointerUp}
         onPointerCancel={() => {
-          mobileEdgeSwipeStartRef.current = null;
+          resetMobileEdgeSwipe();
         }}
       >
         <div
@@ -717,15 +744,16 @@ const EventDetailView = () => {
           onTouchMove={handleMobileDetailTouchMove}
           onTouchEnd={handleMobileDetailTouchEnd}
           onTouchCancel={() => {
-            mobileEdgeSwipeStartRef.current = null;
+            resetMobileEdgeSwipe();
           }}
           onPointerDown={handleMobileDetailPointerDown}
           onPointerMove={handleMobileDetailPointerMove}
           onPointerUp={handleMobileDetailPointerUp}
           onPointerCancel={() => {
-            mobileEdgeSwipeStartRef.current = null;
+            resetMobileEdgeSwipe();
           }}
         />
+        <div className={mobileSwipeSurfaceClassName} style={mobileSwipeSurfaceStyle}>
         <div className="nodu-mobile-event-scroll">
           <header className="nodu-mobile-event-topbar">
             <button
@@ -1034,6 +1062,7 @@ const EventDetailView = () => {
           event={assigningEvent}
           onClose={() => setAssigningEvent(null)}
         />
+        </div>
       </motion.div>
     );
   }

@@ -987,6 +987,18 @@ tbody tr:hover td {
   gap: 0.85rem;
 }
 
+.nodu-mobile-event-swipe-surface {
+  min-height: inherit;
+  opacity: var(--nodu-mobile-event-swipe-opacity, 1);
+  transform: translateX(var(--nodu-mobile-event-swipe-x, 0));
+  transition: var(--nodu-mobile-event-swipe-transition, none);
+  will-change: transform;
+}
+
+.nodu-mobile-event-swipe-surface--dragging {
+  pointer-events: none;
+}
+
 .nodu-mobile-event-swipe-edge {
   position: fixed;
   top: 0;

@@ -32,6 +32,7 @@ describe('nodu CSS helpers', () => {
     const mobileTimelogAddDayConfirmRule = css.match(/\.nodu-mobile-timelog-add-day-confirm\s*\{[\s\S]*?\}/)?.[0];
     const mobilePageFrameRule = css.match(/\.nodu-page-frame--mobile-crew\s*\{[\s\S]*?\}/)?.[0];
     const mobileEventDetailRule = css.match(/\.nodu-mobile-event-detail\s*\{[\s\S]*?\}/)?.[0];
+    const mobileEventSwipeSurfaceRule = css.match(/\.nodu-mobile-event-swipe-surface\s*\{[\s\S]*?\}/)?.[0];
     const mobileEventSwipeEdgeRule = css.match(/\.nodu-mobile-event-swipe-edge\s*\{[\s\S]*?\}/)?.[0];
     const mobileEventFloatingPanelRule = css.match(/\.nodu-mobile-event-floating-panel\s*\{[\s\S]*?\}/)?.[0];
     const mobileEventFloatingPanelCompactRule = css.match(/\.nodu-mobile-event-floating-panel--compact\s*\{[\s\S]*?\}/)?.[0];
@@ -75,6 +76,7 @@ describe('nodu CSS helpers', () => {
       '.nodu-mobile-timelog-add-day-cell',
       '.nodu-mobile-timelog-add-day-cell--selected',
       '.nodu-mobile-timelog-add-day-confirm',
+      '.nodu-mobile-event-swipe-surface',
       '.nodu-mobile-event-swipe-edge',
       '.nodu-mobile-event-floating-panel',
       '.nodu-mobile-event-floating-panel--compact',
@@ -124,6 +126,8 @@ describe('nodu CSS helpers', () => {
     expect(mobileTimelogAddDayConfirmRule).toContain('border-radius: 999px;');
     expect(mobilePageFrameRule).toContain('padding-top: calc(1rem + env(safe-area-inset-top));');
     expect(mobileEventDetailRule).toContain('padding-bottom');
+    expect(mobileEventSwipeSurfaceRule).toContain('transform: translateX(var(--nodu-mobile-event-swipe-x, 0));');
+    expect(mobileEventSwipeSurfaceRule).toContain('opacity: var(--nodu-mobile-event-swipe-opacity, 1);');
     expect(mobileEventSwipeEdgeRule).toContain('position: fixed;');
     expect(mobileEventSwipeEdgeRule).toContain('left: 0;');
     expect(mobileEventSwipeEdgeRule).toContain('touch-action: none;');

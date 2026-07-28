@@ -302,6 +302,24 @@ describe('EventDetailView', () => {
     expect(mobileSwipeSurface).toHaveStyle({ '--nodu-mobile-event-swipe-x': '36px' });
     expect(setSelectedEventId).not.toHaveBeenCalled();
 
+    fireEvent.touchStart(window, {
+      touches: [{ clientX: 18, clientY: 220 }],
+    });
+    fireEvent.touchMove(window, {
+      touches: [{ clientX: 72, clientY: 222 }],
+    });
+
+    expect(mobileSwipeSurface).toHaveStyle({ '--nodu-mobile-event-swipe-x': '54px' });
+    expect(setSelectedEventId).not.toHaveBeenCalled();
+
+    fireEvent.touchEnd(window, {
+      changedTouches: [{ clientX: 104, clientY: 224 }],
+    });
+
+    expect(setSelectedEventId).toHaveBeenCalledWith(null);
+
+    setSelectedEventId.mockClear();
+
     fireEvent.touchStart(mobileSwipeEdge!, {
       touches: [{ clientX: 8, clientY: 160 }],
     });

@@ -187,6 +187,110 @@ const EventDetailView = () => {
     setMobileEdgeSwipePhase('idle');
   }, []);
 
+  const startMobileEdgeSwipe = useCallback((clientX: number, clientY: number) => {
+    if (clientX > MOBILE_EDGE_SWIPE_START_MAX_X) {
+      resetMobileEdgeSwipe();
+      return;
+    }
+
+    mobileEdgeSwipeStartRef.current = { x: clientX, y: clientY };
+    setMobileEdgeSwipeOffset(0);
+    setMobileEdgeSwipePhase('dragging');
+  }, [resetMobileEdgeSwipe]);
+
+  const completeMobileEdgeSwipe = useCallback((clientX: number, clientY: number, shouldFinalize = false) => {
+    const touchStart = mobileEdgeSwipeStartRef.current;
+
+    if (!touchStart) return false;
+
+    const deltaX = clientX - touchStart.x;
+    const deltaY = Math.abs(clientY - touchStart.y);
+
+    if (deltaY > MOBILE_EDGE_SWIPE_MAX_VERTICAL_DRIFT) {
+      resetMobileEdgeSwipe();
+      return false;
+    }
+
+    const swipeOffset = Math.max(0, deltaX);
+    setMobileEdgeSwipeOffset(Math.min(swipeOffset, window.innerWidth || 390));
+
+    if (shouldFinalize) {
+      mobileEdgeSwipeStartRef.current = null;
+      setMobileEdgeSwipePhase('idle');
+
+      if (deltaX >= MOBILE_EDGE_SWIPE_MIN_DISTANCE && deltaY <= MOBILE_EDGE_SWIPE_MAX_VERTICAL_DRIFT) {
+        closeMobileEventDetail();
+        return true;
+      }
+
+      setMobileEdgeSwipeOffset(0);
+    }
+
+    return swipeOffset > 0;
+  }, [closeMobileEventDetail, resetMobileEdgeSwipe]);
+
+  const finishMobileEdgeSwipe = useCallback((clientX: number, clientY: number) => {
+    completeMobileEdgeSwipe(clientX, clientY, true);
+  }, [completeMobileEdgeSwipe]);
+
+  useEffect(() => {
+    if (!isMobile || selectedEventId == null || !detail.event) return undefined;
+
+    const handleWindowTouchStart = (touchEvent: TouchEvent) => {
+      const touch = touchEvent.touches[0];
+
+      if (!touch) {
+        resetMobileEdgeSwipe();
+        return;
+      }
+
+      startMobileEdgeSwipe(touch.clientX, touch.clientY);
+    };
+
+    const handleWindowTouchMove = (touchEvent: TouchEvent) => {
+      const touch = touchEvent.touches[0];
+
+      if (!touch) return;
+
+      if (completeMobileEdgeSwipe(touch.clientX, touch.clientY)) {
+        touchEvent.preventDefault();
+      }
+    };
+
+    const handleWindowTouchEnd = (touchEvent: TouchEvent) => {
+      const touch = touchEvent.changedTouches[0];
+
+      if (!touch) {
+        resetMobileEdgeSwipe();
+        return;
+      }
+
+      finishMobileEdgeSwipe(touch.clientX, touch.clientY);
+    };
+
+    const listenerOptions = { capture: true, passive: false } as AddEventListenerOptions;
+
+    window.addEventListener('touchstart', handleWindowTouchStart, listenerOptions);
+    window.addEventListener('touchmove', handleWindowTouchMove, listenerOptions);
+    window.addEventListener('touchend', handleWindowTouchEnd, listenerOptions);
+    window.addEventListener('touchcancel', resetMobileEdgeSwipe, listenerOptions);
+
+    return () => {
+      window.removeEventListener('touchstart', handleWindowTouchStart, listenerOptions);
+      window.removeEventListener('touchmove', handleWindowTouchMove, listenerOptions);
+      window.removeEventListener('touchend', handleWindowTouchEnd, listenerOptions);
+      window.removeEventListener('touchcancel', resetMobileEdgeSwipe, listenerOptions);
+    };
+  }, [
+    completeMobileEdgeSwipe,
+    detail.event,
+    finishMobileEdgeSwipe,
+    isMobile,
+    resetMobileEdgeSwipe,
+    selectedEventId,
+    startMobileEdgeSwipe,
+  ]);
+
   const event = detail.event;
   const approvalDocuments = invoiceApprovalsQuery.data ?? EMPTY_APPROVAL_DOCUMENTS;
   const eventApprovalDocuments = useMemo(() => (
@@ -428,52 +532,6 @@ const EventDetailView = () => {
       .catch((error) => {
         toast.error(error instanceof Error ? error.message : 'Nepodarilo se aktualizovat vykaz.');
       });
-  };
-
-  const startMobileEdgeSwipe = (clientX: number, clientY: number) => {
-    if (clientX > MOBILE_EDGE_SWIPE_START_MAX_X) {
-      resetMobileEdgeSwipe();
-      return;
-    }
-
-    mobileEdgeSwipeStartRef.current = { x: clientX, y: clientY };
-    setMobileEdgeSwipeOffset(0);
-    setMobileEdgeSwipePhase('dragging');
-  };
-
-  const completeMobileEdgeSwipe = (clientX: number, clientY: number, shouldFinalize = false) => {
-    const touchStart = mobileEdgeSwipeStartRef.current;
-
-    if (!touchStart) return false;
-
-    const deltaX = clientX - touchStart.x;
-    const deltaY = Math.abs(clientY - touchStart.y);
-
-    if (deltaY > MOBILE_EDGE_SWIPE_MAX_VERTICAL_DRIFT) {
-      resetMobileEdgeSwipe();
-      return false;
-    }
-
-    const swipeOffset = Math.max(0, deltaX);
-    setMobileEdgeSwipeOffset(Math.min(swipeOffset, window.innerWidth || 390));
-
-    if (shouldFinalize) {
-      mobileEdgeSwipeStartRef.current = null;
-      setMobileEdgeSwipePhase('idle');
-
-      if (deltaX >= MOBILE_EDGE_SWIPE_MIN_DISTANCE && deltaY <= MOBILE_EDGE_SWIPE_MAX_VERTICAL_DRIFT) {
-        closeMobileEventDetail();
-        return true;
-      }
-
-      setMobileEdgeSwipeOffset(0);
-    }
-
-    return swipeOffset > 0;
-  };
-
-  const finishMobileEdgeSwipe = (clientX: number, clientY: number) => {
-    completeMobileEdgeSwipe(clientX, clientY, true);
   };
 
   const handleMobileDetailTouchStart = (touchEvent: React.TouchEvent<HTMLDivElement>) => {

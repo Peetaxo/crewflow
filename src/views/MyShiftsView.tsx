@@ -16,6 +16,7 @@ import { getProjects, subscribeToProjectChanges } from '../features/projects/ser
 import { getContractors, subscribeToCrewChanges } from '../features/crew/services/crew.service';
 import { useInvoicesQuery } from '../features/invoices/queries/useInvoicesQuery';
 import { categorizeCrewTimelogs, resolveShiftProject } from '../features/crew/services/crew-shift-display';
+import MobileSettingsButton from '../components/layout/MobileSettingsButton';
 
 const MyShiftsView = () => {
   const { darkMode, searchQuery, setCurrentTab, setEventTab, setSelectedEventId } = useAppContext();
@@ -129,11 +130,12 @@ const MyShiftsView = () => {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      <div className="mb-8 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
+      <div className="mb-8 flex items-start justify-between gap-4 md:items-center">
         <div>
           <h1 className="text-xl font-bold text-[var(--nodu-text)]">Moje smeny</h1>
           <p className="text-sm text-[var(--nodu-text-soft)]">Vitejte zpet, {displayName}</p>
         </div>
+        <MobileSettingsButton />
       </div>
 
       <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-5">

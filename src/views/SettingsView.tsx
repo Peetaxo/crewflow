@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Moon, Palette, Sun, UserRound } from 'lucide-react';
+import { ArrowLeft, LogOut, Moon, Palette, Sun, UserRound } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { useAuth } from '../app/providers/useAuth';
@@ -16,9 +16,10 @@ import {
 
 const SettingsView = () => {
   const { darkMode, setDarkMode, settingsSection, setSettingsSection } = useAppContext();
-  const { currentProfileId, profile } = useAuth();
+  const { currentProfileId, profile, signOut } = useAuth();
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   const [profileForm, setProfileForm] = useState({
     name: '',
@@ -101,6 +102,20 @@ const SettingsView = () => {
     }
   };
 
+  const handleSignOut = async () => {
+    if (isSigningOut) return;
+
+    setIsSigningOut(true);
+    try {
+      await signOut();
+      toast.success('Byli jste odhlášeni.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Odhlášení se nepodařilo.');
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
+
   const settingsCards = [
     {
       id: 'profile' as const,
@@ -124,23 +139,44 @@ const SettingsView = () => {
       </div>
 
       {settingsSection === 'menu' && (
-        <div className="grid max-w-3xl grid-cols-1 gap-4 md:grid-cols-2">
-          {settingsCards.map((card) => (
-            <Card
-              key={card.id}
-              className="cursor-pointer text-left transition-all hover:border-[color:rgb(var(--nodu-accent-rgb)/0.24)] hover:shadow-[0_22px_48px_rgba(47,38,31,0.12)]"
-            >
-              <button onClick={() => openSection(card.id)} className="h-full w-full p-0 text-left">
-                <CardHeader>
-                  <div className="mb-2 inline-flex h-11 w-11 items-center justify-center rounded-[16px] bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)]">
-                    <card.icon size={18} />
-                  </div>
-                  <CardTitle className="text-lg">{card.title}</CardTitle>
-                  <CardDescription>{card.description}</CardDescription>
-                </CardHeader>
-              </button>
-            </Card>
-          ))}
+        <div className="max-w-3xl space-y-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {settingsCards.map((card) => (
+              <Card
+                key={card.id}
+                className="cursor-pointer text-left transition-all hover:border-[color:rgb(var(--nodu-accent-rgb)/0.24)] hover:shadow-[0_22px_48px_rgba(47,38,31,0.12)]"
+              >
+                <button onClick={() => openSection(card.id)} className="h-full w-full p-0 text-left">
+                  <CardHeader>
+                    <div className="mb-2 inline-flex h-11 w-11 items-center justify-center rounded-[16px] bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)]">
+                      <card.icon size={18} />
+                    </div>
+                    <CardTitle className="text-lg">{card.title}</CardTitle>
+                    <CardDescription>{card.description}</CardDescription>
+                  </CardHeader>
+                </button>
+              </Card>
+            ))}
+          </div>
+          <Card>
+            <CardContent className="flex items-center justify-between gap-4 p-5">
+              <div>
+                <div className="text-sm font-semibold text-[color:var(--nodu-text)]">Účet</div>
+                <p className="mt-0.5 text-xs text-[color:var(--nodu-text-soft)]">Ukončit aktuální přihlášení.</p>
+              </div>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={handleSignOut}
+                disabled={isSigningOut}
+                className="shrink-0"
+                aria-label="Odhlásit se"
+              >
+                <LogOut size={16} />
+                {isSigningOut ? 'Odhlašuji...' : 'Odhlásit se'}
+              </Button>
+            </CardContent>
+          </Card>
         </div>
       )}
 

@@ -289,19 +289,30 @@ describe('EventDetailView', () => {
     expect(mobileDetail).toBeInTheDocument();
 
     fireEvent.touchStart(mobileDetail!, {
-      touches: [{ clientX: 84, clientY: 160 }],
+      touches: [{ clientX: 128, clientY: 160 }],
     });
     fireEvent.touchEnd(mobileDetail!, {
-      changedTouches: [{ clientX: 172, clientY: 164 }],
+      changedTouches: [{ clientX: 216, clientY: 164 }],
     });
 
     expect(setSelectedEventId).not.toHaveBeenCalled();
 
     fireEvent.touchStart(mobileDetail!, {
-      touches: [{ clientX: 52, clientY: 160 }],
+      touches: [{ clientX: 88, clientY: 160 }],
+    });
+    fireEvent.touchMove(mobileDetail!, {
+      touches: [{ clientX: 168, clientY: 166 }],
+    });
+
+    expect(setSelectedEventId).toHaveBeenCalledWith(null);
+
+    setSelectedEventId.mockClear();
+
+    fireEvent.touchStart(mobileDetail!, {
+      touches: [{ clientX: 88, clientY: 160 }],
     });
     fireEvent.touchEnd(mobileDetail!, {
-      changedTouches: [{ clientX: 132, clientY: 166 }],
+      changedTouches: [{ clientX: 168, clientY: 166 }],
     });
 
     expect(setSelectedEventId).toHaveBeenCalledWith(null);
@@ -309,13 +320,13 @@ describe('EventDetailView', () => {
     setSelectedEventId.mockClear();
 
     fireEvent.pointerDown(mobileDetail!, {
-      clientX: 52,
+      clientX: 88,
       clientY: 160,
       pointerId: 1,
       pointerType: 'mouse',
     });
-    fireEvent.pointerUp(mobileDetail!, {
-      clientX: 132,
+    fireEvent.pointerMove(mobileDetail!, {
+      clientX: 168,
       clientY: 166,
       pointerId: 1,
       pointerType: 'mouse',

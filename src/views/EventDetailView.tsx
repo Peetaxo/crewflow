@@ -36,7 +36,7 @@ import { updateTimelogStatus } from '../features/timelogs/services/timelogs.serv
 import { canCreateTimelog, canEditTimelog } from '../features/timelogs/services/timelog-permissions';
 
 const EMPTY_APPROVAL_DOCUMENTS: InvoiceApprovalDocument[] = [];
-const MOBILE_EDGE_SWIPE_START_MAX_X = 56;
+const MOBILE_EDGE_SWIPE_START_MAX_X = 96;
 const MOBILE_EDGE_SWIPE_MIN_DISTANCE = 64;
 const MOBILE_EDGE_SWIPE_MAX_VERTICAL_DRIFT = 48;
 
@@ -412,18 +412,34 @@ const EventDetailView = () => {
     mobileEdgeSwipeStartRef.current = { x: clientX, y: clientY };
   };
 
-  const finishMobileEdgeSwipe = (clientX: number, clientY: number) => {
+  const completeMobileEdgeSwipe = (clientX: number, clientY: number, shouldFinalize = false) => {
     const touchStart = mobileEdgeSwipeStartRef.current;
-    mobileEdgeSwipeStartRef.current = null;
 
-    if (!touchStart) return;
+    if (!touchStart) return false;
 
     const deltaX = clientX - touchStart.x;
     const deltaY = Math.abs(clientY - touchStart.y);
 
-    if (deltaX >= MOBILE_EDGE_SWIPE_MIN_DISTANCE && deltaY <= MOBILE_EDGE_SWIPE_MAX_VERTICAL_DRIFT) {
-      setSelectedEventId(null);
+    if (deltaY > MOBILE_EDGE_SWIPE_MAX_VERTICAL_DRIFT) {
+      mobileEdgeSwipeStartRef.current = null;
+      return false;
     }
+
+    if (deltaX >= MOBILE_EDGE_SWIPE_MIN_DISTANCE && deltaY <= MOBILE_EDGE_SWIPE_MAX_VERTICAL_DRIFT) {
+      mobileEdgeSwipeStartRef.current = null;
+      setSelectedEventId(null);
+      return true;
+    }
+
+    if (shouldFinalize) {
+      mobileEdgeSwipeStartRef.current = null;
+    }
+
+    return false;
+  };
+
+  const finishMobileEdgeSwipe = (clientX: number, clientY: number) => {
+    completeMobileEdgeSwipe(clientX, clientY, true);
   };
 
   const handleMobileDetailTouchStart = (touchEvent: React.TouchEvent<HTMLDivElement>) => {
@@ -435,6 +451,16 @@ const EventDetailView = () => {
     }
 
     startMobileEdgeSwipe(touch.clientX, touch.clientY);
+  };
+
+  const handleMobileDetailTouchMove = (touchEvent: React.TouchEvent<HTMLDivElement>) => {
+    const touch = touchEvent.touches[0];
+
+    if (!touch) return;
+
+    if (completeMobileEdgeSwipe(touch.clientX, touch.clientY)) {
+      touchEvent.preventDefault();
+    }
   };
 
   const handleMobileDetailTouchEnd = (touchEvent: React.TouchEvent<HTMLDivElement>) => {
@@ -458,6 +484,14 @@ const EventDetailView = () => {
       } catch {
         // Some browser previews do not expose capture for synthetic pointer ids.
       }
+    }
+  };
+
+  const handleMobileDetailPointerMove = (pointerEvent: React.PointerEvent<HTMLDivElement>) => {
+    if (pointerEvent.pointerType === 'touch') return;
+
+    if (completeMobileEdgeSwipe(pointerEvent.clientX, pointerEvent.clientY)) {
+      pointerEvent.preventDefault();
     }
   };
 
@@ -645,11 +679,13 @@ const EventDetailView = () => {
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
         onTouchStart={handleMobileDetailTouchStart}
+        onTouchMove={handleMobileDetailTouchMove}
         onTouchEnd={handleMobileDetailTouchEnd}
         onTouchCancel={() => {
           mobileEdgeSwipeStartRef.current = null;
         }}
         onPointerDown={handleMobileDetailPointerDown}
+        onPointerMove={handleMobileDetailPointerMove}
         onPointerUp={handleMobileDetailPointerUp}
         onPointerCancel={() => {
           mobileEdgeSwipeStartRef.current = null;

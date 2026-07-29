@@ -618,8 +618,11 @@ const MobileTimelogEditModal: React.FC = () => {
   const totalHours = calculateTotalHours(displayDays);
   const isCrewWorkflow = role === 'crew';
   const isCrewHeadCorrection = role === 'crewhead' && editingTimelog.status === 'pending_ch';
-  const shouldRequireCrewConfirmation = isCrewHeadCorrection && (hasDraftChanges || hasReportChanges);
+  const shouldRequireCrewConfirmation = isCrewHeadCorrection;
   const canSubmitCurrentTimelog = isCrewWorkflow && canSubmitTimelog(editingTimelog, role);
+  const saveButtonLabel = isCrewHeadCorrection
+    ? 'Odeslat k potvrzení Crew'
+    : isCrewWorkflow ? 'Uložit výkaz' : 'Uložit změny';
   const submitButtonLabel = editingTimelog.status === 'pending_crew_confirmation'
     ? 'Potvrdit úpravy a odeslat CH'
     : 'Odeslat ke kontrole';
@@ -1331,7 +1334,7 @@ const MobileTimelogEditModal: React.FC = () => {
             variant={canSubmitCurrentTimelog ? 'outline' : 'default'}
             onClick={handleSaveDraft}
           >
-            <Save size={16} /> {isCrewWorkflow ? 'Uložit výkaz' : 'Uložit změny'}
+            <Save size={16} /> {saveButtonLabel}
           </Button>
           {canSubmitCurrentTimelog && (
             <Button

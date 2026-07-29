@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('framer-motion', () => ({
@@ -153,6 +153,73 @@ describe('EventDetailView', () => {
     }));
   });
 
+  it('refreshes the event detail when timelog data changes', async () => {
+    let timelogChangeListener: (() => void) | null = null;
+    const getEventDetailData = vi.fn(() => ({
+      event: { ...event, status: 'upcoming' as const },
+      timelogs: [timelog],
+      contractors: [contractor],
+      receipts: [],
+      applications: [],
+      crewAssignments: [{ eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: contractor.profileId, name: contractor.name }],
+    }));
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        role: 'crew',
+        selectedEventId: 'event-uuid-1',
+        setSelectedEventId,
+        eventTab: 'overview',
+        setEventTab: vi.fn(),
+        setEditingReceipt: vi.fn(),
+        setDeleteConfirm: vi.fn(),
+        setEditingTimelog,
+      }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [contractor],
+      getEventDetailData,
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: requestEventWithdrawalMock,
+      subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn((listener: () => void) => {
+        timelogChangeListener = listener;
+        return () => undefined;
+      }),
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventDetailView } = await import('./EventDetailView');
+
+    render(<EventDetailView />);
+
+    const initialLoadCount = getEventDetailData.mock.calls.length;
+
+    await act(async () => {
+      timelogChangeListener?.();
+    });
+
+    expect(getEventDetailData.mock.calls.length).toBeGreaterThan(initialLoadCount);
+  });
+
   it('renders an info-first mobile Crew event detail with floating evidence action', async () => {
     mobileMockState.isMobile = true;
     const upcomingAssignedEvent = {
@@ -200,6 +267,7 @@ describe('EventDetailView', () => {
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
     vi.doMock('../components/modals/EventEditModal', () => ({
@@ -276,6 +344,7 @@ describe('EventDetailView', () => {
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
     vi.doMock('../components/modals/EventEditModal', () => ({
@@ -459,6 +528,7 @@ describe('EventDetailView', () => {
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
     vi.doMock('../components/modals/EventEditModal', () => ({
@@ -535,6 +605,7 @@ describe('EventDetailView', () => {
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
     vi.doMock('../components/modals/EventEditModal', () => ({
@@ -616,6 +687,7 @@ describe('EventDetailView', () => {
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
     vi.doMock('../components/modals/EventEditModal', () => ({
@@ -692,6 +764,7 @@ describe('EventDetailView', () => {
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
     vi.doMock('../components/modals/EventEditModal', () => ({
@@ -787,6 +860,7 @@ describe('EventDetailView', () => {
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
     vi.doMock('../components/modals/EventEditModal', () => ({
@@ -856,6 +930,7 @@ describe('EventDetailView', () => {
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
     vi.doMock('../components/modals/EventEditModal', () => ({
@@ -937,6 +1012,7 @@ describe('EventDetailView', () => {
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
     vi.doMock('../components/modals/EventEditModal', () => ({
@@ -1045,6 +1121,7 @@ describe('EventDetailView', () => {
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
     vi.doMock('../components/modals/EventEditModal', () => ({
@@ -1107,6 +1184,7 @@ describe('EventDetailView', () => {
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
     vi.doMock('../components/modals/EventEditModal', () => ({
@@ -1170,6 +1248,7 @@ describe('EventDetailView', () => {
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
     vi.doMock('../components/modals/EventEditModal', () => ({
@@ -1227,6 +1306,7 @@ describe('EventDetailView', () => {
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
     vi.doMock('../components/modals/EventEditModal', () => ({
@@ -1283,6 +1363,7 @@ describe('EventDetailView', () => {
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
     vi.doMock('../components/modals/EventEditModal', () => ({
@@ -1339,6 +1420,7 @@ describe('EventDetailView', () => {
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
     vi.doMock('../components/modals/EventEditModal', () => ({
@@ -1395,6 +1477,7 @@ describe('EventDetailView', () => {
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
     vi.doMock('../components/modals/EventEditModal', () => ({
@@ -1500,6 +1583,7 @@ describe('EventDetailView', () => {
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
     vi.doMock('../components/modals/EventEditModal', () => ({
@@ -1591,6 +1675,7 @@ describe('EventDetailView', () => {
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
     vi.doMock('../components/modals/EventEditModal', () => ({
@@ -1667,6 +1752,7 @@ describe('EventDetailView', () => {
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
     vi.doMock('../components/modals/EventEditModal', () => ({
@@ -1728,6 +1814,7 @@ describe('EventDetailView', () => {
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
     vi.doMock('../components/modals/EventEditModal', () => ({
@@ -1799,6 +1886,7 @@ describe('EventDetailView', () => {
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
     vi.doMock('../components/modals/EventEditModal', () => ({
@@ -1866,6 +1954,7 @@ describe('EventDetailView', () => {
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
     vi.doMock('../components/modals/EventEditModal', () => ({
@@ -1940,6 +2029,7 @@ describe('EventDetailView', () => {
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
     vi.doMock('../components/modals/EventEditModal', () => ({

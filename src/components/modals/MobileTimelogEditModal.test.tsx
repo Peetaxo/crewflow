@@ -439,6 +439,25 @@ describe('MobileTimelogEditModal', () => {
     expect(screen.queryByRole('button', { name: 'Odeslat ke kontrole' })).not.toBeInTheDocument();
   });
 
+  it('labels a CrewHead pending review save as sending changes to Crew confirmation', async () => {
+    testState.role = 'crewhead';
+    testState.editingTimelog = {
+      ...testState.editingTimelog!,
+      status: 'pending_ch',
+    };
+
+    render(<MobileTimelogEditModal />);
+
+    expect(screen.getByRole('button', { name: 'Odeslat k potvrzení Crew' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Uložit změny' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Odeslat k potvrzení Crew' }));
+
+    await waitFor(() => expect(testMocks.saveTimelog).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'pending_crew_confirmation',
+    })));
+  });
+
   it('moves a changed CrewHead correction back to Crew confirmation', async () => {
     testState.role = 'crewhead';
     testState.editingTimelog = {
@@ -449,7 +468,7 @@ describe('MobileTimelogEditModal', () => {
     render(<MobileTimelogEditModal />);
 
     selectTime('Od', '10:15');
-    fireEvent.click(screen.getByRole('button', { name: 'Uložit změny' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Odeslat k potvrzení Crew' }));
 
     await waitFor(() => expect(testMocks.saveTimelog).toHaveBeenCalledWith(expect.objectContaining({
       status: 'pending_crew_confirmation',

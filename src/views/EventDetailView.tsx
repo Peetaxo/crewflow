@@ -32,7 +32,7 @@ import {
 import { buildGoogleMapsSearchUrl, getEventAddressLabel } from '../features/events/services/event-location.service';
 import { useInvoiceApprovalsQuery } from '../features/invoices/queries/useInvoiceApprovalsQuery';
 import { getEventApprovalDocuments } from '../features/invoices/services/invoice-approval-sync.service';
-import { updateTimelogStatus } from '../features/timelogs/services/timelogs.service';
+import { subscribeToTimelogChanges, updateTimelogStatus } from '../features/timelogs/services/timelogs.service';
 import { canCreateTimelog, canEditTimelog } from '../features/timelogs/services/timelog-permissions';
 
 const EMPTY_APPROVAL_DOCUMENTS: InvoiceApprovalDocument[] = [];
@@ -129,6 +129,7 @@ const EventDetailView = () => {
   }, [loadDetail]);
 
   useEffect(() => subscribeToEventChanges(loadDetail), [loadDetail]);
+  useEffect(() => subscribeToTimelogChanges(loadDetail), [loadDetail]);
 
   useEffect(() => {
     if (selectedEventId && !detail.event) {

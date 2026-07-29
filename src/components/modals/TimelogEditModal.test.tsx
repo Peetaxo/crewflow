@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Role, Timelog } from '../../types';
 import TimelogEditModal from './TimelogEditModal';
@@ -8,6 +8,9 @@ let mockIsMobile = false;
 let role: Role = 'crew';
 let editingTimelog: Timelog | null = null;
 let setEditingTimelogMock = vi.fn();
+const testMocks = vi.hoisted(() => ({
+  saveTimelog: vi.fn(),
+}));
 
 vi.mock('../../hooks/use-mobile', () => ({
   useIsMobile: () => mockIsMobile,
@@ -70,12 +73,14 @@ vi.mock('../../features/timelogs/services/timelogs.service', () => ({
       },
     ],
   }),
-  saveTimelog: vi.fn(),
+  saveTimelog: testMocks.saveTimelog,
 }));
 
 describe('TimelogEditModal responsive switch', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     setEditingTimelogMock = vi.fn();
+    testMocks.saveTimelog.mockResolvedValue(undefined);
     mockIsMobile = false;
     role = 'crew';
     editingTimelog = {
@@ -128,5 +133,24 @@ describe('TimelogEditModal responsive switch', () => {
         }),
       ],
     }));
+  });
+
+  it('labels CrewHead corrections as sending the report to Crew confirmation', async () => {
+    role = 'crewhead';
+    editingTimelog = {
+      ...editingTimelog!,
+      status: 'pending_ch',
+    };
+
+    render(<TimelogEditModal />);
+
+    expect(screen.getByRole('button', { name: 'Odeslat k potvrzení Crew' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Uložit změny' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Odeslat k potvrzení Crew' }));
+
+    await waitFor(() => expect(testMocks.saveTimelog).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'pending_crew_confirmation',
+    })));
   });
 });

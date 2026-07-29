@@ -37,6 +37,7 @@ const TimelogEditModal = () => {
 
   const totalHours = calculateTotalHours(editingTimelog.days);
   const isCrewHeadCorrection = role === 'crewhead' && editingTimelog.status === 'pending_ch';
+  const saveButtonLabel = isCrewHeadCorrection ? 'Odeslat k potvrzení Crew' : 'Uložit změny';
   const openContractorDetail = () => {
     if (!contractor.profileId) return;
     setEditingTimelog(null);
@@ -284,7 +285,7 @@ const TimelogEditModal = () => {
               }}
               className="flex-1"
             >
-              Uložit změny
+              {saveButtonLabel}
             </Button>
           </div>
         </motion.div>

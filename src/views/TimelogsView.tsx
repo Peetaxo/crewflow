@@ -1,4 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { addMonths, endOfMonth, format, isValid, parseISO, startOfMonth, subMonths } from 'date-fns';
+import { cs } from 'date-fns/locale';
+import { ChevronLeft, ChevronRight, SlidersHorizontal } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
@@ -23,12 +26,28 @@ import {
 } from '../features/timelogs/services/timelogs.service';
 import { useTimelogsQuery } from '../features/timelogs/queries/useTimelogsQuery';
 import { canEditTimelog, canSeeTimelogNote, canSubmitTimelog } from '../features/timelogs/services/timelog-permissions';
+import { useIsMobile } from '../hooks/use-mobile';
 
 interface TimelogsViewProps {
   scope?: 'all' | 'mine';
 }
 
 type ViewMode = 'event' | 'people';
+
+const getLatestTimelogDayDate = (timelogs: Array<{ days: Array<{ d: string }> }>) => {
+  const latestDate = timelogs
+    .flatMap((timelog) => timelog.days.map((day) => day.d))
+    .filter(Boolean)
+    .sort()
+    .at(-1);
+  const parsedDate = latestDate ? parseISO(latestDate) : new Date();
+
+  return isValid(parsedDate) ? parsedDate : new Date();
+};
+
+const hasTimelogDayInRange = (timelog: { days: Array<{ d: string }> }, startDate: string, endDate: string) => (
+  timelog.days.some((day) => day.d >= startDate && day.d <= endDate)
+);
 
 const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
   const {
@@ -39,6 +58,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
     setTimelogFilter,
   } = useAppContext();
   const { currentProfileId } = useAuth();
+  const isMobile = useIsMobile();
   const timelogsQuery = useTimelogsQuery();
   const eventsQuery = useEventsQuery();
   const invoiceApprovalsQuery = useInvoiceApprovalsQuery();
@@ -47,6 +67,8 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [applyingApprovalRowId, setApplyingApprovalRowId] = useState<string | null>(null);
+  const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
+  const [selectedTimelogMonth, setSelectedTimelogMonth] = useState('');
 
   const loadDependencies = useCallback(() => {
     const dependencies = getTimelogDependencies();
@@ -91,31 +113,60 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
     });
   }, [events, findContractor, searchQuery, timelogsQuery.data]);
 
-  const baseTimelogs = scope === 'mine'
-    ? timelogs.filter((timelog) => timelog.contractorProfileId === currentProfileId)
-    : timelogs;
-  const filtered = timelogFilter === 'all' ? baseTimelogs : baseTimelogs.filter((timelog) => timelog.status === timelogFilter);
   const isCrew = role === 'crew';
+  const baseTimelogs = useMemo(() => (
+    scope === 'mine'
+      ? timelogs.filter((timelog) => timelog.contractorProfileId === currentProfileId)
+      : timelogs
+  ), [currentProfileId, scope, timelogs]);
+  const isMobileMineView = scope === 'mine' && isCrew && isMobile;
+  const timelogMonthReferenceDate = useMemo(() => getLatestTimelogDayDate(baseTimelogs), [baseTimelogs]);
+  const selectedTimelogMonthDate = useMemo(() => {
+    const parsedDate = selectedTimelogMonth ? parseISO(selectedTimelogMonth) : timelogMonthReferenceDate;
+    return isValid(parsedDate) ? parsedDate : timelogMonthReferenceDate;
+  }, [selectedTimelogMonth, timelogMonthReferenceDate]);
+  const selectedTimelogMonthStart = format(startOfMonth(selectedTimelogMonthDate), 'yyyy-MM-dd');
+  const selectedTimelogMonthEnd = format(endOfMonth(selectedTimelogMonthDate), 'yyyy-MM-dd');
+  const periodTimelogs = useMemo(() => (
+    isMobileMineView
+      ? baseTimelogs.filter((timelog) => hasTimelogDayInRange(timelog, selectedTimelogMonthStart, selectedTimelogMonthEnd))
+      : baseTimelogs
+  ), [baseTimelogs, isMobileMineView, selectedTimelogMonthEnd, selectedTimelogMonthStart]);
+  const filtered = timelogFilter === 'all'
+    ? periodTimelogs
+    : periodTimelogs.filter((timelog) => timelog.status === timelogFilter);
   const title = scope === 'mine' ? 'Schvalování' : 'Timelogy';
   const pendingStatusForRole = role === 'crewhead' ? 'pending_ch' : 'pending_coo';
   const showPowerAppsPreview = scope === 'all' && role === 'coo';
   const showTimelogNotes = canSeeTimelogNote(role);
+  const getSubmitActionLabel = (timelog: typeof baseTimelogs[number]) => (
+    timelog.status === 'pending_crew_confirmation'
+      ? 'Potvrdit úpravy a odeslat CH'
+      : 'Odeslat ke kontrole CH'
+  );
+
+  useEffect(() => {
+    if (selectedTimelogMonth) return;
+    setSelectedTimelogMonth(format(startOfMonth(timelogMonthReferenceDate), 'yyyy-MM-dd'));
+  }, [selectedTimelogMonth, timelogMonthReferenceDate]);
 
   const filterOptions = useMemo(() => {
     const counts = {
-      all: baseTimelogs.length,
-      draft: baseTimelogs.filter((timelog) => timelog.status === 'draft').length,
-      pending_ch: baseTimelogs.filter((timelog) => timelog.status === 'pending_ch').length,
-      pending_coo: baseTimelogs.filter((timelog) => timelog.status === 'pending_coo').length,
-      approved: baseTimelogs.filter((timelog) => timelog.status === 'approved').length,
-      invoiced: baseTimelogs.filter((timelog) => timelog.status === 'invoiced').length,
-      paid: baseTimelogs.filter((timelog) => timelog.status === 'paid').length,
-      rejected: baseTimelogs.filter((timelog) => timelog.status === 'rejected').length,
+      all: periodTimelogs.length,
+      draft: periodTimelogs.filter((timelog) => timelog.status === 'draft').length,
+      pending_crew_confirmation: periodTimelogs.filter((timelog) => timelog.status === 'pending_crew_confirmation').length,
+      pending_ch: periodTimelogs.filter((timelog) => timelog.status === 'pending_ch').length,
+      pending_coo: periodTimelogs.filter((timelog) => timelog.status === 'pending_coo').length,
+      approved: periodTimelogs.filter((timelog) => timelog.status === 'approved').length,
+      invoiced: periodTimelogs.filter((timelog) => timelog.status === 'invoiced').length,
+      paid: periodTimelogs.filter((timelog) => timelog.status === 'paid').length,
+      rejected: periodTimelogs.filter((timelog) => timelog.status === 'rejected').length,
     };
 
     return [
       { id: 'all', label: 'Vše', count: counts.all },
       { id: 'draft', label: 'Koncepty', count: counts.draft },
+      { id: 'pending_crew_confirmation', label: 'Čeká Crew', count: counts.pending_crew_confirmation },
       { id: 'pending_ch', label: 'Čeká CH', count: counts.pending_ch },
       { id: 'pending_coo', label: 'Čeká COO', count: counts.pending_coo },
       { id: 'approved', label: 'Schváleno', count: counts.approved },
@@ -123,7 +174,21 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
       { id: 'paid', label: 'Zaplaceno', count: counts.paid },
       { id: 'rejected', label: 'Zamítnuto', count: counts.rejected },
     ];
-  }, [baseTimelogs]);
+  }, [periodTimelogs]);
+  const activeFilter = filterOptions.find((filter) => filter.id === timelogFilter) ?? filterOptions[0];
+
+  const selectTimelogFilter = (filterId: string) => {
+    setTimelogFilter(filterId);
+    setMobileFilterOpen(false);
+  };
+
+  const moveTimelogMonth = (direction: 'prev' | 'next') => {
+    const nextDate = direction === 'next'
+      ? addMonths(selectedTimelogMonthDate, 1)
+      : subMonths(selectedTimelogMonthDate, 1);
+
+    setSelectedTimelogMonth(format(startOfMonth(nextDate), 'yyyy-MM-dd'));
+  };
 
   const groupedByEvent = useMemo(() => {
     const groups = new Map<number, { eventId: number; job: string; eventName: string; city: string; startDate: string; timelogs: typeof filtered }>();
@@ -247,7 +312,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
           size="sm"
           className="border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] text-[11px] text-[color:var(--nodu-success-text)] shadow-[0_12px_24px_rgba(47,125,79,0.10)] hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)] hover:text-[color:var(--nodu-success-text)]"
         >
-          Odeslat ke kontrole CH
+          {getSubmitActionLabel(timelog)}
         </Button>
       )}
       {timelog.status === 'pending_ch' && role === 'crewhead' && (
@@ -333,20 +398,86 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
           )}
         </div>
 
-        <div className="flex w-fit flex-wrap gap-1 rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
-          {filterOptions.map((filter) => (
-            <button
-              key={filter.id}
-              onClick={() => setTimelogFilter(filter.id)}
-              className={`inline-flex items-center gap-2 rounded-[14px] px-3 py-2 text-[11px] font-medium transition-all ${timelogFilter === filter.id ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)] shadow-[inset_0_0_0_1px_rgba(255,128,13,0.16)]' : 'text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
-            >
-              <span>{filter.label}</span>
-              <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${timelogFilter === filter.id ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.16)]' : 'bg-[color:rgb(var(--nodu-text-rgb)/0.08)] text-[color:var(--nodu-text-soft)]'}`}>
-                {filter.count}
-              </span>
-            </button>
-          ))}
-        </div>
+        {isMobileMineView ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.94)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
+              <button
+                type="button"
+                onClick={() => moveTimelogMonth('prev')}
+                aria-label="Předchozí měsíc výkazů"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-[14px] text-[color:var(--nodu-text-soft)] transition hover:bg-[color:rgb(var(--nodu-text-rgb)/0.06)] hover:text-[color:var(--nodu-text)]"
+              >
+                <ChevronLeft size={18} aria-hidden="true" />
+              </button>
+              <div className="text-sm font-semibold text-[color:var(--nodu-text)]">
+                {format(selectedTimelogMonthDate, 'LLLL yyyy', { locale: cs })}
+              </div>
+              <button
+                type="button"
+                onClick={() => moveTimelogMonth('next')}
+                aria-label="Další měsíc výkazů"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-[14px] text-[color:var(--nodu-text-soft)] transition hover:bg-[color:rgb(var(--nodu-text-rgb)/0.06)] hover:text-[color:var(--nodu-text)]"
+              >
+                <ChevronRight size={18} aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.94)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
+              <button
+                type="button"
+                onClick={() => setMobileFilterOpen((open) => !open)}
+                aria-expanded={mobileFilterOpen}
+                aria-label={`Filtr výkazů: ${activeFilter.label}, ${activeFilter.count} záznamy`}
+                className="flex w-full items-center justify-between gap-3 rounded-[14px] px-3 py-2.5 text-left transition hover:bg-[color:rgb(var(--nodu-text-rgb)/0.04)]"
+              >
+                <span className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--nodu-text-soft)]">
+                  <SlidersHorizontal size={15} aria-hidden="true" />
+                  Filtr
+                </span>
+                <span className="inline-flex items-center gap-2 text-sm font-semibold text-[color:var(--nodu-text)]">
+                  {activeFilter.label}
+                  <span className="rounded-full bg-[color:rgb(var(--nodu-accent-rgb)/0.14)] px-2 py-0.5 text-xs text-[color:var(--nodu-accent)]">
+                    {activeFilter.count}
+                  </span>
+                </span>
+              </button>
+
+              {mobileFilterOpen && (
+                <div className="grid grid-cols-2 gap-2 px-2 pb-2 pt-1">
+                  {filterOptions.map((filter) => (
+                    <button
+                      key={filter.id}
+                      type="button"
+                      onClick={() => selectTimelogFilter(filter.id)}
+                      aria-label={`${filter.label} ${filter.count}`}
+                      className={`inline-flex items-center justify-between rounded-[14px] px-3 py-2 text-sm font-semibold transition-all ${timelogFilter === filter.id ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)] shadow-[inset_0_0_0_1px_rgba(255,128,13,0.16)]' : 'bg-[color:rgb(var(--nodu-text-rgb)/0.04)] text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
+                    >
+                      <span>{filter.label}</span>
+                      <span className={`rounded-full px-1.5 py-0.5 text-xs ${timelogFilter === filter.id ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.16)]' : 'bg-[color:rgb(var(--nodu-text-rgb)/0.08)]'}`}>
+                        {filter.count}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="flex w-fit flex-wrap gap-1 rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
+            {filterOptions.map((filter) => (
+              <button
+                key={filter.id}
+                onClick={() => setTimelogFilter(filter.id)}
+                className={`inline-flex items-center gap-2 rounded-[14px] px-3 py-2 text-[11px] font-medium transition-all ${timelogFilter === filter.id ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)] shadow-[inset_0_0_0_1px_rgba(255,128,13,0.16)]' : 'text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
+              >
+                <span>{filter.label}</span>
+                <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${timelogFilter === filter.id ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.16)]' : 'bg-[color:rgb(var(--nodu-text-rgb)/0.08)] text-[color:var(--nodu-text-soft)]'}`}>
+                  {filter.count}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {showPowerAppsPreview && approvalPreviewRows.length > 0 && (
@@ -547,7 +678,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                               onClick={() => handleTimelogAction(timelog.id, 'sub')}
                               className="rounded-xl border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] px-3 py-1.5 text-[11px] font-semibold text-[color:var(--nodu-success-text)] shadow-[0_12px_24px_rgba(47,125,79,0.10)] transition hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)]"
                             >
-                              Odeslat ke kontrole CH
+                              {getSubmitActionLabel(timelog)}
                             </button>
                           )}
                           {timelog.status === 'pending_ch' && role === 'crewhead' && (
@@ -620,23 +751,42 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
 
             return (
               <div key={timelog.id} className="nodu-panel rounded-[28px] p-5">
-                <div className="mb-3 flex items-center gap-3 border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] pb-3">
-                  <div className="av w-8 h-8 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>
-                    {contractor.ii}
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-sm font-semibold text-[color:var(--nodu-text)]">{contractor.name}</div>
-                    <div className="mt-0.5 flex items-center gap-1.5">
-                      <span className="jn nodu-job-badge">{event.job}</span>
-                      <span className="text-xs text-[color:var(--nodu-text-soft)]">{event.name}</span>
+                {isMobileMineView ? (
+                  <div className="mb-3 border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] pb-3">
+                    <div className="mb-2 flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                          <span className="jn nodu-job-badge">{event.job}</span>
+                          <StatusBadge status={timelog.status} />
+                        </div>
+                        <div className="text-base font-semibold leading-tight text-[color:var(--nodu-text)]">{event.name}</div>
+                        <div className="mt-1 text-xs text-[color:var(--nodu-text-soft)]">{event.client}</div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <div className="text-lg font-semibold text-[color:var(--nodu-text)]">{totalHours.toFixed(1)}h</div>
+                        {timelog.km > 0 && <div className="text-[10px] text-[color:var(--nodu-text-soft)]">+ {timelog.km} km</div>}
+                      </div>
                     </div>
                   </div>
-                  <StatusBadge status={timelog.status} />
-                  <div className="text-right">
-                    <div className="text-base font-semibold text-[color:var(--nodu-text)]">{totalHours.toFixed(1)}h</div>
-                    {timelog.km > 0 && <div className="text-[10px] text-[color:var(--nodu-text-soft)]">+ {timelog.km} km</div>}
+                ) : (
+                  <div className="mb-3 flex items-center gap-3 border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] pb-3">
+                    <div className="av w-8 h-8 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>
+                      {contractor.ii}
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-sm font-semibold text-[color:var(--nodu-text)]">{contractor.name}</div>
+                      <div className="mt-0.5 flex items-center gap-1.5">
+                        <span className="jn nodu-job-badge">{event.job}</span>
+                        <span className="text-xs text-[color:var(--nodu-text-soft)]">{event.name}</span>
+                      </div>
+                    </div>
+                    <StatusBadge status={timelog.status} />
+                    <div className="text-right">
+                      <div className="text-base font-semibold text-[color:var(--nodu-text)]">{totalHours.toFixed(1)}h</div>
+                      {timelog.km > 0 && <div className="text-[10px] text-[color:var(--nodu-text-soft)]">+ {timelog.km} km</div>}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="mb-3">
                   {timelog.days.map((day, index) => (

@@ -510,16 +510,16 @@ tbody tr:hover td {
 .nodu-mobile-crew-nav {
   position: fixed;
   z-index: 40;
-  right: max(0.75rem, env(safe-area-inset-right));
+  right: max(1.1rem, env(safe-area-inset-right));
   bottom: max(0.75rem, env(safe-area-inset-bottom));
-  left: max(0.75rem, env(safe-area-inset-left));
+  left: max(1.1rem, env(safe-area-inset-left));
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0.25rem;
-  min-height: 4.25rem;
-  padding: 0.35rem;
+  min-height: 4rem;
+  padding: 0.3rem;
   border: 1px solid rgb(var(--nodu-text-rgb) / 0.08);
-  border-radius: 18px;
+  border-radius: 17px;
   background: rgb(var(--nodu-paper-rgb) / 0.94);
   box-shadow: 0 18px 44px rgb(var(--nodu-text-rgb) / 0.16);
   backdrop-filter: blur(18px);
@@ -528,12 +528,12 @@ tbody tr:hover td {
 .nodu-mobile-crew-nav-item {
   display: flex;
   min-width: 0;
-  min-height: 3.25rem;
+  min-height: 3rem;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 0.2rem;
-  border-radius: 14px;
+  border-radius: 13px;
   color: var(--nodu-text-soft);
   font-size: 10px;
   font-weight: 650;
@@ -599,7 +599,6 @@ tbody tr:hover td {
 }
 
 .nodu-my-shifts-next-card,
-.nodu-my-shifts-quick-panel,
 .nodu-my-shifts-list-panel,
 .nodu-my-shifts-billing-panel {
   border: 1px solid rgb(var(--nodu-text-rgb) / 0.08);
@@ -695,57 +694,9 @@ tbody tr:hover td {
   transform: scale(0.98);
 }
 
-.nodu-my-shifts-quick-panel {
-  margin-bottom: 0.9rem;
-  padding: 0.95rem;
-}
-
-.nodu-my-shifts-quick-panel h2,
 .nodu-my-shifts-list-panel h2 {
   font-size: 1.05rem;
   font-weight: 850;
-}
-
-.nodu-my-shifts-quick-panel > div:first-child > span {
-  color: var(--nodu-text-soft);
-  font-size: 0.75rem;
-  font-weight: 750;
-}
-
-.nodu-my-shifts-quick-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.5rem;
-  margin-top: 0.85rem;
-}
-
-.nodu-my-shifts-quick-action {
-  display: flex;
-  min-width: 0;
-  min-height: 4.2rem;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  border: 1px solid rgb(var(--nodu-text-rgb) / 0.08);
-  border-radius: 16px;
-  background: rgb(var(--nodu-paper-rgb) / 0.78);
-  color: var(--nodu-text);
-  font-size: 0.72rem;
-  font-weight: 800;
-  text-align: center;
-  transition:
-    border-color 160ms ease,
-    color 160ms ease,
-    transform 160ms ease;
-}
-
-.nodu-my-shifts-quick-action svg {
-  color: var(--nodu-accent);
-}
-
-.nodu-my-shifts-quick-action:active {
-  transform: scale(0.97);
 }
 
 .nodu-my-shifts-stats-grid {
@@ -826,15 +777,6 @@ tbody tr:hover td {
 
 .nodu-my-shifts-stat-card--warning .nodu-my-shifts-stat-icon {
   background: var(--nodu-warning-bg);
-}
-
-.nodu-my-shifts-stat-card--receipt .nodu-my-shifts-stat-icon,
-.nodu-my-shifts-stat-card--receipt .nodu-my-shifts-stat-topline {
-  color: #8a6b1f;
-}
-
-.nodu-my-shifts-stat-card--receipt .nodu-my-shifts-stat-icon {
-  background: #fff3c7;
 }
 
 .nodu-my-shifts-list-panel {
@@ -974,11 +916,17 @@ tbody tr:hover td {
 }
 
 .nodu-mobile-event-detail {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
   min-height: 100dvh;
-  padding-bottom: calc(6.5rem + env(safe-area-inset-bottom));
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: transparent;
   color: var(--nodu-text);
   overscroll-behavior-x: contain;
   touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
 }
 
 .nodu-mobile-event-scroll {
@@ -988,7 +936,12 @@ tbody tr:hover td {
 }
 
 .nodu-mobile-event-swipe-surface {
-  min-height: inherit;
+  min-height: 100dvh;
+  padding: calc(1rem + env(safe-area-inset-top)) 1rem calc(6.5rem + env(safe-area-inset-bottom));
+  background:
+    radial-gradient(circle at top left, rgb(var(--nodu-surface-rgb) / 0.32), transparent 34%),
+    linear-gradient(180deg, var(--nodu-paper) 0%, var(--nodu-paper-strong) 100%);
+  box-shadow: -18px 0 44px rgb(var(--nodu-text-rgb) / 0.12);
   opacity: var(--nodu-mobile-event-swipe-opacity, 1);
   transform: translateX(var(--nodu-mobile-event-swipe-x, 0));
   transition: var(--nodu-mobile-event-swipe-transition, none);
@@ -1663,11 +1616,11 @@ button.nodu-mobile-event-info-row:focus-visible {
 .nodu-mobile-event-floating-panel {
   position: fixed;
   z-index: 50;
-  right: max(0.75rem, env(safe-area-inset-right));
+  right: max(1.1rem, env(safe-area-inset-right));
   bottom: max(0.75rem, env(safe-area-inset-bottom));
-  left: max(0.75rem, env(safe-area-inset-left));
+  left: max(1.1rem, env(safe-area-inset-left));
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 3.5rem;
+  grid-template-columns: minmax(0, 1fr) 3.25rem;
   grid-template-areas:
     "summary summary"
     "primary secondary";
@@ -1677,7 +1630,11 @@ button.nodu-mobile-event-info-row:focus-visible {
   background: rgb(var(--nodu-paper-rgb) / 0.94);
   box-shadow: 0 18px 42px rgb(var(--nodu-text-rgb) / 0.18);
   backdrop-filter: blur(18px);
-  padding: 0.55rem;
+  padding: 0.45rem;
+  opacity: var(--nodu-mobile-event-swipe-opacity, 1);
+  transform: translateX(var(--nodu-mobile-event-swipe-x, 0));
+  transition: var(--nodu-mobile-event-swipe-transition, none);
+  will-change: transform;
 }
 
 .nodu-mobile-event-floating-panel--compact {
@@ -1830,6 +1787,10 @@ button.nodu-mobile-event-info-row:focus-visible {
 }
 
 .nodu-mobile-event-management-report-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
   margin-top: 0.1rem;
   color: var(--nodu-text-soft);
   font-size: 0.72rem;
@@ -1851,6 +1812,15 @@ button.nodu-mobile-event-info-row:focus-visible {
   flex: 0 0 auto;
   margin-top: 0.05rem;
   white-space: nowrap;
+}
+
+.nodu-mobile-event-management-note {
+  grid-column: 1 / -1;
+  margin: -0.1rem 0 0;
+  color: var(--nodu-text-soft);
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.35;
 }
 
 .nodu-mobile-event-management-day-list {
@@ -2180,6 +2150,24 @@ button.nodu-mobile-event-info-row:focus-visible {
   line-height: 1.4;
 }
 
+.nodu-mobile-timelog-layer {
+  overflow: hidden;
+  background: transparent;
+  color: var(--nodu-text);
+}
+
+.nodu-mobile-timelog-swipe-edge {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 3;
+  width: max(1.75rem, env(safe-area-inset-left));
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .nodu-mobile-timelog-modal {
   display: flex;
   width: 100%;
@@ -2191,7 +2179,17 @@ button.nodu-mobile-event-info-row:focus-visible {
   border-radius: 0;
   background: rgb(var(--nodu-paper-rgb) / 0.98);
   color: var(--nodu-text);
-  box-shadow: none;
+  box-shadow: -18px 0 44px rgb(var(--nodu-text-rgb) / 0.12);
+  opacity: var(--nodu-mobile-timelog-swipe-opacity, 1);
+  transform: translateX(var(--nodu-mobile-timelog-swipe-x, 0));
+  transition: var(--nodu-mobile-timelog-swipe-transition, none);
+  will-change: transform;
+  overscroll-behavior-x: contain;
+  touch-action: pan-y;
+}
+
+.nodu-mobile-timelog-modal--dragging {
+  pointer-events: none;
 }
 
 .nodu-mobile-timelog-header {

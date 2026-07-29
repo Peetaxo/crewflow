@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Calendar, CheckCircle2, Clock, FileText, Receipt, WalletCards } from 'lucide-react';
+import { ArrowRight, Calendar, CheckCircle2, Clock, Receipt, WalletCards } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { format, parseISO } from 'date-fns';
@@ -11,7 +11,6 @@ import StatusBadge from '../components/shared/StatusBadge';
 import { useEventsQuery } from '../features/events/queries/useEventsQuery';
 import ShiftCard from '../components/shared/ShiftCard';
 import { useTimelogsQuery } from '../features/timelogs/queries/useTimelogsQuery';
-import { useReceiptsQuery } from '../features/receipts/queries/useReceiptsQuery';
 import { getProjects, subscribeToProjectChanges } from '../features/projects/services/projects.service';
 import { getContractors, subscribeToCrewChanges } from '../features/crew/services/crew.service';
 import { useInvoicesQuery } from '../features/invoices/queries/useInvoicesQuery';
@@ -23,7 +22,6 @@ const MyShiftsView = () => {
   const { currentProfileId, profile } = useAuth();
   const eventsQuery = useEventsQuery();
   const timelogsQuery = useTimelogsQuery();
-  const receiptsQuery = useReceiptsQuery();
   const invoicesQuery = useInvoicesQuery();
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [projects, setProjects] = useState(() => getProjects() ?? []);
@@ -37,29 +35,26 @@ const MyShiftsView = () => {
 
   useEffect(() => {
     loadData();
-  }, [eventsQuery.data, invoicesQuery.data, loadData, timelogsQuery.data, receiptsQuery.data]);
+  }, [eventsQuery.data, invoicesQuery.data, loadData, timelogsQuery.data]);
 
   useEffect(() => subscribeToCrewChanges(loadData), [loadData]);
   useEffect(() => subscribeToProjectChanges(() => setProjects(getProjects() ?? [])), []);
   const events = useMemo(() => eventsQuery.data ?? [], [eventsQuery.data]);
   const timelogs = timelogsQuery.data ?? [];
-  const receipts = receiptsQuery.data ?? [];
   const invoices = invoicesQuery.data ?? [];
   const meProfileId = currentProfileId ?? me?.profileId ?? null;
   const displayName = me?.name || [profile?.firstName, profile?.lastName].filter(Boolean).join(' ') || 'Crew';
   const myTimelogs = timelogs.filter((timelog) => timelog.contractorProfileId === meProfileId);
   const myInvoices = invoices.filter((invoice) => invoice.contractorProfileId === meProfileId);
-  const myReceipts = receipts.filter((receipt) => receipt.contractorProfileId === meProfileId);
 
   const categorized = useMemo(() => categorizeCrewTimelogs(myTimelogs, events), [myTimelogs, events]);
 
   const stats = useMemo(() => ({
     totalEarned: myInvoices.filter((invoice) => invoice.status === 'paid').reduce((sum, invoice) => sum + invoice.total, 0),
     toPay: myInvoices.filter((invoice) => invoice.status === 'sent').reduce((sum, invoice) => sum + invoice.total, 0),
-    receiptToPay: myReceipts.filter((receipt) => receipt.status === 'approved').reduce((sum, receipt) => sum + receipt.amount, 0),
     pendingHours: categorized.processing.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0),
     totalHours: categorized.invoiced.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0),
-  }), [myInvoices, myReceipts, categorized]);
+  }), [myInvoices, categorized]);
 
   const chartData = useMemo(() => {
     const data: Record<string, { total: number; date: Date }> = {};
@@ -179,20 +174,6 @@ const MyShiftsView = () => {
       icon: Calendar,
       tone: 'neutral',
     },
-    {
-      label: 'Účtenky',
-      value: formatCurrency(stats.receiptToPay),
-      sub: 'K proplacení',
-      icon: Receipt,
-      tone: 'receipt',
-    },
-  ];
-
-  const quickActions = [
-    { label: 'Akce', icon: Calendar, tab: 'events' },
-    { label: 'Výkazy', icon: FileText, tab: 'my-timelogs' },
-    { label: 'Faktury', icon: WalletCards, tab: 'my-invoices' },
-    { label: 'Účtenky', icon: Receipt, tab: 'my-receipts' },
   ];
 
   return (
@@ -243,26 +224,6 @@ const MyShiftsView = () => {
             Procházet akce <ArrowRight size={16} aria-hidden="true" />
           </button>
         )}
-      </section>
-
-      <section className="nodu-my-shifts-quick-panel" aria-labelledby="my-shifts-quick-title">
-        <div className="flex items-center justify-between gap-3">
-          <h2 id="my-shifts-quick-title">Rychlý vstup</h2>
-          <span>{categorized.upcoming.length} aktivní</span>
-        </div>
-        <div className="nodu-my-shifts-quick-grid">
-          {quickActions.map((action) => (
-            <button
-              key={action.tab}
-              type="button"
-              className="nodu-my-shifts-quick-action"
-              onClick={() => setCurrentTab(action.tab)}
-            >
-              <action.icon size={18} aria-hidden="true" />
-              <span>{action.label}</span>
-            </button>
-          ))}
-        </div>
       </section>
 
       <div className="nodu-my-shifts-stats-grid">

@@ -8,12 +8,15 @@ describe('timelog permissions', () => {
   it.each([
     ['crew', 'draft', true],
     ['crew', 'rejected', true],
+    ['crew', 'pending_crew_confirmation', true],
     ['crew', 'pending_ch', false],
     ['crewhead', 'draft', true],
     ['crewhead', 'pending_ch', true],
+    ['crewhead', 'pending_crew_confirmation', false],
     ['crewhead', 'pending_coo', false],
     ['coo', 'draft', false],
     ['coo', 'pending_ch', false],
+    ['coo', 'pending_crew_confirmation', false],
     ['coo', 'pending_coo', false],
   ] satisfies [Role, TimelogStatus, boolean][])('returns edit permission for %s and %s', (role, status, expected) => {
     expect(canEditTimelog(timelogWithStatus(status), role)).toBe(expected);
@@ -28,10 +31,13 @@ describe('timelog permissions', () => {
   it.each([
     ['crew', 'draft', true],
     ['crew', 'rejected', true],
+    ['crew', 'pending_crew_confirmation', true],
     ['crew', 'pending_ch', false],
     ['crewhead', 'draft', true],
     ['crewhead', 'rejected', false],
+    ['crewhead', 'pending_crew_confirmation', false],
     ['coo', 'draft', false],
+    ['coo', 'pending_crew_confirmation', false],
   ] satisfies [Role, TimelogStatus, boolean][])('returns submit permission for %s and %s', (role, status, expected) => {
     expect(canSubmitTimelog(timelogWithStatus(status), role)).toBe(expected);
   });

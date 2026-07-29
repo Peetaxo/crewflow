@@ -9,7 +9,15 @@ export type Json =
 export type AppRole = 'crew' | 'crewhead' | 'coo';
 export type EventStatus = 'planning' | 'upcoming' | 'full' | 'past';
 export type TimelogType = 'pripravy' | 'instal' | 'provoz' | 'deinstal';
-export type TimelogStatus = 'draft' | 'pending_ch' | 'pending_coo' | 'approved' | 'invoiced' | 'paid' | 'rejected';
+export type TimelogStatus =
+  | 'draft'
+  | 'pending_crew_confirmation'
+  | 'pending_ch'
+  | 'pending_coo'
+  | 'approved'
+  | 'invoiced'
+  | 'paid'
+  | 'rejected';
 export type InvoiceStatus = 'draft' | 'sent' | 'paid';
 export type InvoiceApprovalDocumentSource = 'powerapps_document_approval';
 export type PowerAppsApprovalStatus = 'pending' | 'approved' | 'rejected' | 'unknown';

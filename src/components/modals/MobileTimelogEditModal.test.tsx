@@ -149,6 +149,43 @@ describe('MobileTimelogEditModal', () => {
     expect(dialog.parentElement).not.toHaveClass('z-50');
   });
 
+  it('reveals the underlying event detail while swiping the timelog modal back', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
+    vi.useFakeTimers();
+
+    const { container } = render(<MobileTimelogEditModal />);
+    const swipeEdge = container.querySelector('.nodu-mobile-timelog-swipe-edge');
+    const modal = container.querySelector('.nodu-mobile-timelog-modal');
+
+    expect(swipeEdge).toBeInTheDocument();
+    expect(modal).toBeInTheDocument();
+
+    fireEvent.touchStart(swipeEdge!, {
+      touches: [{ clientX: 8, clientY: 164 }],
+    });
+    fireEvent.touchMove(swipeEdge!, {
+      touches: [{ clientX: 70, clientY: 166 }],
+    });
+
+    expect(modal).toHaveStyle({ '--nodu-mobile-timelog-swipe-x': '62px' });
+    expect(modal).toHaveClass('nodu-mobile-timelog-modal--dragging');
+    expect(testMocks.setEditingTimelog).not.toHaveBeenCalledWith(null);
+
+    fireEvent.touchEnd(swipeEdge!, {
+      changedTouches: [{ clientX: 118, clientY: 168 }],
+    });
+
+    expect(modal).toHaveStyle({ '--nodu-mobile-timelog-swipe-x': '390px' });
+    expect(modal).toHaveClass('nodu-mobile-timelog-modal--closing');
+    expect(testMocks.setEditingTimelog).not.toHaveBeenCalledWith(null);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(180);
+    });
+
+    expect(testMocks.setEditingTimelog).toHaveBeenCalledWith(null);
+  });
+
   it('adds a custom calendar day only after confirming the selected date', async () => {
     render(<MobileTimelogEditModal />);
 
@@ -400,6 +437,47 @@ describe('MobileTimelogEditModal', () => {
     expect(screen.getByRole('button', { name: 'Uložit změny' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Uložit výkaz' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Odeslat ke kontrole' })).not.toBeInTheDocument();
+  });
+
+  it('moves a changed CrewHead correction back to Crew confirmation', async () => {
+    testState.role = 'crewhead';
+    testState.editingTimelog = {
+      ...testState.editingTimelog!,
+      status: 'pending_ch',
+    };
+
+    render(<MobileTimelogEditModal />);
+
+    selectTime('Od', '10:15');
+    fireEvent.click(screen.getByRole('button', { name: 'Uložit změny' }));
+
+    await waitFor(() => expect(testMocks.saveTimelog).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'pending_crew_confirmation',
+      days: expect.arrayContaining([
+        expect.objectContaining({
+          d: '2026-07-13',
+          f: '10:15',
+        }),
+      ]),
+    })));
+  });
+
+  it('lets Crew confirm a CrewHead correction and send it back to CH review', async () => {
+    testState.editingTimelog = {
+      ...testState.editingTimelog!,
+      status: 'pending_crew_confirmation',
+    };
+
+    render(<MobileTimelogEditModal />);
+
+    expect(screen.getByRole('button', { name: 'Uložit výkaz' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Potvrdit úpravy a odeslat CH' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Potvrdit úpravy a odeslat CH' }));
+
+    await waitFor(() => expect(testMocks.saveTimelog).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'pending_ch',
+    })));
   });
 
   it('saves a rejected Crew report back as a draft without submitting it', async () => {

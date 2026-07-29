@@ -3,8 +3,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const mobileMockState = vi.hoisted(() => ({ isMobile: false }));
+
 vi.mock('../app/providers/useAuth', () => ({
   useAuth: () => ({ currentProfileId: 'profile-current' }),
+}));
+
+vi.mock('../hooks/use-mobile', () => ({
+  useIsMobile: () => mobileMockState.isMobile,
 }));
 
 vi.mock('../features/timelogs/queries/useTimelogsQuery', () => ({
@@ -141,6 +147,7 @@ describe('EventsView', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    mobileMockState.isMobile = false;
   });
 
   it('renders event list without crashing when events query is active', async () => {
@@ -185,6 +192,58 @@ describe('EventsView', () => {
       </QueryClientProvider>,
     );
 
+    expect(screen.getByText('Akce 1')).toBeInTheDocument();
+    expect(screen.getByText('AK001')).toBeInTheDocument();
+  });
+
+  it('keeps the event list under the mobile detail so swipe back reveals the previous page', async () => {
+    mobileMockState.isMobile = true;
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockAppContext,
+        role: 'crew',
+        selectedEventId: 'event-uuid-1',
+      }),
+    }));
+
+    vi.doMock('../features/events/queries/useEventsQuery', () => ({
+      useEventsQuery: () => ({ data: events, isLoading: false, error: null }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      createEmptyEvent: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      applyForEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+      filterEventsByStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'upcoming' as const })),
+      getEventsWithDerivedStatus: (items: typeof events) => items.map((item) => ({ ...item, derivedStatus: 'upcoming' as const })),
+      getReferenceDate: () => new Date('2026-04-20'),
+      getEventDetailData: () => eventDetail,
+    }));
+
+    vi.doMock('./EventDetailView', () => ({
+      default: () => <div className="nodu-mobile-event-detail" data-testid="mobile-event-detail-overlay">detail</div>,
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventsView } = await import('./EventsView');
+
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <EventsView />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByTestId('mobile-event-detail-overlay')).toBeInTheDocument();
     expect(screen.getByText('Akce 1')).toBeInTheDocument();
     expect(screen.getByText('AK001')).toBeInTheDocument();
   });
@@ -1078,7 +1137,7 @@ describe('EventsView', () => {
     const multiDayCards = screen.getAllByTestId('event-list-card');
     expect(multiDayCards).toHaveLength(1);
     expect(multiDayCards[0]).toHaveAttribute('data-event-multiday', 'true');
-    expect(multiDayCards[0].querySelector('[data-testid="event-list-accent"]')).toBeInTheDocument();
+    expect(multiDayCards[0].querySelector('[data-testid="event-list-accent"]')).not.toBeInTheDocument();
     expect(screen.getByText('Od')).toBeInTheDocument();
     expect(screen.getByText('16. 4. 2026 · 09:00')).toBeInTheDocument();
     expect(screen.getByText('Do')).toBeInTheDocument();

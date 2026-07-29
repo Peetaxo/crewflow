@@ -274,7 +274,9 @@ const TimelogEditModal = () => {
             <Button
               onClick={async () => {
                 try {
-                  await saveTimelog(editingTimelog);
+                  await saveTimelog(isCrewHeadCorrection
+                    ? { ...editingTimelog, status: 'pending_crew_confirmation' }
+                    : editingTimelog);
                   setEditingTimelog(null);
                 } catch (error) {
                   toast.error(error instanceof Error ? error.message : 'Nepodařilo se uložit výkaz.');

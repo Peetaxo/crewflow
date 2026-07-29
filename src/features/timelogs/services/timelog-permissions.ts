@@ -6,7 +6,9 @@ export const canCreateTimelog = (role: Role) => role !== 'coo';
 
 export const canEditTimelog = (timelog: TimelogPermissionTarget, role: Role) => {
   if (role === 'crew') {
-    return timelog.status === 'draft' || timelog.status === 'rejected';
+    return timelog.status === 'draft'
+      || timelog.status === 'rejected'
+      || timelog.status === 'pending_crew_confirmation';
   }
 
   if (role === 'crewhead') {
@@ -17,7 +19,14 @@ export const canEditTimelog = (timelog: TimelogPermissionTarget, role: Role) => 
 };
 
 export const canSubmitTimelog = (timelog: TimelogPermissionTarget, role: Role) => (
-  (role === 'crew' && (timelog.status === 'draft' || timelog.status === 'rejected'))
+  (
+    role === 'crew'
+    && (
+      timelog.status === 'draft'
+      || timelog.status === 'rejected'
+      || timelog.status === 'pending_crew_confirmation'
+    )
+  )
   || (role === 'crewhead' && timelog.status === 'draft')
 );
 

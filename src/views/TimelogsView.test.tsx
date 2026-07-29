@@ -10,6 +10,14 @@ const mockContext = {
   setTimelogFilter: vi.fn(),
 };
 
+const mobileMockState = {
+  isMobile: false,
+};
+
+vi.mock('../hooks/use-mobile', () => ({
+  useIsMobile: () => mobileMockState.isMobile,
+}));
+
 const events = [
   {
     id: 1,
@@ -62,6 +70,13 @@ const pendingCrewheadTimelogs = [
   {
     ...timelogs[0],
     status: 'pending_ch' as const,
+  },
+];
+const pendingCrewConfirmationTimelogs = [
+  {
+    ...timelogs[0],
+    status: 'pending_crew_confirmation' as const,
+    note: 'Upraveno po telefonu',
   },
 ];
 const mixedMineTimelogs = [
@@ -154,6 +169,7 @@ describe('TimelogsView', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    mobileMockState.isMobile = false;
   });
 
   it('groups all timelogs by event instead of job number', async () => {
@@ -251,6 +267,77 @@ describe('TimelogsView', () => {
     expect(screen.queryByRole('heading', { name: 'Moje timelogy' })).not.toBeInTheDocument();
   });
 
+  it('uses a compact month and status filter in mobile Crew Schvalovani', async () => {
+    mobileMockState.isMobile = true;
+    mockEmptyPowerAppsPreview();
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockContext,
+        role: 'crew',
+      }),
+    }));
+
+    vi.doMock('../app/providers/useAuth', () => ({
+      useAuth: () => ({ currentProfileId: 'profile-1' }),
+    }));
+
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
+      useTimelogsQuery: () => ({ data: mixedMineTimelogs }),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      getTimelogDependencies: () => ({ contractors, events }),
+      updateTimelogStatus: vi.fn(),
+    }));
+
+    const { default: TimelogsView } = await import('./TimelogsView');
+
+    render(<TimelogsView scope="mine" />);
+
+    expect(screen.getByText('duben 2026')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Filtr výkazů: Vše, 3/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Koncepty 1/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Filtr výkazů: Vše, 3/ }));
+
+    expect(screen.getByRole('button', { name: 'Koncepty 1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Čeká CH 1' })).toBeInTheDocument();
+  });
+
+  it('leads mobile Crew Schvalovani cards with event information instead of the crew member name', async () => {
+    mobileMockState.isMobile = true;
+    mockEmptyPowerAppsPreview();
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockContext,
+        role: 'crew',
+      }),
+    }));
+
+    vi.doMock('../app/providers/useAuth', () => ({
+      useAuth: () => ({ currentProfileId: 'profile-1' }),
+    }));
+
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
+      useTimelogsQuery: () => ({ data: [mixedMineTimelogs[0]] }),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      getTimelogDependencies: () => ({ contractors, events }),
+      updateTimelogStatus: vi.fn(),
+    }));
+
+    const { default: TimelogsView } = await import('./TimelogsView');
+
+    render(<TimelogsView scope="mine" />);
+
+    expect(screen.queryByText('Crew One')).not.toBeInTheDocument();
+    expect(screen.getByText('Ploom Chodov')).toBeInTheDocument();
+    expect(screen.getByText('JTI001')).toBeInTheDocument();
+  });
+
   it('lets crew edit draft and rejected timelogs in Schvalovani', async () => {
     mockEmptyPowerAppsPreview();
 
@@ -296,6 +383,45 @@ describe('TimelogsView', () => {
       id: 2,
       status: 'pending_ch',
     }));
+  });
+
+  it('lets Crew confirm a CrewHead correction from Schvalovani', async () => {
+    const updateTimelogStatus = vi.fn().mockResolvedValue({
+      ...pendingCrewConfirmationTimelogs[0],
+      status: 'pending_ch',
+    });
+    mockEmptyPowerAppsPreview();
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockContext,
+        role: 'crew',
+      }),
+    }));
+
+    vi.doMock('../app/providers/useAuth', () => ({
+      useAuth: () => ({ currentProfileId: 'profile-1' }),
+    }));
+
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
+      useTimelogsQuery: () => ({ data: pendingCrewConfirmationTimelogs }),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      getTimelogDependencies: () => ({ contractors, events }),
+      updateTimelogStatus,
+    }));
+
+    const { default: TimelogsView } = await import('./TimelogsView');
+
+    render(<TimelogsView scope="mine" />);
+
+    expect(screen.getByText('Čeká na souhlas Crew')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Upravit' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Potvrdit úpravy a odeslat CH' }));
+
+    await waitFor(() => expect(updateTimelogStatus).toHaveBeenCalledWith(1, 'sub'));
   });
 
   it('lets CrewHead edit pending CH timelogs without exposing that edit action to COO', async () => {

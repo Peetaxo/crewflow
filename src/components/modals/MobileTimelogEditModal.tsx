@@ -185,6 +185,10 @@ type AutosaveState = 'idle' | 'pending' | 'saved' | 'error';
 
 const timeOptionHeight = 40;
 const autosaveDelayMs = 800;
+const mobileTimelogSwipeStartMaxX = 96;
+const mobileTimelogSwipeMinDistance = 64;
+const mobileTimelogSwipeMaxVerticalDrift = 48;
+const mobileTimelogCloseAnimationMs = 180;
 const hourOptions = Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, '0'));
 const minuteOptions = ['00', '15', '30', '45'];
 
@@ -380,10 +384,14 @@ const MobileTimelogEditModal: React.FC = () => {
   const [draftNote, setDraftNote] = React.useState(editingTimelog?.note ?? '');
   const [activeTimePicker, setActiveTimePicker] = React.useState<ActiveTimePicker | null>(null);
   const [autosaveState, setAutosaveState] = React.useState<AutosaveState>('idle');
+  const [timelogSwipeOffset, setTimelogSwipeOffset] = React.useState(0);
+  const [timelogSwipePhase, setTimelogSwipePhase] = React.useState<'idle' | 'dragging' | 'closing'>('idle');
   const autosaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const autosavePromiseRef = React.useRef<Promise<Timelog> | null>(null);
   const autosaveRequestRef = React.useRef(0);
   const lastAutosavedSignatureRef = React.useRef<string | null>(null);
+  const timelogSwipeStartRef = React.useRef<{ x: number; y: number } | null>(null);
+  const timelogCloseTimeoutRef = React.useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const calendarDates = React.useMemo(() => (
     editingTimelog && event
       ? buildTimelogCalendarDates(event, [
@@ -449,6 +457,138 @@ const MobileTimelogEditModal: React.FC = () => {
     }
   }, []);
 
+  const resetTimelogSwipe = React.useCallback(() => {
+    timelogSwipeStartRef.current = null;
+    setTimelogSwipeOffset(0);
+    setTimelogSwipePhase('idle');
+  }, []);
+
+  const scheduleTimelogClose = React.useCallback(() => {
+    if (timelogCloseTimeoutRef.current) {
+      window.clearTimeout(timelogCloseTimeoutRef.current);
+    }
+
+    timelogSwipeStartRef.current = null;
+    setTimelogSwipePhase('closing');
+    setTimelogSwipeOffset(window.innerWidth || 390);
+
+    timelogCloseTimeoutRef.current = window.setTimeout(() => {
+      timelogCloseTimeoutRef.current = null;
+      setEditingTimelog(null);
+      setTimelogSwipeOffset(0);
+      setTimelogSwipePhase('idle');
+    }, mobileTimelogCloseAnimationMs);
+  }, [setEditingTimelog]);
+
+  const startTimelogSwipe = React.useCallback((clientX: number, clientY: number) => {
+    if (clientX > mobileTimelogSwipeStartMaxX) {
+      resetTimelogSwipe();
+      return;
+    }
+
+    timelogSwipeStartRef.current = { x: clientX, y: clientY };
+    setTimelogSwipeOffset(0);
+    setTimelogSwipePhase('dragging');
+  }, [resetTimelogSwipe]);
+
+  const completeTimelogSwipe = React.useCallback((clientX: number, clientY: number, shouldFinalize = false) => {
+    const touchStart = timelogSwipeStartRef.current;
+
+    if (!touchStart) return false;
+
+    const deltaX = clientX - touchStart.x;
+    const deltaY = Math.abs(clientY - touchStart.y);
+
+    if (deltaY > mobileTimelogSwipeMaxVerticalDrift) {
+      resetTimelogSwipe();
+      return false;
+    }
+
+    const swipeOffset = Math.max(0, deltaX);
+    setTimelogSwipeOffset(Math.min(swipeOffset, window.innerWidth || 390));
+
+    if (shouldFinalize) {
+      timelogSwipeStartRef.current = null;
+      setTimelogSwipePhase('idle');
+
+      if (deltaX >= mobileTimelogSwipeMinDistance && deltaY <= mobileTimelogSwipeMaxVerticalDrift) {
+        scheduleTimelogClose();
+        return true;
+      }
+
+      setTimelogSwipeOffset(0);
+    }
+
+    return swipeOffset > 0;
+  }, [resetTimelogSwipe, scheduleTimelogClose]);
+
+  const finishTimelogSwipe = React.useCallback((clientX: number, clientY: number) => {
+    completeTimelogSwipe(clientX, clientY, true);
+  }, [completeTimelogSwipe]);
+
+  React.useEffect(() => () => {
+    if (timelogCloseTimeoutRef.current) {
+      window.clearTimeout(timelogCloseTimeoutRef.current);
+      timelogCloseTimeoutRef.current = null;
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (!editingTimelog) return undefined;
+
+    const handleWindowTouchStart = (touchEvent: TouchEvent) => {
+      const touch = touchEvent.touches[0];
+
+      if (!touch) {
+        resetTimelogSwipe();
+        return;
+      }
+
+      startTimelogSwipe(touch.clientX, touch.clientY);
+    };
+
+    const handleWindowTouchMove = (touchEvent: TouchEvent) => {
+      const touch = touchEvent.touches[0];
+
+      if (!touch) return;
+
+      if (completeTimelogSwipe(touch.clientX, touch.clientY)) {
+        touchEvent.preventDefault();
+      }
+    };
+
+    const handleWindowTouchEnd = (touchEvent: TouchEvent) => {
+      const touch = touchEvent.changedTouches[0];
+
+      if (!touch) {
+        resetTimelogSwipe();
+        return;
+      }
+
+      finishTimelogSwipe(touch.clientX, touch.clientY);
+    };
+
+    const listenerOptions = { capture: true, passive: false } as AddEventListenerOptions;
+
+    window.addEventListener('touchstart', handleWindowTouchStart, listenerOptions);
+    window.addEventListener('touchmove', handleWindowTouchMove, listenerOptions);
+    window.addEventListener('touchend', handleWindowTouchEnd, listenerOptions);
+    window.addEventListener('touchcancel', resetTimelogSwipe, listenerOptions);
+
+    return () => {
+      window.removeEventListener('touchstart', handleWindowTouchStart, listenerOptions);
+      window.removeEventListener('touchmove', handleWindowTouchMove, listenerOptions);
+      window.removeEventListener('touchend', handleWindowTouchEnd, listenerOptions);
+      window.removeEventListener('touchcancel', resetTimelogSwipe, listenerOptions);
+    };
+  }, [
+    completeTimelogSwipe,
+    editingTimelog,
+    finishTimelogSwipe,
+    resetTimelogSwipe,
+    startTimelogSwipe,
+  ]);
+
   if (!editingTimelog || !contractor || !event || !selectedDate || !draftDay) return null;
 
   const currentEntryKey = activeEntryKey ?? draftDay.id ?? null;
@@ -477,7 +617,12 @@ const MobileTimelogEditModal: React.FC = () => {
     : editingTimelog.days;
   const totalHours = calculateTotalHours(displayDays);
   const isCrewWorkflow = role === 'crew';
+  const isCrewHeadCorrection = role === 'crewhead' && editingTimelog.status === 'pending_ch';
+  const shouldRequireCrewConfirmation = isCrewHeadCorrection && (hasDraftChanges || hasReportChanges);
   const canSubmitCurrentTimelog = isCrewWorkflow && canSubmitTimelog(editingTimelog, role);
+  const submitButtonLabel = editingTimelog.status === 'pending_crew_confirmation'
+    ? 'Potvrdit úpravy a odeslat CH'
+    : 'Odeslat ke kontrole';
 
   const openContractorDetail = () => {
     if (!contractor.profileId) return;
@@ -557,7 +702,13 @@ const MobileTimelogEditModal: React.FC = () => {
 
   const handleSaveDraft = async () => {
     try {
-      await saveCurrentTimelog(editingTimelog.status === 'rejected' ? 'draft' : undefined);
+      const nextStatus = shouldRequireCrewConfirmation
+        ? 'pending_crew_confirmation'
+        : editingTimelog.status === 'rejected'
+          ? 'draft'
+          : undefined;
+
+      await saveCurrentTimelog(nextStatus);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Nepodařilo se uložit výkaz.');
     }
@@ -741,13 +892,74 @@ const MobileTimelogEditModal: React.FC = () => {
     setAddDayCandidateDate(nextMonthDate);
   };
 
+  const handleTimelogPointerDown = (pointerEvent: React.PointerEvent<HTMLDivElement>) => {
+    if (pointerEvent.pointerType === 'touch') return;
+
+    startTimelogSwipe(pointerEvent.clientX, pointerEvent.clientY);
+    if (timelogSwipeStartRef.current && pointerEvent.currentTarget.setPointerCapture) {
+      try {
+        pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId);
+      } catch {
+        // Browser previews can miss capture for synthetic pointer ids.
+      }
+    }
+  };
+
+  const handleTimelogPointerMove = (pointerEvent: React.PointerEvent<HTMLDivElement>) => {
+    if (pointerEvent.pointerType === 'touch') return;
+
+    if (completeTimelogSwipe(pointerEvent.clientX, pointerEvent.clientY)) {
+      pointerEvent.preventDefault();
+    }
+  };
+
+  const handleTimelogPointerUp = (pointerEvent: React.PointerEvent<HTMLDivElement>) => {
+    if (pointerEvent.pointerType === 'touch') return;
+
+    finishTimelogSwipe(pointerEvent.clientX, pointerEvent.clientY);
+    if (pointerEvent.currentTarget.releasePointerCapture) {
+      try {
+        pointerEvent.currentTarget.releasePointerCapture(pointerEvent.pointerId);
+      } catch {
+        // Capture can be gone when the pointer sequence is interrupted.
+      }
+    }
+  };
+
+  const timelogSwipeOpacity = Math.max(0.86, 1 - (timelogSwipeOffset / 900));
+  const timelogModalClassName = [
+    'nodu-mobile-timelog-modal',
+    timelogSwipePhase === 'dragging' ? 'nodu-mobile-timelog-modal--dragging' : '',
+    timelogSwipePhase === 'closing' ? 'nodu-mobile-timelog-modal--closing' : '',
+  ].filter(Boolean).join(' ');
+  const timelogModalStyle = {
+    '--nodu-mobile-timelog-swipe-x': `${timelogSwipeOffset}px`,
+    '--nodu-mobile-timelog-swipe-opacity': timelogSwipeOpacity.toFixed(3),
+    '--nodu-mobile-timelog-swipe-transition': timelogSwipePhase === 'dragging'
+      ? 'none'
+      : 'transform 180ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms ease',
+  } as React.CSSProperties;
+
   return (
-    <div className="fixed inset-0 z-[90] flex items-end bg-[color:var(--nodu-paper)]">
+    <div className="nodu-mobile-timelog-layer fixed inset-0 z-[90] flex items-end">
+      <div
+        className="nodu-mobile-timelog-swipe-edge"
+        aria-hidden="true"
+        onPointerDown={handleTimelogPointerDown}
+        onPointerMove={handleTimelogPointerMove}
+        onPointerUp={handleTimelogPointerUp}
+        onPointerCancel={resetTimelogSwipe}
+      />
       <section
-        className="nodu-mobile-timelog-modal"
+        className={timelogModalClassName}
+        style={timelogModalStyle}
         role="dialog"
         aria-modal="true"
         aria-labelledby="mobile-timelog-title"
+        onPointerDown={handleTimelogPointerDown}
+        onPointerMove={handleTimelogPointerMove}
+        onPointerUp={handleTimelogPointerUp}
+        onPointerCancel={resetTimelogSwipe}
       >
         <header className="nodu-mobile-timelog-header">
           <div className="min-w-0">
@@ -1126,7 +1338,7 @@ const MobileTimelogEditModal: React.FC = () => {
               type="button"
               onClick={handleSubmitForReview}
             >
-              <Send size={16} /> Odeslat ke kontrole
+              <Send size={16} /> {submitButtonLabel}
             </Button>
           )}
         </footer>

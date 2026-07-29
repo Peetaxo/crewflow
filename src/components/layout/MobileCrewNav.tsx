@@ -1,4 +1,5 @@
 import React from 'react';
+import { House } from 'lucide-react';
 import { getNavItemsForRole, type NavItemId } from '../../constants';
 import { useAppContext } from '../../context/useAppContext';
 
@@ -39,6 +40,7 @@ const MobileCrewNav: React.FC<MobileCrewNavProps> = ({ badgeCounts }) => {
         const isActive = currentTab === item.id;
         const badge = badgeCounts[item.id] || 0;
         const label = mobileLabels[item.id] ?? item.label;
+        const Icon = item.id === 'my-shifts' ? House : item.icon;
 
         return (
           <button
@@ -50,7 +52,7 @@ const MobileCrewNav: React.FC<MobileCrewNavProps> = ({ badgeCounts }) => {
             className={`nodu-mobile-crew-nav-item ${isActive ? 'nodu-mobile-crew-nav-item--active' : ''}`}
           >
             <span className="relative">
-              <item.icon size={18} aria-hidden="true" />
+              <Icon size={18} aria-hidden="true" />
               {badge > 0 && <span className="nodu-mobile-crew-nav-badge">{badge}</span>}
             </span>
             <span>{label}</span>

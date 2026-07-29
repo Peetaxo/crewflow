@@ -10,6 +10,7 @@ const StatusBadge = ({ status, label }: { status: string; label?: string }) => {
 
   const statusMap: Record<string, [string, string]> = {
     draft: [neutral, 'Koncept'],
+    pending_crew_confirmation: [warning, 'Čeká na souhlas Crew'],
     pending_ch: [warning, 'Čeká CH'],
     pending_coo: [info, 'Čeká COO'],
     approved: [success, 'Schváleno'],

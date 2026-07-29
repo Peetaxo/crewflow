@@ -66,11 +66,12 @@ const getApprovalDocumentPersonLabel = (document: InvoiceApprovalDocument) => {
 
 type TimelogApprovalAction = 'sub' | 'ch' | 'coo' | 'rej';
 
-const getTimelogApprovalAction = (timelog: Timelog): Exclude<TimelogApprovalAction, 'rej'> => (
-  timelog.status === 'draft'
-    ? 'sub'
-    : timelog.status === 'pending_ch' ? 'ch' : 'coo'
-);
+const getTimelogApprovalAction = (timelog: Timelog): Exclude<TimelogApprovalAction, 'rej'> | null => {
+  if (timelog.status === 'draft') return 'sub';
+  if (timelog.status === 'pending_ch') return 'ch';
+  if (timelog.status === 'pending_coo') return 'coo';
+  return null;
+};
 
 const sortTimelogDaysForDisplay = (days: Timelog['days']) => (
   [...days].sort((first, second) => (
@@ -116,6 +117,7 @@ const EventDetailView = () => {
   const mobileEdgeSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const mobileHistoryEventIdRef = useRef<string | number | null>(null);
   const mobileCloseTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const mobileDetailRef = useRef<HTMLDivElement | null>(null);
   const invoiceApprovalsQuery = useInvoiceApprovalsQuery();
 
   const loadDetail = useCallback(() => {
@@ -143,7 +145,7 @@ const EventDetailView = () => {
   useEffect(() => {
     if (!isMobile || !selectedEventId || !detail.event) return;
 
-    document.querySelector<HTMLElement>('.nodu-page-frame--mobile-crew')?.scrollTo({ top: 0, left: 0 });
+    mobileDetailRef.current?.scrollTo?.({ top: 0, left: 0 });
   }, [detail.event, isMobile, selectedEventId]);
 
   const scheduleMobileEventDetailClose = useCallback((shouldPopHistory = false) => {
@@ -405,7 +407,7 @@ const EventDetailView = () => {
   const eventApprovalTimelogs = canManageEvents
     ? prepareApprovalTimelogs(eventTimelogs.filter((timelog) => (
         role === 'crewhead'
-          ? timelog.status === 'draft' || timelog.status === 'pending_ch'
+          ? timelog.status === 'draft' || timelog.status === 'pending_ch' || timelog.status === 'pending_crew_confirmation'
           : timelog.status === 'pending_coo'
       )))
     : [];
@@ -551,7 +553,10 @@ const EventDetailView = () => {
   const handleTimelogApprovalAction = (timelog: Timelog, action?: TimelogApprovalAction) => {
     if (action === 'rej' && timelog.status === 'draft') return;
 
-    void updateTimelogStatus(timelog.id, action ?? getTimelogApprovalAction(timelog))
+    const resolvedAction = action ?? getTimelogApprovalAction(timelog);
+    if (!resolvedAction) return;
+
+    void updateTimelogStatus(timelog.id, resolvedAction)
       .then(loadDetail)
       .catch((error) => {
         toast.error(error instanceof Error ? error.message : 'Nepodarilo se aktualizovat vykaz.');
@@ -734,6 +739,7 @@ const EventDetailView = () => {
                 const totalTimelogHours = calculateTotalHours(timelog.days);
                 const approveAction = getTimelogApprovalAction(timelog);
                 const contractorName = contractor?.name ?? 'Neznámý člen crew';
+                const isWaitingForCrewConfirmation = timelog.status === 'pending_crew_confirmation';
 
                 return (
                   <div key={timelog.id} className="nodu-mobile-event-management-row nodu-mobile-event-management-row--timelog">
@@ -742,11 +748,17 @@ const EventDetailView = () => {
                       <div className="nodu-mobile-event-management-report-header">
                         <div className="min-w-0">
                           <div className="nodu-mobile-event-crew-name">{contractorName}</div>
-                          <div className="nodu-mobile-event-management-report-label">Výkaz</div>
+                          <div className="nodu-mobile-event-management-report-label">
+                            <span>Výkaz</span>
+                            <StatusBadge status={timelog.status} />
+                          </div>
                         </div>
                         <div className="nodu-mobile-event-management-hours">{totalTimelogHours.toFixed(1)}h</div>
                       </div>
                     </div>
+                    {isWaitingForCrewConfirmation && (
+                      <p className="nodu-mobile-event-management-note">Čeká na potvrzení upraveného výkazu členem Crew.</p>
+                    )}
                     <div className="nodu-mobile-event-management-day-list">
                       {timelog.days.map((day, index) => (
                         <div key={`${timelog.id}-${day.d}-${index}`} className="nodu-mobile-event-management-day-row">
@@ -762,15 +774,17 @@ const EventDetailView = () => {
                       ))}
                     </div>
                     <div className="nodu-mobile-event-management-actions">
-                      <button
-                        type="button"
-                        aria-label={`Schválit výkaz ${contractorName}`}
-                        className="nodu-mobile-event-icon-action nodu-mobile-event-icon-action--success"
-                        onClick={() => handleTimelogApprovalAction(timelog, approveAction)}
-                      >
-                        Schválit
-                      </button>
-                      {timelog.status !== 'draft' && (
+                      {approveAction && (
+                        <button
+                          type="button"
+                          aria-label={`Schválit výkaz ${contractorName}`}
+                          className="nodu-mobile-event-icon-action nodu-mobile-event-icon-action--success"
+                          onClick={() => handleTimelogApprovalAction(timelog, approveAction)}
+                        >
+                          Schválit
+                        </button>
+                      )}
+                      {timelog.status !== 'draft' && !isWaitingForCrewConfirmation && (
                         <button
                           type="button"
                           aria-label={`Zamítnout výkaz ${contractorName}`}
@@ -804,6 +818,7 @@ const EventDetailView = () => {
 
     return (
       <motion.div
+        ref={mobileDetailRef}
         className="nodu-mobile-event-detail"
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
@@ -994,8 +1009,9 @@ const EventDetailView = () => {
           {mobilePendingApplicationsContent}
 
         </div>
+        </div>
 
-        <div className={floatingPanelClassName} aria-label="Akce k události">
+        <div className={floatingPanelClassName} style={mobileSwipeSurfaceStyle} aria-label="Akce k události">
           {canManageEvents ? (
             <>
               <button
@@ -1145,7 +1161,6 @@ const EventDetailView = () => {
           event={assigningEvent}
           onClose={() => setAssigningEvent(null)}
         />
-        </div>
       </motion.div>
     );
   }
@@ -1440,6 +1455,7 @@ const EventDetailView = () => {
                               : timelog.status === 'pending_ch'
                                 ? 'Schvalit a poslat COO'
                                 : 'Schvalit';
+                            const isWaitingForCrewConfirmation = timelog.status === 'pending_crew_confirmation';
 
                             return (
                               <div key={timelog.id} className="rounded-[18px] border border-[color:var(--nodu-border)] bg-white p-4">
@@ -1464,11 +1480,18 @@ const EventDetailView = () => {
                                     </div>
                                   ))}
                                 </div>
+                                {isWaitingForCrewConfirmation && (
+                                  <p className="mt-3 text-xs font-medium text-[color:var(--nodu-text-soft)]">
+                                    Čeká na potvrzení upraveného výkazu členem Crew.
+                                  </p>
+                                )}
                                 <div className="mt-3 flex flex-wrap gap-2">
-                                  <Button size="sm" className="h-8 text-[11px]" onClick={() => handleTimelogApprovalAction(timelog, approveAction)}>
-                                    {approveLabel}
-                                  </Button>
-                                  {timelog.status !== 'draft' && (
+                                  {approveAction && (
+                                    <Button size="sm" className="h-8 text-[11px]" onClick={() => handleTimelogApprovalAction(timelog, approveAction)}>
+                                      {approveLabel}
+                                    </Button>
+                                  )}
+                                  {timelog.status !== 'draft' && !isWaitingForCrewConfirmation && (
                                     <Button size="sm" variant="outline" className="h-8 border-[#e8b4a3] text-[11px] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]" onClick={() => handleTimelogApprovalAction(timelog, 'rej')}>
                                       Zamitnout
                                     </Button>

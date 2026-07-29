@@ -18,7 +18,11 @@ describe('nodu CSS helpers', () => {
     const dashboardActionRule = css.match(/\.nodu-dashboard-action\s*\{[\s\S]*?\}/)?.[0];
     const mobileCrewScrollbarRule = css.match(/\.nodu-app-shell--mobile-crew \*[\s\S]*?scrollbar-width:\s*none;[\s\S]*?\}/)?.[0];
     const mobileCrewWebkitScrollbarRule = css.match(/\.nodu-app-shell--mobile-crew \*::-webkit-scrollbar\s*\{[\s\S]*?\}/)?.[0];
+    const mobileCrewNavRule = css.match(/\.nodu-mobile-crew-nav\s*\{[\s\S]*?\}/)?.[0];
+    const mobileCrewNavItemRule = css.match(/\.nodu-mobile-crew-nav-item\s*\{[\s\S]*?\}/)?.[0];
     const mobileTimelogModalRule = css.match(/\.nodu-mobile-timelog-modal\s*\{[\s\S]*?\}/)?.[0];
+    const mobileTimelogLayerRule = css.match(/\.nodu-mobile-timelog-layer\s*\{[\s\S]*?\}/)?.[0];
+    const mobileTimelogSwipeEdgeRule = css.match(/\.nodu-mobile-timelog-swipe-edge\s*\{[\s\S]*?\}/)?.[0];
     const mobileTimelogHeaderRule = css.match(/\.nodu-mobile-timelog-header\s*\{[\s\S]*?\}/)?.[0];
     const mobileTimelogFooterRule = css.match(/\.nodu-mobile-timelog-footer\s*\{[\s\S]*?\}/)?.[0];
     const mobileTimelogPanelRule = css.match(/\.nodu-mobile-timelog-summary,\s*\.nodu-mobile-timelog-day-editor,\s*\.nodu-mobile-timelog-report-editor\s*\{[\s\S]*?\}/)?.[0];
@@ -56,6 +60,8 @@ describe('nodu CSS helpers', () => {
       '.nodu-mobile-crew-nav',
       '.nodu-mobile-crew-nav-item',
       '.nodu-mobile-timelog-modal',
+      '.nodu-mobile-timelog-layer',
+      '.nodu-mobile-timelog-swipe-edge',
       '.nodu-mobile-timelog-calendar',
       '.nodu-mobile-timelog-day-count',
       '.nodu-mobile-timelog-day--outside',
@@ -107,8 +113,19 @@ describe('nodu CSS helpers', () => {
     expect(darkMetaBadgeRule).toContain('var(--nodu-text-soft)');
     expect(mobileCrewScrollbarRule).toContain('-ms-overflow-style: none;');
     expect(mobileCrewWebkitScrollbarRule).toContain('display: none;');
+    expect(mobileCrewNavRule).toContain('right: max(1.1rem, env(safe-area-inset-right));');
+    expect(mobileCrewNavRule).toContain('left: max(1.1rem, env(safe-area-inset-left));');
+    expect(mobileCrewNavRule).toContain('min-height: 4rem;');
+    expect(mobileCrewNavRule).toContain('padding: 0.3rem;');
+    expect(mobileCrewNavItemRule).toContain('min-height: 3rem;');
     expect(mobileTimelogModalRule).toContain('height: 100dvh;');
     expect(mobileTimelogModalRule).toContain('border-radius: 0;');
+    expect(mobileTimelogModalRule).toContain('transform: translateX(var(--nodu-mobile-timelog-swipe-x, 0));');
+    expect(mobileTimelogModalRule).toContain('opacity: var(--nodu-mobile-timelog-swipe-opacity, 1);');
+    expect(mobileTimelogLayerRule).toContain('background: transparent;');
+    expect(mobileTimelogSwipeEdgeRule).toContain('position: fixed;');
+    expect(mobileTimelogSwipeEdgeRule).toContain('left: 0;');
+    expect(mobileTimelogSwipeEdgeRule).toContain('touch-action: none;');
     expect(mobileTimelogHeaderRule).toContain('position: sticky;');
     expect(mobileTimelogFooterRule).toContain('position: sticky;');
     expect(mobileTimelogPanelRule).toContain('background: rgb(var(--nodu-accent-rgb) / 0.07);');
@@ -125,13 +142,24 @@ describe('nodu CSS helpers', () => {
     expect(mobileTimelogAddDayCellRule).toContain('aspect-ratio: 1;');
     expect(mobileTimelogAddDayConfirmRule).toContain('border-radius: 999px;');
     expect(mobilePageFrameRule).toContain('padding-top: calc(1rem + env(safe-area-inset-top));');
-    expect(mobileEventDetailRule).toContain('padding-bottom');
+    expect(mobileEventDetailRule).toContain('position: fixed;');
+    expect(mobileEventDetailRule).toContain('inset: 0;');
+    expect(mobileEventDetailRule).toContain('z-index: 50;');
+    expect(mobileEventDetailRule).toContain('background: transparent;');
+    expect(mobileEventDetailRule).toContain('overflow-y: auto;');
     expect(mobileEventSwipeSurfaceRule).toContain('transform: translateX(var(--nodu-mobile-event-swipe-x, 0));');
     expect(mobileEventSwipeSurfaceRule).toContain('opacity: var(--nodu-mobile-event-swipe-opacity, 1);');
+    expect(mobileEventSwipeSurfaceRule).toContain('padding: calc(1rem + env(safe-area-inset-top)) 1rem calc(6.5rem + env(safe-area-inset-bottom));');
+    expect(mobileEventSwipeSurfaceRule).toContain('box-shadow: -18px 0 44px');
     expect(mobileEventSwipeEdgeRule).toContain('position: fixed;');
     expect(mobileEventSwipeEdgeRule).toContain('left: 0;');
     expect(mobileEventSwipeEdgeRule).toContain('touch-action: none;');
     expect(mobileEventFloatingPanelRule).toContain('position: fixed;');
+    expect(mobileEventFloatingPanelRule).toContain('right: max(1.1rem, env(safe-area-inset-right));');
+    expect(mobileEventFloatingPanelRule).toContain('left: max(1.1rem, env(safe-area-inset-left));');
+    expect(mobileEventFloatingPanelRule).toContain('transform: translateX(var(--nodu-mobile-event-swipe-x, 0));');
+    expect(mobileEventFloatingPanelRule).toContain('transition: var(--nodu-mobile-event-swipe-transition, none);');
+    expect(mobileEventFloatingPanelRule).toContain('padding: 0.45rem;');
     expect(mobileEventFloatingPanelRule).toContain('backdrop-filter: blur');
     expect(mobileEventFloatingPanelCompactRule).toContain('grid-template-areas: "primary";');
     expect(mobileEventFloatingPanelCompactRule).toContain('padding: 0.35rem;');

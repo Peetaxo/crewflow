@@ -20,6 +20,7 @@ import {
 import { cs } from 'date-fns/locale';
 import { useAppContext } from '../context/useAppContext';
 import { useAuth } from '../app/providers/useAuth';
+import { useIsMobile } from '../hooks/use-mobile';
 import { Event, Timelog } from '../types';
 import type { SelectedEventId } from '../context/app-context';
 import { eventOccursOnDate, getDatesBetween } from '../utils';
@@ -404,6 +405,7 @@ const EventsView = () => {
     setEventsCalendarDate,
   } = useAppContext();
   const { currentProfileId } = useAuth();
+  const isMobile = useIsMobile();
   const eventsQuery = useEventsQuery();
   const timelogsQuery = useTimelogsQuery();
   void timelogsQuery.data;
@@ -601,7 +603,7 @@ const EventsView = () => {
     setEventsCalendarDate(format(startOfMonth(nextDate), 'yyyy-MM-dd'));
   };
 
-  if (selectedEventId && selectedEvent) {
+  if (selectedEventId && selectedEvent && !isMobile) {
     return <EventDetailView />;
   }
 
@@ -805,13 +807,14 @@ const EventsView = () => {
                   const isFullyStaffed = event.needed > 0 && event.filled >= event.needed;
                   const occurrenceTimeLabel = getEventOccurrenceTimeLabel(event, occurrenceDate, eventTimelogs);
                   const isMultiDayOccurrence = occurrence.dayCount > 1;
+                  const shouldShowMultiDayAccent = canManageEvents && isMultiDayOccurrence;
                   const isContinuationOccurrence = occurrence.kind === 'continuation' || occurrence.kind === 'end';
                   const approvalMeta = getEventTimelogApprovalMeta(eventTimelogs);
                   const listAccentStyle = getEventListAccentStyle(event, occurrence.dayCount);
-                  const listBorderClass = isMultiDayOccurrence
+                  const listBorderClass = shouldShowMultiDayAccent
                     ? 'border-[color:var(--event-list-accent-border)]'
                     : 'border-[color:var(--nodu-border)]';
-                  const continuationBorderClass = isMultiDayOccurrence
+                  const continuationBorderClass = shouldShowMultiDayAccent
                     ? 'border-dashed border-[color:var(--event-list-accent-border)]'
                     : 'border-dashed border-[color:rgb(var(--nodu-text-rgb)/0.16)]';
 
@@ -822,7 +825,7 @@ const EventsView = () => {
                       data-event-multiday={isMultiDayOccurrence ? 'true' : undefined}
                       role="button"
                       tabIndex={0}
-                      style={listAccentStyle}
+                      style={shouldShowMultiDayAccent ? listAccentStyle : undefined}
                       onClick={() => openEventDetail(event)}
                       onKeyDown={(keyboardEvent) => {
                         if (keyboardEvent.key === 'Enter' || keyboardEvent.key === ' ') {
@@ -836,7 +839,7 @@ const EventsView = () => {
                           : `${listBorderClass} bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] shadow-[0_18px_42px_rgba(47,38,31,0.08)] hover:shadow-[0_22px_48px_rgba(47,38,31,0.12)]`
                       }`}
                     >
-                      {isMultiDayOccurrence && (
+                      {shouldShowMultiDayAccent && (
                         <span
                           data-testid="event-list-accent"
                           aria-hidden="true"
@@ -1154,6 +1157,7 @@ const EventsView = () => {
         onClose={() => setEditingEvent(null)}
         onChange={setEditingEvent}
       />
+      {selectedEventId && selectedEvent && isMobile && <EventDetailView />}
     </motion.div>
   );
 };

@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('framer-motion', () => ({
   motion: {
-    div: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div>,
+    div: React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(({ children, ...props }, ref) => <div ref={ref} {...props}>{children}</div>),
   },
 }));
 
@@ -223,6 +223,9 @@ describe('EventDetailView', () => {
     expect(screen.queryByText('Moje výkazy')).not.toBeInTheDocument();
     expect(screen.getByText('Přiřazená crew')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Evidence práce' })).toBeInTheDocument();
+    const swipeSurface = container.querySelector('.nodu-mobile-event-swipe-surface');
+    const floatingPanel = container.querySelector('.nodu-mobile-event-floating-panel');
+    expect(swipeSurface).not.toContainElement(floatingPanel);
     expect(screen.getAllByText('12.0h').length).toBeGreaterThan(0);
     expect(screen.queryByText('v evidenci')).not.toBeInTheDocument();
     expect(screen.queryByText(/Prirazena Crew/)).not.toBeInTheDocument();
@@ -486,7 +489,7 @@ describe('EventDetailView', () => {
     pushStateSpy.mockRestore();
   });
 
-  it('resets the mobile page scroll when opening event detail', async () => {
+  it('resets the mobile detail scroll without moving the underlying page', async () => {
     mobileMockState.isMobile = true;
     const scrollToMock = vi.fn();
     const originalScrollTo = HTMLElement.prototype.scrollTo;
@@ -545,15 +548,19 @@ describe('EventDetailView', () => {
     const { default: EventDetailView } = await import('./EventDetailView');
 
     try {
-      render(
+      const { container } = render(
         <main className="nodu-page-frame nodu-page-frame--mobile-crew">
           <EventDetailView />
         </main>,
       );
+      const mobileDetail = container.querySelector('.nodu-mobile-event-detail');
+      const mobilePage = container.querySelector('.nodu-page-frame--mobile-crew');
 
       await waitFor(() => {
         expect(scrollToMock).toHaveBeenCalledWith({ top: 0, left: 0 });
       });
+      expect(scrollToMock.mock.contexts).toContain(mobileDetail);
+      expect(scrollToMock.mock.contexts).not.toContain(mobilePage);
     } finally {
       Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
         configurable: true,
@@ -991,6 +998,75 @@ describe('EventDetailView', () => {
 
     fireEvent.click(within(approvalDialog).getAllByRole('button', { name: 'Schválit výkaz Jana Nova' })[0]);
     await waitFor(() => expect(updateTimelogStatus).toHaveBeenCalledWith(9, 'ch'));
+  });
+
+  it('shows CrewHead-corrected timelogs as waiting for Crew without approve actions', async () => {
+    mobileMockState.isMobile = true;
+    const correctedTimelog = {
+      ...pendingCrewheadTimelog,
+      id: 11,
+      status: 'pending_crew_confirmation' as const,
+      note: 'Upraveno po telefonu',
+    };
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        role: 'crewhead',
+        selectedEventId: 'event-uuid-1',
+        setSelectedEventId,
+        eventTab: 'overview',
+        setEventTab: vi.fn(),
+        setEditingReceipt: vi.fn(),
+        setDeleteConfirm: vi.fn(),
+        setEditingTimelog,
+      }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [contractor],
+      getEventDetailData: () => ({
+        event: { ...event, status: 'upcoming' as const },
+        timelogs: [pendingCrewheadTimelog, correctedTimelog],
+        contractors: [contractor, applicant],
+        receipts: [],
+        applications: [],
+        crewAssignments: [{ eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: contractor.profileId, name: contractor.name }],
+      }),
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: requestEventWithdrawalMock,
+      subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatus,
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventDetailView } = await import('./EventDetailView');
+
+    render(<EventDetailView />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Schvalování' }));
+
+    const approvalDialog = screen.getByRole('dialog', { name: 'Schvalování' });
+
+    expect(within(approvalDialog).getByText('Čeká na souhlas Crew')).toBeInTheDocument();
+    expect(within(approvalDialog).getByText('Čeká na potvrzení upraveného výkazu členem Crew.')).toBeInTheDocument();
+    expect(within(approvalDialog).getAllByRole('button', { name: 'Schválit výkaz Jana Nova' })).toHaveLength(1);
+    expect(within(approvalDialog).getAllByRole('button', { name: 'Upravit výkaz Jana Nova' })).toHaveLength(1);
   });
 
   it('opens a confirmation dialog before requesting mobile Crew withdrawal', async () => {

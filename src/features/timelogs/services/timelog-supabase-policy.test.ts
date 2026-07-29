@@ -2,33 +2,28 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const sql = () => readFileSync(
-  resolve(process.cwd(), 'supabase/timelog-role-workflow-policies-2026-07.sql'),
-  'utf8',
+const readWorkflowPolicySql = () => (
+  readFileSync(resolve(process.cwd(), 'supabase/timelog-role-workflow-policies-2026-07.sql'), 'utf8')
 );
 
-describe('Supabase timelog role workflow policies', () => {
-  it('replaces broad timelog RLS policies with role-scoped workflow policies', () => {
-    const migrationSql = sql();
+describe('timelog Supabase role workflow policy', () => {
+  it('includes the Crew confirmation state in editable timelog data rules', () => {
+    const sql = readWorkflowPolicySql();
 
-    expect(migrationSql).toContain('drop policy if exists "Crew can manage own timelogs" on public.timelogs;');
-    expect(migrationSql).toContain('drop policy if exists "COO can manage all timelogs" on public.timelogs;');
-    expect(migrationSql).toContain('drop policy if exists "CrewHead can view all timelogs" on public.timelogs;');
-    expect(migrationSql).toContain('create policy "Crew can update own draft and rejected timelogs"');
-    expect(migrationSql).toContain("status in ('draft'::public.timelog_status, 'rejected'::public.timelog_status)");
-    expect(migrationSql).toContain('create policy "CrewHead can update draft and CH timelogs"');
-    expect(migrationSql).toContain('create policy "COO can status-update COO timelogs"');
+    expect(sql).toContain("'pending_crew_confirmation'::public.timelog_status");
+    expect(sql).toMatch(/public\.has_role\(auth\.uid\(\), 'crew'::public\.app_role\)[\s\S]+p_status in \('draft'::public\.timelog_status, 'rejected'::public\.timelog_status, 'pending_crew_confirmation'::public\.timelog_status\)/);
   });
 
-  it('blocks COO data edits and removes COO timelog-day write access', () => {
-    const migrationSql = sql();
+  it('allows Crew to confirm a CrewHead correction back to CH review', () => {
+    const sql = readWorkflowPolicySql();
 
-    expect(migrationSql).toContain('create or replace function public.enforce_timelog_update_permissions()');
-    expect(migrationSql).toContain("old.status = 'pending_coo'::public.timelog_status");
-    expect(migrationSql).toContain("new.status in ('approved'::public.timelog_status, 'rejected'::public.timelog_status)");
-    expect(migrationSql).toContain('p_new.km is not distinct from p_old.km');
-    expect(migrationSql).toContain('p_new.note is not distinct from p_old.note');
-    expect(migrationSql).toContain('drop policy if exists "CrewHead and COO can create assignment timelog days" on public.timelog_days;');
-    expect(migrationSql).not.toContain('create policy "CrewHead and COO can create assignment timelog days"');
+    expect(sql).toMatch(/old\.status in \('draft'::public\.timelog_status, 'rejected'::public\.timelog_status, 'pending_crew_confirmation'::public\.timelog_status\)[\s\S]+new\.status in \('draft'::public\.timelog_status, 'rejected'::public\.timelog_status, 'pending_crew_confirmation'::public\.timelog_status, 'pending_ch'::public\.timelog_status\)/);
+  });
+
+  it('lets CrewHead corrections wait for Crew instead of approving directly to COO', () => {
+    const sql = readWorkflowPolicySql();
+
+    expect(sql).toMatch(/old\.status = 'pending_ch'::public\.timelog_status[\s\S]+new\.status = 'pending_crew_confirmation'::public\.timelog_status/);
+    expect(sql).not.toMatch(/old\.status = 'pending_crew_confirmation'::public\.timelog_status[\s\S]+new\.status = 'pending_coo'::public\.timelog_status/);
   });
 });

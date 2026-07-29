@@ -313,7 +313,8 @@ describe('UUID mine-scope identity', () => {
     expect(screen.getByText(/Vítejte zpět, Prihlaseny Contractor/i)).toBeInTheDocument();
     expect(screen.queryByText(/Vítejte zpět, Prvni Contractor/i)).not.toBeInTheDocument();
     expect(screen.getByText('Nejbližší směna')).toBeInTheDocument();
-    expect(screen.getByText('Rychlý vstup')).toBeInTheDocument();
+    expect(screen.queryByText('Rychlý vstup')).not.toBeInTheDocument();
+    expect(screen.queryByText('Účtenky')).not.toBeInTheDocument();
     expect(screen.getAllByText('Akce moje').length).toBeGreaterThan(0);
     expect(screen.queryByText('Akce prvni')).not.toBeInTheDocument();
   });

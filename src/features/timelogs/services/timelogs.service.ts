@@ -202,6 +202,29 @@ const getSupabaseTimelogRowId = async (localTimelogId: number): Promise<string> 
   return rowId;
 };
 
+const persistSupabaseTimelogRowStatus = async (
+  rowId: string,
+  nextStatus: TimelogStatus,
+): Promise<void> => {
+  if (!supabase) {
+    throw new Error('Supabase klient neni dostupny.');
+  }
+
+  const result = await supabase
+    .from('timelogs')
+    .update({ status: nextStatus })
+    .eq('id', rowId)
+    .select('id');
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+
+  if ((result.data ?? []).length === 0) {
+    throw new Error('Nepodarilo se aktualizovat vykaz v databazi.');
+  }
+};
+
 const persistSupabaseTimelogStatus = async (
   localTimelogIds: number[],
   nextStatus: TimelogStatus,
@@ -219,21 +242,7 @@ const persistSupabaseTimelogStatus = async (
     return rowId;
   })));
 
-  await Promise.all(rowIds.map(async (rowId) => {
-    const result = await supabase
-      .from('timelogs')
-      .update({ status: nextStatus })
-      .eq('id', rowId)
-      .select('id');
-
-    if (result.error) {
-      throw new Error(result.error.message);
-    }
-
-    if ((result.data ?? []).length === 0) {
-      throw new Error('Nepodarilo se aktualizovat vykaz v databazi.');
-    }
-  }));
+  await Promise.all(rowIds.map((rowId) => persistSupabaseTimelogRowStatus(rowId, nextStatus)));
 };
 
 export const getTimelogs = (search = ''): Timelog[] => {
@@ -447,6 +456,9 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
       throw new Error('Nepodarilo se sparovat vykaz s databazovym zaznamem.');
     }
 
+    const statusChanged = normalizedTimelog.status !== existingTimelog.status;
+    const statusForDataWrite = statusChanged ? existingTimelog.status : normalizedTimelog.status;
+
     const timelogUpdate = await supabase
       .from('timelogs')
       .update({
@@ -454,7 +466,7 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
         contractor_id: contractorRowId,
         km: normalizedTimelog.km,
         note: normalizedTimelog.note,
-        status: normalizedTimelog.status,
+        status: statusForDataWrite,
       })
       .eq('id', timelogRowId);
 
@@ -486,6 +498,10 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
       if (timelogDaysInsert.error) {
         throw new Error(timelogDaysInsert.error.message);
       }
+    }
+
+    if (statusChanged) {
+      await persistSupabaseTimelogRowStatus(timelogRowId, normalizedTimelog.status);
     }
   }
 

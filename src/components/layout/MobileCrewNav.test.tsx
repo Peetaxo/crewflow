@@ -36,6 +36,7 @@ describe('MobileCrewNav', () => {
     expect(screen.getByRole('navigation', { name: 'Mobilní navigace Crew' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Akce' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByText('Přehled')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Přehled' }).querySelector('svg.lucide-house')).toBeInTheDocument();
     expect(screen.getByText('Výkazy')).toBeInTheDocument();
     expect(screen.getByText('2')).toBeInTheDocument();
     expect(screen.queryByText('Směny')).not.toBeInTheDocument();

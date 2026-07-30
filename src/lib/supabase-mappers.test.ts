@@ -189,6 +189,14 @@ describe('supabase mappers', () => {
       created_at: '2026-04-28T00:00:00Z',
     };
 
+    expect(mapTimelog(timelogRow, [dayRow])).toMatchObject({
+      supabaseId: 'timelog-uuid-1',
+      days: [expect.objectContaining({
+        id: 'day-uuid-1',
+        d: '2026-07-13',
+        note: 'Příprava mimo standardní plán',
+      })],
+    });
     expect(mapTimelog(timelogRow, [dayRow]).days[0]).toMatchObject({
       id: 'day-uuid-1',
       d: '2026-07-13',

@@ -156,7 +156,7 @@ const invalidateTimelogQueries = () => {
   void queryClient.invalidateQueries({ queryKey: queryKeys.timelogs.all });
 };
 
-const getSupabaseEventIdMap = async (): Promise<Map<number, string>> => {
+const getSupabaseEventRowIds = async (): Promise<string[]> => {
   if (!supabase) {
     throw new Error('Supabase klient neni dostupny.');
   }
@@ -171,7 +171,7 @@ const getSupabaseEventIdMap = async (): Promise<Map<number, string>> => {
     throw new Error(result.error.message);
   }
 
-  return new Map((result.data ?? []).map((row, index) => [index + 1, row.id]));
+  return (result.data ?? []).map((row) => row.id);
 };
 
 const getSupabaseTimelogRowIds = async (): Promise<string[]> => {
@@ -191,9 +191,40 @@ const getSupabaseTimelogRowIds = async (): Promise<string[]> => {
   return (result.data ?? []).map((row) => row.id);
 };
 
+const getSupabaseEventIdMap = async (): Promise<Map<number, string>> => {
+  const rowIds = await getSupabaseEventRowIds();
+  const localEvents = getLocalAppState().events ?? [];
+
+  return new Map(rowIds.map((rowId, index) => [localEvents[index]?.id ?? index + 1, rowId]));
+};
+
+const getSupabaseEventRowId = async (localEventId: number): Promise<string | undefined> => {
+  const event = (getLocalAppState().events ?? []).find((item) => item.id === localEventId);
+
+  if (event?.supabaseId) {
+    return event.supabaseId;
+  }
+
+  const eventIdMap = await getSupabaseEventIdMap();
+  return eventIdMap.get(localEventId);
+};
+
+const getSupabaseTimelogIdMap = async (): Promise<Map<number, string>> => {
+  const rowIds = await getSupabaseTimelogRowIds();
+  const localTimelogs = getLocalAppState().timelogs ?? [];
+
+  return new Map(rowIds.map((rowId, index) => [localTimelogs[index]?.id ?? index + 1, rowId]));
+};
+
 const getSupabaseTimelogRowId = async (localTimelogId: number): Promise<string> => {
-  const timelogRowIds = await getSupabaseTimelogRowIds();
-  const rowId = timelogRowIds[localTimelogId - 1];
+  const timelog = (getLocalAppState().timelogs ?? []).find((item) => item.id === localTimelogId);
+
+  if (timelog?.supabaseId) {
+    return timelog.supabaseId;
+  }
+
+  const timelogIdMap = await getSupabaseTimelogIdMap();
+  const rowId = timelogIdMap.get(localTimelogId);
 
   if (!rowId) {
     throw new Error('Nepodarilo se sparovat vykaz s databazovym zaznamem.');
@@ -233,14 +264,9 @@ const persistSupabaseTimelogStatus = async (
     return;
   }
 
-  const timelogRowIds = await getSupabaseTimelogRowIds();
-  const rowIds = Array.from(new Set(localTimelogIds.map((localId) => {
-    const rowId = timelogRowIds[localId - 1];
-    if (!rowId) {
-      throw new Error('Nepodarilo se sparovat vykaz s databazovym zaznamem.');
-    }
-    return rowId;
-  })));
+  const rowIds = Array.from(new Set(await Promise.all(
+    localTimelogIds.map((localId) => getSupabaseTimelogRowId(localId)),
+  )));
 
   await Promise.all(rowIds.map((rowId) => persistSupabaseTimelogRowStatus(rowId, nextStatus)));
 };
@@ -335,7 +361,7 @@ export const approveAllTimelogsForEvent = async (eventId: number): Promise<Timel
 };
 
 export const createTimelog = async (timelog: Omit<Timelog, 'id'>): Promise<Timelog> => {
-  const normalizedTimelog: Timelog = {
+  let normalizedTimelog: Timelog = {
     ...timelog,
     id: Math.max(0, ...(getLocalAppState().timelogs ?? []).map((item) => item.id)) + 1,
     days: sortTimelogDays(timelog.days),
@@ -361,8 +387,7 @@ export const createTimelog = async (timelog: Omit<Timelog, 'id'>): Promise<Timel
   }
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
-    const eventIdMap = await getSupabaseEventIdMap();
-    const eventRowId = eventIdMap.get(normalizedTimelog.eid);
+    const eventRowId = await getSupabaseEventRowId(normalizedTimelog.eid);
 
     if (!eventRowId) {
       throw new Error('Nepodarilo se sparovat akci s databazovym zaznamem.');
@@ -392,6 +417,11 @@ export const createTimelog = async (timelog: Omit<Timelog, 'id'>): Promise<Timel
     if (!timelogRowId) {
       throw new Error('Nepodarilo se vytvorit vykaz v databazi.');
     }
+
+    normalizedTimelog = {
+      ...normalizedTimelog,
+      supabaseId: timelogRowId,
+    };
 
     const timelogDaysInsert = await supabase
       .from('timelog_days')
@@ -453,12 +483,11 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
   }
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
-    const [timelogRowId, eventIdMap] = await Promise.all([
+    const [timelogRowId, eventRowId] = await Promise.all([
       getSupabaseTimelogRowId(updated.id),
-      getSupabaseEventIdMap(),
+      getSupabaseEventRowId(normalizedTimelog.eid),
     ]);
     const contractorRowId = normalizedTimelog.contractorProfileId;
-    const eventRowId = eventIdMap.get(normalizedTimelog.eid);
 
     if (!contractorRowId || !eventRowId) {
       throw new Error('Nepodarilo se sparovat vykaz s databazovym zaznamem.');

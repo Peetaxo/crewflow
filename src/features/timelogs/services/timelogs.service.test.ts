@@ -665,6 +665,132 @@ describe('timelogs.service write flow', () => {
     ]);
   });
 
+  it('saves a Supabase timelog by stored row ids when local ids are not positional', async () => {
+    const existingTimelog = {
+      id: 7,
+      supabaseId: 'timelog-row-1',
+      eid: 3,
+      contractorProfileId: 'profile-uuid-1',
+      days: [{ d: '2026-04-10', f: '08:00', t: '16:00', type: 'instal' as const }],
+      km: 0,
+      note: '',
+      status: 'draft' as const,
+    } as Timelog & { supabaseId: string };
+    let snapshot = {
+      ...createSnapshot([existingTimelog]),
+      events: [{ id: 3, supabaseId: 'event-row-1' }],
+    };
+
+    const timelogUpdatePayloads: unknown[] = [];
+    const timelogStatusSelect = vi.fn().mockResolvedValue({ data: [{ id: 'timelog-row-1' }], error: null });
+    const timelogUpdateEq = vi.fn().mockImplementation(() => {
+      const payload = timelogUpdatePayloads.at(-1);
+
+      if (
+        payload
+        && typeof payload === 'object'
+        && Object.keys(payload).length === 1
+        && 'status' in payload
+      ) {
+        return { select: timelogStatusSelect };
+      }
+
+      return Promise.resolve({ error: null });
+    });
+    const timelogUpdate = vi.fn().mockImplementation((payload: unknown) => {
+      timelogUpdatePayloads.push(payload);
+      return { eq: timelogUpdateEq };
+    });
+    const timelogDaysDeleteEq = vi.fn().mockResolvedValue({ error: null });
+    const timelogDaysDelete = vi.fn(() => ({ eq: timelogDaysDeleteEq }));
+    const timelogDaysInsert = vi.fn().mockResolvedValue({ error: null });
+    const timelogsSelectMock = vi.fn(() => ({
+      order: vi.fn(() => Promise.resolve({
+        data: [{ id: 'timelog-row-1' }],
+        error: null,
+      })),
+    }));
+    const eventsSelectMock = vi.fn(() => ({
+      order: vi.fn(() => ({
+        order: vi.fn(() => Promise.resolve({
+          data: [{ id: 'event-row-1' }],
+          error: null,
+        })),
+      })),
+    }));
+
+    vi.doMock('../../../lib/app-config', () => ({
+      appDataSource: 'supabase',
+    }));
+
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: vi.fn((table: string) => {
+          if (table === 'timelogs') {
+            return {
+              select: timelogsSelectMock,
+              update: timelogUpdate,
+            };
+          }
+
+          if (table === 'timelog_days') {
+            return {
+              delete: timelogDaysDelete,
+              insert: timelogDaysInsert,
+            };
+          }
+
+          if (table === 'events') {
+            return {
+              select: eventsSelectMock,
+            };
+          }
+
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    }));
+
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapTimelog: vi.fn(),
+    }));
+
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    const { saveTimelog } = await import('./timelogs.service');
+
+    const result = await saveTimelog({
+      ...existingTimelog,
+      days: [{ d: '2026-04-10', f: '09:00', t: '17:00', type: 'provoz' }],
+      status: 'pending_ch',
+    });
+
+    expect(timelogUpdate).toHaveBeenCalledWith({
+      event_id: 'event-row-1',
+      contractor_id: 'profile-uuid-1',
+      km: 0,
+      note: '',
+      status: 'draft',
+    });
+    expect(timelogUpdateEq).toHaveBeenCalledWith('id', 'timelog-row-1');
+    expect(timelogDaysDeleteEq).toHaveBeenCalledWith('timelog_id', 'timelog-row-1');
+    expect(result.status).toBe('pending_ch');
+    expect(snapshot.timelogs[0]).toMatchObject({
+      id: 7,
+      supabaseId: 'timelog-row-1',
+      eid: 3,
+      status: 'pending_ch',
+    });
+  });
+
   it('creates a new timelog when saving an unsaved draft', async () => {
     let snapshot = createSnapshot([
       {
@@ -857,7 +983,9 @@ describe('timelogs.service write flow', () => {
       'timelog-days-insert',
       'timelog-update:pending_crew_confirmation',
     ]);
+    expect(created.supabaseId).toBe('timelog-row-1');
     expect(created.status).toBe('pending_crew_confirmation');
+    expect(snapshot.timelogs[0].supabaseId).toBe('timelog-row-1');
     expect(snapshot.timelogs[0].status).toBe('pending_crew_confirmation');
   });
 

@@ -245,6 +245,7 @@ export function mapTimelogDay(row: TimelogDayRow): TimelogDay {
 export function mapTimelog(row: TimelogRow, days: TimelogDayRow[] = []): Timelog {
   return {
     id: Number.NaN,
+    supabaseId: row.id,
     eid: Number.NaN,
     contractorProfileId: row.contractor_id,
     days: days.map(mapTimelogDay),

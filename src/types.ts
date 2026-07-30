@@ -157,6 +157,7 @@ export interface TimelogDay {
 /** Vykaz prace (timelog) */
 export interface Timelog {
   id: number;
+  supabaseId?: string;
   /** ID akce */
   eid: number;
   contractorProfileId?: string;

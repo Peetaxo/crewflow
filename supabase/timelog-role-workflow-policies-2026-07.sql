@@ -131,6 +131,7 @@ drop policy if exists "Crew can update own draft and rejected timelogs" on publi
 drop policy if exists "Crew can update own draft, rejected, and correction timelogs" on public.timelogs;
 drop policy if exists "Crew can delete own draft and rejected timelogs" on public.timelogs;
 drop policy if exists "CrewHead can create assignment draft timelogs" on public.timelogs;
+drop policy if exists "CrewHead can create timelog proposals for Crew confirmation" on public.timelogs;
 drop policy if exists "CrewHead can update draft and CH timelogs" on public.timelogs;
 drop policy if exists "CrewHead can delete draft and CH timelogs" on public.timelogs;
 drop policy if exists "COO can view all timelogs" on public.timelogs;
@@ -158,6 +159,14 @@ with check (
   public.has_role(auth.uid(), 'crew'::public.app_role)
   and contractor_id = public.current_profile_id()
   and status = 'draft'::public.timelog_status
+);
+
+create policy "CrewHead can create timelog proposals for Crew confirmation"
+on public.timelogs
+for insert
+with check (
+  public.has_role(auth.uid(), 'crewhead'::public.app_role)
+  and status = 'pending_ch'::public.timelog_status
 );
 
 create policy "Crew can update own draft, rejected, and correction timelogs"

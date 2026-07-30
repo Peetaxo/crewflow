@@ -1,5 +1,14 @@
 drop policy if exists "CrewHead can submit and update CH timelogs" on public.timelogs;
+drop policy if exists "CrewHead can create timelog proposals for Crew confirmation" on public.timelogs;
 drop policy if exists "CrewHead can update pending CH timelogs" on public.timelogs;
+
+create policy "CrewHead can create timelog proposals for Crew confirmation"
+on public.timelogs
+for insert
+with check (
+  has_role(auth.uid(), 'crewhead'::app_role)
+  and status = 'pending_ch'::timelog_status
+);
 
 create policy "CrewHead can update pending CH timelogs"
 on public.timelogs

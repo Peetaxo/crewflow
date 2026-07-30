@@ -457,7 +457,7 @@ const EventDetailView = () => {
       })),
       km: 0,
       note: '',
-      status: 'draft',
+      status: role === 'crewhead' ? 'pending_ch' : 'draft',
     };
   };
 
@@ -989,13 +989,14 @@ const EventDetailView = () => {
                 {eventCrew.map((contractor) => {
                   const timelog = eventTimelogs.find((item) => item.contractorProfileId === contractor.profileId);
                   const hours = timelog ? calculateTotalHours(timelog.days) : 0;
+                  const timelogSummary = timelog?.status === 'draft' ? 'Rozpracované' : formatMobileCrewHours(hours);
 
                   return (
                     <div key={contractor.id} className="nodu-mobile-event-crew-row">
                       <div className="av h-10 w-10 text-[12px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
                       <div>
                         <div className="nodu-mobile-event-crew-name">{contractor.name}</div>
-                        <div className="nodu-mobile-event-crew-meta">{formatMobileCrewHours(hours)}</div>
+                        <div className="nodu-mobile-event-crew-meta">{timelogSummary}</div>
                       </div>
                       {contractor.profileId === currentProfileId && <span className="nodu-mobile-event-crew-chip">Ty</span>}
                     </div>
@@ -1367,6 +1368,7 @@ const EventDetailView = () => {
                               const timelog = eventTimelogs.find((item) => item.contractorProfileId === contractor.profileId);
                               const hours = timelog ? calculateTotalHours(timelog.days) : 0;
                               const canOpenTimelog = timelog ? canEditTimelog(timelog, role) : canCreateTimelog(role);
+                              const timelogSummary = timelog?.status === 'draft' ? 'Rozpracované' : `${hours.toFixed(1)}h`;
 
                               return (
                                 <tr
@@ -1394,7 +1396,7 @@ const EventDetailView = () => {
                                       </div>
                                     </td>
                                   )}
-                                  <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text)]">{hours.toFixed(1)}h</td>
+                                  <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text)]">{timelogSummary}</td>
                                   {canManageEvents && (
                                     <td className="px-4 py-3 text-right text-xs font-bold text-[color:var(--nodu-text)]">{formatCurrency(hours * contractor.rate)}</td>
                                   )}

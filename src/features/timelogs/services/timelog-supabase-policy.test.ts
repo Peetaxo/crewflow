@@ -18,6 +18,18 @@ const readCrewHeadDraftRestrictionSql = () => {
   return readFileSync(resolve(migrationsDir, migrationFile), 'utf8');
 };
 
+const readCrewHeadProposalSql = () => {
+  const migrationsDir = resolve(process.cwd(), 'supabase/migrations');
+  const migrationFile = readdirSync(migrationsDir)
+    .find((file) => file.endsWith('_allow_crewhead_timelog_proposals.sql'));
+
+  if (!migrationFile) {
+    throw new Error('Missing CrewHead timelog proposal migration.');
+  }
+
+  return readFileSync(resolve(migrationsDir, migrationFile), 'utf8');
+};
+
 describe('timelog Supabase role workflow policy', () => {
   it('includes the Crew confirmation state in editable timelog data rules', () => {
     const sql = readWorkflowPolicySql();
@@ -46,5 +58,16 @@ describe('timelog Supabase role workflow policy', () => {
     expect(sql).not.toMatch(/public\.has_role\(auth\.uid\(\), 'crewhead'::public\.app_role\)[\s\S]+p_status in \('draft'::public\.timelog_status, 'pending_ch'::public\.timelog_status\)/);
     expect(sql).toContain('drop policy if exists "CrewHead can create assignment draft timelogs"');
     expect(sql).toContain('drop policy if exists "CrewHead can delete draft and CH timelogs"');
+  });
+
+  it('allows CrewHead to create only CH-review timelog proposals', () => {
+    const migrationSql = readCrewHeadProposalSql();
+    const workflowSql = readWorkflowPolicySql();
+
+    for (const sql of [migrationSql, workflowSql]) {
+      expect(sql).toContain('CrewHead can create timelog proposals for Crew confirmation');
+      expect(sql).toMatch(/create policy "CrewHead can create timelog proposals for Crew confirmation"[^;]+public\.has_role\(auth\.uid\(\), 'crewhead'::public\.app_role\)[^;]+status = 'pending_ch'::public\.timelog_status[^;]+;/);
+      expect(sql).not.toMatch(/create policy "CrewHead can create timelog proposals for Crew confirmation"[^;]+status = 'draft'::public\.timelog_status[^;]+;/);
+    }
   });
 });

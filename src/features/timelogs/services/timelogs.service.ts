@@ -368,6 +368,10 @@ export const createTimelog = async (timelog: Omit<Timelog, 'id'>): Promise<Timel
       throw new Error('Nepodarilo se sparovat akci s databazovym zaznamem.');
     }
 
+    const statusForDataWrite = normalizedTimelog.status === 'pending_crew_confirmation'
+      ? 'pending_ch'
+      : normalizedTimelog.status;
+
     const timelogInsert = await supabase
       .from('timelogs')
       .insert({
@@ -375,7 +379,7 @@ export const createTimelog = async (timelog: Omit<Timelog, 'id'>): Promise<Timel
         contractor_id: normalizedTimelog.contractorProfileId,
         km: normalizedTimelog.km,
         note: normalizedTimelog.note,
-        status: normalizedTimelog.status,
+        status: statusForDataWrite,
       })
       .select('id')
       .single();
@@ -402,6 +406,10 @@ export const createTimelog = async (timelog: Omit<Timelog, 'id'>): Promise<Timel
 
     if (timelogDaysInsert.error) {
       throw new Error(timelogDaysInsert.error.message);
+    }
+
+    if (statusForDataWrite !== normalizedTimelog.status) {
+      await persistSupabaseTimelogRowStatus(timelogRowId, normalizedTimelog.status);
     }
   }
 

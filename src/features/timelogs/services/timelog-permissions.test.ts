@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import type { Role, TimelogStatus } from '../../../types';
-import { canEditTimelog, canSeeTimelogNote, canSubmitTimelog } from './timelog-permissions';
+import { canCreateTimelog, canEditTimelog, canSeeTimelogNote, canSubmitTimelog } from './timelog-permissions';
 
 const timelogWithStatus = (status: TimelogStatus) => ({ status });
 
 describe('timelog permissions', () => {
+  it.each([
+    ['crew', true],
+    ['crewhead', true],
+    ['coo', false],
+  ] satisfies [Role, boolean][])('returns create permission for %s', (role, expected) => {
+    expect(canCreateTimelog(role)).toBe(expected);
+  });
+
   it.each([
     ['crew', 'draft', true],
     ['crew', 'rejected', true],

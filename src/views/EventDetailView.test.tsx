@@ -294,7 +294,7 @@ describe('EventDetailView', () => {
     const swipeSurface = container.querySelector('.nodu-mobile-event-swipe-surface');
     const floatingPanel = container.querySelector('.nodu-mobile-event-floating-panel');
     expect(swipeSurface).not.toContainElement(floatingPanel);
-    expect(screen.getAllByText('12.0h').length).toBeGreaterThan(0);
+    expect(screen.getByText('Rozpracované')).toBeInTheDocument();
     expect(screen.queryByText('v evidenci')).not.toBeInTheDocument();
     expect(screen.queryByText(/Prirazena Crew/)).not.toBeInTheDocument();
     expect(crewRatingsMockState.getCrewRatingsForEvent).not.toHaveBeenCalled();
@@ -801,7 +801,7 @@ describe('EventDetailView', () => {
     );
     expect(screen.queryByRole('heading', { name: 'Kde se potkáme' })).not.toBeInTheDocument();
     expect(screen.queryByText('Provoz · 12.0h')).not.toBeInTheDocument();
-    expect(screen.getByText('12.0h')).toBeInTheDocument();
+    expect(screen.getByText('Rozpracované')).toBeInTheDocument();
     expect(screen.getByText('0h')).toBeInTheDocument();
 
     const descriptionSection = screen.getByRole('heading', { name: 'Popis akce' }).closest('section');
@@ -1327,6 +1327,8 @@ describe('EventDetailView', () => {
 
     render(<EventDetailView />);
 
+    expect(screen.getByText('Rozpracované')).toBeInTheDocument();
+
     fireEvent.click(screen.getAllByText('Petr Heitzer')[0]);
 
     expect(setEditingTimelog).not.toHaveBeenCalled();
@@ -1446,7 +1448,7 @@ describe('EventDetailView', () => {
     expect(setEditingTimelog).toHaveBeenCalledWith(pendingCrewheadTimelog);
   });
 
-  it('does not let CrewHead create an unsubmitted crew draft from assigned crew', async () => {
+  it('lets CrewHead create a new timelog proposal for Crew confirmation when no report exists yet', async () => {
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => ({
         role: 'crewhead',
@@ -1500,7 +1502,18 @@ describe('EventDetailView', () => {
 
     fireEvent.click(screen.getByText('Petr Heitzer'));
 
-    expect(setEditingTimelog).not.toHaveBeenCalled();
+    expect(setEditingTimelog).toHaveBeenCalledWith(expect.objectContaining({
+      id: expect.any(Number),
+      eid: 1,
+      contractorProfileId: 'profile-1',
+      days: [
+        { d: '2026-04-16', f: '14:00', t: '17:00', type: 'provoz' },
+        { d: '2026-04-17', f: '14:00', t: '17:00', type: 'provoz' },
+      ],
+      km: 0,
+      note: '',
+      status: 'pending_ch',
+    }));
   });
 
   it('opens a new draft timelog when Crew opens their own assigned event', async () => {

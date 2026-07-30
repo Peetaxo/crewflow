@@ -729,6 +729,138 @@ describe('timelogs.service write flow', () => {
     ]);
   });
 
+  it('creates a CrewHead proposal in Supabase before moving it to Crew confirmation', async () => {
+    let snapshot = createSnapshot([]);
+    const operationOrder: string[] = [];
+    const timelogInsert = vi.fn().mockImplementation((payload: unknown) => {
+      operationOrder.push(`timelog-insert:${(payload as { status?: string }).status ?? 'missing'}`);
+      return {
+        select: vi.fn(() => ({
+          single: vi.fn().mockResolvedValue({ data: { id: 'timelog-row-1' }, error: null }),
+        })),
+      };
+    });
+    const timelogUpdate = vi.fn().mockImplementation((payload: unknown) => {
+      operationOrder.push(`timelog-update:${(payload as { status?: string }).status ?? 'missing'}`);
+      return {
+        eq: vi.fn(() => ({
+          select: vi.fn().mockResolvedValue({ data: [{ id: 'timelog-row-1' }], error: null }),
+        })),
+      };
+    });
+    const timelogDaysInsert = vi.fn().mockImplementation(() => {
+      operationOrder.push('timelog-days-insert');
+      return Promise.resolve({ error: null });
+    });
+    const eventsSelectMock = vi.fn(() => ({
+      order: vi.fn(() => ({
+        order: vi.fn(() => Promise.resolve({
+          data: [{ id: 'event-row-1' }],
+          error: null,
+        })),
+      })),
+    }));
+
+    vi.doMock('../../../lib/app-config', () => ({
+      appDataSource: 'supabase',
+    }));
+
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: vi.fn((table: string) => {
+          if (table === 'timelogs') {
+            return {
+              insert: timelogInsert,
+              update: timelogUpdate,
+            };
+          }
+
+          if (table === 'timelog_days') {
+            return {
+              insert: timelogDaysInsert,
+            };
+          }
+
+          if (table === 'events') {
+            return {
+              select: eventsSelectMock,
+            };
+          }
+
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    }));
+
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapTimelog: vi.fn(),
+    }));
+
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    vi.doMock('../../../lib/query-client', () => ({
+      queryClient: {
+        setQueryData: vi.fn(),
+        invalidateQueries: vi.fn(),
+      },
+    }));
+
+    vi.doMock('../../../lib/query-keys', () => ({
+      queryKeys: {
+        timelogs: {
+          all: ['timelogs'],
+        },
+      },
+    }));
+
+    const { createTimelog } = await import('./timelogs.service');
+
+    const created = await createTimelog({
+      eid: 1,
+      contractorProfileId: 'profile-uuid-1',
+      days: [
+        { d: '2026-04-16', f: '14:00', t: '17:00', type: 'provoz' },
+      ],
+      km: 0,
+      note: 'Zadano CH',
+      status: 'pending_crew_confirmation',
+    });
+
+    expect(timelogInsert).toHaveBeenCalledWith({
+      event_id: 'event-row-1',
+      contractor_id: 'profile-uuid-1',
+      km: 0,
+      note: 'Zadano CH',
+      status: 'pending_ch',
+    });
+    expect(timelogDaysInsert).toHaveBeenCalledWith([
+      {
+        timelog_id: 'timelog-row-1',
+        date: '2026-04-16',
+        time_from: '14:00',
+        time_to: '17:00',
+        day_type: 'provoz',
+        note: null,
+      },
+    ]);
+    expect(timelogUpdate).toHaveBeenCalledWith({ status: 'pending_crew_confirmation' });
+    expect(operationOrder).toEqual([
+      'timelog-insert:pending_ch',
+      'timelog-days-insert',
+      'timelog-update:pending_crew_confirmation',
+    ]);
+    expect(created.status).toBe('pending_crew_confirmation');
+    expect(snapshot.timelogs[0].status).toBe('pending_crew_confirmation');
+  });
+
   it('rejects creating a second event-contractor timelog instead of overwriting the existing report', async () => {
     let snapshot = createSnapshot([
       {

@@ -2,7 +2,7 @@ import type { Role, Timelog } from '../../../types';
 
 type TimelogPermissionTarget = Pick<Timelog, 'status'>;
 
-export const canCreateTimelog = (role: Role) => role === 'crew';
+export const canCreateTimelog = (role: Role) => role === 'crew' || role === 'crewhead';
 
 export const canEditTimelog = (timelog: TimelogPermissionTarget, role: Role) => {
   if (role === 'crew') {

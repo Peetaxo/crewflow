@@ -47,6 +47,38 @@ const getSupabaseClientRowIdByName = async (clientName: string): Promise<string 
   return clientLookup.data?.id ?? null;
 };
 
+const getSupabaseProjectRowId = async (project: Project): Promise<string> => {
+  if (project.supabaseId) {
+    return project.supabaseId;
+  }
+
+  const existingProject = (getLocalAppState().projects ?? []).find((item) => item.id === project.id);
+  if (existingProject?.supabaseId) {
+    return existingProject.supabaseId;
+  }
+
+  if (!supabase || !isSupabaseConfigured) {
+    throw new Error('Supabase neni nakonfigurovany.');
+  }
+
+  const projectLookup = await supabase
+    .from('projects')
+    .select('id')
+    .eq('job_number', project.id)
+    .limit(1)
+    .maybeSingle();
+
+  if (projectLookup.error) {
+    throw new Error(projectLookup.error.message);
+  }
+
+  if (!projectLookup.data?.id) {
+    throw new Error('Nepodarilo se sparovat projekt s databazovym zaznamem.');
+  }
+
+  return projectLookup.data.id;
+};
+
 let projectsHydrationPromise: Promise<void> | null = null;
 let projectsLoaded = false;
 
@@ -185,7 +217,7 @@ export const createEmptyProject = (): Project => ({
 });
 
 export const saveProject = async (project: Project): Promise<Project> => {
-  const normalizedProject = normalizeProject(project);
+  let normalizedProject = normalizeProject(project);
   if (!normalizedProject.id || !normalizedProject.name) {
     throw new Error('Vyplnte Job Number a nazev projektu.');
   }
@@ -201,22 +233,35 @@ export const saveProject = async (project: Project): Promise<Project> => {
     };
 
     if (existing) {
+      const projectRowId = await getSupabaseProjectRowId(normalizedProject);
       const projectUpdate = await supabase
         .from('projects')
         .update(payload)
-        .eq('job_number', normalizedProject.id);
+        .eq('id', projectRowId);
 
       if (projectUpdate.error) {
         throw new Error(projectUpdate.error.message);
       }
+
+      normalizedProject = {
+        ...normalizedProject,
+        supabaseId: projectRowId,
+      };
     } else {
       const projectInsert = await supabase
         .from('projects')
-        .insert(payload);
+        .insert(payload)
+        .select('id')
+        .single();
 
-      if (projectInsert.error) {
-        throw new Error(projectInsert.error.message);
+      if (projectInsert.error || !projectInsert.data?.id) {
+        throw new Error(projectInsert.error?.message ?? 'Nepodarilo se vytvorit projekt v databazi.');
       }
+
+      normalizedProject = {
+        ...normalizedProject,
+        supabaseId: projectInsert.data.id,
+      };
     }
   }
 
@@ -235,10 +280,16 @@ export const saveProject = async (project: Project): Promise<Project> => {
 
 export const deleteProject = async (id: string): Promise<{ id: string }> => {
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    const existing = getLocalAppState().projects.find((project) => project.id === id);
+    if (!existing) {
+      throw new Error('Projekt nebyl nalezen.');
+    }
+
+    const projectRowId = await getSupabaseProjectRowId(existing);
     const projectDelete = await supabase
       .from('projects')
       .delete()
-      .eq('job_number', id);
+      .eq('id', projectRowId);
 
     if (projectDelete.error) {
       throw new Error(projectDelete.error.message);

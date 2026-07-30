@@ -284,6 +284,7 @@ export function mapInvoice(row: InvoiceRow): Invoice {
 export function mapReceipt(row: ReceiptRow): ReceiptItem {
   return {
     id: Number.NaN,
+    supabaseId: row.id,
     eventSupabaseId: row.event_id ?? undefined,
     contractorProfileId: row.contractor_id,
     eid: Number.NaN,

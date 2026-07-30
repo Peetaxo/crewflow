@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { Database } from './database.types';
-import { mapContractor, mapEvent, mapFleetReservation, mapFleetVehicle, mapProject, mapTimelog } from './supabase-mappers';
+import { mapContractor, mapEvent, mapFleetReservation, mapFleetVehicle, mapProject, mapReceipt, mapTimelog } from './supabase-mappers';
 
 type EventRow = Database['public']['Tables']['events']['Row'];
 type FleetReservationRow = Database['public']['Tables']['fleet_reservations']['Row'];
 type FleetVehicleRow = Database['public']['Tables']['fleet_vehicles']['Row'];
 type ProfileRow = Database['public']['Tables']['profiles']['Row'];
 type ProjectRow = Database['public']['Tables']['projects']['Row'];
+type ReceiptRow = Database['public']['Tables']['receipts']['Row'];
 type TimelogRow = Database['public']['Tables']['timelogs']['Row'];
 type TimelogDayRow = Database['public']['Tables']['timelog_days']['Row'];
 
@@ -203,5 +204,29 @@ describe('supabase mappers', () => {
       note: 'Příprava mimo standardní plán',
     });
     expect(mapTimelog(timelogRow, [{ ...dayRow, note: null }]).days[0].note).toBe('');
+  });
+
+  it('maps receipt row UUIDs', () => {
+    const row: ReceiptRow = {
+      id: 'receipt-uuid-1',
+      contractor_id: 'profile-uuid-1',
+      event_id: 'event-uuid-1',
+      job_number: 'AK001',
+      name: 'Parkovne',
+      supplier: 'Garage',
+      amount: 250,
+      paid_at: '2026-07-13',
+      note: null,
+      status: 'draft',
+      created_at: '2026-07-13T00:00:00Z',
+      updated_at: '2026-07-13T00:00:00Z',
+    };
+
+    expect(mapReceipt(row)).toMatchObject({
+      supabaseId: 'receipt-uuid-1',
+      eventSupabaseId: 'event-uuid-1',
+      contractorProfileId: 'profile-uuid-1',
+      title: 'Parkovne',
+    });
   });
 });

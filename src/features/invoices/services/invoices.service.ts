@@ -187,19 +187,61 @@ const getSupabaseIdRows = async (
   orderBy: string,
 ): Promise<Array<{ id: string }>> => safeSelect<{ id: string }>(table, 'id', orderBy);
 
+const mapStoredSupabaseIds = (
+  items: Array<{ id: number; supabaseId?: string | null }>,
+): Map<number, string> => new Map(
+  items
+    .filter((item): item is { id: number; supabaseId: string } => Boolean(item.supabaseId))
+    .map((item) => [item.id, item.supabaseId]),
+);
+
+const addFallbackIdsByLocalOrder = (
+  map: Map<number, string>,
+  localItems: Array<{ id: number }>,
+  rows: Array<{ id: string }>,
+): Map<number, string> => {
+  rows.forEach((row, index) => {
+    const localId = localItems[index]?.id;
+    if (localId != null && !map.has(localId)) {
+      map.set(localId, row.id);
+    }
+  });
+
+  return map;
+};
+
 const getSupabaseTimelogIdMap = async (): Promise<Map<number, string>> => {
+  const localTimelogs = getLocalAppState().timelogs ?? [];
+  const directMap = mapStoredSupabaseIds(localTimelogs);
+
+  if (directMap.size === localTimelogs.length && localTimelogs.length > 0) {
+    return directMap;
+  }
+
   const rows = await getSupabaseIdRows('timelogs', 'created_at');
-  const localIds = (getLocalAppState().timelogs ?? []).map((timelog) => timelog.id);
-  return new Map(rows.map((row, index) => [localIds[index], row.id]).filter(([localId]) => localId != null));
+  return addFallbackIdsByLocalOrder(directMap, localTimelogs, rows);
 };
 
 const getSupabaseReceiptIdMap = async (): Promise<Map<number, string>> => {
+  const localReceipts = getLocalAppState().receipts ?? [];
+  const directMap = mapStoredSupabaseIds(localReceipts);
+
+  if (directMap.size === localReceipts.length && localReceipts.length > 0) {
+    return directMap;
+  }
+
   const rows = await getSupabaseIdRows('receipts', 'created_at');
-  const localIds = (getLocalAppState().receipts ?? []).map((receipt) => receipt.id);
-  return new Map(rows.map((row, index) => [localIds[index], row.id]).filter(([localId]) => localId != null));
+  return addFallbackIdsByLocalOrder(directMap, localReceipts, rows);
 };
 
 const getSupabaseEventIdMap = async (): Promise<Map<number, string>> => {
+  const localEvents = getLocalAppState().events ?? [];
+  const directMap = mapStoredSupabaseIds(localEvents);
+
+  if (directMap.size === localEvents.length && localEvents.length > 0) {
+    return directMap;
+  }
+
   const rows = await safeSelect<{ id: string; date_from: string | null; name: string }>(
     'events',
     'id,date_from,name',
@@ -208,7 +250,7 @@ const getSupabaseEventIdMap = async (): Promise<Map<number, string>> => {
   const sortedRows = [...rows].sort((a, b) => (
     `${a.date_from ?? ''}|${a.name}`.localeCompare(`${b.date_from ?? ''}|${b.name}`)
   ));
-  return new Map(sortedRows.map((row, index) => [index + 1, row.id]));
+  return addFallbackIdsByLocalOrder(directMap, localEvents, sortedRows);
 };
 
 const getNextInvoiceSequence = async (invoiceYear: number, contractorProfileId: string): Promise<number> => {

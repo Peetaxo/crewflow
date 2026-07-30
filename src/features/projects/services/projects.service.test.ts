@@ -18,7 +18,10 @@ describe('projects.service write flow', () => {
       invoices: [],
     };
 
-    const insert = vi.fn().mockResolvedValue({ error: null });
+    const insertSingle = vi.fn().mockResolvedValue({ data: { id: 'project-uuid-1' }, error: null });
+    const insert = vi.fn(() => ({
+      select: vi.fn(() => ({ single: insertSingle })),
+    }));
     const from = vi.fn((table: string) => {
       if (table === 'projects') {
         return { insert };
@@ -63,6 +66,7 @@ describe('projects.service write flow', () => {
     });
     expect(project).toEqual(expect.objectContaining({
       id: 'AK001',
+      supabaseId: 'project-uuid-1',
       name: 'Pilot',
       client: 'Klient A',
       note: 'Poznamka',
@@ -70,10 +74,11 @@ describe('projects.service write flow', () => {
     expect(snapshot.projects[0]).toEqual(project);
   });
 
-  it('updates an existing project in Supabase by job_number', async () => {
+  it('updates an existing project in Supabase by row UUID', async () => {
     let snapshot = {
       projects: [{
         id: 'AK001',
+        supabaseId: 'project-uuid-1',
         name: 'Pilot',
         client: 'Klient A',
         note: '',
@@ -132,8 +137,9 @@ describe('projects.service write flow', () => {
       client_id: 'client-uuid-2',
       note: 'Updated',
     });
-    expect(updateEq).toHaveBeenCalledWith('job_number', 'AK001');
+    expect(updateEq).toHaveBeenCalledWith('id', 'project-uuid-1');
     expect(snapshot.projects[0]).toEqual(expect.objectContaining({
+      supabaseId: 'project-uuid-1',
       name: 'Pilot 2',
       client: 'Klient B',
       note: 'Updated',
@@ -144,6 +150,7 @@ describe('projects.service write flow', () => {
     let snapshot = {
       projects: [{
         id: 'AK001',
+        supabaseId: 'project-uuid-1',
         name: 'Pilot',
         client: 'Klient A',
         note: '',
@@ -186,7 +193,7 @@ describe('projects.service write flow', () => {
 
     await deleteProject('AK001');
 
-    expect(deleteEq).toHaveBeenCalledWith('job_number', 'AK001');
+    expect(deleteEq).toHaveBeenCalledWith('id', 'project-uuid-1');
     expect(snapshot.projects).toEqual([]);
   });
 

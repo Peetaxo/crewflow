@@ -165,11 +165,18 @@ export const saveClient = async (client: Client): Promise<Client> => {
     } else {
       const clientInsert = await supabase
         .from('clients')
-        .insert(payload);
+        .insert(payload)
+        .select('id')
+        .single();
 
-      if (clientInsert.error) {
-        throw new Error(clientInsert.error.message);
+      if (clientInsert.error || !clientInsert.data?.id) {
+        throw new Error(clientInsert.error?.message ?? 'Nepodarilo se vytvorit klienta v databazi.');
       }
+
+      normalizedClient = {
+        ...normalizedClient,
+        supabaseId: clientInsert.data.id,
+      };
     }
   }
 

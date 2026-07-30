@@ -16,6 +16,7 @@ const createSnapshot = (): Snapshot => ({
   events: [
     {
       id: 1,
+      supabaseId: 'event-row-1',
       projectId: 'project-uuid-1',
       name: 'Akce 1',
       job: 'AK001',
@@ -58,6 +59,7 @@ const createSnapshot = (): Snapshot => ({
   timelogs: [
     {
       id: 1,
+      supabaseId: 'timelog-row-1',
       eid: 1,
       contractorProfileId: 'profile-uuid-1',
       days: [{ d: '2026-04-10', f: '08:00', t: '16:00', type: 'instal' }],
@@ -96,9 +98,13 @@ describe('UUID write flows integration', () => {
     const timelogDaysInsert = vi.fn().mockResolvedValue({ error: null });
     const receiptUpdateEq = vi.fn().mockResolvedValue({ error: null });
     const receiptUpdateIn = vi.fn().mockResolvedValue({ error: null });
+    const receiptInsertSingle = vi.fn().mockImplementation(() => {
+      const row = receiptRows[receiptRows.length - 1];
+      return Promise.resolve({ data: { id: row.id }, error: null });
+    });
     const receiptInsert = vi.fn((payload: Record<string, unknown>) => {
       receiptRows.push({ id: `receipt-row-${receiptRows.length + 1}`, ...payload });
-      return Promise.resolve({ error: null });
+      return { select: vi.fn(() => ({ single: receiptInsertSingle })) };
     });
     const invoiceInsertSingle = vi.fn().mockResolvedValue({ data: { id: 'invoice-row-1' }, error: null });
     const invoiceInsert = vi.fn(() => ({ select: vi.fn(() => ({ single: invoiceInsertSingle })) }));
@@ -275,6 +281,8 @@ describe('UUID write flows integration', () => {
 
     expect(savedTimelog.contractorProfileId).toBe('profile-uuid-1');
     expect(savedReceipt.contractorProfileId).toBe('profile-uuid-1');
+    expect(savedTimelog.supabaseId).toBe('timelog-row-1');
+    expect(savedReceipt.supabaseId).toBe('receipt-row-1');
     expect(candidates).toEqual([
       expect.objectContaining({
         contractorProfileId: 'profile-uuid-1',

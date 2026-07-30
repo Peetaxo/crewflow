@@ -1238,7 +1238,7 @@ const syncSupabaseEventTimelogDays = async (eventRowId: string, timelogs: Timelo
 };
 
 export const saveEvent = async (event: Event): Promise<Event> => {
-  const normalized = normalizeEvent(event);
+  let normalized = normalizeEvent(event);
   validateEvent(normalized);
   const syncedTimelogs = syncEventTimelogs(getLocalAppState().timelogs ?? [], normalized);
 
@@ -1275,6 +1275,11 @@ export const saveEvent = async (event: Event): Promise<Event> => {
     }
 
     if (eventRowId) {
+      normalized = {
+        ...normalized,
+        supabaseId: eventRowId,
+      };
+
       await syncSupabaseEventTimelogDays(
         eventRowId,
         syncedTimelogs.filter((timelog) => timelog.eid === normalized.id),

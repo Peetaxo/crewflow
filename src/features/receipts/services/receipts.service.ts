@@ -122,6 +122,17 @@ const invalidateReceiptQueries = () => {
 };
 
 const getSupabaseEventIdMap = async (): Promise<Map<number, string>> => {
+  const localEvents = getLocalAppState().events ?? [];
+  const directMap = new Map(
+    localEvents
+      .filter((event): event is Event & { supabaseId: string } => Boolean(event.supabaseId))
+      .map((event) => [event.id, event.supabaseId]),
+  );
+
+  if (directMap.size === localEvents.length && localEvents.length > 0) {
+    return directMap;
+  }
+
   if (!supabase) {
     throw new Error('Supabase klient neni dostupny.');
   }
@@ -136,7 +147,25 @@ const getSupabaseEventIdMap = async (): Promise<Map<number, string>> => {
     throw new Error(result.error.message);
   }
 
-  return new Map((result.data ?? []).map((row, index) => [index + 1, row.id]));
+  (result.data ?? []).forEach((row, index) => {
+    const localEventId = localEvents[index]?.id ?? index + 1;
+    if (!directMap.has(localEventId)) {
+      directMap.set(localEventId, row.id);
+    }
+  });
+
+  return directMap;
+};
+
+const getSupabaseEventRowId = async (localEventId: number): Promise<string | undefined> => {
+  const event = (getLocalAppState().events ?? []).find((item) => item.id === localEventId);
+
+  if (event?.supabaseId) {
+    return event.supabaseId;
+  }
+
+  const eventIdMap = await getSupabaseEventIdMap();
+  return eventIdMap.get(localEventId);
 };
 
 const getSupabaseReceiptRowIds = async (): Promise<string[]> => {
@@ -157,8 +186,15 @@ const getSupabaseReceiptRowIds = async (): Promise<string[]> => {
 };
 
 const getSupabaseReceiptRowId = async (localReceiptId: number): Promise<string> => {
+  const localReceipts = getLocalAppState().receipts ?? [];
+  const receipt = localReceipts.find((item) => item.id === localReceiptId);
+
+  if (receipt?.supabaseId) {
+    return receipt.supabaseId;
+  }
+
   const receiptRowIds = await getSupabaseReceiptRowIds();
-  const rowId = receiptRowIds[localReceiptId - 1];
+  const rowId = receiptRowIds[localReceipts.findIndex((item) => item.id === localReceiptId)];
 
   if (!rowId) {
     throw new Error('Nepodarilo se sparovat uctenku s databazovym zaznamem.');
@@ -175,14 +211,9 @@ const persistSupabaseReceiptStatus = async (
     return;
   }
 
-  const receiptRowIds = await getSupabaseReceiptRowIds();
-  const rowIds = Array.from(new Set(localReceiptIds.map((localId) => {
-    const rowId = receiptRowIds[localId - 1];
-    if (!rowId) {
-      throw new Error('Nepodarilo se sparovat uctenku s databazovym zaznamem.');
-    }
-    return rowId;
-  })));
+  const rowIds = Array.from(new Set(await Promise.all(
+    localReceiptIds.map((localId) => getSupabaseReceiptRowId(localId)),
+  )));
 
   await Promise.all(rowIds.map(async (rowId) => {
     const result = await supabase
@@ -279,7 +310,7 @@ export const updateReceiptStatus = async (id: number, action: ReceiptAction): Pr
 };
 
 export const saveReceipt = async (updated: ReceiptItem): Promise<ReceiptItem> => {
-  const normalizedReceipt = normalizeReceipt({
+  let normalizedReceipt = normalizeReceipt({
     ...updated,
   });
 
@@ -289,9 +320,8 @@ export const saveReceipt = async (updated: ReceiptItem): Promise<ReceiptItem> =>
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
     const existing = (getLocalAppState().receipts ?? []).some((receipt) => receipt.id === normalizedReceipt.id);
-    const eventIdMap = await getSupabaseEventIdMap();
     const contractorRowId = normalizedReceipt.contractorProfileId;
-    const eventRowId = eventIdMap.get(normalizedReceipt.eid);
+    const eventRowId = await getSupabaseEventRowId(normalizedReceipt.eid);
 
     if (!contractorRowId || !eventRowId) {
       throw new Error('Nepodarilo se sparovat uctenku s databazovym zaznamem.');
@@ -322,11 +352,18 @@ export const saveReceipt = async (updated: ReceiptItem): Promise<ReceiptItem> =>
     } else {
       const receiptInsert = await supabase
         .from('receipts')
-        .insert(payload);
+        .insert(payload)
+        .select('id')
+        .single();
 
-      if (receiptInsert.error) {
-        throw new Error(receiptInsert.error.message);
+      if (receiptInsert.error || !receiptInsert.data?.id) {
+        throw new Error(receiptInsert.error?.message ?? 'Nepodarilo se vytvorit uctenku v databazi.');
       }
+
+      normalizedReceipt = {
+        ...normalizedReceipt,
+        supabaseId: receiptInsert.data.id,
+      };
     }
   }
 

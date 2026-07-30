@@ -88,7 +88,7 @@ describe('clients.service', () => {
     expect(from).toHaveBeenCalledTimes(1);
   });
 
-  it('persists a new client to Supabase without requiring a returned row id', async () => {
+  it('persists a new client to Supabase and stores its row UUID', async () => {
     let snapshot = {
       clients: [],
       events: [],
@@ -96,7 +96,10 @@ describe('clients.service', () => {
       projects: [],
     };
 
-    const insert = vi.fn().mockResolvedValue({ error: null });
+    const insertSingle = vi.fn().mockResolvedValue({ data: { id: 'client-uuid-1' }, error: null });
+    const insert = vi.fn(() => ({
+      select: vi.fn(() => ({ single: insertSingle })),
+    }));
     const from = vi.fn((table: string) => {
       if (table !== 'clients') {
         throw new Error(`Unexpected table ${table}`);
@@ -144,6 +147,7 @@ describe('clients.service', () => {
     });
     expect(snapshot.clients[0]).toEqual(expect.objectContaining({
       id: 1,
+      supabaseId: 'client-uuid-1',
       name: 'Klient A',
       city: 'Praha',
     }));

@@ -126,15 +126,93 @@ describe('receipts.service write flow', () => {
     expect(snapshot.receipts[0].status).toBe('submitted');
   });
 
+  it('updates receipt status in Supabase using stored row ids when local ids are not positional', async () => {
+    let snapshot = createSnapshot({
+      receipts: [
+        {
+          id: 11,
+          supabaseId: 'receipt-row-11',
+          contractorProfileId: 'profile-uuid-1',
+          eid: 1,
+          job: 'AK001',
+          title: 'Parkovne',
+          vendor: 'Garage',
+          amount: 250,
+          paidAt: '2026-04-10',
+          note: '',
+          status: 'draft' as const,
+        },
+      ],
+    });
+
+    const updateEq = vi.fn().mockResolvedValue({ error: null });
+    const updateMock = vi.fn(() => ({ eq: updateEq }));
+    const selectMock = vi.fn(() => ({
+      order: vi.fn(() => Promise.resolve({
+        data: [{ id: 'receipt-row-1' }],
+        error: null,
+      })),
+    }));
+
+    vi.doMock('../../../lib/app-config', () => ({
+      appDataSource: 'supabase',
+    }));
+
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: vi.fn((table: string) => {
+          if (table !== 'receipts') {
+            throw new Error(`Unexpected table ${table}`);
+          }
+
+          return {
+            select: selectMock,
+            update: updateMock,
+          };
+        }),
+      },
+    }));
+
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapReceipt: vi.fn(),
+    }));
+
+    const { updateReceiptStatus } = await import('./receipts.service');
+
+    const updated = await updateReceiptStatus(11, 'submit');
+
+    expect(selectMock).not.toHaveBeenCalled();
+    expect(updateEq).toHaveBeenCalledWith('id', 'receipt-row-11');
+    expect(updated.status).toBe('submitted');
+    expect(snapshot.receipts[0]).toMatchObject({
+      id: 11,
+      supabaseId: 'receipt-row-11',
+      status: 'submitted',
+    });
+  });
+
   it('creates a new receipt in Supabase with mapped contractor and event row ids', async () => {
     let snapshot = createSnapshot({
       receipts: [],
     });
 
-    const receiptsInsert = vi.fn().mockResolvedValue({
-      data: [{ id: 'receipt-row-2' }],
+    const receiptsInsertSingle = vi.fn().mockResolvedValue({
+      data: { id: 'receipt-row-2' },
       error: null,
     });
+    const receiptsInsert = vi.fn(() => ({
+      select: vi.fn(() => ({ single: receiptsInsertSingle })),
+    }));
     const receiptsSelect = vi.fn(() => ({
       order: vi.fn(() => Promise.resolve({
         data: [{ id: 'receipt-row-1' }],
@@ -233,8 +311,10 @@ describe('receipts.service write flow', () => {
     expect(created.title).toBe('Parkovne');
     expect(created.vendor).toBe('Garage');
     expect(created.note).toBe('Poznamka');
+    expect(created.supabaseId).toBe('receipt-row-2');
     expect(snapshot.receipts).toHaveLength(1);
     expect(snapshot.receipts[0].title).toBe('Parkovne');
+    expect(snapshot.receipts[0].supabaseId).toBe('receipt-row-2');
   });
 
   it('persists contractorProfileId for new receipts created from UUID selection', async () => {
@@ -242,10 +322,13 @@ describe('receipts.service write flow', () => {
       receipts: [],
     });
 
-    const receiptsInsert = vi.fn().mockResolvedValue({
-      data: [{ id: 'receipt-row-2' }],
+    const receiptsInsertSingle = vi.fn().mockResolvedValue({
+      data: { id: 'receipt-row-2' },
       error: null,
     });
+    const receiptsInsert = vi.fn(() => ({
+      select: vi.fn(() => ({ single: receiptsInsertSingle })),
+    }));
     const eventsSelect = vi.fn(() => ({
       order: vi.fn(() => ({
         order: vi.fn().mockResolvedValue({
@@ -310,6 +393,8 @@ describe('receipts.service write flow', () => {
       contractor_id: 'profile-uuid-1',
     }));
     expect(created.contractorProfileId).toBe('profile-uuid-1');
+    expect(created.supabaseId).toBe('receipt-row-2');
     expect(snapshot.receipts[0].contractorProfileId).toBe('profile-uuid-1');
+    expect(snapshot.receipts[0].supabaseId).toBe('receipt-row-2');
   });
 });

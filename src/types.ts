@@ -301,6 +301,7 @@ export type ReceiptStatus = 'draft' | 'submitted' | 'approved' | 'attached' | 'r
 /** Účtenka / výdaj crew k akci */
 export interface ReceiptItem {
   id: number;
+  supabaseId?: string;
   eventSupabaseId?: string;
   contractorProfileId?: string;
   eid: number;

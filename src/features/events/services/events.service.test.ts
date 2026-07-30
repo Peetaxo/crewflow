@@ -671,7 +671,9 @@ describe('events.service write flow', () => {
     expect(saved.client).toBe('Klient A');
     expect(saved.city).toBe('Rohanske nabrezi 678/23, Praha');
     expect(saved.address).toBe('Rohanske nabrezi 678/23, Praha');
+    expect(saved.supabaseId).toBe('event-row-1');
     expect(snapshot.events).toHaveLength(1);
+    expect(snapshot.events[0].supabaseId).toBe('event-row-1');
   });
 
   it('persists synced timelog day times to Supabase when an event time changes', async () => {

@@ -960,6 +960,11 @@ describe('EventDetailView', () => {
     updateTimelogStatus.mockResolvedValue({ ...pendingCrewheadTimelog, status: 'pending_coo' });
     const approveEventApplication = vi.fn().mockResolvedValue(undefined);
     const updateEventApplicationStatus = vi.fn().mockResolvedValue(undefined);
+    const crewDraftTimelog = {
+      ...timelog,
+      id: 12,
+      contractorProfileId: contractor.profileId,
+    };
     const secondPendingCrewheadTimelog = {
       ...pendingCrewheadTimelog,
       id: 10,
@@ -983,7 +988,7 @@ describe('EventDetailView', () => {
       getEventCrew: () => [contractor],
       getEventDetailData: () => ({
         event: { ...event, status: 'upcoming' as const, needed: 5, filled: 1, allowCrewTimeProposal: true },
-        timelogs: [pendingCrewheadTimelog, secondPendingCrewheadTimelog],
+        timelogs: [crewDraftTimelog, pendingCrewheadTimelog, secondPendingCrewheadTimelog],
         contractors: [contractor, applicant],
         receipts: [],
         applications: [
@@ -1058,6 +1063,7 @@ describe('EventDetailView', () => {
     expect(within(approvalDialog).queryByText('Přihlášky crew')).not.toBeInTheDocument();
     expect(within(approvalDialog).getByText('Výkazy práce')).toBeInTheDocument();
     expect(within(approvalDialog).getAllByText('Výkaz')).toHaveLength(2);
+    expect(within(approvalDialog).queryByText('Koncept')).not.toBeInTheDocument();
     expect(within(approvalDialog).queryByText('Výkaz 1/2')).not.toBeInTheDocument();
     expect(within(approvalDialog).queryByText('Výkaz 2/2')).not.toBeInTheDocument();
     expect(within(approvalDialog).getByText('17. 4.')).toBeInTheDocument();
@@ -1269,7 +1275,7 @@ describe('EventDetailView', () => {
     await waitFor(() => expect(requestEventWithdrawalMock).toHaveBeenCalledWith('event-uuid-1', 'profile-1'));
   });
 
-  it('opens timelog detail when clicking an assigned crew row', async () => {
+  it('does not open an assigned crew draft timelog for CrewHead editing', async () => {
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => ({
         role: 'crewhead',
@@ -1323,7 +1329,7 @@ describe('EventDetailView', () => {
 
     fireEvent.click(screen.getAllByText('Petr Heitzer')[0]);
 
-    expect(setEditingTimelog).toHaveBeenCalledWith(timelog);
+    expect(setEditingTimelog).not.toHaveBeenCalled();
   });
 
   it('does not open an assigned crew timelog for editing after it is submitted', async () => {
@@ -1440,10 +1446,67 @@ describe('EventDetailView', () => {
     expect(setEditingTimelog).toHaveBeenCalledWith(pendingCrewheadTimelog);
   });
 
-  it('opens a new draft timelog when assigned crew has no timelog yet', async () => {
+  it('does not let CrewHead create an unsubmitted crew draft from assigned crew', async () => {
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => ({
         role: 'crewhead',
+        selectedEventId: 'event-uuid-1',
+        setSelectedEventId,
+        eventTab: 'overview',
+        setEventTab: vi.fn(),
+        setEditingReceipt: vi.fn(),
+        setDeleteConfirm: vi.fn(),
+        setEditingTimelog,
+      }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [contractor],
+      getEventDetailData: () => ({
+        event: { ...event, startTime: '14:00', endTime: '17:00' },
+        timelogs: [],
+        contractors: [contractor],
+        receipts: [],
+        applications: [],
+        crewAssignments: [{ eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: contractor.profileId, name: contractor.name }],
+      }),
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
+      subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventDetailView } = await import('./EventDetailView');
+
+    render(<EventDetailView />);
+
+    fireEvent.click(screen.getByText('Petr Heitzer'));
+
+    expect(setEditingTimelog).not.toHaveBeenCalled();
+  });
+
+  it('opens a new draft timelog when Crew opens their own assigned event', async () => {
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        role: 'crew',
         selectedEventId: 'event-uuid-1',
         setSelectedEventId,
         eventTab: 'overview',

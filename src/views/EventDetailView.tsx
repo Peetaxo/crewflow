@@ -408,7 +408,7 @@ const EventDetailView = () => {
   const eventApprovalTimelogs = canManageEvents
     ? prepareApprovalTimelogs(eventTimelogs.filter((timelog) => (
         role === 'crewhead'
-          ? timelog.status === 'draft' || timelog.status === 'pending_ch' || timelog.status === 'pending_crew_confirmation'
+          ? timelog.status === 'pending_ch' || timelog.status === 'pending_crew_confirmation'
           : timelog.status === 'pending_coo'
       )))
     : [];

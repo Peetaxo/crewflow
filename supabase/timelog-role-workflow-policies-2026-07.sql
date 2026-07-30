@@ -18,7 +18,7 @@ as $$
     )
     or (
       public.has_role(auth.uid(), 'crewhead'::public.app_role)
-      and p_status in ('draft'::public.timelog_status, 'pending_ch'::public.timelog_status)
+      and p_status = 'pending_ch'::public.timelog_status
     );
 $$;
 
@@ -68,10 +68,6 @@ begin
   if public.has_role(auth.uid(), 'crewhead'::public.app_role)
     and (
       (
-        old.status = 'draft'::public.timelog_status
-        and new.status in ('draft'::public.timelog_status, 'pending_ch'::public.timelog_status)
-      )
-      or (
         old.status = 'pending_ch'::public.timelog_status
         and new.status = 'pending_crew_confirmation'::public.timelog_status
       )
@@ -164,14 +160,6 @@ with check (
   and status = 'draft'::public.timelog_status
 );
 
-create policy "CrewHead can create assignment draft timelogs"
-on public.timelogs
-for insert
-with check (
-  public.has_role(auth.uid(), 'crewhead'::public.app_role)
-  and status = 'draft'::public.timelog_status
-);
-
 create policy "Crew can update own draft, rejected, and correction timelogs"
 on public.timelogs
 for update
@@ -186,16 +174,16 @@ with check (
   and status in ('draft'::public.timelog_status, 'rejected'::public.timelog_status, 'pending_crew_confirmation'::public.timelog_status, 'pending_ch'::public.timelog_status)
 );
 
-create policy "CrewHead can update draft and CH timelogs"
+create policy "CrewHead can update pending CH timelogs"
 on public.timelogs
 for update
 using (
   public.has_role(auth.uid(), 'crewhead'::public.app_role)
-  and status in ('draft'::public.timelog_status, 'pending_ch'::public.timelog_status)
+  and status = 'pending_ch'::public.timelog_status
 )
 with check (
   public.has_role(auth.uid(), 'crewhead'::public.app_role)
-  and status in ('draft'::public.timelog_status, 'pending_ch'::public.timelog_status, 'pending_crew_confirmation'::public.timelog_status, 'pending_coo'::public.timelog_status, 'rejected'::public.timelog_status)
+  and status in ('pending_ch'::public.timelog_status, 'pending_crew_confirmation'::public.timelog_status, 'pending_coo'::public.timelog_status, 'rejected'::public.timelog_status)
 );
 
 create policy "COO can status-update COO timelogs"
@@ -217,14 +205,6 @@ using (
   public.has_role(auth.uid(), 'crew'::public.app_role)
   and contractor_id = public.current_profile_id()
   and status in ('draft'::public.timelog_status, 'rejected'::public.timelog_status)
-);
-
-create policy "CrewHead can delete draft and CH timelogs"
-on public.timelogs
-for delete
-using (
-  public.has_role(auth.uid(), 'crewhead'::public.app_role)
-  and status in ('draft'::public.timelog_status, 'pending_ch'::public.timelog_status)
 );
 
 drop policy if exists "Users can manage timelog days via timelog" on public.timelog_days;

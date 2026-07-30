@@ -1151,9 +1151,10 @@ describe('timelogs.service write flow', () => {
 });
 
 describe('timelog Supabase policies', () => {
-  it('allows CrewHead to submit draft timelogs to CH review', () => {
+  it('allows CrewHead to update only submitted CH timelogs', () => {
     const sql = readFileSync(resolve(process.cwd(), 'supabase/crewhead-timelog-approval-policy.sql'), 'utf8');
 
-    expect(sql).toContain("status in ('draft'::timelog_status, 'pending_ch'::timelog_status)");
+    expect(sql).toContain("status = 'pending_ch'::timelog_status");
+    expect(sql).not.toContain("'draft'::timelog_status");
   });
 });

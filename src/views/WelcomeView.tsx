@@ -632,7 +632,7 @@ const FinancePreview = () => (
     <strong>Financni statistika</strong>
     <div className="mt-4 grid grid-cols-2 gap-3">
       {[
-        ['920k', 'rozpocet'],
+        ['920k', 'plan'],
         ['680k', 'naklady'],
         ['240k', 'rezerva'],
         ['26%', 'marze'],
@@ -644,7 +644,7 @@ const FinancePreview = () => (
       ))}
     </div>
     {[
-      ['Rozpocet', '100%', '920k', 'bg-[color:var(--nodu-text)]'],
+      ['Plan', '100%', '920k', 'bg-[color:var(--nodu-text)]'],
       ['Naklady', '74%', '680k', 'bg-[color:var(--nodu-accent)]'],
       ['Fakturace', '58%', '534k', 'bg-[color:var(--nodu-success-text)]'],
     ].map(([label, value, amount, color]) => (

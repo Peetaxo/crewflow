@@ -1712,7 +1712,7 @@ const EventDetailView = () => {
                           <span className="font-bold text-[color:var(--nodu-text)]">{formatCurrency(totalReceiptCost)}</span>
                         </div>
                         <div className="mt-2 flex justify-between border-t border-[color:var(--nodu-success-border)] pt-2 text-sm">
-                          <span className="font-bold text-[color:var(--nodu-success-text)]">Celkovy rozpocet</span>
+                          <span className="font-bold text-[color:var(--nodu-success-text)]">Celkove naklady</span>
                           <span className="font-black text-[color:var(--nodu-text)]">{formatCurrency(totalCrewCost + totalTravelCost + totalReceiptCost)}</span>
                         </div>
                       </div>

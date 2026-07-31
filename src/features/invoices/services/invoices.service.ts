@@ -6,7 +6,17 @@ import { queryClient } from '../../../lib/query-client';
 import { queryKeys } from '../../../lib/query-keys';
 import { mapInvoice } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
-import type { Contractor, Event, Invoice, ReceiptItem, Timelog } from '../../../types';
+import type {
+  Contractor,
+  EntityId,
+  Event,
+  EventId,
+  Invoice,
+  ReceiptId,
+  ReceiptItem,
+  Timelog,
+  TimelogId,
+} from '../../../types';
 import { calculateTotalHours } from '../../../utils';
 import {
   getTimelogs,
@@ -34,9 +44,9 @@ import {
 
 type BillingItem = {
   jobNumber: string;
-  eventIds: Set<number>;
-  timelogIds: number[];
-  receiptIds: number[];
+  eventIds: Set<EventId>;
+  timelogIds: TimelogId[];
+  receiptIds: ReceiptId[];
   hours: number;
   amountHours: number;
   km: number;
@@ -47,9 +57,9 @@ type BillingItem = {
 type BillingBatch = {
   contractorProfileId?: string;
   items: Map<string, BillingItem>;
-  eventIds: Set<number>;
-  timelogIds: number[];
-  receiptIds: number[];
+  eventIds: Set<EventId>;
+  timelogIds: TimelogId[];
+  receiptIds: ReceiptId[];
 };
 
 const syncInvoiceQueryData = () => {
@@ -69,11 +79,11 @@ export type InvoiceCreateCandidate = {
 
 export type InvoiceCreatePreviewItem = {
   jobNumber: string;
-  eventIds: number[];
-  timelogIds: number[];
-  receiptIds: number[];
+  eventIds: EventId[];
+  timelogIds: TimelogId[];
+  receiptIds: ReceiptId[];
   timelogEntries: Array<{
-    timelogId: number;
+    timelogId: TimelogId;
     eventName: string;
     jobNumber: string;
     hours: number;
@@ -82,7 +92,7 @@ export type InvoiceCreatePreviewItem = {
     amountKm: number;
   }>;
   receiptEntries: Array<{
-    receiptId: number;
+    receiptId: ReceiptId;
     amount: number;
   }>;
   hours: number;
@@ -97,8 +107,8 @@ export type InvoiceCreatePreview = {
   contractorProfileId?: string;
   contractorName: string;
   items: InvoiceCreatePreviewItem[];
-  timelogIds: number[];
-  receiptIds: number[];
+  timelogIds: TimelogId[];
+  receiptIds: ReceiptId[];
   totalHours: number;
   totalKm: number;
   totalAmountHours: number;
@@ -149,14 +159,49 @@ const findContractorByIdentity = (
   return contractors.find((contractor) => contractor.profileId === contractorProfileId) ?? null;
 };
 
-const findEvent = (events: Event[], id: number): Event | null => (
-  events.find((event) => event.id === id) ?? null
+const isPersistedSupabaseId = (id: EntityId | null | undefined): id is string => (
+  typeof id === 'string' && id.trim().length > 0 && !id.startsWith('local:')
 );
+
+const findEvent = (events: Event[], id: EventId): Event | null => (
+  events.find((event) => event.id === id || event.supabaseId === id) ?? null
+);
+
+const getBillingEventId = (event: Event | null, fallback: EventId): EventId => (
+  event?.supabaseId ?? event?.id ?? fallback
+);
+
+const getBillingTimelogId = (timelog: Timelog): TimelogId => (
+  timelog.supabaseId ?? timelog.id
+);
+
+const getBillingReceiptId = (receipt: ReceiptItem): ReceiptId => (
+  receipt.supabaseId ?? receipt.id
+);
+
+const mapByEntityIdentity = <TItem extends { id: EntityId; supabaseId?: string | null }>(
+  items: TItem[],
+): Map<EntityId, TItem> => {
+  const map = new Map<EntityId, TItem>();
+  items.forEach((item) => {
+    map.set(item.id, item);
+    if (item.supabaseId) {
+      map.set(item.supabaseId, item);
+    }
+  });
+  return map;
+};
 
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 
-const uniqueSortedNumbers = (values: Iterable<number>): number[] => (
-  Array.from(new Set(values)).sort((a, b) => a - b)
+const uniqueSortedEntityIds = <TId extends EntityId>(values: Iterable<TId>): TId[] => (
+  Array.from(new Set(values)).sort((a, b) => {
+    if (typeof a === 'number' && typeof b === 'number') {
+      return a - b;
+    }
+
+    return String(a).localeCompare(String(b), 'cs', { numeric: true });
+  })
 );
 
 const uniqueSortedStrings = (values: Iterable<string>): string[] => (
@@ -188,18 +233,28 @@ const getSupabaseIdRows = async (
 ): Promise<Array<{ id: string }>> => safeSelect<{ id: string }>(table, 'id', orderBy);
 
 const mapStoredSupabaseIds = (
-  items: Array<{ id: number; supabaseId?: string | null }>,
-): Map<number, string> => new Map(
-  items
-    .filter((item): item is { id: number; supabaseId: string } => Boolean(item.supabaseId))
-    .map((item) => [item.id, item.supabaseId]),
-);
+  items: Array<{ id: EntityId; supabaseId?: string | null }>,
+): Map<EntityId, string> => {
+  const entries = items.flatMap((item): Array<[EntityId, string]> => {
+    if (item.supabaseId) {
+      return [[item.id, item.supabaseId]];
+    }
+
+    if (isPersistedSupabaseId(item.id)) {
+      return [[item.id, item.id]];
+    }
+
+    return [];
+  });
+
+  return new Map(entries);
+};
 
 const addFallbackIdsByLocalOrder = (
-  map: Map<number, string>,
-  localItems: Array<{ id: number }>,
+  map: Map<EntityId, string>,
+  localItems: Array<{ id: EntityId }>,
   rows: Array<{ id: string }>,
-): Map<number, string> => {
+): Map<EntityId, string> => {
   rows.forEach((row, index) => {
     const localId = localItems[index]?.id;
     if (localId != null && !map.has(localId)) {
@@ -210,7 +265,7 @@ const addFallbackIdsByLocalOrder = (
   return map;
 };
 
-const getSupabaseTimelogIdMap = async (): Promise<Map<number, string>> => {
+const getSupabaseTimelogIdMap = async (): Promise<Map<EntityId, string>> => {
   const localTimelogs = getLocalAppState().timelogs ?? [];
   const directMap = mapStoredSupabaseIds(localTimelogs);
 
@@ -222,7 +277,7 @@ const getSupabaseTimelogIdMap = async (): Promise<Map<number, string>> => {
   return addFallbackIdsByLocalOrder(directMap, localTimelogs, rows);
 };
 
-const getSupabaseReceiptIdMap = async (): Promise<Map<number, string>> => {
+const getSupabaseReceiptIdMap = async (): Promise<Map<EntityId, string>> => {
   const localReceipts = getLocalAppState().receipts ?? [];
   const directMap = mapStoredSupabaseIds(localReceipts);
 
@@ -234,7 +289,7 @@ const getSupabaseReceiptIdMap = async (): Promise<Map<number, string>> => {
   return addFallbackIdsByLocalOrder(directMap, localReceipts, rows);
 };
 
-const getSupabaseEventIdMap = async (): Promise<Map<number, string>> => {
+const getSupabaseEventIdMap = async (): Promise<Map<EntityId, string>> => {
   const localEvents = getLocalAppState().events ?? [];
   const directMap = mapStoredSupabaseIds(localEvents);
 
@@ -251,6 +306,17 @@ const getSupabaseEventIdMap = async (): Promise<Map<number, string>> => {
     `${a.date_from ?? ''}|${a.name}`.localeCompare(`${b.date_from ?? ''}|${b.name}`)
   ));
   return addFallbackIdsByLocalOrder(directMap, localEvents, sortedRows);
+};
+
+const resolveSupabaseRowId = (
+  id: EntityId,
+  idMap: Map<EntityId, string>,
+): string | null => {
+  if (isPersistedSupabaseId(id)) {
+    return id;
+  }
+
+  return idMap.get(id) ?? null;
 };
 
 const getNextInvoiceSequence = async (invoiceYear: number, contractorProfileId: string): Promise<number> => {
@@ -305,7 +371,7 @@ const buildBillingBatches = (): BillingBatch[] => {
     const created: BillingBatch = {
       contractorProfileId: contractor.profileId,
       items: new Map<string, BillingItem>(),
-      eventIds: new Set<number>(),
+      eventIds: new Set<EventId>(),
       timelogIds: [],
       receiptIds: [],
     };
@@ -319,7 +385,7 @@ const buildBillingBatches = (): BillingBatch[] => {
 
     const created: BillingItem = {
       jobNumber,
-      eventIds: new Set<number>(),
+      eventIds: new Set<EventId>(),
       timelogIds: [],
       receiptIds: [],
       hours: 0,
@@ -339,6 +405,8 @@ const buildBillingBatches = (): BillingBatch[] => {
 
     const batch = getBatch(contractor);
     const jobNumber = normalizeJobNumber(event.job);
+    const billingEventId = getBillingEventId(event, timelog.eid);
+    const billingTimelogId = getBillingTimelogId(timelog);
     const item = getItem(batch, jobNumber);
     const hours = round2(calculateTotalHours(timelog.days));
     const amountHours = Math.round(hours * contractor.rate);
@@ -348,11 +416,11 @@ const buildBillingBatches = (): BillingBatch[] => {
     item.amountHours += amountHours;
     item.km = round2(item.km + timelog.km);
     item.amountKm += amountKm;
-    item.eventIds.add(timelog.eid);
-    item.timelogIds.push(timelog.id);
+    item.eventIds.add(billingEventId);
+    item.timelogIds.push(billingTimelogId);
 
-    batch.eventIds.add(timelog.eid);
-    batch.timelogIds.push(timelog.id);
+    batch.eventIds.add(billingEventId);
+    batch.timelogIds.push(billingTimelogId);
   });
 
   approvedReceipts.forEach((receipt) => {
@@ -362,15 +430,17 @@ const buildBillingBatches = (): BillingBatch[] => {
 
     const batch = getBatch(contractor);
     const jobNumber = normalizeJobNumber(receipt.job || event?.job);
+    const billingReceiptId = getBillingReceiptId(receipt);
+    const billingEventId = getBillingEventId(event, receipt.eid);
     const item = getItem(batch, jobNumber);
 
     item.amountReceipts += Math.round(receipt.amount);
     if (receipt.eid) {
-      item.eventIds.add(receipt.eid);
-      batch.eventIds.add(receipt.eid);
+      item.eventIds.add(billingEventId);
+      batch.eventIds.add(billingEventId);
     }
-    item.receiptIds.push(receipt.id);
-    batch.receiptIds.push(receipt.id);
+    item.receiptIds.push(billingReceiptId);
+    batch.receiptIds.push(billingReceiptId);
   });
 
   return Array.from(grouped.values())
@@ -390,7 +460,7 @@ const buildInvoiceFromBatch = (
   const km = round2(itemList.reduce((sum, item) => sum + item.km, 0));
   const kAmt = itemList.reduce((sum, item) => sum + item.amountKm, 0);
   const receiptAmt = itemList.reduce((sum, item) => sum + item.amountReceipts, 0);
-  const primaryEventId = uniqueSortedNumbers(batch.eventIds)[0] ?? 0;
+  const primaryEventId = uniqueSortedEntityIds(batch.eventIds)[0] ?? 0;
   const uniqueId = `FAK-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase()}-${index + 1}`;
 
   return {
@@ -405,9 +475,9 @@ const buildInvoiceFromBatch = (
     total: hAmt + kAmt + receiptAmt,
     job: jobNumbers.join(', '),
     jobNumbers,
-    timelogIds: uniqueSortedNumbers(batch.timelogIds),
-    receiptIds: uniqueSortedNumbers(batch.receiptIds),
-    eventIds: uniqueSortedNumbers(batch.eventIds),
+    timelogIds: uniqueSortedEntityIds(batch.timelogIds),
+    receiptIds: uniqueSortedEntityIds(batch.receiptIds),
+    eventIds: uniqueSortedEntityIds(batch.eventIds),
     status: 'draft',
     sentAt: null,
   };
@@ -419,12 +489,12 @@ const batchToPreview = (
 ): InvoiceCreatePreview => {
   const contractor = findContractorByIdentity(contractors, batch.contractorProfileId);
   const snapshot = getLocalAppState();
-  const timelogById = new Map((snapshot.timelogs ?? []).map((timelog) => [timelog.id, timelog]));
-  const receiptById = new Map((snapshot.receipts ?? []).map((receipt) => [receipt.id, receipt]));
-  const eventById = new Map((snapshot.events ?? []).map((event) => [event.id, event]));
+  const timelogById = mapByEntityIdentity(snapshot.timelogs ?? []);
+  const receiptById = mapByEntityIdentity(snapshot.receipts ?? []);
+  const eventById = mapByEntityIdentity(snapshot.events ?? []);
   const items = Array.from(batch.items.values())
     .map((item) => {
-      const timelogEntries = uniqueSortedNumbers(item.timelogIds).map((timelogId) => {
+      const timelogEntries = uniqueSortedEntityIds(item.timelogIds).map((timelogId) => {
         const timelog = timelogById.get(timelogId);
         const event = timelog ? eventById.get(timelog.eid) : null;
         const hours = timelog ? round2(calculateTotalHours(timelog.days)) : 0;
@@ -443,7 +513,7 @@ const batchToPreview = (
         };
       });
 
-      const receiptEntries = uniqueSortedNumbers(item.receiptIds).map((receiptId) => {
+      const receiptEntries = uniqueSortedEntityIds(item.receiptIds).map((receiptId) => {
         const receipt = receiptById.get(receiptId);
         return {
           receiptId,
@@ -453,9 +523,9 @@ const batchToPreview = (
 
       return {
         jobNumber: item.jobNumber,
-        eventIds: uniqueSortedNumbers(item.eventIds),
-        timelogIds: uniqueSortedNumbers(item.timelogIds),
-        receiptIds: uniqueSortedNumbers(item.receiptIds),
+        eventIds: uniqueSortedEntityIds(item.eventIds),
+        timelogIds: uniqueSortedEntityIds(item.timelogIds),
+        receiptIds: uniqueSortedEntityIds(item.receiptIds),
         timelogEntries,
         receiptEntries,
         hours: round2(item.hours),
@@ -478,8 +548,8 @@ const batchToPreview = (
     contractorProfileId: batch.contractorProfileId ?? contractor?.profileId,
     contractorName: contractor?.name ?? '',
     items,
-    timelogIds: uniqueSortedNumbers(batch.timelogIds),
-    receiptIds: uniqueSortedNumbers(batch.receiptIds),
+    timelogIds: uniqueSortedEntityIds(batch.timelogIds),
+    receiptIds: uniqueSortedEntityIds(batch.receiptIds),
     totalHours,
     totalKm,
     totalAmountHours,
@@ -491,8 +561,8 @@ const batchToPreview = (
 
 const buildBatchFromSelection = (
   contractorProfileId: string,
-  selectedTimelogIds: number[],
-  selectedReceiptIds: number[],
+  selectedTimelogIds: TimelogId[],
+  selectedReceiptIds: ReceiptId[],
 ): BillingBatch | null => {
   const snapshot = getLocalAppState();
   const contractors = snapshot.contractors ?? [];
@@ -541,7 +611,7 @@ const buildBatchFromSelection = (
   const batch: BillingBatch = {
     contractorProfileId: contractor.profileId,
     items: new Map<string, BillingItem>(),
-    eventIds: new Set<number>(),
+    eventIds: new Set<EventId>(),
     timelogIds: [],
     receiptIds: [],
   };
@@ -552,7 +622,7 @@ const buildBatchFromSelection = (
 
     const created: BillingItem = {
       jobNumber,
-      eventIds: new Set<number>(),
+      eventIds: new Set<EventId>(),
       timelogIds: [],
       receiptIds: [],
       hours: 0,
@@ -570,6 +640,8 @@ const buildBatchFromSelection = (
     if (!event) return;
 
     const jobNumber = normalizeJobNumber(event.job);
+    const billingEventId = getBillingEventId(event, timelog.eid);
+    const billingTimelogId = getBillingTimelogId(timelog);
     const item = getItem(jobNumber);
     const hours = round2(calculateTotalHours(timelog.days));
     const amountHours = Math.round(hours * contractor.rate);
@@ -579,25 +651,27 @@ const buildBatchFromSelection = (
     item.amountHours += amountHours;
     item.km = round2(item.km + timelog.km);
     item.amountKm += amountKm;
-    item.eventIds.add(timelog.eid);
-    item.timelogIds.push(timelog.id);
+    item.eventIds.add(billingEventId);
+    item.timelogIds.push(billingTimelogId);
 
-    batch.eventIds.add(timelog.eid);
-    batch.timelogIds.push(timelog.id);
+    batch.eventIds.add(billingEventId);
+    batch.timelogIds.push(billingTimelogId);
   });
 
   selectedReceipts.forEach((receipt) => {
     const event = findEvent(events, receipt.eid);
     const jobNumber = normalizeJobNumber(receipt.job || event?.job);
+    const billingReceiptId = getBillingReceiptId(receipt);
+    const billingEventId = getBillingEventId(event, receipt.eid);
     const item = getItem(jobNumber);
 
     item.amountReceipts += Math.round(receipt.amount);
     if (receipt.eid) {
-      item.eventIds.add(receipt.eid);
-      batch.eventIds.add(receipt.eid);
+      item.eventIds.add(billingEventId);
+      batch.eventIds.add(billingEventId);
     }
-    item.receiptIds.push(receipt.id);
-    batch.receiptIds.push(receipt.id);
+    item.receiptIds.push(billingReceiptId);
+    batch.receiptIds.push(billingReceiptId);
   });
 
   return batch;
@@ -613,14 +687,10 @@ const mapSupabaseInvoices = (
   timelogRows: Array<{ id: string }>,
   receiptRows: Array<{ id: string }>,
 ): Invoice[] => {
-  const profileIdMap = new Map(
-    profileRows.map((row, index) => [row.id, index + 1]),
-  );
-  const eventIdMap = new Map(
-    eventRows.map((row, index) => [row.id, index + 1]),
-  );
-  const timelogIdMap = new Map(timelogRows.map((row, index) => [row.id, index + 1]));
-  const receiptIdMap = new Map(receiptRows.map((row, index) => [row.id, index + 1]));
+  const profileIdSet = new Set(profileRows.map((row) => row.id));
+  const eventIdSet = new Set(eventRows.map((row) => row.id));
+  const timelogIdSet = new Set(timelogRows.map((row) => row.id));
+  const receiptIdSet = new Set(receiptRows.map((row) => row.id));
 
   const invoiceItemsByInvoiceId = new Map<string, InvoiceItemRow[]>();
   invoiceItems.forEach((row) => {
@@ -654,30 +724,30 @@ const mapSupabaseInvoices = (
       row.job_number ?? '',
       ...(localInvoice?.jobNumbers ?? []),
     ]);
-    const eventIds = uniqueSortedNumbers([
+    const eventIds = uniqueSortedEntityIds([
       ...items
-        .map((item) => item.event_id ? (eventIdMap.get(item.event_id) ?? Number.NaN) : Number.NaN)
-        .filter((itemId) => !Number.isNaN(itemId)),
-      row.event_id ? (eventIdMap.get(row.event_id) ?? Number.NaN) : Number.NaN,
+        .map((item) => item.event_id)
+        .filter((itemId): itemId is string => Boolean(itemId && eventIdSet.has(itemId))),
+      row.event_id && eventIdSet.has(row.event_id) ? row.event_id : null,
       ...(localInvoice?.eventIds ?? []),
-    ].filter((itemId) => !Number.isNaN(itemId)));
-    const linkedTimelogIds = uniqueSortedNumbers(
+    ].filter((itemId): itemId is EventId => itemId != null));
+    const linkedTimelogIds = uniqueSortedEntityIds(
       (invoiceTimelogsByInvoiceId.get(row.id) ?? [])
-        .map((item) => timelogIdMap.get(item.timelog_id) ?? Number.NaN)
-        .filter((itemId) => !Number.isNaN(itemId)),
+        .map((item) => item.timelog_id)
+        .filter((itemId): itemId is string => timelogIdSet.has(itemId)),
     );
-    const linkedReceiptIds = uniqueSortedNumbers(
+    const linkedReceiptIds = uniqueSortedEntityIds(
       (invoiceReceiptsByInvoiceId.get(row.id) ?? [])
-        .map((item) => receiptIdMap.get(item.receipt_id) ?? Number.NaN)
-        .filter((itemId) => !Number.isNaN(itemId)),
+        .map((item) => item.receipt_id)
+        .filter((itemId): itemId is string => receiptIdSet.has(itemId)),
     );
     const timelogIds = linkedTimelogIds.length > 0 ? linkedTimelogIds : (localInvoice?.timelogIds ?? []);
     const receiptIds = linkedReceiptIds.length > 0 ? linkedReceiptIds : (localInvoice?.receiptIds ?? []);
 
     return {
       ...mapInvoice(row),
-      contractorProfileId: row.contractor_id,
-      eid: eventIds[0] ?? (row.event_id ? (eventIdMap.get(row.event_id) ?? Number.NaN) : 0),
+      contractorProfileId: profileIdSet.has(row.contractor_id) ? row.contractor_id : row.contractor_id,
+      eid: eventIds[0] ?? (row.event_id ?? ''),
       job: jobNumbers.join(', ') || localInvoice?.job || row.job_number || '',
       jobNumbers,
       timelogIds,
@@ -780,13 +850,13 @@ const persistSupabaseGeneratedInvoice = async (invoice: Invoice): Promise<string
   }
 
   const eventRowIds = (invoice.eventIds ?? [])
-    .map((eventId) => eventIdMap.get(eventId))
+    .map((eventId) => resolveSupabaseRowId(eventId, eventIdMap))
     .filter((value): value is string => Boolean(value));
   const timelogRowIds = (invoice.timelogIds ?? [])
-    .map((timelogId) => timelogIdMap.get(timelogId))
+    .map((timelogId) => resolveSupabaseRowId(timelogId, timelogIdMap))
     .filter((value): value is string => Boolean(value));
   const receiptRowIds = (invoice.receiptIds ?? [])
-    .map((receiptId) => receiptIdMap.get(receiptId))
+    .map((receiptId) => resolveSupabaseRowId(receiptId, receiptIdMap))
     .filter((value): value is string => Boolean(value));
 
   const invoiceInsert = await supabase
@@ -823,9 +893,9 @@ const persistSupabaseGeneratedInvoice = async (invoice: Invoice): Promise<string
   const persistedInvoiceId = invoiceInsert.data.id;
 
   const snapshot = getLocalAppState();
-  const timelogById = new Map((snapshot.timelogs ?? []).map((timelog) => [timelog.id, timelog]));
-  const receiptById = new Map((snapshot.receipts ?? []).map((receipt) => [receipt.id, receipt]));
-  const eventById = new Map((snapshot.events ?? []).map((event) => [event.id, event]));
+  const timelogById = mapByEntityIdentity(snapshot.timelogs ?? []);
+  const receiptById = mapByEntityIdentity(snapshot.receipts ?? []);
+  const eventById = mapByEntityIdentity(snapshot.events ?? []);
   const contractor = findContractorByIdentity(snapshot.contractors ?? [], invoice.contractorProfileId);
 
   const items = new Map<string, BillingItem>();
@@ -836,7 +906,7 @@ const persistSupabaseGeneratedInvoice = async (invoice: Invoice): Promise<string
     const jobNumber = normalizeJobNumber(event?.job);
     const current = items.get(jobNumber) ?? {
       jobNumber,
-      eventIds: new Set<number>(),
+      eventIds: new Set<EventId>(),
       timelogIds: [],
       receiptIds: [],
       hours: 0,
@@ -862,7 +932,7 @@ const persistSupabaseGeneratedInvoice = async (invoice: Invoice): Promise<string
     const jobNumber = normalizeJobNumber(receipt.job || event?.job);
     const current = items.get(jobNumber) ?? {
       jobNumber,
-      eventIds: new Set<number>(),
+      eventIds: new Set<EventId>(),
       timelogIds: [],
       receiptIds: [],
       hours: 0,
@@ -881,7 +951,7 @@ const persistSupabaseGeneratedInvoice = async (invoice: Invoice): Promise<string
     invoice_id: persistedInvoiceId,
     job_number: item.jobNumber,
     event_id: Array.from(item.eventIds)
-      .map((eventId) => eventIdMap.get(eventId))
+      .map((eventId) => resolveSupabaseRowId(eventId, eventIdMap))
       .find(Boolean) ?? null,
     hours: item.hours,
     amount_hours: item.amountHours,
@@ -1024,8 +1094,8 @@ export const generateInvoices = async (): Promise<Invoice[]> => {
     }
     const created = await createInvoiceFromSelection(
       batch.contractorProfileId,
-      uniqueSortedNumbers(batch.timelogIds),
-      uniqueSortedNumbers(batch.receiptIds),
+      uniqueSortedEntityIds(batch.timelogIds),
+      uniqueSortedEntityIds(batch.receiptIds),
     );
     if (created) {
       newInvoices.push(created);
@@ -1037,8 +1107,8 @@ export const generateInvoices = async (): Promise<Invoice[]> => {
 
 export const createInvoiceFromSelection = async (
   contractorProfileId: string,
-  selectedTimelogIds: number[],
-  selectedReceiptIds: number[],
+  selectedTimelogIds: TimelogId[],
+  selectedReceiptIds: ReceiptId[],
 ): Promise<Invoice | null> => {
   const batch = buildBatchFromSelection(contractorProfileId, selectedTimelogIds, selectedReceiptIds);
   if (!batch) {
@@ -1137,10 +1207,10 @@ export const approveInvoice = async (id: string): Promise<Invoice | null> => {
     const receiptIdMap = await getSupabaseReceiptIdMap();
 
     const timelogRowIds = (invoice.timelogIds ?? [])
-      .map((timelogId) => timelogIdMap.get(timelogId))
+      .map((timelogId) => resolveSupabaseRowId(timelogId, timelogIdMap))
       .filter((value): value is string => Boolean(value));
     const receiptRowIds = (invoice.receiptIds ?? [])
-      .map((receiptId) => receiptIdMap.get(receiptId))
+      .map((receiptId) => resolveSupabaseRowId(receiptId, receiptIdMap))
       .filter((value): value is string => Boolean(value));
 
     if (timelogRowIds.length > 0) {
@@ -1245,10 +1315,10 @@ export const deleteInvoice = async (id: string): Promise<boolean> => {
     const receiptIdMap = await getSupabaseReceiptIdMap();
 
     const timelogRowIds = (invoice.timelogIds ?? [])
-      .map((timelogId) => timelogIdMap.get(timelogId))
+      .map((timelogId) => resolveSupabaseRowId(timelogId, timelogIdMap))
       .filter((value): value is string => Boolean(value));
     const receiptRowIds = (invoice.receiptIds ?? [])
-      .map((receiptId) => receiptIdMap.get(receiptId))
+      .map((receiptId) => resolveSupabaseRowId(receiptId, receiptIdMap))
       .filter((value): value is string => Boolean(value));
 
     if (timelogRowIds.length > 0) {

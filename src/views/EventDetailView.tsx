@@ -41,6 +41,7 @@ const MOBILE_EDGE_SWIPE_MIN_DISTANCE = 64;
 const MOBILE_EDGE_SWIPE_MAX_VERTICAL_DRIFT = 48;
 const MOBILE_EVENT_DETAIL_CLOSE_ANIMATION_MS = 180;
 const MOBILE_EVENT_DETAIL_HISTORY_KEY = 'noduMobileEventDetailId';
+const createLocalEntityId = (prefix: string) => `local:${prefix}:${crypto.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`}`;
 
 const normalizeContactName = (name: string) => (
   name.trim().toLocaleLowerCase('cs-CZ')
@@ -1209,7 +1210,7 @@ const EventDetailView = () => {
           <div className="flex gap-2">
             <Button
               onClick={() => setEditingReceipt({
-                id: Math.max(0, ...eventReceipts.map((receipt) => receipt.id)) + 1,
+                id: createLocalEntityId('receipt'),
                 contractorProfileId: isCrewRole ? currentProfileId : undefined,
                 eid: event.id,
                 job: event.job,

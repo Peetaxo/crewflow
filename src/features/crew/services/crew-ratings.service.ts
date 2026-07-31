@@ -1,14 +1,14 @@
 import { appDataSource } from '../../../lib/app-config';
 import { getLocalAppState, subscribeToLocalAppState, updateLocalAppState } from '../../../lib/app-data';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
-import type { CrewRating, CrewRatingSource } from '../../../types';
+import type { CrewRating, CrewRatingSource, EventId } from '../../../types';
 import type { Database } from '../../../lib/database.types';
 
 type CrewRatingRow = Database['public']['Tables']['crew_ratings']['Row'];
 
 export interface UpsertCrewRatingInput {
   profileId: string;
-  eventId?: number | null;
+  eventId?: EventId | null;
   eventSupabaseId?: string | null;
   source?: CrewRatingSource;
   rating: number;
@@ -34,18 +34,18 @@ const getRatingAverage = (ratings: CrewRating[]): number | null => {
   return Math.round(average * 10) / 10;
 };
 
-const getEventSupabaseId = (eventId?: number | null, explicitEventSupabaseId?: string | null): string | null => {
+const getEventSupabaseId = (eventId?: EventId | null, explicitEventSupabaseId?: string | null): string | null => {
   if (explicitEventSupabaseId) return explicitEventSupabaseId;
   if (eventId == null) return null;
 
-  return getLocalAppState().events.find((event) => event.id === eventId)?.supabaseId ?? null;
+  return getLocalAppState().events.find((event) => event.id === eventId || event.supabaseId === eventId)?.supabaseId ?? null;
 };
 
-const getEventLocalId = (eventSupabaseId: string | null, explicitEventId?: number | null): number | null => {
+const getEventLocalId = (eventSupabaseId: string | null, explicitEventId?: EventId | null): EventId | null => {
   if (explicitEventId != null) return explicitEventId;
   if (!eventSupabaseId) return null;
 
-  return getLocalAppState().events.find((event) => event.supabaseId === eventSupabaseId)?.id ?? null;
+  return getLocalAppState().events.find((event) => event.supabaseId === eventSupabaseId)?.id ?? eventSupabaseId;
 };
 
 const mapCrewRatingRow = (row: CrewRatingRow): CrewRating => ({
@@ -136,12 +136,12 @@ export const ensureSupabaseCrewRatingsLoaded = () => {
     });
 };
 
-export const getCrewRatingsForEvent = (eventId: number | null): CrewRating[] => {
+export const getCrewRatingsForEvent = (eventId: EventId | null): CrewRating[] => {
   ensureSupabaseCrewRatingsLoaded();
   if (eventId == null) return [];
 
   const snapshot = getLocalAppState();
-  const eventSupabaseId = snapshot.events.find((event) => event.id === eventId)?.supabaseId ?? null;
+  const eventSupabaseId = snapshot.events.find((event) => event.id === eventId || event.supabaseId === eventId)?.supabaseId ?? null;
 
   return (snapshot.crewRatings ?? []).filter((rating) => (
     rating.source === 'event'

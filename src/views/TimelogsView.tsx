@@ -8,7 +8,7 @@ import { Button } from '../components/ui/button';
 import { useAuth } from '../app/providers/useAuth';
 import { useAppContext } from '../context/useAppContext';
 import { KM_RATE } from '../data';
-import { Contractor, Event } from '../types';
+import { Contractor, Event, EventId } from '../types';
 import { calculateDayHours, calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';
 import { getLocalAppState } from '../lib/app-data';
@@ -90,8 +90,8 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
       : null
   ), [contractors]);
 
-  const findEvent = useCallback((id: number) => (
-    events.find((event) => event.id === id) ?? null
+  const findEvent = useCallback((id: EventId) => (
+    events.find((event) => event.id === id || event.supabaseId === id) ?? null
   ), [events]);
 
   const timelogs = useMemo(() => {
@@ -101,7 +101,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
     if (!query) return safeTimelogs;
 
     return safeTimelogs.filter((timelog) => {
-      const event = events.find((item) => item.id === timelog.eid);
+      const event = findEvent(timelog.eid);
       const contractor = findContractor(timelog.contractorProfileId);
       if (!event || !contractor) return false;
 
@@ -191,7 +191,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
   };
 
   const groupedByEvent = useMemo(() => {
-    const groups = new Map<number, { eventId: number; job: string; eventName: string; city: string; startDate: string; timelogs: typeof filtered }>();
+    const groups = new Map<EventId, { eventId: EventId; job: string; eventName: string; city: string; startDate: string; timelogs: typeof filtered }>();
 
     filtered.forEach((timelog) => {
       const event = findEvent(timelog.eid);

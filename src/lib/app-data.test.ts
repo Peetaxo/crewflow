@@ -109,8 +109,28 @@ describe('app-data Supabase loading', () => {
         created_at: '2026-04-28T00:00:00Z',
         updated_at: '2026-04-28T00:00:00Z',
       }],
-      timelogs: [],
-      timelog_days: [],
+      timelogs: [{
+        id: 'timelog-uuid-1',
+        event_id: 'event-uuid-1',
+        contractor_id: 'profile-uuid-1',
+        km: 12,
+        note: 'Poznamka k vykazu',
+        status: 'draft',
+        submitted_at: null,
+        approved_at: null,
+        created_at: '2026-04-28T00:00:00Z',
+        updated_at: '2026-04-28T00:00:00Z',
+      }],
+      timelog_days: [{
+        id: 'timelog-day-uuid-1',
+        timelog_id: 'timelog-uuid-1',
+        date: '2026-05-02',
+        time_from: '08:00',
+        time_to: '17:00',
+        day_type: 'instal',
+        note: null,
+        created_at: '2026-04-28T00:00:00Z',
+      }],
       crew_ratings: [{
         id: 'rating-uuid-1',
         profile_id: 'profile-uuid-1',
@@ -122,8 +142,46 @@ describe('app-data Supabase loading', () => {
         created_at: '2026-04-28T00:00:00Z',
         updated_at: '2026-04-28T00:00:00Z',
       }],
-      invoices: [],
-      receipts: [],
+      invoices: [{
+        id: 'invoice-uuid-1',
+        contractor_id: 'profile-uuid-1',
+        event_id: 'event-uuid-1',
+        timelog_id: 'timelog-uuid-1',
+        job_number: 'AKV104',
+        total_hours: 9,
+        amount_hours: 2700,
+        amount_km: 60,
+        amount_receipts: 250,
+        total_amount: 3010,
+        invoice_number: null,
+        issue_date: null,
+        taxable_supply_date: null,
+        due_date: null,
+        currency: 'CZK',
+        supplier_snapshot: null,
+        customer_snapshot: null,
+        pdf_path: null,
+        pdf_generated_at: null,
+        status: 'draft',
+        sent_at: null,
+        paid_at: null,
+        created_at: '2026-04-28T00:00:00Z',
+        updated_at: '2026-04-28T00:00:00Z',
+      }],
+      receipts: [{
+        id: 'receipt-uuid-1',
+        contractor_id: 'profile-uuid-1',
+        event_id: 'event-uuid-1',
+        job_number: 'AKV104',
+        name: 'Parkovne',
+        supplier: 'Garage',
+        amount: 250,
+        paid_at: '2026-05-02',
+        note: null,
+        status: 'draft',
+        created_at: '2026-04-28T00:00:00Z',
+        updated_at: '2026-04-28T00:00:00Z',
+      }],
       candidates: [],
       fleet_vehicles: [{
         id: 'vehicle-uuid-1',
@@ -215,6 +273,33 @@ describe('app-data Supabase loading', () => {
     const { getSupabaseAppData } = await import('./app-data');
     const snapshot = await getSupabaseAppData();
 
+    expect(snapshot.events).toEqual([
+      expect.objectContaining({
+        id: 'event-uuid-1',
+        supabaseId: 'event-uuid-1',
+      }),
+    ]);
+    expect(snapshot.timelogs).toEqual([
+      expect.objectContaining({
+        id: 'timelog-uuid-1',
+        supabaseId: 'timelog-uuid-1',
+        eid: 'event-uuid-1',
+      }),
+    ]);
+    expect(snapshot.invoices).toEqual([
+      expect.objectContaining({
+        id: 'invoice-uuid-1',
+        eid: 'event-uuid-1',
+      }),
+    ]);
+    expect(snapshot.receipts).toEqual([
+      expect.objectContaining({
+        id: 'receipt-uuid-1',
+        supabaseId: 'receipt-uuid-1',
+        eventSupabaseId: 'event-uuid-1',
+        eid: 'event-uuid-1',
+      }),
+    ]);
     expect(snapshot.fleetVehicles).toEqual([
       expect.objectContaining({
         id: 'crafter-1',
@@ -225,7 +310,7 @@ describe('app-data Supabase loading', () => {
       expect.objectContaining({
         id: 'rating-uuid-1',
         profileId: 'profile-uuid-1',
-        eventId: 1,
+        eventId: 'event-uuid-1',
         eventSupabaseId: 'event-uuid-1',
         source: 'event',
         rating: 9,
@@ -238,7 +323,7 @@ describe('app-data Supabase loading', () => {
         supabaseId: 'reservation-uuid-1',
         vehicleId: 'crafter-1',
         projectId: 'AKV104',
-        eventId: 1,
+        eventId: 'event-uuid-1',
         responsibleProfileId: 'profile-uuid-1',
       }),
     ]);
@@ -247,7 +332,7 @@ describe('app-data Supabase loading', () => {
         id: 1,
         supabaseId: 'package-uuid-1',
         projectId: 'AKV104',
-        eventIds: [1],
+        eventIds: ['event-uuid-1'],
       }),
     ]);
     expect(snapshot.budgetItems).toEqual([
@@ -256,13 +341,13 @@ describe('app-data Supabase loading', () => {
         supabaseId: 'item-uuid-1',
         projectId: 'AKV104',
         budgetPackageId: 1,
-        eventId: 1,
+        eventId: 'event-uuid-1',
         unitPrice: 100,
       }),
     ]);
     expect(snapshot.eventCrewAssignments).toEqual([
       {
-        eventId: 1,
+        eventId: 'event-uuid-1',
         eventSupabaseId: 'event-uuid-1',
         contractorProfileId: 'profile-uuid-1',
         name: 'Petr Heitzer',

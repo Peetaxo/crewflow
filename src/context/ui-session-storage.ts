@@ -42,6 +42,9 @@ const isNumber = (value: unknown): value is number =>
 const isNullableNumber = (value: unknown): value is number | null =>
   value === null || isNumber(value);
 
+const isEntityId = (value: unknown): value is string | number =>
+  isString(value) || isNumber(value);
+
 const isNullableEventId = (value: unknown): value is SelectedEventId | null =>
   value === null || isNumber(value) || isString(value);
 
@@ -54,8 +57,8 @@ const isTimelogDay = (value: unknown): value is Timelog['days'][number] =>
 
 const isTimelog = (value: unknown): value is Timelog =>
   isRecord(value) &&
-  isNumber(value.id) &&
-  isNumber(value.eid) &&
+  isEntityId(value.id) &&
+  isEntityId(value.eid) &&
   (value.contractorProfileId === undefined || isString(value.contractorProfileId)) &&
   Array.isArray(value.days) &&
   value.days.every(isTimelogDay) &&
@@ -65,9 +68,9 @@ const isTimelog = (value: unknown): value is Timelog =>
 
 const isReceiptItem = (value: unknown): value is ReceiptItem =>
   isRecord(value) &&
-  isNumber(value.id) &&
+  isEntityId(value.id) &&
   (value.contractorProfileId === undefined || isString(value.contractorProfileId)) &&
-  isNumber(value.eid) &&
+  isEntityId(value.eid) &&
   isString(value.job) &&
   isString(value.title) &&
   isString(value.vendor) &&

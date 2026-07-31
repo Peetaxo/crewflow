@@ -7,6 +7,11 @@ export type EventStatus = 'upcoming' | 'full' | 'past' | 'planning';
 /** Typ prace (faze akce) */
 export type TimelogType = 'pripravy' | 'instal' | 'provoz' | 'deinstal';
 
+export type EntityId = string | number;
+export type EventId = EntityId;
+export type TimelogId = EntityId;
+export type ReceiptId = EntityId;
+
 export interface EventPhaseTime {
   from: string;
   to: string;
@@ -19,7 +24,7 @@ export interface EventPhaseSlot extends EventPhaseTime {
 
 /** Akce (event) - konkretni realizace projektu */
 export interface Event {
-  id: number;
+  id: EventId;
   supabaseId?: string;
   projectId?: string | null;
   name: string;
@@ -61,9 +66,9 @@ export interface Event {
 export type EventApplicationStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn' | 'withdrawal_requested';
 
 export interface EventApplication {
-  id: number;
+  id: EntityId;
   supabaseId?: string;
-  eventId: number;
+  eventId: EventId;
   eventSupabaseId?: string;
   contractorProfileId: string;
   status: EventApplicationStatus;
@@ -74,7 +79,7 @@ export interface EventApplication {
 }
 
 export interface EventCrewAssignment {
-  eventId: number;
+  eventId: EventId;
   eventSupabaseId?: string;
   contractorProfileId: string;
   name: string;
@@ -119,7 +124,7 @@ export type CrewRatingSource = 'initial' | 'event';
 export interface CrewRating {
   id: string;
   profileId: string;
-  eventId: number | null;
+  eventId: EventId | null;
   eventSupabaseId?: string | null;
   source: CrewRatingSource;
   rating: number;
@@ -156,10 +161,10 @@ export interface TimelogDay {
 
 /** Vykaz prace (timelog) */
 export interface Timelog {
-  id: number;
+  id: TimelogId;
   supabaseId?: string;
   /** ID akce */
-  eid: number;
+  eid: EventId;
   contractorProfileId?: string;
   days: TimelogDay[];
   /** Cestovne v km */
@@ -170,7 +175,7 @@ export interface Timelog {
 
 /** Prirazeni crew k akci bez detailnich vykazanych dni */
 export interface EventCrewAssignment {
-  eventId: number;
+  eventId: EventId;
   eventSupabaseId?: string | null;
   contractorProfileId: string;
   name: string;
@@ -262,7 +267,7 @@ export interface Invoice {
   id: string;
   contractorProfileId?: string;
   /** ID akce */
-  eid: number;
+  eid: EventId;
   hours: number;
   /** Částka za hodiny */
   hAmt: number;
@@ -277,11 +282,11 @@ export interface Invoice {
   /** Vsechny job number zahrnute do billing batch faktury */
   jobNumbers?: string[];
   /** Navazane timelogy zahrnute do faktury */
-  timelogIds?: number[];
+  timelogIds?: TimelogId[];
   /** Navazane uctenky zahrnute do faktury */
-  receiptIds?: number[];
+  receiptIds?: ReceiptId[];
   /** Vsechny navazane akce zahrnute do faktury */
-  eventIds?: number[];
+  eventIds?: EventId[];
   invoiceNumber?: string;
   issueDate?: string;
   taxableSupplyDate?: string;
@@ -300,11 +305,11 @@ export type ReceiptStatus = 'draft' | 'submitted' | 'approved' | 'attached' | 'r
 
 /** Účtenka / výdaj crew k akci */
 export interface ReceiptItem {
-  id: number;
+  id: ReceiptId;
   supabaseId?: string;
   eventSupabaseId?: string;
   contractorProfileId?: string;
-  eid: number;
+  eid: EventId;
   job: string;
   title: string;
   vendor: string;
@@ -366,7 +371,7 @@ export interface FleetReservation {
   supabaseId?: string;
   vehicleId: string;
   projectId: string;
-  eventId: number | null;
+  eventId: EventId | null;
   responsibleProfileId: string;
   startsAt: string;
   endsAt: string;
@@ -385,7 +390,7 @@ export interface BudgetPackage {
   projectId: string;
   name: string;
   note: string;
-  eventIds: number[];
+  eventIds: EventId[];
   createdAt: string;
 }
 
@@ -399,7 +404,7 @@ export interface BudgetItem {
   supabaseId?: string;
   projectId: string;
   budgetPackageId: number | null;
-  eventId: number | null;
+  eventId: EventId | null;
   section: string;
   name: string;
   units: string;

@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { useAppContext } from '../context/useAppContext';
 import { KM_RATE } from '../data';
-import { Contractor, Event, Timelog } from '../types';
+import { Contractor, EntityId, Event, EventId, Timelog } from '../types';
 import { calculateDayHours, calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';
 import {
@@ -53,7 +53,7 @@ const ApprovalsView = () => {
     if (!query) return safeTimelogs;
 
     return safeTimelogs.filter((timelog) => {
-      const event = events.find((item) => item.id === timelog.eid);
+      const event = events.find((item) => item.id === timelog.eid || item.supabaseId === timelog.eid);
       const contractor = findContractor(timelog.contractorProfileId);
       if (!event || !contractor) return false;
 
@@ -80,13 +80,13 @@ const ApprovalsView = () => {
     }, [] as { event: typeof filteredEvents[number]; tls: typeof mine }[]);
   }, [filteredEvents, isCrewHead, mine]);
 
-  const handleTimelogAction = useCallback((timelogId: number, action: 'ch' | 'rej') => {
+  const handleTimelogAction = useCallback((timelogId: EntityId, action: 'ch' | 'rej') => {
     void updateTimelogStatus(timelogId, action).catch((error) => {
       toast.error(error instanceof Error ? error.message : 'Nepodařilo se aktualizovat výkaz.');
     });
   }, []);
 
-  const handleApproveAll = useCallback((eventId: number) => {
+  const handleApproveAll = useCallback((eventId: EventId) => {
     void approveAllTimelogsForEvent(eventId).catch((error) => {
       toast.error(error instanceof Error ? error.message : 'Nepodařilo se schválit výkazy.');
     });

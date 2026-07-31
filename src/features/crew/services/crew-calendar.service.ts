@@ -1,5 +1,5 @@
 import { getLocalAppState, subscribeToLocalAppState } from '../../../lib/app-data';
-import type { Contractor, Event, EventCrewAssignment, Timelog, TimelogDay } from '../../../types';
+import type { Contractor, Event, EventCrewAssignment, EventId, Timelog, TimelogDay } from '../../../types';
 import { getEvents } from '../../events/services/events.service';
 import { getTimelogs } from '../../timelogs/services/timelogs.service';
 import { getCrew } from './crew.service';
@@ -12,7 +12,7 @@ export interface CrewCalendarAssignment {
   contractorInitials: string;
   contractorBg: string;
   contractorFg: string;
-  eventId: number;
+  eventId: EventId;
   eventSelectionId: number | string;
   eventName: string;
   eventJob: string;
@@ -150,7 +150,8 @@ export const buildCrewCalendarAssignments = ({
   for (const timelog of timelogs) {
     if (!timelog.contractorProfileId || timelog.days.length === 0) continue;
 
-    const event = eventsById.get(timelog.eid);
+    const event = eventsById.get(timelog.eid)
+      ?? (typeof timelog.eid === 'string' ? eventsBySupabaseId.get(timelog.eid) : undefined);
     if (!event) continue;
 
     timelogAssignmentKeys.add(`${event.id}:${timelog.contractorProfileId}`);

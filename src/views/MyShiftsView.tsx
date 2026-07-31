@@ -5,7 +5,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { format, parseISO } from 'date-fns';
 import { useAuth } from '../app/providers/useAuth';
 import { useAppContext } from '../context/useAppContext';
-import { Contractor, Event } from '../types';
+import { Contractor, Event, EventId } from '../types';
 import { calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';
 import { useEventsQuery } from '../features/events/queries/useEventsQuery';
@@ -40,6 +40,9 @@ const MyShiftsView = () => {
   useEffect(() => subscribeToCrewChanges(loadData), [loadData]);
   useEffect(() => subscribeToProjectChanges(() => setProjects(getProjects() ?? [])), []);
   const events = useMemo(() => eventsQuery.data ?? [], [eventsQuery.data]);
+  const findEvent = useCallback((eventId: EventId) => (
+    events.find((event) => event.id === eventId || event.supabaseId === eventId) ?? null
+  ), [events]);
   const timelogs = timelogsQuery.data ?? [];
   const invoices = invoicesQuery.data ?? [];
   const meProfileId = currentProfileId ?? me?.profileId ?? null;
@@ -100,7 +103,7 @@ const MyShiftsView = () => {
     const query = searchQuery.toLowerCase();
 
     const filterShifts = (list: typeof myTimelogs) => list.filter((timelog) => {
-      const event = events.find((item) => item.id === timelog.eid);
+      const event = findEvent(timelog.eid);
       const project = projects.find((item) => item.id === event?.job);
       return (
         event?.name.toLowerCase().includes(query)
@@ -115,7 +118,7 @@ const MyShiftsView = () => {
       invoiced: filterShifts(categorized.invoiced),
       invoices: myInvoices.filter((invoice) => invoice.id.toLowerCase().includes(query) || invoice.job.toLowerCase().includes(query)),
     };
-  }, [searchQuery, categorized, myInvoices, events, projects]);
+  }, [searchQuery, categorized, myInvoices, findEvent, projects]);
 
   const openEventDetail = (event: Event) => {
     setCurrentTab('events');
@@ -126,7 +129,7 @@ const MyShiftsView = () => {
   const nextShift = useMemo(() => (
     categorized.upcoming
       .flatMap((timelog) => {
-        const event = events.find((item) => item.id === timelog.eid);
+        const event = findEvent(timelog.eid);
         const project = resolveShiftProject(event, projects);
         if (!event || !project) return [];
 
@@ -143,7 +146,7 @@ const MyShiftsView = () => {
 
         return firstDate.localeCompare(secondDate);
       })[0] ?? null
-  ), [categorized.upcoming, events, projects]);
+  ), [categorized.upcoming, findEvent, projects]);
 
   const overviewStats = [
     {
@@ -271,7 +274,7 @@ const MyShiftsView = () => {
           {activeTab !== 'invoices' ? (
             <motion.div key={activeTab} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="nodu-my-shifts-card-grid">
               {filteredData[activeTab].map((timelog) => {
-                const event = events.find((item) => item.id === timelog.eid);
+                const event = findEvent(timelog.eid);
                 const project = resolveShiftProject(event, projects);
                 if (!event || !project) return null;
                 return <ShiftCard key={timelog.id} timelog={timelog} event={event} project={project} onClick={() => openEventDetail(event)} />;

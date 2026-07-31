@@ -66,7 +66,7 @@ const DashboardView = () => {
     if (!query) return safeTimelogs;
 
     return safeTimelogs.filter((timelog) => {
-      const event = events.find((item) => item.id === timelog.eid);
+      const event = events.find((item) => item.id === timelog.eid || item.supabaseId === timelog.eid);
       const contractor = findContractor(timelog.contractorProfileId);
       if (!event || !contractor) return false;
 

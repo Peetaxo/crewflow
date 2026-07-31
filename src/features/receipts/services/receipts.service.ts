@@ -4,11 +4,12 @@ import { queryClient } from '../../../lib/query-client';
 import { queryKeys } from '../../../lib/query-keys';
 import { mapReceipt } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
-import { Contractor, Event, ReceiptItem, ReceiptStatus } from '../../../types';
+import { Contractor, EntityId, Event, EventId, ReceiptItem, ReceiptId, ReceiptStatus } from '../../../types';
 
 type ReceiptAction = 'submit' | 'approve' | 'reimburse' | 'reject';
 let receiptsHydrationPromise: Promise<void> | null = null;
 let receiptsLoaded = false;
+const createLocalEntityId = (prefix: string) => `local:${prefix}:${crypto.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`}`;
 
 const normalizeReceipt = (receipt: ReceiptItem): ReceiptItem => ({
   ...receipt,
@@ -44,19 +45,12 @@ const mapSupabaseReceipts = (
   profileRows: NonNullable<Awaited<ReturnType<typeof supabase.from<'profiles'>>>['data']>,
   eventRows: NonNullable<Awaited<ReturnType<typeof supabase.from<'events'>>>['data']>,
 ) => {
-  const profileIdMap = new Map(
-    profileRows.map((row, index) => [row.id, index + 1]),
-  );
-  const eventIdMap = new Map(
-    eventRows.map((row, index) => [row.id, index + 1]),
-  );
-
-  return receiptRows.map((row, index) => ({
+  return receiptRows.map((row) => ({
     ...mapReceipt(row),
-    id: index + 1,
+    id: row.id,
     eventSupabaseId: row.event_id ?? undefined,
     contractorProfileId: row.contractor_id,
-    eid: row.event_id ? (eventIdMap.get(row.event_id) ?? Number.NaN) : 0,
+    eid: row.event_id ?? '',
   }));
 };
 
@@ -121,7 +115,7 @@ const invalidateReceiptQueries = () => {
   void queryClient.invalidateQueries({ queryKey: queryKeys.receipts.all });
 };
 
-const getSupabaseEventIdMap = async (): Promise<Map<number, string>> => {
+const getSupabaseEventIdMap = async (): Promise<Map<EntityId, string>> => {
   const localEvents = getLocalAppState().events ?? [];
   const directMap = new Map(
     localEvents
@@ -157,15 +151,19 @@ const getSupabaseEventIdMap = async (): Promise<Map<number, string>> => {
   return directMap;
 };
 
-const getSupabaseEventRowId = async (localEventId: number): Promise<string | undefined> => {
-  const event = (getLocalAppState().events ?? []).find((item) => item.id === localEventId);
+const getSupabaseEventRowId = async (eventId: EventId): Promise<string | undefined> => {
+  const event = (getLocalAppState().events ?? []).find((item) => item.id === eventId);
 
   if (event?.supabaseId) {
     return event.supabaseId;
   }
 
+  if (typeof eventId === 'string' && !eventId.startsWith('local:')) {
+    return eventId;
+  }
+
   const eventIdMap = await getSupabaseEventIdMap();
-  return eventIdMap.get(localEventId);
+  return eventIdMap.get(eventId);
 };
 
 const getSupabaseReceiptRowIds = async (): Promise<string[]> => {
@@ -185,16 +183,20 @@ const getSupabaseReceiptRowIds = async (): Promise<string[]> => {
   return (result.data ?? []).map((row) => row.id);
 };
 
-const getSupabaseReceiptRowId = async (localReceiptId: number): Promise<string> => {
+const getSupabaseReceiptRowId = async (receiptId: ReceiptId): Promise<string> => {
   const localReceipts = getLocalAppState().receipts ?? [];
-  const receipt = localReceipts.find((item) => item.id === localReceiptId);
+  const receipt = localReceipts.find((item) => item.id === receiptId);
 
   if (receipt?.supabaseId) {
     return receipt.supabaseId;
   }
 
+  if (typeof receiptId === 'string' && !receiptId.startsWith('local:')) {
+    return receiptId;
+  }
+
   const receiptRowIds = await getSupabaseReceiptRowIds();
-  const rowId = receiptRowIds[localReceipts.findIndex((item) => item.id === localReceiptId)];
+  const rowId = receiptRowIds[localReceipts.findIndex((item) => item.id === receiptId)];
 
   if (!rowId) {
     throw new Error('Nepodarilo se sparovat uctenku s databazovym zaznamem.');
@@ -204,7 +206,7 @@ const getSupabaseReceiptRowId = async (localReceiptId: number): Promise<string> 
 };
 
 const persistSupabaseReceiptStatus = async (
-  localReceiptIds: number[],
+  localReceiptIds: ReceiptId[],
   nextStatus: ReceiptStatus,
 ): Promise<void> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
@@ -242,7 +244,7 @@ export const getReceipts = (search = ''): ReceiptItem[] => {
   ));
 };
 
-export const getReceiptById = (id: number | null): ReceiptItem | null => {
+export const getReceiptById = (id: ReceiptId | null): ReceiptItem | null => {
   ensureSupabaseReceiptsLoaded();
   if (id == null) return null;
   return (getLocalAppState().receipts ?? []).find((receipt) => receipt.id === id) ?? null;
@@ -261,9 +263,9 @@ export const createEmptyReceipt = (
   contractorProfileId?: string,
 ): ReceiptItem => {
   return ({
-    id: Math.max(0, ...getLocalAppState().receipts.map((receipt) => receipt.id)) + 1,
+    id: createLocalEntityId('receipt'),
     contractorProfileId,
-    eid: 0,
+    eid: '',
     job: '',
     title: '',
     vendor: '',
@@ -274,7 +276,7 @@ export const createEmptyReceipt = (
   });
 };
 
-export const updateReceiptStatus = async (id: number, action: ReceiptAction): Promise<ReceiptItem> => {
+export const updateReceiptStatus = async (id: ReceiptId, action: ReceiptAction): Promise<ReceiptItem> => {
   const statusMap: Record<ReceiptAction, ReceiptStatus> = {
     submit: 'submitted',
     approve: 'approved',
@@ -362,6 +364,7 @@ export const saveReceipt = async (updated: ReceiptItem): Promise<ReceiptItem> =>
 
       normalizedReceipt = {
         ...normalizedReceipt,
+        id: receiptInsert.data.id,
         supabaseId: receiptInsert.data.id,
       };
     }
@@ -384,7 +387,7 @@ export const saveReceipt = async (updated: ReceiptItem): Promise<ReceiptItem> =>
   return normalizedReceipt;
 };
 
-export const deleteReceipt = async (id: number): Promise<{ id: number }> => {
+export const deleteReceipt = async (id: ReceiptId): Promise<{ id: ReceiptId }> => {
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
     const receiptRowId = await getSupabaseReceiptRowId(id);
     const receiptDelete = await supabase
@@ -435,7 +438,7 @@ export const markApprovedReceiptsAsAttached = async (): Promise<ReceiptItem[]> =
   return updatedReceipts;
 };
 
-export const markReceiptsAsAttached = async (receiptIds: number[]): Promise<ReceiptItem[]> => {
+export const markReceiptsAsAttached = async (receiptIds: ReceiptId[]): Promise<ReceiptItem[]> => {
   const idSet = new Set(receiptIds);
   const updatedReceipts: ReceiptItem[] = [];
 
@@ -446,7 +449,7 @@ export const markReceiptsAsAttached = async (receiptIds: number[]): Promise<Rece
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     receipts: snapshot.receipts.map((receipt) => {
-      if (!idSet.has(receipt.id)) return receipt;
+      if (!idSet.has(receipt.id) && (!receipt.supabaseId || !idSet.has(receipt.supabaseId))) return receipt;
 
       const updatedReceipt = {
         ...receipt,
@@ -463,7 +466,7 @@ export const markReceiptsAsAttached = async (receiptIds: number[]): Promise<Rece
 };
 
 export const markReceiptsAsReimbursedForInvoice = async (
-  eventId: number,
+  eventId: EventId,
   contractorProfileId: string,
 ): Promise<ReceiptItem[]> => {
   const updatedReceipts: ReceiptItem[] = [];
@@ -494,7 +497,7 @@ export const markReceiptsAsReimbursedForInvoice = async (
   return updatedReceipts;
 };
 
-export const markReceiptsAsReimbursed = async (receiptIds: number[]): Promise<ReceiptItem[]> => {
+export const markReceiptsAsReimbursed = async (receiptIds: ReceiptId[]): Promise<ReceiptItem[]> => {
   const idSet = new Set(receiptIds);
   const updatedReceipts: ReceiptItem[] = [];
 
@@ -505,7 +508,7 @@ export const markReceiptsAsReimbursed = async (receiptIds: number[]): Promise<Re
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     receipts: snapshot.receipts.map((receipt) => {
-      if (!idSet.has(receipt.id)) return receipt;
+      if (!idSet.has(receipt.id) && (!receipt.supabaseId || !idSet.has(receipt.supabaseId))) return receipt;
 
       const updatedReceipt = {
         ...receipt,

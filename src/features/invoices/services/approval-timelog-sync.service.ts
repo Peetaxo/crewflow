@@ -6,6 +6,7 @@ import type {
   InvoiceApprovalDocument,
   Timelog,
   TimelogDay,
+  TimelogId,
   TimelogType,
 } from '../../../types';
 import { getDatesBetween } from '../../../utils';
@@ -28,7 +29,7 @@ export interface ApprovalTimelogPreviewRow {
   matchedEvent: Event | null;
   matchedContractor: Contractor | null;
   proposedDays: TimelogDay[];
-  existingTimelogId: number | null;
+  existingTimelogId: TimelogId | null;
 }
 
 interface BuildApprovalTimelogPreviewInput {
@@ -68,6 +69,10 @@ interface GroupedEntry {
   event: Event;
   entries: ParsedCommentEntry[];
 }
+
+const timelogMatchesEvent = (timelog: Timelog, event: Event): boolean => (
+  timelog.eid === event.id || Boolean(event.supabaseId && timelog.eid === event.supabaseId)
+);
 
 interface IndexedSearchText {
   text: string;
@@ -754,6 +759,7 @@ const eventAssignmentMatches = (
   assignment.contractorProfileId === contractor.profileId
   && (
     assignment.eventId === event.id
+    || Boolean(event.supabaseId && assignment.eventId === event.supabaseId)
     || Boolean(event.supabaseId && assignment.eventSupabaseId === event.supabaseId)
   )
 );
@@ -823,7 +829,7 @@ const findExistingTimelog = (
 ): Timelog | null => (
   contractor.profileId
     ? timelogs.find((timelog) => (
-      timelog.eid === event.id && timelog.contractorProfileId === contractor.profileId
+      timelogMatchesEvent(timelog, event) && timelog.contractorProfileId === contractor.profileId
     )) ?? null
     : null
 );
@@ -904,7 +910,7 @@ const hasOverlappingTimelog = (
 
   return timelogs.some((timelog) => (
     timelog.contractorProfileId === contractor.profileId
-    && timelog.eid !== event.id
+    && !timelogMatchesEvent(timelog, event)
     && timelog.days.some((existingDay) => (
       proposedDays.some((proposedDay) => timelogDaysOverlap(existingDay, proposedDay))
     ))
@@ -917,7 +923,7 @@ const groupEntriesByEvent = (
   input: BuildApprovalTimelogPreviewInput,
   contractor: Contractor,
 ): { groups: GroupedEntry[]; reviewReasons: string[] } => {
-  const groups = new Map<number, GroupedEntry>();
+  const groups = new Map<Event['id'], GroupedEntry>();
   const reviewReasons: string[] = [];
 
   parsed.entries.forEach((entry) => {
@@ -1077,7 +1083,8 @@ export const applyApprovalTimelogPreview = async (
   }
 
   const existingTimelog = dependencies.timelogs.find((timelog) => (
-    timelog.eid === row.matchedEvent?.id
+    row.matchedEvent != null
+    && timelogMatchesEvent(timelog, row.matchedEvent)
     && timelog.contractorProfileId === row.matchedContractor?.profileId
   ));
   const nextDays = sortDays(row.proposedDays);

@@ -1,23 +1,27 @@
 import type {
   Client,
   Contractor,
+  EntityId,
   Event,
+  EventId,
   InvoiceCustomerSnapshot,
   InvoiceSupplierSnapshot,
   Project,
+  ReceiptId,
   ReceiptItem,
   Timelog,
+  TimelogId,
 } from '../../../types';
 
 const requireText = (value: string | null | undefined): string => (value ?? '').trim();
 
 const findClientForEvent = (
-  eventId: number,
+  eventId: EventId,
   events: Event[],
   projects: Project[],
   clients: Client[],
 ): Client => {
-  const event = events.find((item) => item.id === eventId);
+  const event = events.find((item) => item.id === eventId || item.supabaseId === eventId);
   if (!event?.projectId) {
     throw new Error('Akce nema prirazeny projekt.');
   }
@@ -35,6 +39,13 @@ const findClientForEvent = (
   return client;
 };
 
+const matchesEntityId = (
+  item: { id: EntityId; supabaseId?: string | null },
+  selectedIds: Set<EntityId>,
+): boolean => (
+  selectedIds.has(item.id) || Boolean(item.supabaseId && selectedIds.has(item.supabaseId))
+);
+
 export const resolveSingleInvoiceClient = ({
   timelogs,
   receipts,
@@ -46,14 +57,16 @@ export const resolveSingleInvoiceClient = ({
 }: {
   timelogs: Timelog[];
   receipts: ReceiptItem[];
-  selectedTimelogIds: number[];
-  selectedReceiptIds: number[];
+  selectedTimelogIds: TimelogId[];
+  selectedReceiptIds: ReceiptId[];
   events: Event[];
   projects: Project[];
   clients: Client[];
 }): Client => {
-  const selectedTimelogs = timelogs.filter((item) => selectedTimelogIds.includes(item.id));
-  const selectedReceipts = receipts.filter((item) => selectedReceiptIds.includes(item.id));
+  const selectedTimelogIdSet = new Set<EntityId>(selectedTimelogIds);
+  const selectedReceiptIdSet = new Set<EntityId>(selectedReceiptIds);
+  const selectedTimelogs = timelogs.filter((item) => matchesEntityId(item, selectedTimelogIdSet));
+  const selectedReceipts = receipts.filter((item) => matchesEntityId(item, selectedReceiptIdSet));
   const clientById = new Map<string, Client>();
 
   selectedTimelogs.forEach((timelog) => {

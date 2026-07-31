@@ -609,8 +609,8 @@ describe('invoices.service billing batches', () => {
 
     const created = await createInvoiceFromSelection('profile-uuid-1', [7], [11]);
 
-    expect(created?.timelogIds).toEqual([7]);
-    expect(created?.receiptIds).toEqual([11]);
+    expect(created?.timelogIds).toEqual(['timelog-uuid-7']);
+    expect(created?.receiptIds).toEqual(['receipt-uuid-11']);
     expect(invoiceItemsInsert).toHaveBeenCalledWith([
       expect.objectContaining({ event_id: 'event-uuid-3' }),
     ]);
@@ -622,8 +622,8 @@ describe('invoices.service billing batches', () => {
     ]);
     expect(timelogsUpdateIn).toHaveBeenCalledWith('id', ['timelog-uuid-7']);
     expect(receiptsUpdateIn).toHaveBeenCalledWith('id', ['receipt-uuid-11']);
-    expect(markTimelogsAsInvoiced).toHaveBeenCalledWith([7]);
-    expect(markReceiptsAsAttached).toHaveBeenCalledWith([11]);
+    expect(markTimelogsAsInvoiced).toHaveBeenCalledWith(['timelog-uuid-7']);
+    expect(markReceiptsAsAttached).toHaveBeenCalledWith(['receipt-uuid-11']);
   });
 
   it('persists invoice number dates and billing snapshots when creating an invoice', async () => {
@@ -846,6 +846,6 @@ describe('invoices.service billing batches', () => {
     const invoices = getInvoices();
 
     expect(invoices[0].contractorProfileId).toBe('profile-uuid-1');
-    expect(invoices[0].eid).toBe(1);
+    expect(invoices[0].eid).toBe('event-row-1');
   });
 });

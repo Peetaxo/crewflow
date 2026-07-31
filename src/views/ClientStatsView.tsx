@@ -72,7 +72,7 @@ const ClientStatsView = () => {
   const filteredTimelogs = useMemo(() => {
     if (!rangeStart) return clientTimelogs;
     return clientTimelogs.filter((timelog) => {
-      const event = events.find((item) => item.id === timelog.eid);
+      const event = events.find((item) => item.id === timelog.eid || item.supabaseId === timelog.eid);
       return event && event.startDate && parseISO(event.startDate) >= rangeStart;
     });
   }, [clientTimelogs, rangeStart, events]);

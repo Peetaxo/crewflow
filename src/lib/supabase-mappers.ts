@@ -1,4 +1,4 @@
-import type { BudgetItem, BudgetPackage, Candidate, Client, Contractor, Event, FleetReservation, FleetVehicle, Invoice, Project, ReceiptItem, Timelog, TimelogDay } from '@/types';
+import type { BudgetItem, BudgetPackage, Candidate, Client, Contractor, EntityId, Event, EventId, FleetReservation, FleetVehicle, Invoice, Project, ReceiptItem, Timelog, TimelogDay } from '@/types';
 import type { Database, Json } from './database.types';
 
 type BudgetItemRow = Database['public']['Tables']['budget_items']['Row'];
@@ -115,7 +115,7 @@ export function mapContractor(row: ProfileRow): Contractor {
 
 export function mapEvent(row: EventRow): Event {
   return {
-    id: Number.NaN,
+    id: row.id,
     supabaseId: row.id,
     projectId: row.project_id,
     name: row.name,
@@ -169,7 +169,7 @@ export function mapFleetReservation(
     localId: number;
     vehicleSlug: string;
     projectJobNumber: string;
-    eventId: number | null;
+    eventId: EventId | null;
   },
 ): FleetReservation {
   return {
@@ -191,7 +191,7 @@ export function mapBudgetPackage(
   links: {
     localId: number;
     projectJobNumber: string;
-    eventIds: number[];
+    eventIds: EventId[];
   },
 ): BudgetPackage {
   return {
@@ -210,8 +210,8 @@ export function mapBudgetItem(
   links: {
     localId: number;
     projectJobNumber: string;
-    budgetPackageId: number | null;
-    eventId: number | null;
+    budgetPackageId: EntityId | null;
+    eventId: EventId | null;
   },
 ): BudgetItem {
   return {
@@ -244,9 +244,9 @@ export function mapTimelogDay(row: TimelogDayRow): TimelogDay {
 
 export function mapTimelog(row: TimelogRow, days: TimelogDayRow[] = []): Timelog {
   return {
-    id: Number.NaN,
+    id: row.id,
     supabaseId: row.id,
-    eid: Number.NaN,
+    eid: row.event_id,
     contractorProfileId: row.contractor_id,
     days: days.map(mapTimelogDay),
     km: Number(row.km ?? 0),
@@ -259,7 +259,7 @@ export function mapInvoice(row: InvoiceRow): Invoice {
   return {
     id: row.id,
     contractorProfileId: row.contractor_id,
-    eid: Number.NaN,
+    eid: row.event_id ?? '',
     hours: Number(row.total_hours ?? 0),
     hAmt: Number(row.amount_hours ?? 0),
     km: 0,
@@ -283,11 +283,11 @@ export function mapInvoice(row: InvoiceRow): Invoice {
 
 export function mapReceipt(row: ReceiptRow): ReceiptItem {
   return {
-    id: Number.NaN,
+    id: row.id,
     supabaseId: row.id,
     eventSupabaseId: row.event_id ?? undefined,
     contractorProfileId: row.contractor_id,
-    eid: Number.NaN,
+    eid: row.event_id ?? '',
     job: row.job_number ?? '',
     title: row.name,
     vendor: row.supplier ?? '',

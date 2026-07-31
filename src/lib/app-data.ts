@@ -482,14 +482,12 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     userId: row.user_id,
   }));
 
-  const eventIdMap = indexById(eventRows);
   const projectByUuid = new Map(projectRows.map((row) => [row.id, row]));
   const projectJobNumberByUuid = new Map(projectRows.map((row) => [row.id, row.job_number]));
   const events = eventRows.map((row) => {
     const project = row.project_id ? projectByUuid.get(row.project_id) : undefined;
     return {
       ...mapEvent(row),
-      id: eventIdMap.get(row.id) ?? Number.NaN,
       job: row.job_number ?? project?.job_number ?? '',
       client: row.client_name ?? '',
     };
@@ -502,23 +500,17 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     timelogDayRowsByTimelogId.set(dayRow.timelog_id, current);
   }
 
-  const timelogIdMap = indexById(timelogRows);
   const timelogs = timelogRows.map((row) => ({
     ...mapTimelog(row, timelogDayRowsByTimelogId.get(row.id) ?? []),
-    id: timelogIdMap.get(row.id) ?? Number.NaN,
-    eid: eventIdMap.get(row.event_id) ?? Number.NaN,
     contractorProfileId: row.contractor_id,
   }));
 
-  const eventApplicationIdMap = indexById(eventApplicationRows);
   const eventApplications = eventApplicationRows
     .map((row) => {
-      const eventId = eventIdMap.get(row.event_id);
-      if (!eventId) return null;
       return {
-        id: eventApplicationIdMap.get(row.id) ?? Number.NaN,
+        id: row.id,
         supabaseId: row.id,
-        eventId,
+        eventId: row.event_id,
         eventSupabaseId: row.event_id,
         contractorProfileId: row.profile_id,
         status: row.status,
@@ -538,11 +530,8 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
 
   const explicitEventCrewAssignments = eventAssignmentRows
     .map((row) => {
-      const localEventId = eventIdMap.get(row.event_id);
-      if (!localEventId) return null;
-
       return {
-        eventId: localEventId,
+        eventId: row.event_id,
         eventSupabaseId: row.event_id,
         contractorProfileId: row.profile_id,
         name: contractorsByProfileId.get(row.profile_id)?.name ?? row.profile_id,
@@ -552,11 +541,9 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
 
   const timelogEventCrewAssignments = eventCrewAssignmentRows
     .map((row) => {
-      const eventId = eventIdMap.get(row.event_id);
-      if (!eventId) return null;
       const name = `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim();
       return {
-        eventId,
+        eventId: row.event_id,
         eventSupabaseId: row.event_id,
         contractorProfileId: row.profile_id,
         name: name || 'Clen crew',
@@ -577,7 +564,7 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
   const crewRatings = crewRatingRows.map((row) => ({
     id: row.id,
     profileId: row.profile_id,
-    eventId: row.event_id ? (eventIdMap.get(row.event_id) ?? null) : null,
+    eventId: row.event_id ?? null,
     eventSupabaseId: row.event_id,
     source: row.source,
     rating: row.rating,
@@ -590,16 +577,12 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
   const invoices = invoiceRows.map((row) => ({
     ...mapInvoice(row),
     contractorProfileId: row.contractor_id,
-    eid: row.event_id ? (eventIdMap.get(row.event_id) ?? Number.NaN) : Number.NaN,
   }));
 
-  const receiptIdMap = indexById(receiptRows);
   const receipts = receiptRows.map((row) => ({
     ...mapReceipt(row),
-    id: receiptIdMap.get(row.id) ?? Number.NaN,
     eventSupabaseId: row.event_id ?? undefined,
     contractorProfileId: row.contractor_id,
-    eid: row.event_id ? (eventIdMap.get(row.event_id) ?? Number.NaN) : Number.NaN,
   }));
 
   const candidateIdMap = indexById(candidateRows);
@@ -609,14 +592,13 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
   }));
 
   const budgetPackageIdMap = indexById(budgetPackageRows);
-  const budgetPackageEventsByPackageId = new Map<string, number[]>();
+  const budgetPackageEventsByPackageId = new Map<string, string[]>();
   for (const row of budgetPackageEventRows) {
-    const eventId = eventIdMap.get(row.event_id);
-    if (!eventId) {
+    if (!row.event_id) {
       continue;
     }
     const current = budgetPackageEventsByPackageId.get(row.budget_package_id) ?? [];
-    current.push(eventId);
+    current.push(row.event_id);
     budgetPackageEventsByPackageId.set(row.budget_package_id, current);
   }
   const budgetPackages = budgetPackageRows.map((row) => mapBudgetPackage(row, {
@@ -629,7 +611,7 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     localId: budgetItemIdMap.get(row.id) ?? Number.NaN,
     projectJobNumber: projectJobNumberByUuid.get(row.project_id) ?? row.project_id,
     budgetPackageId: row.budget_package_id ? (budgetPackageIdMap.get(row.budget_package_id) ?? null) : null,
-    eventId: row.event_id ? (eventIdMap.get(row.event_id) ?? null) : null,
+    eventId: row.event_id ?? null,
   }));
 
   const fleetVehicles = fleetVehicleRows.map(mapFleetVehicle);
@@ -640,7 +622,7 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
       localId: fleetReservationIdMap.get(row.id) ?? Number.NaN,
       vehicleSlug: fleetVehicleSlugByUuid.get(row.vehicle_id) ?? row.vehicle_id,
       projectJobNumber: projectJobNumberByUuid.get(row.project_id) ?? row.project_id,
-      eventId: row.event_id ? (eventIdMap.get(row.event_id) ?? null) : null,
+      eventId: row.event_id ?? null,
     }));
 
   let warehouseItems: WarehouseItem[];

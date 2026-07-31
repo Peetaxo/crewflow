@@ -289,6 +289,9 @@ describe('UUID write flows integration', () => {
       }),
     ]);
     expect(createdInvoice?.contractorProfileId).toBe('profile-uuid-1');
+    expect(createdInvoice?.timelogIds).toEqual(['timelog-row-1']);
+    expect(createdInvoice?.receiptIds).toEqual(['receipt-row-1']);
+    expect(createdInvoice?.eventIds).toEqual(['event-row-1']);
     expect(invoiceInsert).toHaveBeenCalledWith(expect.objectContaining({
       contractor_id: 'profile-uuid-1',
     }));

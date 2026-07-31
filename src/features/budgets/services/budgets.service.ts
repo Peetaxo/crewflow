@@ -3,7 +3,7 @@ import { getLocalAppState, subscribeToLocalAppState, updateLocalAppState } from 
 import type { AppDataSnapshot } from '../../../lib/app-data';
 import { mapBudgetItem, mapBudgetPackage } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
-import type { BudgetItem, BudgetItemDraft, BudgetPackage, BudgetPackageDraft, Event } from '../../../types';
+import type { BudgetItem, BudgetItemDraft, BudgetPackage, BudgetPackageDraft, Event, EventId } from '../../../types';
 
 export interface BudgetPackageOverview extends BudgetPackage {
   items: BudgetItem[];
@@ -43,9 +43,13 @@ const roundToCents = (value: number): number => Math.round((value + Number.EPSIL
 
 const getNextId = (rows: Array<{ id: number }>): number => Math.max(0, ...rows.map((row) => row.id)) + 1;
 
-const normalizeEventIds = (eventIds: number[] | undefined): number[] => (
-  [...new Set((eventIds ?? []).map(Number).filter((id) => Number.isFinite(id)))]
-    .sort((left, right) => left - right)
+const normalizeEventIds = (eventIds: EventId[] | undefined): EventId[] => (
+  [...new Set(eventIds ?? [])]
+    .sort((left, right) => String(left).localeCompare(String(right)))
+);
+
+const eventMatchesId = (event: Event, eventId: EventId): boolean => (
+  event.id === eventId || Boolean(event.supabaseId && event.supabaseId === eventId)
 );
 
 const normalizePackage = (
@@ -86,7 +90,7 @@ const assertBudgetPackageEventsBelongToProject = (
 ): void => {
   const projectId = normalizeProjectId(budgetPackage.projectId);
   const hasCrossProjectEvent = budgetPackage.eventIds.some((eventId) => {
-    const event = events.find((item) => item.id === eventId);
+    const event = events.find((item) => eventMatchesId(item, eventId));
     return !event || normalizeProjectId(event.job) !== projectId;
   });
 
@@ -132,8 +136,8 @@ const getProjectSupabaseId = (projectId: string, snapshot = getLocalAppState()):
   return project.supabaseId;
 };
 
-const getEventForSupabaseWrite = (eventId: number, projectId: string, snapshot: AppDataSnapshot): Event => {
-  const event = (snapshot.events ?? []).find((item) => item.id === eventId);
+const getEventForSupabaseWrite = (eventId: EventId, projectId: string, snapshot: AppDataSnapshot): Event => {
+  const event = (snapshot.events ?? []).find((item) => eventMatchesId(item, eventId));
   if (!event?.supabaseId) {
     throw new Error('Akce neni propojena se Supabase.');
   }
@@ -187,17 +191,12 @@ const mapBudgetSnapshot = (
   eventRows: Array<{ id: string }>,
 ): Pick<AppDataSnapshot, 'budgetPackages' | 'budgetItems'> => {
   const projectJobNumberByUuid = new Map(projectRows.map((row) => [row.id, row.job_number]));
-  const eventIdByUuid = new Map(eventRows.map((row, index) => [row.id, index + 1]));
   const packageIdByUuid = new Map(packageRows.map((row, index) => [row.id, index + 1]));
-  const eventIdsByPackageUuid = new Map<string, number[]>();
+  const eventIdsByPackageUuid = new Map<string, EventId[]>();
 
   for (const row of packageEventRows) {
-    const eventId = eventIdByUuid.get(row.event_id);
-    if (!eventId) {
-      continue;
-    }
     const current = eventIdsByPackageUuid.get(row.budget_package_id) ?? [];
-    current.push(eventId);
+    current.push(row.event_id);
     eventIdsByPackageUuid.set(row.budget_package_id, current);
   }
 
@@ -211,7 +210,7 @@ const mapBudgetSnapshot = (
       localId: index + 1,
       projectJobNumber: projectJobNumberByUuid.get(row.project_id) ?? row.project_id,
       budgetPackageId: row.budget_package_id ? (packageIdByUuid.get(row.budget_package_id) ?? null) : null,
-      eventId: row.event_id ? (eventIdByUuid.get(row.event_id) ?? null) : null,
+      eventId: row.event_id ?? null,
     })),
   };
 };
@@ -399,7 +398,7 @@ const invoiceMatchesProject = (invoice: AppDataSnapshot['invoices'][number], pro
   || (invoice.jobNumbers ?? []).some((jobNumber) => normalizeProjectId(jobNumber) === projectId)
 );
 
-const invoiceMatchesAnyEvent = (invoice: AppDataSnapshot['invoices'][number], linkedEventIds: Set<number>): boolean => (
+const invoiceMatchesAnyEvent = (invoice: AppDataSnapshot['invoices'][number], linkedEventIds: Set<EventId>): boolean => (
   linkedEventIds.has(invoice.eid)
   || (invoice.eventIds ?? []).some((eventId) => linkedEventIds.has(eventId))
 );
@@ -420,7 +419,7 @@ const getProjectReceiptsActual = (snapshot: AppDataSnapshot, projectId: string):
     .map((receipt) => normalizeNumber(receipt.amount)),
 );
 
-const getPackageActual = (snapshot: AppDataSnapshot, projectId: string, eventIds: number[]): number => {
+const getPackageActual = (snapshot: AppDataSnapshot, projectId: string, eventIds: EventId[]): number => {
   const linkedEventIds = new Set(eventIds);
 
   const invoiceActual = (snapshot.invoices ?? [])
@@ -461,7 +460,7 @@ export const getProjectBudgetOverview = (projectId: string): ProjectBudgetOvervi
   const packages = projectPackages.map((budgetPackage): BudgetPackageOverview => {
     const items = projectItems.filter((budgetItem) => budgetItem.budgetPackageId === budgetPackage.id);
     const linkedEvents = (snapshot.events ?? [])
-      .filter((event) => budgetPackage.eventIds.includes(event.id));
+      .filter((event) => budgetPackage.eventIds.some((eventId) => eventMatchesId(event, eventId)));
     const plannedTotal = sum(items.map(getBudgetItemTotal));
     const actualTotal = getPackageActual(snapshot, normalizedProjectId, budgetPackage.eventIds);
 

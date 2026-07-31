@@ -17,7 +17,7 @@ import { useAuth } from '../app/providers/useAuth';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
-import type { FleetReservation, FleetReservationDraft, FleetVehicleStatus } from '../types';
+import type { EventId, FleetReservation, FleetReservationDraft, FleetVehicleStatus } from '../types';
 import {
   createEmptyFleetReservation,
   findFleetReservationConflicts,
@@ -158,9 +158,9 @@ const FleetView: React.FC = () => {
     };
   };
 
-  const getEventLabel = (eventId: number | null) => {
+  const getEventLabel = (eventId: EventId | null) => {
     if (!eventId) return 'Bez konkrétní akce';
-    const event = dependencies.events.find((item) => item.id === eventId);
+    const event = dependencies.events.find((item) => item.id === eventId || item.supabaseId === eventId);
     return event ? event.name : 'Akce nenalezena';
   };
 

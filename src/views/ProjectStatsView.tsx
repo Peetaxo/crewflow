@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { toast } from 'sonner';
 import { useAppContext } from '../context/useAppContext';
-import { BudgetItem, Contractor, Invoice, ReceiptItem, Timelog } from '../types';
+import { BudgetItem, Contractor, EventId, Invoice, ReceiptItem, Timelog } from '../types';
 import { calculateDayHours, calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';
 import { getTimelogDependencies, getTimelogs, subscribeToTimelogChanges } from '../features/timelogs/services/timelogs.service';
@@ -62,7 +62,7 @@ const ProjectStatsView = () => {
   ));
   const [budgetEvents, setBudgetEvents] = useState<ReturnType<typeof getBudgetDependencies>['events']>([]);
   const [newPackageName, setNewPackageName] = useState('');
-  const [newPackageEventIds, setNewPackageEventIds] = useState<number[]>([]);
+  const [newPackageEventIds, setNewPackageEventIds] = useState<EventId[]>([]);
   const [draftItemsByPackage, setDraftItemsByPackage] = useState<Record<number, BudgetItemDraftForm>>({});
   const [isTimelogsOpen, setIsTimelogsOpen] = useState(true);
   const [isReceiptsOpen, setIsReceiptsOpen] = useState(false);
@@ -215,7 +215,7 @@ const ProjectStatsView = () => {
     }));
   };
 
-  const handlePackageEventToggle = (eventId: number) => {
+  const handlePackageEventToggle = (eventId: EventId) => {
     setNewPackageEventIds((current) => (
       current.includes(eventId)
         ? current.filter((item) => item !== eventId)
@@ -636,7 +636,7 @@ const ProjectStatsView = () => {
               <div className="mt-4 space-y-3">
                 {projectTimelogs.map((timelog) => {
                   const contractor = findContractor(timelog.contractorProfileId);
-                  const event = projectEvents.find((item) => item.id === timelog.eid);
+                  const event = projectEvents.find((item) => item.id === timelog.eid || item.supabaseId === timelog.eid);
                   if (!contractor || !event) return null;
 
                   const totalTimelogHours = calculateTotalHours(timelog.days);

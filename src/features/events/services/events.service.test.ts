@@ -192,7 +192,7 @@ describe('events.service fetch snapshot', () => {
 
     await expect(fetchEventsSnapshot()).resolves.toEqual([
       {
-        id: 1,
+        id: 'event-row-1',
         supabaseId: 'event-row-1',
         name: 'Akce 1',
         job: 'AK001',
@@ -210,7 +210,7 @@ describe('events.service fetch snapshot', () => {
     expect(updateLocalAppState.mock.results[0].value).toEqual({
       events: [
         {
-          id: 1,
+          id: 'event-row-1',
           supabaseId: 'event-row-1',
           name: 'Akce 1',
           job: 'AK001',
@@ -226,7 +226,7 @@ describe('events.service fetch snapshot', () => {
       eventApplications: [],
       eventCrewAssignments: [
         {
-          eventId: 1,
+          eventId: 'event-row-1',
           eventSupabaseId: 'event-row-1',
           contractorProfileId: 'profile-uuid-1',
           name: 'Test User',
@@ -842,7 +842,6 @@ describe('events.service write flow', () => {
     const copy = createEventCopy(snapshot.events[0]);
 
     expect(copy).toMatchObject({
-      id: 6,
       name: 'Akce ke kopii',
       job: 'AK001',
       startDate: '2026-04-18',
@@ -851,6 +850,7 @@ describe('events.service write flow', () => {
       status: 'upcoming',
       client: 'Klient A',
     });
+    expect(copy.id).toEqual(expect.stringMatching(/^local:event:/));
     expect(copy.supabaseId).toBeUndefined();
     expect(copy.dayTypes).toEqual({
       '2026-04-18': 'instal',

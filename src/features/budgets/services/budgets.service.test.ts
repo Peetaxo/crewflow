@@ -437,7 +437,7 @@ describe('budgets service data shape', () => {
       projectId: 'JTI001',
       name: 'Majales',
       note: '',
-      eventIds: [2],
+      eventIds: ['event-uuid-2'],
       createdAt: '2026-04-28T00:00:00Z',
     }]);
     expect(snapshot.budgetItems).toEqual([{
@@ -445,7 +445,7 @@ describe('budgets service data shape', () => {
       supabaseId: 'item-uuid-1',
       projectId: 'JTI001',
       budgetPackageId: 1,
-      eventId: 2,
+      eventId: 'event-uuid-2',
       section: 'TRANSPORTATION',
       name: 'Van',
       units: 'km/action/czk',

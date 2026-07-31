@@ -352,7 +352,8 @@ describe('timelogs.service write flow', () => {
     const timelogs = getTimelogs();
 
     expect(timelogs[0].contractorProfileId).toBe('profile-uuid-1');
-    expect(timelogs[0].eid).toBe(1);
+    expect(timelogs[0].id).toBe('timelog-row-1');
+    expect(timelogs[0].eid).toBe('event-row-1');
   });
 
   it('persists timelog edits to Supabase and rewrites timelog days for the mapped row id', async () => {
@@ -847,7 +848,7 @@ describe('timelogs.service write flow', () => {
       status: 'draft',
     });
 
-    expect(created.id).toBe(2);
+    expect(created.id).toEqual(expect.stringMatching(/^local:timelog:/));
     expect(snapshot.timelogs).toHaveLength(2);
     expect(snapshot.timelogs[1]).toEqual(created);
     expect(snapshot.timelogs[1].days).toEqual([

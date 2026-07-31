@@ -4,7 +4,7 @@ import { queryClient } from '../../../lib/query-client';
 import { queryKeys } from '../../../lib/query-keys';
 import { mapTimelog } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
-import { Contractor, Event, Timelog, TimelogStatus } from '../../../types';
+import { Contractor, EntityId, Event, EventId, Timelog, TimelogStatus } from '../../../types';
 import { assertTimelogDaysDoNotOverlap } from './timelog-validation';
 
 type TimelogAction = 'sub' | 'ch' | 'coo' | 'rej';
@@ -16,10 +16,29 @@ const statusMap: Record<TimelogAction, TimelogStatus> = {
   coo: 'approved',
   rej: 'rejected',
 };
+const createLocalEntityId = (prefix: string) => `local:${prefix}:${crypto.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`}`;
 
 const sortTimelogDays = (days: Timelog['days']) => (
   [...days].sort((a, b) => `${a.d}${a.f}${a.type}`.localeCompare(`${b.d}${b.f}${b.type}`))
 );
+
+const eventMatchesId = (event: Event, eventId: EventId): boolean => (
+  event.id === eventId || Boolean(event.supabaseId && event.supabaseId === eventId)
+);
+
+const findEventById = (eventId: EventId, events: Event[] = getLocalAppState().events ?? []): Event | undefined => (
+  events.find((event) => eventMatchesId(event, eventId))
+);
+
+const timelogMatchesEventId = (
+  timelog: Timelog,
+  eventId: EventId,
+  events?: Event[],
+): boolean => {
+  const event = findEventById(eventId, events);
+  if (!event) return timelog.eid === eventId;
+  return timelog.eid === event.id || Boolean(event.supabaseId && timelog.eid === event.supabaseId);
+};
 
 const findExistingEventContractorTimelog = (
   candidate: Pick<Timelog, 'id' | 'eid' | 'contractorProfileId'>,
@@ -29,7 +48,7 @@ const findExistingEventContractorTimelog = (
 
   return timelogs.find((timelog) => (
     timelog.id !== candidate.id
-    && timelog.eid === candidate.eid
+    && timelogMatchesEventId(timelog, candidate.eid)
     && timelog.contractorProfileId === candidate.contractorProfileId
   ));
 };
@@ -42,7 +61,7 @@ const matchesSearch = (
 ) => {
   if (!query) return true;
 
-  const event = events.find((item) => item.id === timelog.eid);
+  const event = findEventById(timelog.eid, events);
   const contractor = contractors.find((item) => item.profileId === timelog.contractorProfileId);
   if (!event || !contractor) return false;
 
@@ -59,13 +78,6 @@ const mapSupabaseTimelogs = (
   profileRows: NonNullable<Awaited<ReturnType<typeof supabase.from<'profiles'>>>['data']>,
   eventRows: NonNullable<Awaited<ReturnType<typeof supabase.from<'events'>>>['data']>,
 ) => {
-  const profileIdMap = new Map(
-    profileRows.map((row, index) => [row.id, index + 1]),
-  );
-  const eventIdMap = new Map(
-    eventRows.map((row, index) => [row.id, index + 1]),
-  );
-
   const timelogDayRowsByTimelogId = new Map<string, typeof timelogDayRows>();
   for (const dayRow of timelogDayRows) {
     const current = timelogDayRowsByTimelogId.get(dayRow.timelog_id) ?? [];
@@ -73,10 +85,10 @@ const mapSupabaseTimelogs = (
     timelogDayRowsByTimelogId.set(dayRow.timelog_id, current);
   }
 
-  return timelogRows.map((row, index) => ({
+  return timelogRows.map((row) => ({
     ...mapTimelog(row, timelogDayRowsByTimelogId.get(row.id) ?? []),
-    id: index + 1,
-    eid: eventIdMap.get(row.event_id) ?? Number.NaN,
+    id: row.id,
+    eid: row.event_id,
     contractorProfileId: row.contractor_id,
   }));
 };
@@ -191,40 +203,48 @@ const getSupabaseTimelogRowIds = async (): Promise<string[]> => {
   return (result.data ?? []).map((row) => row.id);
 };
 
-const getSupabaseEventIdMap = async (): Promise<Map<number, string>> => {
+const getSupabaseEventIdMap = async (): Promise<Map<EntityId, string>> => {
   const rowIds = await getSupabaseEventRowIds();
   const localEvents = getLocalAppState().events ?? [];
 
   return new Map(rowIds.map((rowId, index) => [localEvents[index]?.id ?? index + 1, rowId]));
 };
 
-const getSupabaseEventRowId = async (localEventId: number): Promise<string | undefined> => {
-  const event = (getLocalAppState().events ?? []).find((item) => item.id === localEventId);
+const getSupabaseEventRowId = async (eventId: EventId): Promise<string | undefined> => {
+  const event = (getLocalAppState().events ?? []).find((item) => item.id === eventId);
 
   if (event?.supabaseId) {
     return event.supabaseId;
   }
 
+  if (typeof eventId === 'string' && !eventId.startsWith('local:')) {
+    return eventId;
+  }
+
   const eventIdMap = await getSupabaseEventIdMap();
-  return eventIdMap.get(localEventId);
+  return eventIdMap.get(eventId);
 };
 
-const getSupabaseTimelogIdMap = async (): Promise<Map<number, string>> => {
+const getSupabaseTimelogIdMap = async (): Promise<Map<EntityId, string>> => {
   const rowIds = await getSupabaseTimelogRowIds();
   const localTimelogs = getLocalAppState().timelogs ?? [];
 
   return new Map(rowIds.map((rowId, index) => [localTimelogs[index]?.id ?? index + 1, rowId]));
 };
 
-const getSupabaseTimelogRowId = async (localTimelogId: number): Promise<string> => {
-  const timelog = (getLocalAppState().timelogs ?? []).find((item) => item.id === localTimelogId);
+const getSupabaseTimelogRowId = async (timelogId: EntityId): Promise<string> => {
+  const timelog = (getLocalAppState().timelogs ?? []).find((item) => item.id === timelogId);
 
   if (timelog?.supabaseId) {
     return timelog.supabaseId;
   }
 
+  if (typeof timelogId === 'string' && !timelogId.startsWith('local:')) {
+    return timelogId;
+  }
+
   const timelogIdMap = await getSupabaseTimelogIdMap();
-  const rowId = timelogIdMap.get(localTimelogId);
+  const rowId = timelogIdMap.get(timelogId);
 
   if (!rowId) {
     throw new Error('Nepodarilo se sparovat vykaz s databazovym zaznamem.');
@@ -257,7 +277,7 @@ const persistSupabaseTimelogRowStatus = async (
 };
 
 const persistSupabaseTimelogStatus = async (
-  localTimelogIds: number[],
+  localTimelogIds: EntityId[],
   nextStatus: TimelogStatus,
 ): Promise<void> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
@@ -286,7 +306,7 @@ export const getTimelogs = (search = ''): Timelog[] => {
   ));
 };
 
-export const getTimelogById = (id: number | null): Timelog | null => {
+export const getTimelogById = (id: EntityId | null): Timelog | null => {
   ensureSupabaseTimelogsLoaded();
   if (id == null) return null;
   return (getLocalAppState().timelogs ?? []).find((timelog) => timelog.id === id) ?? null;
@@ -301,7 +321,7 @@ export const getTimelogDependencies = (): { contractors: Contractor[]; events: E
   };
 };
 
-export const updateTimelogStatus = async (id: number, action: TimelogAction): Promise<Timelog> => {
+export const updateTimelogStatus = async (id: EntityId, action: TimelogAction): Promise<Timelog> => {
   const nextStatus = statusMap[action];
   await persistSupabaseTimelogStatus([id], nextStatus);
   let updatedTimelog: Timelog | null = null;
@@ -328,11 +348,11 @@ export const updateTimelogStatus = async (id: number, action: TimelogAction): Pr
   return updatedTimelog;
 };
 
-export const approveAllTimelogsForEvent = async (eventId: number): Promise<Timelog[]> => {
+export const approveAllTimelogsForEvent = async (eventId: EventId): Promise<Timelog[]> => {
   const approvedTimelogs: Timelog[] = [];
   const safeTimelogs = getLocalAppState().timelogs ?? [];
   const localTimelogIds = safeTimelogs
-    .filter((timelog) => timelog.eid === eventId && timelog.status === 'pending_coo')
+    .filter((timelog) => timelogMatchesEventId(timelog, eventId) && timelog.status === 'pending_coo')
     .map((timelog) => timelog.id);
 
   if (localTimelogIds.length === 0) {
@@ -363,7 +383,7 @@ export const approveAllTimelogsForEvent = async (eventId: number): Promise<Timel
 export const createTimelog = async (timelog: Omit<Timelog, 'id'>): Promise<Timelog> => {
   let normalizedTimelog: Timelog = {
     ...timelog,
-    id: Math.max(0, ...(getLocalAppState().timelogs ?? []).map((item) => item.id)) + 1,
+    id: createLocalEntityId('timelog'),
     days: sortTimelogDays(timelog.days),
   };
 
@@ -420,6 +440,7 @@ export const createTimelog = async (timelog: Omit<Timelog, 'id'>): Promise<Timel
 
     normalizedTimelog = {
       ...normalizedTimelog,
+      id: timelogRowId,
       supabaseId: timelogRowId,
     };
 
@@ -457,6 +478,7 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
     ...updated,
     days: sortTimelogDays(updated.days),
   };
+  let persistedTimelogRowId = normalizedTimelog.supabaseId;
   const currentTimelogs = getLocalAppState().timelogs ?? [];
   const existingTimelog = currentTimelogs.find((timelog) => timelog.id === updated.id);
 
@@ -487,6 +509,7 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
       getSupabaseTimelogRowId(updated.id),
       getSupabaseEventRowId(normalizedTimelog.eid),
     ]);
+    persistedTimelogRowId = timelogRowId;
     const contractorRowId = normalizedTimelog.contractorProfileId;
 
     if (!contractorRowId || !eventRowId) {
@@ -545,15 +568,17 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     timelogs: snapshot.timelogs.map((timelog) => (
-      timelog.id === updated.id ? normalizedTimelog : timelog
+      timelog.id === updated.id
+        ? { ...normalizedTimelog, supabaseId: persistedTimelogRowId }
+        : timelog
     )),
   }));
 
   invalidateTimelogQueries();
-  return normalizedTimelog;
+  return { ...normalizedTimelog, supabaseId: persistedTimelogRowId };
 };
 
-export const deleteTimelog = async (id: number): Promise<{ id: number }> => {
+export const deleteTimelog = async (id: EntityId): Promise<{ id: EntityId }> => {
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
     const timelogRowId = await getSupabaseTimelogRowId(id);
 
@@ -614,7 +639,7 @@ export const markApprovedTimelogsAsInvoiced = async (): Promise<Timelog[]> => {
   return updatedTimelogs;
 };
 
-export const markTimelogsAsInvoiced = async (timelogIds: number[]): Promise<Timelog[]> => {
+export const markTimelogsAsInvoiced = async (timelogIds: EntityId[]): Promise<Timelog[]> => {
   const idSet = new Set(timelogIds);
   const updatedTimelogs: Timelog[] = [];
 
@@ -625,7 +650,7 @@ export const markTimelogsAsInvoiced = async (timelogIds: number[]): Promise<Time
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     timelogs: snapshot.timelogs.map((timelog) => {
-      if (!idSet.has(timelog.id)) return timelog;
+      if (!idSet.has(timelog.id) && (!timelog.supabaseId || !idSet.has(timelog.supabaseId))) return timelog;
 
       const updatedTimelog = {
         ...timelog,
@@ -642,12 +667,16 @@ export const markTimelogsAsInvoiced = async (timelogIds: number[]): Promise<Time
 };
 
 export const markTimelogsAsPaidForInvoice = async (
-  eventId: number,
+  eventId: EventId,
   contractorProfileId: string,
 ): Promise<Timelog[]> => {
   const updatedTimelogs: Timelog[] = [];
   const localTimelogIds = (getLocalAppState().timelogs ?? [])
-    .filter((timelog) => timelog.eid === eventId && timelog.contractorProfileId === contractorProfileId && timelog.status === 'invoiced')
+    .filter((timelog) => (
+      timelogMatchesEventId(timelog, eventId)
+      && timelog.contractorProfileId === contractorProfileId
+      && timelog.status === 'invoiced'
+    ))
     .map((timelog) => timelog.id);
 
   if (localTimelogIds.length > 0) {
@@ -673,7 +702,7 @@ export const markTimelogsAsPaidForInvoice = async (
   return updatedTimelogs;
 };
 
-export const markTimelogsAsPaid = async (timelogIds: number[]): Promise<Timelog[]> => {
+export const markTimelogsAsPaid = async (timelogIds: EntityId[]): Promise<Timelog[]> => {
   const idSet = new Set(timelogIds);
   const updatedTimelogs: Timelog[] = [];
 

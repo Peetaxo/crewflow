@@ -9,6 +9,7 @@ type ProfileRow = Database['public']['Tables']['profiles']['Row'];
 type ProjectRow = Database['public']['Tables']['projects']['Row'];
 type ReceiptRow = Database['public']['Tables']['receipts']['Row'];
 type TimelogRow = Database['public']['Tables']['timelogs']['Row'];
+type TimelogApprovalRow = Database['public']['Tables']['timelog_approvals']['Row'];
 type TimelogDayRow = Database['public']['Tables']['timelog_days']['Row'];
 
 describe('supabase mappers', () => {
@@ -127,6 +128,52 @@ describe('supabase mappers', () => {
 
     expect(mapped.note).toBe('Poznámka od Crew');
     expect(mapped.reviewNote).toBe('Poznámka od CH');
+  });
+
+  it('maps active timelog approval rows onto the timelog', () => {
+    const row: TimelogRow = {
+      id: 'timelog-uuid-1',
+      event_id: 'event-uuid-1',
+      contractor_id: 'crew-profile-uuid',
+      km: 0,
+      note: 'Crew note',
+      review_note: 'Prosím schválit',
+      status: 'pending_coo',
+      crew_confirmation_snapshot: null,
+      submitted_at: null,
+      approved_at: null,
+      created_at: '2026-08-11T10:00:00.000Z',
+      updated_at: '2026-08-11T10:00:00.000Z',
+    };
+    const approvalRows: TimelogApprovalRow[] = [
+      {
+        id: 'approval-uuid-1',
+        approval_round_id: 'round-uuid-1',
+        timelog_id: 'timelog-uuid-1',
+        approver_profile_id: 'approver-profile-uuid',
+        status: 'pending',
+        requested_by_profile_id: 'manager-profile-uuid',
+        requested_at: '2026-08-11T10:05:00.000Z',
+        resolved_at: null,
+        superseded_at: null,
+        note: 'Prosím schválit',
+      },
+    ];
+
+    expect(mapTimelog(row, [], approvalRows).approvals).toEqual([
+      {
+        id: 'approval-uuid-1',
+        approvalRoundId: 'round-uuid-1',
+        timelogId: 'timelog-uuid-1',
+        approverProfileId: 'approver-profile-uuid',
+        status: 'pending',
+        requestedByProfileId: 'manager-profile-uuid',
+        requestedAt: '2026-08-11T10:05:00.000Z',
+        resolvedAt: null,
+        supersededAt: null,
+        note: 'Prosím schválit',
+      },
+    ]);
   });
 
   it('maps Supabase fleet vehicles to app vehicles', () => {

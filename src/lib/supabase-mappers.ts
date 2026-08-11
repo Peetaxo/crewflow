@@ -1,4 +1,4 @@
-import type { BudgetItem, BudgetPackage, Candidate, Client, Contractor, EntityId, Event, EventId, FleetReservation, FleetVehicle, Invoice, Project, ReceiptItem, Timelog, TimelogDay, TimelogType } from '@/types';
+import type { BudgetItem, BudgetPackage, Candidate, Client, Contractor, EntityId, Event, EventId, FleetReservation, FleetVehicle, Invoice, Project, ReceiptItem, Timelog, TimelogApproval, TimelogDay, TimelogType } from '@/types';
 import { normalizeMealSelection } from '@/utils';
 import type { Database, Json } from './database.types';
 
@@ -14,6 +14,7 @@ type ProfileRow = Database['public']['Tables']['profiles']['Row'];
 type ProjectRow = Database['public']['Tables']['projects']['Row'];
 type ReceiptRow = Database['public']['Tables']['receipts']['Row'];
 type TimelogRow = Database['public']['Tables']['timelogs']['Row'];
+type TimelogApprovalRow = Database['public']['Tables']['timelog_approvals']['Row'];
 type TimelogDayRow = Database['public']['Tables']['timelog_days']['Row'];
 
 function asRecord(value: Json | null): Record<string, unknown> | undefined {
@@ -293,7 +294,26 @@ function mapTimelogChangeSnapshot(value: Json | null): Timelog['crewConfirmation
   };
 }
 
-export function mapTimelog(row: TimelogRow, days: TimelogDayRow[] = []): Timelog {
+export function mapTimelogApproval(row: TimelogApprovalRow): TimelogApproval {
+  return {
+    id: row.id,
+    approvalRoundId: row.approval_round_id,
+    timelogId: row.timelog_id,
+    approverProfileId: row.approver_profile_id,
+    status: row.status,
+    requestedByProfileId: row.requested_by_profile_id,
+    requestedAt: row.requested_at,
+    resolvedAt: row.resolved_at,
+    supersededAt: row.superseded_at,
+    note: row.note ?? '',
+  };
+}
+
+export function mapTimelog(
+  row: TimelogRow,
+  days: TimelogDayRow[] = [],
+  approvalRows: TimelogApprovalRow[] = [],
+): Timelog {
   return {
     id: row.id,
     supabaseId: row.id,
@@ -305,6 +325,7 @@ export function mapTimelog(row: TimelogRow, days: TimelogDayRow[] = []): Timelog
     reviewNote: row.review_note ?? '',
     status: row.status,
     crewConfirmationSnapshot: mapTimelogChangeSnapshot(row.crew_confirmation_snapshot),
+    approvals: approvalRows.map(mapTimelogApproval),
   };
 }
 

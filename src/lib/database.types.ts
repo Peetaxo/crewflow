@@ -482,6 +482,64 @@ export interface Database {
           updated_at: string;
         };
       };
+      timelog_approvals: {
+        Row: {
+          id: string;
+          approval_round_id: string;
+          timelog_id: string;
+          approver_profile_id: string;
+          status: 'pending' | 'approved' | 'returned';
+          requested_by_profile_id: string | null;
+          requested_at: string;
+          resolved_at: string | null;
+          superseded_at: string | null;
+          note: string;
+        };
+        Insert: {
+          id?: string;
+          approval_round_id: string;
+          timelog_id: string;
+          approver_profile_id: string;
+          status?: 'pending' | 'approved' | 'returned';
+          requested_by_profile_id?: string | null;
+          requested_at?: string;
+          resolved_at?: string | null;
+          superseded_at?: string | null;
+          note?: string;
+        };
+        Update: {
+          id?: string;
+          approval_round_id?: string;
+          timelog_id?: string;
+          approver_profile_id?: string;
+          status?: 'pending' | 'approved' | 'returned';
+          requested_by_profile_id?: string | null;
+          requested_at?: string;
+          resolved_at?: string | null;
+          superseded_at?: string | null;
+          note?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'timelog_approvals_timelog_id_fkey';
+            columns: ['timelog_id'];
+            referencedRelation: 'timelogs';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'timelog_approvals_approver_profile_id_fkey';
+            columns: ['approver_profile_id'];
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'timelog_approvals_requested_by_profile_id_fkey';
+            columns: ['requested_by_profile_id'];
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       timelog_days: {
         Row: {
           id: string;
@@ -521,6 +579,22 @@ export interface Database {
       };
     };
     Functions: {
+      send_timelog_to_approvers: {
+        Args: {
+          p_timelog_id: string;
+          p_approver_profile_ids: string[];
+          p_note?: string | null;
+        };
+        Returns: Database['public']['Tables']['timelogs']['Row'];
+      };
+      resolve_timelog_approval: {
+        Args: {
+          p_approval_id: string;
+          p_action: string;
+          p_note?: string | null;
+        };
+        Returns: Database['public']['Tables']['timelogs']['Row'];
+      };
       list_event_crew_assignments: {
         Args: Record<string, never>;
         Returns: Array<{

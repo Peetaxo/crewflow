@@ -113,6 +113,7 @@ const matchesSearch = (
 const mapSupabaseTimelogs = (
   timelogRows: NonNullable<Awaited<ReturnType<typeof supabase.from<'timelogs'>>>['data']>,
   timelogDayRows: NonNullable<Awaited<ReturnType<typeof supabase.from<'timelog_days'>>>['data']>,
+  timelogApprovalRows: NonNullable<Awaited<ReturnType<typeof supabase.from<'timelog_approvals'>>>['data']>,
   profileRows: NonNullable<Awaited<ReturnType<typeof supabase.from<'profiles'>>>['data']>,
   eventRows: NonNullable<Awaited<ReturnType<typeof supabase.from<'events'>>>['data']>,
 ) => {
@@ -123,8 +124,19 @@ const mapSupabaseTimelogs = (
     timelogDayRowsByTimelogId.set(dayRow.timelog_id, current);
   }
 
+  const approvalRowsByTimelogId = new Map<string, typeof timelogApprovalRows>();
+  for (const approvalRow of timelogApprovalRows) {
+    const current = approvalRowsByTimelogId.get(approvalRow.timelog_id) ?? [];
+    current.push(approvalRow);
+    approvalRowsByTimelogId.set(approvalRow.timelog_id, current);
+  }
+
   return timelogRows.map((row) => ({
-    ...mapTimelog(row, timelogDayRowsByTimelogId.get(row.id) ?? []),
+    ...mapTimelog(
+      row,
+      timelogDayRowsByTimelogId.get(row.id) ?? [],
+      approvalRowsByTimelogId.get(row.id) ?? [],
+    ),
     id: row.id,
     eid: row.event_id,
     contractorProfileId: row.contractor_id,
@@ -136,15 +148,20 @@ export const fetchTimelogsSnapshot = async (): Promise<Timelog[]> => {
     return getLocalAppState().timelogs ?? [];
   }
 
-  const [timelogsResult, timelogDaysResult, profilesResult, eventsResult] = await Promise.all([
+  const [timelogsResult, timelogDaysResult, timelogApprovalsResult, profilesResult, eventsResult] = await Promise.all([
     supabase.from('timelogs').select('*').order('created_at'),
     supabase.from('timelog_days').select('*').order('date'),
+    supabase.from('timelog_approvals').select('*').order('requested_at'),
     supabase.from('profiles').select('id').order('last_name').order('first_name'),
     supabase.from('events').select('id').order('date_from').order('name'),
   ]);
 
   const firstError =
-    timelogsResult.error ?? timelogDaysResult.error ?? profilesResult.error ?? eventsResult.error;
+    timelogsResult.error
+    ?? timelogDaysResult.error
+    ?? timelogApprovalsResult.error
+    ?? profilesResult.error
+    ?? eventsResult.error;
   if (firstError) {
     throw new Error(firstError.message);
   }
@@ -152,6 +169,7 @@ export const fetchTimelogsSnapshot = async (): Promise<Timelog[]> => {
   const supabaseTimelogs = mapSupabaseTimelogs(
     timelogsResult.data ?? [],
     timelogDaysResult.data ?? [],
+    timelogApprovalsResult.data ?? [],
     profilesResult.data ?? [],
     eventsResult.data ?? [],
   );

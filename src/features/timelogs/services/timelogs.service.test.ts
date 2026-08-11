@@ -249,6 +249,15 @@ describe('timelogs.service write flow', () => {
 
   it('preserves contractor profile UUIDs during Supabase hydration', async () => {
     let snapshot = createSnapshot([]);
+    const mapTimelogMock = vi.fn(() => ({
+      id: Number.NaN,
+      eid: Number.NaN,
+      contractorProfileId: 'profile-uuid-1',
+      days: [],
+      km: 0,
+      note: '',
+      status: 'draft',
+    }));
     const createDoubleOrderMock = <T,>(data: T[]) => {
       const secondOrder = vi.fn().mockResolvedValue({ data, error: null });
       const firstOrder = vi.fn(() => ({ order: secondOrder }));
@@ -303,6 +312,42 @@ describe('timelogs.service write flow', () => {
             };
           }
 
+          if (table === 'timelog_approvals') {
+            return {
+              select: vi.fn(() => ({
+                order: vi.fn().mockResolvedValue({
+                  data: [
+                    {
+                      id: 'approval-row-1',
+                      approval_round_id: 'round-row-1',
+                      timelog_id: 'timelog-row-1',
+                      approver_profile_id: 'approver-profile-uuid',
+                      status: 'pending',
+                      requested_by_profile_id: 'manager-profile-uuid',
+                      requested_at: '2026-08-11T10:05:00.000Z',
+                      resolved_at: null,
+                      superseded_at: null,
+                      note: 'Prosím schválit',
+                    },
+                    {
+                      id: 'approval-row-2',
+                      approval_round_id: 'round-row-2',
+                      timelog_id: 'other-timelog-row',
+                      approver_profile_id: 'other-approver-profile-uuid',
+                      status: 'pending',
+                      requested_by_profile_id: 'manager-profile-uuid',
+                      requested_at: '2026-08-11T10:06:00.000Z',
+                      resolved_at: null,
+                      superseded_at: null,
+                      note: '',
+                    },
+                  ],
+                  error: null,
+                }),
+              })),
+            };
+          }
+
           if (table === 'profiles') {
             return {
               select: vi.fn(() => createDoubleOrderMock([
@@ -325,15 +370,7 @@ describe('timelogs.service write flow', () => {
     }));
 
     vi.doMock('../../../lib/supabase-mappers', () => ({
-      mapTimelog: vi.fn(() => ({
-        id: Number.NaN,
-        eid: Number.NaN,
-        contractorProfileId: 'profile-uuid-1',
-        days: [],
-        km: 0,
-        note: '',
-        status: 'draft',
-      })),
+      mapTimelog: mapTimelogMock,
     }));
 
     vi.doMock('../../../lib/app-data', () => ({
@@ -354,6 +391,11 @@ describe('timelogs.service write flow', () => {
     expect(timelogs[0].contractorProfileId).toBe('profile-uuid-1');
     expect(timelogs[0].id).toBe('timelog-row-1');
     expect(timelogs[0].eid).toBe('event-row-1');
+    expect(mapTimelogMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'timelog-row-1' }),
+      [expect.objectContaining({ id: 'day-row-1' })],
+      [expect.objectContaining({ id: 'approval-row-1' })],
+    );
   });
 
   it('persists timelog edits to Supabase and rewrites timelog days for the mapped row id', async () => {

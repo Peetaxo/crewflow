@@ -926,6 +926,9 @@ describe('TimelogsView', () => {
 
     expect(screen.getByText('Vráceno k opravě')).toBeInTheDocument();
     expect(screen.getByText('Uprav výkaz a odešli ho znovu ke kontrole.')).toBeInTheDocument();
+    const returnedNotice = screen.getByText('Důvod vrácení').parentElement?.parentElement;
+    expect(returnedNotice).not.toBeNull();
+    expect(within(returnedNotice as HTMLElement).queryByText('Upraveno po telefonu')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Odeslat znovu' })).toBeInTheDocument();
     expect(screen.queryByText('Zamítnuto')).not.toBeInTheDocument();
   });

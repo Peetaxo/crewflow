@@ -804,7 +804,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
               && changeSummary.length > 0;
             const showCrewConfirmedCorrection = shouldShowCrewConfirmedCorrection(timelog, changeSummary);
             const showReturnedNotice = isCrewMineScope && timelog.status === 'rejected';
-            const returnedReason = timelog.reviewNote?.trim() || timelog.note.trim();
+            const returnedReason = timelog.reviewNote?.trim() || '';
 
             return (
               <div key={timelog.id} className="nodu-panel rounded-[28px] p-5">

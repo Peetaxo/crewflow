@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Role, Timelog } from '../../types';
 import TimelogEditModal from './TimelogEditModal';
@@ -150,6 +150,41 @@ describe('TimelogEditModal responsive switch', () => {
         }),
       ],
     }));
+  });
+
+  it('shows a returned review note without treating the Crew note as the return reason', () => {
+    editingTimelog = {
+      ...editingTimelog!,
+      status: 'rejected',
+      note: 'Crew původní poznámka.',
+      reviewNote: 'Chybí pauza po obědě.',
+    };
+
+    render(<TimelogEditModal />);
+
+    expect(screen.getByText('Vráceno k opravě')).toBeInTheDocument();
+    expect(screen.getByText('Chybí pauza po obědě.')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Crew původní poznámka.')).toBeInTheDocument();
+    const returnedNotice = screen.getByText('Vráceno k opravě').parentElement?.parentElement;
+    expect(returnedNotice).not.toBeNull();
+    expect(within(returnedNotice as HTMLElement).queryByText('Crew původní poznámka.')).not.toBeInTheDocument();
+  });
+
+  it('does not show a return reason in the desktop editor when review note is empty', () => {
+    editingTimelog = {
+      ...editingTimelog!,
+      status: 'rejected',
+      note: 'Crew původní poznámka.',
+      reviewNote: '',
+    };
+
+    render(<TimelogEditModal />);
+
+    expect(screen.getByText('Vráceno k opravě')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Crew původní poznámka.')).toBeInTheDocument();
+    const returnedNotice = screen.getByText('Vráceno k opravě').parentElement?.parentElement;
+    expect(returnedNotice).not.toBeNull();
+    expect(within(returnedNotice as HTMLElement).queryByText('Crew původní poznámka.')).not.toBeInTheDocument();
   });
 
   it('labels CrewHead corrections as sending the report to Crew confirmation', async () => {

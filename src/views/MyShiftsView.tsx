@@ -344,7 +344,7 @@ const MyShiftsView = () => {
           <p className="nodu-my-shifts-action-copy">{formatActionRequiredCount(actionRequiredTimelogs.length)}</p>
           <div className="nodu-my-shifts-action-list">
             {actionRequiredTimelogs.map(({ timelog, event, project, hours, changeSummary }) => {
-              const returnedReason = timelog.reviewNote?.trim() || timelog.note.trim();
+              const returnedReason = timelog.reviewNote?.trim() || '';
 
               return (
                 <button

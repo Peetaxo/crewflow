@@ -933,7 +933,7 @@ const MobileTimelogEditModal: React.FC = () => {
   const showCrewConfirmationChanges = editingTimelog.status === 'pending_crew_confirmation' && changeSummary.length > 0;
   const showReturnedNotice = editingTimelog.status === 'rejected';
   const correctionNote = editingTimelog.reviewNote?.trim() || '';
-  const returnedNote = (editingTimelog.reviewNote?.trim() || editingTimelog.note.trim());
+  const returnedNote = editingTimelog.reviewNote?.trim() || '';
   const saveButtonLabel = isCrewHeadCorrection
     ? 'Odeslat k potvrzení Crew'
     : isCrewWorkflow ? 'Uložit výkaz' : 'Uložit změny';

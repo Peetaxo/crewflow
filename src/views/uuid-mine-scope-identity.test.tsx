@@ -339,7 +339,8 @@ describe('UUID mine-scope identity', () => {
         contractorProfileId: 'profile-uuid-2',
         days: [{ d: '2999-04-21', f: '09:00', t: '17:00', type: 'provoz' }],
         km: 0,
-        note: 'Chybí pauza po obědě.',
+        note: 'Crew původní poznámka.',
+        reviewNote: 'Chybí pauza po obědě.',
         status: 'rejected',
       },
       {
@@ -380,6 +381,8 @@ describe('UUID mine-scope identity', () => {
     expect(screen.getAllByText('21. 4. 2999').length).toBeGreaterThan(0);
     expect(screen.getByText('Klient 2 · 9.0 h')).toBeInTheDocument();
     expect(screen.getByText('Chybí pauza po obědě.')).toBeInTheDocument();
+    expect(screen.queryByText('Crew původní poznámka.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Doplň prosím typ směny.')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Otevřít výkaz k potvrzení/i }));
 

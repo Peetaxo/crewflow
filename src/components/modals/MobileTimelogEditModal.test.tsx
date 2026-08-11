@@ -659,6 +659,23 @@ describe('MobileTimelogEditModal', () => {
     })));
   });
 
+  it('does not show the Crew note as a return reason when no review note exists', () => {
+    testState.editingTimelog = {
+      ...testState.editingTimelog!,
+      status: 'rejected',
+      note: 'Crew původní poznámka.',
+      reviewNote: '',
+    };
+
+    render(<MobileTimelogEditModal />);
+
+    expect(screen.getByText('Vráceno k opravě')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Crew původní poznámka.')).toBeInTheDocument();
+    const returnedNotice = screen.getByText('Vráceno k opravě').parentElement?.parentElement;
+    expect(returnedNotice).not.toBeNull();
+    expect(within(returnedNotice as HTMLElement).queryByText('Crew původní poznámka.')).not.toBeInTheDocument();
+  });
+
   it('keeps the Crew report note read-only and saves CrewHead correction notes separately', async () => {
     testState.role = 'crewhead';
     testState.editingTimelog = {

@@ -117,4 +117,23 @@ describe('timelog Supabase role workflow policy', () => {
     expect(sql).toContain('p_note text default null');
     expect(sql).toContain('review_note = nullif(trim(coalesce(p_note, \'\')), \'\')');
   });
+
+  it('normalizes approval row notes without violating the not-null column', () => {
+    const sql = readTargetedApprovalsSql();
+    const approvalNoteWrites = sql.match(/note = coalesce\(nullif\(trim\(coalesce\(p_note, ''\)\), ''\), ''\)/g) ?? [];
+    const approvalNoteInsertValues = sql.match(/coalesce\(nullif\(trim\(coalesce\(p_note, ''\)\), ''\), ''\)/g) ?? [];
+
+    expect(sql).toContain("note text not null default ''");
+    expect(approvalNoteWrites).toHaveLength(2);
+    expect(approvalNoteInsertValues).toHaveLength(3);
+  });
+
+  it('closes returned approval rounds and approves only when every active approval is approved', () => {
+    const sql = readTargetedApprovalsSql();
+
+    expect(sql).toContain("and status <> 'approved'");
+    expect(sql).toMatch(/select count\(\*\)[\s\S]+into v_unapproved_count[\s\S]+from public\.timelog_approvals[\s\S]+where timelog_id = v_approval\.timelog_id[\s\S]+and approval_round_id = v_approval\.approval_round_id[\s\S]+and superseded_at is null[\s\S]+and status <> 'approved'/);
+    expect(sql).toContain('if v_unapproved_count = 0 then');
+    expect(sql).toMatch(/update public\.timelog_approvals[\s\S]+set superseded_at = now\(\)[\s\S]+where timelog_id = v_approval\.timelog_id[\s\S]+and approval_round_id = v_approval\.approval_round_id[\s\S]+and id <> p_approval_id[\s\S]+and superseded_at is null[\s\S]+and status = 'pending'/);
+  });
 });

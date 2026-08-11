@@ -165,7 +165,7 @@ begin
     p_timelog_id,
     profile_id,
     v_actor_profile_id,
-    nullif(trim(coalesce(p_note, '')), '')
+    coalesce(nullif(trim(coalesce(p_note, '')), ''), '')
   from unnest(v_approver_ids) as profile_id;
 
   update public.timelogs
@@ -192,7 +192,7 @@ as $$
 declare
   v_actor_profile_id uuid := public.current_profile_id();
   v_approval public.timelog_approvals;
-  v_pending_count integer;
+  v_unapproved_count integer;
   v_result public.timelogs;
 begin
   if auth.uid() is null then
@@ -223,18 +223,18 @@ begin
     set
       status = 'approved',
       resolved_at = now(),
-      note = nullif(trim(coalesce(p_note, '')), '')
+      note = coalesce(nullif(trim(coalesce(p_note, '')), ''), '')
     where id = p_approval_id;
 
     select count(*)
-    into v_pending_count
+    into v_unapproved_count
     from public.timelog_approvals
     where timelog_id = v_approval.timelog_id
       and approval_round_id = v_approval.approval_round_id
       and superseded_at is null
-      and status = 'pending';
+      and status <> 'approved';
 
-    if v_pending_count = 0 then
+    if v_unapproved_count = 0 then
       update public.timelogs
       set status = 'approved'::public.timelog_status
       where id = v_approval.timelog_id
@@ -254,8 +254,16 @@ begin
     set
       status = 'returned',
       resolved_at = now(),
-      note = nullif(trim(coalesce(p_note, '')), '')
+      note = coalesce(nullif(trim(coalesce(p_note, '')), ''), '')
     where id = p_approval_id;
+
+    update public.timelog_approvals
+    set superseded_at = now()
+    where timelog_id = v_approval.timelog_id
+      and approval_round_id = v_approval.approval_round_id
+      and id <> p_approval_id
+      and superseded_at is null
+      and status = 'pending';
 
     update public.timelogs
     set

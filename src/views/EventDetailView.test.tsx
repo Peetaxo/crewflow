@@ -1096,6 +1096,9 @@ describe('EventDetailView', () => {
   it('renders mobile management detail for CH and COO with edit, assignment, and approval actions', async () => {
     mobileMockState.isMobile = true;
     updateTimelogStatus.mockResolvedValue({ ...pendingCrewheadTimelog, status: 'pending_coo' });
+    const fetchEligibleTimelogFinalApprovers = vi.fn().mockResolvedValue([
+      { profileId: 'profile-manager', name: 'Manager', roles: ['coo'] },
+    ]);
     const approveEventApplication = vi.fn().mockResolvedValue(undefined);
     const updateEventApplicationStatus = vi.fn().mockResolvedValue(undefined);
     const crewDraftTimelog = {
@@ -1154,6 +1157,10 @@ describe('EventDetailView', () => {
     }));
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      fetchEligibleTimelogFinalApprovers,
+      resolveTimelogApproval: vi.fn(),
+      returnTimelogToCrewCorrection: vi.fn(),
+      sendTimelogToApprovers: vi.fn(),
       updateTimelogStatus,
       subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
@@ -1217,7 +1224,8 @@ describe('EventDetailView', () => {
     await waitFor(() => expect(approveEventApplication).toHaveBeenCalledWith(12));
 
     fireEvent.click(within(approvalDialog).getAllByRole('button', { name: 'Schválit výkaz Jana Nova' })[0]);
-    await waitFor(() => expect(updateTimelogStatus).toHaveBeenCalledWith(9, 'ch'));
+    await waitFor(() => expect(fetchEligibleTimelogFinalApprovers).toHaveBeenCalledWith(pendingCrewheadTimelog, 'profile-1'));
+    expect(screen.getByRole('dialog', { name: 'Finální schválení výkazu' })).toBeInTheDocument();
   });
 
   it('opens assigned crew detail and removes a draft crew member after confirmation on mobile management detail', async () => {

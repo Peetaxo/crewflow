@@ -2,13 +2,18 @@ import { appDataSource } from '../../../lib/app-config';
 import { getLocalAppState, subscribeToLocalAppState, updateLocalAppState } from '../../../lib/app-data';
 import { queryClient } from '../../../lib/query-client';
 import { queryKeys } from '../../../lib/query-keys';
+import type { Database } from '../../../lib/database.types';
 import { mapTimelog } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
-import { Contractor, EntityId, Event, EventId, Timelog, TimelogChangeSnapshot, TimelogDay, TimelogStatus } from '../../../types';
+import { Contractor, EntityId, Event, EventId, Role, Timelog, TimelogChangeSnapshot, TimelogDay, TimelogStatus } from '../../../types';
 import { normalizeMealSelection } from '../../../utils';
+import { filterEligibleTimelogFinalApprovers, TimelogFinalApprover } from './timelog-final-approvers';
 import { assertTimelogDaysDoNotOverlap } from './timelog-validation';
 
 type TimelogAction = 'sub' | 'ch' | 'coo' | 'rej';
+type TimelogRow = Database['public']['Tables']['timelogs']['Row'];
+type UserRoleRow = Pick<Database['public']['Tables']['user_roles']['Row'], 'user_id' | 'role'>;
+type ApproverProfileRow = Pick<Database['public']['Tables']['profiles']['Row'], 'id' | 'user_id' | 'first_name' | 'last_name' | 'email'>;
 let timelogsHydrationPromise: Promise<void> | null = null;
 let timelogsLoaded = false;
 const statusMap: Record<TimelogAction, TimelogStatus> = {
@@ -347,6 +352,134 @@ const persistSupabaseTimelogStatus = async (
   await Promise.all(rowIds.map((rowId) => persistSupabaseTimelogRowStatus(rowId, nextStatus)));
 };
 
+const getTimelogRowIdentity = (timelog: Pick<Timelog, 'id' | 'supabaseId'>) => (
+  timelog.supabaseId ?? (typeof timelog.id === 'string' && !timelog.id.startsWith('local:') ? timelog.id : null)
+);
+
+const updateTimelogFromSupabaseRow = (row: TimelogRow): Timelog => {
+  let updatedTimelog: Timelog | null = null;
+
+  updateLocalAppState((snapshot) => ({
+    ...snapshot,
+    timelogs: (snapshot.timelogs ?? []).map((timelog) => {
+      if (getTimelogRowIdentity(timelog) !== row.id) return timelog;
+
+      updatedTimelog = {
+        ...timelog,
+        supabaseId: row.id,
+        eid: row.event_id,
+        contractorProfileId: row.contractor_id,
+        km: row.km ?? 0,
+        note: row.note ?? '',
+        reviewNote: row.review_note ?? undefined,
+        status: row.status,
+        crewConfirmationSnapshot: row.crew_confirmation_snapshot as TimelogChangeSnapshot | null,
+      };
+
+      return updatedTimelog;
+    }),
+  }));
+
+  if (!updatedTimelog) {
+    throw new Error('Vykaz nebyl nalezen.');
+  }
+
+  invalidateTimelogQueries();
+  return updatedTimelog;
+};
+
+const updateLocalTimelogReviewStatus = (
+  id: EntityId,
+  nextStatus: TimelogStatus,
+  note?: string | null,
+): Timelog => {
+  let updatedTimelog: Timelog | null = null;
+  const normalizedNote = note?.trim() || undefined;
+
+  updateLocalAppState((snapshot) => ({
+    ...snapshot,
+    timelogs: (snapshot.timelogs ?? []).map((timelog) => {
+      if (timelog.id !== id) return timelog;
+
+      updatedTimelog = {
+        ...timelog,
+        status: nextStatus,
+        reviewNote: normalizedNote,
+        crewConfirmationSnapshot: nextStatus === 'pending_crew_confirmation'
+          ? timelog.crewConfirmationSnapshot ?? null
+          : null,
+      };
+
+      return updatedTimelog;
+    }),
+  }));
+
+  if (!updatedTimelog) {
+    throw new Error('Vykaz nebyl nalezen.');
+  }
+
+  invalidateTimelogQueries();
+  return updatedTimelog;
+};
+
+export const fetchEligibleTimelogFinalApprovers = async (
+  timelog: Pick<Timelog, 'contractorProfileId'>,
+  currentProfileId: string | null,
+): Promise<TimelogFinalApprover[]> => {
+  if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
+    const localApprovers = (getLocalAppState().contractors ?? [])
+      .filter((contractor) => contractor.profileId)
+      .map((contractor) => ({
+        profileId: contractor.profileId as string,
+        name: contractor.name,
+        roles: ['crewhead'] as Role[],
+      }));
+
+    return filterEligibleTimelogFinalApprovers(localApprovers, timelog, currentProfileId);
+  }
+
+  const roleResult = await supabase
+    .from('user_roles')
+    .select('user_id, role')
+    .in('role', ['crewhead', 'coo']);
+
+  if (roleResult.error) {
+    throw new Error(roleResult.error.message);
+  }
+
+  const roleRows = (roleResult.data ?? []) as UserRoleRow[];
+  const userIds = Array.from(new Set(roleRows.map((row) => row.user_id).filter(Boolean)));
+  if (userIds.length === 0) return [];
+
+  const profileResult = await supabase
+    .from('profiles')
+    .select('id, user_id, first_name, last_name, email')
+    .in('user_id', userIds);
+
+  if (profileResult.error) {
+    throw new Error(profileResult.error.message);
+  }
+
+  const rolesByUserId = new Map<string, Role[]>();
+  for (const row of roleRows) {
+    const existing = rolesByUserId.get(row.user_id) ?? [];
+    existing.push(row.role as Role);
+    rolesByUserId.set(row.user_id, existing);
+  }
+
+  const approvers = ((profileResult.data ?? []) as ApproverProfileRow[]).map((profile) => {
+    const name = `${profile.first_name ?? ''} ${profile.last_name ?? ''}`.trim() || profile.email || profile.id;
+
+    return {
+      profileId: profile.id,
+      name,
+      roles: profile.user_id ? rolesByUserId.get(profile.user_id) ?? [] : [],
+    };
+  });
+
+  return filterEligibleTimelogFinalApprovers(approvers, timelog, currentProfileId);
+};
+
 export const getTimelogs = (search = ''): Timelog[] => {
   ensureSupabaseTimelogsLoaded();
   const snapshot = getLocalAppState();
@@ -405,6 +538,97 @@ export const updateTimelogStatus = async (id: EntityId, action: TimelogAction): 
 
   invalidateTimelogQueries();
   return updatedTimelog;
+};
+
+export const sendTimelogToApprovers = async (
+  id: EntityId,
+  approverProfileIds: string[],
+  note?: string | null,
+): Promise<Timelog> => {
+  if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
+    return updateLocalTimelogReviewStatus(id, 'pending_coo', note);
+  }
+
+  const rowId = await getSupabaseTimelogRowId(id);
+  const result = await supabase.rpc('send_timelog_to_approvers', {
+    p_timelog_id: rowId,
+    p_approver_profile_ids: approverProfileIds,
+    p_note: note?.trim() || null,
+  });
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+
+  if (!result.data) {
+    throw new Error('Nepodarilo se odeslat vykaz ke schvaleni.');
+  }
+
+  return updateTimelogFromSupabaseRow(result.data);
+};
+
+export const resolveTimelogApproval = async (
+  approvalId: string,
+  action: 'approved' | 'returned',
+  note?: string | null,
+): Promise<Timelog> => {
+  if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
+    const localTimelog = (getLocalAppState().timelogs ?? []).find((timelog) => (
+      timelog.approvals?.some((approval) => approval.id === approvalId)
+    ));
+
+    if (!localTimelog) {
+      throw new Error('Schvaleni vykazu nebylo nalezeno.');
+    }
+
+    return updateLocalTimelogReviewStatus(localTimelog.id, action === 'approved' ? 'approved' : 'rejected', note);
+  }
+
+  const result = await supabase.rpc('resolve_timelog_approval', {
+    p_approval_id: approvalId,
+    p_action: action,
+    p_note: note?.trim() || null,
+  });
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+
+  if (!result.data) {
+    throw new Error('Nepodarilo se vyridit schvaleni vykazu.');
+  }
+
+  return updateTimelogFromSupabaseRow(result.data);
+};
+
+export const returnTimelogToCrewCorrection = async (
+  id: EntityId,
+  note?: string | null,
+): Promise<Timelog> => {
+  if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
+    return updateLocalTimelogReviewStatus(id, 'rejected', note);
+  }
+
+  const rowId = await getSupabaseTimelogRowId(id);
+  const result = await supabase
+    .from('timelogs')
+    .update({
+      status: 'rejected',
+      review_note: note?.trim() || null,
+    })
+    .eq('id', rowId)
+    .select('*')
+    .single();
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+
+  if (!result.data) {
+    throw new Error('Nepodarilo se vratit vykaz k oprave.');
+  }
+
+  return updateTimelogFromSupabaseRow(result.data);
 };
 
 export const approveAllTimelogsForEvent = async (eventId: EventId): Promise<Timelog[]> => {

@@ -206,7 +206,7 @@ const getReadOnlyTimelogCopy = (status: Timelog['status']) => {
   if (status === 'pending_ch') {
     return {
       title: 'Výkaz je ve schvalování',
-      detail: 'Čeká na kontrolu CH. Úpravy teď nejsou možné.',
+      detail: 'Čeká na kontrolu. Úpravy teď nejsou možné.',
     };
   }
 

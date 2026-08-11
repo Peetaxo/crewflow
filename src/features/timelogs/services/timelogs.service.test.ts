@@ -177,6 +177,194 @@ describe('timelogs.service write flow', () => {
     expect(invalidateQueries).not.toHaveBeenCalled();
   });
 
+  it('sends a CH-controlled timelog to selected final approvers through the Supabase RPC', async () => {
+    let snapshot = createSnapshot([
+      {
+        id: 1,
+        supabaseId: 'timelog-uuid-1',
+        eid: 'event-uuid-1',
+        contractorProfileId: 'profile-contractor',
+        days: [],
+        km: 0,
+        note: '',
+        status: 'pending_ch',
+      },
+    ]);
+    const setQueryData = vi.fn();
+    const invalidateQueries = vi.fn();
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        id: 'timelog-uuid-1',
+        event_id: 'event-uuid-1',
+        contractor_id: 'profile-contractor',
+        km: 0,
+        note: '',
+        review_note: 'Prosím finálně schválit',
+        status: 'pending_coo',
+        crew_confirmation_snapshot: null,
+        submitted_at: null,
+        approved_at: null,
+        created_at: '2026-08-11T10:00:00.000Z',
+        updated_at: '2026-08-11T10:05:00.000Z',
+      },
+      error: null,
+    });
+
+    vi.doMock('../../../lib/app-config', () => ({
+      appDataSource: 'supabase',
+    }));
+
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: { rpc },
+    }));
+
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapTimelog: vi.fn(),
+    }));
+
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    vi.doMock('../../../lib/query-client', () => ({
+      queryClient: {
+        setQueryData,
+        invalidateQueries,
+      },
+    }));
+
+    vi.doMock('../../../lib/query-keys', () => ({
+      queryKeys: {
+        timelogs: {
+          all: ['timelogs'],
+        },
+      },
+    }));
+
+    const { sendTimelogToApprovers } = await import('./timelogs.service');
+
+    const result = await sendTimelogToApprovers(1, ['profile-approver-1'], 'Prosím finálně schválit');
+
+    expect(rpc).toHaveBeenCalledWith('send_timelog_to_approvers', {
+      p_timelog_id: 'timelog-uuid-1',
+      p_approver_profile_ids: ['profile-approver-1'],
+      p_note: 'Prosím finálně schválit',
+    });
+    expect(result.status).toBe('pending_coo');
+    expect(result.reviewNote).toBe('Prosím finálně schválit');
+    expect(snapshot.timelogs[0].status).toBe('pending_coo');
+    expect(snapshot.timelogs[0].reviewNote).toBe('Prosím finálně schválit');
+    expect(setQueryData).toHaveBeenCalledWith(['timelogs'], snapshot.timelogs);
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['timelogs'] });
+  });
+
+  it('resolves the current approver row through the Supabase RPC and preserves returned notes', async () => {
+    let snapshot = createSnapshot([
+      {
+        id: 1,
+        supabaseId: 'timelog-uuid-1',
+        eid: 'event-uuid-1',
+        contractorProfileId: 'profile-contractor',
+        days: [],
+        km: 0,
+        note: '',
+        status: 'pending_coo',
+        approvals: [
+          {
+            id: 'approval-uuid-1',
+            approvalRoundId: 'round-uuid-1',
+            timelogId: 'timelog-uuid-1',
+            approverProfileId: 'profile-approver-1',
+            status: 'pending',
+            requestedByProfileId: 'profile-requester',
+            requestedAt: '2026-08-11T10:00:00.000Z',
+            resolvedAt: null,
+            supersededAt: null,
+            note: '',
+          },
+        ],
+      },
+    ]);
+    const setQueryData = vi.fn();
+    const invalidateQueries = vi.fn();
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        id: 'timelog-uuid-1',
+        event_id: 'event-uuid-1',
+        contractor_id: 'profile-contractor',
+        km: 0,
+        note: '',
+        review_note: 'Uprav prosím čas odchodu',
+        status: 'rejected',
+        crew_confirmation_snapshot: null,
+        submitted_at: null,
+        approved_at: null,
+        created_at: '2026-08-11T10:00:00.000Z',
+        updated_at: '2026-08-11T10:05:00.000Z',
+      },
+      error: null,
+    });
+
+    vi.doMock('../../../lib/app-config', () => ({
+      appDataSource: 'supabase',
+    }));
+
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: { rpc },
+    }));
+
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapTimelog: vi.fn(),
+    }));
+
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    vi.doMock('../../../lib/query-client', () => ({
+      queryClient: {
+        setQueryData,
+        invalidateQueries,
+      },
+    }));
+
+    vi.doMock('../../../lib/query-keys', () => ({
+      queryKeys: {
+        timelogs: {
+          all: ['timelogs'],
+        },
+      },
+    }));
+
+    const { resolveTimelogApproval } = await import('./timelogs.service');
+
+    const result = await resolveTimelogApproval('approval-uuid-1', 'returned', 'Uprav prosím čas odchodu');
+
+    expect(rpc).toHaveBeenCalledWith('resolve_timelog_approval', {
+      p_approval_id: 'approval-uuid-1',
+      p_action: 'returned',
+      p_note: 'Uprav prosím čas odchodu',
+    });
+    expect(result.status).toBe('rejected');
+    expect(result.reviewNote).toBe('Uprav prosím čas odchodu');
+    expect(snapshot.timelogs[0].status).toBe('rejected');
+    expect(snapshot.timelogs[0].reviewNote).toBe('Uprav prosím čas odchodu');
+    expect(setQueryData).toHaveBeenCalledWith(['timelogs'], snapshot.timelogs);
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['timelogs'] });
+  });
+
   it('approves all matching event timelogs in Supabase and updates local state', async () => {
     let snapshot = createSnapshot([
       { id: 1, eid: 7, contractorProfileId: 'profile-uuid-1', days: [], km: 0, note: '', status: 'pending_coo' },

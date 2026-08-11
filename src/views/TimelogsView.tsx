@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { addMonths, endOfMonth, format, isValid, parseISO, startOfMonth, subMonths } from 'date-fns';
 import { cs } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, SlidersHorizontal } from 'lucide-react';
+import { ChevronLeft, ChevronRight, SlidersHorizontal, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
@@ -15,9 +15,14 @@ import StatusBadge from '../components/shared/StatusBadge';
 import { getContractors, subscribeToCrewChanges } from '../features/crew/services/crew.service';
 import { useEventsQuery } from '../features/events/queries/useEventsQuery';
 import {
+  fetchEligibleTimelogFinalApprovers,
   getTimelogDependencies,
+  resolveTimelogApproval,
+  returnTimelogToCrewCorrection,
+  sendTimelogToApprovers,
   updateTimelogStatus,
 } from '../features/timelogs/services/timelogs.service';
+import { getDefaultTimelogFinalApproverIds, TimelogFinalApprover } from '../features/timelogs/services/timelog-final-approvers';
 import { buildTimelogChangeSummary } from '../features/timelogs/services/timelog-change-summary';
 import { useTimelogsQuery } from '../features/timelogs/queries/useTimelogsQuery';
 import { canEditTimelog, canSeeTimelogNote, canSubmitTimelog } from '../features/timelogs/services/timelog-permissions';
@@ -78,6 +83,15 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
   const [events, setEvents] = useState<Event[]>([]);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
   const [selectedTimelogMonth, setSelectedTimelogMonth] = useState('');
+  const [approvalDialogTimelog, setApprovalDialogTimelog] = useState<Timelog | null>(null);
+  const [eligibleFinalApprovers, setEligibleFinalApprovers] = useState<TimelogFinalApprover[]>([]);
+  const [selectedFinalApproverIds, setSelectedFinalApproverIds] = useState<string[]>([]);
+  const [finalApprovalNote, setFinalApprovalNote] = useState('');
+  const [isLoadingFinalApprovers, setIsLoadingFinalApprovers] = useState(false);
+  const [isSubmittingFinalApproval, setIsSubmittingFinalApproval] = useState(false);
+  const [returnDialogTimelog, setReturnDialogTimelog] = useState<Timelog | null>(null);
+  const [returnNote, setReturnNote] = useState('');
+  const [isReturningTimelog, setIsReturningTimelog] = useState(false);
 
   const loadDependencies = useCallback(() => {
     const dependencies = getTimelogDependencies();
@@ -120,7 +134,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
         || contractor.name.toLowerCase().includes(query)
       );
     });
-  }, [events, findContractor, searchQuery, timelogsQuery.data]);
+  }, [findContractor, findEvent, searchQuery, timelogsQuery.data]);
 
   const isCrew = role === 'crew';
   const isCrewMineScope = scope === 'mine' && isCrew;
@@ -176,7 +190,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
       { id: 'all', label: 'Vše', count: counts.all },
       { id: 'draft', label: 'Koncepty', count: counts.draft },
       { id: 'pending_crew_confirmation', label: isCrewMineScope ? 'K potvrzení' : 'Čeká Crew', count: counts.pending_crew_confirmation },
-      { id: 'pending_ch', label: 'Čeká CH', count: counts.pending_ch },
+      { id: 'pending_ch', label: 'Čeká na kontrolu', count: counts.pending_ch },
       { id: 'pending_coo', label: 'Čeká COO', count: counts.pending_coo },
       { id: 'approved', label: 'Schváleno', count: counts.approved },
       { id: 'invoiced', label: 'Fakturováno', count: counts.invoiced },
@@ -226,11 +240,119 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
     });
   }, [filtered, findEvent]);
 
-  const handleTimelogAction = useCallback((id: number, action: 'sub' | 'ch' | 'coo' | 'rej') => {
+  const findCurrentPendingApproval = useCallback((timelog: Timelog) => (
+    timelog.approvals?.find((approval) => (
+      approval.status === 'pending'
+      && !approval.supersededAt
+      && approval.approverProfileId === currentProfileId
+    ))
+    ?? timelog.approvals?.find((approval) => approval.status === 'pending' && !approval.supersededAt)
+    ?? null
+  ), [currentProfileId]);
+
+  const openFinalApprovalDialog = useCallback((timelog: Timelog) => {
+    const stateEvent = findEvent(timelog.eid);
+    const dependencyEvent = getTimelogDependencies().events.find((item) => item.id === timelog.eid || item.supabaseId === timelog.eid) ?? null;
+    const event = stateEvent?.contactProfileId ? stateEvent : dependencyEvent ?? stateEvent ?? null;
+    setApprovalDialogTimelog(timelog);
+    setEligibleFinalApprovers([]);
+    setSelectedFinalApproverIds([]);
+    setFinalApprovalNote('');
+    setIsLoadingFinalApprovers(true);
+
+    void fetchEligibleTimelogFinalApprovers(timelog, currentProfileId)
+      .then((approvers) => {
+        setEligibleFinalApprovers(approvers);
+        setSelectedFinalApproverIds(getDefaultTimelogFinalApproverIds(event, approvers));
+      })
+      .catch((error) => {
+        toast.error(error instanceof Error ? error.message : 'Nepodařilo se načíst schvalovatele.');
+      })
+      .finally(() => setIsLoadingFinalApprovers(false));
+  }, [currentProfileId, findEvent]);
+
+  const closeFinalApprovalDialog = () => {
+    if (isSubmittingFinalApproval) return;
+    setApprovalDialogTimelog(null);
+    setEligibleFinalApprovers([]);
+    setSelectedFinalApproverIds([]);
+    setFinalApprovalNote('');
+  };
+
+  const toggleFinalApprover = (profileId: string) => {
+    setSelectedFinalApproverIds((current) => (
+      current.includes(profileId)
+        ? current.filter((item) => item !== profileId)
+        : [...current, profileId]
+    ));
+  };
+
+  const confirmFinalApproval = () => {
+    if (!approvalDialogTimelog || selectedFinalApproverIds.length === 0) return;
+
+    setIsSubmittingFinalApproval(true);
+    void sendTimelogToApprovers(approvalDialogTimelog.id, selectedFinalApproverIds, finalApprovalNote)
+      .then(() => {
+        setApprovalDialogTimelog(null);
+        setEligibleFinalApprovers([]);
+        setSelectedFinalApproverIds([]);
+        setFinalApprovalNote('');
+      })
+      .catch((error) => {
+        toast.error(error instanceof Error ? error.message : 'Nepodařilo se odeslat výkaz ke schválení.');
+      })
+      .finally(() => setIsSubmittingFinalApproval(false));
+  };
+
+  const openReturnDialog = (timelog: Timelog) => {
+    setReturnDialogTimelog(timelog);
+    setReturnNote('');
+  };
+
+  const closeReturnDialog = () => {
+    if (isReturningTimelog) return;
+    setReturnDialogTimelog(null);
+    setReturnNote('');
+  };
+
+  const confirmReturnToCrew = () => {
+    if (!returnDialogTimelog) return;
+
+    const pendingApproval = findCurrentPendingApproval(returnDialogTimelog);
+    const action = pendingApproval
+      ? resolveTimelogApproval(pendingApproval.id, 'returned', returnNote)
+      : returnTimelogToCrewCorrection(returnDialogTimelog.id, returnNote);
+
+    setIsReturningTimelog(true);
+    void action
+      .then(() => {
+        setReturnDialogTimelog(null);
+        setReturnNote('');
+      })
+      .catch((error) => {
+        toast.error(error instanceof Error ? error.message : 'Nepodařilo se vrátit výkaz k opravě.');
+      })
+      .finally(() => setIsReturningTimelog(false));
+  };
+
+  const handleTimelogAction = useCallback((id: Timelog['id'], action: 'sub' | 'ch' | 'coo' | 'rej') => {
     void updateTimelogStatus(id, action).catch((error) => {
       toast.error(error instanceof Error ? error.message : 'Nepodařilo se aktualizovat výkaz.');
     });
   }, []);
+
+  const approveFinalTimelog = useCallback((timelog: Timelog) => {
+    const pendingApproval = findCurrentPendingApproval(timelog);
+
+    if (!pendingApproval) {
+      handleTimelogAction(timelog.id, 'coo');
+      return;
+    }
+
+    void resolveTimelogApproval(pendingApproval.id, 'approved').catch((error) => {
+      toast.error(error instanceof Error ? error.message : 'Nepodařilo se schválit výkaz.');
+    });
+  }, [findCurrentPendingApproval, handleTimelogAction]);
 
   const runBulkAction = (ids: number[], action: 'ch' | 'coo') => {
     void Promise.all(ids.map((id) => updateTimelogStatus(id, action))).catch((error) => {
@@ -245,13 +367,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
 
     if (actionableIds.length === 0 || role === 'crew' || scope === 'mine') return null;
 
-    if (role === 'crewhead') {
-      return {
-        ids: actionableIds,
-        action: 'ch' as const,
-        label: `Schválit vše a poslat COO (${actionableIds.length})`,
-      };
-    }
+    if (role === 'crewhead') return null;
 
     return {
       ids: actionableIds,
@@ -335,38 +451,38 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
       {timelog.status === 'pending_ch' && role === 'crewhead' && (
         <>
           <Button
-            onClick={() => handleTimelogAction(timelog.id, 'ch')}
+            onClick={() => openFinalApprovalDialog(timelog)}
             size="sm"
             className="border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] text-[11px] text-[color:var(--nodu-success-text)] shadow-[0_12px_24px_rgba(47,125,79,0.10)] hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)] hover:text-[color:var(--nodu-success-text)]"
           >
-            Schválit a poslat COO
+            Schválit a vybrat schvalovatele
           </Button>
           <Button
-            onClick={() => handleTimelogAction(timelog.id, 'rej')}
+            onClick={() => openReturnDialog(timelog)}
             variant="outline"
             size="sm"
             className="border-[#e8b4a3] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39] text-[11px]"
           >
-            Zamítnout
+            Vrátit
           </Button>
         </>
       )}
       {timelog.status === 'pending_coo' && role === 'coo' && (
         <>
           <Button
-            onClick={() => handleTimelogAction(timelog.id, 'coo')}
+            onClick={() => approveFinalTimelog(timelog)}
             size="sm"
             className="border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] text-[11px] text-[color:var(--nodu-success-text)] shadow-[0_12px_24px_rgba(47,125,79,0.10)] hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)] hover:text-[color:var(--nodu-success-text)]"
           >
             Schválit
           </Button>
           <Button
-            onClick={() => handleTimelogAction(timelog.id, 'rej')}
+            onClick={() => openReturnDialog(timelog)}
             variant="outline"
             size="sm"
             className="border-[#e8b4a3] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39] text-[11px]"
           >
-            Zamítnout
+            Vrátit
           </Button>
         </>
       )}
@@ -595,32 +711,32 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                           {timelog.status === 'pending_ch' && role === 'crewhead' && (
                             <>
                               <button
-                                onClick={() => handleTimelogAction(timelog.id, 'ch')}
+                                onClick={() => openFinalApprovalDialog(timelog)}
                                 className="rounded-xl border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] px-3 py-1.5 text-[11px] font-semibold text-[color:var(--nodu-success-text)] shadow-[0_12px_24px_rgba(47,125,79,0.10)] transition hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)]"
                               >
-                                Schválit a poslat COO
+                                Schválit a vybrat schvalovatele
                               </button>
                               <button
-                                onClick={() => handleTimelogAction(timelog.id, 'rej')}
+                                onClick={() => openReturnDialog(timelog)}
                                 className="rounded-xl border border-[color:var(--nodu-error-border)] px-3 py-1.5 text-[11px] font-medium text-[color:var(--nodu-error-text)] transition hover:bg-[color:var(--nodu-error-bg)]"
                               >
-                                Zamítnout
+                                Vrátit
                               </button>
                             </>
                           )}
                           {timelog.status === 'pending_coo' && role === 'coo' && (
                             <>
                               <button
-                                onClick={() => handleTimelogAction(timelog.id, 'coo')}
+                                onClick={() => approveFinalTimelog(timelog)}
                                 className="rounded-xl border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] px-3 py-1.5 text-[11px] font-semibold text-[color:var(--nodu-success-text)] shadow-[0_12px_24px_rgba(47,125,79,0.10)] transition hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)]"
                               >
                                 Schválit
                               </button>
                               <button
-                                onClick={() => handleTimelogAction(timelog.id, 'rej')}
+                                onClick={() => openReturnDialog(timelog)}
                                 className="rounded-xl border border-[color:var(--nodu-error-border)] px-3 py-1.5 text-[11px] font-medium text-[color:var(--nodu-error-text)] transition hover:bg-[color:var(--nodu-error-bg)]"
                               >
-                                Zamítnout
+                                Vrátit
                               </button>
                             </>
                           )}
@@ -769,6 +885,121 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
               Žádné záznamy pro tento filtr
             </div>
           )}
+        </div>
+      )}
+      {approvalDialogTimelog && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="timelog-final-approval-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4"
+        >
+          <div className="w-full max-w-lg rounded-[22px] border border-[color:var(--nodu-border)] bg-white p-5 shadow-[0_24px_72px_rgba(47,38,31,0.22)]">
+            <div className="mb-4 flex items-start gap-3">
+              <div>
+                <h2 id="timelog-final-approval-title" className="text-lg font-semibold text-[color:var(--nodu-text)]">Finální schválení výkazu</h2>
+                <p className="mt-1 text-sm text-[color:var(--nodu-text-soft)]">Vyber konkrétní Nodu profil, který má výkaz finálně schválit.</p>
+              </div>
+              <button
+                type="button"
+                aria-label="Zavřít finální schválení"
+                onClick={closeFinalApprovalDialog}
+                className="ml-auto rounded-full p-1.5 text-[color:var(--nodu-text-soft)] transition hover:bg-[color:var(--nodu-accent-soft)] hover:text-[color:var(--nodu-text)]"
+              >
+                <X size={17} />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {isLoadingFinalApprovers && (
+                <div className="rounded-[16px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] px-3 py-2 text-sm text-[color:var(--nodu-text-soft)]">
+                  Načítám schvalovatele...
+                </div>
+              )}
+              {!isLoadingFinalApprovers && eligibleFinalApprovers.length === 0 && (
+                <div className="rounded-[16px] border border-[color:var(--nodu-error-border)] bg-[color:var(--nodu-error-bg)] px-3 py-2 text-sm text-[color:var(--nodu-error-text)]">
+                  Není dostupný žádný interní schvalovatel.
+                </div>
+              )}
+              {eligibleFinalApprovers.map((approver) => (
+                <label
+                  key={approver.profileId}
+                  className="flex cursor-pointer items-center gap-3 rounded-[16px] border border-[color:var(--nodu-border)] px-3 py-2 text-sm font-medium text-[color:var(--nodu-text)] transition hover:bg-[color:var(--nodu-accent-soft)]"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedFinalApproverIds.includes(approver.profileId)}
+                    onChange={() => toggleFinalApprover(approver.profileId)}
+                    className="h-4 w-4 accent-[color:var(--nodu-accent)]"
+                  />
+                  <span>{approver.name}</span>
+                </label>
+              ))}
+            </div>
+
+            <label className="mt-4 block text-sm font-medium text-[color:var(--nodu-text)]">
+              Poznámka pro schvalovatele
+              <textarea
+                value={finalApprovalNote}
+                onChange={(event) => setFinalApprovalNote(event.target.value)}
+                className="mt-2 min-h-20 w-full rounded-[16px] border border-[color:var(--nodu-border)] bg-white px-3 py-2 text-sm outline-none transition focus:border-[color:var(--nodu-accent)]"
+              />
+            </label>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={closeFinalApprovalDialog}>Zrušit</Button>
+              <Button
+                type="button"
+                onClick={confirmFinalApproval}
+                disabled={selectedFinalApproverIds.length === 0 || isLoadingFinalApprovers || isSubmittingFinalApproval}
+              >
+                Odeslat ke schválení
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {returnDialogTimelog && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="timelog-return-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4"
+        >
+          <div className="w-full max-w-md rounded-[22px] border border-[color:var(--nodu-border)] bg-white p-5 shadow-[0_24px_72px_rgba(47,38,31,0.22)]">
+            <div className="mb-4 flex items-start gap-3">
+              <div>
+                <h2 id="timelog-return-title" className="text-lg font-semibold text-[color:var(--nodu-text)]">Vrátit výkaz k opravě</h2>
+                <p className="mt-1 text-sm text-[color:var(--nodu-text-soft)]">Poznámka je volitelná, když jste se domluvili jinak.</p>
+              </div>
+              <button
+                type="button"
+                aria-label="Zavřít vrácení výkazu"
+                onClick={closeReturnDialog}
+                className="ml-auto rounded-full p-1.5 text-[color:var(--nodu-text-soft)] transition hover:bg-[color:var(--nodu-accent-soft)] hover:text-[color:var(--nodu-text)]"
+              >
+                <X size={17} />
+              </button>
+            </div>
+
+            <label htmlFor="timelog-return-note" className="block text-sm font-medium text-[color:var(--nodu-text)]">
+              Poznámka pro Crew
+            </label>
+            <textarea
+              id="timelog-return-note"
+              value={returnNote}
+              onChange={(event) => setReturnNote(event.target.value)}
+              className="mt-2 min-h-24 w-full rounded-[16px] border border-[color:var(--nodu-border)] bg-white px-3 py-2 text-sm outline-none transition focus:border-[color:var(--nodu-accent)]"
+            />
+
+            <div className="mt-5 flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={closeReturnDialog}>Zrušit</Button>
+              <Button type="button" onClick={confirmReturnToCrew} disabled={isReturningTimelog}>
+                Vrátit k opravě
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </motion.div>

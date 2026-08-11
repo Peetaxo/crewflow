@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockContext = {
@@ -265,6 +265,100 @@ describe('TimelogsView', () => {
     expect(updateTimelogStatus).not.toHaveBeenCalled();
   });
 
+  it('lets CH choose concrete final approvers and defaults to the eligible event contact', async () => {
+    const fetchEligibleTimelogFinalApprovers = vi.fn().mockResolvedValue([
+      { profileId: 'profile-2', name: 'Crew Two', roles: ['coo'] },
+      { profileId: 'profile-3', name: 'Crew Three', roles: ['crewhead'] },
+    ]);
+    const sendTimelogToApprovers = vi.fn().mockResolvedValue({ ...pendingCrewheadTimelogs[0], status: 'pending_coo' });
+    const eventsWithContact = [{ ...events[0], contactProfileId: 'profile-2' }];
+    mockExternalApprovalModules();
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockContext,
+        role: 'crewhead',
+      }),
+    }));
+
+    vi.doMock('../app/providers/useAuth', () => ({
+      useAuth: () => ({ currentProfileId: 'profile-manager' }),
+    }));
+
+    vi.doMock('../features/events/queries/useEventsQuery', () => ({
+      useEventsQuery: () => ({ data: eventsWithContact }),
+    }));
+
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
+      useTimelogsQuery: () => ({ data: pendingCrewheadTimelogs }),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      getTimelogDependencies: () => ({ contractors, events: eventsWithContact }),
+      fetchEligibleTimelogFinalApprovers,
+      sendTimelogToApprovers,
+      updateTimelogStatus: vi.fn(),
+    }));
+
+    const { default: TimelogsView } = await import('./TimelogsView');
+
+    render(<TimelogsView />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Schválit a vybrat schvalovatele' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Finální schválení výkazu' });
+    expect(within(dialog).getByRole('checkbox', { name: 'Crew Two' })).toBeChecked();
+    expect(within(dialog).getByRole('checkbox', { name: 'Crew Three' })).not.toBeChecked();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Odeslat ke schválení' }));
+
+    await waitFor(() => expect(sendTimelogToApprovers).toHaveBeenCalledWith(1, ['profile-2'], ''));
+  });
+
+  it('opens a return note dialog before CH returns a timelog to Crew correction', async () => {
+    const returnTimelogToCrewCorrection = vi.fn().mockResolvedValue({ ...pendingCrewheadTimelogs[0], status: 'rejected', reviewNote: 'Chybí odchod.' });
+    mockExternalApprovalModules();
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockContext,
+        role: 'crewhead',
+      }),
+    }));
+
+    vi.doMock('../app/providers/useAuth', () => ({
+      useAuth: () => ({ currentProfileId: 'profile-manager' }),
+    }));
+
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
+      useTimelogsQuery: () => ({ data: pendingCrewheadTimelogs }),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      getTimelogDependencies: () => ({ contractors, events }),
+      fetchEligibleTimelogFinalApprovers: vi.fn(),
+      returnTimelogToCrewCorrection,
+      sendTimelogToApprovers: vi.fn(),
+      updateTimelogStatus: vi.fn(),
+    }));
+
+    const { default: TimelogsView } = await import('./TimelogsView');
+
+    render(<TimelogsView />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Vrátit' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Vrátit výkaz k opravě' });
+    expect(returnTimelogToCrewCorrection).not.toHaveBeenCalled();
+
+    fireEvent.change(within(dialog).getByLabelText('Poznámka pro Crew'), {
+      target: { value: 'Chybí odchod.' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Vrátit k opravě' }));
+
+    await waitFor(() => expect(returnTimelogToCrewCorrection).toHaveBeenCalledWith(1, 'Chybí odchod.'));
+  });
+
   it('labels the mine scope as Schvalovani for crew', async () => {
     mockExternalApprovalModules();
 
@@ -331,7 +425,7 @@ describe('TimelogsView', () => {
     fireEvent.click(screen.getByRole('button', { name: /Filtr výkazů: Vše, 3/ }));
 
     expect(screen.getByRole('button', { name: 'Koncepty 1' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Čeká CH 1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Čeká na kontrolu 1' })).toBeInTheDocument();
   });
 
   it('uses the compact status filter for mobile management Schvalovani', async () => {

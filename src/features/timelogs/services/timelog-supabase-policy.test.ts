@@ -136,4 +136,37 @@ describe('timelog Supabase role workflow policy', () => {
     expect(sql).toContain('if v_unapproved_count = 0 then');
     expect(sql).toMatch(/update public\.timelog_approvals[\s\S]+set superseded_at = now\(\)[\s\S]+where timelog_id = v_approval\.timelog_id[\s\S]+and approval_round_id = v_approval\.approval_round_id[\s\S]+and id <> p_approval_id[\s\S]+and superseded_at is null[\s\S]+and status = 'pending'/);
   });
+
+  it('keeps approval row writes private to RPC functions', () => {
+    const sql = readTargetedApprovalsSql();
+
+    expect(sql).toContain('revoke insert, update, delete on public.timelog_approvals from anon');
+    expect(sql).toContain('revoke insert, update, delete on public.timelog_approvals from authenticated');
+    expect(sql).toContain('grant select on public.timelog_approvals to authenticated');
+    expect(sql).not.toMatch(/create policy "CrewHead and COO can create timelog approval rows"[\s\S]+for insert/);
+    expect(sql).not.toMatch(/create policy "Selected approvers can update own approval rows"[\s\S]+for update/);
+    expect(sql).not.toContain('grant select, insert, update on public.timelog_approvals to authenticated');
+  });
+
+  it('extends the timelog update trigger for targeted approval status moves', () => {
+    const sql = readTargetedApprovalsSql();
+
+    expect(sql).toContain('create or replace function public.enforce_timelog_update_permissions()');
+    expect(sql).toMatch(/old\.status = 'pending_ch'::public\.timelog_status[\s\S]+new\.status = 'pending_coo'::public\.timelog_status[\s\S]+from public\.timelog_approvals approval[\s\S]+approval\.timelog_id = old\.id[\s\S]+approval\.requested_by_profile_id = public\.current_profile_id\(\)[\s\S]+approval\.superseded_at is null/);
+    expect(sql).toMatch(/old\.status = 'pending_ch'::public\.timelog_status[\s\S]+new\.status = 'approved'::public\.timelog_status[\s\S]+public\.has_role\(auth\.uid\(\), 'crewhead'::public\.app_role\)[\s\S]+public\.has_role\(auth\.uid\(\), 'coo'::public\.app_role\)/);
+    expect(sql).toMatch(/old\.status = 'pending_coo'::public\.timelog_status[\s\S]+new\.status in \('approved'::public\.timelog_status, 'rejected'::public\.timelog_status\)[\s\S]+approval\.approver_profile_id = public\.current_profile_id\(\)[\s\S]+approval\.superseded_at is null/);
+    expect(sql).not.toContain('current_setting(');
+    expect(sql).not.toContain('set_config(');
+  });
+
+  it('serializes approval resolution by locking the parent timelog before re-reading approval state', () => {
+    const sql = readTargetedApprovalsSql();
+    const readTimelogIdIndex = sql.indexOf('select approval.timelog_id');
+    const lockTimelogIndex = sql.indexOf('from public.timelogs\n  where id = v_timelog_id\n  for update');
+    const rereadApprovalIndex = sql.indexOf('from public.timelog_approvals\n  where id = p_approval_id\n    and superseded_at is null\n  for update');
+
+    expect(readTimelogIdIndex).toBeGreaterThan(-1);
+    expect(lockTimelogIndex).toBeGreaterThan(readTimelogIdIndex);
+    expect(rereadApprovalIndex).toBeGreaterThan(lockTimelogIndex);
+  });
 });

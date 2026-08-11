@@ -46,28 +46,7 @@ using (
 );
 
 drop policy if exists "CrewHead and COO can create timelog approval rows" on public.timelog_approvals;
-create policy "CrewHead and COO can create timelog approval rows"
-on public.timelog_approvals
-for insert
-to authenticated
-with check (
-  public.has_role(auth.uid(), 'crewhead'::public.app_role)
-  or public.has_role(auth.uid(), 'coo'::public.app_role)
-);
-
 drop policy if exists "Selected approvers can update own approval rows" on public.timelog_approvals;
-create policy "Selected approvers can update own approval rows"
-on public.timelog_approvals
-for update
-to authenticated
-using (
-  approver_profile_id = public.current_profile_id()
-  and superseded_at is null
-)
-with check (
-  approver_profile_id = public.current_profile_id()
-  and superseded_at is null
-);
 
 drop policy if exists "Selected approvers can view assigned timelogs" on public.timelogs;
 create policy "Selected approvers can view assigned timelogs"
@@ -83,6 +62,124 @@ using (
       and approval.superseded_at is null
   )
 );
+
+create or replace function public.enforce_timelog_update_permissions()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'User must be authenticated to update timelogs.' using errcode = '42501';
+  end if;
+
+  if new.id is distinct from old.id
+    or new.event_id is distinct from old.event_id
+    or new.contractor_id is distinct from old.contractor_id
+    or new.created_at is distinct from old.created_at then
+    raise exception 'Timelog identity fields cannot be changed.' using errcode = '42501';
+  end if;
+
+  if public.has_role(auth.uid(), 'crew'::public.app_role)
+    and old.contractor_id = public.current_profile_id()
+    and old.status in ('draft'::public.timelog_status, 'rejected'::public.timelog_status, 'pending_crew_confirmation'::public.timelog_status)
+    and new.status in ('draft'::public.timelog_status, 'rejected'::public.timelog_status, 'pending_crew_confirmation'::public.timelog_status, 'pending_ch'::public.timelog_status) then
+    return new;
+  end if;
+
+  if (
+    public.has_role(auth.uid(), 'crewhead'::public.app_role)
+    or public.has_role(auth.uid(), 'coo'::public.app_role)
+  )
+    and public.timelog_update_is_status_only(old, new)
+    and old.status = 'pending_ch'::public.timelog_status
+    and new.status = 'pending_coo'::public.timelog_status
+    and exists (
+      select 1
+      from public.timelog_approvals approval
+      where approval.timelog_id = old.id
+        and approval.requested_by_profile_id = public.current_profile_id()
+        and approval.superseded_at is null
+        and approval.status = 'pending'
+    ) then
+    return new;
+  end if;
+
+  if (
+    public.has_role(auth.uid(), 'crewhead'::public.app_role)
+    or public.has_role(auth.uid(), 'coo'::public.app_role)
+  )
+    and public.timelog_update_is_status_only(old, new)
+    and old.status = 'pending_ch'::public.timelog_status
+    and new.status = 'approved'::public.timelog_status then
+    return new;
+  end if;
+
+  if public.has_role(auth.uid(), 'crewhead'::public.app_role)
+    and (
+      (
+        old.status = 'pending_ch'::public.timelog_status
+        and new.status = 'pending_crew_confirmation'::public.timelog_status
+      )
+      or (
+        old.status = 'pending_ch'::public.timelog_status
+        and new.status in ('pending_ch'::public.timelog_status, 'rejected'::public.timelog_status)
+      )
+      or (
+        old.status = 'pending_ch'::public.timelog_status
+        and public.timelog_update_is_status_only(old, new)
+        and new.status = 'pending_coo'::public.timelog_status
+      )
+    ) then
+    return new;
+  end if;
+
+  if public.timelog_update_is_status_only(old, new)
+    and old.status = 'pending_coo'::public.timelog_status
+    and new.status in ('approved'::public.timelog_status, 'rejected'::public.timelog_status)
+    and exists (
+      select 1
+      from public.timelog_approvals approval
+      where approval.timelog_id = old.id
+        and approval.approver_profile_id = public.current_profile_id()
+        and approval.superseded_at is null
+        and (
+          (
+            new.status = 'approved'::public.timelog_status
+            and approval.status = 'approved'
+          )
+          or (
+            new.status = 'rejected'::public.timelog_status
+            and approval.status = 'returned'
+          )
+        )
+    ) then
+    return new;
+  end if;
+
+  if public.has_role(auth.uid(), 'coo'::public.app_role)
+    and public.timelog_update_is_status_only(old, new)
+    and (
+      (
+        old.status = 'pending_coo'::public.timelog_status
+        and new.status in ('approved'::public.timelog_status, 'rejected'::public.timelog_status)
+      )
+      or (
+        old.status = 'approved'::public.timelog_status
+        and new.status in ('invoiced'::public.timelog_status, 'paid'::public.timelog_status)
+      )
+      or (
+        old.status = 'invoiced'::public.timelog_status
+        and new.status = 'paid'::public.timelog_status
+      )
+    ) then
+    return new;
+  end if;
+
+  raise exception 'Timelog update is not allowed for this role and status.' using errcode = '42501';
+end;
+$$;
 
 create or replace function public.send_timelog_to_approvers(
   p_timelog_id uuid,
@@ -191,12 +288,34 @@ set search_path = public
 as $$
 declare
   v_actor_profile_id uuid := public.current_profile_id();
+  v_timelog_id uuid;
+  v_timelog public.timelogs;
   v_approval public.timelog_approvals;
   v_unapproved_count integer;
   v_result public.timelogs;
 begin
   if auth.uid() is null then
     raise exception 'User must be authenticated to resolve timelog approvals.' using errcode = '42501';
+  end if;
+
+  select approval.timelog_id
+  into v_timelog_id
+  from public.timelog_approvals approval
+  where approval.id = p_approval_id
+    and approval.superseded_at is null;
+
+  if not found then
+    raise exception 'Approval request was not found.' using errcode = 'P0002';
+  end if;
+
+  select *
+  into v_timelog
+  from public.timelogs
+  where id = v_timelog_id
+  for update;
+
+  if not found then
+    raise exception 'Timelog was not found.' using errcode = 'P0002';
   end if;
 
   select *
@@ -284,6 +403,8 @@ revoke all on function public.resolve_timelog_approval(uuid, text, text) from pu
 grant execute on function public.send_timelog_to_approvers(uuid, uuid[], text) to authenticated;
 grant execute on function public.resolve_timelog_approval(uuid, text, text) to authenticated;
 
-grant select, insert, update on public.timelog_approvals to authenticated;
+revoke insert, update, delete on public.timelog_approvals from anon;
+revoke insert, update, delete on public.timelog_approvals from authenticated;
+grant select on public.timelog_approvals to authenticated;
 
 commit;

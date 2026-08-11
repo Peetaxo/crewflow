@@ -30,6 +30,18 @@ const readCrewHeadProposalSql = () => {
   return readFileSync(resolve(migrationsDir, migrationFile), 'utf8');
 };
 
+const readTargetedApprovalsSql = () => {
+  const migrationsDir = resolve(process.cwd(), 'supabase/migrations');
+  const migrationFile = readdirSync(migrationsDir)
+    .find((file) => file.endsWith('_targeted_timelog_approvals.sql'));
+
+  if (!migrationFile) {
+    throw new Error('Missing targeted timelog approvals migration.');
+  }
+
+  return readFileSync(resolve(migrationsDir, migrationFile), 'utf8');
+};
+
 describe('timelog Supabase role workflow policy', () => {
   it('includes the Crew confirmation state in editable timelog data rules', () => {
     const sql = readWorkflowPolicySql();
@@ -69,5 +81,40 @@ describe('timelog Supabase role workflow policy', () => {
       expect(sql).toMatch(/create policy "CrewHead can create timelog proposals for Crew confirmation"[^;]+public\.has_role\(auth\.uid\(\), 'crewhead'::public\.app_role\)[^;]+status = 'pending_ch'::public\.timelog_status[^;]+;/);
       expect(sql).not.toMatch(/create policy "CrewHead can create timelog proposals for Crew confirmation"[^;]+status = 'draft'::public\.timelog_status[^;]+;/);
     }
+  });
+
+  it('adds targeted timelog approval rows with active-round indexes', () => {
+    const sql = readTargetedApprovalsSql();
+
+    expect(sql).toContain('create table if not exists public.timelog_approvals');
+    expect(sql).toContain('approval_round_id uuid not null');
+    expect(sql).toContain("status text not null default 'pending'");
+    expect(sql).toContain("check (status in ('pending', 'approved', 'returned'))");
+    expect(sql).toContain('create index if not exists timelog_approvals_timelog_active_idx');
+    expect(sql).toContain('create unique index if not exists timelog_approvals_active_approver_key');
+  });
+
+  it('lets selected approvers view timelogs assigned to them', () => {
+    const sql = readTargetedApprovalsSql();
+
+    expect(sql).toContain('Selected approvers can view assigned timelogs');
+    expect(sql).toMatch(/exists \([\s\S]+from public\.timelog_approvals approval[\s\S]+approval\.timelog_id = timelogs\.id[\s\S]+approval\.approver_profile_id = public\.current_profile_id\(\)[\s\S]+approval\.superseded_at is null[\s\S]+\)/);
+  });
+
+  it('creates guarded RPC functions for sending and resolving approval requests', () => {
+    const sql = readTargetedApprovalsSql();
+
+    expect(sql).toContain('create or replace function public.send_timelog_to_approvers');
+    expect(sql).toContain('create or replace function public.resolve_timelog_approval');
+    expect(sql).toContain("public.has_role(auth.uid(), 'crewhead'::public.app_role)");
+    expect(sql).toContain("public.has_role(auth.uid(), 'coo'::public.app_role)");
+    expect(sql).toContain('approver_profile_id = public.current_profile_id()');
+  });
+
+  it('requires return notes to be optional and visible on the timelog review note', () => {
+    const sql = readTargetedApprovalsSql();
+
+    expect(sql).toContain('p_note text default null');
+    expect(sql).toContain('review_note = nullif(trim(coalesce(p_note, \'\')), \'\')');
   });
 });

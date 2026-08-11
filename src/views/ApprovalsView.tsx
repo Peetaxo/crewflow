@@ -18,7 +18,12 @@ import {
 } from '../features/timelogs/services/timelogs.service';
 import { useTimelogsQuery } from '../features/timelogs/queries/useTimelogsQuery';
 import { canEditTimelog } from '../features/timelogs/services/timelog-permissions';
-import { getDefaultTimelogFinalApproverIds, TimelogFinalApprover } from '../features/timelogs/services/timelog-final-approvers';
+import {
+  getCurrentPendingTimelogApproval,
+  getDefaultTimelogFinalApproverIds,
+  hasActiveTimelogApprovals,
+  TimelogFinalApprover,
+} from '../features/timelogs/services/timelog-final-approvers';
 
 const ApprovalsView = () => {
   const {
@@ -78,9 +83,25 @@ const ApprovalsView = () => {
   }, [events, findContractor, searchQuery, timelogsQuery.data]);
 
   const isCrewHead = role === 'crewhead';
+  const findCurrentPendingApproval = useCallback((timelog: Timelog) => (
+    getCurrentPendingTimelogApproval(timelog, currentProfileId)
+  ), [currentProfileId]);
+  const canUseLegacyFinalApprovalAction = useCallback((timelog: Timelog) => (
+    role === 'coo'
+    && timelog.status === 'pending_coo'
+    && !hasActiveTimelogApprovals(timelog)
+  ), [role]);
+  const canResolveFinalTimelog = useCallback((timelog: Timelog) => (
+    timelog.status === 'pending_coo'
+    && (Boolean(findCurrentPendingApproval(timelog)) || canUseLegacyFinalApprovalAction(timelog))
+  ), [canUseLegacyFinalApprovalAction, findCurrentPendingApproval]);
   const mine = useMemo(() => (
-    timelogs.filter((timelog) => timelog.status === (isCrewHead ? 'pending_ch' : 'pending_coo'))
-  ), [isCrewHead, timelogs]);
+    timelogs.filter((timelog) => {
+      if (timelog.status === 'pending_ch') return isCrewHead;
+      if (timelog.status === 'pending_coo') return canResolveFinalTimelog(timelog);
+      return false;
+    })
+  ), [canResolveFinalTimelog, isCrewHead, timelogs]);
 
   const grouped = useMemo(() => {
     if (isCrewHead) return null;
@@ -91,12 +112,6 @@ const ApprovalsView = () => {
       return acc;
     }, [] as { event: typeof filteredEvents[number]; tls: typeof mine }[]);
   }, [filteredEvents, isCrewHead, mine]);
-
-  const findCurrentPendingApproval = useCallback((timelog: Timelog) => (
-    timelog.approvals?.find((approval) => approval.status === 'pending' && !approval.supersededAt && approval.approverProfileId === currentProfileId)
-    ?? timelog.approvals?.find((approval) => approval.status === 'pending' && !approval.supersededAt)
-    ?? null
-  ), [currentProfileId]);
 
   const openFinalApprovalDialog = useCallback((timelog: Timelog) => {
     const event = findEvent(timelog.eid);
@@ -131,9 +146,15 @@ const ApprovalsView = () => {
     if (!returnDialogTimelog) return;
 
     const approval = findCurrentPendingApproval(returnDialogTimelog);
-    const update = approval
-      ? resolveTimelogApproval(approval.id, 'returned', returnNote)
-      : returnTimelogToCrewCorrection(returnDialogTimelog.id, returnNote);
+    let update: Promise<unknown>;
+
+    if (approval) {
+      update = resolveTimelogApproval(approval.id, 'returned', returnNote);
+    } else if (returnDialogTimelog.status === 'pending_coo' && !canUseLegacyFinalApprovalAction(returnDialogTimelog)) {
+      return;
+    } else {
+      update = returnTimelogToCrewCorrection(returnDialogTimelog.id, returnNote);
+    }
 
     void update
       .then(() => {
@@ -143,7 +164,23 @@ const ApprovalsView = () => {
       .catch((error) => {
         toast.error(error instanceof Error ? error.message : 'Nepodařilo se vrátit výkaz k opravě.');
       });
-  }, [findCurrentPendingApproval, returnDialogTimelog, returnNote]);
+  }, [canUseLegacyFinalApprovalAction, findCurrentPendingApproval, returnDialogTimelog, returnNote]);
+
+  const approveFinalTimelog = useCallback((timelog: Timelog) => {
+    const approval = findCurrentPendingApproval(timelog);
+
+    const update = approval
+      ? resolveTimelogApproval(approval.id, 'approved')
+      : canUseLegacyFinalApprovalAction(timelog)
+        ? updateTimelogStatus(timelog.id, 'coo')
+        : null;
+
+    if (!update) return;
+
+    void update.catch((error) => {
+      toast.error(error instanceof Error ? error.message : 'Nepodařilo se schválit výkaz.');
+    });
+  }, [canUseLegacyFinalApprovalAction, findCurrentPendingApproval]);
 
   const handleTimelogAction = useCallback((timelog: Timelog, action: 'ch' | 'rej') => {
     if (action === 'ch') {
@@ -158,17 +195,17 @@ const ApprovalsView = () => {
   const handleApproveAll = useCallback((eventId: EventId) => {
     const approvals = mine
       .filter((timelog) => timelog.eid === eventId)
-      .map((timelog) => {
+      .flatMap((timelog) => {
         const approval = findCurrentPendingApproval(timelog);
-        return approval
-          ? resolveTimelogApproval(approval.id, 'approved')
-          : updateTimelogStatus(timelog.id, 'coo');
+        if (approval) return [resolveTimelogApproval(approval.id, 'approved')];
+        if (canUseLegacyFinalApprovalAction(timelog)) return [updateTimelogStatus(timelog.id, 'coo')];
+        return [];
       });
 
     void Promise.all(approvals).catch((error) => {
       toast.error(error instanceof Error ? error.message : 'Nepodařilo se schválit výkazy.');
     });
-  }, [findCurrentPendingApproval, mine]);
+  }, [canUseLegacyFinalApprovalAction, findCurrentPendingApproval, mine]);
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -179,7 +216,7 @@ const ApprovalsView = () => {
             {isCrewHead ? 'CrewHead - vizualni kontrola a predani COO' : 'COO - finalni schvaleni a financni prehled'}
           </p>
         </div>
-        <StatusBadge status={mine.length ? (isCrewHead ? 'pending_ch' : 'pending_coo') : 'approved'} label={`${mine.length} ceka`} />
+        <StatusBadge status={mine[0]?.status ?? 'approved'} label={`${mine.length} ceka`} />
       </div>
 
       {mine.length === 0 ? (
@@ -224,7 +261,11 @@ const ApprovalsView = () => {
                   ))}
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => handleTimelogAction(timelog, 'ch')} className="rounded-xl border border-[var(--nodu-success-border)] bg-[var(--nodu-success-bg)] px-4 py-1.5 text-xs font-semibold text-[var(--nodu-success-text)] shadow-[0_14px_28px_rgba(47,125,79,0.10)] hover:bg-[var(--nodu-success-bg-hover)] hover:shadow-[0_16px_32px_rgba(47,125,79,0.14)]">Schvalit a vybrat schvalovatele</button>
+                  {timelog.status === 'pending_ch' ? (
+                    <button onClick={() => handleTimelogAction(timelog, 'ch')} className="rounded-xl border border-[var(--nodu-success-border)] bg-[var(--nodu-success-bg)] px-4 py-1.5 text-xs font-semibold text-[var(--nodu-success-text)] shadow-[0_14px_28px_rgba(47,125,79,0.10)] hover:bg-[var(--nodu-success-bg-hover)] hover:shadow-[0_16px_32px_rgba(47,125,79,0.14)]">Schvalit a vybrat schvalovatele</button>
+                  ) : (
+                    <button onClick={() => approveFinalTimelog(timelog)} className="rounded-xl border border-[var(--nodu-success-border)] bg-[var(--nodu-success-bg)] px-4 py-1.5 text-xs font-semibold text-[var(--nodu-success-text)] shadow-[0_14px_28px_rgba(47,125,79,0.10)] hover:bg-[var(--nodu-success-bg-hover)] hover:shadow-[0_16px_32px_rgba(47,125,79,0.14)]">Schvalit</button>
+                  )}
                   <button onClick={() => handleTimelogAction(timelog, 'rej')} className="rounded-xl border border-[var(--nodu-error-border)] px-4 py-1.5 text-xs font-medium text-[var(--nodu-error-text)] hover:bg-[var(--nodu-error-bg)]">Vrátit</button>
                   {canEditTimelog(timelog, role) && (
                     <button onClick={() => setEditingTimelog(timelog)} className="ml-auto rounded-xl border border-[var(--nodu-border)] px-4 py-1.5 text-xs font-medium text-[var(--nodu-text)] hover:bg-[var(--nodu-accent-soft)]">Upravit</button>

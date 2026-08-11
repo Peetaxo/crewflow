@@ -100,6 +100,23 @@ const pendingApprovalTimelog = {
   status: 'pending_coo' as const,
 };
 
+const assignedFinalApprovalTimelog = {
+  ...pendingApprovalTimelog,
+  id: 11,
+  approvals: [{
+    id: 'approval-profile-1',
+    approvalRoundId: 'round-1',
+    timelogId: 'timelog-11',
+    approverProfileId: 'profile-1',
+    status: 'pending' as const,
+    requestedByProfileId: 'profile-manager',
+    requestedAt: '2026-08-11T10:00:00.000Z',
+    resolvedAt: null,
+    supersededAt: null,
+    note: '',
+  }],
+};
+
 const pendingCrewheadTimelog = {
   ...pendingApprovalTimelog,
   id: 9,
@@ -2257,6 +2274,77 @@ describe('EventDetailView', () => {
     await waitFor(() => {
       expect(updateTimelogStatus).toHaveBeenCalledWith(8, 'coo');
     });
+  });
+
+  it('lets a CrewHead resolve an assigned final approval from event detail', async () => {
+    const resolveTimelogApproval = vi.fn().mockResolvedValue({ ...assignedFinalApprovalTimelog, status: 'approved' });
+    updateTimelogStatus.mockResolvedValue({ ...assignedFinalApprovalTimelog, status: 'approved' });
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        role: 'crewhead',
+        selectedEventId: 'event-uuid-1',
+        setSelectedEventId,
+        eventTab: 'overview',
+        setEventTab: vi.fn(),
+        setEditingReceipt: vi.fn(),
+        setDeleteConfirm: vi.fn(),
+        setEditingTimelog,
+      }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [contractor, applicant],
+      getEventDetailData: () => ({
+        event,
+        timelogs: [timelog, assignedFinalApprovalTimelog],
+        contractors: [contractor, applicant],
+        receipts: [],
+        applications: [],
+        crewAssignments: [
+          { eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: contractor.profileId, name: contractor.name },
+          { eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: applicant.profileId, name: applicant.name },
+        ],
+      }),
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
+      subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      fetchEligibleTimelogFinalApprovers: vi.fn(),
+      resolveTimelogApproval,
+      returnTimelogToCrewCorrection: vi.fn(),
+      sendTimelogToApprovers: vi.fn(),
+      updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventDetailView } = await import('./EventDetailView');
+
+    render(<EventDetailView />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Schvalovani timelogu \(1\)/ }));
+    expect(screen.getAllByText('Jana Nova').length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Schvalit' }));
+
+    await waitFor(() => expect(resolveTimelogApproval).toHaveBeenCalledWith('approval-profile-1', 'approved'));
+    expect(updateTimelogStatus).not.toHaveBeenCalledWith(11, 'coo');
   });
 
   it('does not merge duplicate approval timelogs for the same contractor', async () => {

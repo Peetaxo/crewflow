@@ -72,6 +72,81 @@ const pendingCrewheadTimelogs = [
     status: 'pending_ch' as const,
   },
 ];
+const pendingFinalApprovalForCrewheadTimelogs = [
+  {
+    ...timelogs[0],
+    id: 20,
+    status: 'pending_coo' as const,
+    approvals: [{
+      id: 'approval-crewhead',
+      approvalRoundId: 'round-1',
+      timelogId: 'timelog-20',
+      approverProfileId: 'profile-crewhead',
+      status: 'pending' as const,
+      requestedByProfileId: 'profile-manager',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      resolvedAt: null,
+      supersededAt: null,
+      note: '',
+    }],
+  },
+];
+const pendingFinalApprovalForAnotherApproverTimelogs = [
+  {
+    ...timelogs[0],
+    id: 21,
+    status: 'pending_coo' as const,
+    approvals: [{
+      id: 'approval-other',
+      approvalRoundId: 'round-1',
+      timelogId: 'timelog-21',
+      approverProfileId: 'profile-other',
+      status: 'pending' as const,
+      requestedByProfileId: 'profile-manager',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      resolvedAt: null,
+      supersededAt: null,
+      note: '',
+    }],
+  },
+];
+const bulkFinalApprovalTimelogs = [
+  {
+    ...timelogs[0],
+    id: 30,
+    status: 'pending_coo' as const,
+    approvals: [{
+      id: 'approval-coo',
+      approvalRoundId: 'round-1',
+      timelogId: 'timelog-30',
+      approverProfileId: 'profile-coo',
+      status: 'pending' as const,
+      requestedByProfileId: 'profile-manager',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      resolvedAt: null,
+      supersededAt: null,
+      note: '',
+    }],
+  },
+  {
+    ...timelogs[1],
+    id: 31,
+    eid: 1,
+    status: 'pending_coo' as const,
+    approvals: [{
+      id: 'approval-other-coo',
+      approvalRoundId: 'round-1',
+      timelogId: 'timelog-31',
+      approverProfileId: 'profile-other',
+      status: 'pending' as const,
+      requestedByProfileId: 'profile-manager',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      resolvedAt: null,
+      supersededAt: null,
+      note: '',
+    }],
+  },
+];
 const pendingCrewConfirmationTimelogs = [
   {
     ...timelogs[0],
@@ -357,6 +432,119 @@ describe('TimelogsView', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Vrátit k opravě' }));
 
     await waitFor(() => expect(returnTimelogToCrewCorrection).toHaveBeenCalledWith(1, 'Chybí odchod.'));
+  });
+
+  it('lets a selected CrewHead final approver resolve their assigned approval row', async () => {
+    const resolveTimelogApproval = vi.fn().mockResolvedValue({ ...pendingFinalApprovalForCrewheadTimelogs[0], status: 'approved' });
+    const updateTimelogStatus = vi.fn();
+    mockExternalApprovalModules();
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockContext,
+        role: 'crewhead',
+      }),
+    }));
+
+    vi.doMock('../app/providers/useAuth', () => ({
+      useAuth: () => ({ currentProfileId: 'profile-crewhead' }),
+    }));
+
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
+      useTimelogsQuery: () => ({ data: pendingFinalApprovalForCrewheadTimelogs }),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      getTimelogDependencies: () => ({ contractors, events }),
+      fetchEligibleTimelogFinalApprovers: vi.fn(),
+      resolveTimelogApproval,
+      returnTimelogToCrewCorrection: vi.fn(),
+      sendTimelogToApprovers: vi.fn(),
+      updateTimelogStatus,
+    }));
+
+    const { default: TimelogsView } = await import('./TimelogsView');
+
+    render(<TimelogsView />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Schválit' }));
+
+    await waitFor(() => expect(resolveTimelogApproval).toHaveBeenCalledWith('approval-crewhead', 'approved'));
+    expect(updateTimelogStatus).not.toHaveBeenCalledWith(20, 'coo');
+  });
+
+  it('does not show unrelated targeted final approvals to CrewHead users', async () => {
+    mockExternalApprovalModules();
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockContext,
+        role: 'crewhead',
+      }),
+    }));
+
+    vi.doMock('../app/providers/useAuth', () => ({
+      useAuth: () => ({ currentProfileId: 'profile-crewhead' }),
+    }));
+
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
+      useTimelogsQuery: () => ({ data: pendingFinalApprovalForAnotherApproverTimelogs }),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      getTimelogDependencies: () => ({ contractors, events }),
+      fetchEligibleTimelogFinalApprovers: vi.fn(),
+      resolveTimelogApproval: vi.fn(),
+      returnTimelogToCrewCorrection: vi.fn(),
+      sendTimelogToApprovers: vi.fn(),
+      updateTimelogStatus: vi.fn(),
+    }));
+
+    const { default: TimelogsView } = await import('./TimelogsView');
+
+    render(<TimelogsView />);
+
+    expect(screen.queryByText('Ploom Chodov')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Schválit' })).not.toBeInTheDocument();
+  });
+
+  it('uses approval resolution instead of direct COO status updates for bulk final approvals', async () => {
+    const resolveTimelogApproval = vi.fn().mockResolvedValue({ ...bulkFinalApprovalTimelogs[0], status: 'approved' });
+    const updateTimelogStatus = vi.fn();
+    mockExternalApprovalModules();
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockContext,
+        role: 'coo',
+      }),
+    }));
+
+    vi.doMock('../app/providers/useAuth', () => ({
+      useAuth: () => ({ currentProfileId: 'profile-coo' }),
+    }));
+
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
+      useTimelogsQuery: () => ({ data: bulkFinalApprovalTimelogs }),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      getTimelogDependencies: () => ({ contractors, events }),
+      fetchEligibleTimelogFinalApprovers: vi.fn(),
+      resolveTimelogApproval,
+      returnTimelogToCrewCorrection: vi.fn(),
+      sendTimelogToApprovers: vi.fn(),
+      updateTimelogStatus,
+    }));
+
+    const { default: TimelogsView } = await import('./TimelogsView');
+
+    render(<TimelogsView />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Schválit vše (1)' }));
+
+    await waitFor(() => expect(resolveTimelogApproval).toHaveBeenCalledWith('approval-coo', 'approved'));
+    expect(updateTimelogStatus).not.toHaveBeenCalledWith(expect.any(Number), 'coo');
   });
 
   it('labels the mine scope as Schvalovani for crew', async () => {

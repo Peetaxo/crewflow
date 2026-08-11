@@ -40,7 +40,12 @@ import {
   subscribeToTimelogChanges,
   updateTimelogStatus,
 } from '../features/timelogs/services/timelogs.service';
-import { getDefaultTimelogFinalApproverIds, TimelogFinalApprover } from '../features/timelogs/services/timelog-final-approvers';
+import {
+  getCurrentPendingTimelogApproval,
+  getDefaultTimelogFinalApproverIds,
+  hasActiveTimelogApprovals,
+  TimelogFinalApprover,
+} from '../features/timelogs/services/timelog-final-approvers';
 import { canCreateTimelog, canEditTimelog, canOpenTimelogDetail } from '../features/timelogs/services/timelog-permissions';
 
 const EMPTY_APPROVAL_DOCUMENTS: InvoiceApprovalDocument[] = [];
@@ -447,12 +452,25 @@ const EventDetailView = () => {
     from: applicationDraftTimes.from || event.startTime || '08:00',
     to: applicationDraftTimes.to || event.endTime || '17:00',
   };
+  const findCurrentPendingApproval = (timelog: Timelog) => (
+    getCurrentPendingTimelogApproval(timelog, currentProfileId)
+  );
+  const canUseLegacyFinalApprovalAction = (timelog: Timelog) => (
+    role === 'coo'
+    && timelog.status === 'pending_coo'
+    && !hasActiveTimelogApprovals(timelog)
+  );
+  const canResolveFinalTimelog = (timelog: Timelog) => (
+    timelog.status === 'pending_coo'
+    && (Boolean(findCurrentPendingApproval(timelog)) || canUseLegacyFinalApprovalAction(timelog))
+  );
+  const canShowApprovalTimelog = (timelog: Timelog) => {
+    if (timelog.status === 'pending_ch' || timelog.status === 'pending_crew_confirmation') return role === 'crewhead';
+    if (timelog.status === 'pending_coo') return canResolveFinalTimelog(timelog);
+    return false;
+  };
   const eventApprovalTimelogs = canManageEvents
-    ? prepareApprovalTimelogs(eventTimelogs.filter((timelog) => (
-        role === 'crewhead'
-          ? timelog.status === 'pending_ch' || timelog.status === 'pending_crew_confirmation'
-          : timelog.status === 'pending_coo'
-      )))
+    ? prepareApprovalTimelogs(eventTimelogs.filter(canShowApprovalTimelog))
     : [];
 
   const getPhasesForDate = (date: string) => (
@@ -606,16 +624,6 @@ const EventDetailView = () => {
     setEditingEvent(createEventCopy(event));
   };
 
-  const findCurrentPendingApproval = (timelog: Timelog) => (
-    timelog.approvals?.find((approval) => (
-      approval.status === 'pending'
-      && !approval.supersededAt
-      && approval.approverProfileId === currentProfileId
-    ))
-    ?? timelog.approvals?.find((approval) => approval.status === 'pending' && !approval.supersededAt)
-    ?? null
-  );
-
   const openFinalApprovalDialog = (timelog: Timelog) => {
     setApprovalDialogTimelog(timelog);
     setEligibleFinalApprovers([]);
@@ -683,9 +691,15 @@ const EventDetailView = () => {
     if (!returnDialogTimelog) return;
 
     const pendingApproval = findCurrentPendingApproval(returnDialogTimelog);
-    const action = pendingApproval
-      ? resolveTimelogApproval(pendingApproval.id, 'returned', returnNote)
-      : returnTimelogToCrewCorrection(returnDialogTimelog.id, returnNote);
+    let action: Promise<unknown>;
+
+    if (pendingApproval) {
+      action = resolveTimelogApproval(pendingApproval.id, 'returned', returnNote);
+    } else if (returnDialogTimelog.status === 'pending_coo' && !canUseLegacyFinalApprovalAction(returnDialogTimelog)) {
+      return;
+    } else {
+      action = returnTimelogToCrewCorrection(returnDialogTimelog.id, returnNote);
+    }
 
     setIsReturningTimelog(true);
     void action
@@ -715,7 +729,11 @@ const EventDetailView = () => {
       const pendingApproval = findCurrentPendingApproval(timelog);
       const update = pendingApproval
         ? resolveTimelogApproval(pendingApproval.id, 'approved')
-        : updateTimelogStatus(timelog.id, 'coo');
+        : canUseLegacyFinalApprovalAction(timelog)
+          ? updateTimelogStatus(timelog.id, 'coo')
+          : null;
+
+      if (!update) return;
 
       void update
         .then(loadDetail)

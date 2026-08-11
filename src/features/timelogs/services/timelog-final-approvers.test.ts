@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { Contractor, Event, Timelog } from '../../../types';
 import {
   filterEligibleTimelogFinalApprovers,
+  getCurrentPendingTimelogApproval,
   getDefaultTimelogFinalApproverIds,
+  hasActiveTimelogApprovals,
   type TimelogFinalApprover,
 } from './timelog-final-approvers';
 
@@ -89,5 +91,41 @@ describe('timelog final approver selection', () => {
       timelog('profile-1'),
       'profile-2',
     )).toEqual([]);
+  });
+
+  it('finds only the current profile pending approval without falling back to another approver', () => {
+    const assignedTimelog = {
+      approvals: [
+        {
+          id: 'approval-other',
+          approvalRoundId: 'round-1',
+          timelogId: 'timelog-1',
+          approverProfileId: 'profile-other',
+          status: 'pending' as const,
+          requestedByProfileId: 'profile-manager',
+          requestedAt: '2026-08-11T10:00:00.000Z',
+          resolvedAt: null,
+          supersededAt: null,
+          note: '',
+        },
+        {
+          id: 'approval-current',
+          approvalRoundId: 'round-1',
+          timelogId: 'timelog-1',
+          approverProfileId: 'profile-current',
+          status: 'pending' as const,
+          requestedByProfileId: 'profile-manager',
+          requestedAt: '2026-08-11T10:00:00.000Z',
+          resolvedAt: null,
+          supersededAt: null,
+          note: '',
+        },
+      ],
+    };
+
+    expect(hasActiveTimelogApprovals(assignedTimelog)).toBe(true);
+    expect(getCurrentPendingTimelogApproval(assignedTimelog, 'profile-current')?.id).toBe('approval-current');
+    expect(getCurrentPendingTimelogApproval(assignedTimelog, 'profile-missing')).toBeNull();
+    expect(getCurrentPendingTimelogApproval(assignedTimelog, null)).toBeNull();
   });
 });

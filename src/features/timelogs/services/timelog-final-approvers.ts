@@ -1,4 +1,4 @@
-import type { Event, Role, Timelog } from '../../../types';
+import type { Event, Role, Timelog, TimelogApproval } from '../../../types';
 
 export interface TimelogFinalApprover {
   profileId: string;
@@ -44,4 +44,21 @@ export const getDefaultTimelogFinalApproverIds = (
   return eligibleApprovers.some((approver) => approver.profileId === contactProfileId)
     ? [contactProfileId]
     : [];
+};
+
+export const hasActiveTimelogApprovals = (timelog: Pick<Timelog, 'approvals'>): boolean => (
+  timelog.approvals?.some((approval) => !approval.supersededAt) ?? false
+);
+
+export const getCurrentPendingTimelogApproval = (
+  timelog: Pick<Timelog, 'approvals'>,
+  currentProfileId: string | null,
+): TimelogApproval | null => {
+  if (!currentProfileId) return null;
+
+  return timelog.approvals?.find((approval) => (
+    approval.status === 'pending'
+    && !approval.supersededAt
+    && approval.approverProfileId === currentProfileId
+  )) ?? null;
 };

@@ -22,7 +22,12 @@ import {
   sendTimelogToApprovers,
   updateTimelogStatus,
 } from '../features/timelogs/services/timelogs.service';
-import { getDefaultTimelogFinalApproverIds, TimelogFinalApprover } from '../features/timelogs/services/timelog-final-approvers';
+import {
+  getCurrentPendingTimelogApproval,
+  getDefaultTimelogFinalApproverIds,
+  hasActiveTimelogApprovals,
+  TimelogFinalApprover,
+} from '../features/timelogs/services/timelog-final-approvers';
 import { buildTimelogChangeSummary } from '../features/timelogs/services/timelog-change-summary';
 import { useTimelogsQuery } from '../features/timelogs/queries/useTimelogsQuery';
 import { canEditTimelog, canSeeTimelogNote, canSubmitTimelog } from '../features/timelogs/services/timelog-permissions';
@@ -138,11 +143,28 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
 
   const isCrew = role === 'crew';
   const isCrewMineScope = scope === 'mine' && isCrew;
+  const findCurrentPendingApproval = useCallback((timelog: Timelog) => (
+    getCurrentPendingTimelogApproval(timelog, currentProfileId)
+  ), [currentProfileId]);
+  const canUseLegacyFinalApprovalAction = useCallback((timelog: Timelog) => (
+    role === 'coo'
+    && timelog.status === 'pending_coo'
+    && !hasActiveTimelogApprovals(timelog)
+  ), [role]);
+  const canResolveFinalTimelog = useCallback((timelog: Timelog) => (
+    timelog.status === 'pending_coo'
+    && (Boolean(findCurrentPendingApproval(timelog)) || canUseLegacyFinalApprovalAction(timelog))
+  ), [canUseLegacyFinalApprovalAction, findCurrentPendingApproval]);
+  const canSeeManagementTimelog = useCallback((timelog: Timelog) => {
+    if (timelog.status !== 'pending_coo') return true;
+    if (hasActiveTimelogApprovals(timelog)) return Boolean(findCurrentPendingApproval(timelog));
+    return role === 'coo';
+  }, [findCurrentPendingApproval, role]);
   const baseTimelogs = useMemo(() => (
     scope === 'mine'
       ? timelogs.filter((timelog) => timelog.contractorProfileId === currentProfileId)
-      : timelogs
-  ), [currentProfileId, scope, timelogs]);
+      : timelogs.filter(canSeeManagementTimelog)
+  ), [canSeeManagementTimelog, currentProfileId, scope, timelogs]);
   const isMobileMineView = scope === 'mine' && isCrew && isMobile;
   const timelogMonthReferenceDate = useMemo(() => getLatestTimelogDayDate(baseTimelogs), [baseTimelogs]);
   const selectedTimelogMonthDate = useMemo(() => {
@@ -160,7 +182,6 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
     ? periodTimelogs
     : periodTimelogs.filter((timelog) => timelog.status === timelogFilter);
   const title = scope === 'mine' ? 'Schvalování' : 'Timelogy';
-  const pendingStatusForRole = role === 'crewhead' ? 'pending_ch' : 'pending_coo';
   const showTimelogNotes = canSeeTimelogNote(role);
   const getSubmitActionLabel = (timelog: typeof baseTimelogs[number]) => {
     if (timelog.status === 'pending_crew_confirmation') return 'Potvrdit a odeslat';
@@ -240,16 +261,6 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
     });
   }, [filtered, findEvent]);
 
-  const findCurrentPendingApproval = useCallback((timelog: Timelog) => (
-    timelog.approvals?.find((approval) => (
-      approval.status === 'pending'
-      && !approval.supersededAt
-      && approval.approverProfileId === currentProfileId
-    ))
-    ?? timelog.approvals?.find((approval) => approval.status === 'pending' && !approval.supersededAt)
-    ?? null
-  ), [currentProfileId]);
-
   const openFinalApprovalDialog = useCallback((timelog: Timelog) => {
     const stateEvent = findEvent(timelog.eid);
     const dependencyEvent = getTimelogDependencies().events.find((item) => item.id === timelog.eid || item.supabaseId === timelog.eid) ?? null;
@@ -319,9 +330,15 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
     if (!returnDialogTimelog) return;
 
     const pendingApproval = findCurrentPendingApproval(returnDialogTimelog);
-    const action = pendingApproval
-      ? resolveTimelogApproval(pendingApproval.id, 'returned', returnNote)
-      : returnTimelogToCrewCorrection(returnDialogTimelog.id, returnNote);
+    let action: Promise<unknown>;
+
+    if (pendingApproval) {
+      action = resolveTimelogApproval(pendingApproval.id, 'returned', returnNote);
+    } else if (returnDialogTimelog.status === 'pending_coo' && !canUseLegacyFinalApprovalAction(returnDialogTimelog)) {
+      return;
+    } else {
+      action = returnTimelogToCrewCorrection(returnDialogTimelog.id, returnNote);
+    }
 
     setIsReturningTimelog(true);
     void action
@@ -344,35 +361,41 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
   const approveFinalTimelog = useCallback((timelog: Timelog) => {
     const pendingApproval = findCurrentPendingApproval(timelog);
 
-    if (!pendingApproval) {
-      handleTimelogAction(timelog.id, 'coo');
+    if (pendingApproval) {
+      void resolveTimelogApproval(pendingApproval.id, 'approved').catch((error) => {
+        toast.error(error instanceof Error ? error.message : 'Nepodařilo se schválit výkaz.');
+      });
       return;
     }
 
-    void resolveTimelogApproval(pendingApproval.id, 'approved').catch((error) => {
-      toast.error(error instanceof Error ? error.message : 'Nepodařilo se schválit výkaz.');
-    });
-  }, [findCurrentPendingApproval, handleTimelogAction]);
+    if (canUseLegacyFinalApprovalAction(timelog)) {
+      handleTimelogAction(timelog.id, 'coo');
+      return;
+    }
+  }, [canUseLegacyFinalApprovalAction, findCurrentPendingApproval, handleTimelogAction]);
 
-  const runBulkAction = (ids: number[], action: 'ch' | 'coo') => {
-    void Promise.all(ids.map((id) => updateTimelogStatus(id, action))).catch((error) => {
+  const runBulkFinalApproval = (timelogsToApprove: Timelog[]) => {
+    void Promise.all(timelogsToApprove.map((timelog) => {
+      const pendingApproval = findCurrentPendingApproval(timelog);
+      if (pendingApproval) return resolveTimelogApproval(pendingApproval.id, 'approved');
+      if (canUseLegacyFinalApprovalAction(timelog)) return updateTimelogStatus(timelog.id, 'coo');
+      return Promise.resolve(null);
+    })).catch((error) => {
       toast.error(error instanceof Error ? error.message : 'Nepodařilo se aktualizovat výkazy.');
     });
   };
 
   const getBulkActionMeta = (timelogsInGroup: typeof filtered) => {
-    const actionableIds = timelogsInGroup
-      .filter((timelog) => timelog.status === pendingStatusForRole)
-      .map((timelog) => timelog.id);
+    const actionableTimelogs = timelogsInGroup
+      .filter((timelog) => canResolveFinalTimelog(timelog));
 
-    if (actionableIds.length === 0 || role === 'crew' || scope === 'mine') return null;
+    if (actionableTimelogs.length === 0 || role === 'crew' || scope === 'mine') return null;
 
-    if (role === 'crewhead') return null;
+    if (role === 'crewhead' && actionableTimelogs.some((timelog) => canUseLegacyFinalApprovalAction(timelog))) return null;
 
     return {
-      ids: actionableIds,
-      action: 'coo' as const,
-      label: `Schválit vše (${actionableIds.length})`,
+      timelogs: actionableTimelogs,
+      label: `Schválit vše (${actionableTimelogs.length})`,
     };
   };
 
@@ -467,7 +490,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
           </Button>
         </>
       )}
-      {timelog.status === 'pending_coo' && role === 'coo' && (
+      {canResolveFinalTimelog(timelog) && (
         <>
           <Button
             onClick={() => approveFinalTimelog(timelog)}
@@ -724,7 +747,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                               </button>
                             </>
                           )}
-                          {timelog.status === 'pending_coo' && role === 'coo' && (
+                          {canResolveFinalTimelog(timelog) && (
                             <>
                               <button
                                 onClick={() => approveFinalTimelog(timelog)}
@@ -749,7 +772,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                 {bulkAction && (
                   <div className="mt-4 flex justify-end">
                     <Button
-                      onClick={() => runBulkAction(bulkAction.ids, bulkAction.action)}
+                      onClick={() => runBulkFinalApproval(bulkAction.timelogs)}
                       size="sm"
                       className="border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] text-xs text-[color:var(--nodu-success-text)] shadow-[0_14px_28px_rgba(47,125,79,0.10)] hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)] hover:text-[color:var(--nodu-success-text)]"
                     >

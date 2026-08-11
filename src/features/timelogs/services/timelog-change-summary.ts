@@ -18,7 +18,9 @@ const formatDate = (date: string): string => {
   return `${day}. ${month}.`;
 };
 
-const formatRange = (day: TimelogDay): string => `${formatDate(day.d)} ${day.f}-${day.t}`;
+const formatTimeRange = (from: string, to: string): string => `${from}–${to}`;
+
+const formatRange = (day: TimelogDay): string => `${formatDate(day.d)} ${formatTimeRange(day.f, day.t)}`;
 
 const formatMeals = (day: TimelogDay): string => {
   const meals = normalizeMealSelection(day);
@@ -60,15 +62,15 @@ export const buildTimelogChangeSummary = (timelog: Timelog): string[] => {
       if (before.d !== after.d) {
         changes.push(`${formatRange(before)} -> ${formatRange(after)}`);
       } else if (before.f !== after.f || before.t !== after.t) {
-        changes.push(`${formatDate(after.d)} čas ${before.f}-${before.t} -> ${after.f}-${after.t}`);
+        changes.push(`${formatDate(after.d)} Čas ${formatTimeRange(before.f, before.t)} -> ${formatTimeRange(after.f, after.t)}`);
       }
 
       if (before.type !== after.type) {
-        changes.push(`${formatDate(after.d)} fáze ${phaseLabels[before.type]} -> ${phaseLabels[after.type]}`);
+        changes.push(`${formatDate(after.d)} Fáze ${phaseLabels[before.type]} -> ${phaseLabels[after.type]}`);
       }
 
       if (formatMeals(before) !== formatMeals(after)) {
-        changes.push(`${formatDate(after.d)} jídlo ${formatMeals(before)} -> ${formatMeals(after)}`);
+        changes.push(`${formatDate(after.d)} Jídlo ${formatMeals(before)} -> ${formatMeals(after)}`);
       }
 
       if ((before.note ?? '').trim() !== (after.note ?? '').trim()) {

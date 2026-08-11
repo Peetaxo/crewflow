@@ -749,7 +749,7 @@ describe('TimelogsView', () => {
 
     expect(screen.getByText('Upraveno CH')).toBeInTheDocument();
     expect(screen.getAllByText('Čeká na tvoje potvrzení').length).toBeGreaterThan(0);
-    expect(screen.getByText('20. 4. čas 09:00-14:00 -> 09:00-15:00')).toBeInTheDocument();
+    expect(screen.getByText('20. 4. Čas 09:00–14:00 -> 09:00–15:00')).toBeInTheDocument();
   });
 
   it('shows CrewHead that Crew confirmed a previous correction without exposing it to COO', async () => {
@@ -781,7 +781,7 @@ describe('TimelogsView', () => {
 
     expect(screen.getByText('Potvrzeno Crew po úpravě')).toBeInTheDocument();
     expect(screen.getByText('Historie úpravy')).toBeInTheDocument();
-    expect(screen.getByText('20. 4. čas 09:00-14:00 -> 09:00-15:00')).toBeInTheDocument();
+    expect(screen.getByText('20. 4. Čas 09:00–14:00 -> 09:00–15:00')).toBeInTheDocument();
 
     unmount();
     vi.resetModules();

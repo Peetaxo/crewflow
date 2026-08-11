@@ -29,8 +29,8 @@ describe('buildTimelogChangeSummary', () => {
     };
 
     expect(buildTimelogChangeSummary(timelog)).toEqual([
-      '29. 7. čas 08:00-17:00 -> 08:00-19:00',
-      'Přidán den 30. 7. 09:00-17:00',
+      '29. 7. Čas 08:00–17:00 -> 08:00–19:00',
+      'Přidán den 30. 7. 09:00–17:00',
       'Cestovné 0 km -> 12 km',
     ]);
   });

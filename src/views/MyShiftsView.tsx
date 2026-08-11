@@ -211,7 +211,6 @@ const MyShiftsView = () => {
   const openTimelogResolution = (timelog: Timelog) => {
     setTimelogFilter(timelog.status);
     setEditingTimelog(timelog);
-    setCurrentTab('my-timelogs');
   };
 
   const nextShift = useMemo(() => (
@@ -344,7 +343,7 @@ const MyShiftsView = () => {
           </div>
           <p className="nodu-my-shifts-action-copy">{formatActionRequiredCount(actionRequiredTimelogs.length)}</p>
           <div className="nodu-my-shifts-action-list">
-            {actionRequiredTimelogs.slice(0, 2).map(({ timelog, event, project, hours, changeSummary }) => {
+            {actionRequiredTimelogs.map(({ timelog, event, project, hours, changeSummary }) => {
               const returnedReason = timelog.reviewNote?.trim() || timelog.note.trim();
 
               return (

@@ -359,14 +359,23 @@ describe('UUID mine-scope identity', () => {
           },
         },
       },
+      {
+        id: 5,
+        eid: 2,
+        contractorProfileId: 'profile-uuid-2',
+        days: [{ d: '2999-04-22', f: '10:00', t: '12:00', type: 'provoz' }],
+        km: 0,
+        note: 'Doplň prosím typ směny.',
+        status: 'rejected',
+      },
     ];
     const { default: MyShiftsView } = await import('./MyShiftsView');
 
     render(<MyShiftsView />);
 
     expect(screen.getByRole('heading', { name: 'Výkazy k dořešení' })).toBeInTheDocument();
-    expect(screen.getByText('2 výkazy čekají na tebe')).toBeInTheDocument();
-    expect(screen.getByText('Vráceno k opravě')).toBeInTheDocument();
+    expect(screen.getByText('3 výkazy čekají na tebe')).toBeInTheDocument();
+    expect(screen.getAllByText('Vráceno k opravě').length).toBeGreaterThan(0);
     expect(screen.getByText('Čeká na tvoje potvrzení')).toBeInTheDocument();
     expect(screen.getAllByText('21. 4. 2999').length).toBeGreaterThan(0);
     expect(screen.getByText('Klient 2 · 9.0 h')).toBeInTheDocument();
@@ -379,7 +388,7 @@ describe('UUID mine-scope identity', () => {
       id: 4,
       status: 'pending_crew_confirmation',
     }));
-    expect(setCurrentTab).toHaveBeenCalledWith('my-timelogs');
+    expect(setCurrentTab).not.toHaveBeenCalledWith('my-timelogs');
   });
 
   it('shows only earned and approval money cards on the Crew overview', async () => {

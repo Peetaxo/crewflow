@@ -244,7 +244,7 @@ describe('MobileTimelogEditModal', () => {
 
     expect(screen.getByText('Upraveno CH')).toBeInTheDocument();
     expect(screen.getByText('Čeká na tvoje potvrzení')).toBeInTheDocument();
-    expect(screen.getByText('13. 7. čas 08:00-17:00 -> 08:00-19:00')).toBeInTheDocument();
+    expect(screen.getByText('13. 7. Čas 08:00–17:00 -> 08:00–19:00')).toBeInTheDocument();
   });
 
   it('reveals the underlying event detail while swiping the timelog modal back', async () => {
@@ -641,13 +641,15 @@ describe('MobileTimelogEditModal', () => {
     testState.editingTimelog = {
       ...testState.editingTimelog!,
       status: 'rejected',
-      note: 'Chybí pauza po obědě.',
+      note: 'Crew původní poznámka.',
+      reviewNote: 'Chybí pauza po obědě.',
     };
     render(<MobileTimelogEditModal />);
 
     expect(screen.getByText('Vráceno k opravě')).toBeInTheDocument();
     expect(screen.getByText('Uprav výkaz a odešli ho znovu ke kontrole.')).toBeInTheDocument();
     expect(screen.getAllByText('Chybí pauza po obědě.').length).toBeGreaterThan(0);
+    expect(screen.queryAllByText('Crew původní poznámka.')).toHaveLength(1);
     expect(screen.getByRole('button', { name: 'Odeslat znovu' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Uložit výkaz' }));

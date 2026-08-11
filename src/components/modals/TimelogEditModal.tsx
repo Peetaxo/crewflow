@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Plus, Send, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { useAppContext } from '../../context/useAppContext';
@@ -8,6 +8,8 @@ import { MEAL_CONFIG, PHASE_CONFIG } from '../../constants';
 import { KM_RATE } from '../../data';
 import { calculateMealAllowance, calculateTotalHours, formatCurrency, normalizeMealSelection } from '../../utils';
 import { getTimelogDependencies, saveTimelog } from '../../features/timelogs/services/timelogs.service';
+import { buildTimelogChangeSummary } from '../../features/timelogs/services/timelog-change-summary';
+import { canSubmitTimelog } from '../../features/timelogs/services/timelog-permissions';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
@@ -39,12 +41,33 @@ const TimelogEditModal = () => {
   const mealAllowanceEnabled = Boolean(event.mealAllowanceEnabled);
   const totalMealAllowance = calculateMealAllowance(editingTimelog.days, { enabled: mealAllowanceEnabled });
   const isCrewHeadCorrection = role === 'crewhead' && editingTimelog.status === 'pending_ch';
+  const isCrewWorkflow = role === 'crew';
+  const canSubmitCurrentTimelog = isCrewWorkflow && canSubmitTimelog(editingTimelog, role);
+  const changeSummary = buildTimelogChangeSummary(editingTimelog);
+  const showCrewConfirmationChanges = editingTimelog.status === 'pending_crew_confirmation' && changeSummary.length > 0;
+  const showReturnedNotice = editingTimelog.status === 'rejected';
+  const correctionNote = editingTimelog.reviewNote?.trim() || '';
+  const returnedNote = editingTimelog.reviewNote?.trim() || editingTimelog.note.trim();
   const saveButtonLabel = isCrewHeadCorrection ? 'Odeslat k potvrzení Crew' : 'Uložit změny';
+  const submitButtonLabel = editingTimelog.status === 'pending_crew_confirmation'
+    ? 'Potvrdit a odeslat'
+    : editingTimelog.status === 'rejected'
+      ? 'Odeslat znovu'
+      : 'Odeslat ke kontrole';
   const openContractorDetail = () => {
     if (!contractor.profileId) return;
     setEditingTimelog(null);
     setSelectedContractorProfileId(contractor.profileId);
     setCurrentTab('crew');
+  };
+
+  const submitTimelogForReview = async () => {
+    try {
+      await saveTimelog({ ...editingTimelog, status: 'pending_ch' });
+      setEditingTimelog(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Nepodařilo se odeslat výkaz ke kontrole.');
+    }
   };
 
   const resolveExpectedDay = (day: typeof editingTimelog.days[number]) => {
@@ -123,6 +146,47 @@ const TimelogEditModal = () => {
                 </div>
               )}
             </div>
+
+            {showCrewConfirmationChanges && (
+              <div className="rounded-[18px] border border-[color:rgb(var(--nodu-accent-rgb)/0.24)] bg-[color:rgb(var(--nodu-accent-rgb)/0.07)] p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--nodu-accent)]">
+                    Upraveno CH
+                  </div>
+                  <div className="text-[11px] font-semibold text-[color:var(--nodu-text-soft)]">
+                    Čeká na tvoje potvrzení
+                  </div>
+                </div>
+                <div className="mt-2 space-y-1 text-xs font-medium text-[color:var(--nodu-text)]">
+                  {changeSummary.map((change) => (
+                    <div key={change}>{change}</div>
+                  ))}
+                  {correctionNote && (
+                    <div className="rounded-[12px] bg-[color:rgb(var(--nodu-surface-rgb)/0.72)] px-3 py-2 text-[color:var(--nodu-text)]">
+                      {correctionNote}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {showReturnedNotice && (
+              <div className="rounded-[18px] border border-[color:var(--nodu-error-border)] bg-[color:var(--nodu-error-bg)] p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--nodu-error-text)]">
+                    Vráceno k opravě
+                  </div>
+                  <div className="text-[11px] font-semibold text-[color:var(--nodu-text-soft)]">
+                    Uprav výkaz a odešli ho znovu ke kontrole.
+                  </div>
+                </div>
+                {returnedNote && (
+                  <div className="mt-2 rounded-[14px] bg-[color:rgb(var(--nodu-surface-rgb)/0.76)] px-3 py-2 text-xs font-medium text-[color:var(--nodu-text)]">
+                    {returnedNote}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div>
               <label className="mb-2 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">Dny</label>
@@ -341,6 +405,14 @@ const TimelogEditModal = () => {
             >
               {saveButtonLabel}
             </Button>
+            {canSubmitCurrentTimelog && (
+              <Button
+                onClick={() => { void submitTimelogForReview(); }}
+                className="flex-1"
+              >
+                <Send size={16} /> {submitButtonLabel}
+              </Button>
+            )}
           </div>
         </motion.div>
       </div>

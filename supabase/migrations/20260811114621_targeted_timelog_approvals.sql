@@ -72,6 +72,51 @@ as $$
     );
 $$;
 
+create or replace function public.timelog_update_is_status_only(
+  p_old public.timelogs,
+  p_new public.timelogs
+)
+returns boolean
+language sql
+immutable
+set search_path = public
+as $$
+  select
+    p_new.id is not distinct from p_old.id
+    and p_new.event_id is not distinct from p_old.event_id
+    and p_new.contractor_id is not distinct from p_old.contractor_id
+    and p_new.km is not distinct from p_old.km
+    and p_new.note is not distinct from p_old.note
+    and p_new.submitted_at is not distinct from p_old.submitted_at
+    and p_new.approved_at is not distinct from p_old.approved_at
+    and p_new.created_at is not distinct from p_old.created_at
+    and p_new.updated_at is not distinct from p_old.updated_at
+    and p_new.crew_confirmation_snapshot is not distinct from p_old.crew_confirmation_snapshot
+    and p_new.review_note is not distinct from p_old.review_note;
+$$;
+
+create or replace function public.timelog_update_is_approval_status_change(
+  p_old public.timelogs,
+  p_new public.timelogs
+)
+returns boolean
+language sql
+immutable
+set search_path = public
+as $$
+  select
+    p_new.id is not distinct from p_old.id
+    and p_new.event_id is not distinct from p_old.event_id
+    and p_new.contractor_id is not distinct from p_old.contractor_id
+    and p_new.km is not distinct from p_old.km
+    and p_new.note is not distinct from p_old.note
+    and p_new.submitted_at is not distinct from p_old.submitted_at
+    and p_new.approved_at is not distinct from p_old.approved_at
+    and p_new.created_at is not distinct from p_old.created_at
+    and p_new.updated_at is not distinct from p_old.updated_at
+    and p_new.crew_confirmation_snapshot is not distinct from p_old.crew_confirmation_snapshot;
+$$;
+
 drop policy if exists "Timelog approval rows are visible to involved users" on public.timelog_approvals;
 create policy "Timelog approval rows are visible to involved users"
 on public.timelog_approvals
@@ -126,7 +171,7 @@ begin
     public.has_role(auth.uid(), 'crewhead'::public.app_role)
     or public.has_role(auth.uid(), 'coo'::public.app_role)
   )
-    and public.timelog_update_is_status_only(old, new)
+    and public.timelog_update_is_approval_status_change(old, new)
     and old.status = 'pending_ch'::public.timelog_status
     and new.status = 'pending_coo'::public.timelog_status
     and exists (
@@ -144,7 +189,7 @@ begin
     public.has_role(auth.uid(), 'crewhead'::public.app_role)
     or public.has_role(auth.uid(), 'coo'::public.app_role)
   )
-    and public.timelog_update_is_status_only(old, new)
+    and public.timelog_update_is_approval_status_change(old, new)
     and old.status = 'pending_ch'::public.timelog_status
     and new.status = 'approved'::public.timelog_status then
     return new;
@@ -164,7 +209,7 @@ begin
     return new;
   end if;
 
-  if public.timelog_update_is_status_only(old, new)
+  if public.timelog_update_is_approval_status_change(old, new)
     and old.status = 'pending_coo'::public.timelog_status
     and new.status in ('approved'::public.timelog_status, 'rejected'::public.timelog_status)
     and exists (
@@ -235,6 +280,10 @@ begin
     raise exception 'User must be authenticated to send timelog approvals.' using errcode = '42501';
   end if;
 
+  if v_actor_profile_id is null then
+    raise exception 'User must have a profile to send timelog approvals.' using errcode = '42501';
+  end if;
+
   if not (
     public.has_role(auth.uid(), 'crewhead'::public.app_role)
     or public.has_role(auth.uid(), 'coo'::public.app_role)
@@ -260,7 +309,7 @@ begin
   into v_approver_ids
   from unnest(coalesce(p_approver_profile_ids, '{}'::uuid[])) as profile_id
   where profile_id is not null
-    and profile_id <> v_actor_profile_id
+    and profile_id is distinct from v_actor_profile_id
     and exists (
       select 1
       from public.profiles profile
@@ -331,6 +380,10 @@ begin
     raise exception 'User must be authenticated to resolve timelog approvals.' using errcode = '42501';
   end if;
 
+  if v_actor_profile_id is null then
+    raise exception 'User must have a profile to resolve timelog approvals.' using errcode = '42501';
+  end if;
+
   select approval.timelog_id
   into v_timelog_id
   from public.timelog_approvals approval
@@ -362,7 +415,7 @@ begin
     raise exception 'Approval request was not found.' using errcode = 'P0002';
   end if;
 
-  if v_approval.approver_profile_id <> v_actor_profile_id then
+  if v_approval.approver_profile_id is distinct from v_actor_profile_id then
     raise exception 'Only the selected approver can resolve this approval request.' using errcode = '42501';
   end if;
 
@@ -435,10 +488,14 @@ revoke all on function public.send_timelog_to_approvers(uuid, uuid[], text) from
 revoke all on function public.resolve_timelog_approval(uuid, text, text) from public;
 revoke all on function public.can_view_timelog_approval(uuid, uuid, uuid) from public;
 revoke all on function public.can_view_assigned_timelog(uuid) from public;
+revoke all on function public.timelog_update_is_status_only(public.timelogs, public.timelogs) from public;
+revoke all on function public.timelog_update_is_approval_status_change(public.timelogs, public.timelogs) from public;
 grant execute on function public.send_timelog_to_approvers(uuid, uuid[], text) to authenticated;
 grant execute on function public.resolve_timelog_approval(uuid, text, text) to authenticated;
 grant execute on function public.can_view_timelog_approval(uuid, uuid, uuid) to authenticated;
 grant execute on function public.can_view_assigned_timelog(uuid) to authenticated;
+grant execute on function public.timelog_update_is_status_only(public.timelogs, public.timelogs) to authenticated;
+grant execute on function public.timelog_update_is_approval_status_change(public.timelogs, public.timelogs) to authenticated;
 
 revoke insert, update, delete on public.timelog_approvals from anon;
 revoke insert, update, delete on public.timelog_approvals from authenticated;

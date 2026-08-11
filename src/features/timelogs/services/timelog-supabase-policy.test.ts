@@ -106,9 +106,12 @@ describe('timelog Supabase role workflow policy', () => {
 
     expect(sql).toContain('create or replace function public.send_timelog_to_approvers');
     expect(sql).toContain('create or replace function public.resolve_timelog_approval');
+    expect(sql).toMatch(/v_actor_profile_id uuid := public\.current_profile_id\(\);[\s\S]+if v_actor_profile_id is null then[\s\S]+User must have a profile to send timelog approvals/);
+    expect(sql).toMatch(/v_actor_profile_id uuid := public\.current_profile_id\(\);[\s\S]+if v_actor_profile_id is null then[\s\S]+User must have a profile to resolve timelog approvals/);
     expect(sql).toContain("public.has_role(auth.uid(), 'crewhead'::public.app_role)");
     expect(sql).toContain("public.has_role(auth.uid(), 'coo'::public.app_role)");
     expect(sql).toContain('approver_profile_id = public.current_profile_id()');
+    expect(sql).toContain('v_approval.approver_profile_id is distinct from v_actor_profile_id');
   });
 
   it('requires return notes to be optional and visible on the timelog review note', () => {
@@ -152,11 +155,30 @@ describe('timelog Supabase role workflow policy', () => {
     const sql = readTargetedApprovalsSql();
 
     expect(sql).toContain('create or replace function public.enforce_timelog_update_permissions()');
-    expect(sql).toMatch(/old\.status = 'pending_ch'::public\.timelog_status[\s\S]+new\.status = 'pending_coo'::public\.timelog_status[\s\S]+from public\.timelog_approvals approval[\s\S]+approval\.timelog_id = old\.id[\s\S]+approval\.requested_by_profile_id = public\.current_profile_id\(\)[\s\S]+approval\.superseded_at is null/);
-    expect(sql).toMatch(/old\.status = 'pending_ch'::public\.timelog_status[\s\S]+new\.status = 'approved'::public\.timelog_status[\s\S]+public\.has_role\(auth\.uid\(\), 'crewhead'::public\.app_role\)[\s\S]+public\.has_role\(auth\.uid\(\), 'coo'::public\.app_role\)/);
-    expect(sql).toMatch(/old\.status = 'pending_coo'::public\.timelog_status[\s\S]+new\.status in \('approved'::public\.timelog_status, 'rejected'::public\.timelog_status\)[\s\S]+approval\.approver_profile_id = public\.current_profile_id\(\)[\s\S]+approval\.superseded_at is null[\s\S]+not exists \([\s\S]+status <> 'approved'/);
+    expect(sql).toMatch(/public\.timelog_update_is_approval_status_change\(old, new\)[\s\S]+old\.status = 'pending_ch'::public\.timelog_status[\s\S]+new\.status = 'pending_coo'::public\.timelog_status[\s\S]+from public\.timelog_approvals approval[\s\S]+approval\.timelog_id = old\.id[\s\S]+approval\.requested_by_profile_id = public\.current_profile_id\(\)[\s\S]+approval\.superseded_at is null/);
+    expect(sql).toMatch(/public\.timelog_update_is_approval_status_change\(old, new\)[\s\S]+old\.status = 'pending_ch'::public\.timelog_status[\s\S]+new\.status = 'approved'::public\.timelog_status[\s\S]+public\.has_role\(auth\.uid\(\), 'crewhead'::public\.app_role\)[\s\S]+public\.has_role\(auth\.uid\(\), 'coo'::public\.app_role\)/);
+    expect(sql).toMatch(/public\.timelog_update_is_approval_status_change\(old, new\)[\s\S]+old\.status = 'pending_coo'::public\.timelog_status[\s\S]+new\.status in \('approved'::public\.timelog_status, 'rejected'::public\.timelog_status\)[\s\S]+approval\.approver_profile_id = public\.current_profile_id\(\)[\s\S]+approval\.superseded_at is null[\s\S]+not exists \([\s\S]+status <> 'approved'/);
     expect(sql).not.toContain('current_setting(');
     expect(sql).not.toContain('set_config(');
+  });
+
+  it('uses a strict approval status helper that accounts for newer timelog columns', () => {
+    const sql = readTargetedApprovalsSql();
+
+    expect(sql).toContain('create or replace function public.timelog_update_is_approval_status_change');
+    expect(sql).toMatch(/p_new\.id is not distinct from p_old\.id[\s\S]+p_new\.event_id is not distinct from p_old\.event_id[\s\S]+p_new\.contractor_id is not distinct from p_old\.contractor_id[\s\S]+p_new\.km is not distinct from p_old\.km[\s\S]+p_new\.note is not distinct from p_old\.note[\s\S]+p_new\.submitted_at is not distinct from p_old\.submitted_at[\s\S]+p_new\.approved_at is not distinct from p_old\.approved_at[\s\S]+p_new\.created_at is not distinct from p_old\.created_at[\s\S]+p_new\.updated_at is not distinct from p_old\.updated_at[\s\S]+p_new\.crew_confirmation_snapshot is not distinct from p_old\.crew_confirmation_snapshot/);
+    expect(sql).not.toMatch(/create or replace function public\.timelog_update_is_approval_status_change[\s\S]+p_new\.review_note is not distinct from p_old\.review_note/);
+    expect(sql).toContain('revoke all on function public.timelog_update_is_approval_status_change(public.timelogs, public.timelogs) from public');
+    expect(sql).toContain('grant execute on function public.timelog_update_is_approval_status_change(public.timelogs, public.timelogs) to authenticated');
+  });
+
+  it('hardens the legacy status-only helper against newer timelog columns', () => {
+    const sql = readTargetedApprovalsSql();
+
+    expect(sql).toContain('create or replace function public.timelog_update_is_status_only');
+    expect(sql).toMatch(/create or replace function public\.timelog_update_is_status_only[\s\S]+p_new\.submitted_at is not distinct from p_old\.submitted_at[\s\S]+p_new\.approved_at is not distinct from p_old\.approved_at[\s\S]+p_new\.updated_at is not distinct from p_old\.updated_at[\s\S]+p_new\.crew_confirmation_snapshot is not distinct from p_old\.crew_confirmation_snapshot[\s\S]+p_new\.review_note is not distinct from p_old\.review_note/);
+    expect(sql).toContain('revoke all on function public.timelog_update_is_status_only(public.timelogs, public.timelogs) from public');
+    expect(sql).toContain('grant execute on function public.timelog_update_is_status_only(public.timelogs, public.timelogs) to authenticated');
   });
 
   it('removes legacy direct targeted approval status transitions from generic role branches', () => {

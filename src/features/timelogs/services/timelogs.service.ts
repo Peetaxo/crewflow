@@ -12,6 +12,7 @@ import { assertTimelogDaysDoNotOverlap } from './timelog-validation';
 
 type TimelogAction = 'sub' | 'ch' | 'coo' | 'rej';
 type TimelogRow = Database['public']['Tables']['timelogs']['Row'];
+type TimelogApprovalRow = Database['public']['Tables']['timelog_approvals']['Row'];
 type UserRoleRow = Pick<Database['public']['Tables']['user_roles']['Row'], 'user_id' | 'role'>;
 type ApproverProfileRow = Pick<Database['public']['Tables']['profiles']['Row'], 'id' | 'user_id' | 'first_name' | 'last_name' | 'email'>;
 let timelogsHydrationPromise: Promise<void> | null = null;
@@ -356,8 +357,43 @@ const getTimelogRowIdentity = (timelog: Pick<Timelog, 'id' | 'supabaseId'>) => (
   timelog.supabaseId ?? (typeof timelog.id === 'string' && !timelog.id.startsWith('local:') ? timelog.id : null)
 );
 
-const updateTimelogFromSupabaseRow = (row: TimelogRow): Timelog => {
+const mapTimelogApprovalRow = (row: TimelogApprovalRow): NonNullable<Timelog['approvals']>[number] => ({
+  id: row.id,
+  approvalRoundId: row.approval_round_id,
+  timelogId: row.timelog_id,
+  approverProfileId: row.approver_profile_id,
+  status: row.status,
+  requestedByProfileId: row.requested_by_profile_id,
+  requestedAt: row.requested_at,
+  resolvedAt: row.resolved_at,
+  supersededAt: row.superseded_at,
+  note: row.note ?? '',
+});
+
+const fetchSupabaseTimelogApprovalRows = async (timelogRowId: string): Promise<TimelogApprovalRow[]> => {
+  if (!supabase) {
+    throw new Error('Supabase klient neni dostupny.');
+  }
+
+  const result = await supabase
+    .from('timelog_approvals')
+    .select('*')
+    .eq('timelog_id', timelogRowId)
+    .order('requested_at');
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+
+  return (result.data ?? []) as TimelogApprovalRow[];
+};
+
+const updateTimelogFromSupabaseRow = (
+  row: TimelogRow,
+  approvalRows?: TimelogApprovalRow[],
+): Timelog => {
   let updatedTimelog: Timelog | null = null;
+  const approvals = approvalRows?.map(mapTimelogApprovalRow);
 
   updateLocalAppState((snapshot) => ({
     ...snapshot,
@@ -374,6 +410,7 @@ const updateTimelogFromSupabaseRow = (row: TimelogRow): Timelog => {
         reviewNote: row.review_note ?? undefined,
         status: row.status,
         crewConfirmationSnapshot: row.crew_confirmation_snapshot as TimelogChangeSnapshot | null,
+        approvals: approvals ?? timelog.approvals,
       };
 
       return updatedTimelog;
@@ -564,7 +601,8 @@ export const sendTimelogToApprovers = async (
     throw new Error('Nepodarilo se odeslat vykaz ke schvaleni.');
   }
 
-  return updateTimelogFromSupabaseRow(result.data);
+  const approvalRows = await fetchSupabaseTimelogApprovalRows(result.data.id);
+  return updateTimelogFromSupabaseRow(result.data, approvalRows);
 };
 
 export const resolveTimelogApproval = async (
@@ -598,7 +636,8 @@ export const resolveTimelogApproval = async (
     throw new Error('Nepodarilo se vyridit schvaleni vykazu.');
   }
 
-  return updateTimelogFromSupabaseRow(result.data);
+  const approvalRows = await fetchSupabaseTimelogApprovalRows(result.data.id);
+  return updateTimelogFromSupabaseRow(result.data, approvalRows);
 };
 
 export const returnTimelogToCrewCorrection = async (

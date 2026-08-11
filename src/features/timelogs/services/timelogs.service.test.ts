@@ -192,6 +192,32 @@ describe('timelogs.service write flow', () => {
     ]);
     const setQueryData = vi.fn();
     const invalidateQueries = vi.fn();
+    const approvalsOrder = vi.fn().mockResolvedValue({
+      data: [
+        {
+          id: 'approval-uuid-1',
+          approval_round_id: 'round-uuid-1',
+          timelog_id: 'timelog-uuid-1',
+          approver_profile_id: 'profile-approver-1',
+          status: 'pending',
+          requested_by_profile_id: 'profile-requester',
+          requested_at: '2026-08-11T10:05:00.000Z',
+          resolved_at: null,
+          superseded_at: null,
+          note: 'Prosím finálně schválit',
+        },
+      ],
+      error: null,
+    });
+    const approvalsEq = vi.fn(() => ({ order: approvalsOrder }));
+    const approvalsSelect = vi.fn(() => ({ eq: approvalsEq }));
+    const fromMock = vi.fn((table: string) => {
+      if (table !== 'timelog_approvals') {
+        throw new Error(`Unexpected table ${table}`);
+      }
+
+      return { select: approvalsSelect };
+    });
     const rpc = vi.fn().mockResolvedValue({
       data: {
         id: 'timelog-uuid-1',
@@ -216,7 +242,7 @@ describe('timelogs.service write flow', () => {
 
     vi.doMock('../../../lib/supabase', () => ({
       isSupabaseConfigured: true,
-      supabase: { rpc },
+      supabase: { from: fromMock, rpc },
     }));
 
     vi.doMock('../../../lib/supabase-mappers', () => ({
@@ -256,10 +282,21 @@ describe('timelogs.service write flow', () => {
       p_approver_profile_ids: ['profile-approver-1'],
       p_note: 'Prosím finálně schválit',
     });
+    expect(approvalsSelect).toHaveBeenCalledWith('*');
+    expect(approvalsEq).toHaveBeenCalledWith('timelog_id', 'timelog-uuid-1');
+    expect(approvalsOrder).toHaveBeenCalledWith('requested_at');
     expect(result.status).toBe('pending_coo');
     expect(result.reviewNote).toBe('Prosím finálně schválit');
+    expect(result.approvals).toEqual([
+      expect.objectContaining({
+        id: 'approval-uuid-1',
+        approverProfileId: 'profile-approver-1',
+        status: 'pending',
+      }),
+    ]);
     expect(snapshot.timelogs[0].status).toBe('pending_coo');
     expect(snapshot.timelogs[0].reviewNote).toBe('Prosím finálně schválit');
+    expect(snapshot.timelogs[0].approvals).toEqual(result.approvals);
     expect(setQueryData).toHaveBeenCalledWith(['timelogs'], snapshot.timelogs);
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['timelogs'] });
   });
@@ -293,6 +330,32 @@ describe('timelogs.service write flow', () => {
     ]);
     const setQueryData = vi.fn();
     const invalidateQueries = vi.fn();
+    const approvalsOrder = vi.fn().mockResolvedValue({
+      data: [
+        {
+          id: 'approval-uuid-1',
+          approval_round_id: 'round-uuid-1',
+          timelog_id: 'timelog-uuid-1',
+          approver_profile_id: 'profile-approver-1',
+          status: 'returned',
+          requested_by_profile_id: 'profile-requester',
+          requested_at: '2026-08-11T10:00:00.000Z',
+          resolved_at: '2026-08-11T10:06:00.000Z',
+          superseded_at: null,
+          note: 'Uprav prosím čas odchodu',
+        },
+      ],
+      error: null,
+    });
+    const approvalsEq = vi.fn(() => ({ order: approvalsOrder }));
+    const approvalsSelect = vi.fn(() => ({ eq: approvalsEq }));
+    const fromMock = vi.fn((table: string) => {
+      if (table !== 'timelog_approvals') {
+        throw new Error(`Unexpected table ${table}`);
+      }
+
+      return { select: approvalsSelect };
+    });
     const rpc = vi.fn().mockResolvedValue({
       data: {
         id: 'timelog-uuid-1',
@@ -317,7 +380,7 @@ describe('timelogs.service write flow', () => {
 
     vi.doMock('../../../lib/supabase', () => ({
       isSupabaseConfigured: true,
-      supabase: { rpc },
+      supabase: { from: fromMock, rpc },
     }));
 
     vi.doMock('../../../lib/supabase-mappers', () => ({
@@ -357,10 +420,22 @@ describe('timelogs.service write flow', () => {
       p_action: 'returned',
       p_note: 'Uprav prosím čas odchodu',
     });
+    expect(approvalsSelect).toHaveBeenCalledWith('*');
+    expect(approvalsEq).toHaveBeenCalledWith('timelog_id', 'timelog-uuid-1');
+    expect(approvalsOrder).toHaveBeenCalledWith('requested_at');
     expect(result.status).toBe('rejected');
     expect(result.reviewNote).toBe('Uprav prosím čas odchodu');
+    expect(result.approvals).toEqual([
+      expect.objectContaining({
+        id: 'approval-uuid-1',
+        approverProfileId: 'profile-approver-1',
+        status: 'returned',
+        resolvedAt: '2026-08-11T10:06:00.000Z',
+      }),
+    ]);
     expect(snapshot.timelogs[0].status).toBe('rejected');
     expect(snapshot.timelogs[0].reviewNote).toBe('Uprav prosím čas odchodu');
+    expect(snapshot.timelogs[0].approvals?.some((approval) => approval.status === 'pending')).toBe(false);
     expect(setQueryData).toHaveBeenCalledWith(['timelogs'], snapshot.timelogs);
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['timelogs'] });
   });

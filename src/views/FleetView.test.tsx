@@ -1,6 +1,14 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getLocalAppData, updateLocalAppState } from '../lib/app-data';
+import {
+  TEST_FLEET_CONTRACTORS,
+  TEST_FLEET_EVENTS,
+  TEST_FLEET_PROJECTS,
+  TEST_FLEET_RESERVATIONS,
+  TEST_FLEET_VEHICLES,
+} from '../test/fleetFixtures';
 import FleetView from './FleetView';
 
 vi.mock('../lib/app-config', () => ({
@@ -25,6 +33,14 @@ describe('FleetView', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-04-28T12:00:00+02:00'));
+    updateLocalAppState(() => ({
+      ...getLocalAppData(),
+      contractors: TEST_FLEET_CONTRACTORS,
+      fleetVehicles: TEST_FLEET_VEHICLES,
+      fleetReservations: TEST_FLEET_RESERVATIONS,
+      projects: TEST_FLEET_PROJECTS,
+      events: TEST_FLEET_EVENTS,
+    }));
   });
 
   afterEach(() => {

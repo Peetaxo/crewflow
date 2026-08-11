@@ -162,7 +162,7 @@ describe('InvoicesView', () => {
     expect(screen.getByRole('button', { name: /Pregenerovat PDF/i })).toBeInTheDocument();
   });
 
-  it('shows PowerApps approval state separately from paid invoice state', () => {
+  it('shows document approval state separately from paid invoice state', () => {
     mockInvoices = [createInvoiceForPdfTest(null)];
     mockInvoiceApprovals = [
       {

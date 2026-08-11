@@ -663,6 +663,7 @@ describe('events.service write flow', () => {
       meeting_point: null,
       show_day_types: false,
       allow_crew_time_proposal: false,
+      meal_allowance_enabled: false,
       day_types: null,
       phase_times: null,
       phase_schedules: null,
@@ -779,6 +780,8 @@ describe('events.service write flow', () => {
         time_from: '10:00',
         time_to: '16:00',
         day_type: 'instal',
+        meals: [],
+        meal: null,
         note: null,
       },
     ]);
@@ -948,6 +951,8 @@ describe('events.service write flow', () => {
         time_from: '08:00',
         time_to: '17:00',
         day_type: 'instal',
+        meals: [],
+        meal: null,
       },
       {
         timelog_id: 'timelog-row-1',
@@ -955,6 +960,8 @@ describe('events.service write flow', () => {
         time_from: '08:00',
         time_to: '17:00',
         day_type: 'instal',
+        meals: [],
+        meal: null,
       },
     ]);
     expect(eventsUpdate).toHaveBeenCalledWith({ crew_filled: 1 });

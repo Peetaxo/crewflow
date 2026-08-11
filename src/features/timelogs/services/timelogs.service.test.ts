@@ -457,7 +457,7 @@ describe('timelogs.service write flow', () => {
       note: 'Aktualizovano',
       days: [
         { d: '2026-04-11', f: '09:00', t: '15:00', type: 'provoz' },
-        { d: '2026-04-10', f: '08:00', t: '18:00', type: 'instal', note: 'Ranni priprava' },
+        { d: '2026-04-10', f: '08:00', t: '18:00', type: 'instal', meal: 'obed', note: 'Ranni priprava' },
       ],
     });
 
@@ -467,6 +467,7 @@ describe('timelogs.service write flow', () => {
       contractor_id: 'profile-uuid-1',
       km: 25,
       note: 'Aktualizovano',
+      review_note: null,
       status: 'draft',
     });
     expect(timelogUpdateEq).toHaveBeenCalledWith('id', 'timelog-row-1');
@@ -478,6 +479,8 @@ describe('timelogs.service write flow', () => {
         time_from: '08:00',
         time_to: '18:00',
         day_type: 'instal',
+        meals: ['obed'],
+        meal: 'obed',
         note: 'Ranni priprava',
       },
       {
@@ -486,11 +489,13 @@ describe('timelogs.service write flow', () => {
         time_from: '09:00',
         time_to: '15:00',
         day_type: 'provoz',
+        meals: [],
+        meal: null,
         note: null,
       },
     ]);
     expect(updated.days).toEqual([
-      { d: '2026-04-10', f: '08:00', t: '18:00', type: 'instal', note: 'Ranni priprava' },
+      { d: '2026-04-10', f: '08:00', t: '18:00', type: 'instal', meal: 'obed', note: 'Ranni priprava' },
       { d: '2026-04-11', f: '09:00', t: '15:00', type: 'provoz' },
     ]);
     expect(snapshot.timelogs[0].days).toEqual(updated.days);
@@ -619,6 +624,7 @@ describe('timelogs.service write flow', () => {
       contractor_id: 'profile-uuid-1',
       km: 0,
       note: '',
+      review_note: null,
       status: 'draft',
     });
     expect(timelogUpdate).toHaveBeenNthCalledWith(2, { status: 'pending_ch' });
@@ -641,15 +647,25 @@ describe('timelogs.service write flow', () => {
     await saveTimelog({
       ...snapshot.timelogs[0],
       days: [{ d: '2026-04-10', f: '10:00', t: '18:00', type: 'instal' }],
-      note: 'Upraveno CH',
+      note: '',
+      reviewNote: 'Upraveno CH',
       status: 'pending_crew_confirmation',
-    });
+    } as Timelog & { reviewNote: string });
 
     expect(timelogUpdate).toHaveBeenNthCalledWith(1, {
       event_id: 'event-row-1',
       contractor_id: 'profile-uuid-1',
+      crew_confirmation_snapshot: expect.objectContaining({
+        changedAt: expect.any(String),
+        before: expect.objectContaining({
+          days: [expect.objectContaining({ d: '2026-04-10', f: '09:00', t: '17:00', type: 'provoz' })],
+          km: 0,
+          note: '',
+        }),
+      }),
       km: 0,
-      note: 'Upraveno CH',
+      note: '',
+      review_note: 'Upraveno CH',
       status: 'pending_ch',
     });
     expect(timelogUpdate).toHaveBeenNthCalledWith(2, { status: 'pending_crew_confirmation' });
@@ -661,6 +677,14 @@ describe('timelogs.service write flow', () => {
       'timelog-status-select',
     ]);
     expect(snapshot.timelogs[0].status).toBe('pending_crew_confirmation');
+    expect(snapshot.timelogs[0].note).toBe('');
+    expect((snapshot.timelogs[0] as Timelog & { reviewNote?: string }).reviewNote).toBe('Upraveno CH');
+    expect(snapshot.timelogs[0].crewConfirmationSnapshot).toEqual(expect.objectContaining({
+      changedAt: expect.any(String),
+      before: expect.objectContaining({
+        days: [expect.objectContaining({ d: '2026-04-10', f: '09:00', t: '17:00', type: 'provoz' })],
+      }),
+    }));
     expect(snapshot.timelogs[0].days).toEqual([
       { d: '2026-04-10', f: '10:00', t: '18:00', type: 'instal' },
     ]);
@@ -779,6 +803,7 @@ describe('timelogs.service write flow', () => {
       contractor_id: 'profile-uuid-1',
       km: 0,
       note: '',
+      review_note: null,
       status: 'draft',
     });
     expect(timelogUpdateEq).toHaveBeenCalledWith('id', 'timelog-row-1');
@@ -964,8 +989,17 @@ describe('timelogs.service write flow', () => {
     expect(timelogInsert).toHaveBeenCalledWith({
       event_id: 'event-row-1',
       contractor_id: 'profile-uuid-1',
+      crew_confirmation_snapshot: expect.objectContaining({
+        changedAt: expect.any(String),
+        before: {
+          days: [],
+          km: 0,
+          note: '',
+        },
+      }),
       km: 0,
       note: 'Zadano CH',
+      review_note: null,
       status: 'pending_ch',
     });
     expect(timelogDaysInsert).toHaveBeenCalledWith([
@@ -975,6 +1009,8 @@ describe('timelogs.service write flow', () => {
         time_from: '14:00',
         time_to: '17:00',
         day_type: 'provoz',
+        meals: [],
+        meal: null,
         note: null,
       },
     ]);

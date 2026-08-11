@@ -38,7 +38,10 @@ describe('MobileCrewNav', () => {
     expect(screen.getByText('Přehled')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Přehled' }).querySelector('svg.lucide-house')).toBeInTheDocument();
     expect(screen.getByText('Výkazy')).toBeInTheDocument();
+    expect(screen.getByText('Faktury')).toBeInTheDocument();
     expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.queryByText('Účtenky')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Moje účtenky' })).not.toBeInTheDocument();
     expect(screen.queryByText('Směny')).not.toBeInTheDocument();
     expect(screen.queryByText('Moje směny')).not.toBeInTheDocument();
   });
@@ -53,5 +56,41 @@ describe('MobileCrewNav', () => {
     expect(setSelectedEventId).toHaveBeenCalledWith(null);
     expect(setSelectedProjectIdForStats).toHaveBeenCalledWith(null);
     expect(setSelectedClientIdForStats).toHaveBeenCalledWith(null);
+  });
+
+  it('renders compact management navigation for CH and COO roles', () => {
+    currentTab = 'timelogs';
+
+    render(<MobileCrewNav role="crewhead" badgeCounts={{ timelogs: 4 }} />);
+
+    expect(screen.getByRole('navigation', { name: 'Mobilní navigace Management' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Přehled' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Akce' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Schvalování' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: 'Projekty' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Crew' })).toBeInTheDocument();
+    expect(screen.getByText('4')).toBeInTheDocument();
+    expect(screen.queryByText('Faktury')).not.toBeInTheDocument();
+    expect(screen.queryByText('Účtenky')).not.toBeInTheDocument();
+  });
+
+  it('switches management approval navigation to the all timelogs tab', () => {
+    render(<MobileCrewNav role="coo" badgeCounts={{}} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Schvalování' }));
+
+    expect(setCurrentTab).toHaveBeenCalledWith('timelogs');
+    expect(setSelectedContractorProfileId).toHaveBeenCalledWith(null);
+    expect(setSelectedEventId).toHaveBeenCalledWith(null);
+  });
+
+  it('switches management project navigation to projects', () => {
+    render(<MobileCrewNav role="crewhead" badgeCounts={{}} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Projekty' }));
+
+    expect(setCurrentTab).toHaveBeenCalledWith('projects');
+    expect(setSelectedContractorProfileId).toHaveBeenCalledWith(null);
+    expect(setSelectedEventId).toHaveBeenCalledWith(null);
   });
 });

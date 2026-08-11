@@ -1,33 +1,105 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Calendar, CheckCircle2, Clock, Receipt, WalletCards } from 'lucide-react';
+import { AlertCircle, ArrowRight, Calendar, CheckCircle2, Clock, WalletCards } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { format, parseISO } from 'date-fns';
 import { useAuth } from '../app/providers/useAuth';
 import { useAppContext } from '../context/useAppContext';
-import { Contractor, Event, EventId } from '../types';
-import { calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
-import StatusBadge from '../components/shared/StatusBadge';
+import { KM_RATE } from '../data';
+import { Contractor, Event, EventId, Timelog } from '../types';
+import { calculateMealAllowance, calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
 import { useEventsQuery } from '../features/events/queries/useEventsQuery';
 import ShiftCard from '../components/shared/ShiftCard';
 import { useTimelogsQuery } from '../features/timelogs/queries/useTimelogsQuery';
 import { getProjects, subscribeToProjectChanges } from '../features/projects/services/projects.service';
 import { getContractors, subscribeToCrewChanges } from '../features/crew/services/crew.service';
-import { useInvoicesQuery } from '../features/invoices/queries/useInvoicesQuery';
 import { categorizeCrewTimelogs, resolveShiftProject } from '../features/crew/services/crew-shift-display';
 import MobileSettingsButton from '../components/layout/MobileSettingsButton';
+import { buildTimelogChangeSummary } from '../features/timelogs/services/timelog-change-summary';
+
+const formatActionRequiredCount = (count: number) => {
+  if (count === 1) return '1 výkaz čeká na tebe';
+  if (count >= 2 && count <= 4) return `${count} výkazy čekají na tebe`;
+  return `${count} výkazů čeká na tebe`;
+};
+
+const getActionRequiredLabel = (status: Timelog['status']) => (
+  status === 'pending_crew_confirmation'
+    ? 'Čeká na tvoje potvrzení'
+    : 'Vráceno k opravě'
+);
+
+type ChartPeriod = 'month' | 'quarter' | 'year';
+type CrewOverviewTimelogTab = 'drafts' | 'processing' | 'invoiced';
+
+const isEarnedTimelog = (timelog: Timelog) => (
+  timelog.status === 'approved'
+  || timelog.status === 'invoiced'
+  || timelog.status === 'paid'
+);
+
+const getChartBucket = (date: Date, period: ChartPeriod): { key: string; sortDate: Date } => {
+  if (period === 'month') {
+    return {
+      key: format(date, 'MMM yyyy'),
+      sortDate: new Date(date.getFullYear(), date.getMonth(), 1),
+    };
+  }
+
+  if (period === 'quarter') {
+    const quarter = Math.floor(date.getMonth() / 3);
+    return {
+      key: `Q${quarter + 1} ${date.getFullYear()}`,
+      sortDate: new Date(date.getFullYear(), quarter * 3, 1),
+    };
+  }
+
+  return {
+    key: format(date, 'yyyy'),
+    sortDate: new Date(date.getFullYear(), 0, 1),
+  };
+};
+
+const formatActionRequiredEventDate = (event: Event) => {
+  const start = parseISO(event.startDate);
+
+  if (!event.endDate || event.endDate === event.startDate) {
+    return format(start, 'd. M. yyyy');
+  }
+
+  const end = parseISO(event.endDate);
+  return `${format(start, 'd. M.')} - ${format(end, 'd. M. yyyy')}`;
+};
+
+const calculateTimelogPayoutAmount = (timelog: Timelog, contractor: Contractor | null, event: Event | null): number => {
+  if (!contractor) return 0;
+
+  const hours = calculateTotalHours(timelog.days);
+  const amountHours = Math.round(hours * contractor.rate);
+  const amountKm = Math.round(timelog.km * KM_RATE);
+  const amountMeals = Math.round(calculateMealAllowance(timelog.days, { enabled: Boolean(event?.mealAllowanceEnabled) }));
+
+  return amountHours + amountKm + amountMeals;
+};
 
 const MyShiftsView = () => {
-  const { darkMode, searchQuery, setCurrentTab, setEventTab, setSelectedEventId } = useAppContext();
+  const {
+    darkMode,
+    searchQuery,
+    setCurrentTab,
+    setEditingTimelog,
+    setEventTab,
+    setSelectedEventId,
+    setTimelogFilter,
+  } = useAppContext();
   const { currentProfileId, profile } = useAuth();
   const eventsQuery = useEventsQuery();
   const timelogsQuery = useTimelogsQuery();
-  const invoicesQuery = useInvoicesQuery();
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [projects, setProjects] = useState(() => getProjects() ?? []);
   const me = contractors.find((item) => item.profileId === currentProfileId) ?? null;
-  const [activeTab, setActiveTab] = useState<'upcoming' | 'processing' | 'invoiced' | 'invoices'>('upcoming');
-  const [chartPeriod, setChartPeriod] = useState<'month' | 'quarter' | 'year'>('month');
+  const [activeTab, setActiveTab] = useState<CrewOverviewTimelogTab>('drafts');
+  const [chartPeriod, setChartPeriod] = useState<ChartPeriod>('month');
 
   const loadData = useCallback(() => {
     setContractors(getContractors() ?? []);
@@ -35,7 +107,7 @@ const MyShiftsView = () => {
 
   useEffect(() => {
     loadData();
-  }, [eventsQuery.data, invoicesQuery.data, loadData, timelogsQuery.data]);
+  }, [eventsQuery.data, loadData, timelogsQuery.data]);
 
   useEffect(() => subscribeToCrewChanges(loadData), [loadData]);
   useEffect(() => subscribeToProjectChanges(() => setProjects(getProjects() ?? [])), []);
@@ -44,59 +116,70 @@ const MyShiftsView = () => {
     events.find((event) => event.id === eventId || event.supabaseId === eventId) ?? null
   ), [events]);
   const timelogs = timelogsQuery.data ?? [];
-  const invoices = invoicesQuery.data ?? [];
   const meProfileId = currentProfileId ?? me?.profileId ?? null;
   const displayName = me?.name || [profile?.firstName, profile?.lastName].filter(Boolean).join(' ') || 'Crew';
   const myTimelogs = timelogs.filter((timelog) => timelog.contractorProfileId === meProfileId);
-  const myInvoices = invoices.filter((invoice) => invoice.contractorProfileId === meProfileId);
 
   const categorized = useMemo(() => categorizeCrewTimelogs(myTimelogs, events), [myTimelogs, events]);
 
-  const stats = useMemo(() => ({
-    totalEarned: myInvoices.filter((invoice) => invoice.status === 'paid').reduce((sum, invoice) => sum + invoice.total, 0),
-    toPay: myInvoices.filter((invoice) => invoice.status === 'sent').reduce((sum, invoice) => sum + invoice.total, 0),
-    pendingHours: categorized.processing.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0),
-    totalHours: categorized.invoiced.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0),
-  }), [myInvoices, categorized]);
+  const stats = useMemo(() => {
+    const earnedTimelogs = myTimelogs.filter(isEarnedTimelog);
+    const pendingApprovalTimelogs = myTimelogs.filter((timelog) => timelog.status === 'pending_ch' || timelog.status === 'pending_coo');
+
+    const calculateTimelogAmount = (timelog: Timelog) => (
+      calculateTimelogPayoutAmount(timelog, me, findEvent(timelog.eid))
+    );
+
+    const earnedAmount = earnedTimelogs.reduce((sum, timelog) => sum + calculateTimelogAmount(timelog), 0);
+    const pendingApprovalAmount = pendingApprovalTimelogs.reduce((sum, timelog) => sum + calculateTimelogAmount(timelog), 0);
+
+    return {
+      earnedAmount,
+      pendingApprovalAmount,
+    };
+  }, [myTimelogs, me, findEvent]);
 
   const chartData = useMemo(() => {
     const data: Record<string, { total: number; date: Date }> = {};
 
-    myInvoices.forEach((invoice) => {
-      if (!invoice.sentAt) return;
+    const addAmount = (dateValue: string, amount: number) => {
+      const date = parseISO(dateValue);
+      if (Number.isNaN(date.getTime())) return;
 
-      const date = parseISO(invoice.sentAt);
-      let key: string;
-      let sortDate: Date;
+      const { key, sortDate } = getChartBucket(date, chartPeriod);
+      if (!data[key]) data[key] = { total: 0, date: sortDate };
+      data[key].total += amount;
+    };
 
-      if (chartPeriod === 'month') {
-        key = format(date, 'MMM yyyy');
-        sortDate = new Date(date.getFullYear(), date.getMonth(), 1);
-      } else if (chartPeriod === 'quarter') {
-        const quarter = Math.floor(date.getMonth() / 3);
-        key = `Q${quarter + 1} ${date.getFullYear()}`;
-        sortDate = new Date(date.getFullYear(), quarter * 3, 1);
-      } else {
-        key = format(date, 'yyyy');
-        sortDate = new Date(date.getFullYear(), 0, 1);
+    myTimelogs.filter(isEarnedTimelog).forEach((timelog) => {
+      const event = findEvent(timelog.eid);
+
+      if (!me || timelog.days.length === 0) {
+        const fallbackDate = timelog.days[0]?.d ?? event?.startDate;
+        if (fallbackDate) addAmount(fallbackDate, calculateTimelogPayoutAmount(timelog, me, event));
+        return;
       }
 
-      if (!data[key]) data[key] = { total: 0, date: sortDate };
-      data[key].total += invoice.total;
+      timelog.days.forEach((day, index) => {
+        const amountHours = Math.round(calculateTotalHours([day]) * me.rate);
+        const amountMeals = Math.round(calculateMealAllowance([day], { enabled: Boolean(event?.mealAllowanceEnabled) }));
+        const amountKm = index === 0 ? Math.round(timelog.km * KM_RATE) : 0;
+
+        addAmount(day.d, amountHours + amountMeals + amountKm);
+      });
     });
 
     return Object.entries(data)
       .map(([name, { total, date }]) => ({ name, total, date }))
       .sort((a, b) => a.date.getTime() - b.date.getTime());
-  }, [myInvoices, chartPeriod]);
+  }, [myTimelogs, chartPeriod, me, findEvent]);
 
   const filteredData = useMemo(() => {
     if (!searchQuery) {
       return {
-        upcoming: categorized.upcoming,
+        drafts: categorized.drafts,
         processing: categorized.processing,
         invoiced: categorized.invoiced,
-        invoices: myInvoices,
       };
     }
 
@@ -113,17 +196,22 @@ const MyShiftsView = () => {
     });
 
     return {
-      upcoming: filterShifts(categorized.upcoming),
+      drafts: filterShifts(categorized.drafts),
       processing: filterShifts(categorized.processing),
       invoiced: filterShifts(categorized.invoiced),
-      invoices: myInvoices.filter((invoice) => invoice.id.toLowerCase().includes(query) || invoice.job.toLowerCase().includes(query)),
     };
-  }, [searchQuery, categorized, myInvoices, findEvent, projects]);
+  }, [searchQuery, categorized, findEvent, projects]);
 
   const openEventDetail = (event: Event) => {
     setCurrentTab('events');
     setSelectedEventId(event.supabaseId ?? event.id);
     setEventTab('overview');
+  };
+
+  const openTimelogResolution = (timelog: Timelog) => {
+    setTimelogFilter(timelog.status);
+    setEditingTimelog(timelog);
+    setCurrentTab('my-timelogs');
   };
 
   const nextShift = useMemo(() => (
@@ -148,34 +236,47 @@ const MyShiftsView = () => {
       })[0] ?? null
   ), [categorized.upcoming, findEvent, projects]);
 
+  const actionRequiredTimelogs = useMemo(() => (
+    myTimelogs
+      .filter((timelog) => timelog.status === 'rejected' || timelog.status === 'pending_crew_confirmation')
+      .flatMap((timelog) => {
+        const event = findEvent(timelog.eid);
+        const project = resolveShiftProject(event, projects);
+        if (!event || !project) return [];
+
+        return [{
+          timelog,
+          event,
+          project,
+          hours: calculateTotalHours(timelog.days),
+          changeSummary: buildTimelogChangeSummary(timelog),
+        }];
+      })
+      .sort((a, b) => {
+        if (a.timelog.status !== b.timelog.status) {
+          return a.timelog.status === 'rejected' ? -1 : 1;
+        }
+
+        return a.event.startDate.localeCompare(b.event.startDate);
+      })
+  ), [findEvent, myTimelogs, projects]);
+
   const overviewStats = [
     {
       label: 'Vyděláno',
-      value: formatCurrency(stats.totalEarned),
-      sub: 'Proplaceno',
-      icon: Receipt,
-      tone: 'success',
-    },
-    {
-      label: 'K vyplacení',
-      value: formatCurrency(stats.toPay),
-      sub: 'Odeslané faktury',
+      value: formatCurrency(stats.earnedAmount),
+      sub: 'Finálně schváleno',
       icon: WalletCards,
       tone: 'info',
+      targetTab: 'invoiced' as const,
     },
     {
       label: 'Ke schválení',
-      value: `${stats.pendingHours.toFixed(1)} h`,
+      value: formatCurrency(stats.pendingApprovalAmount),
       sub: 'Čeká na kontrolu',
       icon: CheckCircle2,
       tone: 'warning',
-    },
-    {
-      label: 'Odpracováno',
-      value: `${stats.totalHours.toFixed(1)} h`,
-      sub: 'Schváleno',
-      icon: Calendar,
-      tone: 'neutral',
+      targetTab: 'processing' as const,
     },
   ];
 
@@ -229,9 +330,63 @@ const MyShiftsView = () => {
         )}
       </section>
 
+      {actionRequiredTimelogs.length > 0 && (
+        <section className="nodu-my-shifts-action-panel" aria-labelledby="my-shifts-action-title">
+          <div className="nodu-my-shifts-action-header">
+            <div className="nodu-my-shifts-action-icon">
+              <AlertCircle size={18} aria-hidden="true" />
+            </div>
+            <div className="min-w-0">
+              <div className="nodu-my-shifts-kicker">Vyžaduje akci</div>
+              <h2 id="my-shifts-action-title">Výkazy k dořešení</h2>
+            </div>
+            <span>{actionRequiredTimelogs.length}</span>
+          </div>
+          <p className="nodu-my-shifts-action-copy">{formatActionRequiredCount(actionRequiredTimelogs.length)}</p>
+          <div className="nodu-my-shifts-action-list">
+            {actionRequiredTimelogs.slice(0, 2).map(({ timelog, event, project, hours, changeSummary }) => {
+              const returnedReason = timelog.reviewNote?.trim() || timelog.note.trim();
+
+              return (
+                <button
+                key={timelog.id}
+                type="button"
+                className="nodu-my-shifts-action-row"
+                aria-label={timelog.status === 'rejected' ? `Otevřít vrácený výkaz ${event.name}` : `Otevřít výkaz k potvrzení ${event.name}`}
+                onClick={() => openTimelogResolution(timelog)}
+              >
+                <div className="min-w-0">
+                  <div className="nodu-my-shifts-action-row-title">{event.name}</div>
+                  <div className="nodu-my-shifts-action-row-meta">
+                    {formatActionRequiredEventDate(event)}
+                  </div>
+                  <div className="nodu-my-shifts-action-row-meta">
+                    {project.client} · {hours.toFixed(1)} h
+                  </div>
+                  {timelog.status === 'rejected' && returnedReason && (
+                    <div className="nodu-my-shifts-action-row-note">{returnedReason}</div>
+                  )}
+                  {timelog.status === 'pending_crew_confirmation' && changeSummary[0] && (
+                    <div className="nodu-my-shifts-action-row-note">{changeSummary[0]}</div>
+                  )}
+                </div>
+                <span>{getActionRequiredLabel(timelog.status)}</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       <div className="nodu-my-shifts-stats-grid">
         {overviewStats.map((stat) => (
-          <div key={stat.label} className={`nodu-my-shifts-stat-card nodu-my-shifts-stat-card--${stat.tone}`}>
+          <button
+            key={stat.label}
+            type="button"
+            className={`nodu-my-shifts-stat-card nodu-my-shifts-stat-card--${stat.tone}`}
+            aria-label={`${stat.label}: ${stat.value}. ${stat.sub}`}
+            onClick={() => setActiveTab(stat.targetTab)}
+          >
             <div className="nodu-my-shifts-stat-topline">
               <div className="nodu-my-shifts-stat-icon">
                 <stat.icon size={17} aria-hidden="true" />
@@ -240,7 +395,7 @@ const MyShiftsView = () => {
             </div>
             <div className="nodu-my-shifts-stat-value">{stat.value}</div>
             <p>{stat.sub}</p>
-          </div>
+          </button>
         ))}
       </div>
 
@@ -248,16 +403,15 @@ const MyShiftsView = () => {
         <div className="nodu-my-shifts-section-header">
           <div>
             <div className="nodu-my-shifts-kicker">Workflow</div>
-            <h2 id="my-shifts-list-title">Směny a výkazy</h2>
+            <h2 id="my-shifts-list-title">Výkazy</h2>
           </div>
         </div>
 
         <div className="nodu-my-shifts-tabs">
           {[
-            { id: 'upcoming' as const, lbl: 'Nadcházející', count: categorized.upcoming.length },
-            { id: 'processing' as const, lbl: 'Zpracování', count: categorized.processing.length },
+            { id: 'drafts' as const, lbl: 'Rozpracované', count: categorized.drafts.length },
+            { id: 'processing' as const, lbl: 'Ke kontrole', count: categorized.processing.length },
             { id: 'invoiced' as const, lbl: 'Vyúčtované', count: categorized.invoiced.length },
-            { id: 'invoices' as const, lbl: 'Moje faktury', count: myInvoices.length },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -271,46 +425,22 @@ const MyShiftsView = () => {
         </div>
 
         <AnimatePresence mode="wait">
-          {activeTab !== 'invoices' ? (
-            <motion.div key={activeTab} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="nodu-my-shifts-card-grid">
-              {filteredData[activeTab].map((timelog) => {
-                const event = findEvent(timelog.eid);
-                const project = resolveShiftProject(event, projects);
-                if (!event || !project) return null;
-                return <ShiftCard key={timelog.id} timelog={timelog} event={event} project={project} onClick={() => openEventDetail(event)} />;
-              })}
-              {filteredData[activeTab].length === 0 && <div className="nodu-my-shifts-empty">{searchQuery ? 'Nebyly nalezeny žádné výsledky' : 'Žádné záznamy'}</div>}
-            </motion.div>
-          ) : (
-            <motion.div key="invoices" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="space-y-3">
-              {filteredData.invoices.map((invoice) => (
-                <div key={invoice.id} className="nodu-my-shifts-invoice-row">
-                  <div className="flex items-center gap-3">
-                    <div className="nodu-my-shifts-invoice-icon"><Receipt size={18} aria-hidden="true" /></div>
-                    <div>
-                      <div className="text-xs font-bold text-[var(--nodu-text)]">{invoice.id}</div>
-                      <div className="text-[10px] text-[var(--nodu-text-soft)]">{invoice.job} · {invoice.sentAt ? formatShortDate(invoice.sentAt) : '-'}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="text-right">
-                      <div className="text-xs font-bold text-[var(--nodu-text)]">{formatCurrency(invoice.total)}</div>
-                      <div className="text-[10px] text-[var(--nodu-text-soft)]">{invoice.hours}h + {invoice.km}km</div>
-                    </div>
-                    <StatusBadge status={invoice.status} />
-                  </div>
-                </div>
-              ))}
-              {filteredData.invoices.length === 0 && <div className="nodu-my-shifts-empty">{searchQuery ? 'Nebyly nalezeny žádné výsledky' : 'Zatím žádné faktury'}</div>}
-            </motion.div>
-          )}
+          <motion.div key={activeTab} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="nodu-my-shifts-card-grid">
+            {filteredData[activeTab].map((timelog) => {
+              const event = findEvent(timelog.eid);
+              const project = resolveShiftProject(event, projects);
+              if (!event || !project) return null;
+              return <ShiftCard key={timelog.id} timelog={timelog} event={event} project={project} onClick={() => openEventDetail(event)} />;
+            })}
+            {filteredData[activeTab].length === 0 && <div className="nodu-my-shifts-empty">{searchQuery ? 'Nebyly nalezeny žádné výsledky' : 'Žádné záznamy'}</div>}
+          </motion.div>
         </AnimatePresence>
       </section>
 
       <div className="nodu-my-shifts-billing-panel">
         <div className="mb-6 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
           <div>
-            <h2 className="text-sm font-bold uppercase tracking-wider text-[var(--nodu-text)]">Fakturace za dané období</h2>
+            <h2 className="text-sm font-bold uppercase tracking-wider text-[var(--nodu-text)]">Příjmy za období</h2>
             <p className="text-xs text-[var(--nodu-text-soft)]">Přehled vašich příjmů</p>
           </div>
           <div className="flex gap-1 rounded-xl border border-[var(--nodu-border)] bg-white p-1">
@@ -327,7 +457,7 @@ const MyShiftsView = () => {
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={darkMode ? '#1f2937' : '#f3f4f6'} />
               <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9ca3af' }} dy={10} />
               <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9ca3af' }} tickFormatter={(value) => `${value / 1000}k`} />
-              <Tooltip cursor={{ fill: darkMode ? '#111827' : '#f9fafb' }} contentStyle={{ backgroundColor: darkMode ? '#111827' : '#fff', border: 'none', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '12px' }} formatter={(value: number) => [formatCurrency(value), 'Fakturovano']} />
+              <Tooltip cursor={{ fill: darkMode ? '#111827' : '#f9fafb' }} contentStyle={{ backgroundColor: darkMode ? '#111827' : '#fff', border: 'none', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '12px' }} formatter={(value: number) => [formatCurrency(value), 'Příjem']} />
               <Bar dataKey="total" fill="var(--nodu-accent)" radius={[4, 4, 0, 0]} barSize={40} />
             </BarChart>
           </ResponsiveContainer>

@@ -1,11 +1,17 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import { ArrowRight, Pencil, Plus, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '../components/ui/button';
 import { useAppContext } from '../context/useAppContext';
 import { ProjectFilter, createEmptyProject, getProjectById, getProjectRows, subscribeToProjectChanges } from '../features/projects/services/projects.service';
 import { formatCurrency } from '../utils';
 import ProjectStatsView from './ProjectStatsView';
+
+const formatProjectEventCount = (count: number) => {
+  if (count === 1) return '1 akce';
+  if (count >= 2 && count <= 4) return `${count} akce`;
+  return `${count} akcí`;
+};
 
 const ProjectsView = () => {
   const {
@@ -34,20 +40,33 @@ const ProjectsView = () => {
     return <ProjectStatsView />;
   }
 
+  const openProject = (projectId: string) => setSelectedProjectIdForStats(projectId);
+
+  const editProject = (project: ReturnType<typeof getProjectRows>[number]) => {
+    const fullProject = getProjectById(project.id);
+    setEditingProject(fullProject ?? {
+      id: project.id,
+      name: project.name,
+      client: project.client,
+      note: '',
+      createdAt: project.createdAt,
+    });
+  };
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <div className="nodu-dashboard-kicker">Project Ledger</div>
+          <div className="nodu-dashboard-kicker">Management</div>
           <h1 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--nodu-text)]">Projekty</h1>
-          <p className="mt-1 text-sm text-[color:var(--nodu-text-soft)]">Job Number muze mit vice akci a tady je uvidite pohromade.</p>
+          <p className="mt-1 text-sm text-[color:var(--nodu-text-soft)]">Job number a související akce pohromadě.</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
             {[
-              { id: 'all', label: 'Vse' },
-              { id: 'upcoming', label: 'Nadchazejici' },
+              { id: 'all', label: 'Vše' },
+              { id: 'upcoming', label: 'Nadcházející' },
               { id: 'past', label: 'Uplynule' },
             ].map((item) => (
               <button
@@ -69,12 +88,85 @@ const ProjectsView = () => {
             size="sm"
             className="text-xs"
           >
-            + Novy projekt
+            <Plus size={14} />
+            Nový projekt
           </Button>
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-[28px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] shadow-[0_18px_42px_rgba(47,38,31,0.08)]">
+      <div className="space-y-3 lg:hidden">
+        {projectRows.map((project) => (
+          <article
+            key={project.id}
+            className="rounded-[26px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] p-4 shadow-[0_18px_42px_rgba(47,38,31,0.08)]"
+          >
+            <button
+              type="button"
+              className="block w-full text-left"
+              onClick={() => openProject(project.id)}
+            >
+              <div className="mb-3 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="mb-2 inline-flex rounded-md border border-[color:rgb(var(--nodu-accent-rgb)/0.24)] bg-[color:rgb(var(--nodu-accent-rgb)/0.08)] px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-[color:var(--nodu-accent)]">
+                    {project.id}
+                  </div>
+                  <h2 className="text-lg font-semibold leading-tight tracking-[-0.02em] text-[color:var(--nodu-text)]">
+                    {project.name || project.id}
+                  </h2>
+                  <p className="mt-1 text-sm font-medium text-[color:var(--nodu-text-soft)]">
+                    {project.client || 'Klient není vyplněný'}
+                  </p>
+                </div>
+                <span className="shrink-0 rounded-full bg-[color:rgb(var(--nodu-text-rgb)/0.06)] px-3 py-1 text-xs font-semibold text-[color:var(--nodu-text)]">
+                  {formatProjectEventCount(project.eventCount)}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-2xl bg-[color:rgb(var(--nodu-text-rgb)/0.035)] px-3 py-2">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--nodu-text-soft)]">Akce</div>
+                  <div className="mt-1 text-sm font-semibold text-[color:var(--nodu-text)]">{formatProjectEventCount(project.eventCount)}</div>
+                </div>
+                <div className="rounded-2xl bg-[color:rgb(var(--nodu-text-rgb)/0.035)] px-3 py-2">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--nodu-text-soft)]">Crew</div>
+                  <div className="mt-1 text-sm font-semibold text-[color:var(--nodu-text)]">{formatCurrency(project.crewCost)}</div>
+                </div>
+              </div>
+            </button>
+
+            <div className="mt-4 flex items-center justify-between gap-2 border-t border-[color:rgb(var(--nodu-text-rgb)/0.08)] pt-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-10 flex-1 text-xs"
+                onClick={() => openProject(project.id)}
+              >
+                Otevřít detail
+                <ArrowRight size={14} />
+              </Button>
+              <button
+                type="button"
+                onClick={() => editProject(project)}
+                className="flex h-10 w-10 items-center justify-center rounded-xl border border-[color:var(--nodu-border)] bg-white text-[color:var(--nodu-text-soft)] shadow-[0_10px_24px_rgba(47,38,31,0.08)]"
+                aria-label={`Upravit projekt ${project.id}`}
+              >
+                <Pencil size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeleteConfirm({ type: 'project', id: project.id, name: project.name })}
+                className="flex h-10 w-10 items-center justify-center rounded-xl border border-[rgba(212,93,55,0.2)] bg-[rgba(212,93,55,0.04)] text-[#c45c39] shadow-[0_10px_24px_rgba(47,38,31,0.06)]"
+                aria-label={`Smazat projekt ${project.id}`}
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+
+      <div className="hidden overflow-hidden rounded-[28px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] shadow-[0_18px_42px_rgba(47,38,31,0.08)] lg:block">
         <table className="w-full border-collapse text-left">
           <thead>
             <tr className="border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] text-[10px] uppercase tracking-wider text-[color:var(--nodu-text-soft)]">
@@ -92,11 +184,10 @@ const ProjectsView = () => {
               <tr
                 key={project.id}
                 className="cursor-pointer transition-colors hover:bg-[color:rgb(var(--nodu-accent-rgb)/0.04)]"
-                onClick={() => setSelectedProjectIdForStats(project.id)}
+                onClick={() => openProject(project.id)}
               >
                 <td className="px-4 py-3">
                   <div className="text-xs font-semibold text-[color:var(--nodu-accent)]">{project.id}</div>
-                  <div className="text-[10px] text-[color:var(--nodu-text-soft)]">{project.createdAt}</div>
                 </td>
                 <td className="px-4 py-3">
                   <div className="text-xs font-semibold text-[color:var(--nodu-text)]">{project.name}</div>
@@ -104,7 +195,7 @@ const ProjectsView = () => {
                 <td className="px-4 py-3">
                   <div className="text-xs text-[color:var(--nodu-text)]">{project.client || '—'}</div>
                 </td>
-                <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text)]">{project.eventCount}</td>
+                <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text)]">{formatProjectEventCount(project.eventCount)}</td>
                 <td className="px-4 py-3">
                   <div className="text-xs font-semibold text-[color:var(--nodu-text)]">{formatCurrency(project.crewCost)}</div>
                 </td>
@@ -113,14 +204,7 @@ const ProjectsView = () => {
                     <Button
                       onClick={(event) => {
                         event.stopPropagation();
-                        const fullProject = getProjectById(project.id);
-                        setEditingProject(fullProject ?? {
-                          id: project.id,
-                          name: project.name,
-                          client: project.client,
-                          note: '',
-                          createdAt: project.createdAt,
-                        });
+                        editProject(project);
                       }}
                       variant="outline"
                       size="sm"
@@ -147,7 +231,7 @@ const ProjectsView = () => {
 
         {projectRows.length === 0 && (
           <div className="px-6 py-12 text-center text-sm text-[color:var(--nodu-text-soft)]">
-            Pro zvoleny filtr tu zatim nejsou zadne projekty.
+            Pro zvolený filtr tu zatím nejsou žádné projekty.
           </div>
         )}
       </div>

@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getLocalAppData, updateLocalAppState } from '../../../lib/app-data';
 import {
+  TEST_FLEET_EVENTS,
+  TEST_FLEET_PROJECTS,
+} from '../../../test/fleetFixtures';
+import {
   createWarehouseReservation,
   findWarehouseReservationConflicts,
   getWarehouseCatalogRows,
@@ -30,7 +34,11 @@ describe('warehouse service', () => {
   beforeEach(() => {
     supabaseMockState.isSupabaseConfigured = false;
     supabaseMockState.supabase = null;
-    updateLocalAppState(() => getLocalAppData());
+    updateLocalAppState(() => ({
+      ...getLocalAppData(),
+      projects: TEST_FLEET_PROJECTS,
+      events: TEST_FLEET_EVENTS,
+    }));
   });
 
   it('returns imported Booqable items as catalog rows', () => {

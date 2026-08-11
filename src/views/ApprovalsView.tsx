@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { useAppContext } from '../context/useAppContext';
 import { KM_RATE } from '../data';
 import { Contractor, EntityId, Event, EventId, Timelog } from '../types';
-import { calculateDayHours, calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
+import { calculateDayHours, calculateMealAllowance, calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';
 import {
   approveAllTimelogsForEvent,
@@ -131,7 +131,7 @@ const ApprovalsView = () => {
                     </div>
                   </div>
                   <div className="ml-auto text-right">
-                    <div className="text-base font-semibold text-[var(--nodu-text)]">{totalHours.toFixed(1)}h = {formatCurrency(totalHours * contractor.rate)}</div>
+                    <div className="text-base font-semibold text-[var(--nodu-text)]">{totalHours.toFixed(1)}h = {formatCurrency(totalHours * contractor.rate + calculateMealAllowance(timelog.days, { enabled: Boolean(event.mealAllowanceEnabled) }))}</div>
                     {timelog.km > 0 && <div className="text-[10px] text-[var(--nodu-text-soft)]">+ {formatCurrency(timelog.km * KM_RATE)} cestovne</div>}
                   </div>
                 </div>
@@ -162,7 +162,7 @@ const ApprovalsView = () => {
             const totalHours = group.tls.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
             const totalAmount = group.tls.reduce((sum, timelog) => {
               const contractor = findContractor(timelog.contractorProfileId);
-              return sum + (contractor ? calculateTotalHours(timelog.days) * contractor.rate + timelog.km * KM_RATE : 0);
+              return sum + (contractor ? calculateTotalHours(timelog.days) * contractor.rate + timelog.km * KM_RATE + calculateMealAllowance(timelog.days, { enabled: Boolean(group.event.mealAllowanceEnabled) }) : 0);
             }, 0);
 
             return (
@@ -186,7 +186,7 @@ const ApprovalsView = () => {
                         <span className="text-xs font-medium text-[var(--nodu-text)]">{contractor.name}</span>
                         <div className="flex gap-1">{Array.from(new Set(timelog.days.map((day) => day.type))).map((type) => <StatusBadge key={type} status={type} />)}</div>
                         <span className="text-[10px] text-[var(--nodu-text-soft)]">{timelog.days.length} {timelog.days.length === 1 ? 'den' : 'dny'}</span>
-                        <span className="ml-auto text-xs font-semibold text-[var(--nodu-text)]">{hours.toFixed(1)}h = {formatCurrency(hours * contractor.rate)}{timelog.km > 0 ? ` + ${formatCurrency(timelog.km * KM_RATE)} km` : ''}</span>
+                        <span className="ml-auto text-xs font-semibold text-[var(--nodu-text)]">{hours.toFixed(1)}h = {formatCurrency(hours * contractor.rate + calculateMealAllowance(timelog.days, { enabled: Boolean(group.event.mealAllowanceEnabled) }))}{timelog.km > 0 ? ` + ${formatCurrency(timelog.km * KM_RATE)} km` : ''}</span>
                       </div>
                     );
                   })}

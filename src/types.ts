@@ -6,6 +6,7 @@ export type EventStatus = 'upcoming' | 'full' | 'past' | 'planning';
 
 /** Typ prace (faze akce) */
 export type TimelogType = 'pripravy' | 'instal' | 'provoz' | 'deinstal';
+export type TimelogMeal = 'obed' | 'vecere';
 
 export type EntityId = string | number;
 export type EventId = EntityId;
@@ -61,6 +62,8 @@ export interface Event {
   phaseSchedules?: Partial<Record<TimelogType, EventPhaseSlot[]>>;
   /** Povoli clenovi crew doplnit planovany prichod/odchod pri prihlasce */
   allowCrewTimeProposal?: boolean;
+  /** Povoli ve vykazu prace nahradu za nezajistene jidlo */
+  mealAllowanceEnabled?: boolean;
 }
 
 export type EventApplicationStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn' | 'withdrawal_requested';
@@ -156,7 +159,19 @@ export interface TimelogDay {
   /** Cas do (HH:MM) */
   t: string;
   type: TimelogType;
+  /** Vybrana jidla pro nahradu. Legacy `meal` nechavame jako fallback pro starsi data. */
+  meals?: TimelogMeal[] | null;
+  meal?: TimelogMeal | null;
   note?: string;
+}
+
+export interface TimelogChangeSnapshot {
+  changedAt: string;
+  before: {
+    days: TimelogDay[];
+    km: number;
+    note: string;
+  };
 }
 
 /** Vykaz prace (timelog) */
@@ -169,8 +184,13 @@ export interface Timelog {
   days: TimelogDay[];
   /** Cestovne v km */
   km: number;
+  /** Poznamka clena Crew k vlastnimu vykazu. */
   note: string;
+  /** Poznamka CH/COO k uprave nebo vraceni vykazu. */
+  reviewNote?: string;
   status: TimelogStatus;
+  /** Puvodni verze pred upravou CH/COO, kterou ma Crew potvrdit. */
+  crewConfirmationSnapshot?: TimelogChangeSnapshot | null;
 }
 
 /** Prirazeni crew k akci bez detailnich vykazanych dni */
@@ -274,6 +294,8 @@ export interface Invoice {
   km: number;
   /** Částka za km */
   kAmt: number;
+  /** Částka za jídlo */
+  mealAmt?: number;
   /** Částka za účtenky */
   receiptAmt?: number;
   total: number;

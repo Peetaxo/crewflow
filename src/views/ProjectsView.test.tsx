@@ -53,4 +53,28 @@ describe('ProjectsView', () => {
     expect(screen.queryByRole('columnheader', { name: 'Stav' })).not.toBeInTheDocument();
     expect(screen.queryByText('Obsazeno')).not.toBeInTheDocument();
   });
+
+  it('renders project rows as mobile-friendly project cards without raw timestamps', async () => {
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => mockAppContext,
+    }));
+
+    vi.doMock('../features/projects/services/projects.service', () => ({
+      createEmptyProject: vi.fn(),
+      getProjectById: vi.fn(),
+      getProjectRows: () => projectRows,
+      subscribeToProjectChanges: vi.fn(() => () => undefined),
+    }));
+
+    vi.doMock('./ProjectStatsView', () => ({
+      default: () => <div>project detail</div>,
+    }));
+
+    const { default: ProjectsView } = await import('./ProjectsView');
+
+    render(<ProjectsView />);
+
+    expect(screen.getByRole('button', { name: /JTI001 JTI NextLevel s\.r\.o\. 2 akce/i })).toBeInTheDocument();
+    expect(screen.queryByText('2026-04-29')).not.toBeInTheDocument();
+  });
 });

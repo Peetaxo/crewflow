@@ -18,6 +18,10 @@ export const canEditTimelog = (timelog: TimelogPermissionTarget, role: Role) => 
   return false;
 };
 
+export const canOpenTimelogDetail = (timelog: TimelogPermissionTarget, role: Role) => (
+  role === 'crew' || canEditTimelog(timelog, role)
+);
+
 export const canSubmitTimelog = (timelog: TimelogPermissionTarget, role: Role) => (
   (
     role === 'crew'

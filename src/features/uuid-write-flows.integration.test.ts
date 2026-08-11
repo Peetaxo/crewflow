@@ -246,6 +246,10 @@ describe('UUID write flows integration', () => {
         if (!day) return 0;
         return Number(day.t.split(':')[0]) - Number(day.f.split(':')[0]);
       },
+      calculateMealAllowance: () => 0,
+      normalizeMealSelection: (day: Timelog['days'][number]) => (
+        Array.isArray(day.meals) ? day.meals : day.meal ? [day.meal] : []
+      ),
     }));
     vi.doMock('sonner', () => ({
       toast: {

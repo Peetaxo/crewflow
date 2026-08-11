@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Contractor, Event, Invoice, ReceiptItem, Timelog } from '../types';
 
@@ -132,10 +132,12 @@ const events: Event[] = [
   },
 ];
 
-const timelogs: Timelog[] = [
+const baseTimelogs: Timelog[] = [
   { id: 1, eid: 1, contractorProfileId: 'profile-uuid-1', days: [{ d: '2999-04-20', f: '08:00', t: '12:00', type: 'provoz' }], km: 0, note: '', status: 'draft' },
   { id: 2, eid: 2, contractorProfileId: 'profile-uuid-2', days: [{ d: '2999-04-21', f: '09:00', t: '15:00', type: 'provoz' }], km: 12, note: '', status: 'draft' },
 ];
+
+let timelogs: Timelog[] = [...baseTimelogs];
 
 const receipts: ReceiptItem[] = [
   { id: 1, contractorProfileId: 'profile-uuid-1', eid: 1, job: 'JOB-1', title: 'Prvni receipt', vendor: 'Vendor 1', amount: 100, paidAt: '2026-04-20', note: '', status: 'approved' },
@@ -161,7 +163,9 @@ vi.mock('framer-motion', () => ({
 
 vi.mock('recharts', () => ({
   ResponsiveContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  BarChart: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  BarChart: ({ children, data }: { children: React.ReactNode; data?: Array<{ name: string; total: number }> }) => (
+    <div data-testid="earnings-chart" data-chart={JSON.stringify(data ?? [])}>{children}</div>
+  ),
   Bar: () => <div />,
   XAxis: () => <div />,
   YAxis: () => <div />,
@@ -205,6 +209,10 @@ vi.mock('../constants', () => ({
     { id: 'my-timelogs', label: 'Schvalování', icon: () => <span>T</span> },
     { id: 'my-invoices', label: 'Moje faktury', icon: () => <span>I</span> },
     { id: 'my-receipts', label: 'Moje účtenky', icon: () => <span>R</span> },
+  ],
+  MEAL_CONFIG: [
+    { type: 'obed', label: 'Oběd' },
+    { type: 'vecere', label: 'Večeře' },
   ],
   ROLE_LABELS: { crew: 'Crew', crewhead: 'CrewHead', coo: 'COO' },
   ROLE_SHORT_LABELS: { crew: 'CR', crewhead: 'CH', coo: 'CO' },
@@ -301,7 +309,10 @@ describe('UUID mine-scope identity', () => {
       searchQuery: '',
       currentTab: 'dashboard',
       settingsSection: 'menu',
+      timelogFilter: 'all',
+      setTimelogFilter: vi.fn(),
     };
+    timelogs = [...baseTimelogs];
   });
 
   it('uses currentProfileId in MyShiftsView instead of first contractor', async () => {
@@ -317,6 +328,157 @@ describe('UUID mine-scope identity', () => {
     expect(screen.queryByText('Účtenky')).not.toBeInTheDocument();
     expect(screen.getAllByText('Akce moje').length).toBeGreaterThan(0);
     expect(screen.queryByText('Akce prvni')).not.toBeInTheDocument();
+  });
+
+  it('surfaces returned and CH-edited timelogs on the Crew overview', async () => {
+    timelogs = [
+      ...baseTimelogs,
+      {
+        id: 3,
+        eid: 2,
+        contractorProfileId: 'profile-uuid-2',
+        days: [{ d: '2999-04-21', f: '09:00', t: '17:00', type: 'provoz' }],
+        km: 0,
+        note: 'Chybí pauza po obědě.',
+        status: 'rejected',
+      },
+      {
+        id: 4,
+        eid: 2,
+        contractorProfileId: 'profile-uuid-2',
+        days: [{ d: '2999-04-21', f: '09:00', t: '18:00', type: 'provoz' }],
+        km: 0,
+        note: 'Upraveno po telefonu.',
+        status: 'pending_crew_confirmation',
+        crewConfirmationSnapshot: {
+          changedAt: '2999-04-21T12:00:00.000Z',
+          before: {
+            days: [{ d: '2999-04-21', f: '09:00', t: '15:00', type: 'provoz' }],
+            km: 0,
+            note: '',
+          },
+        },
+      },
+    ];
+    const { default: MyShiftsView } = await import('./MyShiftsView');
+
+    render(<MyShiftsView />);
+
+    expect(screen.getByRole('heading', { name: 'Výkazy k dořešení' })).toBeInTheDocument();
+    expect(screen.getByText('2 výkazy čekají na tebe')).toBeInTheDocument();
+    expect(screen.getByText('Vráceno k opravě')).toBeInTheDocument();
+    expect(screen.getByText('Čeká na tvoje potvrzení')).toBeInTheDocument();
+    expect(screen.getAllByText('21. 4. 2999').length).toBeGreaterThan(0);
+    expect(screen.getByText('Klient 2 · 9.0 h')).toBeInTheDocument();
+    expect(screen.getByText('Chybí pauza po obědě.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Otevřít výkaz k potvrzení/i }));
+
+    expect(mockAppContext.setTimelogFilter).toHaveBeenCalledWith('pending_crew_confirmation');
+    expect(setEditingTimelog).toHaveBeenCalledWith(expect.objectContaining({
+      id: 4,
+      status: 'pending_crew_confirmation',
+    }));
+    expect(setCurrentTab).toHaveBeenCalledWith('my-timelogs');
+  });
+
+  it('shows only earned and approval money cards on the Crew overview', async () => {
+    timelogs = [
+      {
+        id: 5,
+        eid: 2,
+        contractorProfileId: 'profile-uuid-2',
+        days: [{ d: '2999-04-21', f: '09:00', t: '15:00', type: 'provoz' }],
+        km: 12,
+        note: '',
+        status: 'approved',
+      },
+      {
+        id: 7,
+        eid: 2,
+        contractorProfileId: 'profile-uuid-2',
+        days: [{ d: '2999-04-23', f: '08:00', t: '10:00', type: 'provoz' }],
+        km: 0,
+        note: '',
+        status: 'paid',
+      },
+      {
+        id: 6,
+        eid: 2,
+        contractorProfileId: 'profile-uuid-2',
+        days: [{ d: '2999-04-22', f: '10:00', t: '14:00', type: 'provoz' }],
+        km: 0,
+        note: '',
+        status: 'pending_ch',
+      },
+    ];
+    const { default: MyShiftsView } = await import('./MyShiftsView');
+
+    render(<MyShiftsView />);
+
+    expect(screen.queryByText('Vyplaceno')).not.toBeInTheDocument();
+    expect(screen.queryByText('K vyplacení')).not.toBeInTheDocument();
+    expect(screen.queryByText('Odpracováno')).not.toBeInTheDocument();
+
+    const earnedCard = screen.getByText('Vyděláno').closest('.nodu-my-shifts-stat-card');
+    const approvalCard = screen.getByText('Ke schválení').closest('.nodu-my-shifts-stat-card');
+
+    expect(earnedCard).not.toBeNull();
+    expect(approvalCard).not.toBeNull();
+    expect(within(earnedCard as HTMLElement).getByText('2 067 Kc')).toBeInTheDocument();
+    expect(within(earnedCard as HTMLElement).getByText('Finálně schváleno')).toBeInTheDocument();
+    expect(within(approvalCard as HTMLElement).getByText('1 000 Kc')).toBeInTheDocument();
+    expect(within(approvalCard as HTMLElement).getByText('Čeká na kontrolu')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Vyděláno/i }));
+    expect(screen.getByRole('button', { name: /Vyúčtované/i }).className).toContain('nodu-my-shifts-tab--active');
+
+    fireEvent.click(screen.getByRole('button', { name: /Ke schválení/i }));
+    expect(screen.getByRole('button', { name: /Ke kontrole/i }).className).toContain('nodu-my-shifts-tab--active');
+  });
+
+  it('charts earned timelogs instead of invoices on the Crew overview', async () => {
+    timelogs = [
+      {
+        id: 5,
+        eid: 2,
+        contractorProfileId: 'profile-uuid-2',
+        days: [{ d: '2999-04-21', f: '09:00', t: '15:00', type: 'provoz' }],
+        km: 12,
+        note: '',
+        status: 'approved',
+      },
+      {
+        id: 7,
+        eid: 2,
+        contractorProfileId: 'profile-uuid-2',
+        days: [{ d: '2999-04-23', f: '08:00', t: '10:00', type: 'provoz' }],
+        km: 0,
+        note: '',
+        status: 'paid',
+      },
+      {
+        id: 6,
+        eid: 2,
+        contractorProfileId: 'profile-uuid-2',
+        days: [{ d: '2999-04-22', f: '10:00', t: '14:00', type: 'provoz' }],
+        km: 0,
+        note: '',
+        status: 'pending_ch',
+      },
+    ];
+    const { default: MyShiftsView } = await import('./MyShiftsView');
+
+    render(<MyShiftsView />);
+
+    expect(screen.getByRole('heading', { name: 'Příjmy za období' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Fakturace za dané období' })).not.toBeInTheDocument();
+
+    const chart = screen.getByTestId('earnings-chart');
+    const chartData = JSON.parse(chart.dataset.chart ?? '[]') as Array<{ name: string; total: number }>;
+
+    expect(chartData).toHaveLength(1);
+    expect(chartData[0]?.total).toBe(2067);
   });
 
   it('filters mine timelogs by currentProfileId', async () => {

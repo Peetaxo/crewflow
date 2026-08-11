@@ -1,4 +1,5 @@
-import type { BudgetItem, BudgetPackage, Candidate, Client, Contractor, EntityId, Event, EventId, FleetReservation, FleetVehicle, Invoice, Project, ReceiptItem, Timelog, TimelogDay } from '@/types';
+import type { BudgetItem, BudgetPackage, Candidate, Client, Contractor, EntityId, Event, EventId, FleetReservation, FleetVehicle, Invoice, Project, ReceiptItem, Timelog, TimelogDay, TimelogType } from '@/types';
+import { normalizeMealSelection } from '@/utils';
 import type { Database, Json } from './database.types';
 
 type BudgetItemRow = Database['public']['Tables']['budget_items']['Row'];
@@ -17,6 +18,20 @@ type TimelogDayRow = Database['public']['Tables']['timelog_days']['Row'];
 
 function asRecord(value: Json | null): Record<string, unknown> | undefined {
   return value && !Array.isArray(value) && typeof value === 'object' ? value as Record<string, unknown> : undefined;
+}
+
+function asString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+function asNumber(value: unknown, fallback = 0): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function asTimelogType(value: unknown): TimelogType {
+  return value === 'pripravy' || value === 'instal' || value === 'provoz' || value === 'deinstal'
+    ? value
+    : 'instal';
 }
 
 function initials(firstName: string, lastName: string): string {
@@ -141,6 +156,7 @@ export function mapEvent(row: EventRow): Event {
     meetingLocation: row.meeting_point ?? undefined,
     showDayTypes: row.show_day_types ?? undefined,
     allowCrewTimeProposal: row.allow_crew_time_proposal ?? undefined,
+    mealAllowanceEnabled: row.meal_allowance_enabled ?? false,
     dayTypes: asRecord(row.day_types) as Event['dayTypes'],
     phaseTimes: asRecord(row.phase_times) as Event['phaseTimes'],
     phaseSchedules: asRecord(row.phase_schedules) as Event['phaseSchedules'],
@@ -232,13 +248,48 @@ export function mapBudgetItem(
 }
 
 export function mapTimelogDay(row: TimelogDayRow): TimelogDay {
+  const meals = normalizeMealSelection(row);
+
   return {
     id: row.id,
     d: row.date,
     f: row.time_from ?? '',
     t: row.time_to ?? '',
     type: row.day_type,
+    meals,
+    meal: meals[0] ?? null,
     note: row.note ?? '',
+  };
+}
+
+function mapTimelogChangeSnapshot(value: Json | null): Timelog['crewConfirmationSnapshot'] {
+  const snapshot = asRecord(value);
+  const before = asRecord(snapshot?.before as Json | null);
+  const rawDays = Array.isArray(before?.days) ? before.days : [];
+
+  if (!snapshot || !before || typeof snapshot.changedAt !== 'string') {
+    return null;
+  }
+
+  return {
+    changedAt: snapshot.changedAt,
+    before: {
+      days: rawDays
+        .map((rawDay) => asRecord(rawDay as Json | null))
+        .filter((day): day is Record<string, unknown> => Boolean(day))
+        .map((day) => ({
+          id: asString(day.id) || undefined,
+          d: asString(day.d),
+          f: asString(day.f),
+          t: asString(day.t),
+          type: asTimelogType(day.type),
+          meals: Array.isArray(day.meals) ? day.meals.filter((meal) => meal === 'obed' || meal === 'vecere') : [],
+          meal: day.meal === 'obed' || day.meal === 'vecere' ? day.meal : null,
+          note: asString(day.note),
+        })),
+      km: asNumber(before.km),
+      note: asString(before.note),
+    },
   };
 }
 
@@ -251,7 +302,9 @@ export function mapTimelog(row: TimelogRow, days: TimelogDayRow[] = []): Timelog
     days: days.map(mapTimelogDay),
     km: Number(row.km ?? 0),
     note: row.note ?? '',
+    reviewNote: row.review_note ?? '',
     status: row.status,
+    crewConfirmationSnapshot: mapTimelogChangeSnapshot(row.crew_confirmation_snapshot),
   };
 }
 
@@ -264,6 +317,7 @@ export function mapInvoice(row: InvoiceRow): Invoice {
     hAmt: Number(row.amount_hours ?? 0),
     km: 0,
     kAmt: Number(row.amount_km ?? 0),
+    mealAmt: Number(row.amount_meals ?? 0),
     receiptAmt: Number(row.amount_receipts ?? 0),
     total: Number(row.total_amount ?? 0),
     job: row.job_number ?? '',

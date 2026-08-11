@@ -107,6 +107,28 @@ describe('supabase mappers', () => {
     });
   });
 
+  it('maps timelog review notes separately from Crew notes', () => {
+    const row = {
+      id: 'timelog-uuid-1',
+      event_id: 'event-uuid-1',
+      contractor_id: 'profile-uuid-1',
+      km: 0,
+      note: 'Poznámka od Crew',
+      review_note: 'Poznámka od CH',
+      status: 'pending_crew_confirmation',
+      crew_confirmation_snapshot: null,
+      submitted_at: null,
+      approved_at: null,
+      created_at: '2026-04-27T00:00:00Z',
+      updated_at: '2026-04-27T00:00:00Z',
+    } as TimelogRow & { review_note: string };
+
+    const mapped = mapTimelog(row) as ReturnType<typeof mapTimelog> & { reviewNote?: string };
+
+    expect(mapped.note).toBe('Poznámka od Crew');
+    expect(mapped.reviewNote).toBe('Poznámka od CH');
+  });
+
   it('maps Supabase fleet vehicles to app vehicles', () => {
     const row: FleetVehicleRow = {
       id: 'vehicle-uuid-1',
@@ -186,6 +208,7 @@ describe('supabase mappers', () => {
       time_from: '08:00',
       time_to: '17:00',
       day_type: 'instal',
+      meal: 'vecere',
       note: 'Příprava mimo standardní plán',
       created_at: '2026-04-28T00:00:00Z',
     };
@@ -195,15 +218,18 @@ describe('supabase mappers', () => {
       days: [expect.objectContaining({
         id: 'day-uuid-1',
         d: '2026-07-13',
+        meal: 'vecere',
         note: 'Příprava mimo standardní plán',
       })],
     });
     expect(mapTimelog(timelogRow, [dayRow]).days[0]).toMatchObject({
       id: 'day-uuid-1',
       d: '2026-07-13',
+      meal: 'vecere',
       note: 'Příprava mimo standardní plán',
     });
     expect(mapTimelog(timelogRow, [{ ...dayRow, note: null }]).days[0].note).toBe('');
+    expect(mapTimelog(timelogRow, [{ ...dayRow, meal: null }]).days[0].meal).toBeNull();
   });
 
   it('maps receipt row UUIDs', () => {

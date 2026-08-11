@@ -8,7 +8,7 @@ import { useAppContext } from '../context/useAppContext';
 import { KM_RATE } from '../data';
 import StatusBadge from '../components/shared/StatusBadge';
 import ShiftCard from '../components/shared/ShiftCard';
-import { calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
+import { calculateMealAllowance, calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
 import { getCrewDetailData, subscribeToCrewChanges, updateCrew } from '../features/crew/services/crew.service';
 import { categorizeCrewTimelogs, resolveShiftProject } from '../features/crew/services/crew-shift-display';
 import { canEditTimelog } from '../features/timelogs/services/timelog-permissions';
@@ -37,7 +37,7 @@ const CrewDetailView = () => {
 
   useEffect(() => subscribeToCrewChanges(loadDetail), [loadDetail]);
 
-  const [activeTab, setActiveTab] = useState<'upcoming' | 'processing' | 'invoiced' | 'invoices'>('upcoming');
+  const [activeTab, setActiveTab] = useState<'drafts' | 'processing' | 'invoiced' | 'invoices'>('drafts');
   const [chartPeriod, setChartPeriod] = useState<'month' | 'quarter' | 'year'>('month');
   const [isChartExpanded, setIsChartExpanded] = useState(false);
   const [profileTab, setProfileTab] = useState<'personal' | 'billing'>('personal');
@@ -344,8 +344,8 @@ const CrewDetailView = () => {
             <h3 className="mb-3 text-sm font-semibold text-[var(--nodu-text)]">Smeny</h3>
             <div className="flex w-fit flex-wrap items-center gap-2 rounded-xl border border-[var(--nodu-border)] bg-white p-1">
               {[
-                { id: 'upcoming' as const, lbl: 'Nadchazejici', count: categorized.upcoming.length },
-                { id: 'processing' as const, lbl: 'Zpracovava se', count: categorized.processing.length },
+                { id: 'drafts' as const, lbl: 'Rozpracovane', count: categorized.drafts.length },
+                { id: 'processing' as const, lbl: 'Ke kontrole', count: categorized.processing.length },
                 { id: 'invoiced' as const, lbl: 'Vyuctovane', count: categorized.invoiced.length },
                 { id: 'invoices' as const, lbl: 'Faktury', count: cInvoices.length },
               ].map((tab) => (
@@ -466,7 +466,7 @@ const CrewDetailView = () => {
             </thead>
             <tbody className="divide-y divide-[rgba(var(--nodu-text-rgb),0.06)]">
               {cTls.map((t) => {
-                const e = events.find((event) => event.id === t.eid);
+                const e = events.find((event) => event.id === t.eid || event.supabaseId === t.eid);
                 if (!e) return null;
                 const hours = calculateTotalHours(t.days);
 
@@ -478,7 +478,7 @@ const CrewDetailView = () => {
                     </td>
                     <td className="px-4 py-3 text-xs font-semibold text-[var(--nodu-text)]">{hours.toFixed(1)}h</td>
                     <td className="px-4 py-3 text-xs text-[var(--nodu-text-soft)]">{t.km || '-'}</td>
-                    <td className="px-4 py-3 text-xs font-bold text-[var(--nodu-text)]">{formatCurrency(hours * c.rate + t.km * KM_RATE)}</td>
+                    <td className="px-4 py-3 text-xs font-bold text-[var(--nodu-text)]">{formatCurrency(hours * c.rate + t.km * KM_RATE + calculateMealAllowance(t.days, { enabled: Boolean(e.mealAllowanceEnabled) }))}</td>
                     <td className="px-4 py-3">
                       <StatusBadge status={t.status} />
                     </td>

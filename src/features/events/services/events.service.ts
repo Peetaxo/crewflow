@@ -5,7 +5,7 @@ import { queryClient } from '../../../lib/query-client';
 import { queryKeys } from '../../../lib/query-keys';
 import { mapClient, mapEvent } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
-import { getDatesBetween, getEventStatus } from '../../../utils';
+import { getDatesBetween, getEventStatus, normalizeMealSelection } from '../../../utils';
 import { Client, Contractor, EntityId, Event, EventApplication, EventApplicationStatus, EventCrewAssignment, EventPhaseSlot, GrasonEventConfirmation, Project, ReceiptItem, Timelog, TimelogType } from '../../../types';
 import { assertTimelogDaysDoNotOverlap } from '../../timelogs/services/timelog-validation';
 import { EventAssignmentResult, EventConflictDetail, EventFilter, EventWithDerivedStatus } from '../types/events.types';
@@ -607,6 +607,7 @@ const toSupabaseEventPayload = async (event: Event) => ({
   meeting_point: event.meetingLocation ?? null,
   show_day_types: event.showDayTypes ?? false,
   allow_crew_time_proposal: event.allowCrewTimeProposal ?? false,
+  meal_allowance_enabled: event.mealAllowanceEnabled ?? false,
   day_types: event.dayTypes ?? null,
   phase_times: event.phaseTimes ?? null,
   phase_schedules: event.phaseSchedules ?? null,
@@ -1000,6 +1001,7 @@ export const createEmptyEvent = (): Event => {
     client: '',
     showDayTypes: false,
     allowCrewTimeProposal: false,
+    mealAllowanceEnabled: false,
   };
 };
 
@@ -1111,6 +1113,7 @@ export const syncDayTypesFromSchedules = (event: Event) => {
 
 export const applyEventDraft = (event: Event): Event => ({
   ...event,
+  mealAllowanceEnabled: event.mealAllowanceEnabled ?? false,
   dayTypes: syncDayTypesFromSchedules(event),
 });
 
@@ -1134,6 +1137,7 @@ const normalizeEvent = (event: Event): Event => ({
   contactPerson: event.contactPerson?.trim() || undefined,
   contactPhone: event.contactPhone?.trim() || undefined,
   allowCrewTimeProposal: event.allowCrewTimeProposal ?? false,
+  mealAllowanceEnabled: event.mealAllowanceEnabled ?? false,
 });
 
 export const ensureProjectForEvent = (projects: Project[], event: Event): Project[] => {
@@ -1234,6 +1238,8 @@ const syncSupabaseEventTimelogDays = async (eventRowId: string, timelogs: Timelo
         time_from: day.f,
         time_to: day.t,
         day_type: day.type,
+        meals: normalizeMealSelection(day),
+        meal: normalizeMealSelection(day)[0] ?? null,
         note: day.note?.trim() || null,
       })));
 
@@ -1618,6 +1624,8 @@ export const buildTimelogDaysForEvent = (
       f: defaultFrom,
       t: defaultTo,
       type: 'instal' as TimelogType,
+      meals: [],
+      meal: null,
     }));
   }
 
@@ -1640,6 +1648,8 @@ export const buildTimelogDaysForEvent = (
             f: event.phaseTimes?.[phaseType]?.from || defaultFrom,
             t: event.phaseTimes?.[phaseType]?.to || defaultTo,
             type: phaseType,
+            meals: [],
+            meal: null,
           }));
       }
 
@@ -1648,6 +1658,8 @@ export const buildTimelogDaysForEvent = (
         f: slot.from || defaultFrom,
         t: slot.to || defaultTo,
         type: phaseType,
+        meals: [],
+        meal: null,
       })));
     })
     .filter((day) => eventDates.includes(day.d))
@@ -1756,6 +1768,8 @@ export const assignCrewToEvent = async (
         time_from: day.f,
         time_to: day.t,
         day_type: day.type,
+        meals: normalizeMealSelection(day),
+        meal: normalizeMealSelection(day)[0] ?? null,
       })));
 
     if (timelogDaysInsert.error) {

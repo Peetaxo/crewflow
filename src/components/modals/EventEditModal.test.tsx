@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Event } from '../../types';
 
 type MockEventAddressSelection = {
@@ -166,6 +166,10 @@ describe('EventEditModal', () => {
     vi.clearAllMocks();
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('shows the current event client even when client options are not hydrated yet', async () => {
     mockEventServices({ clients: [] });
     mockLocationComponents();
@@ -219,6 +223,194 @@ describe('EventEditModal', () => {
       locationLat: 50.0929,
       locationLng: 14.4502,
     }));
+  });
+
+  it('lets managers enable meal allowance for an event', async () => {
+    mockEventServices();
+    mockLocationComponents();
+
+    const onChange = vi.fn();
+    const { default: EventEditModal } = await import('./EventEditModal');
+
+    render(
+      <EventEditModal
+        editingEvent={{ ...event, mealAllowanceEnabled: false }}
+        onClose={vi.fn()}
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Nárok na jídlo'));
+
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      mealAllowanceEnabled: true,
+    }));
+  });
+
+  it('uses a sectioned responsive layout for the event editor form', async () => {
+    mockEventServices();
+    mockLocationComponents();
+
+    const { default: EventEditModal } = await import('./EventEditModal');
+
+    const { container } = render(
+      <EventEditModal
+        editingEvent={event}
+        onClose={vi.fn()}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector('.nodu-event-edit-modal')).toBeInTheDocument();
+    expect(container.querySelector('.nodu-event-edit-body')).toBeInTheDocument();
+    expect(container.querySelectorAll('.nodu-event-edit-section')).toHaveLength(5);
+    expect(container.querySelector('.nodu-event-edit-grid--details')).toBeInTheDocument();
+    expect(container.querySelector('.nodu-event-edit-grid--settings')).toBeInTheDocument();
+  });
+
+  it('keeps event timing grouped by start and end moments', async () => {
+    mockEventServices();
+    mockLocationComponents();
+
+    const { default: EventEditModal } = await import('./EventEditModal');
+
+    const { container } = render(
+      <EventEditModal
+        editingEvent={event}
+        onClose={vi.fn()}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const timeTriggers = container.querySelectorAll('.nodu-event-edit-datetime-trigger');
+
+    expect(container.querySelector('.nodu-event-edit-time-groups')).toBeInTheDocument();
+    expect(timeTriggers).toHaveLength(2);
+    expect(screen.getByText('Začátek')).toBeInTheDocument();
+    expect(screen.getByText('Konec')).toBeInTheDocument();
+  });
+
+  it('renders event timing as combined date-time triggers', async () => {
+    mockEventServices();
+    mockLocationComponents();
+
+    const { default: EventEditModal } = await import('./EventEditModal');
+
+    const { container } = render(
+      <EventEditModal
+        editingEvent={event}
+        onClose={vi.fn()}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelectorAll('.nodu-event-edit-datetime-trigger')).toHaveLength(2);
+    expect(container.querySelectorAll('.nodu-event-edit-time-input')).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Otevřít výběr termínu Začátek 20. 4. 2026 · 20:00' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Otevřít výběr termínu Konec 20. 4. 2026 · 01:00' })).toBeInTheDocument();
+  });
+
+  it('uses today as the default date for a new event without stored dates', async () => {
+    mockEventServices();
+    mockLocationComponents();
+
+    const { default: EventEditModal } = await import('./EventEditModal');
+    const addDays = (date: Date, days: number) => {
+      const nextDate = new Date(date);
+      nextDate.setDate(nextDate.getDate() + days);
+      return nextDate;
+    };
+    const formatLabel = (date: Date) => `${date.getDate()}. ${date.getMonth() + 1}. ${date.getFullYear()}`;
+    const todayLabel = formatLabel(new Date());
+    const firstWheelDateLabel = formatLabel(addDays(new Date(), -15));
+    const lastWheelDateLabel = formatLabel(addDays(new Date(), 15));
+
+    render(
+      <EventEditModal
+        editingEvent={{
+          ...event,
+          startDate: '',
+          endDate: '',
+        }}
+        onClose={vi.fn()}
+        onChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: `Otevřít výběr termínu Začátek ${todayLabel} · 20:00` }));
+
+    expect(screen.getByRole('button', { name: `Začátek datum ${todayLabel}` })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: `Začátek datum ${firstWheelDateLabel}` })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: `Začátek datum ${lastWheelDateLabel}` })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Začátek datum 17. 12. 1899' })).not.toBeInTheDocument();
+  });
+
+  it('updates start date and time from one picker confirmation', async () => {
+    mockEventServices();
+    mockLocationComponents();
+
+    const onChange = vi.fn();
+    const { default: EventEditModal } = await import('./EventEditModal');
+
+    render(
+      <EventEditModal
+        editingEvent={event}
+        onClose={vi.fn()}
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Otevřít výběr termínu Začátek 20. 4. 2026 · 20:00' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Začátek datum 21. 4. 2026' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Začátek hodina 09' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Začátek minuta 15' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Potvrdit termín Začátek' }));
+
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      startDate: '2026-04-21',
+      startTime: '09:15',
+    }));
+  });
+
+  it('keeps date wheel options stable while changing the selected date', async () => {
+    mockEventServices();
+    mockLocationComponents();
+
+    const { default: EventEditModal } = await import('./EventEditModal');
+
+    render(
+      <EventEditModal
+        editingEvent={event}
+        onClose={vi.fn()}
+        onChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Otevřít výběr termínu Začátek 20. 4. 2026 · 20:00' }));
+
+    expect(screen.getByRole('button', { name: 'Začátek datum 5. 4. 2026' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Začátek datum 21. 4. 2026' }));
+
+    expect(screen.getByRole('button', { name: 'Začátek datum 5. 4. 2026' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Začátek datum 6. 5. 2026' })).not.toBeInTheDocument();
+  });
+
+  it('keeps advanced day type setup out of the standard event editor', async () => {
+    mockEventServices();
+    mockLocationComponents();
+
+    const { default: EventEditModal } = await import('./EventEditModal');
+
+    render(
+      <EventEditModal
+        editingEvent={event}
+        onClose={vi.fn()}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText('Zobrazovat typy dnu (PR-I-P-D) na akci')).not.toBeInTheDocument();
   });
 
   it('renders an editable map preview and updates only coordinates when the map moves', async () => {

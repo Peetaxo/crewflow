@@ -4,9 +4,9 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { useAppContext } from '../../context/useAppContext';
 import { useIsMobile } from '../../hooks/use-mobile';
-import { PHASE_CONFIG } from '../../constants';
+import { MEAL_CONFIG, PHASE_CONFIG } from '../../constants';
 import { KM_RATE } from '../../data';
-import { calculateTotalHours, formatCurrency } from '../../utils';
+import { calculateMealAllowance, calculateTotalHours, formatCurrency, normalizeMealSelection } from '../../utils';
 import { getTimelogDependencies, saveTimelog } from '../../features/timelogs/services/timelogs.service';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -32,10 +32,12 @@ const TimelogEditModal = () => {
   const { contractors, events } = getTimelogDependencies();
   const contractor = contractors.find((item) => item.profileId === editingTimelog.contractorProfileId)
     ?? null;
-  const event = events.find((item) => item.id === editingTimelog.eid) ?? null;
+  const event = events.find((item) => item.id === editingTimelog.eid || item.supabaseId === editingTimelog.eid) ?? null;
   if (!contractor || !event) return null;
 
   const totalHours = calculateTotalHours(editingTimelog.days);
+  const mealAllowanceEnabled = Boolean(event.mealAllowanceEnabled);
+  const totalMealAllowance = calculateMealAllowance(editingTimelog.days, { enabled: mealAllowanceEnabled });
   const isCrewHeadCorrection = role === 'crewhead' && editingTimelog.status === 'pending_ch';
   const saveButtonLabel = isCrewHeadCorrection ? 'Odeslat k potvrzení Crew' : 'Uložit změny';
   const openContractorDetail = () => {
@@ -109,7 +111,7 @@ const TimelogEditModal = () => {
               <div className="mt-1 flex items-center justify-between">
                 <div className="text-xs text-[color:var(--nodu-text-soft)]">Odměna</div>
                 <div className="text-sm font-semibold text-[color:var(--nodu-text)]">
-                  {formatCurrency(totalHours * contractor.rate)}
+                  {formatCurrency(totalHours * contractor.rate + totalMealAllowance)}
                 </div>
               </div>
               {editingTimelog.km > 0 && (
@@ -196,6 +198,45 @@ const TimelogEditModal = () => {
                           <Trash2 size={14} />
                         </button>
                       </div>
+                      {mealAllowanceEnabled && (
+                        <div className="mt-2" role="group" aria-label={`Jídlo ${idx + 1}`}>
+                          <div className="mb-1 text-[10px] uppercase tracking-[0.2em] text-[color:var(--nodu-text-soft)]">Jídlo</div>
+                          <div className="grid grid-cols-2 gap-2">
+                            {MEAL_CONFIG.map((meal) => {
+                              const selectedMeals = normalizeMealSelection(day);
+                              const isSelected = selectedMeals.includes(meal.type);
+                              const nextMeals = isSelected
+                                ? selectedMeals.filter((selectedMeal) => selectedMeal !== meal.type)
+                                : [...selectedMeals, meal.type];
+
+                              return (
+                                <button
+                                  key={meal.type}
+                                  type="button"
+                                  aria-pressed={isSelected}
+                                  onClick={() => {
+                                    const newDays = [...editingTimelog.days];
+                                    newDays[idx] = {
+                                      ...newDays[idx],
+                                      meals: nextMeals,
+                                      meal: nextMeals[0] ?? null,
+                                    };
+                                    setEditingTimelog({ ...editingTimelog, days: newDays });
+                                  }}
+                                  className={[
+                                    'min-h-10 rounded-xl border px-3 text-xs font-semibold transition',
+                                    isSelected
+                                      ? 'border-[color:rgb(var(--nodu-accent-rgb)/0.4)] bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)]'
+                                      : 'border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.9)] text-[color:var(--nodu-text)] hover:border-[color:rgb(var(--nodu-accent-rgb)/0.22)]',
+                                  ].join(' ')}
+                                >
+                                  {meal.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                       <Input
                         value={day.note ?? ''}
                         onChange={(e) => {
@@ -251,13 +292,26 @@ const TimelogEditModal = () => {
               </div>
             </div>
 
+            {isCrewHeadCorrection && (
+              <div className="rounded-2xl border border-[color:rgb(var(--nodu-text-rgb)/0.08)] bg-[color:rgb(var(--nodu-text-rgb)/0.03)] p-3">
+                <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">
+                  Poznámka Crew
+                </div>
+                <p className="text-sm font-semibold text-[color:var(--nodu-text)]">
+                  {editingTimelog.note.trim() || 'Crew nepřidala poznámku.'}
+                </p>
+              </div>
+            )}
+
             <div>
               <label className="mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">
                 {isCrewHeadCorrection ? 'Poznámka pro Crew' : 'Poznámka'}
               </label>
               <Textarea
-                value={editingTimelog.note}
-                onChange={(e) => setEditingTimelog({ ...editingTimelog, note: e.target.value })}
+                value={isCrewHeadCorrection ? editingTimelog.reviewNote ?? '' : editingTimelog.note}
+                onChange={(e) => setEditingTimelog(isCrewHeadCorrection
+                  ? { ...editingTimelog, reviewNote: e.target.value }
+                  : { ...editingTimelog, note: e.target.value })}
                 className="h-20 resize-none"
                 placeholder={isCrewHeadCorrection ? 'Doplňte komentář k úpravě pro člena Crew...' : 'Doplňte detaily...'}
               />

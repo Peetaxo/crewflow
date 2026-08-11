@@ -45,6 +45,7 @@ const AppLayout: React.FC = () => {
   const badgeCounts = useNavBadgeCounts();
   const isMobileAppShell = isMobile;
   const isMobileCrewRole = role === 'crew';
+  const isMobileManagementRole = role === 'crewhead' || role === 'coo';
   const isMobileEventDetail = isMobileAppShell && currentTab === 'events' && Boolean(selectedEventId);
   const effectiveRole = authRole ?? role;
   const showMobileRolePreviewSwitch = isMobileAppShell;
@@ -134,7 +135,9 @@ const AppLayout: React.FC = () => {
         </div>
       </main>
 
-      {isMobileAppShell && isMobileCrewRole && !isMobileEventDetail && <MobileCrewNav badgeCounts={badgeCounts} />}
+      {isMobileAppShell && (isMobileCrewRole || isMobileManagementRole) && !isMobileEventDetail && (
+        <MobileCrewNav badgeCounts={badgeCounts} role={role} />
+      )}
 
       <TimelogEditModal />
       <ProjectEditModal />

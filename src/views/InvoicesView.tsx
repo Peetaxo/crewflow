@@ -140,8 +140,8 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
   const getApprovalIndicator = (invoiceId: string): InvoiceApprovalIndicator => (
     approvalIndicators.get(invoiceId) ?? {
       status: 'not_found',
-      label: 'Nenalezeno v PowerApps',
-      reason: 'K této faktuře zatím není spárovaný dokument z approval systému.',
+      label: 'Bez schvalovacího dokumentu',
+      reason: 'K této faktuře zatím není spárovaný dokument ze schvalování.',
     }
   );
 
@@ -385,6 +385,12 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
                       <div className="rounded-[16px] bg-[color:rgb(var(--nodu-accent-rgb)/0.1)] px-2.5 py-1.5 text-[color:var(--nodu-accent)]">
                         <span className="font-semibold text-[color:var(--nodu-text)]">Uctenky</span>
                         <span>{` = ${formatCurrency(invoice.receiptAmt || 0)}`}</span>
+                      </div>
+                    )}
+                    {(invoice.mealAmt || 0) > 0 && (
+                      <div className="rounded-[16px] bg-[color:var(--nodu-warning-bg)] px-2.5 py-1.5 text-[color:var(--nodu-warning-text)]">
+                        <span className="font-semibold text-[color:var(--nodu-text)]">Jídlo</span>
+                        <span>{` = ${formatCurrency(invoice.mealAmt || 0)}`}</span>
                       </div>
                     )}
                     {invoice.km > 0 && (

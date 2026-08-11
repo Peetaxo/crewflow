@@ -9,6 +9,7 @@ export type Json =
 export type AppRole = 'crew' | 'crewhead' | 'coo';
 export type EventStatus = 'planning' | 'upcoming' | 'full' | 'past';
 export type TimelogType = 'pripravy' | 'instal' | 'provoz' | 'deinstal';
+export type TimelogMeal = 'obed' | 'vecere';
 export type TimelogStatus =
   | 'draft'
   | 'pending_crew_confirmation'
@@ -251,6 +252,7 @@ export interface Database {
           meeting_point: string | null;
           show_day_types: boolean | null;
           allow_crew_time_proposal: boolean | null;
+          meal_allowance_enabled: boolean | null;
           day_types: Json | null;
           phase_times: Json | null;
           phase_schedules: Json | null;
@@ -268,6 +270,7 @@ export interface Database {
           total_hours: number | null;
           amount_hours: number | null;
           amount_km: number | null;
+          amount_meals: number | null;
           amount_receipts: number | null;
           total_amount: number | null;
           invoice_number: string | null;
@@ -402,6 +405,7 @@ export interface Database {
           amount_hours: number;
           km: number;
           amount_km: number;
+          amount_meals: number;
           amount_receipts: number;
           total_amount: number;
           created_at: string;
@@ -486,6 +490,8 @@ export interface Database {
           time_from: string | null;
           time_to: string | null;
           day_type: TimelogType;
+          meals: TimelogMeal[] | null;
+          meal: TimelogMeal | null;
           note: string | null;
           created_at: string;
         };
@@ -497,7 +503,9 @@ export interface Database {
           contractor_id: string;
           km: number | null;
           note: string | null;
+          review_note: string | null;
           status: TimelogStatus;
+          crew_confirmation_snapshot: Json | null;
           submitted_at: string | null;
           approved_at: string | null;
           created_at: string;

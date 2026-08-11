@@ -66,7 +66,7 @@ const createSnapshot = (overrides?: Partial<{
       id: 1,
       eid: 1,
       contractorProfileId: 'profile-uuid-1',
-      days: [{ d: '2026-04-10', f: '08:00', t: '18:00', type: 'instal' as const }],
+      days: [{ d: '2026-04-10', f: '08:00', t: '18:00', type: 'instal' as const, meal: 'obed' as const }],
       km: 10,
       note: '',
       status: 'approved' as const,
@@ -167,6 +167,7 @@ describe('invoices.service billing batches', () => {
         const to = Number(day.t.split(':')[0]);
         return to - from;
       },
+      calculateMealAllowance: (days: Timelog['days']) => days.filter((day) => day.meal).length * 250,
     }));
 
     vi.doMock('sonner', () => ({
@@ -191,8 +192,9 @@ describe('invoices.service billing batches', () => {
     expect(created[0].hours).toBe(17);
     expect(created[0].hAmt).toBe(4250);
     expect(created[0].kAmt).toBe(50);
+    expect(created[0].mealAmt).toBe(250);
     expect(created[0].receiptAmt).toBe(300);
-    expect(created[0].total).toBe(4600);
+    expect(created[0].total).toBe(4850);
     expect(snapshot.invoices).toHaveLength(1);
     expect(markTimelogsAsInvoiced).toHaveBeenCalledWith([1, 2]);
     expect(markReceiptsAsAttached).toHaveBeenCalledWith([11]);
@@ -265,6 +267,7 @@ describe('invoices.service billing batches', () => {
         if (!day) return 0;
         return Number(day.t.split(':')[0]) - Number(day.f.split(':')[0]);
       },
+      calculateMealAllowance: () => 0,
     }));
     vi.doMock('sonner', () => ({ toast: { info: vi.fn(), success: vi.fn() } }));
 
@@ -314,6 +317,7 @@ describe('invoices.service billing batches', () => {
         if (!day) return 0;
         return Number(day.t.split(':')[0]) - Number(day.f.split(':')[0]);
       },
+      calculateMealAllowance: () => 0,
     }));
     vi.doMock('sonner', () => ({ toast: { info: vi.fn(), success: vi.fn() } }));
 
@@ -393,6 +397,7 @@ describe('invoices.service billing batches', () => {
         if (!day) return 0;
         return Number(day.t.split(':')[0]) - Number(day.f.split(':')[0]);
       },
+      calculateMealAllowance: () => 0,
     }));
     vi.doMock('sonner', () => ({ toast: { info: vi.fn(), success: vi.fn() } }));
 
@@ -417,6 +422,17 @@ describe('invoices.service billing batches', () => {
 
   it('creates invoice from selected subset of approved items only', async () => {
     let snapshot = createSnapshot();
+    snapshot = {
+      ...snapshot,
+      timelogs: snapshot.timelogs.map((timelog) => (
+        timelog.id === 2
+          ? {
+              ...timelog,
+              days: timelog.days.map((day) => ({ ...day, meal: 'vecere' as const })),
+            }
+          : timelog
+      )),
+    };
     const markTimelogsAsInvoiced = vi.fn();
     const markReceiptsAsAttached = vi.fn();
     const invoiceInsertSingle = vi.fn().mockResolvedValue({ data: { id: 'invoice-uuid-1' }, error: null });
@@ -474,6 +490,7 @@ describe('invoices.service billing batches', () => {
         if (!day) return 0;
         return Number(day.t.split(':')[0]) - Number(day.f.split(':')[0]);
       },
+      calculateMealAllowance: (days: Timelog['days']) => days.filter((day) => day.meal).length * 250,
     }));
     vi.doMock('sonner', () => ({ toast: { info: vi.fn(), success: vi.fn() } }));
 
@@ -484,14 +501,19 @@ describe('invoices.service billing batches', () => {
     expect(created?.jobNumbers).toEqual(['AK002']);
     expect(created?.timelogIds).toEqual([2]);
     expect(created?.receiptIds).toEqual([11]);
-    expect(created?.total).toBe(2050);
+    expect(created?.total).toBe(2300);
+    expect(invoiceInsert).toHaveBeenCalledWith(expect.objectContaining({
+      amount_meals: 250,
+      total_amount: 2300,
+    }));
     expect(invoiceItemsInsert).toHaveBeenCalledWith([
       expect.objectContaining({
         job_number: 'AK002',
         amount_hours: 1750,
         amount_km: 0,
+        amount_meals: 250,
         amount_receipts: 300,
-        total_amount: 2050,
+        total_amount: 2300,
       }),
     ]);
     expect(invoiceTimelogsInsert).toHaveBeenCalledWith([
@@ -602,7 +624,7 @@ describe('invoices.service billing batches', () => {
       markReceiptsAsReimbursedForInvoice: vi.fn(),
     }));
     vi.doMock('../../../data', () => ({ KM_RATE: 5 }));
-    vi.doMock('../../../utils', () => ({ calculateTotalHours: () => 9 }));
+    vi.doMock('../../../utils', () => ({ calculateTotalHours: () => 9, calculateMealAllowance: () => 0 }));
     vi.doMock('sonner', () => ({ toast: { info: vi.fn(), success: vi.fn() } }));
 
     const { createInvoiceFromSelection } = await import('./invoices.service');
@@ -713,7 +735,7 @@ describe('invoices.service billing batches', () => {
       markReceiptsAsReimbursedForInvoice: vi.fn(),
     }));
     vi.doMock('../../../data', () => ({ KM_RATE: 5 }));
-    vi.doMock('../../../utils', () => ({ calculateTotalHours: () => 7 }));
+    vi.doMock('../../../utils', () => ({ calculateTotalHours: () => 7, calculateMealAllowance: () => 0 }));
     vi.doMock('sonner', () => ({ toast: { info: vi.fn(), success: vi.fn() } }));
 
     const { createInvoiceFromSelection } = await import('./invoices.service');

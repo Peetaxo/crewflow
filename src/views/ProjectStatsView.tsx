@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { useAppContext } from '../context/useAppContext';
 import { Contractor, Invoice, ReceiptItem, Timelog } from '../types';
-import { calculateDayHours, calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
+import { calculateDayHours, calculateDayMealAllowance, calculateMealAllowance, calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';
 import { getTimelogDependencies, getTimelogs, subscribeToTimelogChanges } from '../features/timelogs/services/timelogs.service';
 import { canSeeTimelogNote } from '../features/timelogs/services/timelog-permissions';
@@ -68,8 +68,9 @@ const ProjectStatsView = () => {
 
   const getTimelogCrewCost = useCallback((timelog: Timelog): number => {
     const contractor = findContractor(timelog.contractorProfileId);
-    return contractor ? calculateTotalHours(timelog.days) * contractor.rate : 0;
-  }, [findContractor]);
+    const event = projectEvents.find((item) => item.id === timelog.eid || item.supabaseId === timelog.eid);
+    return contractor ? calculateTotalHours(timelog.days) * contractor.rate + calculateMealAllowance(timelog.days, { enabled: Boolean(event?.mealAllowanceEnabled) }) : 0;
+  }, [findContractor, projectEvents]);
 
   const totalHours = projectTimelogs.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
   const totalKm = projectTimelogs.reduce((sum, timelog) => sum + timelog.km, 0);
@@ -82,27 +83,29 @@ const ProjectStatsView = () => {
 
     projectTimelogs.forEach((timelog) => {
       const contractor = findContractor(timelog.contractorProfileId);
+      const event = projectEvents.find((item) => item.id === timelog.eid || item.supabaseId === timelog.eid);
       if (!contractor) return;
 
       timelog.days.forEach((day) => {
         const hours = calculateDayHours(day.f, day.t);
-        phaseMap[day.type || 'provoz'] = (phaseMap[day.type || 'provoz'] || 0) + (hours * contractor.rate);
+        phaseMap[day.type || 'provoz'] = (phaseMap[day.type || 'provoz'] || 0) + (hours * contractor.rate) + (event?.mealAllowanceEnabled ? calculateDayMealAllowance(day) : 0);
       });
     });
 
     const phaseColors: Record<string, string> = {
+      pripravy: 'var(--nodu-accent)',
       instal: 'var(--nodu-info-text)',
       provoz: 'var(--nodu-success-text)',
       deinstal: 'var(--nodu-warning-text)',
     };
-    const phaseLabels: Record<string, string> = { instal: 'Instal', provoz: 'Provoz', deinstal: 'Deinstal' };
+    const phaseLabels: Record<string, string> = { pripravy: 'Přípravy', instal: 'Instal', provoz: 'Provoz', deinstal: 'Deinstal' };
 
     return Object.entries(phaseMap).map(([type, value]) => ({
       name: phaseLabels[type] || type,
       value: Math.round(value),
       color: phaseColors[type] || 'var(--nodu-text-soft)',
     }));
-  }, [projectTimelogs, findContractor]);
+  }, [projectTimelogs, findContractor, projectEvents]);
 
   const hoursByPhase = useMemo(() => {
     const phaseMap: Record<string, number> = {};
@@ -114,8 +117,9 @@ const ProjectStatsView = () => {
       });
     });
 
-    const phaseLabels: Record<string, string> = { instal: 'Instal', provoz: 'Provoz', deinstal: 'Deinstal' };
+    const phaseLabels: Record<string, string> = { pripravy: 'Přípravy', instal: 'Instal', provoz: 'Provoz', deinstal: 'Deinstal' };
     const phaseColors: Record<string, string> = {
+      pripravy: 'var(--nodu-accent)',
       instal: 'var(--nodu-info-text)',
       provoz: 'var(--nodu-success-text)',
       deinstal: 'var(--nodu-warning-text)',

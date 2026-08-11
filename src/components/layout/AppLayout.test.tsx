@@ -48,8 +48,8 @@ vi.mock('./Sidebar', () => ({
 }));
 
 vi.mock('./MobileCrewNav', () => ({
-  default: ({ badgeCounts }: { badgeCounts: Record<string, number> }) => (
-    <nav data-testid="mobile-crew-nav">{badgeCounts['my-timelogs']}</nav>
+  default: ({ badgeCounts, role }: { badgeCounts: Record<string, number>; role?: string }) => (
+    <nav data-testid="mobile-crew-nav" data-role={role}>{badgeCounts['my-timelogs']}</nav>
   ),
 }));
 
@@ -195,6 +195,7 @@ describe('AppLayout shell', () => {
     expect(screen.getByRole('main')).toHaveClass('nodu-page-frame--mobile-crew');
     expect(screen.queryByTestId('sidebar')).not.toBeInTheDocument();
     expect(screen.getByTestId('mobile-crew-nav')).toHaveTextContent('2');
+    expect(screen.getByTestId('mobile-crew-nav')).toHaveAttribute('data-role', 'crew');
     expect(screen.getByRole('button', { name: 'Crew' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'CrewHead' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'COO' })).toBeInTheDocument();
@@ -226,8 +227,23 @@ describe('AppLayout shell', () => {
 
     expect(screen.getByRole('main')).toHaveClass('nodu-page-frame--mobile-crew');
     expect(screen.queryByTestId('sidebar')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('mobile-crew-nav')).not.toBeInTheDocument();
+    expect(screen.getByTestId('mobile-crew-nav')).toHaveAttribute('data-role', 'crewhead');
     expect(screen.getByRole('button', { name: 'CrewHead' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('hides the mobile management nav while a management event detail is open', () => {
+    mockAppContext = {
+      ...mockAppContext,
+      currentTab: 'events',
+      role: 'coo',
+      selectedEventId: 'event-uuid-1',
+    };
+    mockIsMobile = true;
+
+    render(<AppLayout />);
+
+    expect(screen.queryByTestId('mobile-crew-nav')).not.toBeInTheDocument();
+    expect(screen.getByTestId('events-view')).toBeInTheDocument();
   });
 
   it('switches roles from the mobile role switcher in preview mode', () => {

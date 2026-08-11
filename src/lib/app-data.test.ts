@@ -128,6 +128,7 @@ describe('app-data Supabase loading', () => {
         time_from: '08:00',
         time_to: '17:00',
         day_type: 'instal',
+        meal: null,
         note: null,
         created_at: '2026-04-28T00:00:00Z',
       }],

@@ -17,7 +17,7 @@ import type {
   Timelog,
   TimelogId,
 } from '../../../types';
-import { calculateTotalHours } from '../../../utils';
+import { calculateMealAllowance, calculateTotalHours } from '../../../utils';
 import {
   getTimelogs,
   markTimelogsAsInvoiced,
@@ -51,6 +51,7 @@ type BillingItem = {
   amountHours: number;
   km: number;
   amountKm: number;
+  amountMeals: number;
   amountReceipts: number;
 };
 
@@ -90,6 +91,7 @@ export type InvoiceCreatePreviewItem = {
     amountHours: number;
     km: number;
     amountKm: number;
+    amountMeals: number;
   }>;
   receiptEntries: Array<{
     receiptId: ReceiptId;
@@ -99,6 +101,7 @@ export type InvoiceCreatePreviewItem = {
   amountHours: number;
   km: number;
   amountKm: number;
+  amountMeals: number;
   amountReceipts: number;
   totalAmount: number;
 };
@@ -113,6 +116,7 @@ export type InvoiceCreatePreview = {
   totalKm: number;
   totalAmountHours: number;
   totalAmountKm: number;
+  totalAmountMeals: number;
   totalAmountReceipts: number;
   totalAmount: number;
 };
@@ -126,6 +130,7 @@ type InvoiceItemRow = {
   amount_hours: number | null;
   km: number | null;
   amount_km: number | null;
+  amount_meals?: number | null;
   amount_receipts: number | null;
   total_amount: number | null;
   created_at: string;
@@ -165,6 +170,10 @@ const isPersistedSupabaseId = (id: EntityId | null | undefined): id is string =>
 
 const findEvent = (events: Event[], id: EventId): Event | null => (
   events.find((event) => event.id === id || event.supabaseId === id) ?? null
+);
+
+const calculateTimelogMealAllowanceForEvent = (timelog: Timelog, event: Event | null): number => (
+  calculateMealAllowance(timelog.days, { enabled: Boolean(event?.mealAllowanceEnabled) })
 );
 
 const getBillingEventId = (event: Event | null, fallback: EventId): EventId => (
@@ -392,6 +401,7 @@ const buildBillingBatches = (): BillingBatch[] => {
       amountHours: 0,
       km: 0,
       amountKm: 0,
+      amountMeals: 0,
       amountReceipts: 0,
     };
     batch.items.set(jobNumber, created);
@@ -411,11 +421,13 @@ const buildBillingBatches = (): BillingBatch[] => {
     const hours = round2(calculateTotalHours(timelog.days));
     const amountHours = Math.round(hours * contractor.rate);
     const amountKm = Math.round(timelog.km * KM_RATE);
+    const amountMeals = Math.round(calculateTimelogMealAllowanceForEvent(timelog, event));
 
     item.hours = round2(item.hours + hours);
     item.amountHours += amountHours;
     item.km = round2(item.km + timelog.km);
     item.amountKm += amountKm;
+    item.amountMeals += amountMeals;
     item.eventIds.add(billingEventId);
     item.timelogIds.push(billingTimelogId);
 
@@ -459,6 +471,7 @@ const buildInvoiceFromBatch = (
   const hAmt = itemList.reduce((sum, item) => sum + item.amountHours, 0);
   const km = round2(itemList.reduce((sum, item) => sum + item.km, 0));
   const kAmt = itemList.reduce((sum, item) => sum + item.amountKm, 0);
+  const mealAmt = itemList.reduce((sum, item) => sum + item.amountMeals, 0);
   const receiptAmt = itemList.reduce((sum, item) => sum + item.amountReceipts, 0);
   const primaryEventId = uniqueSortedEntityIds(batch.eventIds)[0] ?? 0;
   const uniqueId = `FAK-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase()}-${index + 1}`;
@@ -471,8 +484,9 @@ const buildInvoiceFromBatch = (
     hAmt,
     km,
     kAmt,
+    mealAmt,
     receiptAmt,
-    total: hAmt + kAmt + receiptAmt,
+    total: hAmt + kAmt + mealAmt + receiptAmt,
     job: jobNumbers.join(', '),
     jobNumbers,
     timelogIds: uniqueSortedEntityIds(batch.timelogIds),
@@ -501,6 +515,7 @@ const batchToPreview = (
         const amountHours = contractor ? Math.round(hours * contractor.rate) : 0;
         const km = timelog ? round2(timelog.km) : 0;
         const amountKm = Math.round(km * KM_RATE);
+        const amountMeals = timelog ? Math.round(calculateTimelogMealAllowanceForEvent(timelog, event)) : 0;
 
         return {
           timelogId,
@@ -510,6 +525,7 @@ const batchToPreview = (
           amountHours,
           km,
           amountKm,
+          amountMeals,
         };
       });
 
@@ -532,8 +548,9 @@ const batchToPreview = (
         amountHours: item.amountHours,
         km: round2(item.km),
         amountKm: item.amountKm,
+        amountMeals: item.amountMeals,
         amountReceipts: item.amountReceipts,
-        totalAmount: item.amountHours + item.amountKm + item.amountReceipts,
+        totalAmount: item.amountHours + item.amountKm + item.amountMeals + item.amountReceipts,
       };
     })
     .sort((a, b) => a.jobNumber.localeCompare(b.jobNumber));
@@ -542,6 +559,7 @@ const batchToPreview = (
   const totalKm = round2(items.reduce((sum, item) => sum + item.km, 0));
   const totalAmountHours = items.reduce((sum, item) => sum + item.amountHours, 0);
   const totalAmountKm = items.reduce((sum, item) => sum + item.amountKm, 0);
+  const totalAmountMeals = items.reduce((sum, item) => sum + item.amountMeals, 0);
   const totalAmountReceipts = items.reduce((sum, item) => sum + item.amountReceipts, 0);
 
   return {
@@ -554,8 +572,9 @@ const batchToPreview = (
     totalKm,
     totalAmountHours,
     totalAmountKm,
+    totalAmountMeals,
     totalAmountReceipts,
-    totalAmount: totalAmountHours + totalAmountKm + totalAmountReceipts,
+    totalAmount: totalAmountHours + totalAmountKm + totalAmountMeals + totalAmountReceipts,
   };
 };
 
@@ -629,6 +648,7 @@ const buildBatchFromSelection = (
       amountHours: 0,
       km: 0,
       amountKm: 0,
+      amountMeals: 0,
       amountReceipts: 0,
     };
     batch.items.set(jobNumber, created);
@@ -646,11 +666,13 @@ const buildBatchFromSelection = (
     const hours = round2(calculateTotalHours(timelog.days));
     const amountHours = Math.round(hours * contractor.rate);
     const amountKm = Math.round(timelog.km * KM_RATE);
+    const amountMeals = Math.round(calculateTimelogMealAllowanceForEvent(timelog, event));
 
     item.hours = round2(item.hours + hours);
     item.amountHours += amountHours;
     item.km = round2(item.km + timelog.km);
     item.amountKm += amountKm;
+    item.amountMeals += amountMeals;
     item.eventIds.add(billingEventId);
     item.timelogIds.push(billingTimelogId);
 
@@ -869,6 +891,7 @@ const persistSupabaseGeneratedInvoice = async (invoice: Invoice): Promise<string
       total_hours: invoice.hours,
       amount_hours: invoice.hAmt,
       amount_km: invoice.kAmt,
+      amount_meals: invoice.mealAmt ?? 0,
       amount_receipts: invoice.receiptAmt ?? 0,
       total_amount: invoice.total,
       invoice_number: invoice.invoiceNumber ?? null,
@@ -913,6 +936,7 @@ const persistSupabaseGeneratedInvoice = async (invoice: Invoice): Promise<string
       amountHours: 0,
       km: 0,
       amountKm: 0,
+      amountMeals: 0,
       amountReceipts: 0,
     };
     const hours = round2(calculateTotalHours(timelog.days));
@@ -920,6 +944,7 @@ const persistSupabaseGeneratedInvoice = async (invoice: Invoice): Promise<string
     current.amountHours += Math.round(hours * contractor.rate);
     current.km = round2(current.km + timelog.km);
     current.amountKm += Math.round(timelog.km * KM_RATE);
+    current.amountMeals += Math.round(calculateTimelogMealAllowanceForEvent(timelog, event ?? null));
     current.timelogIds.push(timelogId);
     if (timelog.eid) current.eventIds.add(timelog.eid);
     items.set(jobNumber, current);
@@ -939,6 +964,7 @@ const persistSupabaseGeneratedInvoice = async (invoice: Invoice): Promise<string
       amountHours: 0,
       km: 0,
       amountKm: 0,
+      amountMeals: 0,
       amountReceipts: 0,
     };
     current.amountReceipts += Math.round(receipt.amount);
@@ -957,8 +983,9 @@ const persistSupabaseGeneratedInvoice = async (invoice: Invoice): Promise<string
     amount_hours: item.amountHours,
     km: item.km,
     amount_km: item.amountKm,
+    amount_meals: item.amountMeals,
     amount_receipts: item.amountReceipts,
-    total_amount: item.amountHours + item.amountKm + item.amountReceipts,
+    total_amount: item.amountHours + item.amountKm + item.amountMeals + item.amountReceipts,
   }));
 
   if (itemRows.length > 0) {

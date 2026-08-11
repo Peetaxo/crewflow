@@ -71,6 +71,8 @@ describe('timelog day UI helpers', () => {
       f: '09:00',
       t: '18:00',
       type: 'provoz',
+      meals: [],
+      meal: null,
       note: '',
     });
   });
@@ -81,6 +83,8 @@ describe('timelog day UI helpers', () => {
       f: '06:00',
       t: '08:00',
       type: 'pripravy',
+      meals: [],
+      meal: null,
       note: '',
     });
   });
@@ -169,6 +173,6 @@ describe('timelog day UI helpers', () => {
       t: '12:00',
       type: 'provoz',
       note: 'Ranni blok',
-    }, 1)).toBe('2026-07-14|09:00|12:00|provoz|Ranni blok|1');
+    }, 1)).toBe('2026-07-14|09:00|12:00|provoz||Ranni blok|1');
   });
 });

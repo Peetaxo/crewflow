@@ -3,7 +3,7 @@ import { getLocalAppState, subscribeToLocalAppState, updateLocalAppState } from 
 import { mapClient, mapProject } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { Client, Contractor, Event, Invoice, Project, Timelog } from '../../../types';
-import { calculateTotalHours, getEventStatus } from '../../../utils';
+import { calculateMealAllowance, calculateTotalHours, getEventStatus } from '../../../utils';
 import { ensureSupabaseCrewLoaded } from '../../crew/services/crew.service';
 import { ensureSupabaseEventsLoaded } from '../../events/services/events.service';
 import { ensureSupabaseTimelogsLoaded } from '../../timelogs/services/timelogs.service';
@@ -152,13 +152,20 @@ const calculateProjectCrewCost = (
   timelogs: Timelog[],
   contractors: Contractor[],
 ) => {
-  const projectEventIds = new Set(projectEvents.map((event) => event.id));
+  const projectEventIds = new Set(
+    projectEvents.flatMap((event) => [event.id, event.supabaseId].filter(Boolean)),
+  );
 
   return timelogs
     .filter((timelog) => projectEventIds.has(timelog.eid))
     .reduce((sum, timelog) => {
       const contractor = contractors.find((item) => item.profileId === timelog.contractorProfileId);
-      return sum + (contractor ? calculateTotalHours(timelog.days) * contractor.rate : 0);
+      const event = projectEvents.find((item) => item.id === timelog.eid || item.supabaseId === timelog.eid);
+      return sum + (
+        contractor
+          ? calculateTotalHours(timelog.days) * contractor.rate + calculateMealAllowance(timelog.days, { enabled: Boolean(event?.mealAllowanceEnabled) })
+          : 0
+      );
     }, 0);
 };
 

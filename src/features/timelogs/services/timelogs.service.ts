@@ -4,7 +4,8 @@ import { queryClient } from '../../../lib/query-client';
 import { queryKeys } from '../../../lib/query-keys';
 import { mapTimelog } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
-import { Contractor, EntityId, Event, EventId, Timelog, TimelogStatus } from '../../../types';
+import { Contractor, EntityId, Event, EventId, Timelog, TimelogChangeSnapshot, TimelogDay, TimelogStatus } from '../../../types';
+import { normalizeMealSelection } from '../../../utils';
 import { assertTimelogDaysDoNotOverlap } from './timelog-validation';
 
 type TimelogAction = 'sub' | 'ch' | 'coo' | 'rej';
@@ -19,8 +20,45 @@ const statusMap: Record<TimelogAction, TimelogStatus> = {
 const createLocalEntityId = (prefix: string) => `local:${prefix}:${crypto.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`}`;
 
 const sortTimelogDays = (days: Timelog['days']) => (
-  [...days].sort((a, b) => `${a.d}${a.f}${a.type}`.localeCompare(`${b.d}${b.f}${b.type}`))
+  [...days].sort((a, b) => `${a.d}${a.f}${a.type}${normalizeMealSelection(a).join(',')}${a.meal ?? ''}`.localeCompare(`${b.d}${b.f}${b.type}${normalizeMealSelection(b).join(',')}${b.meal ?? ''}`))
 );
+
+const normalizeTimelogDayForSnapshot = (day: TimelogDay): TimelogDay => {
+  const meals = normalizeMealSelection(day);
+
+  return {
+    ...day,
+    meals,
+    meal: meals[0] ?? null,
+    note: day.note ?? '',
+  };
+};
+
+const createCrewConfirmationSnapshot = (
+  timelog: Pick<Timelog, 'days' | 'km' | 'note'>,
+): TimelogChangeSnapshot => ({
+  changedAt: new Date().toISOString(),
+  before: {
+    days: sortTimelogDays(timelog.days).map(normalizeTimelogDayForSnapshot),
+    km: timelog.km,
+    note: timelog.note,
+  },
+});
+
+const resolveCrewConfirmationSnapshot = (
+  updatedTimelog: Timelog,
+  existingTimelog: Pick<Timelog, 'days' | 'km' | 'note' | 'status' | 'crewConfirmationSnapshot'>,
+): TimelogChangeSnapshot | null => {
+  if (updatedTimelog.status !== 'pending_crew_confirmation') {
+    return null;
+  }
+
+  if (existingTimelog.status !== 'pending_crew_confirmation') {
+    return createCrewConfirmationSnapshot(existingTimelog);
+  }
+
+  return updatedTimelog.crewConfirmationSnapshot ?? existingTimelog.crewConfirmationSnapshot ?? null;
+};
 
 const eventMatchesId = (event: Event, eventId: EventId): boolean => (
   event.id === eventId || Boolean(event.supabaseId && event.supabaseId === eventId)
@@ -334,6 +372,9 @@ export const updateTimelogStatus = async (id: EntityId, action: TimelogAction): 
       updatedTimelog = {
         ...timelog,
         status: nextStatus,
+        crewConfirmationSnapshot: nextStatus === 'pending_crew_confirmation'
+          ? timelog.crewConfirmationSnapshot ?? null
+          : null,
       };
 
       return updatedTimelog;
@@ -387,6 +428,13 @@ export const createTimelog = async (timelog: Omit<Timelog, 'id'>): Promise<Timel
     days: sortTimelogDays(timelog.days),
   };
 
+  if (normalizedTimelog.status === 'pending_crew_confirmation' && !normalizedTimelog.crewConfirmationSnapshot) {
+    normalizedTimelog = {
+      ...normalizedTimelog,
+      crewConfirmationSnapshot: createCrewConfirmationSnapshot({ days: [], km: 0, note: '' }),
+    };
+  }
+
   if (normalizedTimelog.days.length === 0) {
     throw new Error('Vykaz musi obsahovat alespon jeden den.');
   }
@@ -417,15 +465,21 @@ export const createTimelog = async (timelog: Omit<Timelog, 'id'>): Promise<Timel
       ? 'pending_ch'
       : normalizedTimelog.status;
 
+    const timelogInsertPayload = {
+      event_id: eventRowId,
+      contractor_id: normalizedTimelog.contractorProfileId,
+      ...(normalizedTimelog.crewConfirmationSnapshot ? {
+        crew_confirmation_snapshot: normalizedTimelog.crewConfirmationSnapshot,
+      } : {}),
+      km: normalizedTimelog.km,
+      note: normalizedTimelog.note,
+      review_note: normalizedTimelog.reviewNote?.trim() || null,
+      status: statusForDataWrite,
+    };
+
     const timelogInsert = await supabase
       .from('timelogs')
-      .insert({
-        event_id: eventRowId,
-        contractor_id: normalizedTimelog.contractorProfileId,
-        km: normalizedTimelog.km,
-        note: normalizedTimelog.note,
-        status: statusForDataWrite,
-      })
+      .insert(timelogInsertPayload)
       .select('id')
       .single();
 
@@ -452,6 +506,8 @@ export const createTimelog = async (timelog: Omit<Timelog, 'id'>): Promise<Timel
         time_from: day.f,
         time_to: day.t,
         day_type: day.type,
+        meals: normalizeMealSelection(day),
+        meal: normalizeMealSelection(day)[0] ?? null,
         note: day.note?.trim() || null,
       })));
 
@@ -504,6 +560,11 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
     throw new Error('Nepodarilo se dohledat UUID identitu clena crew.');
   }
 
+  const timelogToPersist: Timelog = {
+    ...normalizedTimelog,
+    crewConfirmationSnapshot: resolveCrewConfirmationSnapshot(normalizedTimelog, existingTimelog),
+  };
+
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
     const [timelogRowId, eventRowId] = await Promise.all([
       getSupabaseTimelogRowId(updated.id),
@@ -524,8 +585,12 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
       .update({
         event_id: eventRowId,
         contractor_id: contractorRowId,
-        km: normalizedTimelog.km,
-        note: normalizedTimelog.note,
+        ...(timelogToPersist.status === 'pending_crew_confirmation' || existingTimelog.crewConfirmationSnapshot ? {
+          crew_confirmation_snapshot: timelogToPersist.crewConfirmationSnapshot,
+        } : {}),
+        km: timelogToPersist.km,
+        note: timelogToPersist.note,
+        review_note: timelogToPersist.reviewNote?.trim() || null,
         status: statusForDataWrite,
       })
       .eq('id', timelogRowId);
@@ -543,15 +608,17 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
       throw new Error(timelogDaysDelete.error.message);
     }
 
-    if (normalizedTimelog.days.length > 0) {
+    if (timelogToPersist.days.length > 0) {
       const timelogDaysInsert = await supabase
         .from('timelog_days')
-        .insert(normalizedTimelog.days.map((day) => ({
+        .insert(timelogToPersist.days.map((day) => ({
           timelog_id: timelogRowId,
           date: day.d,
           time_from: day.f,
           time_to: day.t,
           day_type: day.type,
+          meals: normalizeMealSelection(day),
+          meal: normalizeMealSelection(day)[0] ?? null,
           note: day.note?.trim() || null,
         })));
 
@@ -569,13 +636,13 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
     ...snapshot,
     timelogs: snapshot.timelogs.map((timelog) => (
       timelog.id === updated.id
-        ? { ...normalizedTimelog, supabaseId: persistedTimelogRowId }
+        ? { ...timelogToPersist, supabaseId: persistedTimelogRowId }
         : timelog
     )),
   }));
 
   invalidateTimelogQueries();
-  return { ...normalizedTimelog, supabaseId: persistedTimelogRowId };
+  return { ...timelogToPersist, supabaseId: persistedTimelogRowId };
 };
 
 export const deleteTimelog = async (id: EntityId): Promise<{ id: EntityId }> => {

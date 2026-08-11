@@ -31,6 +31,7 @@ const testData = vi.hoisted(() => ({
     filled: 1,
     status: 'upcoming',
     client: 'NEXTLEVEL',
+    mealAllowanceEnabled: true,
     showDayTypes: true,
     dayTypes: {
       '2026-07-13': 'instal',
@@ -107,6 +108,8 @@ describe('MobileTimelogEditModal', () => {
     vi.clearAllMocks();
     testState.cloneDependencies = false;
     testState.role = 'crew';
+    testData.event.mealAllowanceEnabled = true;
+    testData.event.supabaseId = undefined;
     testState.editingTimelog = {
       id: 1,
       eid: 1,
@@ -139,6 +142,75 @@ describe('MobileTimelogEditModal', () => {
     expect(screen.getByText('5 400 Kc')).toBeInTheDocument();
   });
 
+  it('opens when the timelog references the event by Supabase id', () => {
+    testData.event.supabaseId = 'event-uuid-1';
+    testState.editingTimelog = {
+      ...testState.editingTimelog!,
+      eid: 'event-uuid-1',
+    };
+
+    render(<MobileTimelogEditModal />);
+
+    expect(screen.getByRole('heading', { name: 'Upravit výkaz' })).toBeInTheDocument();
+    expect(screen.getByText('Petr Heitzer · TEST')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '13.07.2026' })).toHaveClass('nodu-mobile-timelog-day--event');
+  });
+
+  it('opens submitted Crew timelogs as read-only evidence', () => {
+    testState.editingTimelog = {
+      ...testState.editingTimelog!,
+      status: 'pending_coo',
+    };
+
+    render(<MobileTimelogEditModal />);
+
+    expect(screen.getByRole('heading', { name: 'Upravit výkaz' })).toBeInTheDocument();
+    expect(screen.getAllByText('Výkaz je ve schvalování')).toHaveLength(1);
+    expect(screen.getAllByText('Čeká na schválení COO. Úpravy teď nejsou možné.')).toHaveLength(1);
+    const summary = screen.getByRole('region', { name: 'Souhrn hodin' });
+    expect(summary).toHaveTextContent('13.07.');
+    expect(summary).not.toHaveTextContent('13.07.2026');
+    expect(summary).toHaveTextContent('08:00 - 17:00');
+    expect(summary).toHaveTextContent('Instal');
+    expect(summary).toHaveTextContent('9.0h');
+    expect(summary).toHaveTextContent('14.07.');
+    expect(summary).not.toHaveTextContent('14.07.2026');
+    expect(summary).toHaveTextContent('09:00 - 18:00');
+    expect(summary).toHaveTextContent('Provoz');
+    expect(within(summary).queryByText('Celkem')).not.toBeInTheDocument();
+    expect(within(summary).queryByText('18.0h celkem')).not.toBeInTheDocument();
+    expect(within(summary).queryByText('Odměna')).not.toBeInTheDocument();
+    expect(within(summary).queryByText('5 400 Kc')).not.toBeInTheDocument();
+    expect(summary.querySelector('.nodu-mobile-timelog-readonly-summary-totals')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Přidat den' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Přidat Záznam' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Otevřít výběr času Od 08:00' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Instal' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Cestovné celkem (km)')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Uložit výkaz' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Odeslat ke kontrole' })).not.toBeInTheDocument();
+  });
+
+  it('keeps readonly summary date, time, and phase in one compact metadata row', () => {
+    testState.editingTimelog = {
+      ...testState.editingTimelog!,
+      status: 'pending_coo',
+    };
+
+    render(<MobileTimelogEditModal />);
+
+    const summary = screen.getByRole('region', { name: 'Souhrn hodin' });
+    const firstRow = within(summary)
+      .getByText('13.07.')
+      .closest('.nodu-mobile-timelog-summary-row');
+    const metaRow = firstRow?.querySelector('.nodu-mobile-timelog-summary-row-meta');
+
+    expect(metaRow).toBeInTheDocument();
+    expect(metaRow).toContainElement(within(firstRow as HTMLElement).getByText('13.07.'));
+    expect(metaRow).toContainElement(within(firstRow as HTMLElement).getByText('08:00 - 17:00'));
+    expect(metaRow).toContainElement(within(firstRow as HTMLElement).getByText('Instal'));
+  });
+
   it('renders as a top-level modal above mobile event detail dialogs', () => {
     render(<MobileTimelogEditModal />);
 
@@ -147,6 +219,32 @@ describe('MobileTimelogEditModal', () => {
     expect(dialog).toHaveAttribute('aria-modal', 'true');
     expect(dialog.parentElement).toHaveClass('z-[90]');
     expect(dialog.parentElement).not.toHaveClass('z-50');
+  });
+
+  it('shows CH changes that Crew must confirm', () => {
+    testState.editingTimelog = {
+      ...testState.editingTimelog!,
+      status: 'pending_crew_confirmation',
+      days: [
+        { d: '2026-07-13', f: '08:00', t: '19:00', type: 'instal' },
+      ],
+      crewConfirmationSnapshot: {
+        changedAt: '2026-07-13T12:00:00.000Z',
+        before: {
+          days: [
+            { d: '2026-07-13', f: '08:00', t: '17:00', type: 'instal' },
+          ],
+          km: 0,
+          note: '',
+        },
+      },
+    };
+
+    render(<MobileTimelogEditModal />);
+
+    expect(screen.getByText('Upraveno CH')).toBeInTheDocument();
+    expect(screen.getByText('Čeká na tvoje potvrzení')).toBeInTheDocument();
+    expect(screen.getByText('13. 7. čas 08:00-17:00 -> 08:00-19:00')).toBeInTheDocument();
   });
 
   it('reveals the underlying event detail while swiping the timelog modal back', async () => {
@@ -416,6 +514,20 @@ describe('MobileTimelogEditModal', () => {
     selectTime('Od', '10:15');
     fireEvent.click(screen.getByRole('button', { name: 'Odeslat ke kontrole' }));
 
+    const dialog = screen.getByRole('dialog', { name: 'Odeslat výkaz ke kontrole?' });
+    expect(dialog).toHaveTextContent('Zkontroluj si ještě hodiny, cestovné a poznámku.');
+    expect(dialog).toHaveTextContent('13.07.');
+    expect(dialog).not.toHaveTextContent('13.07.2026');
+    expect(dialog).toHaveTextContent('08:00 - 17:00');
+    expect(dialog).toHaveTextContent('14.07.');
+    expect(dialog).not.toHaveTextContent('14.07.2026');
+    expect(dialog).toHaveTextContent('10:15 - 18:00');
+    expect(dialog).toHaveTextContent('16.8h celkem');
+    expect(dialog).toHaveTextContent('5 025 Kc');
+    expect(testMocks.saveTimelog).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Odeslat ke kontrole' }));
+
     await waitFor(() => expect(testMocks.saveTimelog).toHaveBeenCalledWith(expect.objectContaining({
       status: 'pending_ch',
       days: expect.arrayContaining([
@@ -429,12 +541,38 @@ describe('MobileTimelogEditModal', () => {
     expect(testMocks.setEditingTimelog).toHaveBeenCalledWith(null);
   });
 
-  it('keeps the review submission action out of the management edit workflow', () => {
-    testState.role = 'crewhead';
+  it('keeps meal compensation in the submit confirmation totals without repeating meal badges in rows', () => {
+    testState.editingTimelog = {
+      ...testState.editingTimelog!,
+      days: [
+        { d: '2026-07-13', f: '08:00', t: '20:00', type: 'instal', meals: ['obed'] },
+      ],
+    };
 
     render(<MobileTimelogEditModal />);
 
-    expect(screen.getByRole('button', { name: 'Uložit změny' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Odeslat ke kontrole' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Odeslat výkaz ke kontrole?' });
+    expect(dialog).toHaveTextContent('13.07.');
+    expect(dialog).toHaveTextContent('08:00 - 20:00');
+    expect(dialog).toHaveTextContent('Instal');
+    expect(dialog).toHaveTextContent('12.0h');
+    expect(dialog).toHaveTextContent('Jídlo');
+    expect(dialog).toHaveTextContent('250 Kc');
+    expect(within(dialog).queryByText('Oběd')).not.toBeInTheDocument();
+  });
+
+  it('keeps the review submission action out of the management edit workflow', () => {
+    testState.role = 'crewhead';
+    testState.editingTimelog = {
+      ...testState.editingTimelog!,
+      status: 'pending_ch',
+    };
+
+    render(<MobileTimelogEditModal />);
+
+    expect(screen.getByRole('button', { name: 'Odeslat k potvrzení Crew' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Uložit výkaz' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Odeslat ke kontrole' })).not.toBeInTheDocument();
   });
@@ -490,9 +628,9 @@ describe('MobileTimelogEditModal', () => {
     render(<MobileTimelogEditModal />);
 
     expect(screen.getByRole('button', { name: 'Uložit výkaz' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Potvrdit úpravy a odeslat CH' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Potvrdit a odeslat' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Potvrdit úpravy a odeslat CH' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Potvrdit a odeslat' }));
 
     await waitFor(() => expect(testMocks.saveTimelog).toHaveBeenCalledWith(expect.objectContaining({
       status: 'pending_ch',
@@ -503,8 +641,14 @@ describe('MobileTimelogEditModal', () => {
     testState.editingTimelog = {
       ...testState.editingTimelog!,
       status: 'rejected',
+      note: 'Chybí pauza po obědě.',
     };
     render(<MobileTimelogEditModal />);
+
+    expect(screen.getByText('Vráceno k opravě')).toBeInTheDocument();
+    expect(screen.getByText('Uprav výkaz a odešli ho znovu ke kontrole.')).toBeInTheDocument();
+    expect(screen.getAllByText('Chybí pauza po obědě.').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Odeslat znovu' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Uložit výkaz' }));
 
@@ -513,8 +657,35 @@ describe('MobileTimelogEditModal', () => {
     })));
   });
 
+  it('keeps the Crew report note read-only and saves CrewHead correction notes separately', async () => {
+    testState.role = 'crewhead';
+    testState.editingTimelog = {
+      ...testState.editingTimelog!,
+      status: 'pending_ch',
+      note: 'Crew napsal původní poznámku.',
+      reviewNote: '',
+    } as Timelog & { reviewNote: string };
+
+    render(<MobileTimelogEditModal />);
+
+    expect(screen.getByText('Poznámka Crew')).toBeInTheDocument();
+    expect(screen.getByText('Crew napsal původní poznámku.')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Poznámka pro Crew'), {
+      target: { value: 'Upravil jsem konec podle telefonu.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Odeslat k potvrzení Crew' }));
+
+    await waitFor(() => expect(testMocks.saveTimelog).toHaveBeenCalledWith(expect.objectContaining({
+      note: 'Crew napsal původní poznámku.',
+      reviewNote: 'Upravil jsem konec podle telefonu.',
+      status: 'pending_crew_confirmation',
+    })));
+  });
+
   it('does not autosave timelogs that are no longer drafts', async () => {
     vi.useFakeTimers();
+    testState.role = 'crewhead';
     testState.editingTimelog = {
       ...testState.editingTimelog!,
       status: 'pending_ch',
@@ -546,12 +717,27 @@ describe('MobileTimelogEditModal', () => {
       days: expect.arrayContaining([
         expect.objectContaining({
           d: '2026-07-14',
-          f: '06:00',
-          t: '08:00',
+          f: '09:00',
+          t: '18:00',
           type: 'pripravy',
         }),
       ]),
     })));
+  });
+
+  it('keeps the selected times when changing the phase', async () => {
+    render(<MobileTimelogEditModal />);
+
+    selectTime('Do', '19:00');
+    fireEvent.click(screen.getByRole('button', { name: 'Potvrdit čas Do' }));
+
+    const phasePicker = screen.getByRole('group', { name: 'Fáze' });
+    fireEvent.click(within(phasePicker).getByRole('button', { name: 'Přípravy' }));
+
+    expect(screen.getByRole('button', { name: 'Otevřít výběr času Od 08:00' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Otevřít výběr času Do 19:00' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Upravit záznam 1' })).toHaveTextContent('08:00 - 19:00');
+    expect(screen.getByRole('button', { name: 'Upravit záznam 1' })).toHaveTextContent('Přípravy');
   });
 
   it('uses an in-app phase picker instead of a native system select', () => {
@@ -567,9 +753,68 @@ describe('MobileTimelogEditModal', () => {
     fireEvent.click(within(phasePicker).getByRole('button', { name: 'Přípravy' }));
 
     expect(within(phasePicker).getByRole('button', { name: 'Přípravy' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'Otevřít výběr času Od 06:00' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Otevřít výběr času Do 08:00' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Otevřít výběr času Od 08:00' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Otevřít výběr času Do 17:00' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Upravit záznam 1' })).toHaveTextContent('Přípravy');
+  });
+
+  it('stores optional meal selections on the selected day record', async () => {
+    render(<MobileTimelogEditModal />);
+
+    const mealPicker = screen.getByRole('group', { name: 'Jídlo' });
+    const lunchButton = within(mealPicker).getByRole('button', { name: 'Oběd' });
+    const dinnerButton = within(mealPicker).getByRole('button', { name: 'Večeře' });
+
+    expect(lunchButton).toHaveAttribute('aria-pressed', 'false');
+    expect(dinnerButton).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(lunchButton);
+    fireEvent.click(dinnerButton);
+
+    expect(screen.getByText('5 650 Kc')).toBeInTheDocument();
+    expect(lunchButton).toHaveAttribute('aria-pressed', 'true');
+    expect(dinnerButton).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Uložit výkaz' }));
+
+    await waitFor(() => expect(testMocks.saveTimelog).toHaveBeenCalledWith(expect.objectContaining({
+      days: expect.arrayContaining([
+        expect.objectContaining({
+          d: '2026-07-13',
+          meals: ['obed', 'vecere'],
+        }),
+      ]),
+    })));
+  });
+
+  it('hides meal selection when the event has no meal allowance enabled', () => {
+    testData.event.mealAllowanceEnabled = false;
+
+    render(<MobileTimelogEditModal />);
+
+    expect(screen.queryByRole('group', { name: 'Jídlo' })).not.toBeInTheDocument();
+
+    testData.event.mealAllowanceEnabled = true;
+  });
+
+  it('lets Crew clear a selected meal by tapping it again', () => {
+    testState.editingTimelog = {
+      ...testState.editingTimelog!,
+      days: [
+        { d: '2026-07-13', f: '08:00', t: '17:00', type: 'instal', meals: ['vecere'] },
+      ],
+    };
+
+    render(<MobileTimelogEditModal />);
+
+    const mealPicker = screen.getByRole('group', { name: 'Jídlo' });
+    const dinnerButton = within(mealPicker).getByRole('button', { name: 'Večeře' });
+
+    expect(dinnerButton).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.click(dinnerButton);
+
+    expect(dinnerButton).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('keeps the selected phase after autosave updates the editing timelog', async () => {
@@ -768,6 +1013,7 @@ describe('MobileTimelogEditModal', () => {
     const recordGroup = screen.getByRole('group', { name: 'Záznam dne' });
     const reportGroup = screen.getByRole('group', { name: 'Výkaz celkem' });
     const phaseLabel = screen.getByText('Fáze');
+    const mealLabel = screen.getByText('Jídlo');
     const kmLabel = screen.getByText('Cestovné celkem (km)');
     const noteLabel = screen.getByText('Poznámka k výkazu');
 
@@ -776,6 +1022,8 @@ describe('MobileTimelogEditModal', () => {
     expect(recordGroup).toContainElement(phaseLabel);
     expect(reportGroup).toContainElement(kmLabel);
     expect(reportGroup).toContainElement(noteLabel);
+    expect(Boolean(phaseLabel.compareDocumentPosition(mealLabel) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    expect(Boolean(mealLabel.compareDocumentPosition(kmLabel) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
     expect(Boolean(phaseLabel.compareDocumentPosition(kmLabel) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
     expect(Boolean(kmLabel.compareDocumentPosition(noteLabel) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
   });

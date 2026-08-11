@@ -7,7 +7,7 @@ const fallbackTo = '17:00';
 
 const sortDays = (days: Timelog['days']) => (
   [...days].sort((a, b) => (
-    `${a.d}${a.f}${a.t}${a.type}${a.id ?? ''}`.localeCompare(`${b.d}${b.f}${b.t}${b.type}${b.id ?? ''}`)
+    `${a.d}${a.f}${a.t}${a.type}${(a.meals ?? []).join(',')}${a.meal ?? ''}${a.id ?? ''}`.localeCompare(`${b.d}${b.f}${b.t}${b.type}${(b.meals ?? []).join(',')}${b.meal ?? ''}${b.id ?? ''}`)
   ))
 );
 
@@ -21,6 +21,8 @@ export const getTimelogDayEntryKey = (day: TimelogDay, index = 0): string => (
     day.f,
     day.t,
     day.type,
+    ...(day.meals ?? []),
+    day.meal ?? '',
     day.note ?? '',
     index,
   ].join('|')
@@ -77,6 +79,8 @@ export const resolveTimelogDayDefaults = (
       f: event.startTime || fallbackFrom,
       t: event.endTime || fallbackTo,
       type: resolvedType,
+      meals: [],
+      meal: null,
       note: '',
     };
   }
@@ -94,6 +98,8 @@ export const resolveTimelogDayDefaults = (
     f: resolvedSlot?.from ?? event.phaseTimes?.[resolvedType]?.from ?? event.startTime ?? fallbackFrom,
     t: resolvedSlot?.to ?? event.phaseTimes?.[resolvedType]?.to ?? event.endTime ?? fallbackTo,
     type: resolvedType,
+    meals: [],
+    meal: null,
     note: '',
   };
 };

@@ -93,7 +93,7 @@ const InvoiceCreateModal = ({ onClose, onDirtyChange, onSubmitSuccess }: Invoice
     return preview.items.reduce((sum, item) => {
       const timelogTotal = item.timelogEntries.reduce((timelogSum, entry) => (
         selectedTimelogIds.includes(entry.timelogId)
-          ? timelogSum + entry.amountHours + entry.amountKm
+          ? timelogSum + entry.amountHours + entry.amountKm + entry.amountMeals
           : timelogSum
       ), 0);
       const receiptTotal = item.receiptEntries.reduce((receiptSum, entry) => (
@@ -263,7 +263,8 @@ const InvoiceCreateModal = ({ onClose, onDirtyChange, onSubmitSuccess }: Invoice
                                 {entry.jobNumber} · {entry.eventName}
                               </div>
                               <div className="mt-0.5 text-[11px] text-[var(--nodu-text-soft)]">
-                                {entry.hours}h · {formatCurrency(entry.amountHours + entry.amountKm)}
+                                {entry.hours}h · {formatCurrency(entry.amountHours + entry.amountKm + entry.amountMeals)}
+                                {entry.amountMeals > 0 ? ` · jídlo ${formatCurrency(entry.amountMeals)}` : ''}
                               </div>
                             </div>
                             <span

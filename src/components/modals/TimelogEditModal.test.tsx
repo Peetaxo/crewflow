@@ -70,6 +70,7 @@ vi.mock('../../features/timelogs/services/timelogs.service', () => ({
         filled: 1,
         status: 'upcoming',
         client: 'NEXTLEVEL',
+        mealAllowanceEnabled: true,
       },
     ],
   }),
@@ -130,6 +131,22 @@ describe('TimelogEditModal responsive switch', () => {
         expect.objectContaining({
           d: '2026-07-13',
           note: 'Domluveno telefonicky.',
+        }),
+      ],
+    }));
+  });
+
+  it('updates optional meal selection for individual days in the desktop editor', () => {
+    render(<TimelogEditModal />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Oběd' }));
+
+    expect(setEditingTimelogMock).toHaveBeenCalledWith(expect.objectContaining({
+      days: [
+        expect.objectContaining({
+          d: '2026-07-13',
+          meals: ['obed'],
+          meal: 'obed',
         }),
       ],
     }));

@@ -191,7 +191,13 @@ begin
   )
     and public.timelog_update_is_approval_status_change(old, new)
     and old.status = 'pending_ch'::public.timelog_status
-    and new.status = 'approved'::public.timelog_status then
+    and new.status = 'approved'::public.timelog_status
+    and exists (
+      select 1
+      from public.events event
+      where event.id = old.event_id
+        and event.contact_profile_id = public.current_profile_id()
+    ) then
     return new;
   end if;
 
@@ -322,6 +328,15 @@ begin
     and superseded_at is null;
 
   if cardinality(v_approver_ids) = 0 then
+    if not exists (
+      select 1
+      from public.events event
+      where event.id = v_timelog.event_id
+        and event.contact_profile_id = v_actor_profile_id
+    ) then
+      raise exception 'Only the event contact person can approve without another approver.' using errcode = '42501';
+    end if;
+
     update public.timelogs
     set
       status = 'approved'::public.timelog_status,

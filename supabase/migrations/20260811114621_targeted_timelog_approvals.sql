@@ -191,6 +191,19 @@ using (
   )
 );
 
+drop trigger if exists trg_timelog_approved on public.timelogs;
+
+create or replace function public.handle_timelog_approved()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  return new;
+end;
+$$;
+
 create or replace function public.enforce_timelog_update_permissions()
 returns trigger
 language plpgsql
@@ -528,6 +541,7 @@ revoke all on function public.resolve_timelog_approval(uuid, text, text) from pu
 revoke all on function public.can_view_timelog_approval(uuid, uuid, uuid) from public;
 revoke all on function public.can_view_assigned_timelog(uuid) from public;
 revoke all on function public.is_valid_timelog_approval_approver(uuid, uuid) from public;
+revoke all on function public.handle_timelog_approved() from public;
 revoke all on function public.timelog_update_is_status_only(public.timelogs, public.timelogs) from public;
 revoke all on function public.timelog_update_is_approval_status_change(public.timelogs, public.timelogs) from public;
 grant execute on function public.send_timelog_to_approvers(uuid, uuid[], text) to authenticated;

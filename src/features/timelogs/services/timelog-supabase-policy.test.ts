@@ -140,6 +140,17 @@ describe('timelog Supabase role workflow policy', () => {
     expect(sql).toMatch(/update public\.timelog_approvals[\s\S]+set superseded_at = now\(\)[\s\S]+where timelog_id = v_approval\.timelog_id[\s\S]+and approval_round_id = v_approval\.approval_round_id[\s\S]+and id <> p_approval_id[\s\S]+and superseded_at is null[\s\S]+and status = 'pending'/);
   });
 
+  it('neutralizes legacy auto-invoicing when targeted approvals move timelogs to approved', () => {
+    const sql = readTargetedApprovalsSql();
+    const triggerReplacement = sql.slice(sql.indexOf('create or replace function public.handle_timelog_approved()'));
+
+    expect(sql).toContain('drop trigger if exists trg_timelog_approved on public.timelogs');
+    expect(sql).toContain('create or replace function public.handle_timelog_approved()');
+    expect(triggerReplacement).toMatch(/returns trigger[\s\S]+begin[\s\S]+return new;[\s\S]+end;/);
+    expect(triggerReplacement).not.toContain("NEW.status := 'invoiced'");
+    expect(triggerReplacement).not.toMatch(/insert into public\.invoices/i);
+  });
+
   it('keeps approval row writes private to RPC functions', () => {
     const sql = readTargetedApprovalsSql();
 

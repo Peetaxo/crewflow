@@ -98,7 +98,7 @@ describe('timelog Supabase role workflow policy', () => {
     const sql = readTargetedApprovalsSql();
 
     expect(sql).toContain('Selected approvers can view assigned timelogs');
-    expect(sql).toMatch(/exists \([\s\S]+from public\.timelog_approvals approval[\s\S]+approval\.timelog_id = timelogs\.id[\s\S]+approval\.approver_profile_id = public\.current_profile_id\(\)[\s\S]+approval\.superseded_at is null[\s\S]+\)/);
+    expect(sql).toContain('public.can_view_assigned_timelog(timelogs.id)');
   });
 
   it('creates guarded RPC functions for sending and resolving approval requests', () => {
@@ -154,9 +154,31 @@ describe('timelog Supabase role workflow policy', () => {
     expect(sql).toContain('create or replace function public.enforce_timelog_update_permissions()');
     expect(sql).toMatch(/old\.status = 'pending_ch'::public\.timelog_status[\s\S]+new\.status = 'pending_coo'::public\.timelog_status[\s\S]+from public\.timelog_approvals approval[\s\S]+approval\.timelog_id = old\.id[\s\S]+approval\.requested_by_profile_id = public\.current_profile_id\(\)[\s\S]+approval\.superseded_at is null/);
     expect(sql).toMatch(/old\.status = 'pending_ch'::public\.timelog_status[\s\S]+new\.status = 'approved'::public\.timelog_status[\s\S]+public\.has_role\(auth\.uid\(\), 'crewhead'::public\.app_role\)[\s\S]+public\.has_role\(auth\.uid\(\), 'coo'::public\.app_role\)/);
-    expect(sql).toMatch(/old\.status = 'pending_coo'::public\.timelog_status[\s\S]+new\.status in \('approved'::public\.timelog_status, 'rejected'::public\.timelog_status\)[\s\S]+approval\.approver_profile_id = public\.current_profile_id\(\)[\s\S]+approval\.superseded_at is null/);
+    expect(sql).toMatch(/old\.status = 'pending_coo'::public\.timelog_status[\s\S]+new\.status in \('approved'::public\.timelog_status, 'rejected'::public\.timelog_status\)[\s\S]+approval\.approver_profile_id = public\.current_profile_id\(\)[\s\S]+approval\.superseded_at is null[\s\S]+not exists \([\s\S]+status <> 'approved'/);
     expect(sql).not.toContain('current_setting(');
     expect(sql).not.toContain('set_config(');
+  });
+
+  it('removes legacy direct targeted approval status transitions from generic role branches', () => {
+    const sql = readTargetedApprovalsSql();
+
+    expect(sql).not.toMatch(/if public\.has_role\(auth\.uid\(\), 'crewhead'::public\.app_role\)[\s\S]+old\.status = 'pending_ch'::public\.timelog_status[\s\S]+new\.status = 'pending_coo'::public\.timelog_status/);
+    expect(sql).not.toMatch(/if public\.has_role\(auth\.uid\(\), 'coo'::public\.app_role\)[\s\S]+old\.status = 'pending_coo'::public\.timelog_status[\s\S]+new\.status in \('approved'::public\.timelog_status, 'rejected'::public\.timelog_status\)/);
+  });
+
+  it('uses security definer visibility helpers to avoid recursive select policies', () => {
+    const sql = readTargetedApprovalsSql();
+
+    expect(sql).toContain('create or replace function public.can_view_timelog_approval');
+    expect(sql).toContain('create or replace function public.can_view_assigned_timelog');
+    expect(sql).toMatch(/create policy "Timelog approval rows are visible to involved users"[\s\S]+using \(\s*public\.can_view_timelog_approval\(\s*timelog_id,\s*approver_profile_id,\s*requested_by_profile_id\s*\)\s*\)/);
+    expect(sql).toMatch(/create policy "Selected approvers can view assigned timelogs"[\s\S]+using \(\s*public\.can_view_assigned_timelog\(timelogs\.id\)\s*\)/);
+    expect(sql).toMatch(/create or replace function public\.can_view_timelog_approval[\s\S]+security definer[\s\S]+from public\.timelogs t/);
+    expect(sql).toMatch(/create or replace function public\.can_view_assigned_timelog[\s\S]+security definer[\s\S]+from public\.timelog_approvals approval/);
+    expect(sql).toContain('revoke all on function public.can_view_timelog_approval(uuid, uuid, uuid) from public');
+    expect(sql).toContain('grant execute on function public.can_view_timelog_approval(uuid, uuid, uuid) to authenticated');
+    expect(sql).toContain('revoke all on function public.can_view_assigned_timelog(uuid) from public');
+    expect(sql).toContain('grant execute on function public.can_view_assigned_timelog(uuid) to authenticated');
   });
 
   it('serializes approval resolution by locking the parent timelog before re-reading approval state', () => {

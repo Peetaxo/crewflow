@@ -27,21 +27,61 @@ create unique index if not exists timelog_approvals_active_approver_key
 
 alter table public.timelog_approvals enable row level security;
 
+create or replace function public.can_view_timelog_approval(
+  p_timelog_id uuid,
+  p_approver_profile_id uuid,
+  p_requested_by_profile_id uuid
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    auth.uid() is not null
+    and (
+      p_approver_profile_id = public.current_profile_id()
+      or p_requested_by_profile_id = public.current_profile_id()
+      or public.has_role(auth.uid(), 'crewhead'::public.app_role)
+      or public.has_role(auth.uid(), 'coo'::public.app_role)
+      or exists (
+        select 1
+        from public.timelogs t
+        where t.id = p_timelog_id
+          and t.contractor_id = public.current_profile_id()
+      )
+    );
+$$;
+
+create or replace function public.can_view_assigned_timelog(p_timelog_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    auth.uid() is not null
+    and exists (
+      select 1
+      from public.timelog_approvals approval
+      where approval.timelog_id = p_timelog_id
+        and approval.approver_profile_id = public.current_profile_id()
+        and approval.superseded_at is null
+    );
+$$;
+
 drop policy if exists "Timelog approval rows are visible to involved users" on public.timelog_approvals;
 create policy "Timelog approval rows are visible to involved users"
 on public.timelog_approvals
 for select
 to authenticated
 using (
-  approver_profile_id = public.current_profile_id()
-  or requested_by_profile_id = public.current_profile_id()
-  or public.has_role(auth.uid(), 'crewhead'::public.app_role)
-  or public.has_role(auth.uid(), 'coo'::public.app_role)
-  or exists (
-    select 1
-    from public.timelogs t
-    where t.id = timelog_approvals.timelog_id
-      and t.contractor_id = public.current_profile_id()
+  public.can_view_timelog_approval(
+    timelog_id,
+    approver_profile_id,
+    requested_by_profile_id
   )
 );
 
@@ -54,13 +94,7 @@ on public.timelogs
 for select
 to authenticated
 using (
-  exists (
-    select 1
-    from public.timelog_approvals approval
-    where approval.timelog_id = timelogs.id
-      and approval.approver_profile_id = public.current_profile_id()
-      and approval.superseded_at is null
-  )
+  public.can_view_assigned_timelog(timelogs.id)
 );
 
 create or replace function public.enforce_timelog_update_permissions()
@@ -126,11 +160,6 @@ begin
         old.status = 'pending_ch'::public.timelog_status
         and new.status in ('pending_ch'::public.timelog_status, 'rejected'::public.timelog_status)
       )
-      or (
-        old.status = 'pending_ch'::public.timelog_status
-        and public.timelog_update_is_status_only(old, new)
-        and new.status = 'pending_coo'::public.timelog_status
-      )
     ) then
     return new;
   end if;
@@ -148,6 +177,14 @@ begin
           (
             new.status = 'approved'::public.timelog_status
             and approval.status = 'approved'
+            and not exists (
+              select 1
+              from public.timelog_approvals active_approval
+              where active_approval.timelog_id = approval.timelog_id
+                and active_approval.approval_round_id = approval.approval_round_id
+                and active_approval.superseded_at is null
+                and active_approval.status <> 'approved'
+            )
           )
           or (
             new.status = 'rejected'::public.timelog_status
@@ -162,10 +199,6 @@ begin
     and public.timelog_update_is_status_only(old, new)
     and (
       (
-        old.status = 'pending_coo'::public.timelog_status
-        and new.status in ('approved'::public.timelog_status, 'rejected'::public.timelog_status)
-      )
-      or (
         old.status = 'approved'::public.timelog_status
         and new.status in ('invoiced'::public.timelog_status, 'paid'::public.timelog_status)
       )
@@ -400,8 +433,12 @@ $$;
 
 revoke all on function public.send_timelog_to_approvers(uuid, uuid[], text) from public;
 revoke all on function public.resolve_timelog_approval(uuid, text, text) from public;
+revoke all on function public.can_view_timelog_approval(uuid, uuid, uuid) from public;
+revoke all on function public.can_view_assigned_timelog(uuid) from public;
 grant execute on function public.send_timelog_to_approvers(uuid, uuid[], text) to authenticated;
 grant execute on function public.resolve_timelog_approval(uuid, text, text) to authenticated;
+grant execute on function public.can_view_timelog_approval(uuid, uuid, uuid) to authenticated;
+grant execute on function public.can_view_assigned_timelog(uuid) to authenticated;
 
 revoke insert, update, delete on public.timelog_approvals from anon;
 revoke insert, update, delete on public.timelog_approvals from authenticated;

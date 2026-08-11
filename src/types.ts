@@ -148,6 +148,21 @@ export type TimelogStatus =
   | 'paid'
   | 'rejected';
 
+export type TimelogApprovalStatus = 'pending' | 'approved' | 'returned';
+
+export interface TimelogApproval {
+  id: string;
+  approvalRoundId: string;
+  timelogId: string;
+  approverProfileId: string;
+  status: TimelogApprovalStatus;
+  requestedByProfileId: string | null;
+  requestedAt: string;
+  resolvedAt: string | null;
+  supersededAt: string | null;
+  note: string;
+}
+
 /** Jeden den ve vykazu prace */
 export interface TimelogDay {
   /** ID radku v databazi nebo docasny klientsky klic */
@@ -191,6 +206,8 @@ export interface Timelog {
   status: TimelogStatus;
   /** Puvodni verze pred upravou CH/COO, kterou ma Crew potvrdit. */
   crewConfirmationSnapshot?: TimelogChangeSnapshot | null;
+  /** Schvalovatele vybrani pro aktualni nebo historicke kolo schvaleni. */
+  approvals?: TimelogApproval[];
 }
 
 /** Prirazeni crew k akci bez detailnich vykazanych dni */

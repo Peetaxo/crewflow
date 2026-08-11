@@ -1,4 +1,6 @@
 import React from 'react';
+import { getTimelogStatusLabel } from '../../features/timelogs/services/timelog-status-labels';
+import { TimelogStatus } from '../../types';
 
 const StatusBadge = ({ status, label }: { status: string; label?: string }) => {
   const neutral = 'border-[color:rgb(var(--nodu-text-rgb)/0.1)] bg-[color:rgb(var(--nodu-text-rgb)/0.06)] text-[color:var(--nodu-text-soft)]';
@@ -8,18 +10,21 @@ const StatusBadge = ({ status, label }: { status: string; label?: string }) => {
   const error = 'border-[color:var(--nodu-error-border)] bg-[color:var(--nodu-error-bg)] text-[color:var(--nodu-error-text)]';
   const decision = 'border-[color:rgb(var(--nodu-accent-rgb)/0.22)] bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)]';
 
-  const statusMap: Record<string, [string, string]> = {
-    draft: [neutral, 'Koncept'],
-    pending_crew_confirmation: [warning, 'Čeká na souhlas Crew'],
-    pending_ch: [warning, 'Čeká CH'],
-    pending_coo: [info, 'Čeká COO'],
-    approved: [success, 'Schváleno'],
+  const toneMap: Record<TimelogStatus, string> = {
+    draft: neutral,
+    pending_crew_confirmation: warning,
+    pending_ch: warning,
+    pending_coo: info,
+    approved: success,
+    invoiced: info,
+    paid: success,
+    rejected: error,
+  };
+
+  const otherStatusMap: Record<string, [string, string]> = {
     pending: [warning, 'Ve schvalování'],
     needs_review: [warning, 'Ke kontrole'],
     not_found: [neutral, 'Nenalezeno'],
-    invoiced: [info, 'Fakturovano'],
-    paid: [success, 'Zaplaceno'],
-    rejected: [error, 'Zamítnuto'],
     sent: [info, 'Odesláno'],
     submitted: [warning, 'Čeká na schválení'],
     attached: [info, 'Ve faktuře'],
@@ -38,7 +43,8 @@ const StatusBadge = ({ status, label }: { status: string; label?: string }) => {
     past: [neutral, 'Uplynulé'],
   };
 
-  const [cls, defaultLabel] = statusMap[status] || [neutral, status];
+  const fallbackLabel = status in toneMap ? getTimelogStatusLabel(status as TimelogStatus) : status;
+  const [cls, defaultLabel] = otherStatusMap[status] || [toneMap[status as TimelogStatus] || neutral, fallbackLabel];
 
   return (
     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${cls}`}>

@@ -156,17 +156,43 @@ describe('timelog Supabase role workflow policy', () => {
 
     expect(sql).toContain('create or replace function public.enforce_timelog_update_permissions()');
     expect(sql).toMatch(/public\.timelog_update_is_approval_status_change\(old, new\)[\s\S]+old\.status = 'pending_ch'::public\.timelog_status[\s\S]+new\.status = 'pending_coo'::public\.timelog_status[\s\S]+from public\.timelog_approvals approval[\s\S]+approval\.timelog_id = old\.id[\s\S]+approval\.requested_by_profile_id = public\.current_profile_id\(\)[\s\S]+approval\.superseded_at is null/);
-    expect(sql).toMatch(/public\.timelog_update_is_approval_status_change\(old, new\)[\s\S]+old\.status = 'pending_ch'::public\.timelog_status[\s\S]+new\.status = 'approved'::public\.timelog_status[\s\S]+from public\.events event[\s\S]+event\.id = old\.event_id[\s\S]+event\.contact_profile_id = public\.current_profile_id\(\)/);
     expect(sql).toMatch(/public\.timelog_update_is_approval_status_change\(old, new\)[\s\S]+old\.status = 'pending_coo'::public\.timelog_status[\s\S]+new\.status in \('approved'::public\.timelog_status, 'rejected'::public\.timelog_status\)[\s\S]+approval\.approver_profile_id = public\.current_profile_id\(\)[\s\S]+approval\.superseded_at is null[\s\S]+not exists \([\s\S]+status <> 'approved'/);
+    expect(sql).not.toMatch(/old\.status = 'pending_ch'::public\.timelog_status[\s\S]{0,300}new\.status = 'approved'::public\.timelog_status/);
     expect(sql).not.toContain('current_setting(');
     expect(sql).not.toContain('set_config(');
   });
 
-  it('only auto-approves empty targeted approval selections for the event contact person', () => {
+  it('rejects empty targeted approval selections instead of auto-approving', () => {
     const sql = readTargetedApprovalsSql();
 
-    expect(sql).toMatch(/if cardinality\(v_approver_ids\) = 0 then[\s\S]+if not exists \([\s\S]+from public\.events event[\s\S]+event\.id = v_timelog\.event_id[\s\S]+event\.contact_profile_id = v_actor_profile_id[\s\S]+\) then[\s\S]+raise exception 'Only the event contact person can approve without another approver\.' using errcode = '42501'/);
-    expect(sql).toMatch(/if cardinality\(v_approver_ids\) = 0 then[\s\S]+status = 'approved'::public\.timelog_status/);
+    expect(sql).toMatch(/if cardinality\(v_approver_ids\) = 0 then[\s\S]+raise exception 'At least one valid management approver must be selected\.' using errcode = '42501'[\s\S]+end if;/);
+    expect(sql).not.toMatch(/if cardinality\(v_approver_ids\) = 0 then[\s\S]{0,500}status = 'approved'::public\.timelog_status/);
+    expect(sql).not.toContain('Only the event contact person can approve without another approver.');
+    expect(sql).not.toContain('event.contact_profile_id = v_actor_profile_id');
+  });
+
+  it('limits selected approvers to management profiles that are not the requester or contractor', () => {
+    const sql = readTargetedApprovalsSql();
+
+    expect(sql).toContain('create or replace function public.is_valid_timelog_approval_approver');
+    expect(sql).toMatch(/from public\.profiles profile[\s\S]+join public\.user_roles user_role[\s\S]+user_role\.user_id = profile\.user_id[\s\S]+user_role\.role in \('crewhead'::public\.app_role, 'coo'::public\.app_role\)/);
+    expect(sql).toContain('p_profile_id is distinct from p_contractor_profile_id');
+    expect(sql).toMatch(/from unnest\(coalesce\(p_approver_profile_ids, '\{\}'::uuid\[\]\)\) as profile_id[\s\S]+profile_id is distinct from v_actor_profile_id[\s\S]+public\.is_valid_timelog_approval_approver\(profile_id, v_timelog\.contractor_id\)/);
+    expect(sql).toMatch(/if not public\.is_valid_timelog_approval_approver\(v_approval\.approver_profile_id, v_timelog\.contractor_id\) then[\s\S]+raise exception 'Only selected management approvers can resolve this approval request\.' using errcode = '42501'/);
+    expect(sql).toMatch(/if v_approval\.requested_by_profile_id is not null[\s\S]+and v_approval\.requested_by_profile_id = v_actor_profile_id then[\s\S]+raise exception 'Requesters cannot resolve their own approval request\.' using errcode = '42501'/);
+    expect(sql).toMatch(/old\.status = 'pending_coo'::public\.timelog_status[\s\S]+public\.is_valid_timelog_approval_approver\(public\.current_profile_id\(\), old\.contractor_id\)/);
+    expect(sql).toContain('approval.requested_by_profile_id is distinct from public.current_profile_id()');
+    expect(sql).toMatch(/create or replace function public\.can_view_assigned_timelog[\s\S]+join public\.timelogs t[\s\S]+public\.is_valid_timelog_approval_approver\(\s*public\.current_profile_id\(\),\s*t\.contractor_id\s*\)/);
+    expect(sql).toContain('revoke all on function public.is_valid_timelog_approval_approver(uuid, uuid) from public');
+  });
+
+  it('lets selected approvers view assigned timelog days without write access', () => {
+    const sql = readTargetedApprovalsSql();
+
+    expect(sql).toMatch(/drop policy if exists "Users can view timelog days via visible timelog" on public\.timelog_days/);
+    expect(sql).toMatch(/create policy "Users can view timelog days via visible timelog"[\s\S]+on public\.timelog_days[\s\S]+for select[\s\S]+to authenticated[\s\S]+public\.can_view_assigned_timelog\(timelog_days\.timelog_id\)/);
+    expect(sql).not.toMatch(/create policy "Selected approvers can (insert|update|delete|manage) timelog days"/);
+    expect(sql).not.toMatch(/grant (insert|update|delete)[\s\S]+on public\.timelog_days[\s\S]+to authenticated/);
   });
 
   it('uses a strict approval status helper that accounts for newer timelog columns', () => {

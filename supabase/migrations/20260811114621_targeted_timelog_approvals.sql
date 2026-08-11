@@ -54,6 +54,29 @@ as $$
     );
 $$;
 
+create or replace function public.is_valid_timelog_approval_approver(
+  p_profile_id uuid,
+  p_contractor_profile_id uuid
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    p_profile_id is not null
+    and p_profile_id is distinct from p_contractor_profile_id
+    and exists (
+      select 1
+      from public.profiles profile
+      join public.user_roles user_role
+        on user_role.user_id = profile.user_id
+      where profile.id = p_profile_id
+        and user_role.role in ('crewhead'::public.app_role, 'coo'::public.app_role)
+    );
+$$;
+
 create or replace function public.can_view_assigned_timelog(p_timelog_id uuid)
 returns boolean
 language sql
@@ -66,9 +89,16 @@ as $$
     and exists (
       select 1
       from public.timelog_approvals approval
+      join public.timelogs t
+        on t.id = approval.timelog_id
       where approval.timelog_id = p_timelog_id
         and approval.approver_profile_id = public.current_profile_id()
+        and approval.requested_by_profile_id is distinct from public.current_profile_id()
         and approval.superseded_at is null
+        and public.is_valid_timelog_approval_approver(
+          public.current_profile_id(),
+          t.contractor_id
+        )
     );
 $$;
 
@@ -142,6 +172,25 @@ using (
   public.can_view_assigned_timelog(timelogs.id)
 );
 
+drop policy if exists "Users can view timelog days via visible timelog" on public.timelog_days;
+create policy "Users can view timelog days via visible timelog"
+on public.timelog_days
+for select
+to authenticated
+using (
+  public.can_view_assigned_timelog(timelog_days.timelog_id)
+  or exists (
+    select 1
+    from public.timelogs t
+    where t.id = timelog_days.timelog_id
+      and (
+        t.contractor_id = public.current_profile_id()
+        or public.has_role(auth.uid(), 'crewhead'::public.app_role)
+        or public.has_role(auth.uid(), 'coo'::public.app_role)
+      )
+  )
+);
+
 create or replace function public.enforce_timelog_update_permissions()
 returns trigger
 language plpgsql
@@ -185,22 +234,6 @@ begin
     return new;
   end if;
 
-  if (
-    public.has_role(auth.uid(), 'crewhead'::public.app_role)
-    or public.has_role(auth.uid(), 'coo'::public.app_role)
-  )
-    and public.timelog_update_is_approval_status_change(old, new)
-    and old.status = 'pending_ch'::public.timelog_status
-    and new.status = 'approved'::public.timelog_status
-    and exists (
-      select 1
-      from public.events event
-      where event.id = old.event_id
-        and event.contact_profile_id = public.current_profile_id()
-    ) then
-    return new;
-  end if;
-
   if public.has_role(auth.uid(), 'crewhead'::public.app_role)
     and (
       (
@@ -218,11 +251,13 @@ begin
   if public.timelog_update_is_approval_status_change(old, new)
     and old.status = 'pending_coo'::public.timelog_status
     and new.status in ('approved'::public.timelog_status, 'rejected'::public.timelog_status)
+    and public.is_valid_timelog_approval_approver(public.current_profile_id(), old.contractor_id)
     and exists (
       select 1
       from public.timelog_approvals approval
       where approval.timelog_id = old.id
         and approval.approver_profile_id = public.current_profile_id()
+        and approval.requested_by_profile_id is distinct from public.current_profile_id()
         and approval.superseded_at is null
         and (
           (
@@ -316,36 +351,16 @@ begin
   from unnest(coalesce(p_approver_profile_ids, '{}'::uuid[])) as profile_id
   where profile_id is not null
     and profile_id is distinct from v_actor_profile_id
-    and exists (
-      select 1
-      from public.profiles profile
-      where profile.id = profile_id
-    );
+    and public.is_valid_timelog_approval_approver(profile_id, v_timelog.contractor_id);
+
+  if cardinality(v_approver_ids) = 0 then
+    raise exception 'At least one valid management approver must be selected.' using errcode = '42501';
+  end if;
 
   update public.timelog_approvals
   set superseded_at = now()
   where timelog_id = p_timelog_id
     and superseded_at is null;
-
-  if cardinality(v_approver_ids) = 0 then
-    if not exists (
-      select 1
-      from public.events event
-      where event.id = v_timelog.event_id
-        and event.contact_profile_id = v_actor_profile_id
-    ) then
-      raise exception 'Only the event contact person can approve without another approver.' using errcode = '42501';
-    end if;
-
-    update public.timelogs
-    set
-      status = 'approved'::public.timelog_status,
-      review_note = nullif(trim(coalesce(p_note, '')), '')
-    where id = p_timelog_id
-    returning * into v_result;
-
-    return v_result;
-  end if;
 
   insert into public.timelog_approvals (
     approval_round_id,
@@ -434,6 +449,15 @@ begin
     raise exception 'Only the selected approver can resolve this approval request.' using errcode = '42501';
   end if;
 
+  if not public.is_valid_timelog_approval_approver(v_approval.approver_profile_id, v_timelog.contractor_id) then
+    raise exception 'Only selected management approvers can resolve this approval request.' using errcode = '42501';
+  end if;
+
+  if v_approval.requested_by_profile_id is not null
+    and v_approval.requested_by_profile_id = v_actor_profile_id then
+    raise exception 'Requesters cannot resolve their own approval request.' using errcode = '42501';
+  end if;
+
   if v_approval.status <> 'pending' then
     raise exception 'Approval request has already been resolved.' using errcode = '42501';
   end if;
@@ -503,6 +527,7 @@ revoke all on function public.send_timelog_to_approvers(uuid, uuid[], text) from
 revoke all on function public.resolve_timelog_approval(uuid, text, text) from public;
 revoke all on function public.can_view_timelog_approval(uuid, uuid, uuid) from public;
 revoke all on function public.can_view_assigned_timelog(uuid) from public;
+revoke all on function public.is_valid_timelog_approval_approver(uuid, uuid) from public;
 revoke all on function public.timelog_update_is_status_only(public.timelogs, public.timelogs) from public;
 revoke all on function public.timelog_update_is_approval_status_change(public.timelogs, public.timelogs) from public;
 grant execute on function public.send_timelog_to_approvers(uuid, uuid[], text) to authenticated;

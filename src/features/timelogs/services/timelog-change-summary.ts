@@ -78,6 +78,34 @@ const getSameDateEditScore = (before: TimelogDay, after: TimelogDay): number => 
   return score;
 };
 
+const splitSameIdEdits = (
+  beforeDays: TimelogDay[],
+  afterDays: TimelogDay[],
+): { pairs: Array<{ before: TimelogDay; after: TimelogDay }>; beforeRemaining: TimelogDay[]; afterRemaining: TimelogDay[] } => {
+  const afterRemaining = [...afterDays];
+  const beforeRemaining: TimelogDay[] = [];
+  const pairs: Array<{ before: TimelogDay; after: TimelogDay }> = [];
+
+  beforeDays.forEach((before) => {
+    if (!before.id) {
+      beforeRemaining.push(before);
+      return;
+    }
+
+    const matchingAfterIndex = afterRemaining.findIndex((after) => after.id === before.id);
+
+    if (matchingAfterIndex < 0) {
+      beforeRemaining.push(before);
+      return;
+    }
+
+    const [after] = afterRemaining.splice(matchingAfterIndex, 1);
+    pairs.push({ before, after });
+  });
+
+  return { pairs, beforeRemaining, afterRemaining };
+};
+
 const splitSameDateEdits = (
   beforeDays: TimelogDay[],
   afterDays: TimelogDay[],
@@ -137,7 +165,12 @@ export const buildTimelogChangeSummary = (timelog: Timelog): string[] => {
   const afterDays = sortDays(timelog.days);
   const changes: string[] = [];
   const exactSplit = splitExactMatches(beforeDays, afterDays);
-  const sameDateSplit = splitSameDateEdits(exactSplit.beforeRemaining, exactSplit.afterRemaining);
+  const sameIdSplit = splitSameIdEdits(exactSplit.beforeRemaining, exactSplit.afterRemaining);
+  const sameDateSplit = splitSameDateEdits(sameIdSplit.beforeRemaining, sameIdSplit.afterRemaining);
+
+  sameIdSplit.pairs.forEach(({ before, after }) => {
+    changes.push(...collectDayChanges(before, after));
+  });
 
   sameDateSplit.pairs.forEach(({ before, after }) => {
     changes.push(...collectDayChanges(before, after));

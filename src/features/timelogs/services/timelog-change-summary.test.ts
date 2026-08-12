@@ -120,4 +120,62 @@ describe('buildTimelogChangeSummary', () => {
       '29. 7. Čas 08:00–17:00 -> 08:00–19:00',
     ]);
   });
+
+  it('reports a date change for the same row id instead of added and removed days', () => {
+    const timelog: Timelog = {
+      id: 'timelog-5',
+      eid: 'event-1',
+      contractorProfileId: 'profile-1',
+      status: 'pending_crew_confirmation',
+      km: 0,
+      note: '',
+      days: [
+        { id: 'day-1', d: '2026-07-30', f: '08:00', t: '17:00', type: 'instal' },
+      ],
+      crewConfirmationSnapshot: {
+        changedAt: '2026-07-30T10:00:00.000Z',
+        before: {
+          km: 0,
+          note: '',
+          days: [
+            { id: 'day-1', d: '2026-07-29', f: '08:00', t: '17:00', type: 'instal' },
+          ],
+        },
+      },
+    };
+
+    expect(buildTimelogChangeSummary(timelog)).toEqual([
+      '29. 7. 08:00–17:00 -> 30. 7. 08:00–17:00',
+    ]);
+  });
+
+  it('handles multiple rows on the same day without reporting the unchanged row', () => {
+    const timelog: Timelog = {
+      id: 'timelog-6',
+      eid: 'event-1',
+      contractorProfileId: 'profile-1',
+      status: 'pending_crew_confirmation',
+      km: 0,
+      note: '',
+      days: [
+        { d: '2026-07-29', f: '08:00', t: '12:00', type: 'instal' },
+        { d: '2026-07-29', f: '13:00', t: '18:00', type: 'provoz' },
+      ],
+      crewConfirmationSnapshot: {
+        changedAt: '2026-07-30T10:00:00.000Z',
+        before: {
+          km: 0,
+          note: '',
+          days: [
+            { d: '2026-07-29', f: '08:00', t: '12:00', type: 'instal' },
+            { d: '2026-07-29', f: '13:00', t: '17:00', type: 'provoz' },
+          ],
+        },
+      },
+    };
+
+    expect(buildTimelogChangeSummary(timelog)).toEqual([
+      '29. 7. Čas 13:00–17:00 -> 13:00–18:00',
+    ]);
+  });
 });

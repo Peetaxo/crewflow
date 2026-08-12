@@ -34,4 +34,90 @@ describe('buildTimelogChangeSummary', () => {
       'Cestovné 0 km -> 12 km',
     ]);
   });
+
+  it('reports only an inserted earlier day without changing the unchanged later day', () => {
+    const timelog: Timelog = {
+      id: 'timelog-2',
+      eid: 'event-1',
+      contractorProfileId: 'profile-1',
+      status: 'pending_crew_confirmation',
+      km: 0,
+      note: '',
+      days: [
+        { d: '2026-07-28', f: '10:00', t: '12:00', type: 'pripravy' },
+        { d: '2026-07-29', f: '08:00', t: '17:00', type: 'instal' },
+      ],
+      crewConfirmationSnapshot: {
+        changedAt: '2026-07-30T10:00:00.000Z',
+        before: {
+          km: 0,
+          note: '',
+          days: [
+            { d: '2026-07-29', f: '08:00', t: '17:00', type: 'instal' },
+          ],
+        },
+      },
+    };
+
+    expect(buildTimelogChangeSummary(timelog)).toEqual([
+      'Přidán den 28. 7. 10:00–12:00',
+    ]);
+  });
+
+  it('reports only a removed earlier day without changing the unchanged later day', () => {
+    const timelog: Timelog = {
+      id: 'timelog-3',
+      eid: 'event-1',
+      contractorProfileId: 'profile-1',
+      status: 'pending_crew_confirmation',
+      km: 0,
+      note: '',
+      days: [
+        { d: '2026-07-29', f: '08:00', t: '17:00', type: 'instal' },
+      ],
+      crewConfirmationSnapshot: {
+        changedAt: '2026-07-30T10:00:00.000Z',
+        before: {
+          km: 0,
+          note: '',
+          days: [
+            { d: '2026-07-28', f: '10:00', t: '12:00', type: 'pripravy' },
+            { d: '2026-07-29', f: '08:00', t: '17:00', type: 'instal' },
+          ],
+        },
+      },
+    };
+
+    expect(buildTimelogChangeSummary(timelog)).toEqual([
+      'Odebrán den 28. 7. 10:00–12:00',
+    ]);
+  });
+
+  it('still reports a time change on the same day', () => {
+    const timelog: Timelog = {
+      id: 'timelog-4',
+      eid: 'event-1',
+      contractorProfileId: 'profile-1',
+      status: 'pending_crew_confirmation',
+      km: 0,
+      note: '',
+      days: [
+        { d: '2026-07-29', f: '08:00', t: '19:00', type: 'instal' },
+      ],
+      crewConfirmationSnapshot: {
+        changedAt: '2026-07-30T10:00:00.000Z',
+        before: {
+          km: 0,
+          note: '',
+          days: [
+            { d: '2026-07-29', f: '08:00', t: '17:00', type: 'instal' },
+          ],
+        },
+      },
+    };
+
+    expect(buildTimelogChangeSummary(timelog)).toEqual([
+      '29. 7. Čas 08:00–17:00 -> 08:00–19:00',
+    ]);
+  });
 });

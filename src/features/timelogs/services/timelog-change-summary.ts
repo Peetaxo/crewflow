@@ -39,11 +39,95 @@ const normalizeDay = (day: TimelogDay): TimelogDay => {
 };
 
 const sortDays = (days: TimelogDay[]): TimelogDay[] => (
-  [...days].map(normalizeDay).sort((a, b) => (
-    `${a.d}${a.f}${a.t}${a.type}${formatMeals(a)}${a.note ?? ''}`
-      .localeCompare(`${b.d}${b.f}${b.t}${b.type}${formatMeals(b)}${b.note ?? ''}`)
-  ))
+  [...days].map(normalizeDay).sort((a, b) => getDaySortKey(a).localeCompare(getDaySortKey(b)))
 );
+
+const getDaySortKey = (day: TimelogDay): string => `${day.d}${day.f}${day.t}${day.type}${formatMeals(day)}${day.note ?? ''}`;
+
+const getDaySignature = (day: TimelogDay): string => getDaySortKey(day);
+
+const splitExactMatches = (
+  beforeDays: TimelogDay[],
+  afterDays: TimelogDay[],
+): { beforeRemaining: TimelogDay[]; afterRemaining: TimelogDay[] } => {
+  const afterRemaining = [...afterDays];
+  const beforeRemaining: TimelogDay[] = [];
+
+  beforeDays.forEach((before) => {
+    const matchingAfterIndex = afterRemaining.findIndex((after) => getDaySignature(after) === getDaySignature(before));
+
+    if (matchingAfterIndex >= 0) {
+      afterRemaining.splice(matchingAfterIndex, 1);
+      return;
+    }
+
+    beforeRemaining.push(before);
+  });
+
+  return { beforeRemaining, afterRemaining };
+};
+
+const getSameDateEditScore = (before: TimelogDay, after: TimelogDay): number => {
+  let score = 0;
+
+  if (before.f !== after.f || before.t !== after.t) score += 1;
+  if (before.type !== after.type) score += 1;
+  if (formatMeals(before) !== formatMeals(after)) score += 1;
+  if ((before.note ?? '').trim() !== (after.note ?? '').trim()) score += 1;
+
+  return score;
+};
+
+const splitSameDateEdits = (
+  beforeDays: TimelogDay[],
+  afterDays: TimelogDay[],
+): { pairs: Array<{ before: TimelogDay; after: TimelogDay }>; beforeRemaining: TimelogDay[]; afterRemaining: TimelogDay[] } => {
+  const afterRemaining = [...afterDays];
+  const beforeRemaining: TimelogDay[] = [];
+  const pairs: Array<{ before: TimelogDay; after: TimelogDay }> = [];
+
+  beforeDays.forEach((before) => {
+    const candidates = afterRemaining
+      .map((after, index) => ({ after, index, score: getSameDateEditScore(before, after) }))
+      .filter((candidate) => candidate.after.d === before.d)
+      .sort((a, b) => a.score - b.score || getDaySortKey(a.after).localeCompare(getDaySortKey(b.after)));
+    const match = candidates[0];
+
+    if (!match) {
+      beforeRemaining.push(before);
+      return;
+    }
+
+    pairs.push({ before, after: match.after });
+    afterRemaining.splice(match.index, 1);
+  });
+
+  return { pairs, beforeRemaining, afterRemaining };
+};
+
+const collectDayChanges = (before: TimelogDay, after: TimelogDay): string[] => {
+  const changes: string[] = [];
+
+  if (before.d !== after.d) {
+    changes.push(`${formatRange(before)} -> ${formatRange(after)}`);
+  } else if (before.f !== after.f || before.t !== after.t) {
+    changes.push(`${formatDate(after.d)} Čas ${formatTimeRange(before.f, before.t)} -> ${formatTimeRange(after.f, after.t)}`);
+  }
+
+  if (before.type !== after.type) {
+    changes.push(`${formatDate(after.d)} Fáze ${phaseLabels[before.type]} -> ${phaseLabels[after.type]}`);
+  }
+
+  if (formatMeals(before) !== formatMeals(after)) {
+    changes.push(`${formatDate(after.d)} Jídlo ${formatMeals(before)} -> ${formatMeals(after)}`);
+  }
+
+  if ((before.note ?? '').trim() !== (after.note ?? '').trim()) {
+    changes.push(`${formatDate(after.d)} poznámka u dne upravena`);
+  }
+
+  return changes;
+};
 
 export const buildTimelogChangeSummary = (timelog: Timelog): string[] => {
   const snapshot = timelog.crewConfirmationSnapshot;
@@ -52,36 +136,20 @@ export const buildTimelogChangeSummary = (timelog: Timelog): string[] => {
   const beforeDays = sortDays(snapshot.before.days);
   const afterDays = sortDays(timelog.days);
   const changes: string[] = [];
-  const maxDayCount = Math.max(beforeDays.length, afterDays.length);
+  const exactSplit = splitExactMatches(beforeDays, afterDays);
+  const sameDateSplit = splitSameDateEdits(exactSplit.beforeRemaining, exactSplit.afterRemaining);
 
-  for (let index = 0; index < maxDayCount; index += 1) {
-    const before = beforeDays[index];
-    const after = afterDays[index];
+  sameDateSplit.pairs.forEach(({ before, after }) => {
+    changes.push(...collectDayChanges(before, after));
+  });
 
-    if (before && after) {
-      if (before.d !== after.d) {
-        changes.push(`${formatRange(before)} -> ${formatRange(after)}`);
-      } else if (before.f !== after.f || before.t !== after.t) {
-        changes.push(`${formatDate(after.d)} Čas ${formatTimeRange(before.f, before.t)} -> ${formatTimeRange(after.f, after.t)}`);
-      }
+  sameDateSplit.afterRemaining.forEach((after) => {
+    changes.push(`Přidán den ${formatRange(after)}`);
+  });
 
-      if (before.type !== after.type) {
-        changes.push(`${formatDate(after.d)} Fáze ${phaseLabels[before.type]} -> ${phaseLabels[after.type]}`);
-      }
-
-      if (formatMeals(before) !== formatMeals(after)) {
-        changes.push(`${formatDate(after.d)} Jídlo ${formatMeals(before)} -> ${formatMeals(after)}`);
-      }
-
-      if ((before.note ?? '').trim() !== (after.note ?? '').trim()) {
-        changes.push(`${formatDate(after.d)} poznámka u dne upravena`);
-      }
-    } else if (after) {
-      changes.push(`Přidán den ${formatRange(after)}`);
-    } else if (before) {
-      changes.push(`Odebrán den ${formatRange(before)}`);
-    }
-  }
+  sameDateSplit.beforeRemaining.forEach((before) => {
+    changes.push(`Odebrán den ${formatRange(before)}`);
+  });
 
   if (snapshot.before.km !== timelog.km) {
     changes.push(`Cestovné ${snapshot.before.km} km -> ${timelog.km} km`);

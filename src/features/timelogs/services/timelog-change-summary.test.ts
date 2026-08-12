@@ -149,9 +149,39 @@ describe('buildTimelogChangeSummary', () => {
     ]);
   });
 
-  it('handles multiple rows on the same day without reporting the unchanged row', () => {
+  it('keeps same-id pairing when a moved row lands on another unchanged row', () => {
     const timelog: Timelog = {
       id: 'timelog-6',
+      eid: 'event-1',
+      contractorProfileId: 'profile-1',
+      status: 'pending_crew_confirmation',
+      km: 0,
+      note: '',
+      days: [
+        { id: 'day-a', d: '2026-07-30', f: '08:00', t: '17:00', type: 'instal' },
+        { id: 'day-b', d: '2026-07-30', f: '08:00', t: '17:00', type: 'instal' },
+      ],
+      crewConfirmationSnapshot: {
+        changedAt: '2026-07-30T10:00:00.000Z',
+        before: {
+          km: 0,
+          note: '',
+          days: [
+            { id: 'day-a', d: '2026-07-29', f: '08:00', t: '17:00', type: 'instal' },
+            { id: 'day-b', d: '2026-07-30', f: '08:00', t: '17:00', type: 'instal' },
+          ],
+        },
+      },
+    };
+
+    expect(buildTimelogChangeSummary(timelog)).toEqual([
+      '29. 7. 08:00–17:00 -> 30. 7. 08:00–17:00',
+    ]);
+  });
+
+  it('handles multiple rows on the same day without reporting the unchanged row', () => {
+    const timelog: Timelog = {
+      id: 'timelog-7',
       eid: 'event-1',
       contractorProfileId: 'profile-1',
       status: 'pending_crew_confirmation',

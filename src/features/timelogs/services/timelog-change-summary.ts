@@ -42,9 +42,16 @@ const sortDays = (days: TimelogDay[]): TimelogDay[] => (
   [...days].map(normalizeDay).sort((a, b) => getDaySortKey(a).localeCompare(getDaySortKey(b)))
 );
 
-const getDaySortKey = (day: TimelogDay): string => `${day.d}${day.f}${day.t}${day.type}${formatMeals(day)}${day.note ?? ''}`;
+const getDaySignature = (day: TimelogDay): string => JSON.stringify([
+  day.d,
+  day.f,
+  day.t,
+  day.type,
+  formatMeals(day),
+  (day.note ?? '').trim(),
+]);
 
-const getDaySignature = (day: TimelogDay): string => getDaySortKey(day);
+const getDaySortKey = (day: TimelogDay): string => getDaySignature(day);
 
 const splitExactMatches = (
   beforeDays: TimelogDay[],
@@ -164,9 +171,9 @@ export const buildTimelogChangeSummary = (timelog: Timelog): string[] => {
   const beforeDays = sortDays(snapshot.before.days);
   const afterDays = sortDays(timelog.days);
   const changes: string[] = [];
-  const exactSplit = splitExactMatches(beforeDays, afterDays);
-  const sameIdSplit = splitSameIdEdits(exactSplit.beforeRemaining, exactSplit.afterRemaining);
-  const sameDateSplit = splitSameDateEdits(sameIdSplit.beforeRemaining, sameIdSplit.afterRemaining);
+  const sameIdSplit = splitSameIdEdits(beforeDays, afterDays);
+  const exactSplit = splitExactMatches(sameIdSplit.beforeRemaining, sameIdSplit.afterRemaining);
+  const sameDateSplit = splitSameDateEdits(exactSplit.beforeRemaining, exactSplit.afterRemaining);
 
   sameIdSplit.pairs.forEach(({ before, after }) => {
     changes.push(...collectDayChanges(before, after));

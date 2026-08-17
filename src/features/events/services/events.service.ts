@@ -13,6 +13,7 @@ import { assignEventCrewRpc, isDisposableTimelogStatus, removeEventCrewRpc } fro
 const DEFAULT_TIME_FROM = '08:00';
 const DEFAULT_TIME_TO = '17:00';
 const CREW_LIFECYCLE_ERROR_MESSAGE = 'Operaci s Crew se nepodařilo dokončit.';
+const EVENT_APPLICATION_STATUS_CONFLICT_MESSAGE = 'Stav přihlášky se mezitím změnil. Obnovte detail akce a zkuste to znovu.';
 const ASSIGNMENT_LIFECYCLE_VALIDATION_DIAGNOSTIC = 'Failed to validate refreshed Crew assignment lifecycle state';
 const EVENT_PHASE_TYPES: TimelogType[] = ['instal', 'provoz', 'deinstal'];
 type TimelogAssignmentRow = { event_id: string | null; contractor_id: string | null };
@@ -72,6 +73,19 @@ type EventLifecycleSnapshot = {
   eventCrewAssignments: EventCrewAssignment[];
   grasonEventConfirmations: GrasonEventConfirmation[];
   eventRowIdByLocalId: Map<number, string>;
+};
+
+const isEventApplicationRow = (value: unknown): value is EventApplicationRow => {
+  if (!value || typeof value !== 'object') return false;
+  const row = value as Record<string, unknown>;
+  return typeof row.id === 'string'
+    && typeof row.event_id === 'string'
+    && typeof row.profile_id === 'string'
+    && ['pending', 'approved', 'rejected', 'withdrawn', 'withdrawal_requested'].includes(String(row.status))
+    && (row.note === null || typeof row.note === 'string')
+    && (row.planned_from === null || typeof row.planned_from === 'string')
+    && (row.planned_to === null || typeof row.planned_to === 'string')
+    && typeof row.created_at === 'string';
 };
 
 const throwAssignmentLifecycleValidationError = ({
@@ -907,11 +921,15 @@ export const applyForEvent = async (
 export const updateEventApplicationStatus = async (
   applicationId: number,
   status: EventApplicationStatus,
+  expectedStatus?: EventApplicationStatus,
 ): Promise<EventApplication | null> => {
   const snapshot = getLocalAppState();
   const application = (snapshot.eventApplications ?? []).find((item) => item.id === applicationId);
   if (!application) {
     throw new Error('Prihlaska nebyla nalezena.');
+  }
+  if (expectedStatus && application.status !== expectedStatus) {
+    throw new Error(EVENT_APPLICATION_STATUS_CONFLICT_MESSAGE);
   }
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
@@ -919,15 +937,32 @@ export const updateEventApplicationStatus = async (
       throw new Error('Prihlaska nema UUID zaznam v Supabase.');
     }
 
-    const updateResult = await supabase
+    const updateById = supabase
       .from('event_applications')
       .update({ status })
-      .eq('id', application.supabaseId)
-      .select('*')
-      .single();
+      .eq('id', application.supabaseId);
+    const conditionalUpdate = expectedStatus
+      ? updateById.eq('status', expectedStatus)
+      : updateById;
+    const updateResult = await conditionalUpdate.select('*');
 
     if (updateResult.error) {
       throw new Error(updateResult.error.message);
+    }
+    if (updateResult.data?.length === 0) {
+      throw new Error(EVENT_APPLICATION_STATUS_CONFLICT_MESSAGE);
+    }
+
+    const updatedRow = updateResult.data?.[0];
+    if (
+      updateResult.data?.length !== 1
+      || !isEventApplicationRow(updatedRow)
+      || updatedRow.id !== application.supabaseId
+      || updatedRow.status !== status
+      || updatedRow.profile_id !== application.contractorProfileId
+      || (application.eventSupabaseId && updatedRow.event_id !== application.eventSupabaseId)
+    ) {
+      throw new Error(CREW_LIFECYCLE_ERROR_MESSAGE);
     }
   }
 
@@ -960,7 +995,7 @@ export const withdrawEventApplication = async (
     throw new Error('Odhlasit se lze primo jen pred schvalenim prihlasky.');
   }
 
-  return updateEventApplicationStatus(application.id, 'withdrawn');
+  return updateEventApplicationStatus(application.id, 'withdrawn', 'pending');
 };
 
 export const requestEventWithdrawal = async (

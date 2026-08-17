@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EventApplication, Timelog, TimelogStatus } from '../types';
 
@@ -8,10 +8,15 @@ const mocks = vi.hoisted(() => ({
   approveEventWithdrawal: vi.fn(),
   getEventDetailData: vi.fn(),
   removeContractorFromEvent: vi.fn(),
+  setSelectedEventId: vi.fn(),
   toastError: vi.fn(),
+  toastSuccess: vi.fn(),
+  updateEventApplicationStatus: vi.fn(),
 }));
 
 const state = vi.hoisted(() => ({
+  isMobile: false,
+  role: 'coo' as 'coo' | 'crew',
   detail: {} as {
     event: Record<string, unknown>;
     timelogs: Timelog[];
@@ -31,16 +36,16 @@ vi.mock('framer-motion', () => ({
 
 vi.mock('sonner', () => ({
   toast: {
-    success: vi.fn(),
+    success: mocks.toastSuccess,
     error: mocks.toastError,
   },
 }));
 
 vi.mock('../context/useAppContext', () => ({
   useAppContext: () => ({
-    role: 'coo',
+    role: state.role,
     selectedEventId: 'event-uuid-1',
-    setSelectedEventId: vi.fn(),
+    setSelectedEventId: mocks.setSelectedEventId,
     eventTab: 'overview',
     setEventTab: vi.fn(),
     setEditingReceipt: vi.fn(),
@@ -54,7 +59,7 @@ vi.mock('../app/providers/useAuth', () => ({
 }));
 
 vi.mock('../hooks/use-mobile', () => ({
-  useIsMobile: () => false,
+  useIsMobile: () => state.isMobile,
 }));
 
 vi.mock('../features/events/services/events.service', () => ({
@@ -67,7 +72,7 @@ vi.mock('../features/events/services/events.service', () => ({
   removeContractorFromEvent: (...args: unknown[]) => mocks.removeContractorFromEvent(...args),
   requestEventWithdrawal: vi.fn(),
   subscribeToEventChanges: vi.fn(() => () => undefined),
-  updateEventApplicationStatus: vi.fn().mockResolvedValue(undefined),
+  updateEventApplicationStatus: (...args: unknown[]) => mocks.updateEventApplicationStatus(...args),
   withdrawEventApplication: vi.fn(),
 }));
 
@@ -211,7 +216,10 @@ describe('EventDetailView Crew lifecycle guards', () => {
     mocks.approveEventApplication.mockResolvedValue(undefined);
     mocks.approveEventWithdrawal.mockResolvedValue(undefined);
     mocks.removeContractorFromEvent.mockResolvedValue(undefined);
+    mocks.updateEventApplicationStatus.mockResolvedValue(undefined);
     mocks.getEventDetailData.mockImplementation(() => state.detail);
+    state.isMobile = false;
+    state.role = 'coo';
   });
 
   it('disables removal when any Crew timelog is already submitted', () => {
@@ -310,6 +318,89 @@ describe('EventDetailView Crew lifecycle guards', () => {
     await waitFor(() => expect(approve).not.toBeDisabled());
   });
 
+  it('calls application rejection only once, blocks approval and Back, then reloads', async () => {
+    let resolveRejection!: () => void;
+    mocks.updateEventApplicationStatus.mockReturnValue(new Promise<void>((resolve) => { resolveRejection = resolve; }));
+    renderManagerDetail({ pendingApplication: true });
+    const detailCallsBeforeAction = mocks.getEventDetailData.mock.calls.length;
+    const reject = screen.getByRole('button', { name: 'Zamitnout' });
+    const approve = screen.getByRole('button', { name: 'Schvalit' });
+    const back = screen.getByRole('button', { name: 'Zpet na Akce' });
+
+    fireEvent.click(reject);
+    fireEvent.click(reject);
+    fireEvent.click(approve);
+    fireEvent.click(back);
+
+    expect(mocks.updateEventApplicationStatus).toHaveBeenCalledTimes(1);
+    expect(mocks.updateEventApplicationStatus).toHaveBeenCalledWith(11, 'rejected', 'pending');
+    expect(mocks.approveEventApplication).not.toHaveBeenCalled();
+    expect(mocks.setSelectedEventId).not.toHaveBeenCalled();
+    expect(reject).toBeDisabled();
+    expect(reject).toHaveAttribute('aria-busy', 'true');
+    expect(back).toBeDisabled();
+    expect(back).toHaveAttribute('aria-busy', 'true');
+    expect(back).toHaveAccessibleName('Zpet na Akce – čeká na dokončení akce Crew');
+    expect(mocks.getEventDetailData).toHaveBeenCalledTimes(detailCallsBeforeAction);
+
+    resolveRejection();
+
+    await waitFor(() => expect(reject).toBeEnabled());
+    expect(mocks.getEventDetailData).toHaveBeenCalledTimes(detailCallsBeforeAction + 1);
+  });
+
+  it('keeps the mobile Back action disabled while a Crew lifecycle action is pending', async () => {
+    let resolveRejection!: () => void;
+    mocks.updateEventApplicationStatus.mockReturnValue(new Promise<void>((resolve) => { resolveRejection = resolve; }));
+    const view = renderManagerDetail({ pendingApplication: true });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Zamitnout' }));
+    state.role = 'crew';
+    state.isMobile = true;
+    view.rerender(<EventDetailView />);
+
+    const back = screen.getByRole('button', { name: 'Zpět na akce – čeká na dokončení akce Crew' });
+    expect(back).toBeDisabled();
+    expect(back).toHaveAttribute('aria-busy', 'true');
+    fireEvent.click(back);
+    expect(mocks.setSelectedEventId).not.toHaveBeenCalled();
+
+    resolveRejection();
+    await waitFor(() => expect(back).toBeEnabled());
+  });
+
+  it('clears the application rejection lock after an error and permits retry', async () => {
+    mocks.updateEventApplicationStatus.mockRejectedValueOnce(new Error('Rejection failed')).mockResolvedValueOnce(undefined);
+    renderManagerDetail({ pendingApplication: true });
+    const reject = screen.getByRole('button', { name: 'Zamitnout' });
+
+    fireEvent.click(reject);
+
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith('Rejection failed'));
+    expect(reject).toBeEnabled();
+
+    fireEvent.click(reject);
+    await waitFor(() => expect(mocks.updateEventApplicationStatus).toHaveBeenCalledTimes(2));
+  });
+
+  it('does not reload or notify after unmounting during a pending Crew action', async () => {
+    let resolveRejection!: () => void;
+    mocks.updateEventApplicationStatus.mockReturnValue(new Promise<void>((resolve) => { resolveRejection = resolve; }));
+    const view = renderManagerDetail({ pendingApplication: true });
+    const detailCallsBeforeAction = mocks.getEventDetailData.mock.calls.length;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Zamitnout' }));
+    view.unmount();
+    await act(async () => {
+      resolveRejection();
+      await Promise.resolve();
+    });
+
+    expect(mocks.getEventDetailData).toHaveBeenCalledTimes(detailCallsBeforeAction);
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+    expect(mocks.toastError).not.toHaveBeenCalled();
+  });
+
   it('clears the application approval lock after rejection and permits retry', async () => {
     mocks.approveEventApplication.mockRejectedValueOnce(new Error('Approval failed')).mockResolvedValueOnce(undefined);
     renderManagerDetail({ pendingApplication: true });
@@ -340,6 +431,30 @@ describe('EventDetailView Crew lifecycle guards', () => {
     resolveApproval();
 
     await waitFor(() => expect(approve).not.toBeDisabled());
+  });
+
+  it('calls withdrawal rejection only once with its expected status and permits retry after failure', async () => {
+    let rejectFirst!: (reason?: unknown) => void;
+    mocks.updateEventApplicationStatus
+      .mockReturnValueOnce(new Promise<void>((_resolve, reject) => { rejectFirst = reject; }))
+      .mockResolvedValueOnce(undefined);
+    renderManagerDetail({ pendingWithdrawal: true });
+    const reject = screen.getByRole('button', { name: 'Zamitnout' });
+
+    fireEvent.click(reject);
+    fireEvent.click(reject);
+
+    expect(mocks.updateEventApplicationStatus).toHaveBeenCalledTimes(1);
+    expect(mocks.updateEventApplicationStatus).toHaveBeenCalledWith(12, 'approved', 'withdrawal_requested');
+    expect(reject).toBeDisabled();
+    expect(reject).toHaveAttribute('aria-busy', 'true');
+
+    rejectFirst(new Error('Withdrawal rejection failed'));
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith('Withdrawal rejection failed'));
+    expect(reject).toBeEnabled();
+
+    fireEvent.click(reject);
+    await waitFor(() => expect(mocks.updateEventApplicationStatus).toHaveBeenCalledTimes(2));
   });
 
   it('clears the Crew action lock even when detail reload fails', async () => {

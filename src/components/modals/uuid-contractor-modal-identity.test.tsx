@@ -61,7 +61,9 @@ const getEventDetailData = vi.fn(() => ({ timelogs: [] }));
 vi.mock('framer-motion', () => ({
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   motion: {
-    div: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div>,
+    div: React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+      ({ children, ...props }, ref) => <div ref={ref} {...props}>{children}</div>,
+    ),
   },
 }));
 
@@ -269,9 +271,58 @@ describe('modal contractor identity handling', () => {
     expect(screen.getByRole('button', { name: /Assigned Contractor/i })).toBeDisabled();
   });
 
+  it('exposes accessible dialog semantics, initial focus, Escape close, and focus return', () => {
+    const opener = render(<button type="button">Open assignment</button>);
+    const returnTarget = screen.getByRole('button', { name: 'Open assignment' });
+    returnTarget.focus();
+    const onClose = vi.fn();
+
+    const view = render(
+      <AssignCrewModal
+        event={{
+          id: 1,
+          name: 'Test Event',
+          job: 'JOB-1',
+          startDate: '2026-04-24',
+          endDate: '2026-04-24',
+          city: 'Praha',
+          needed: 1,
+          filled: 0,
+          status: 'upcoming',
+          client: 'Client',
+        }}
+        onClose={onClose}
+      />,
+    );
+
+    const dialog = screen.getByRole('dialog', { name: 'Obsadit crew' });
+    const close = screen.getByRole('button', { name: 'Zavřít obsazení crew' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(close).toHaveAttribute('type', 'button');
+    expect(screen.getByPlaceholderText('Hledat v crew...')).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(returnTarget).toHaveFocus();
+
+    view.unmount();
+    opener.unmount();
+  });
+
+  it('ignores Escape when the assignment dialog is not open', () => {
+    const onClose = vi.fn();
+    render(<AssignCrewModal event={null} onClose={onClose} />);
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('assigns crew through contractorProfileId only once while the request is pending', async () => {
     let resolveAssignment!: () => void;
     assignCrewToEvent.mockReturnValue(new Promise<void>((resolve) => { resolveAssignment = resolve; }));
+    const onClose = vi.fn();
     mockCrew = [
       {
         id: 2,
@@ -311,7 +362,7 @@ describe('modal contractor identity handling', () => {
           status: 'upcoming',
           client: 'Client',
         }}
-        onClose={vi.fn()}
+        onClose={onClose}
       />,
     );
 
@@ -325,6 +376,17 @@ describe('modal contractor identity handling', () => {
     expect(contractorRow).toBeDisabled();
     expect(contractorRow).toHaveAttribute('aria-busy', 'true');
     expect(screen.getByRole('button', { name: /Other Contractor/i })).toBeDisabled();
+    expect(screen.getByRole('dialog', { name: 'Obsadit crew' })).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('status')).toHaveTextContent('Přiřazuji…');
+    const close = screen.getByRole('button', { name: 'Zavřít obsazení crew' });
+    const done = screen.getByRole('button', { name: 'Hotovo' });
+    expect(close).toBeDisabled();
+    expect(done).toBeDisabled();
+
+    fireEvent.click(close);
+    fireEvent.click(done);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
 
     resolveAssignment();
 
@@ -411,7 +473,10 @@ describe('modal contractor identity handling', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: /Free Contractor/i }));
-    fireEvent.click(screen.getByRole('button', { name: /^I Instal$/i }));
+    const installPhase = screen.getByRole('button', { name: /^I Instal$/i });
+    expect(installPhase).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(installPhase);
+    expect(installPhase).toHaveAttribute('aria-pressed', 'true');
     const confirm = screen.getByRole('button', { name: 'Potvrdit prirazeni' });
 
     fireEvent.click(confirm);
@@ -422,10 +487,60 @@ describe('modal contractor identity handling', () => {
     expect(confirm).toBeDisabled();
     expect(confirm).toHaveAttribute('aria-busy', 'true');
     expect(screen.getByRole('button', { name: /Free Contractor/i })).toBeDisabled();
+    expect(installPhase).toBeDisabled();
+    expect(installPhase).toHaveClass('disabled:cursor-not-allowed', 'disabled:opacity-50');
+    const cancelPhase = screen.getByRole('button', { name: 'Zrusit vyber faze' });
+    expect(cancelPhase).toBeDisabled();
+    fireEvent.click(cancelPhase);
+    expect(confirm).toBeInTheDocument();
 
     resolveAssignment();
 
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Potvrdit prirazeni' })).not.toBeInTheDocument());
+  });
+
+  it('traps Tab focus within the assignment dialog', () => {
+    mockCrew = [{
+      id: 2,
+      profileId: 'profile-uuid-2',
+      name: 'Free Contractor',
+      ii: 'FC',
+      bg: '#111',
+      fg: '#fff',
+      tags: [],
+      reliable: true,
+      city: 'Brno',
+    }];
+
+    render(
+      <AssignCrewModal
+        event={{
+          id: 1,
+          name: 'Test Event',
+          job: 'JOB-1',
+          startDate: '2026-04-24',
+          endDate: '2026-04-24',
+          city: 'Praha',
+          needed: 1,
+          filled: 0,
+          status: 'upcoming',
+          client: 'Client',
+        }}
+        onClose={vi.fn()}
+      />,
+    );
+
+    const dialog = screen.getByRole('dialog', { name: 'Obsadit crew' });
+    const close = screen.getByRole('button', { name: 'Zavřít obsazení crew' });
+    const done = screen.getByRole('button', { name: 'Hotovo' });
+
+    done.focus();
+    fireEvent.keyDown(dialog, { key: 'Tab' });
+    expect(close).toHaveFocus();
+
+    close.focus();
+    fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
+    expect(done).toHaveFocus();
   });
 
   it('assigns the only available day type immediately on typed single-phase events', async () => {

@@ -428,13 +428,23 @@ describe('events.service write flow', () => {
     const eventsUpdate = vi.fn(() => ({
       eq: vi.fn().mockResolvedValue({ error: null }),
     }));
-    const eventApplicationsUpdate = vi.fn(() => ({
-      eq: vi.fn(() => ({
-        select: vi.fn(() => ({
-          single: vi.fn().mockResolvedValue({ data: {}, error: null }),
-        })),
-      })),
+    let requestedApplicationStatus: EventApplication['status'] = 'pending';
+    const eventApplicationsSelect = vi.fn(async () => ({
+      data: [{
+        ...applicationRows[0],
+        status: requestedApplicationStatus,
+      }],
+      error: null,
     }));
+    const eventApplicationsExpectedStatusEq = vi.fn(() => ({ select: eventApplicationsSelect }));
+    const eventApplicationsIdEq = vi.fn(() => ({
+      eq: eventApplicationsExpectedStatusEq,
+      select: eventApplicationsSelect,
+    }));
+    const eventApplicationsUpdate = vi.fn(({ status }: { status: EventApplication['status'] }) => {
+      requestedApplicationStatus = status;
+      return { eq: eventApplicationsIdEq };
+    });
 
     const toEventRow = (event: Event) => ({
       id: event.supabaseId,
@@ -687,6 +697,9 @@ describe('events.service write flow', () => {
         });
       },
       eventApplicationsUpdate,
+      eventApplicationsIdEq,
+      eventApplicationsExpectedStatusEq,
+      eventApplicationsSelect,
       directWrites: {
         timelogsInsert,
         timelogsDelete,
@@ -1285,6 +1298,54 @@ describe('events.service write flow', () => {
 
     expect(harness.assignEventCrewRpc).not.toHaveBeenCalled();
     expect(harness.getSnapshot()).toEqual(before);
+  });
+
+  it('conditions a Supabase application update on the expected current status', async () => {
+    const harness = await setupLifecycleService();
+
+    await expect(harness.service.updateEventApplicationStatus(1, 'rejected', 'pending'))
+      .resolves.toMatchObject({ status: 'rejected' });
+
+    expect(harness.eventApplicationsUpdate).toHaveBeenCalledWith({ status: 'rejected' });
+    expect(harness.eventApplicationsIdEq).toHaveBeenCalledWith('id', 'application-row-1');
+    expect(harness.eventApplicationsExpectedStatusEq).toHaveBeenCalledWith('status', 'pending');
+    expect(harness.eventApplicationsSelect).toHaveBeenCalledWith('*');
+    expect(harness.getSnapshot().eventApplications[0].status).toBe('rejected');
+  });
+
+  it('reports a stable conflict and preserves state when a conditional Supabase update matches no row', async () => {
+    const harness = await setupLifecycleService();
+    const before = harness.getSnapshot();
+    harness.eventApplicationsSelect.mockResolvedValueOnce({ data: [], error: null });
+
+    await expect(harness.service.updateEventApplicationStatus(1, 'rejected', 'pending'))
+      .rejects.toThrow('Stav přihlášky se mezitím změnil. Obnovte detail akce a zkuste to znovu.');
+
+    expect(harness.getSnapshot()).toEqual(before);
+  });
+
+  it('refuses a stale expected application status in the local fallback', async () => {
+    const initialSnapshot = createSnapshot({
+      events: [{ ...lifecycleEvent, supabaseId: undefined }],
+      eventApplications: [{ ...lifecycleApplication, supabaseId: undefined, status: 'approved' }],
+    });
+    const harness = await setupLifecycleService({ dataSource: 'local', initialSnapshot });
+    const before = harness.getSnapshot();
+
+    await expect(harness.service.updateEventApplicationStatus(1, 'rejected', 'pending'))
+      .rejects.toThrow('Stav přihlášky se mezitím změnil. Obnovte detail akce a zkuste to znovu.');
+
+    expect(harness.getSnapshot()).toEqual(before);
+    expect(harness.eventApplicationsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('withdraws a pending application with a conditional status update', async () => {
+    const harness = await setupLifecycleService();
+
+    await harness.service.withdrawEventApplication(1, 'profile-uuid-1');
+
+    expect(harness.eventApplicationsUpdate).toHaveBeenCalledWith({ status: 'withdrawn' });
+    expect(harness.eventApplicationsExpectedStatusEq).toHaveBeenCalledWith('status', 'pending');
   });
 
   it('hydrates the canonical timelog returned by repeated assignment', async () => {

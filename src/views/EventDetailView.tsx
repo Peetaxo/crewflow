@@ -71,6 +71,7 @@ const EventDetailView = () => {
   const [showWithdrawalConfirm, setShowWithdrawalConfirm] = useState(false);
   const [pendingCrewAction, setPendingCrewAction] = useState<string | null>(null);
   const pendingCrewActionRef = useRef<string | null>(null);
+  const isMountedRef = useRef(false);
   const invoiceApprovalsQuery = useInvoiceApprovalsQuery();
 
   const beginCrewAction = (actionKey: string) => {
@@ -83,12 +84,19 @@ const EventDetailView = () => {
   const endCrewAction = (actionKey: string) => {
     if (pendingCrewActionRef.current !== actionKey) return;
     pendingCrewActionRef.current = null;
-    setPendingCrewAction(null);
+    if (isMountedRef.current) setPendingCrewAction(null);
   };
 
   const loadDetail = useCallback(() => {
     setDetail(getEventDetailData(selectedEventId));
   }, [selectedEventId]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     loadDetail();
@@ -213,9 +221,11 @@ const EventDetailView = () => {
 
     try {
       await removeContractorFromEvent(event.id, contractorProfileId);
-      loadDetail();
+      if (isMountedRef.current) loadDetail();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Nepodařilo se odebrat člena crew.');
+      if (isMountedRef.current) {
+        toast.error(error instanceof Error ? error.message : 'Nepodařilo se odebrat člena crew.');
+      }
     } finally {
       endCrewAction(actionKey);
     }
@@ -309,22 +319,34 @@ const EventDetailView = () => {
 
     try {
       await approveEventApplication(applicationId);
+      if (!isMountedRef.current) return;
       loadDetail();
       toast.success('Crew byla prirazena na akci.');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Prihlasku se nepodarilo schvalit.');
+      if (isMountedRef.current) {
+        toast.error(error instanceof Error ? error.message : 'Prihlasku se nepodarilo schvalit.');
+      }
     } finally {
       endCrewAction(actionKey);
     }
   };
 
-  const handleRejectApplication = (applicationId: number) => {
-    if (pendingCrewActionRef.current !== null) return;
-    void updateEventApplicationStatus(applicationId, 'rejected')
-      .then(() => toast.success('Prihlaska byla zamitnuta.'))
-      .catch((error) => {
+  const handleRejectApplication = async (applicationId: number) => {
+    const actionKey = `reject-application:${applicationId}`;
+    if (!beginCrewAction(actionKey)) return;
+
+    try {
+      await updateEventApplicationStatus(applicationId, 'rejected', 'pending');
+      if (!isMountedRef.current) return;
+      loadDetail();
+      toast.success('Prihlaska byla zamitnuta.');
+    } catch (error) {
+      if (isMountedRef.current) {
         toast.error(error instanceof Error ? error.message : 'Prihlasku se nepodarilo zamitnout.');
-      });
+      }
+    } finally {
+      endCrewAction(actionKey);
+    }
   };
 
   const handleApproveWithdrawal = async (applicationId: number) => {
@@ -333,22 +355,34 @@ const EventDetailView = () => {
 
     try {
       await approveEventWithdrawal(applicationId);
+      if (!isMountedRef.current) return;
       loadDetail();
       toast.success('Crew byla odhlasena z akce.');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Odhlaseni se nepodarilo schvalit.');
+      if (isMountedRef.current) {
+        toast.error(error instanceof Error ? error.message : 'Odhlaseni se nepodarilo schvalit.');
+      }
     } finally {
       endCrewAction(actionKey);
     }
   };
 
-  const handleRejectWithdrawal = (applicationId: number) => {
-    if (pendingCrewActionRef.current !== null) return;
-    void updateEventApplicationStatus(applicationId, 'approved')
-      .then(() => toast.success('Zadost o odhlaseni byla zamitnuta.'))
-      .catch((error) => {
+  const handleRejectWithdrawal = async (applicationId: number) => {
+    const actionKey = `reject-withdrawal:${applicationId}`;
+    if (!beginCrewAction(actionKey)) return;
+
+    try {
+      await updateEventApplicationStatus(applicationId, 'approved', 'withdrawal_requested');
+      if (!isMountedRef.current) return;
+      loadDetail();
+      toast.success('Zadost o odhlaseni byla zamitnuta.');
+    } catch (error) {
+      if (isMountedRef.current) {
         toast.error(error instanceof Error ? error.message : 'Zadost o odhlaseni se nepodarilo zamitnout.');
-      });
+      }
+    } finally {
+      endCrewAction(actionKey);
+    }
   };
 
   const handleCopyEvent = () => {
@@ -407,6 +441,11 @@ const EventDetailView = () => {
             <button
               type="button"
               onClick={() => setSelectedEventId(null)}
+              disabled={anyCrewActionPending}
+              aria-busy={anyCrewActionPending || undefined}
+              aria-label={anyCrewActionPending
+                ? 'Zpět na akce – čeká na dokončení akce Crew'
+                : 'Zpět na akce'}
               className="nodu-mobile-event-back"
             >
               <ArrowLeft size={18} />
@@ -609,7 +648,16 @@ const EventDetailView = () => {
 
   return (
     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
-      <button onClick={() => setSelectedEventId(null)} className="mb-4 flex items-center gap-1 text-xs text-[color:var(--nodu-text-soft)] transition-colors hover:text-[color:var(--nodu-accent)]">
+      <button
+        type="button"
+        onClick={() => setSelectedEventId(null)}
+        disabled={anyCrewActionPending}
+        aria-busy={anyCrewActionPending || undefined}
+        aria-label={anyCrewActionPending
+          ? 'Zpet na Akce – čeká na dokončení akce Crew'
+          : 'Zpet na Akce'}
+        className="mb-4 flex items-center gap-1 text-xs text-[color:var(--nodu-text-soft)] transition-colors hover:text-[color:var(--nodu-accent)] disabled:cursor-not-allowed disabled:opacity-50"
+      >
         <ArrowLeft size={14} /> Zpet na Akce
       </button>
 
@@ -983,6 +1031,7 @@ const EventDetailView = () => {
                           <tbody className="divide-y divide-[color:rgb(var(--nodu-text-rgb)/0.06)]">
                             {pendingApplications.map(({ application, contractor }) => {
                               const approvalPending = pendingCrewAction === `approve-application:${application.id}`;
+                              const rejectionPending = pendingCrewAction === `reject-application:${application.id}`;
 
                               return (
                                 <tr key={application.id} className="bg-white">
@@ -1012,7 +1061,14 @@ const EventDetailView = () => {
                                         >
                                           Schvalit
                                         </Button>
-                                        <Button size="sm" variant="outline" className="h-8 border-[#e8b4a3] text-[11px] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]" onClick={() => handleRejectApplication(application.id)} disabled={anyCrewActionPending}>
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="h-8 border-[#e8b4a3] text-[11px] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]"
+                                          onClick={() => void handleRejectApplication(application.id)}
+                                          disabled={anyCrewActionPending}
+                                          aria-busy={rejectionPending || undefined}
+                                        >
                                           Zamitnout
                                         </Button>
                                       </div>
@@ -1050,6 +1106,7 @@ const EventDetailView = () => {
                         <tbody className="divide-y divide-[color:rgb(var(--nodu-text-rgb)/0.06)]">
                           {withdrawalRequests.map(({ application, contractor }) => {
                             const approvalPending = pendingCrewAction === `approve-withdrawal:${application.id}`;
+                            const rejectionPending = pendingCrewAction === `reject-withdrawal:${application.id}`;
 
                             return (
                               <tr key={application.id} className="bg-white">
@@ -1075,7 +1132,14 @@ const EventDetailView = () => {
                                     >
                                       Schvalit odhlaseni
                                     </Button>
-                                    <Button size="sm" variant="outline" className="h-8 border-[#e8b4a3] text-[11px] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]" onClick={() => handleRejectWithdrawal(application.id)} disabled={anyCrewActionPending}>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-8 border-[#e8b4a3] text-[11px] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]"
+                                      onClick={() => void handleRejectWithdrawal(application.id)}
+                                      disabled={anyCrewActionPending}
+                                      aria-busy={rejectionPending || undefined}
+                                    >
                                       Zamitnout
                                     </Button>
                                   </div>

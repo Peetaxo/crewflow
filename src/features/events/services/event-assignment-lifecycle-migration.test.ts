@@ -40,6 +40,17 @@ const expectMarkersInOrder = (sql: string, markers: readonly string[]) => {
   });
 };
 
+const readFunction = (sql: string, functionName: string) => {
+  const match = sql.match(
+    new RegExp(
+      `create\\s+or\\s+replace\\s+function\\s+public\\.${functionName}([\\s\\S]*?)\\n\\$\\$;`,
+    ),
+  );
+
+  expect(match, `missing function public.${functionName}`).not.toBeNull();
+  return match?.[0] ?? '';
+};
+
 describe('timelog assignment lifecycle migration', () => {
   it('contains the complete explicit production repair map', () => {
     const sql = readMigration();
@@ -221,12 +232,127 @@ describe('timelog assignment lifecycle migration', () => {
     expect(guardedBlockEnd).toBeGreaterThan(rowCountIndex);
     expect(globalDuplicateCheck).toBeGreaterThan(guardedBlockEnd);
     expect(addConstraintIndex).toBeGreaterThan(globalDuplicateCheck);
-    expect(sql.match(/delete from public\.timelogs/g)).toHaveLength(1);
+    expect(sql.slice(0, addConstraintIndex).match(/delete from public\.timelogs/g)).toHaveLength(1);
     expect(sql).toMatch(
       /delete from public\.timelogs t\s+using timelog_duplicate_repair_map m\s+where t\.id = m\.duplicate_id;/,
     );
     expect(sql).toContain('delete from public.timelogs');
     expect(sql).toMatch(/add\s+constraint\s+timelogs_event_contractor_unique\b/);
-    expect(sql).not.toMatch(/\bcommit\s*;/);
+  });
+
+  it('defines both atomic lifecycle RPCs with exact hardened signatures', () => {
+    const sql = readMigration();
+    const assignFunction = readFunction(sql, 'assign_event_crew');
+    const removeFunction = readFunction(sql, 'remove_event_crew');
+
+    expect(sql.match(/security definer/g)).toHaveLength(2);
+    expect(assignFunction).toMatch(
+      /function\s+public\.assign_event_crew\s*\(\s*p_event_id uuid,\s*p_profile_id uuid,\s*p_application_id uuid default null,\s*p_days jsonb default '\[\]'::jsonb\s*\)/,
+    );
+    expect(removeFunction).toMatch(
+      /function\s+public\.remove_event_crew\s*\(\s*p_event_id uuid,\s*p_profile_id uuid\s*\)/,
+    );
+    [assignFunction, removeFunction].forEach((functionSql) => {
+      expect(functionSql).toMatch(/returns\s+jsonb\s+language\s+plpgsql\s+security definer/);
+      expect(functionSql).toContain("set search_path = ''");
+      expect(functionSql).toMatch(
+        /if\s+auth\.uid\(\) is null or not \(\s*public\.has_role\(auth\.uid\(\), 'crewhead'::public\.app_role\)\s*or public\.has_role\(auth\.uid\(\), 'coo'::public\.app_role\)\s*\) then\s*raise exception 'crew_lifecycle_unauthorized'/,
+      );
+    });
+
+    const lockExpression =
+      /perform\s+pg_catalog\.pg_advisory_xact_lock\(\s*pg_catalog\.hashtextextended\(p_event_id::text \|\| ':' \|\| p_profile_id::text, 0\)\s*\)/g;
+    expect(sql.match(lockExpression)).toHaveLength(2);
+    expect(assignFunction).toContain('on conflict (event_id, profile_id) do nothing');
+    expect(removeFunction).toContain("status not in ('draft', 'rejected')");
+  });
+
+  it('fully qualifies lifecycle RPC relations and catalog functions', () => {
+    const sql = readMigration();
+    const lifecycleFunctions = [
+      readFunction(sql, 'assign_event_crew'),
+      readFunction(sql, 'remove_event_crew'),
+    ];
+
+    lifecycleFunctions.forEach((functionSql) => {
+      [
+        'events',
+        'profiles',
+        'event_assignments',
+        'timelogs',
+        'timelog_days',
+        'event_applications',
+      ].forEach((relation) => {
+        expect(functionSql).not.toMatch(
+          new RegExp(`(?:from|into|update|delete\\s+from)\\s+${relation}\\b`),
+        );
+      });
+      expect(functionSql).not.toMatch(/(?<!pg_catalog\.)\b(?:now|jsonb_build_object)\s*\(/);
+      expect(functionSql).toContain('pg_catalog.pg_advisory_xact_lock');
+      expect(functionSql).toContain('pg_catalog.hashtextextended');
+    });
+
+    const assignFunction = lifecycleFunctions[0];
+    ['jsonb_typeof', 'jsonb_array_length', 'jsonb_array_elements'].forEach((catalogFunction) => {
+      expect(assignFunction).toContain(`pg_catalog.${catalogFunction}`);
+      expect(assignFunction).not.toMatch(
+        new RegExp(`(?<!pg_catalog\\.)\\b${catalogFunction}\\s*\\(`),
+      );
+    });
+    expect(assignFunction).toContain('insert into public.timelog_days');
+  });
+
+  it('preserves existing timelogs during assignment and validates removals before deletion', () => {
+    const sql = readMigration();
+    const assignFunction = readFunction(sql, 'assign_event_crew');
+    const removeFunction = readFunction(sql, 'remove_event_crew');
+    const createBranchStart = assignFunction.indexOf('if v_timelog_id is null then');
+    const createBranchEnd = assignFunction.indexOf('\n  end if;', createBranchStart);
+    const timelogInsert = assignFunction.indexOf('insert into public.timelogs');
+    const dayInsert = assignFunction.indexOf('insert into public.timelog_days');
+
+    expect(assignFunction).not.toMatch(/update\s+public\.timelogs\b/);
+    expect(assignFunction).not.toMatch(/delete\s+from\s+public\.timelog_days\b/);
+    expect(assignFunction.match(/insert into public\.timelogs/g)).toHaveLength(1);
+    expect(assignFunction.match(/insert into public\.timelog_days/g)).toHaveLength(1);
+    expect(createBranchStart).toBeGreaterThanOrEqual(0);
+    expect(timelogInsert).toBeGreaterThan(createBranchStart);
+    expect(dayInsert).toBeGreaterThan(timelogInsert);
+    expect(createBranchEnd).toBeGreaterThan(dayInsert);
+
+    const blockedCheck = removeFunction.indexOf("status not in ('draft', 'rejected')");
+    const blockedError = removeFunction.indexOf("raise exception 'crew_removal_blocked'");
+    const timelogDelete = removeFunction.indexOf('delete from public.timelogs');
+    const assignmentDelete = removeFunction.indexOf('delete from public.event_assignments');
+
+    expect(blockedCheck).toBeGreaterThanOrEqual(0);
+    expect(blockedError).toBeGreaterThan(blockedCheck);
+    expect(timelogDelete).toBeGreaterThan(blockedError);
+    expect(assignmentDelete).toBeGreaterThan(timelogDelete);
+    expect(removeFunction).toContain("status in ('draft', 'rejected')");
+  });
+
+  it('exposes lifecycle RPCs only to authenticated users and commits exactly once at the end', () => {
+    const sql = readMigration();
+    const assignSignature = 'public.assign_event_crew(uuid, uuid, uuid, jsonb)';
+    const removeSignature = 'public.remove_event_crew(uuid, uuid)';
+
+    [assignSignature, removeSignature].forEach((signature) => {
+      expect(sql).toContain(`revoke all on function ${signature} from public;`);
+      expect(sql).toContain(`revoke all on function ${signature} from anon;`);
+      expect(sql).toContain(`grant execute on function ${signature} to authenticated;`);
+      expect(sql).not.toMatch(
+        new RegExp(
+          `grant execute on function ${signature.replace(/[()]/g, '\\$&')} to (?:anon|public|service_role)`,
+        ),
+      );
+    });
+    expect(sql).toContain('crew_lifecycle_not_found');
+    expect(sql).toContain('crew_assignment_conflict');
+    expect(sql).toContain('crew_assignment_invalid_days');
+    expect(sql).toContain('crew_removal_blocked');
+    expect(sql.match(/\bcommit\s*;/g)).toHaveLength(1);
+    expect(sql.trimEnd()).toMatch(/commit;$/);
+    expect(sql).not.toMatch(/\bassert\b/);
   });
 });

@@ -1,0 +1,520 @@
+begin;
+
+do $$
+declare
+  v_manager_user_id uuid;
+  v_crew_user_id uuid;
+  v_profile_id uuid;
+  v_event_id uuid;
+  v_application_id uuid;
+  v_assignment_id uuid;
+  v_first_timelog_id uuid;
+  v_second_timelog_id uuid;
+  v_blocked_timelog_id uuid;
+  v_result jsonb;
+  v_error_message text;
+  v_expected_error boolean;
+  v_count integer;
+  v_status public.timelog_status;
+  v_non_disposable_statuses public.timelog_status[] := array[
+    'pending_ch'::public.timelog_status,
+    'pending_crew_confirmation'::public.timelog_status,
+    'pending_coo'::public.timelog_status,
+    'approved'::public.timelog_status,
+    'invoiced'::public.timelog_status,
+    'paid'::public.timelog_status
+  ];
+  v_toggle_update_trigger boolean;
+  v_assignment_before jsonb;
+  v_timelog_before jsonb;
+  v_application_before jsonb;
+  v_event_before jsonb;
+  v_days_before jsonb;
+  v_assignment_after jsonb;
+  v_timelog_after jsonb;
+  v_application_after jsonb;
+  v_event_after jsonb;
+  v_days_after jsonb;
+begin
+  select ur.user_id
+  into v_manager_user_id
+  from public.user_roles ur
+  where ur.role in ('crewhead'::public.app_role, 'coo'::public.app_role)
+  order by
+    case ur.role when 'crewhead'::public.app_role then 0 else 1 end,
+    ur.user_id
+  limit 1;
+
+  if v_manager_user_id is null then
+    raise exception 'verification fixture missing: no crewhead or coo user exists';
+  end if;
+
+  select p.id, p.user_id
+  into v_profile_id, v_crew_user_id
+  from public.profiles p
+  where p.user_id is not null
+    and exists (
+      select 1
+      from public.user_roles crew_role
+      where crew_role.user_id = p.user_id
+        and crew_role.role = 'crew'::public.app_role
+    )
+    and not exists (
+      select 1
+      from public.user_roles manager_role
+      where manager_role.user_id = p.user_id
+        and manager_role.role in ('crewhead'::public.app_role, 'coo'::public.app_role)
+    )
+  order by p.id
+  limit 1;
+
+  if v_profile_id is null or v_crew_user_id is null then
+    raise exception 'verification fixture missing: no crew-only profile exists';
+  end if;
+
+  insert into public.events (name, status)
+  values (
+    'Crew lifecycle verification ' || pg_catalog.gen_random_uuid()::text,
+    'planning'::public.event_status
+  )
+  returning id into v_event_id;
+
+  insert into public.event_applications (event_id, profile_id, status, note)
+  values (v_event_id, v_profile_id, 'pending', 'crew lifecycle verification')
+  returning id into v_application_id;
+
+  perform pg_catalog.set_config('request.jwt.claim.sub', v_manager_user_id::text, true);
+  perform pg_catalog.set_config('request.jwt.claim.role', 'authenticated', true);
+  perform pg_catalog.set_config(
+    'request.jwt.claims',
+    pg_catalog.jsonb_build_object(
+      'sub', v_manager_user_id::text,
+      'role', 'authenticated'
+    )::text,
+    true
+  );
+
+  v_result := public.assign_event_crew(
+    v_event_id,
+    v_profile_id,
+    v_application_id,
+    pg_catalog.jsonb_build_array(
+      pg_catalog.jsonb_build_object(
+        'date', '2099-01-01',
+        'time_from', '08:00',
+        'time_to', '16:00',
+        'day_type', 'instal',
+        'note', 'original assignment day'
+      )
+    )
+  );
+  v_assignment_id := (v_result->>'assignment_id')::uuid;
+  v_first_timelog_id := (v_result->>'timelog_id')::uuid;
+
+  if (v_result->>'timelog_created')::boolean is not true
+    or v_assignment_id is null
+    or v_first_timelog_id is null then
+    raise exception 'verification failed: first assignment did not create its rows';
+  end if;
+
+  v_result := public.assign_event_crew(
+    v_event_id,
+    v_profile_id,
+    v_application_id,
+    pg_catalog.jsonb_build_array(
+      pg_catalog.jsonb_build_object(
+        'date', '2099-01-02',
+        'time_from', '09:00',
+        'time_to', '17:00',
+        'day_type', 'provoz',
+        'note', 'must not replace original day'
+      )
+    )
+  );
+
+  if (v_result->>'timelog_created')::boolean is not false
+    or (v_result->>'assignment_id')::uuid is distinct from v_assignment_id
+    or (v_result->>'timelog_id')::uuid is distinct from v_first_timelog_id then
+    raise exception 'verification failed: repeated assignment was not idempotent';
+  end if;
+
+  select count(*) into v_count
+  from public.event_assignments
+  where event_id = v_event_id and profile_id = v_profile_id;
+  if v_count <> 1 then
+    raise exception 'verification failed: repeated assignment changed assignment count';
+  end if;
+
+  select count(*) into v_count
+  from public.timelogs
+  where event_id = v_event_id and contractor_id = v_profile_id;
+  if v_count <> 1 then
+    raise exception 'verification failed: repeated assignment changed timelog count';
+  end if;
+
+  select count(*) into v_count
+  from public.timelog_days
+  where timelog_id = v_first_timelog_id;
+  if v_count <> 1 or not exists (
+    select 1
+    from public.timelog_days
+    where timelog_id = v_first_timelog_id
+      and date = '2099-01-01'::date
+      and time_from = '08:00'
+      and time_to = '16:00'
+      and day_type = 'instal'::public.timelog_type
+      and note = 'original assignment day'
+  ) then
+    raise exception 'verification failed: repeated assignment replaced original timelog days';
+  end if;
+
+  if not exists (
+    select 1
+    from public.event_applications
+    where id = v_application_id and status = 'approved'
+  ) then
+    raise exception 'verification failed: assignment did not approve the application';
+  end if;
+
+  v_result := public.remove_event_crew(v_event_id, v_profile_id);
+  if (v_result->>'assignment_removed')::boolean is not true
+    or (v_result->>'timelog_removed')::boolean is not true then
+    raise exception 'verification failed: draft removal result did not report both deletions';
+  end if;
+
+  if exists (
+    select 1 from public.event_assignments
+    where event_id = v_event_id and profile_id = v_profile_id
+  ) or exists (
+    select 1 from public.timelogs
+    where event_id = v_event_id and contractor_id = v_profile_id
+  ) or exists (
+    select 1 from public.timelog_days where timelog_id = v_first_timelog_id
+  ) then
+    raise exception 'verification failed: draft removal left lifecycle rows behind';
+  end if;
+
+  if not exists (
+    select 1 from public.event_applications
+    where id = v_application_id and status = 'withdrawn'
+  ) or not exists (
+    select 1 from public.events where id = v_event_id and crew_filled = 0
+  ) then
+    raise exception 'verification failed: draft removal did not update application and event';
+  end if;
+
+  v_result := public.assign_event_crew(
+    v_event_id,
+    v_profile_id,
+    v_application_id,
+    '[{"date":"2099-01-03","time_from":"10:00","time_to":"18:00","day_type":"deinstal","note":"clean reapply day"}]'::jsonb
+  );
+  v_second_timelog_id := (v_result->>'timelog_id')::uuid;
+
+  if (v_result->>'timelog_created')::boolean is not true
+    or v_second_timelog_id is null
+    or v_second_timelog_id = v_first_timelog_id then
+    raise exception 'verification failed: reapply did not create a new timelog';
+  end if;
+
+  select count(*) into v_count
+  from public.timelog_days
+  where timelog_id = v_second_timelog_id;
+  if v_count <> 1 or not exists (
+    select 1
+    from public.timelog_days
+    where timelog_id = v_second_timelog_id
+      and date = '2099-01-03'::date
+      and time_from = '10:00'
+      and time_to = '18:00'
+      and day_type = 'deinstal'::public.timelog_type
+      and note = 'clean reapply day'
+  ) then
+    raise exception 'verification failed: reapply did not create one clean day';
+  end if;
+
+  select exists (
+    select 1
+    from pg_catalog.pg_trigger trigger_row
+    where trigger_row.tgrelid = 'public.timelogs'::pg_catalog.regclass
+      and trigger_row.tgname = 'enforce_timelog_update_permissions'
+      and not trigger_row.tgisinternal
+      and trigger_row.tgenabled <> 'D'
+  ) into v_toggle_update_trigger;
+
+  if v_toggle_update_trigger then
+    execute 'alter table public.timelogs disable trigger enforce_timelog_update_permissions';
+  end if;
+  update public.timelogs
+  set status = 'rejected'::public.timelog_status
+  where id = v_second_timelog_id;
+  if v_toggle_update_trigger then
+    execute 'alter table public.timelogs enable trigger enforce_timelog_update_permissions';
+  end if;
+
+  v_result := public.remove_event_crew(v_event_id, v_profile_id);
+  if (v_result->>'assignment_removed')::boolean is not true
+    or (v_result->>'timelog_removed')::boolean is not true
+    or exists (
+      select 1 from public.event_assignments
+      where event_id = v_event_id and profile_id = v_profile_id
+    )
+    or exists (
+      select 1 from public.timelogs
+      where event_id = v_event_id and contractor_id = v_profile_id
+    )
+    or exists (
+      select 1 from public.timelog_days where timelog_id = v_second_timelog_id
+    )
+    or not exists (
+      select 1 from public.event_applications
+      where id = v_application_id and status = 'withdrawn'
+    )
+    or not exists (
+      select 1 from public.events where id = v_event_id and crew_filled = 0
+    ) then
+    raise exception 'verification failed: rejected removal was not atomic and disposable';
+  end if;
+
+  v_expected_error := false;
+  begin
+    perform public.assign_event_crew(
+      v_event_id,
+      v_profile_id,
+      pg_catalog.gen_random_uuid(),
+      '[{"date":"2099-01-04","time_from":"08:00","time_to":"12:00","day_type":"provoz"}]'::jsonb
+    );
+  exception
+    when sqlstate 'P0002' then
+      get stacked diagnostics v_error_message = message_text;
+      if v_error_message <> 'crew_lifecycle_not_found' then
+        raise;
+      end if;
+      v_expected_error := true;
+  end;
+  if not v_expected_error
+    or exists (
+      select 1 from public.event_assignments
+      where event_id = v_event_id and profile_id = v_profile_id
+    )
+    or exists (
+      select 1 from public.timelogs
+      where event_id = v_event_id and contractor_id = v_profile_id
+    )
+    or not exists (
+      select 1 from public.event_applications
+      where id = v_application_id and status = 'withdrawn'
+    ) then
+    raise exception 'verification failed: bad application id did not roll back assignment';
+  end if;
+
+  v_expected_error := false;
+  begin
+    perform public.assign_event_crew(
+      v_event_id,
+      v_profile_id,
+      v_application_id,
+      '[{"date":"not-a-date","time_from":"08:00","time_to":"12:00","day_type":"provoz"}]'::jsonb
+    );
+  exception
+    when sqlstate '22023' then
+      get stacked diagnostics v_error_message = message_text;
+      if v_error_message <> 'crew_assignment_invalid_days' then
+        raise;
+      end if;
+      v_expected_error := true;
+  end;
+  if not v_expected_error
+    or exists (
+      select 1 from public.event_assignments
+      where event_id = v_event_id and profile_id = v_profile_id
+    )
+    or exists (
+      select 1 from public.timelogs
+      where event_id = v_event_id and contractor_id = v_profile_id
+    ) then
+    raise exception 'verification failed: invalid days did not roll back cleanly';
+  end if;
+
+  v_result := public.assign_event_crew(
+    v_event_id,
+    v_profile_id,
+    v_application_id,
+    '[{"date":"2099-01-05","time_from":"07:30","time_to":"15:30","day_type":"provoz","note":"blocked status day"}]'::jsonb
+  );
+  v_assignment_id := (v_result->>'assignment_id')::uuid;
+  v_blocked_timelog_id := (v_result->>'timelog_id')::uuid;
+
+  foreach v_status in array v_non_disposable_statuses loop
+    if v_toggle_update_trigger then
+      execute 'alter table public.timelogs disable trigger enforce_timelog_update_permissions';
+    end if;
+    update public.timelogs set status = v_status where id = v_blocked_timelog_id;
+    if v_toggle_update_trigger then
+      execute 'alter table public.timelogs enable trigger enforce_timelog_update_permissions';
+    end if;
+    if not found then
+      raise exception 'verification failed: blocking-loop timelog disappeared before %', v_status;
+    end if;
+
+    v_expected_error := false;
+    begin
+      perform public.remove_event_crew(v_event_id, v_profile_id);
+    exception
+      when sqlstate 'P0001' then
+        get stacked diagnostics v_error_message = message_text;
+        if v_error_message <> 'crew_removal_blocked' then
+          raise;
+        end if;
+        v_expected_error := true;
+    end;
+
+    if not v_expected_error then
+      raise exception 'verification failed: removal did not block status %', v_status;
+    end if;
+
+    if not exists (
+      select 1 from public.event_assignments
+      where id = v_assignment_id
+        and event_id = v_event_id
+        and profile_id = v_profile_id
+    ) or not exists (
+      select 1 from public.timelogs
+      where id = v_blocked_timelog_id
+        and event_id = v_event_id
+        and contractor_id = v_profile_id
+        and status = v_status
+    ) or not exists (
+      select 1 from public.event_applications
+      where id = v_application_id and status = 'approved'
+    ) or not exists (
+      select 1 from public.events where id = v_event_id and crew_filled = 1
+    ) then
+      raise exception 'verification failed: blocked removal changed lifecycle state for %', v_status;
+    end if;
+
+    select count(*) into v_count
+    from public.timelog_days
+    where timelog_id = v_blocked_timelog_id;
+    if v_count <> 1 or not exists (
+      select 1 from public.timelog_days
+      where timelog_id = v_blocked_timelog_id
+        and date = '2099-01-05'::date
+        and time_from = '07:30'
+        and time_to = '15:30'
+        and day_type = 'provoz'::public.timelog_type
+        and note = 'blocked status day'
+    ) then
+      raise exception 'verification failed: blocked removal changed timelog days for %', v_status;
+    end if;
+  end loop;
+
+  select pg_catalog.to_jsonb(ea)
+  into v_assignment_before
+  from public.event_assignments ea
+  where ea.id = v_assignment_id;
+
+  select pg_catalog.to_jsonb(t)
+  into v_timelog_before
+  from public.timelogs t
+  where t.id = v_blocked_timelog_id;
+
+  select pg_catalog.to_jsonb(a)
+  into v_application_before
+  from public.event_applications a
+  where a.id = v_application_id;
+
+  select pg_catalog.to_jsonb(e)
+  into v_event_before
+  from public.events e
+  where e.id = v_event_id;
+
+  select pg_catalog.jsonb_agg(pg_catalog.to_jsonb(d) order by d.id)
+  into v_days_before
+  from public.timelog_days d
+  where d.timelog_id = v_blocked_timelog_id;
+
+  perform pg_catalog.set_config('request.jwt.claim.sub', v_crew_user_id::text, true);
+  perform pg_catalog.set_config('request.jwt.claim.role', 'authenticated', true);
+  perform pg_catalog.set_config(
+    'request.jwt.claims',
+    pg_catalog.jsonb_build_object(
+      'sub', v_crew_user_id::text,
+      'role', 'authenticated'
+    )::text,
+    true
+  );
+
+  v_expected_error := false;
+  begin
+    perform public.remove_event_crew(v_event_id, v_profile_id);
+  exception
+    when sqlstate '42501' then
+      get stacked diagnostics v_error_message = message_text;
+      if v_error_message <> 'crew_lifecycle_unauthorized' then
+        raise;
+      end if;
+      v_expected_error := true;
+  end;
+  if not v_expected_error then
+    raise exception 'verification failed: crew-only user could remove event crew';
+  end if;
+
+  v_expected_error := false;
+  begin
+    perform public.assign_event_crew(
+      v_event_id,
+      v_profile_id,
+      v_application_id,
+      '[{"date":"2099-01-06","time_from":"06:00","time_to":"14:00","day_type":"instal"}]'::jsonb
+    );
+  exception
+    when sqlstate '42501' then
+      get stacked diagnostics v_error_message = message_text;
+      if v_error_message <> 'crew_lifecycle_unauthorized' then
+        raise;
+      end if;
+      v_expected_error := true;
+  end;
+  if not v_expected_error then
+    raise exception 'verification failed: crew-only user could assign event crew';
+  end if;
+
+  select pg_catalog.to_jsonb(ea)
+  into v_assignment_after
+  from public.event_assignments ea
+  where ea.id = v_assignment_id;
+
+  select pg_catalog.to_jsonb(t)
+  into v_timelog_after
+  from public.timelogs t
+  where t.id = v_blocked_timelog_id;
+
+  select pg_catalog.to_jsonb(a)
+  into v_application_after
+  from public.event_applications a
+  where a.id = v_application_id;
+
+  select pg_catalog.to_jsonb(e)
+  into v_event_after
+  from public.events e
+  where e.id = v_event_id;
+
+  select pg_catalog.jsonb_agg(pg_catalog.to_jsonb(d) order by d.id)
+  into v_days_after
+  from public.timelog_days d
+  where d.timelog_id = v_blocked_timelog_id;
+
+  if v_assignment_after is distinct from v_assignment_before
+    or v_timelog_after is distinct from v_timelog_before
+    or v_application_after is distinct from v_application_before
+    or v_event_after is distinct from v_event_before
+    or v_days_after is distinct from v_days_before then
+    raise exception 'verification failed: unauthorized calls changed lifecycle state';
+  end if;
+
+  raise notice 'timelog assignment lifecycle verification passed';
+end
+$$;
+
+rollback;

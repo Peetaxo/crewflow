@@ -489,3 +489,237 @@ begin
   end if;
 end
 $$;
+
+create or replace function public.assign_event_crew(
+  p_event_id uuid,
+  p_profile_id uuid,
+  p_application_id uuid default null,
+  p_days jsonb default '[]'::jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_assignment_id uuid;
+  v_existing_assignment_id uuid;
+  v_timelog_id uuid;
+  v_timelog_status public.timelog_status;
+  v_timelog_created boolean := false;
+  v_crew_filled integer;
+  v_application_id uuid;
+begin
+  if auth.uid() is null or not (
+    public.has_role(auth.uid(), 'crewhead'::public.app_role)
+    or public.has_role(auth.uid(), 'coo'::public.app_role)
+  ) then
+    raise exception 'crew_lifecycle_unauthorized' using errcode = '42501';
+  end if;
+
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(p_event_id::text || ':' || p_profile_id::text, 0)
+  );
+
+  if not exists (select 1 from public.events where id = p_event_id)
+    or not exists (select 1 from public.profiles where id = p_profile_id) then
+    raise exception 'crew_lifecycle_not_found' using errcode = 'P0002';
+  end if;
+
+  select id into v_existing_assignment_id
+  from public.event_assignments
+  where event_id = p_event_id and profile_id = p_profile_id
+  for update;
+
+  select id, status into v_timelog_id, v_timelog_status
+  from public.timelogs
+  where event_id = p_event_id and contractor_id = p_profile_id
+  for update;
+
+  if v_timelog_id is not null
+    and v_existing_assignment_id is null
+    and v_timelog_status <> 'draft'::public.timelog_status then
+    raise exception 'crew_assignment_conflict' using errcode = 'P0001';
+  end if;
+
+  insert into public.event_assignments (event_id, profile_id)
+  values (p_event_id, p_profile_id)
+  on conflict (event_id, profile_id) do nothing;
+
+  select id into v_assignment_id
+  from public.event_assignments
+  where event_id = p_event_id and profile_id = p_profile_id;
+
+  if v_timelog_id is null then
+    if p_days is null or pg_catalog.jsonb_typeof(p_days) <> 'array' then
+      raise exception 'crew_assignment_invalid_days' using errcode = '22023';
+    end if;
+
+    if pg_catalog.jsonb_array_length(p_days) = 0 or exists (
+      select 1
+      from pg_catalog.jsonb_array_elements(p_days) day
+      where nullif(day->>'date', '') is null
+        or nullif(day->>'time_from', '') is null
+        or nullif(day->>'time_to', '') is null
+        or nullif(day->>'day_type', '') is null
+        or day->>'day_type' not in ('instal', 'provoz', 'deinstal')
+    ) then
+      raise exception 'crew_assignment_invalid_days' using errcode = '22023';
+    end if;
+
+    -- Also force-cast all dates and both times solely for validation before inserts.
+    -- Keep stored time strings in their original HH:MM form.
+    perform (day->>'date')::date,
+      (day->>'time_from')::time,
+      (day->>'time_to')::time
+    from pg_catalog.jsonb_array_elements(p_days) day;
+
+    insert into public.timelogs (event_id, contractor_id, km, note, status)
+    values (p_event_id, p_profile_id, 0, '', 'draft')
+    returning id into v_timelog_id;
+
+    insert into public.timelog_days (
+      timelog_id, date, time_from, time_to, day_type, note
+    )
+    select
+      v_timelog_id,
+      (day->>'date')::date,
+      day->>'time_from',
+      day->>'time_to',
+      (day->>'day_type')::public.timelog_type,
+      nullif(day->>'note', '')
+    from pg_catalog.jsonb_array_elements(p_days) day;
+
+    v_timelog_created := true;
+  end if;
+
+  if p_application_id is not null then
+    update public.event_applications
+    set status = 'approved', updated_at = pg_catalog.now()
+    where id = p_application_id
+      and event_id = p_event_id
+      and profile_id = p_profile_id
+    returning id into v_application_id;
+
+    if v_application_id is null then
+      raise exception 'crew_lifecycle_not_found' using errcode = 'P0002';
+    end if;
+  else
+    update public.event_applications
+    set status = 'approved', updated_at = pg_catalog.now()
+    where event_id = p_event_id and profile_id = p_profile_id
+    returning id into v_application_id;
+  end if;
+
+  select count(*)::integer into v_crew_filled
+  from public.event_assignments
+  where event_id = p_event_id;
+
+  update public.events
+  set crew_filled = v_crew_filled
+  where id = p_event_id;
+
+  return pg_catalog.jsonb_build_object(
+    'event_id', p_event_id,
+    'profile_id', p_profile_id,
+    'assignment_id', v_assignment_id,
+    'timelog_id', v_timelog_id,
+    'application_id', v_application_id,
+    'timelog_created', v_timelog_created,
+    'crew_filled', v_crew_filled
+  );
+exception
+  when invalid_datetime_format or datetime_field_overflow or invalid_text_representation then
+    raise exception 'crew_assignment_invalid_days' using errcode = '22023';
+end;
+$$;
+
+create or replace function public.remove_event_crew(
+  p_event_id uuid,
+  p_profile_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_assignment_removed boolean := false;
+  v_timelog_removed boolean := false;
+  v_application_id uuid;
+  v_crew_filled integer;
+begin
+  if auth.uid() is null or not (
+    public.has_role(auth.uid(), 'crewhead'::public.app_role)
+    or public.has_role(auth.uid(), 'coo'::public.app_role)
+  ) then
+    raise exception 'crew_lifecycle_unauthorized' using errcode = '42501';
+  end if;
+
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(p_event_id::text || ':' || p_profile_id::text, 0)
+  );
+
+  if not exists (select 1 from public.events where id = p_event_id)
+    or not exists (select 1 from public.profiles where id = p_profile_id) then
+    raise exception 'crew_lifecycle_not_found' using errcode = 'P0002';
+  end if;
+
+  perform id
+  from public.timelogs
+  where event_id = p_event_id and contractor_id = p_profile_id
+  for update;
+
+  if exists (
+    select 1
+    from public.timelogs
+    where event_id = p_event_id
+      and contractor_id = p_profile_id
+      and status not in ('draft', 'rejected')
+  ) then
+    raise exception 'crew_removal_blocked' using errcode = 'P0001';
+  end if;
+
+  delete from public.timelogs
+  where event_id = p_event_id
+    and contractor_id = p_profile_id
+    and status in ('draft', 'rejected');
+  v_timelog_removed := found;
+
+  delete from public.event_assignments
+  where event_id = p_event_id and profile_id = p_profile_id;
+  v_assignment_removed := found;
+
+  update public.event_applications
+  set status = 'withdrawn', updated_at = pg_catalog.now()
+  where event_id = p_event_id and profile_id = p_profile_id
+  returning id into v_application_id;
+
+  select count(*)::integer into v_crew_filled
+  from public.event_assignments
+  where event_id = p_event_id;
+
+  update public.events
+  set crew_filled = v_crew_filled
+  where id = p_event_id;
+
+  return pg_catalog.jsonb_build_object(
+    'event_id', p_event_id,
+    'profile_id', p_profile_id,
+    'application_id', v_application_id,
+    'assignment_removed', v_assignment_removed,
+    'timelog_removed', v_timelog_removed,
+    'crew_filled', v_crew_filled
+  );
+end;
+$$;
+
+revoke all on function public.assign_event_crew(uuid, uuid, uuid, jsonb) from public;
+revoke all on function public.assign_event_crew(uuid, uuid, uuid, jsonb) from anon;
+grant execute on function public.assign_event_crew(uuid, uuid, uuid, jsonb) to authenticated;
+
+revoke all on function public.remove_event_crew(uuid, uuid) from public;
+revoke all on function public.remove_event_crew(uuid, uuid) from anon;
+grant execute on function public.remove_event_crew(uuid, uuid) to authenticated;
+
+commit;

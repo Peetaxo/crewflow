@@ -116,7 +116,7 @@ describe('event assignment lifecycle RPC adapter', () => {
   it('calls remove_event_crew with exact arguments and returns its typed object', async () => {
     supabaseMock.rpc.mockResolvedValue({ data: removalResult, error: null });
 
-    const result = await removeEventCrewRpc({ eventId: 'event-1', profileId: 'profile-1' });
+    const result = await removeEventCrewRpc('event-1', 'profile-1');
 
     expect(supabaseMock.rpc).toHaveBeenCalledWith('remove_event_crew', {
       p_event_id: 'event-1',
@@ -138,7 +138,7 @@ describe('event assignment lifecycle RPC adapter', () => {
       error: { message: `RPC failed with ${token} in database context` },
     });
 
-    await expect(removeEventCrewRpc({ eventId: 'event-1', profileId: 'profile-1' }))
+    await expect(removeEventCrewRpc('event-1', 'profile-1'))
       .rejects.toThrow(message);
     expect(consoleError).not.toHaveBeenCalled();
   });
@@ -174,7 +174,7 @@ describe('event assignment lifecycle RPC adapter', () => {
     async (data) => {
       supabaseMock.rpc.mockResolvedValue({ data, error: null });
 
-      await expect(removeEventCrewRpc({ eventId: 'event-1', profileId: 'profile-1' }))
+      await expect(removeEventCrewRpc('event-1', 'profile-1'))
         .rejects.toThrow('Operaci s Crew se nepodařilo dokončit.');
     },
   );
@@ -182,7 +182,7 @@ describe('event assignment lifecycle RPC adapter', () => {
   it('maps an unavailable Supabase client to a generic message', async () => {
     supabaseMock.client = null;
 
-    await expect(removeEventCrewRpc({ eventId: 'event-1', profileId: 'profile-1' }))
+    await expect(removeEventCrewRpc('event-1', 'profile-1'))
       .rejects.toThrow('Operaci s Crew se nepodařilo dokončit.');
     expect(supabaseMock.rpc).not.toHaveBeenCalled();
   });

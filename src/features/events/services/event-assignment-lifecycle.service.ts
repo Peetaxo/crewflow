@@ -96,13 +96,10 @@ export const assignEventCrewRpc = async ({
   return assertRpcResponse(result.data) as unknown as AssignEventCrewRpcResult;
 };
 
-export const removeEventCrewRpc = async ({
-  eventId,
-  profileId,
-}: {
-  eventId: string;
-  profileId: string;
-}): Promise<RemoveEventCrewRpcResult> => {
+export const removeEventCrewRpc = async (
+  eventId: string,
+  profileId: string,
+): Promise<RemoveEventCrewRpcResult> => {
   if (!supabase) {
     throw new Error(GENERIC_ERROR_MESSAGE);
   }

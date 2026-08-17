@@ -512,6 +512,27 @@ export interface Database {
         };
         Returns: Json;
       };
+      delete_timelog_atomic: {
+        Args: {
+          p_timelog_id: string;
+          p_expected_updated_at: string;
+          p_expected_status: TimelogStatus;
+        };
+        Returns: Json;
+      };
+      import_approved_timelog_atomic: {
+        Args: {
+          p_timelog_id: string | null;
+          p_event_id: string;
+          p_contractor_id: string;
+          p_expected_updated_at: string | null;
+          p_expected_status: TimelogStatus | null;
+          p_km: number;
+          p_note: string;
+          p_days: Json;
+        };
+        Returns: Json;
+      };
       assign_event_crew: {
         Args: {
           p_event_id: string;
@@ -544,11 +565,33 @@ export interface Database {
         };
         Returns: Json;
       };
+      save_timelog_atomic: {
+        Args: {
+          p_timelog_id: string | null;
+          p_event_id: string;
+          p_contractor_id: string;
+          p_expected_updated_at: string | null;
+          p_expected_status: TimelogStatus | null;
+          p_km: number;
+          p_note: string;
+          p_status: TimelogStatus;
+          p_days: Json;
+        };
+        Returns: Json;
+      };
       set_current_user_role: {
         Args: {
           p_role: AppRole;
         };
         Returns: void;
+      };
+      transition_timelog_statuses_atomic: {
+        Args: {
+          p_targets: Json;
+          p_expected_status: TimelogStatus;
+          p_next_status: TimelogStatus;
+        };
+        Returns: Json;
       };
       save_budget_package_events: {
         Args: {

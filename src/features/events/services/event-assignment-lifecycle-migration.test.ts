@@ -296,7 +296,7 @@ describe('timelog assignment lifecycle migration', () => {
     const removeFunction = readFunction(sql, 'remove_event_crew');
     const withdrawalFunction = readFunction(sql, 'approve_event_withdrawal');
 
-    expect(sql.match(/security definer/g)).toHaveLength(4);
+    expect(sql.match(/security definer/g)).toHaveLength(6);
     expect(assignFunction).toMatch(
       /function\s+public\.assign_event_crew\s*\(\s*p_event_id uuid,\s*p_profile_id uuid,\s*p_application_id uuid default null,\s*p_days jsonb default '\[\]'::jsonb\s*\)/,
     );
@@ -507,6 +507,106 @@ describe('timelog assignment lifecycle migration', () => {
     expect(sql).not.toMatch(/\bassert\b/);
   });
 
+  it('defines versioned atomic timelog RPCs with invoker-by-default security and ordered writes', () => {
+    const sql = readMigration();
+    const saveFunction = readFunction(sql, 'save_timelog_atomic');
+    const statusFunction = readFunction(sql, 'transition_timelog_statuses_atomic');
+    const deleteFunction = readFunction(sql, 'delete_timelog_atomic');
+    const importFunction = readFunction(sql, 'import_approved_timelog_atomic');
+    const permissionTrigger = readFunction(sql, 'enforce_timelog_update_permissions');
+
+    expect(saveFunction).toMatch(
+      /function\s+public\.save_timelog_atomic\s*\(\s*p_timelog_id uuid,\s*p_event_id uuid,\s*p_contractor_id uuid,\s*p_expected_updated_at timestamptz,\s*p_expected_status public\.timelog_status,\s*p_km numeric,\s*p_note text,\s*p_status public\.timelog_status,\s*p_days jsonb\s*\)/,
+    );
+    expect(statusFunction).toMatch(
+      /function\s+public\.transition_timelog_statuses_atomic\s*\(\s*p_targets jsonb,\s*p_expected_status public\.timelog_status,\s*p_next_status public\.timelog_status\s*\)/,
+    );
+    expect(deleteFunction).toMatch(
+      /function\s+public\.delete_timelog_atomic\s*\(\s*p_timelog_id uuid,\s*p_expected_updated_at timestamptz,\s*p_expected_status public\.timelog_status\s*\)/,
+    );
+    expect(importFunction).toMatch(
+      /function\s+public\.import_approved_timelog_atomic\s*\(\s*p_timelog_id uuid,\s*p_event_id uuid,\s*p_contractor_id uuid,\s*p_expected_updated_at timestamptz,\s*p_expected_status public\.timelog_status,\s*p_km numeric,\s*p_note text,\s*p_days jsonb\s*\)/,
+    );
+
+    [saveFunction, statusFunction, deleteFunction].forEach((functionSql) => {
+      expect(functionSql).toMatch(/returns\s+jsonb\s+language\s+plpgsql\s+security invoker/);
+      expect(functionSql).toContain("set search_path = ''");
+    });
+    expect(importFunction).toMatch(/returns\s+jsonb\s+language\s+plpgsql\s+security definer/);
+    expect(importFunction).toContain("set search_path = ''");
+    expect(importFunction).toMatch(
+      /auth\.uid\(\) is null[\s\S]*public\.has_role\(auth\.uid\(\), 'coo'::public\.app_role\)[\s\S]*raise exception 'timelog_import_unauthorized'/,
+    );
+    expectMarkersInOrder(importFunction, [
+      'for update;',
+      "if v_timelog.status in ('approved', 'invoiced') then",
+      "or v_existing_days is distinct from v_requested_days then\n        raise exception 'timelog_mutation_conflict'",
+      'return pg_catalog.jsonb_build_object(',
+      "pg_catalog.set_config('crewflow.approved_timelog_import', 'on', true)",
+    ]);
+
+    expectMarkersInOrder(saveFunction, [
+      'for update;',
+      'or v_timelog.updated_at is distinct from p_expected_updated_at',
+      'update public.timelogs',
+      'delete from public.timelog_days',
+      'insert into public.timelog_days',
+      'set status = p_status',
+    ]);
+    expect(statusFunction).toContain('order by (target->>\'id\')::uuid');
+    expect(statusFunction).toContain("raise exception 'timelog_mutation_conflict'");
+    expect(deleteFunction).toContain("status in ('draft', 'rejected')");
+    expect(deleteFunction).not.toContain("'pending_ch'");
+    expect(deleteFunction).not.toContain('delete from public.timelog_days');
+    expectMarkersInOrder(importFunction, [
+      "pg_catalog.set_config('crewflow.approved_timelog_import', 'on', true)",
+      'update public.timelogs',
+      'delete from public.timelog_days',
+      'insert into public.timelog_days',
+      "set status = 'approved'",
+    ]);
+    expect(importFunction).toMatch(/exception\s+when others then/);
+    expect(importFunction).toContain("pg_catalog.set_config('crewflow.approved_timelog_import'");
+    expect(importFunction).toContain(
+      "v_timelog.status not in ('draft', 'rejected', 'pending_coo')",
+    );
+    expect(permissionTrigger).toMatch(
+      /current_setting\('crewflow\.approved_timelog_import', true\) = 'on'[\s\S]*old\.status in \([\s\S]*'draft'::public\.timelog_status,[\s\S]*'rejected'::public\.timelog_status,[\s\S]*'pending_coo'::public\.timelog_status[\s\S]*new\.status in/,
+    );
+  });
+
+  it('exposes exactly seven authenticated lifecycle/timelog RPCs and keeps trigger helpers private', () => {
+    const sql = readMigration();
+    const publicSignatures = [
+      'public.assign_event_crew(uuid, uuid, uuid, jsonb)',
+      'public.remove_event_crew(uuid, uuid)',
+      'public.approve_event_withdrawal(uuid, uuid, uuid)',
+      'public.save_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, public.timelog_status, jsonb)',
+      'public.transition_timelog_statuses_atomic(jsonb, public.timelog_status, public.timelog_status)',
+      'public.delete_timelog_atomic(uuid, timestamptz, public.timelog_status)',
+      'public.import_approved_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, jsonb)',
+    ];
+
+    publicSignatures.forEach((signature) => {
+      expect(sql).toContain(`revoke all on function ${signature} from public;`);
+      expect(sql).toContain(`revoke all on function ${signature} from anon;`);
+      expect(sql).toContain(`grant execute on function ${signature} to authenticated;`);
+    });
+    expect(sql).toContain(
+      'revoke all on function public.enforce_timelog_update_permissions() from authenticated;',
+    );
+
+    const verifier = readVerificationScript();
+    publicSignatures.forEach((signature) => {
+      expect(verifier).toContain(`'${signature}'::pg_catalog.regprocedure`);
+    });
+    expect(verifier).toContain(
+      "'public.enforce_timelog_update_permissions()'::pg_catalog.regprocedure",
+    );
+    expect(verifier).toContain('verification failed: direct coo timelog update bypassed import rpc');
+    expect(verifier).toContain('verification failed: crew-only user imported approved timelog');
+  });
+
   it('resets each blocked-status fixture before setting and checking the target status', () => {
     const sql = readVerificationScript();
     const loopStart = sql.indexOf('foreach v_status in array v_non_disposable_statuses loop');
@@ -614,8 +714,8 @@ describe('timelog assignment lifecycle migration', () => {
       thirdCrewheadInsert,
     ])].sort((a, b) => a - b));
     expect(firstCrewheadInsert).toBeGreaterThanOrEqual(0);
-    expect(sql.match(/insert into public\.user_roles \(user_id, role\)/g)).toHaveLength(4);
-    expect(sql.match(/delete from public\.user_roles/g)).toHaveLength(3);
+    expect(sql.match(/insert into public\.user_roles \(user_id, role\)/g)).toHaveLength(6);
+    expect(sql.match(/delete from public\.user_roles/g)).toHaveLength(4);
     expect(sql).toContain('foreach v_application_status in array v_disallowed_approval_statuses loop');
     expect(sql).toContain('foreach v_application_status in array v_disallowed_withdrawal_statuses loop');
     expect(sql).toContain("v_error_message <> 'crew_application_conflict'");

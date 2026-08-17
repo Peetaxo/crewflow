@@ -572,6 +572,684 @@ begin
 end
 $$;
 
+create or replace function public.enforce_timelog_update_permissions()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Timelog update requires authentication.' using errcode = '42501';
+  end if;
+
+  if new.id is distinct from old.id
+    or new.event_id is distinct from old.event_id
+    or new.contractor_id is distinct from old.contractor_id
+    or new.created_at is distinct from old.created_at then
+    raise exception 'Timelog identity fields cannot be changed.' using errcode = '42501';
+  end if;
+
+  if pg_catalog.current_setting('crewflow.approved_timelog_import', true) = 'on'
+    and public.has_role(auth.uid(), 'coo'::public.app_role)
+    and old.status in (
+      'draft'::public.timelog_status,
+      'rejected'::public.timelog_status,
+      'pending_coo'::public.timelog_status
+    )
+    and new.status in (
+      old.status,
+      'approved'::public.timelog_status
+    ) then
+    return new;
+  end if;
+
+  if public.has_role(auth.uid(), 'crew'::public.app_role)
+    and old.contractor_id = public.current_profile_id()
+    and old.status in ('draft'::public.timelog_status, 'rejected'::public.timelog_status)
+    and new.status in (
+      'draft'::public.timelog_status,
+      'rejected'::public.timelog_status,
+      'pending_ch'::public.timelog_status
+    ) then
+    return new;
+  end if;
+
+  if public.has_role(auth.uid(), 'crewhead'::public.app_role)
+    and (
+      (
+        old.status = 'draft'::public.timelog_status
+        and new.status in (
+          'draft'::public.timelog_status,
+          'pending_ch'::public.timelog_status
+        )
+      )
+      or (
+        old.status = 'pending_ch'::public.timelog_status
+        and new.status in (
+          'pending_ch'::public.timelog_status,
+          'pending_coo'::public.timelog_status,
+          'rejected'::public.timelog_status
+        )
+      )
+    ) then
+    return new;
+  end if;
+
+  if public.has_role(auth.uid(), 'coo'::public.app_role)
+    and new.id is not distinct from old.id
+    and new.event_id is not distinct from old.event_id
+    and new.contractor_id is not distinct from old.contractor_id
+    and new.km is not distinct from old.km
+    and new.note is not distinct from old.note
+    and new.created_at is not distinct from old.created_at
+    and (
+      (
+        old.status = 'pending_coo'::public.timelog_status
+        and new.status in (
+          'approved'::public.timelog_status,
+          'rejected'::public.timelog_status
+        )
+      )
+      or (
+        old.status = 'approved'::public.timelog_status
+        and new.status in (
+          'invoiced'::public.timelog_status,
+          'paid'::public.timelog_status
+        )
+      )
+      or (
+        old.status = 'invoiced'::public.timelog_status
+        and new.status = 'paid'::public.timelog_status
+      )
+    ) then
+    return new;
+  end if;
+
+  raise exception 'Timelog update is not allowed for this role and status.' using errcode = '42501';
+end;
+$$;
+
+revoke all on function public.enforce_timelog_update_permissions() from public;
+revoke all on function public.enforce_timelog_update_permissions() from anon;
+revoke all on function public.enforce_timelog_update_permissions() from authenticated;
+
+drop trigger if exists enforce_timelog_update_permissions on public.timelogs;
+create trigger enforce_timelog_update_permissions
+before update on public.timelogs
+for each row execute function public.enforce_timelog_update_permissions();
+
+create or replace function public.save_timelog_atomic(
+  p_timelog_id uuid,
+  p_event_id uuid,
+  p_contractor_id uuid,
+  p_expected_updated_at timestamptz,
+  p_expected_status public.timelog_status,
+  p_km numeric,
+  p_note text,
+  p_status public.timelog_status,
+  p_days jsonb
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_timelog public.timelogs%rowtype;
+begin
+  if auth.uid() is null then
+    raise exception 'timelog_mutation_not_found' using errcode = '42501';
+  end if;
+
+  if p_event_id is null
+    or p_contractor_id is null
+    or p_km is null
+    or p_km < 0
+    or p_status is null
+    or p_days is null
+    or pg_catalog.jsonb_typeof(p_days) <> 'array'
+    or pg_catalog.jsonb_array_length(p_days) = 0
+    or exists (
+      select 1
+      from pg_catalog.jsonb_array_elements(p_days) day
+      where pg_catalog.jsonb_typeof(day) <> 'object'
+        or nullif(day->>'date', '') is null
+        or nullif(day->>'time_from', '') is null
+        or nullif(day->>'time_to', '') is null
+        or day->>'day_type' not in ('instal', 'provoz', 'deinstal')
+    ) then
+    raise exception 'timelog_mutation_invalid' using errcode = '22023';
+  end if;
+
+  begin
+    perform (day->>'date')::date,
+      (day->>'time_from')::time,
+      (day->>'time_to')::time
+    from pg_catalog.jsonb_array_elements(p_days) day;
+  exception
+    when invalid_datetime_format or datetime_field_overflow or invalid_text_representation then
+      raise exception 'timelog_mutation_invalid' using errcode = '22023';
+  end;
+
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(p_event_id::text || ':' || p_contractor_id::text, 0)
+  );
+
+  if p_timelog_id is null then
+    if p_expected_updated_at is not null
+      or p_expected_status is not null
+      or p_status <> 'draft'::public.timelog_status then
+      raise exception 'timelog_mutation_invalid' using errcode = '22023';
+    end if;
+
+    begin
+      insert into public.timelogs (
+        event_id,
+        contractor_id,
+        km,
+        note,
+        status
+      ) values (
+        p_event_id,
+        p_contractor_id,
+        p_km,
+        coalesce(p_note, ''),
+        'draft'::public.timelog_status
+      )
+      returning * into v_timelog;
+    exception
+      when unique_violation then
+        raise exception 'timelog_mutation_conflict' using errcode = '40001';
+    end;
+  else
+    if p_expected_updated_at is null or p_expected_status is null then
+      raise exception 'timelog_mutation_invalid' using errcode = '22023';
+    end if;
+
+    select t.* into v_timelog
+    from public.timelogs t
+    where t.id = p_timelog_id
+    for update;
+
+    if not found then
+      raise exception 'timelog_mutation_not_found' using errcode = 'P0002';
+    end if;
+
+    if v_timelog.event_id is distinct from p_event_id
+      or v_timelog.contractor_id is distinct from p_contractor_id
+      or v_timelog.updated_at is distinct from p_expected_updated_at
+      or v_timelog.status is distinct from p_expected_status then
+      raise exception 'timelog_mutation_conflict' using errcode = '40001';
+    end if;
+
+    update public.timelogs
+    set km = p_km,
+      note = coalesce(p_note, '')
+    where id = p_timelog_id
+    returning * into v_timelog;
+
+    if not found then
+      raise exception 'timelog_mutation_not_found' using errcode = 'P0002';
+    end if;
+  end if;
+
+  delete from public.timelog_days
+  where timelog_id = v_timelog.id;
+
+  if exists (
+    select 1
+    from public.timelog_days
+    where timelog_id = v_timelog.id
+  ) then
+    raise exception 'timelog_mutation_not_found' using errcode = '42501';
+  end if;
+
+  insert into public.timelog_days (
+    timelog_id,
+    date,
+    time_from,
+    time_to,
+    day_type,
+    note
+  )
+  select
+    v_timelog.id,
+    (source.day->>'date')::date,
+    source.day->>'time_from',
+    source.day->>'time_to',
+    (source.day->>'day_type')::public.timelog_type,
+    nullif(pg_catalog.btrim(coalesce(source.day->>'note', '')), '')
+  from pg_catalog.jsonb_array_elements(p_days) with ordinality source(day, ordinal)
+  order by
+    (source.day->>'date')::date,
+    (source.day->>'time_from')::time,
+    (source.day->>'time_to')::time,
+    source.day->>'day_type',
+    coalesce(source.day->>'note', ''),
+    source.ordinal;
+
+  if v_timelog.status is distinct from p_status then
+    update public.timelogs
+    set status = p_status
+    where id = v_timelog.id
+    returning * into v_timelog;
+
+    if not found then
+      raise exception 'timelog_mutation_conflict' using errcode = '40001';
+    end if;
+  end if;
+
+  return pg_catalog.jsonb_build_object(
+    'id', v_timelog.id,
+    'updated_at', v_timelog.updated_at,
+    'status', v_timelog.status
+  );
+end;
+$$;
+
+create or replace function public.transition_timelog_statuses_atomic(
+  p_targets jsonb,
+  p_expected_status public.timelog_status,
+  p_next_status public.timelog_status
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_target_count integer;
+  v_locked_count integer;
+  v_updated_count integer;
+  v_result jsonb;
+begin
+  if auth.uid() is null then
+    raise exception 'timelog_mutation_not_found' using errcode = '42501';
+  end if;
+
+  if p_targets is null
+    or pg_catalog.jsonb_typeof(p_targets) <> 'array'
+    or pg_catalog.jsonb_array_length(p_targets) = 0
+    or p_expected_status is null
+    or p_next_status is null
+    or exists (
+      select 1
+      from pg_catalog.jsonb_array_elements(p_targets) target
+      where pg_catalog.jsonb_typeof(target) <> 'object'
+        or nullif(target->>'id', '') is null
+        or nullif(target->>'expected_updated_at', '') is null
+    ) then
+    raise exception 'timelog_mutation_invalid' using errcode = '22023';
+  end if;
+
+  begin
+    perform (target->>'id')::uuid,
+      (target->>'expected_updated_at')::timestamptz
+    from pg_catalog.jsonb_array_elements(p_targets) target;
+  exception
+    when invalid_datetime_format or datetime_field_overflow or invalid_text_representation then
+      raise exception 'timelog_mutation_invalid' using errcode = '22023';
+  end;
+
+  select pg_catalog.count(*)::integer into v_target_count
+  from pg_catalog.jsonb_array_elements(p_targets);
+
+  if (
+    select pg_catalog.count(distinct (target->>'id')::uuid)
+    from pg_catalog.jsonb_array_elements(p_targets) target
+  ) <> v_target_count then
+    raise exception 'timelog_mutation_invalid' using errcode = '22023';
+  end if;
+
+  perform t.id
+  from pg_catalog.jsonb_array_elements(p_targets) target
+  join public.timelogs t on t.id = (target->>'id')::uuid
+  order by (target->>'id')::uuid
+  for update of t;
+  get diagnostics v_locked_count = row_count;
+
+  if v_locked_count <> v_target_count then
+    raise exception 'timelog_mutation_not_found' using errcode = 'P0002';
+  end if;
+
+  if exists (
+    select 1
+    from pg_catalog.jsonb_array_elements(p_targets) target
+    join public.timelogs t on t.id = (target->>'id')::uuid
+    where t.updated_at is distinct from (target->>'expected_updated_at')::timestamptz
+      or t.status is distinct from p_expected_status
+  ) then
+    raise exception 'timelog_mutation_conflict' using errcode = '40001';
+  end if;
+
+  with targets as (
+    select
+      (target->>'id')::uuid as id,
+      (target->>'expected_updated_at')::timestamptz as expected_updated_at
+    from pg_catalog.jsonb_array_elements(p_targets) target
+  ), updated as (
+    update public.timelogs t
+    set status = p_next_status
+    from targets
+    where t.id = targets.id
+      and t.updated_at = targets.expected_updated_at
+      and t.status = p_expected_status
+    returning t.id, t.updated_at, t.status
+  )
+  select
+    pg_catalog.count(*)::integer,
+    coalesce(
+      pg_catalog.jsonb_agg(
+        pg_catalog.jsonb_build_object(
+          'id', updated.id,
+          'updated_at', updated.updated_at,
+          'status', updated.status
+        ) order by updated.id
+      ),
+      '[]'::jsonb
+    )
+  into v_updated_count, v_result
+  from updated;
+
+  if v_updated_count <> v_target_count then
+    raise exception 'timelog_mutation_conflict' using errcode = '40001';
+  end if;
+
+  return v_result;
+end;
+$$;
+
+create or replace function public.delete_timelog_atomic(
+  p_timelog_id uuid,
+  p_expected_updated_at timestamptz,
+  p_expected_status public.timelog_status
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_timelog public.timelogs%rowtype;
+begin
+  if auth.uid() is null then
+    raise exception 'timelog_mutation_not_found' using errcode = '42501';
+  end if;
+
+  if p_timelog_id is null
+    or p_expected_updated_at is null
+    or p_expected_status is null then
+    raise exception 'timelog_mutation_invalid' using errcode = '22023';
+  end if;
+
+  select t.* into v_timelog
+  from public.timelogs t
+  where t.id = p_timelog_id
+  for update;
+
+  if not found then
+    raise exception 'timelog_mutation_not_found' using errcode = 'P0002';
+  end if;
+
+  if v_timelog.updated_at is distinct from p_expected_updated_at
+    or v_timelog.status is distinct from p_expected_status then
+    raise exception 'timelog_mutation_conflict' using errcode = '40001';
+  end if;
+
+  if v_timelog.status not in ('draft', 'rejected') then
+    raise exception 'timelog_mutation_blocked' using errcode = 'P0001';
+  end if;
+
+  delete from public.timelogs
+  where id = p_timelog_id
+    and updated_at = p_expected_updated_at
+    and status in ('draft', 'rejected');
+
+  if not found then
+    raise exception 'timelog_mutation_conflict' using errcode = '40001';
+  end if;
+
+  return pg_catalog.jsonb_build_object(
+    'id', v_timelog.id,
+    'updated_at', v_timelog.updated_at,
+    'status', v_timelog.status
+  );
+end;
+$$;
+
+create or replace function public.import_approved_timelog_atomic(
+  p_timelog_id uuid,
+  p_event_id uuid,
+  p_contractor_id uuid,
+  p_expected_updated_at timestamptz,
+  p_expected_status public.timelog_status,
+  p_km numeric,
+  p_note text,
+  p_days jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_existing_days jsonb;
+  v_previous_marker text;
+  v_requested_days jsonb;
+  v_timelog public.timelogs%rowtype;
+begin
+  if auth.uid() is null
+    or not public.has_role(auth.uid(), 'coo'::public.app_role) then
+    raise exception 'timelog_import_unauthorized' using errcode = '42501';
+  end if;
+
+  if p_event_id is null
+    or p_contractor_id is null
+    or p_km is null
+    or p_km < 0
+    or p_days is null
+    or pg_catalog.jsonb_typeof(p_days) <> 'array'
+    or pg_catalog.jsonb_array_length(p_days) = 0
+    or exists (
+      select 1
+      from pg_catalog.jsonb_array_elements(p_days) day
+      where pg_catalog.jsonb_typeof(day) <> 'object'
+        or nullif(day->>'date', '') is null
+        or nullif(day->>'time_from', '') is null
+        or nullif(day->>'time_to', '') is null
+        or day->>'day_type' not in ('instal', 'provoz', 'deinstal')
+    ) then
+    raise exception 'timelog_mutation_invalid' using errcode = '22023';
+  end if;
+
+  begin
+    perform (day->>'date')::date,
+      (day->>'time_from')::time,
+      (day->>'time_to')::time
+    from pg_catalog.jsonb_array_elements(p_days) day;
+  exception
+    when invalid_datetime_format or datetime_field_overflow or invalid_text_representation then
+      raise exception 'timelog_mutation_invalid' using errcode = '22023';
+  end;
+
+  select pg_catalog.jsonb_agg(
+    pg_catalog.jsonb_build_object(
+      'date', (source.day->>'date')::date,
+      'time_from', (source.day->>'time_from')::time,
+      'time_to', (source.day->>'time_to')::time,
+      'day_type', (source.day->>'day_type')::public.timelog_type,
+      'note', nullif(pg_catalog.btrim(coalesce(source.day->>'note', '')), '')
+    ) order by
+      (source.day->>'date')::date,
+      (source.day->>'time_from')::time,
+      (source.day->>'time_to')::time,
+      source.day->>'day_type',
+      nullif(pg_catalog.btrim(coalesce(source.day->>'note', '')), ''),
+      source.ordinal
+  ) into v_requested_days
+  from pg_catalog.jsonb_array_elements(p_days) with ordinality source(day, ordinal);
+
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(p_event_id::text || ':' || p_contractor_id::text, 0)
+  );
+
+  if p_timelog_id is null then
+    if p_expected_updated_at is not null or p_expected_status is not null then
+      raise exception 'timelog_mutation_invalid' using errcode = '22023';
+    end if;
+  else
+    if p_expected_updated_at is null or p_expected_status is null then
+      raise exception 'timelog_mutation_invalid' using errcode = '22023';
+    end if;
+
+    select t.* into v_timelog
+    from public.timelogs t
+    where t.id = p_timelog_id
+    for update;
+
+    if not found then
+      raise exception 'timelog_mutation_not_found' using errcode = 'P0002';
+    end if;
+
+    if v_timelog.event_id is distinct from p_event_id
+      or v_timelog.contractor_id is distinct from p_contractor_id
+      or v_timelog.updated_at is distinct from p_expected_updated_at
+      or v_timelog.status is distinct from p_expected_status then
+      raise exception 'timelog_mutation_conflict' using errcode = '40001';
+    end if;
+
+    if v_timelog.status in ('approved', 'invoiced') then
+      select coalesce(
+        pg_catalog.jsonb_agg(
+          pg_catalog.jsonb_build_object(
+            'date', d.date,
+            'time_from', d.time_from::time,
+            'time_to', d.time_to::time,
+            'day_type', d.day_type,
+            'note', nullif(pg_catalog.btrim(coalesce(d.note, '')), '')
+          ) order by
+            d.date,
+            d.time_from::time,
+            d.time_to::time,
+            d.day_type,
+            nullif(pg_catalog.btrim(coalesce(d.note, '')), ''),
+            d.id
+        ),
+        '[]'::jsonb
+      ) into v_existing_days
+      from public.timelog_days d
+      where d.timelog_id = v_timelog.id;
+
+      if v_timelog.km is distinct from p_km
+        or coalesce(v_timelog.note, '') is distinct from coalesce(p_note, '')
+        or v_existing_days is distinct from v_requested_days then
+        raise exception 'timelog_mutation_conflict' using errcode = '40001';
+      end if;
+
+      return pg_catalog.jsonb_build_object(
+        'id', v_timelog.id,
+        'updated_at', v_timelog.updated_at,
+        'status', v_timelog.status
+      );
+    end if;
+
+    if v_timelog.status not in ('draft', 'rejected', 'pending_coo') then
+      raise exception 'timelog_mutation_conflict' using errcode = '40001';
+    end if;
+  end if;
+
+  v_previous_marker := pg_catalog.current_setting('crewflow.approved_timelog_import', true);
+  perform pg_catalog.set_config('crewflow.approved_timelog_import', 'on', true);
+
+  begin
+    if p_timelog_id is null then
+      begin
+        insert into public.timelogs (
+          event_id,
+          contractor_id,
+          km,
+          note,
+          status
+        ) values (
+          p_event_id,
+          p_contractor_id,
+          p_km,
+          coalesce(p_note, ''),
+          'draft'::public.timelog_status
+        )
+        returning * into v_timelog;
+      exception
+        when unique_violation then
+          raise exception 'timelog_mutation_conflict' using errcode = '40001';
+      end;
+    else
+      update public.timelogs
+      set km = p_km,
+        note = coalesce(p_note, '')
+      where id = p_timelog_id
+      returning * into v_timelog;
+    end if;
+
+    delete from public.timelog_days
+    where timelog_id = v_timelog.id;
+
+    insert into public.timelog_days (
+      timelog_id,
+      date,
+      time_from,
+      time_to,
+      day_type,
+      note
+    )
+    select
+      v_timelog.id,
+      (source.day->>'date')::date,
+      source.day->>'time_from',
+      source.day->>'time_to',
+      (source.day->>'day_type')::public.timelog_type,
+      nullif(pg_catalog.btrim(coalesce(source.day->>'note', '')), '')
+    from pg_catalog.jsonb_array_elements(p_days) with ordinality source(day, ordinal)
+    order by
+      (source.day->>'date')::date,
+      (source.day->>'time_from')::time,
+      (source.day->>'time_to')::time,
+      source.day->>'day_type',
+      coalesce(source.day->>'note', ''),
+      source.ordinal;
+
+    update public.timelogs
+    set status = 'approved'
+    where id = v_timelog.id
+    returning * into v_timelog;
+
+    if not found then
+      raise exception 'timelog_mutation_conflict' using errcode = '40001';
+    end if;
+
+    perform pg_catalog.set_config(
+      'crewflow.approved_timelog_import',
+      coalesce(v_previous_marker, ''),
+      true
+    );
+  exception
+    when others then
+      perform pg_catalog.set_config(
+        'crewflow.approved_timelog_import',
+        coalesce(v_previous_marker, ''),
+        true
+      );
+      raise;
+  end;
+
+  return pg_catalog.jsonb_build_object(
+    'id', v_timelog.id,
+    'updated_at', v_timelog.updated_at,
+    'status', v_timelog.status
+  );
+end;
+$$;
+
 create or replace function public.assign_event_crew(
   p_event_id uuid,
   p_profile_id uuid,
@@ -964,5 +1642,21 @@ grant execute on function public.remove_event_crew(uuid, uuid) to authenticated;
 revoke all on function public.approve_event_withdrawal(uuid, uuid, uuid) from public;
 revoke all on function public.approve_event_withdrawal(uuid, uuid, uuid) from anon;
 grant execute on function public.approve_event_withdrawal(uuid, uuid, uuid) to authenticated;
+
+revoke all on function public.save_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, public.timelog_status, jsonb) from public;
+revoke all on function public.save_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, public.timelog_status, jsonb) from anon;
+grant execute on function public.save_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, public.timelog_status, jsonb) to authenticated;
+
+revoke all on function public.transition_timelog_statuses_atomic(jsonb, public.timelog_status, public.timelog_status) from public;
+revoke all on function public.transition_timelog_statuses_atomic(jsonb, public.timelog_status, public.timelog_status) from anon;
+grant execute on function public.transition_timelog_statuses_atomic(jsonb, public.timelog_status, public.timelog_status) to authenticated;
+
+revoke all on function public.delete_timelog_atomic(uuid, timestamptz, public.timelog_status) from public;
+revoke all on function public.delete_timelog_atomic(uuid, timestamptz, public.timelog_status) from anon;
+grant execute on function public.delete_timelog_atomic(uuid, timestamptz, public.timelog_status) to authenticated;
+
+revoke all on function public.import_approved_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, jsonb) from public;
+revoke all on function public.import_approved_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, jsonb) from anon;
+grant execute on function public.import_approved_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, jsonb) to authenticated;
 
 commit;

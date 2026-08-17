@@ -50,6 +50,17 @@ declare
   v_assignment_after jsonb;
   v_timelog_after jsonb;
   v_application_after jsonb;
+  v_atomic_event_id uuid;
+  v_atomic_first_timelog_id uuid;
+  v_atomic_second_timelog_id uuid;
+  v_atomic_third_timelog_id uuid;
+  v_atomic_fourth_timelog_id uuid;
+  v_atomic_delete_timelog_id uuid;
+  v_atomic_updated_at timestamptz;
+  v_atomic_second_updated_at timestamptz;
+  v_atomic_third_updated_at timestamptz;
+  v_atomic_fourth_updated_at timestamptz;
+  v_atomic_delete_updated_at timestamptz;
   v_event_after jsonb;
   v_days_after jsonb;
 begin
@@ -61,10 +72,45 @@ begin
     raise exception 'verification failed: authenticated role does not exist';
   end if;
 
+  if not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    join pg_catalog.pg_attribute local_column
+      on local_column.attrelid = c.conrelid
+      and local_column.attname = 'timelog_id'
+      and not local_column.attisdropped
+    join pg_catalog.pg_attribute referenced_column
+      on referenced_column.attrelid = c.confrelid
+      and referenced_column.attname = 'id'
+      and not referenced_column.attisdropped
+    where c.conrelid = 'public.timelog_days'::pg_catalog.regclass
+      and c.contype = 'f'
+      and c.conkey = array[local_column.attnum]
+      and c.confrelid = 'public.timelogs'::pg_catalog.regclass
+      and c.confkey = array[referenced_column.attnum]
+      and c.confdeltype = 'c'
+  ) then
+    raise exception 'verification failed: timelog day cascade constraint is incompatible';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    where c.conrelid = 'public.event_assignments'::pg_catalog.regclass
+      and c.contype = 'u'
+      and pg_catalog.pg_get_constraintdef(c.oid) = 'UNIQUE (event_id, profile_id)'
+  ) then
+    raise exception 'verification failed: assignment event/profile uniqueness is incompatible';
+  end if;
+
   foreach v_function_signature in array array[
     'public.assign_event_crew(uuid, uuid, uuid, jsonb)'::pg_catalog.regprocedure,
     'public.remove_event_crew(uuid, uuid)'::pg_catalog.regprocedure,
-    'public.approve_event_withdrawal(uuid, uuid, uuid)'::pg_catalog.regprocedure
+    'public.approve_event_withdrawal(uuid, uuid, uuid)'::pg_catalog.regprocedure,
+    'public.save_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, public.timelog_status, jsonb)'::pg_catalog.regprocedure,
+    'public.transition_timelog_statuses_atomic(jsonb, public.timelog_status, public.timelog_status)'::pg_catalog.regprocedure,
+    'public.delete_timelog_atomic(uuid, timestamptz, public.timelog_status)'::pg_catalog.regprocedure,
+    'public.import_approved_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, jsonb)'::pg_catalog.regprocedure
   ] loop
     select
       p.proowner,
@@ -138,6 +184,38 @@ begin
       and trigger_row.tgenabled <> 'D'
   ) then
     raise exception 'verification failed: event application lifecycle trigger is missing or disabled';
+  end if;
+
+  select
+    p.proowner,
+    coalesce(
+      pg_catalog.bool_or(acl.grantee <> p.proowner),
+      false
+    )
+  into v_function_owner_oid, v_has_unexpected_execute_grantee
+  from pg_catalog.pg_proc p
+  cross join lateral pg_catalog.aclexplode(
+    coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))
+  ) acl
+  where p.oid = 'public.enforce_timelog_update_permissions()'::pg_catalog.regprocedure
+  group by p.proowner;
+
+  if v_function_owner_oid is null then
+    raise exception 'verification failed: timelog permission trigger function does not exist';
+  end if;
+  if v_has_unexpected_execute_grantee then
+    raise exception 'verification failed: timelog permission trigger function is directly executable';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_catalog.pg_trigger trigger_row
+    where trigger_row.tgrelid = 'public.timelogs'::pg_catalog.regclass
+      and trigger_row.tgname = 'enforce_timelog_update_permissions'
+      and not trigger_row.tgisinternal
+      and trigger_row.tgenabled <> 'D'
+  ) then
+    raise exception 'verification failed: timelog permission trigger is missing or disabled';
   end if;
 
   select p.id, p.user_id
@@ -1102,6 +1180,375 @@ begin
     or not exists (select 1 from public.event_assignments where id = v_assignment_id)
     or not exists (select 1 from public.timelogs where id = v_second_timelog_id) then
     raise exception 'verification failed: inconsistent withdrawn application was accepted';
+  end if;
+
+  delete from public.user_roles
+  where user_id = v_manager_user_id
+    and role = 'crewhead'::public.app_role;
+  get diagnostics v_status_count = row_count;
+  if v_status_count <> 1 then
+    raise exception 'verification failed: atomic fixture crewhead role was not removed';
+  end if;
+
+  perform pg_catalog.set_config('request.jwt.claim.sub', v_crew_user_id::text, true);
+  perform pg_catalog.set_config('request.jwt.claim.role', 'authenticated', true);
+  perform pg_catalog.set_config(
+    'request.jwt.claims',
+    pg_catalog.jsonb_build_object(
+      'sub', v_crew_user_id::text,
+      'role', 'authenticated'
+    )::text,
+    true
+  );
+
+  insert into public.events (name, status)
+  values (
+    'atomic timelog verification ' || pg_catalog.gen_random_uuid()::text,
+    'planning'::public.event_status
+  )
+  returning id into v_atomic_event_id;
+
+  v_result := public.save_timelog_atomic(
+    null,
+    v_atomic_event_id,
+    v_profile_id,
+    null,
+    null,
+    12,
+    'atomic first',
+    'draft'::public.timelog_status,
+    '[{"date":"2099-03-01","time_from":"08:00","time_to":"16:00","day_type":"provoz","note":"first day"}]'::jsonb
+  );
+  v_atomic_first_timelog_id := (v_result->>'id')::uuid;
+  v_atomic_updated_at := (v_result->>'updated_at')::timestamptz;
+
+  insert into public.events (name, status)
+  values (
+    'atomic timelog batch peer ' || pg_catalog.gen_random_uuid()::text,
+    'planning'::public.event_status
+  )
+  returning id into v_atomic_event_id;
+
+  v_result := public.save_timelog_atomic(
+    null,
+    v_atomic_event_id,
+    v_profile_id,
+    null,
+    null,
+    0,
+    'atomic second',
+    'draft'::public.timelog_status,
+    '[{"date":"2099-03-02","time_from":"09:00","time_to":"17:00","day_type":"instal"}]'::jsonb
+  );
+  v_atomic_second_timelog_id := (v_result->>'id')::uuid;
+  v_atomic_second_updated_at := (v_result->>'updated_at')::timestamptz;
+
+  if v_atomic_first_timelog_id is null or v_atomic_second_timelog_id is null then
+    raise exception 'verification failed: atomic draft create returned no identity';
+  end if;
+
+  v_expected_error := false;
+  begin
+    perform public.transition_timelog_statuses_atomic(
+      pg_catalog.jsonb_build_array(
+        pg_catalog.jsonb_build_object(
+          'id', v_atomic_first_timelog_id,
+          'expected_updated_at', v_atomic_updated_at
+        ),
+        pg_catalog.jsonb_build_object(
+          'id', v_atomic_second_timelog_id,
+          'expected_updated_at', '2000-01-01T00:00:00Z'
+        )
+      ),
+      'draft'::public.timelog_status,
+      'pending_ch'::public.timelog_status
+    );
+  exception
+    when sqlstate '40001' then
+      get stacked diagnostics v_error_message = message_text;
+      if v_error_message <> 'timelog_mutation_conflict' then
+        raise;
+      end if;
+      v_expected_error := true;
+  end;
+  if not v_expected_error or exists (
+    select 1
+    from public.timelogs
+    where id in (v_atomic_first_timelog_id, v_atomic_second_timelog_id)
+      and status <> 'draft'::public.timelog_status
+  ) then
+    raise exception 'verification failed: atomic batch conflict partially changed rows';
+  end if;
+
+  v_result := public.transition_timelog_statuses_atomic(
+    pg_catalog.jsonb_build_array(
+      pg_catalog.jsonb_build_object(
+        'id', v_atomic_first_timelog_id,
+        'expected_updated_at', v_atomic_updated_at
+      ),
+      pg_catalog.jsonb_build_object(
+        'id', v_atomic_second_timelog_id,
+        'expected_updated_at', v_atomic_second_updated_at
+      )
+    ),
+    'draft'::public.timelog_status,
+    'pending_ch'::public.timelog_status
+  );
+
+  select updated_at into v_atomic_updated_at
+  from public.timelogs
+  where id = v_atomic_first_timelog_id;
+
+  v_expected_error := false;
+  begin
+    perform public.delete_timelog_atomic(
+      v_atomic_first_timelog_id,
+      v_atomic_updated_at,
+      'pending_ch'::public.timelog_status
+    );
+  exception
+    when sqlstate 'P0001' then
+      get stacked diagnostics v_error_message = message_text;
+      if v_error_message <> 'timelog_mutation_blocked' then
+        raise;
+      end if;
+      v_expected_error := true;
+  end;
+  if not v_expected_error
+    or not exists (select 1 from public.timelogs where id = v_atomic_first_timelog_id)
+    or not exists (select 1 from public.timelog_days where timelog_id = v_atomic_first_timelog_id) then
+    raise exception 'verification failed: pending CH timelog was deleted';
+  end if;
+
+  insert into public.events (name, status)
+  values (
+    'atomic import verification ' || pg_catalog.gen_random_uuid()::text,
+    'planning'::public.event_status
+  )
+  returning id into v_atomic_event_id;
+
+  v_result := public.save_timelog_atomic(
+    null,
+    v_atomic_event_id,
+    v_profile_id,
+    null,
+    null,
+    5,
+    'import source',
+    'draft'::public.timelog_status,
+    '[{"date":"2099-03-03","time_from":"10:00","time_to":"18:00","day_type":"provoz"}]'::jsonb
+  );
+  v_atomic_third_timelog_id := (v_result->>'id')::uuid;
+  v_atomic_third_updated_at := (v_result->>'updated_at')::timestamptz;
+
+  v_expected_error := false;
+  begin
+    perform public.import_approved_timelog_atomic(
+      v_atomic_third_timelog_id,
+      v_atomic_event_id,
+      v_profile_id,
+      v_atomic_third_updated_at,
+      'draft'::public.timelog_status,
+      5,
+      'import source',
+      '[{"date":"2099-03-03","time_from":"10:00","time_to":"18:00","day_type":"provoz"}]'::jsonb
+    );
+  exception
+    when sqlstate '42501' then
+      get stacked diagnostics v_error_message = message_text;
+      if v_error_message <> 'timelog_import_unauthorized' then
+        raise;
+      end if;
+      v_expected_error := true;
+  end;
+  if not v_expected_error or not exists (
+    select 1 from public.timelogs
+    where id = v_atomic_third_timelog_id
+      and status = 'draft'::public.timelog_status
+      and updated_at = v_atomic_third_updated_at
+  ) then
+    raise exception 'verification failed: crew-only user imported approved timelog';
+  end if;
+
+  insert into public.user_roles (user_id, role)
+  values (v_manager_user_id, 'coo'::public.app_role);
+
+  v_expected_error := false;
+  begin
+    update public.timelogs
+    set km = 99,
+      status = 'approved'::public.timelog_status
+    where id = v_atomic_third_timelog_id;
+  exception
+    when sqlstate '42501' then
+      v_expected_error := true;
+  end;
+  if not v_expected_error or not exists (
+    select 1 from public.timelogs
+    where id = v_atomic_third_timelog_id
+      and status = 'draft'::public.timelog_status
+      and km = 5
+      and updated_at = v_atomic_third_updated_at
+  ) then
+    raise exception 'verification failed: direct COO timelog update bypassed import RPC';
+  end if;
+
+  v_result := public.import_approved_timelog_atomic(
+    v_atomic_third_timelog_id,
+    v_atomic_event_id,
+    v_profile_id,
+    v_atomic_third_updated_at,
+    'draft'::public.timelog_status,
+    7,
+    'approved import',
+    '[{"date":"2099-03-03","time_from":"10:30","time_to":"18:30","day_type":"provoz","note":"approved"}]'::jsonb
+  );
+  v_atomic_third_updated_at := (v_result->>'updated_at')::timestamptz;
+  if v_result->>'status' <> 'approved' then
+    raise exception 'verification failed: draft import did not return approved status';
+  end if;
+
+  v_result := public.import_approved_timelog_atomic(
+    v_atomic_third_timelog_id,
+    v_atomic_event_id,
+    v_profile_id,
+    v_atomic_third_updated_at,
+    'approved'::public.timelog_status,
+    7,
+    'approved import',
+    '[{"date":"2099-03-03","time_from":"10:30","time_to":"18:30","day_type":"provoz","note":"approved"}]'::jsonb
+  );
+  if (v_result->>'updated_at')::timestamptz is distinct from v_atomic_third_updated_at then
+    raise exception 'verification failed: approved import exact retry mutated the row';
+  end if;
+
+  v_expected_error := false;
+  begin
+    perform public.import_approved_timelog_atomic(
+      v_atomic_third_timelog_id,
+      v_atomic_event_id,
+      v_profile_id,
+      v_atomic_third_updated_at,
+      'approved'::public.timelog_status,
+      8,
+      'changed approved import',
+      '[{"date":"2099-03-03","time_from":"10:30","time_to":"18:30","day_type":"provoz","note":"approved"}]'::jsonb
+    );
+  exception
+    when sqlstate '40001' then
+      get stacked diagnostics v_error_message = message_text;
+      if v_error_message <> 'timelog_mutation_conflict' then
+        raise;
+      end if;
+      v_expected_error := true;
+  end;
+  if not v_expected_error then
+    raise exception 'verification failed: approved import accepted changed historical payload';
+  end if;
+
+  insert into public.events (name, status)
+  values (
+    'atomic COO invoice verification ' || pg_catalog.gen_random_uuid()::text,
+    'planning'::public.event_status
+  )
+  returning id into v_atomic_event_id;
+
+  v_result := public.save_timelog_atomic(
+    null,
+    v_atomic_event_id,
+    v_profile_id,
+    null,
+    null,
+    0,
+    'pending COO source',
+    'draft'::public.timelog_status,
+    '[{"date":"2099-03-04","time_from":"08:00","time_to":"12:00","day_type":"instal"}]'::jsonb
+  );
+  v_atomic_fourth_timelog_id := (v_result->>'id')::uuid;
+  v_atomic_fourth_updated_at := (v_result->>'updated_at')::timestamptz;
+
+  v_result := public.transition_timelog_statuses_atomic(
+    pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
+      'id', v_atomic_fourth_timelog_id,
+      'expected_updated_at', v_atomic_fourth_updated_at
+    )),
+    'draft'::public.timelog_status,
+    'pending_ch'::public.timelog_status
+  );
+  v_atomic_fourth_updated_at := (v_result->0->>'updated_at')::timestamptz;
+
+  insert into public.user_roles (user_id, role)
+  values (v_manager_user_id, 'crewhead'::public.app_role);
+
+  v_result := public.transition_timelog_statuses_atomic(
+    pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
+      'id', v_atomic_fourth_timelog_id,
+      'expected_updated_at', v_atomic_fourth_updated_at
+    )),
+    'pending_ch'::public.timelog_status,
+    'pending_coo'::public.timelog_status
+  );
+  v_atomic_fourth_updated_at := (v_result->0->>'updated_at')::timestamptz;
+
+  v_result := public.import_approved_timelog_atomic(
+    v_atomic_fourth_timelog_id,
+    v_atomic_event_id,
+    v_profile_id,
+    v_atomic_fourth_updated_at,
+    'pending_coo'::public.timelog_status,
+    3,
+    'canonical invoice import',
+    '[{"date":"2099-03-04","time_from":"08:00","time_to":"14:00","day_type":"instal","note":"invoice hours"}]'::jsonb
+  );
+  v_atomic_fourth_updated_at := (v_result->>'updated_at')::timestamptz;
+  if v_result->>'status' <> 'invoiced' or not exists (
+    select 1 from public.invoices where timelog_id = v_atomic_fourth_timelog_id
+  ) then
+    raise exception 'verification failed: pending COO import did not return canonical invoiced status';
+  end if;
+
+  v_result := public.import_approved_timelog_atomic(
+    v_atomic_fourth_timelog_id,
+    v_atomic_event_id,
+    v_profile_id,
+    v_atomic_fourth_updated_at,
+    'invoiced'::public.timelog_status,
+    3,
+    'canonical invoice import',
+    '[{"date":"2099-03-04","time_from":"08:00","time_to":"14:00","day_type":"instal","note":"invoice hours"}]'::jsonb
+  );
+  if (v_result->>'updated_at')::timestamptz is distinct from v_atomic_fourth_updated_at then
+    raise exception 'verification failed: invoiced import exact retry mutated the row';
+  end if;
+
+  insert into public.events (name, status)
+  values (
+    'atomic delete verification ' || pg_catalog.gen_random_uuid()::text,
+    'planning'::public.event_status
+  )
+  returning id into v_atomic_event_id;
+
+  v_result := public.save_timelog_atomic(
+    null,
+    v_atomic_event_id,
+    v_profile_id,
+    null,
+    null,
+    0,
+    'delete source',
+    'draft'::public.timelog_status,
+    '[{"date":"2099-03-05","time_from":"08:00","time_to":"10:00","day_type":"deinstal"}]'::jsonb
+  );
+  v_atomic_delete_timelog_id := (v_result->>'id')::uuid;
+  v_atomic_delete_updated_at := (v_result->>'updated_at')::timestamptz;
+  perform public.delete_timelog_atomic(
+    v_atomic_delete_timelog_id,
+    v_atomic_delete_updated_at,
+    'draft'::public.timelog_status
+  );
+  if exists (select 1 from public.timelogs where id = v_atomic_delete_timelog_id)
+    or exists (select 1 from public.timelog_days where timelog_id = v_atomic_delete_timelog_id) then
+    raise exception 'verification failed: atomic parent delete did not cascade days';
   end if;
 
   raise notice 'timelog assignment lifecycle verification passed';

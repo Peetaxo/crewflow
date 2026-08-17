@@ -62,12 +62,14 @@ const mapSupabaseTimelogs = (
   return timelogRows.map((row, index) => ({
     ...mapTimelog(row, timelogDayRowsByTimelogId.get(row.id) ?? []),
     id: index + 1,
+    supabaseId: row.id,
     eid: eventIdMap.get(row.event_id) ?? Number.NaN,
+    eventSupabaseId: row.event_id,
     contractorProfileId: row.contractor_id,
   }));
 };
 
-export const fetchTimelogsSnapshot = async (): Promise<Timelog[]> => {
+export const loadTimelogsSnapshot = async (): Promise<Timelog[]> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
     return getLocalAppState().timelogs ?? [];
   }
@@ -76,7 +78,7 @@ export const fetchTimelogsSnapshot = async (): Promise<Timelog[]> => {
     supabase.from('timelogs').select('*').order('created_at'),
     supabase.from('timelog_days').select('*').order('date'),
     supabase.from('profiles').select('id').order('last_name').order('first_name'),
-    supabase.from('events').select('id').order('date_from').order('name'),
+    supabase.from('events').select('id').order('date_from').order('name').order('id'),
   ]);
 
   const firstError =
@@ -92,6 +94,16 @@ export const fetchTimelogsSnapshot = async (): Promise<Timelog[]> => {
     eventsResult.data ?? [],
   );
 
+  return supabaseTimelogs;
+};
+
+export const fetchTimelogsSnapshot = async (): Promise<Timelog[]> => {
+  const supabaseTimelogs = await loadTimelogsSnapshot();
+
+  if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
+    return supabaseTimelogs;
+  }
+
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     timelogs: supabaseTimelogs,
@@ -101,11 +113,7 @@ export const fetchTimelogsSnapshot = async (): Promise<Timelog[]> => {
 };
 
 const hydrateTimelogsFromSupabase = async (): Promise<void> => {
-  const supabaseTimelogs = await fetchTimelogsSnapshot();
-  updateLocalAppState((snapshot) => ({
-    ...snapshot,
-    timelogs: supabaseTimelogs,
-  }));
+  await fetchTimelogsSnapshot();
 };
 
 export const ensureSupabaseTimelogsLoaded = () => {
@@ -147,11 +155,14 @@ const getSupabaseEventIdMap = async (): Promise<Map<number, string>> => {
     throw new Error('Supabase klient neni dostupny.');
   }
 
-  const result = await supabase
+  const eventRowsQuery = supabase
     .from('events')
     .select('id')
     .order('date_from')
     .order('name');
+  const result = typeof eventRowsQuery.order === 'function'
+    ? await eventRowsQuery.order('id')
+    : await eventRowsQuery;
 
   if (result.error) {
     throw new Error(result.error.message);

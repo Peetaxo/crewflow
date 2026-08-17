@@ -10,34 +10,36 @@ describe('events.service fetch snapshot', () => {
   it('hydrates event job number and client name from related project and client rows', async () => {
     const eventsSelect = vi.fn(() => ({
       order: vi.fn(() => ({
-        order: vi.fn().mockResolvedValue({
-          data: [
-            {
-              id: 'event-row-1',
-              project_id: 'project-row-1',
-              job_number: null,
-              client_name: null,
-              name: 'Akce 1',
-              date_from: '2026-04-20',
-              date_to: '2026-04-21',
-              time_from: null,
-              time_to: null,
-              city: 'Praha',
-              crew_needed: 2,
-              crew_filled: 2,
-              status: 'upcoming',
-              description: null,
-              contact_person: null,
-              dresscode: null,
-              meeting_point: null,
-              show_day_types: false,
-              day_types: null,
-              phase_times: null,
-              phase_schedules: null,
-            },
-          ],
-          error: null,
-        }),
+        order: vi.fn(() => ({
+          order: vi.fn().mockResolvedValue({
+            data: [
+              {
+                id: 'event-row-1',
+                project_id: 'project-row-1',
+                job_number: null,
+                client_name: null,
+                name: 'Akce 1',
+                date_from: '2026-04-20',
+                date_to: '2026-04-21',
+                time_from: null,
+                time_to: null,
+                city: 'Praha',
+                crew_needed: 2,
+                crew_filled: 2,
+                status: 'upcoming',
+                description: null,
+                contact_person: null,
+                dresscode: null,
+                meeting_point: null,
+                show_day_types: false,
+                day_types: null,
+                phase_times: null,
+                phase_schedules: null,
+              },
+            ],
+            error: null,
+          }),
+        })),
       })),
     }));
     const projectsSelect = vi.fn(() => ({
@@ -306,6 +308,16 @@ const createSnapshot = (overrides?: Partial<{
   ...overrides,
 });
 
+const createDeferred = <T,>() => {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+};
+
 describe('events.service write flow', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -331,7 +343,9 @@ describe('events.service write flow', () => {
 
   const canonicalTimelog: Timelog = {
     id: 1,
+    supabaseId: 'timelog-row-1',
     eid: 1,
+    eventSupabaseId: 'event-row-1',
     contractorProfileId: 'profile-uuid-1',
     days: [
       { d: '2026-04-20', f: '08:00', t: '17:00', type: 'instal' },
@@ -387,6 +401,8 @@ describe('events.service write flow', () => {
     let snapshot = structuredClone(initialSnapshot);
     const assignEventCrewRpc = vi.fn().mockResolvedValue(rpcAssignment);
     const removeEventCrewRpc = vi.fn().mockResolvedValue(rpcRemoval);
+    const setQueryData = vi.fn();
+    const invalidateQueries = vi.fn();
     const isDisposableTimelogStatus = vi.fn((status: Timelog['status']) => (
       status === 'draft' || status === 'rejected'
     ));
@@ -452,11 +468,7 @@ describe('events.service write flow', () => {
       planned_to: application.plannedTo ?? null,
       created_at: application.createdAt ?? '2026-04-10T08:00:00Z',
     }));
-    const fetchTimelogsSnapshot = vi.fn(async () => {
-      snapshot = {
-        ...snapshot,
-        timelogs: structuredClone(refreshedTimelogs),
-      };
+    const loadTimelogsSnapshot = vi.fn(async () => {
       if (failTimelogsRefresh) {
         throw new Error('timelog refresh failed');
       }
@@ -475,20 +487,40 @@ describe('events.service write flow', () => {
 
     vi.doMock('../../timelogs/services/timelogs.service', () => ({
       ensureSupabaseTimelogsLoaded: vi.fn(),
-      fetchTimelogsSnapshot,
+      loadTimelogsSnapshot,
+      fetchTimelogsSnapshot: loadTimelogsSnapshot,
     }));
+
+    vi.doMock('../../../lib/query-client', () => ({
+      queryClient: {
+        setQueryData,
+        invalidateQueries,
+      },
+    }));
+
+    vi.doMock('../../../lib/query-keys', () => ({
+      queryKeys: {
+        events: { all: ['events'] },
+        timelogs: { all: ['timelogs'] },
+        receipts: { all: ['receipts'] },
+      },
+    }));
+
+    const eventsResult = Promise.resolve({
+      data: eventRows,
+      error: failEventsRefresh ? { message: 'event refresh failed' } : null,
+    });
+    const eventsOrder = vi.fn();
+    const eventsQuery = {
+      order: eventsOrder,
+      then: eventsResult.then.bind(eventsResult),
+    };
+    eventsOrder.mockReturnValue(eventsQuery);
 
     const from = vi.fn((table: string) => {
       if (table === 'events') {
         return {
-          select: vi.fn(() => ({
-            order: vi.fn(() => ({
-              order: vi.fn().mockResolvedValue({
-                data: eventRows,
-                error: failEventsRefresh ? { message: 'event refresh failed' } : null,
-              }),
-            })),
-          })),
+          select: vi.fn(() => eventsQuery),
           update: eventsUpdate,
         };
       }
@@ -582,12 +614,14 @@ describe('events.service write flow', () => {
         : null,
     }));
 
+    const updateLocalAppState = vi.fn((updater: (state: typeof snapshot) => typeof snapshot) => {
+      snapshot = structuredClone(updater(structuredClone(snapshot)));
+      return structuredClone(snapshot);
+    });
+
     vi.doMock('../../../lib/app-data', () => ({
       getLocalAppState: () => structuredClone(snapshot),
-      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
-        snapshot = structuredClone(updater(structuredClone(snapshot)));
-        return structuredClone(snapshot);
-      },
+      updateLocalAppState,
       subscribeToLocalAppState: vi.fn(() => () => undefined),
     }));
 
@@ -618,8 +652,16 @@ describe('events.service write flow', () => {
     return {
       service: await import('./events.service'),
       getSnapshot: () => structuredClone(snapshot),
+      setSnapshot: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+      },
       assignEventCrewRpc,
       removeEventCrewRpc,
+      loadTimelogsSnapshot,
+      updateLocalAppState,
+      setQueryData,
+      invalidateQueries,
+      eventsOrder,
       eventApplicationsUpdate,
       directWrites: {
         timelogsInsert,
@@ -1237,6 +1279,83 @@ describe('events.service write flow', () => {
     expect(result.rpc).toEqual({ ...rpcAssignment, timelog_created: false });
   });
 
+  it('selects the canonical refreshed timelog by the RPC UUID instead of the first local pair match', async () => {
+    const candidates: Timelog[] = [
+      { ...canonicalTimelog, id: 1, supabaseId: 'older-timelog-row' },
+      { ...canonicalTimelog, id: 2, supabaseId: 'timelog-row-1' },
+    ];
+    const initialSnapshot = createSnapshot({
+      events: [{ ...lifecycleEvent, filled: 1 }],
+      timelogs: candidates,
+    });
+    const harness = await setupLifecycleService({
+      initialSnapshot,
+      refreshedTimelogs: candidates,
+    });
+
+    const result = await harness.service.assignCrewToEvent(1, 'profile-uuid-1');
+
+    expect(result.timelog.id).toBe(2);
+    expect(result.timelog.supabaseId).toBe('timelog-row-1');
+  });
+
+  it.each([
+    {
+      label: 'RPC event',
+      rpc: { ...rpcAssignment, event_id: 'other-event-row' },
+      timelogs: [canonicalTimelog],
+    },
+    {
+      label: 'RPC profile',
+      rpc: { ...rpcAssignment, profile_id: 'other-profile' },
+      timelogs: [canonicalTimelog],
+    },
+    {
+      label: 'canonical timelog UUID',
+      rpc: { ...rpcAssignment, timelog_id: 'missing-timelog-row' },
+      timelogs: [canonicalTimelog],
+    },
+    {
+      label: 'canonical timelog event UUID',
+      rpc: rpcAssignment,
+      timelogs: [{ ...canonicalTimelog, eventSupabaseId: 'other-event-row' }],
+    },
+    {
+      label: 'canonical timelog profile UUID',
+      rpc: rpcAssignment,
+      timelogs: [{ ...canonicalTimelog, contractorProfileId: 'other-profile' }],
+    },
+  ])('rejects a mismatched $label after the assignment RPC commits', async ({ rpc, timelogs }) => {
+    const initialSnapshot = createSnapshot({
+      events: [lifecycleEvent],
+      timelogs,
+    });
+    const harness = await setupLifecycleService({
+      initialSnapshot,
+      refreshedTimelogs: timelogs,
+    });
+    harness.assignEventCrewRpc.mockResolvedValue(rpc);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      await expect(harness.service.assignCrewToEvent(1, 'profile-uuid-1'))
+        .rejects.toThrow('Operaci s Crew se nepodařilo dokončit.');
+      expect(harness.assignEventCrewRpc).toHaveBeenCalledOnce();
+      expect(consoleError).toHaveBeenCalledWith(
+        'Failed to validate refreshed Crew assignment lifecycle state',
+        expect.objectContaining({
+          requestedEventId: 'event-row-1',
+          requestedProfileId: 'profile-uuid-1',
+          rpcEventId: rpc.event_id,
+          rpcProfileId: rpc.profile_id,
+          rpcTimelogId: rpc.timelog_id,
+        }),
+      );
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it('uses the removal RPC for direct removal and withdrawal approval', async () => {
     const initialSnapshot = createSnapshot({
       events: [{ ...lifecycleEvent, filled: 1 }],
@@ -1278,7 +1397,7 @@ describe('events.service write flow', () => {
     expect(harness.getSnapshot()).toEqual(before);
   });
 
-  it('rolls back refresh mutations and reports a generic lifecycle error when refresh fails', async () => {
+  it('leaves state and query cache untouched when the event lifecycle load fails', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const harness = await setupLifecycleService({ failEventsRefresh: true });
     const before = harness.getSnapshot();
@@ -1293,12 +1412,15 @@ describe('events.service write flow', () => {
         expect.any(Error),
       );
       expect(harness.getSnapshot()).toEqual(before);
+      expect(harness.updateLocalAppState).not.toHaveBeenCalled();
+      expect(harness.setQueryData).not.toHaveBeenCalled();
+      expect(harness.invalidateQueries).not.toHaveBeenCalled();
     } finally {
       consoleError.mockRestore();
     }
   });
 
-  it('restores the entire snapshot when timelog refresh fails after the event refresh succeeds', async () => {
+  it('leaves state and query cache untouched when the pure timelog lifecycle load fails', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const harness = await setupLifecycleService({
       refreshedEvents: [{
@@ -1321,6 +1443,102 @@ describe('events.service write flow', () => {
         expect.any(Error),
       );
       expect(harness.getSnapshot()).toEqual(before);
+      expect(harness.updateLocalAppState).not.toHaveBeenCalled();
+      expect(harness.setQueryData).not.toHaveBeenCalled();
+      expect(harness.invalidateQueries).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('commits staged event and timelog lifecycle slices in one state update before syncing queries', async () => {
+    const harness = await setupLifecycleService();
+
+    const result = await harness.service.assignCrewToEvent(1, 'profile-uuid-1');
+    const snapshot = harness.getSnapshot();
+
+    expect(harness.updateLocalAppState).toHaveBeenCalledOnce();
+    expect(snapshot.events[0].supabaseId).toBe('event-row-1');
+    expect(snapshot.timelogs).toEqual([canonicalTimelog]);
+    expect(result.timelog.supabaseId).toBe('timelog-row-1');
+    expect(harness.setQueryData).toHaveBeenCalledWith(['events'], snapshot.events);
+    expect(harness.setQueryData).toHaveBeenCalledWith(['timelogs'], snapshot.timelogs);
+    expect(harness.updateLocalAppState.mock.invocationCallOrder[0])
+      .toBeLessThan(harness.setQueryData.mock.invocationCallOrder[0]);
+    expect(harness.eventsOrder.mock.calls).toEqual([
+      ['date_from'],
+      ['name'],
+      ['id'],
+    ]);
+  });
+
+  it('preserves unrelated state changed while pure lifecycle reads are in flight', async () => {
+    const deferredTimelogs = createDeferred<Timelog[]>();
+    const harness = await setupLifecycleService();
+    harness.loadTimelogsSnapshot.mockImplementationOnce(() => deferredTimelogs.promise);
+    const interveningReceipt: ReceiptItem = {
+      id: 99,
+      eid: 1,
+      job: 'AK001',
+      title: 'Concurrent receipt',
+      vendor: 'Vendor',
+      amount: 125,
+      paidAt: '2026-04-20',
+      note: '',
+      status: 'submitted',
+    };
+
+    const assignmentPromise = harness.service.assignCrewToEvent(1, 'profile-uuid-1');
+    await vi.waitFor(() => {
+      expect(harness.loadTimelogsSnapshot).toHaveBeenCalledOnce();
+    });
+    harness.setSnapshot((snapshot) => ({
+      ...snapshot,
+      receipts: [interveningReceipt],
+      contractors: snapshot.contractors.map((contractor) => ({
+        ...contractor,
+        note: 'Concurrent contractor edit',
+      })),
+    }));
+    deferredTimelogs.resolve([canonicalTimelog]);
+
+    await expect(assignmentPromise).resolves.toEqual(expect.objectContaining({
+      timelog: expect.objectContaining({ supabaseId: 'timelog-row-1' }),
+    }));
+    expect(harness.getSnapshot().receipts).toEqual([interveningReceipt]);
+    expect(harness.getSnapshot().contractors[0].note).toBe('Concurrent contractor edit');
+  });
+
+  it('serializes overlapping lifecycle refreshes and continues after the first load fails', async () => {
+    const firstTimelogLoad = createDeferred<Timelog[]>();
+    const harness = await setupLifecycleService();
+    harness.loadTimelogsSnapshot.mockReset();
+    harness.loadTimelogsSnapshot
+      .mockImplementationOnce(() => firstTimelogLoad.promise)
+      .mockResolvedValueOnce([canonicalTimelog]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const firstAssignment = harness.service.assignCrewToEvent(1, 'profile-uuid-1')
+        .then(() => null, (error: unknown) => error);
+      const secondAssignment = harness.service.assignCrewToEvent(1, 'profile-uuid-1');
+
+      await vi.waitFor(() => {
+        expect(harness.assignEventCrewRpc).toHaveBeenCalledTimes(2);
+        expect(harness.loadTimelogsSnapshot).toHaveBeenCalledOnce();
+      });
+
+      firstTimelogLoad.reject(new Error('first staged timelog load failed'));
+      await expect(firstAssignment).resolves.toEqual(expect.objectContaining({
+        message: 'Operaci s Crew se nepodařilo dokončit.',
+      }));
+      await expect(secondAssignment).resolves.toEqual(expect.objectContaining({
+        timelog: expect.objectContaining({ supabaseId: 'timelog-row-1' }),
+      }));
+
+      expect(harness.loadTimelogsSnapshot).toHaveBeenCalledTimes(2);
+      expect(harness.updateLocalAppState).toHaveBeenCalledOnce();
+      expect(harness.getSnapshot().timelogs).toEqual([canonicalTimelog]);
     } finally {
       consoleError.mockRestore();
     }

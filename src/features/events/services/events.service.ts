@@ -12,6 +12,7 @@ import { assignEventCrewRpc, isDisposableTimelogStatus, removeEventCrewRpc } fro
 const DEFAULT_TIME_FROM = '08:00';
 const DEFAULT_TIME_TO = '17:00';
 const CREW_LIFECYCLE_ERROR_MESSAGE = 'Operaci s Crew se nepodařilo dokončit.';
+const ASSIGNMENT_LIFECYCLE_VALIDATION_DIAGNOSTIC = 'Failed to validate refreshed Crew assignment lifecycle state';
 const EVENT_PHASE_TYPES: TimelogType[] = ['instal', 'provoz', 'deinstal'];
 type TimelogAssignmentRow = { event_id: string | null; contractor_id: string | null };
 type EventAssignmentRow = { event_id: string | null; profile_id: string | null; assigned_at?: string | null };
@@ -64,6 +65,40 @@ type SupabaseGrasonClient = {
     };
   };
 };
+type EventLifecycleSnapshot = {
+  events: Event[];
+  eventApplications: EventApplication[];
+  eventCrewAssignments: EventCrewAssignment[];
+  grasonEventConfirmations: GrasonEventConfirmation[];
+  eventRowIdByLocalId: Map<number, string>;
+};
+
+const throwAssignmentLifecycleValidationError = ({
+  requestedEventId,
+  requestedProfileId,
+  rpc,
+  refreshedEvent,
+  refreshedTimelog,
+}: {
+  requestedEventId: string;
+  requestedProfileId: string;
+  rpc: Awaited<ReturnType<typeof assignEventCrewRpc>>;
+  refreshedEvent?: Event;
+  refreshedTimelog?: Timelog;
+}): never => {
+  console.error(ASSIGNMENT_LIFECYCLE_VALIDATION_DIAGNOSTIC, {
+    requestedEventId,
+    requestedProfileId,
+    rpcEventId: rpc.event_id,
+    rpcProfileId: rpc.profile_id,
+    rpcTimelogId: rpc.timelog_id,
+    refreshedEventId: refreshedEvent?.supabaseId ?? null,
+    refreshedTimelogId: refreshedTimelog?.supabaseId ?? null,
+    refreshedTimelogEventId: refreshedTimelog?.eventSupabaseId ?? null,
+    refreshedTimelogProfileId: refreshedTimelog?.contractorProfileId ?? null,
+  });
+  throw new Error(CREW_LIFECYCLE_ERROR_MESSAGE);
+};
 
 const createSlotId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
@@ -109,6 +144,7 @@ const shiftPhaseSchedules = (
 
 let eventsHydrationPromise: Promise<void> | null = null;
 let eventsLoaded = false;
+let eventLifecycleRefreshQueue: Promise<void> = Promise.resolve();
 const eventRowIdByLocalId = new Map<number, string>();
 
 const assignmentMatchesEvent = (assignment: EventCrewAssignment, event: Event): boolean => (
@@ -243,9 +279,20 @@ const requestSupabaseTimelogsHydration = () => {
     });
 };
 
-export const fetchEventsSnapshot = async (): Promise<Event[]> => {
+const loadEventsLifecycleSnapshot = async (): Promise<EventLifecycleSnapshot> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
-    return getLocalAppState().events ?? [];
+    const snapshot = getLocalAppState();
+    return {
+      events: snapshot.events ?? [],
+      eventApplications: snapshot.eventApplications ?? [],
+      eventCrewAssignments: snapshot.eventCrewAssignments ?? [],
+      grasonEventConfirmations: snapshot.grasonEventConfirmations ?? [],
+      eventRowIdByLocalId: new Map(
+        (snapshot.events ?? [])
+          .filter((event) => event.supabaseId)
+          .map((event) => [event.id, event.supabaseId as string]),
+      ),
+    };
   }
 
   const supabaseGrason = supabase as unknown as SupabaseGrasonClient;
@@ -259,7 +306,7 @@ export const fetchEventsSnapshot = async (): Promise<Event[]> => {
     applicationsResult,
     crewAssignmentsResult,
   ] = await Promise.all([
-    supabase.from('events').select('*').order('date_from').order('name'),
+    supabase.from('events').select('*').order('date_from').order('name').order('id'),
     supabase.from('projects').select('*').order('job_number'),
     supabase.from('clients').select('*').order('name'),
     supabase.from('timelogs').select('event_id,contractor_id'),
@@ -357,11 +404,6 @@ export const fetchEventsSnapshot = async (): Promise<Event[]> => {
     })
     .filter((assignment): assignment is EventCrewAssignment => Boolean(assignment));
 
-  eventRowIdByLocalId.clear();
-  eventRows.forEach((row, index) => {
-    eventRowIdByLocalId.set(index + 1, row.id);
-  });
-
   const eventLocalIdByRowId = new Map(eventRows.map((row, index) => [row.id, index + 1]));
   const eventApplications = applicationRows
     .map((row, index) => {
@@ -406,15 +448,38 @@ export const fetchEventsSnapshot = async (): Promise<Event[]> => {
     )),
   ];
 
-  updateLocalAppState((snapshot) => ({
-    ...snapshot,
+  return {
     events: supabaseEvents,
     eventApplications,
     eventCrewAssignments,
     grasonEventConfirmations,
-  }));
+    eventRowIdByLocalId: new Map(eventRows.map((row, index) => [index + 1, row.id])),
+  };
+};
 
-  return supabaseEvents;
+const applyEventRowIdMap = (nextMap: Map<number, string>): void => {
+  eventRowIdByLocalId.clear();
+  nextMap.forEach((rowId, localId) => {
+    eventRowIdByLocalId.set(localId, rowId);
+  });
+};
+
+export const fetchEventsSnapshot = async (): Promise<Event[]> => {
+  if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
+    return getLocalAppState().events ?? [];
+  }
+
+  const lifecycleSnapshot = await loadEventsLifecycleSnapshot();
+  updateLocalAppState((snapshot) => ({
+    ...snapshot,
+    events: lifecycleSnapshot.events,
+    eventApplications: lifecycleSnapshot.eventApplications,
+    eventCrewAssignments: lifecycleSnapshot.eventCrewAssignments,
+    grasonEventConfirmations: lifecycleSnapshot.grasonEventConfirmations,
+  }));
+  applyEventRowIdMap(lifecycleSnapshot.eventRowIdByLocalId);
+
+  return lifecycleSnapshot.events;
 };
 
 const hydrateEventsFromSupabase = async (): Promise<void> => {
@@ -456,20 +521,36 @@ const invalidateEventQueries = () => {
   void queryClient.invalidateQueries({ queryKey: queryKeys.receipts.all });
 };
 
-const refreshEventLifecycleState = async (): Promise<void> => {
-  const previousSnapshot = structuredClone(getLocalAppState());
-  const { fetchTimelogsSnapshot } = await import('../../timelogs/services/timelogs.service');
-  const refreshes = [fetchEventsSnapshot(), fetchTimelogsSnapshot()];
+const refreshEventLifecycleState = (): Promise<void> => {
+  const queuedRefresh = eventLifecycleRefreshQueue.then(async () => {
+    let eventLifecycleSnapshot: EventLifecycleSnapshot;
+    let timelogs: Timelog[];
 
-  try {
-    await Promise.all(refreshes);
+    try {
+      const { loadTimelogsSnapshot } = await import('../../timelogs/services/timelogs.service');
+      [eventLifecycleSnapshot, timelogs] = await Promise.all([
+        loadEventsLifecycleSnapshot(),
+        loadTimelogsSnapshot(),
+      ]);
+    } catch (error) {
+      console.error('Failed to refresh Crew lifecycle state', error);
+      throw new Error(CREW_LIFECYCLE_ERROR_MESSAGE);
+    }
+
+    updateLocalAppState((snapshot) => ({
+      ...snapshot,
+      events: eventLifecycleSnapshot.events,
+      eventApplications: eventLifecycleSnapshot.eventApplications,
+      eventCrewAssignments: eventLifecycleSnapshot.eventCrewAssignments,
+      grasonEventConfirmations: eventLifecycleSnapshot.grasonEventConfirmations,
+      timelogs,
+    }));
+    applyEventRowIdMap(eventLifecycleSnapshot.eventRowIdByLocalId);
     invalidateEventQueries();
-  } catch (error) {
-    await Promise.allSettled(refreshes);
-    updateLocalAppState(() => previousSnapshot);
-    console.error('Failed to refresh Crew lifecycle state', error);
-    throw new Error(CREW_LIFECYCLE_ERROR_MESSAGE);
-  }
+  });
+
+  eventLifecycleRefreshQueue = queuedRefresh.catch(() => undefined);
+  return queuedRefresh;
 };
 
 const getSupabaseClientRows = async (): Promise<Array<{ id: string; name: string }>> => {
@@ -511,11 +592,14 @@ const getSupabaseEventRows = async (): Promise<Array<{ id: string; date_from: st
     throw new Error('Supabase klient neni dostupny.');
   }
 
-  const result = await supabase
+  const eventRowsQuery = supabase
     .from('events')
     .select('id,date_from,name')
     .order('date_from')
     .order('name');
+  const result = typeof eventRowsQuery.order === 'function'
+    ? await eventRowsQuery.order('id')
+    : await eventRowsQuery;
 
   if (result.error) {
     throw new Error(result.error.message);
@@ -1471,12 +1555,27 @@ export const removeContractorFromEvent = async (eventId: number, contractorProfi
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
     const eventRowId = await getSupabaseEventRowId(eventId);
-    await removeEventCrewRpc(eventRowId, contractorProfileId);
+    const rpc = await removeEventCrewRpc(eventRowId, contractorProfileId);
+    if (rpc.event_id !== eventRowId || rpc.profile_id !== contractorProfileId) {
+      console.error('Failed to validate refreshed Crew removal lifecycle state', {
+        requestedEventId: eventRowId,
+        requestedProfileId: contractorProfileId,
+        rpcEventId: rpc.event_id,
+        rpcProfileId: rpc.profile_id,
+      });
+      throw new Error(CREW_LIFECYCLE_ERROR_MESSAGE);
+    }
     await refreshEventLifecycleState();
 
     const refreshed = getLocalAppState();
-    const refreshedEvent = (refreshed.events ?? []).find((item) => item.supabaseId === eventRowId);
+    const refreshedEvent = (refreshed.events ?? []).find((item) => item.supabaseId === rpc.event_id);
     if (!refreshedEvent) {
+      console.error('Failed to validate refreshed Crew removal lifecycle state', {
+        requestedEventId: eventRowId,
+        requestedProfileId: contractorProfileId,
+        rpcEventId: rpc.event_id,
+        rpcProfileId: rpc.profile_id,
+      });
       throw new Error(CREW_LIFECYCLE_ERROR_MESSAGE);
     }
 
@@ -1667,15 +1766,32 @@ export const assignCrewToEvent = async (
       applicationId: applicationSupabaseId,
       days: initialDays,
     });
+    if (rpc.event_id !== eventRowId || rpc.profile_id !== contractorProfileId) {
+      throwAssignmentLifecycleValidationError({
+        requestedEventId: eventRowId,
+        requestedProfileId: contractorProfileId,
+        rpc,
+      });
+    }
     await refreshEventLifecycleState();
 
     const refreshed = getLocalAppState();
     const refreshedEvent = (refreshed.events ?? []).find((item) => item.supabaseId === rpc.event_id);
-    const canonicalTimelog = (refreshed.timelogs ?? []).find((item) => (
-      item.eid === refreshedEvent?.id && item.contractorProfileId === contractorProfileId
-    ));
-    if (!refreshedEvent || !canonicalTimelog) {
-      throw new Error(CREW_LIFECYCLE_ERROR_MESSAGE);
+    const canonicalTimelog = (refreshed.timelogs ?? []).find((item) => item.supabaseId === rpc.timelog_id);
+    if (
+      !refreshedEvent
+      || !canonicalTimelog
+      || canonicalTimelog.eventSupabaseId !== rpc.event_id
+      || canonicalTimelog.contractorProfileId !== rpc.profile_id
+      || canonicalTimelog.eid !== refreshedEvent.id
+    ) {
+      throwAssignmentLifecycleValidationError({
+        requestedEventId: eventRowId,
+        requestedProfileId: contractorProfileId,
+        rpc,
+        refreshedEvent,
+        refreshedTimelog: canonicalTimelog,
+      });
     }
 
     return {

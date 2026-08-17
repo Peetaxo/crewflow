@@ -147,8 +147,12 @@ export interface TimelogDay {
 /** Vykaz prace (timelog) */
 export interface Timelog {
   id: number;
+  /** Stabilni UUID radku vykazu v Supabase */
+  supabaseId?: string;
   /** ID akce */
   eid: number;
+  /** Stabilni UUID akce v Supabase */
+  eventSupabaseId?: string;
   contractorProfileId?: string;
   days: TimelogDay[];
   /** Cestovne v km */

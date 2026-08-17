@@ -576,6 +576,21 @@ export interface Database {
           receipts: Json;
         }>;
       };
+      mark_invoice_sent_atomic: {
+        Args: {
+          p_invoice_id: string;
+          p_expected_updated_at: string;
+          p_sent_at: string;
+        };
+        Returns: Array<{
+          invoice_id: string;
+          invoice_status: InvoiceStatus;
+          invoice_updated_at: string;
+          paid_at: string | null;
+          timelogs: Json;
+          receipts: Json;
+        }>;
+      };
       import_approved_timelog_atomic: {
         Args: {
           p_timelog_id: string | null;
@@ -646,6 +661,14 @@ export interface Database {
           p_targets: Json;
           p_expected_status: TimelogStatus;
           p_next_status: TimelogStatus;
+        };
+        Returns: Json;
+      };
+      transition_receipt_statuses_atomic: {
+        Args: {
+          p_receipts: Json;
+          p_expected_status: ReceiptStatus;
+          p_next_status: ReceiptStatus;
         };
         Returns: Json;
       };

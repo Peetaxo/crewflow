@@ -1329,15 +1329,15 @@ alter table public.invoice_receipts enable row level security;
 revoke all on table public.invoice_items from public;
 revoke all on table public.invoice_items from anon;
 revoke all on table public.invoice_items from authenticated;
-grant select, insert, delete on table public.invoice_items to authenticated;
+grant select on table public.invoice_items to authenticated;
 revoke all on table public.invoice_timelogs from public;
 revoke all on table public.invoice_timelogs from anon;
 revoke all on table public.invoice_timelogs from authenticated;
-grant select, insert, delete on table public.invoice_timelogs to authenticated;
+grant select on table public.invoice_timelogs to authenticated;
 revoke all on table public.invoice_receipts from public;
 revoke all on table public.invoice_receipts from anon;
 revoke all on table public.invoice_receipts from authenticated;
-grant select, insert, delete on table public.invoice_receipts to authenticated;
+grant select on table public.invoice_receipts to authenticated;
 
 do $$
 declare
@@ -1370,23 +1370,640 @@ begin
       v_table_name || '_select_management',
       v_table_name
     );
-    execute pg_catalog.format(
-      'create policy %I on public.%I for insert to authenticated with check (' ||
-      'public.has_role((select auth.uid()), ''crewhead''::public.app_role) or ' ||
-      'public.has_role((select auth.uid()), ''coo''::public.app_role))',
-      v_table_name || '_insert_management',
-      v_table_name
-    );
-    execute pg_catalog.format(
-      'create policy %I on public.%I for delete to authenticated using (' ||
-      'public.has_role((select auth.uid()), ''crewhead''::public.app_role) or ' ||
-      'public.has_role((select auth.uid()), ''coo''::public.app_role))',
-      v_table_name || '_delete_management',
-      v_table_name
-    );
   end loop;
 end
 $$;
+
+alter table public.invoices enable row level security;
+
+revoke all on table public.invoices from public;
+revoke all on table public.invoices from anon;
+revoke all on table public.invoices from authenticated;
+grant select on table public.invoices to authenticated;
+
+drop policy if exists "Crew can view own invoices" on public.invoices;
+drop policy if exists "CrewHead can view all invoices" on public.invoices;
+drop policy if exists "COO can manage all invoices" on public.invoices;
+drop policy if exists "CrewHead and COO can view all invoices" on public.invoices;
+
+create policy "Crew can view own invoices"
+on public.invoices
+for select
+to authenticated
+using (
+  public.has_role((select auth.uid()), 'crew'::public.app_role)
+  and contractor_id = public.current_profile_id()
+);
+
+create policy "CrewHead and COO can view all invoices"
+on public.invoices
+for select
+to authenticated
+using (
+  public.has_role((select auth.uid()), 'crewhead'::public.app_role)
+  or public.has_role((select auth.uid()), 'coo'::public.app_role)
+);
+
+create or replace function public.enforce_receipt_lifecycle_update()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_data_changed boolean;
+begin
+  if auth.uid() is null then
+    raise exception 'receipt_lifecycle_unauthorized' using errcode = '42501';
+  end if;
+
+  if new.id is distinct from old.id
+    or new.contractor_id is distinct from old.contractor_id
+    or new.event_id is distinct from old.event_id
+    or new.created_at is distinct from old.created_at then
+    raise exception 'receipt_lifecycle_unauthorized' using errcode = '42501';
+  end if;
+
+  new.updated_at := pg_catalog.now();
+  v_data_changed :=
+    new.job_number is distinct from old.job_number
+    or new.name is distinct from old.name
+    or new.supplier is distinct from old.supplier
+    or new.amount is distinct from old.amount
+    or new.paid_at is distinct from old.paid_at
+    or new.note is distinct from old.note;
+
+  if public.has_role(auth.uid(), 'crew'::public.app_role)
+    and old.contractor_id = public.current_profile_id()
+    and old.status in ('draft', 'rejected')
+    and new.status in (old.status, 'submitted') then
+    return new;
+  end if;
+
+  if (
+      public.has_role(auth.uid(), 'crewhead'::public.app_role)
+      or public.has_role(auth.uid(), 'coo'::public.app_role)
+    )
+    and not v_data_changed
+    and old.status = 'submitted'
+    and new.status in ('approved', 'rejected') then
+    return new;
+  end if;
+
+  if public.has_role(auth.uid(), 'coo'::public.app_role)
+    and not v_data_changed
+    and old.status = 'approved'
+    and new.status = 'reimbursed' then
+    return new;
+  end if;
+
+  if pg_catalog.current_setting('crewflow.invoice_receipt_mutation', true) = 'on'
+    and public.has_role(auth.uid(), 'coo'::public.app_role)
+    and not v_data_changed
+    and (
+      (old.status = 'approved' and new.status = 'attached')
+      or (old.status = 'attached' and new.status in ('reimbursed', 'approved'))
+    ) then
+    return new;
+  end if;
+
+  raise exception 'receipt_lifecycle_unauthorized' using errcode = '42501';
+end;
+$$;
+
+revoke all on function public.enforce_receipt_lifecycle_update() from public;
+revoke all on function public.enforce_receipt_lifecycle_update() from anon;
+revoke all on function public.enforce_receipt_lifecycle_update() from authenticated;
+
+drop trigger if exists enforce_receipt_lifecycle_update on public.receipts;
+create trigger enforce_receipt_lifecycle_update
+before update on public.receipts
+for each row execute function public.enforce_receipt_lifecycle_update();
+
+alter table public.receipts enable row level security;
+
+revoke all on table public.receipts from public;
+revoke all on table public.receipts from anon;
+revoke all on table public.receipts from authenticated;
+grant select, insert, update, delete on table public.receipts to authenticated;
+
+drop policy if exists "Crew can manage own receipts" on public.receipts;
+drop policy if exists "CrewHead can view all receipts" on public.receipts;
+drop policy if exists "COO can manage all receipts" on public.receipts;
+drop policy if exists "Crew can view own receipts" on public.receipts;
+drop policy if exists "CrewHead and COO can view all receipts" on public.receipts;
+drop policy if exists "Crew can create own draft receipts" on public.receipts;
+drop policy if exists "CrewHead and COO can create draft receipts" on public.receipts;
+drop policy if exists "Crew can update own editable receipts" on public.receipts;
+drop policy if exists "CrewHead and COO can review submitted receipts" on public.receipts;
+drop policy if exists "COO can update invoice receipt status" on public.receipts;
+drop policy if exists "Crew can delete own disposable receipts" on public.receipts;
+drop policy if exists "CrewHead and COO can delete disposable receipts" on public.receipts;
+
+create policy "Crew can view own receipts"
+on public.receipts
+for select
+to authenticated
+using (
+  public.has_role((select auth.uid()), 'crew'::public.app_role)
+  and contractor_id = public.current_profile_id()
+);
+
+create policy "CrewHead and COO can view all receipts"
+on public.receipts
+for select
+to authenticated
+using (
+  public.has_role((select auth.uid()), 'crewhead'::public.app_role)
+  or public.has_role((select auth.uid()), 'coo'::public.app_role)
+);
+
+create policy "Crew can create own draft receipts"
+on public.receipts
+for insert
+to authenticated
+with check (
+  public.has_role((select auth.uid()), 'crew'::public.app_role)
+  and contractor_id = public.current_profile_id()
+  and status = 'draft'::public.receipt_status
+);
+
+create policy "CrewHead and COO can create draft receipts"
+on public.receipts
+for insert
+to authenticated
+with check (
+  (
+    public.has_role((select auth.uid()), 'crewhead'::public.app_role)
+    or public.has_role((select auth.uid()), 'coo'::public.app_role)
+  )
+  and status = 'draft'::public.receipt_status
+);
+
+create policy "Crew can update own editable receipts"
+on public.receipts
+for update
+to authenticated
+using (
+  public.has_role((select auth.uid()), 'crew'::public.app_role)
+  and contractor_id = public.current_profile_id()
+  and status in ('draft'::public.receipt_status, 'rejected'::public.receipt_status)
+)
+with check (
+  public.has_role((select auth.uid()), 'crew'::public.app_role)
+  and contractor_id = public.current_profile_id()
+  and status in (
+    'draft'::public.receipt_status,
+    'rejected'::public.receipt_status,
+    'submitted'::public.receipt_status
+  )
+);
+
+create policy "CrewHead and COO can review submitted receipts"
+on public.receipts
+for update
+to authenticated
+using (
+  (
+    public.has_role((select auth.uid()), 'crewhead'::public.app_role)
+    or public.has_role((select auth.uid()), 'coo'::public.app_role)
+  )
+  and status = 'submitted'::public.receipt_status
+)
+with check (
+  (
+    public.has_role((select auth.uid()), 'crewhead'::public.app_role)
+    or public.has_role((select auth.uid()), 'coo'::public.app_role)
+  )
+  and status in ('approved'::public.receipt_status, 'rejected'::public.receipt_status)
+);
+
+create policy "COO can update invoice receipt status"
+on public.receipts
+for update
+to authenticated
+using (
+  public.has_role((select auth.uid()), 'coo'::public.app_role)
+  and status in ('approved'::public.receipt_status, 'attached'::public.receipt_status)
+)
+with check (
+  public.has_role((select auth.uid()), 'coo'::public.app_role)
+  and status in (
+    'approved'::public.receipt_status,
+    'attached'::public.receipt_status,
+    'reimbursed'::public.receipt_status
+  )
+);
+
+create policy "Crew can delete own disposable receipts"
+on public.receipts
+for delete
+to authenticated
+using (
+  public.has_role((select auth.uid()), 'crew'::public.app_role)
+  and contractor_id = public.current_profile_id()
+  and status in ('draft'::public.receipt_status, 'rejected'::public.receipt_status)
+);
+
+create policy "CrewHead and COO can delete disposable receipts"
+on public.receipts
+for delete
+to authenticated
+using (
+  (
+    public.has_role((select auth.uid()), 'crewhead'::public.app_role)
+    or public.has_role((select auth.uid()), 'coo'::public.app_role)
+  )
+  and status in ('draft'::public.receipt_status, 'rejected'::public.receipt_status)
+);
+
+create or replace function public.transition_receipt_statuses_atomic(
+  p_receipts jsonb,
+  p_expected_status public.receipt_status,
+  p_next_status public.receipt_status
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_target_count integer;
+  v_matching_count integer;
+  v_result jsonb;
+begin
+  if auth.uid() is null then
+    raise exception 'receipt_mutation_unauthorized' using errcode = '42501';
+  end if;
+
+  if p_receipts is null
+    or pg_catalog.jsonb_typeof(p_receipts) <> 'array'
+    or pg_catalog.jsonb_array_length(p_receipts) = 0
+    or p_expected_status is null
+    or p_next_status is null
+    or p_expected_status = p_next_status
+    or exists (
+      select 1
+      from pg_catalog.jsonb_array_elements(p_receipts) target
+      where case
+        when pg_catalog.jsonb_typeof(target) <> 'object' then true
+        else (
+          select pg_catalog.array_agg(key order by key)
+          from pg_catalog.jsonb_object_keys(target) key
+        ) is distinct from array['expected_updated_at', 'id']::text[]
+      end
+    ) then
+    raise exception 'receipt_mutation_invalid' using errcode = '22023';
+  end if;
+
+  begin
+    perform
+      (target->>'id')::uuid,
+      (target->>'expected_updated_at')::timestamptz
+    from pg_catalog.jsonb_array_elements(p_receipts) target;
+  exception
+    when invalid_text_representation
+      or invalid_datetime_format
+      or datetime_field_overflow then
+      raise exception 'receipt_mutation_invalid' using errcode = '22023';
+  end;
+
+  select pg_catalog.jsonb_array_length(p_receipts) into v_target_count;
+  if v_target_count <> (
+    select pg_catalog.count(distinct target->>'id')::integer
+    from pg_catalog.jsonb_array_elements(p_receipts) target
+  ) or exists (
+    select 1
+    from pg_catalog.jsonb_array_elements(p_receipts) target
+    where nullif(target->>'id', '') is null
+      or nullif(target->>'expected_updated_at', '') is null
+  ) then
+    raise exception 'receipt_mutation_invalid' using errcode = '22023';
+  end if;
+
+  if not (
+    (
+      public.has_role(auth.uid(), 'crew'::public.app_role)
+      and p_expected_status in ('draft', 'rejected')
+      and p_next_status = 'submitted'
+    )
+    or (
+      (
+        public.has_role(auth.uid(), 'crewhead'::public.app_role)
+        or public.has_role(auth.uid(), 'coo'::public.app_role)
+      )
+      and p_expected_status = 'submitted'
+      and p_next_status in ('approved', 'rejected')
+    )
+    or (
+      public.has_role(auth.uid(), 'coo'::public.app_role)
+      and p_expected_status = 'approved'
+      and p_next_status = 'reimbursed'
+    )
+  ) then
+    raise exception 'receipt_mutation_unauthorized' using errcode = '42501';
+  end if;
+
+  perform r.id
+  from pg_catalog.jsonb_array_elements(p_receipts) target
+  join public.receipts r on r.id = (target->>'id')::uuid
+  order by (target->>'id')::uuid
+  for update of r;
+
+  select pg_catalog.count(*)::integer into v_matching_count
+  from pg_catalog.jsonb_array_elements(p_receipts) target
+  join public.receipts r on r.id = (target->>'id')::uuid
+  where r.updated_at = (target->>'expected_updated_at')::timestamptz
+    and r.status = p_expected_status;
+
+  if v_matching_count <> v_target_count then
+    raise exception 'receipt_mutation_conflict' using errcode = '40001';
+  end if;
+
+  update public.receipts r
+  set status = p_next_status
+  from pg_catalog.jsonb_array_elements(p_receipts) target
+  where r.id = (target->>'id')::uuid
+    and r.updated_at = (target->>'expected_updated_at')::timestamptz
+    and r.status = p_expected_status;
+  get diagnostics v_matching_count = row_count;
+
+  if v_matching_count <> v_target_count then
+    raise exception 'receipt_mutation_conflict' using errcode = '40001';
+  end if;
+
+  select pg_catalog.coalesce(
+    pg_catalog.jsonb_agg(
+      pg_catalog.jsonb_build_object(
+        'id', r.id,
+        'status', r.status,
+        'updated_at', r.updated_at
+      ) order by r.id
+    ),
+    '[]'::jsonb
+  ) into v_result
+  from public.receipts r
+  join pg_catalog.jsonb_array_elements(p_receipts) target
+    on r.id = (target->>'id')::uuid;
+
+  if pg_catalog.jsonb_array_length(v_result) <> v_target_count then
+    raise exception 'receipt_mutation_conflict' using errcode = '40001';
+  end if;
+
+  return v_result;
+exception
+  when insufficient_privilege then
+    raise exception 'receipt_mutation_unauthorized' using errcode = '42501';
+end;
+$$;
+
+create or replace function public.handle_timelog_approved()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_profile public.profiles%rowtype;
+  v_invoice_id uuid;
+  v_receipt_ids uuid[];
+  v_receipt_count integer;
+  v_changed_count integer;
+  v_total_hours numeric;
+  v_receipt_amount numeric;
+  v_amount_hours numeric;
+  v_amount_km numeric;
+  v_total_amount numeric;
+  v_job text;
+  v_previous_marker text;
+begin
+  if new.status = 'approved' and old.status = 'pending_coo' then
+    if auth.uid() is null
+      or not public.has_role(auth.uid(), 'coo'::public.app_role) then
+      raise exception 'timelog_import_unauthorized' using errcode = '42501';
+    end if;
+
+    select p.* into v_profile
+    from public.profiles p
+    where p.id = new.contractor_id;
+
+    if not found then
+      raise exception 'invoice_create_conflict' using errcode = '40001';
+    end if;
+
+    select pg_catalog.coalesce(
+      pg_catalog.array_agg(locked_receipt.id order by locked_receipt.id),
+      array[]::uuid[]
+    ) into v_receipt_ids
+    from (
+      select r.id
+      from public.receipts r
+      where r.event_id = new.event_id
+        and r.contractor_id = new.contractor_id
+        and r.status = 'approved'::public.receipt_status
+      order by r.id
+      for update
+    ) locked_receipt;
+
+    v_receipt_count := pg_catalog.coalesce(pg_catalog.array_length(v_receipt_ids, 1), 0);
+
+    select pg_catalog.coalesce(pg_catalog.sum(r.amount), 0)
+    into v_receipt_amount
+    from public.receipts r
+    where r.id = any(v_receipt_ids)
+      and r.status = 'approved'::public.receipt_status;
+
+    get diagnostics v_changed_count = row_count;
+    if v_changed_count <> 1 then
+      raise exception 'invoice_create_conflict' using errcode = '40001';
+    end if;
+
+    select pg_catalog.coalesce(pg_catalog.sum(
+      pg_catalog.date_part('epoch', td.time_to::time - td.time_from::time) / 3600.0
+    ), 0)
+    into v_total_hours
+    from public.timelog_days td
+    where td.timelog_id = new.id;
+
+    select project.job_number into v_job
+    from public.events event_row
+    left join public.projects project on project.id = event_row.project_id
+    where event_row.id = new.event_id;
+
+    v_amount_hours := v_total_hours * pg_catalog.coalesce(v_profile.hourly_rate, 0);
+    v_amount_km := new.km * 5.0;
+    v_total_amount := v_amount_hours + v_amount_km + v_receipt_amount;
+
+    v_previous_marker := pg_catalog.current_setting(
+      'crewflow.invoice_receipt_mutation',
+      true
+    );
+    perform pg_catalog.set_config('crewflow.invoice_receipt_mutation', 'on', true);
+
+    begin
+      begin
+        insert into public.invoices (
+          contractor_id,
+          event_id,
+          timelog_id,
+          job_number,
+          total_hours,
+          amount_hours,
+          amount_km,
+          amount_receipts,
+          total_amount,
+          status
+        ) values (
+          new.contractor_id,
+          new.event_id,
+          new.id,
+          v_job,
+          v_total_hours,
+          v_amount_hours,
+          v_amount_km,
+          v_receipt_amount,
+          v_total_amount,
+          'draft'::public.invoice_status
+        )
+        returning id into v_invoice_id;
+
+        insert into public.invoice_items (
+          invoice_id,
+          job_number,
+          event_id,
+          hours,
+          amount_hours,
+          km,
+          amount_km,
+          amount_receipts,
+          total_amount
+        ) values (
+          v_invoice_id,
+          pg_catalog.coalesce(v_job, ''),
+          new.event_id,
+          v_total_hours,
+          v_amount_hours,
+          new.km,
+          v_amount_km,
+          v_receipt_amount,
+          v_total_amount
+        );
+
+        insert into public.invoice_timelogs (invoice_id, timelog_id)
+        values (v_invoice_id, new.id);
+
+        insert into public.invoice_receipts (invoice_id, receipt_id)
+        select v_invoice_id, source.receipt_id
+        from pg_catalog.unnest(v_receipt_ids) as source(receipt_id)
+        order by source.receipt_id;
+        get diagnostics v_changed_count = row_count;
+
+        if v_changed_count <> v_receipt_count then
+          raise exception 'invoice_create_conflict' using errcode = '40001';
+        end if;
+
+        update public.receipts r
+        set status = 'attached'::public.receipt_status
+        where r.id = any(v_receipt_ids)
+          and r.status = 'approved'::public.receipt_status;
+        get diagnostics v_changed_count = row_count;
+
+        if v_changed_count <> v_receipt_count then
+          raise exception 'invoice_create_conflict' using errcode = '40001';
+        end if;
+      exception
+        when unique_violation or foreign_key_violation or check_violation then
+          raise exception 'invoice_create_conflict' using errcode = '40001';
+      end;
+
+      perform pg_catalog.set_config(
+        'crewflow.invoice_receipt_mutation',
+        pg_catalog.coalesce(v_previous_marker, ''),
+        true
+      );
+    exception
+      when others then
+        perform pg_catalog.set_config(
+          'crewflow.invoice_receipt_mutation',
+          pg_catalog.coalesce(v_previous_marker, ''),
+          true
+        );
+        raise;
+    end;
+
+    new.status := 'invoiced'::public.timelog_status;
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke all on function public.handle_timelog_approved() from public;
+revoke all on function public.handle_timelog_approved() from anon;
+revoke all on function public.handle_timelog_approved() from authenticated;
+
+drop trigger if exists trg_timelog_approved on public.timelogs;
+create trigger trg_timelog_approved
+before update on public.timelogs
+for each row execute function public.handle_timelog_approved();
+
+alter table public.events enable row level security;
+
+revoke all on table public.events from public;
+revoke all on table public.events from anon;
+revoke all on table public.events from authenticated;
+grant select, insert, update on table public.events to authenticated;
+
+drop policy if exists "CrewHead and COO can manage events" on public.events;
+drop policy if exists "Crew can view assigned events" on public.events;
+drop policy if exists "CrewHead and COO can view events" on public.events;
+drop policy if exists "CrewHead and COO can create events" on public.events;
+drop policy if exists "CrewHead and COO can update events" on public.events;
+
+create policy "Crew can view assigned events"
+on public.events
+for select
+to authenticated
+using (
+  public.has_role((select auth.uid()), 'crew'::public.app_role)
+  and exists (
+    select 1
+    from public.event_assignments assignment
+    where assignment.event_id = events.id
+      and assignment.profile_id = public.current_profile_id()
+  )
+);
+
+create policy "CrewHead and COO can view events"
+on public.events
+for select
+to authenticated
+using (
+  public.has_role((select auth.uid()), 'crewhead'::public.app_role)
+  or public.has_role((select auth.uid()), 'coo'::public.app_role)
+);
+
+create policy "CrewHead and COO can create events"
+on public.events
+for insert
+to authenticated
+with check (
+  public.has_role((select auth.uid()), 'crewhead'::public.app_role)
+  or public.has_role((select auth.uid()), 'coo'::public.app_role)
+);
+
+create policy "CrewHead and COO can update events"
+on public.events
+for update
+to authenticated
+using (
+  public.has_role((select auth.uid()), 'crewhead'::public.app_role)
+  or public.has_role((select auth.uid()), 'coo'::public.app_role)
+)
+with check (
+  public.has_role((select auth.uid()), 'crewhead'::public.app_role)
+  or public.has_role((select auth.uid()), 'coo'::public.app_role)
+);
 
 create or replace function public.enforce_timelog_update_permissions()
 returns trigger
@@ -2081,7 +2698,7 @@ returns table (
   event_id uuid
 )
 language plpgsql
-security invoker
+security definer
 set search_path = ''
 as $$
 declare
@@ -2089,7 +2706,10 @@ declare
   v_receipt_count integer;
   v_deleted_receipt_count integer;
 begin
-  if auth.uid() is null then
+  if auth.uid() is null or not (
+    public.has_role(auth.uid(), 'crewhead'::public.app_role)
+    or public.has_role(auth.uid(), 'coo'::public.app_role)
+  ) then
     raise exception 'event_delete_conflict' using errcode = '42501';
   end if;
 
@@ -2106,7 +2726,7 @@ begin
   from public.timelogs t
   where t.event_id = p_event_id
   order by t.id
-  for share;
+  for update;
 
   if exists (
     select 1
@@ -2115,6 +2735,21 @@ begin
       and t.status not in ('draft', 'rejected')
   ) then
     raise exception 'event_has_protected_timelogs' using errcode = 'P0001';
+  end if;
+
+  perform r.id
+  from public.receipts r
+  where r.event_id = p_event_id
+  order by r.id
+  for update;
+
+  if exists (
+    select 1
+    from public.receipts r
+    where r.event_id = p_event_id
+      and r.status not in ('draft', 'rejected')
+  ) then
+    raise exception 'event_has_protected_receipts' using errcode = 'P0001';
   end if;
 
   select pg_catalog.count(*)::integer into v_receipt_count
@@ -2161,7 +2796,7 @@ returns table (
   receipts jsonb
 )
 language plpgsql
-security invoker
+security definer
 set search_path = ''
 as $$
 declare
@@ -2180,6 +2815,7 @@ declare
   v_matching_count integer;
   v_timelog_rows jsonb;
   v_receipt_rows jsonb;
+  v_previous_marker text;
 begin
   if auth.uid() is null
     or not public.has_role(auth.uid(), 'coo'::public.app_role) then
@@ -2495,16 +3131,37 @@ begin
     from pg_catalog.jsonb_array_elements(p_receipts) target
     order by (target->>'id')::uuid;
 
-    update public.receipts r
-    set status = 'attached'::public.receipt_status
-    from pg_catalog.jsonb_array_elements(p_receipts) target
-    where r.id = (target->>'id')::uuid
-      and r.status = 'approved'::public.receipt_status;
+    v_previous_marker := pg_catalog.current_setting(
+      'crewflow.invoice_receipt_mutation',
+      true
+    );
+    perform pg_catalog.set_config('crewflow.invoice_receipt_mutation', 'on', true);
+    begin
+      update public.receipts r
+      set status = 'attached'::public.receipt_status
+      from pg_catalog.jsonb_array_elements(p_receipts) target
+      where r.id = (target->>'id')::uuid
+        and r.status = 'approved'::public.receipt_status;
 
-    get diagnostics v_matching_count = row_count;
-    if v_matching_count <> pg_catalog.jsonb_array_length(p_receipts) then
-      raise exception 'invoice_create_conflict' using errcode = '40001';
-    end if;
+      get diagnostics v_matching_count = row_count;
+      if v_matching_count <> pg_catalog.jsonb_array_length(p_receipts) then
+        raise exception 'invoice_create_conflict' using errcode = '40001';
+      end if;
+
+      perform pg_catalog.set_config(
+        'crewflow.invoice_receipt_mutation',
+        pg_catalog.coalesce(v_previous_marker, ''),
+        true
+      );
+    exception
+      when others then
+        perform pg_catalog.set_config(
+          'crewflow.invoice_receipt_mutation',
+          pg_catalog.coalesce(v_previous_marker, ''),
+          true
+        );
+        raise;
+    end;
 
     update public.timelogs t
     set status = 'invoiced'::public.timelog_status
@@ -2569,6 +3226,170 @@ begin
 end;
 $$;
 
+create or replace function public.mark_invoice_sent_atomic(
+  p_invoice_id uuid,
+  p_expected_updated_at timestamptz,
+  p_sent_at timestamptz
+)
+returns table (
+  invoice_id uuid,
+  invoice_status public.invoice_status,
+  invoice_updated_at timestamptz,
+  paid_at timestamptz,
+  timelogs jsonb,
+  receipts jsonb
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_invoice public.invoices%rowtype;
+  v_timelog_rows jsonb;
+  v_receipt_rows jsonb;
+begin
+  if auth.uid() is null
+    or not public.has_role(auth.uid(), 'coo'::public.app_role) then
+    raise exception 'invoice_unauthorized' using errcode = '42501';
+  end if;
+
+  if p_invoice_id is null
+    or p_expected_updated_at is null
+    or p_sent_at is null then
+    raise exception 'invoice_mutation_invalid' using errcode = '22023';
+  end if;
+
+  select i.* into v_invoice
+  from public.invoices i
+  where i.id = p_invoice_id
+  for update;
+
+  if not found then
+    raise exception 'invoice_not_found' using errcode = 'P0002';
+  end if;
+
+  if v_invoice.updated_at is distinct from p_expected_updated_at
+    or v_invoice.status not in ('draft', 'sent')
+    or (
+      v_invoice.status = 'sent'::public.invoice_status
+      and v_invoice.sent_at is distinct from p_sent_at
+    ) then
+    raise exception 'invoice_sent_conflict' using errcode = '40001';
+  end if;
+
+  perform link.id
+  from public.invoice_timelogs link
+  where link.invoice_id = p_invoice_id
+  order by link.id
+  for update;
+
+  perform link.id
+  from public.invoice_receipts link
+  where link.invoice_id = p_invoice_id
+  order by link.id
+  for update;
+
+  perform t.id
+  from public.timelogs t
+  join (
+    select v_invoice.timelog_id as id
+    where v_invoice.timelog_id is not null
+    union
+    select link.timelog_id
+    from public.invoice_timelogs link
+    where link.invoice_id = p_invoice_id
+  ) linked on linked.id = t.id
+  order by t.id
+  for update of t;
+
+  perform r.id
+  from public.receipts r
+  join public.invoice_receipts link on link.receipt_id = r.id
+  where link.invoice_id = p_invoice_id
+  order by r.id
+  for update of r;
+
+  if exists (
+    select 1
+    from public.timelogs t
+    join (
+      select v_invoice.timelog_id as id
+      where v_invoice.timelog_id is not null
+      union
+      select link.timelog_id
+      from public.invoice_timelogs link
+      where link.invoice_id = p_invoice_id
+    ) linked on linked.id = t.id
+    where t.status <> 'invoiced'::public.timelog_status
+  ) or exists (
+    select 1
+    from public.receipts r
+    join public.invoice_receipts link on link.receipt_id = r.id
+    where link.invoice_id = p_invoice_id
+      and r.status <> 'attached'::public.receipt_status
+  ) then
+    raise exception 'invoice_has_protected_items' using errcode = 'P0001';
+  end if;
+
+  if v_invoice.status = 'draft'::public.invoice_status then
+    update public.invoices i
+    set status = 'sent'::public.invoice_status,
+      sent_at = p_sent_at
+    where i.id = p_invoice_id
+      and i.status = 'draft'::public.invoice_status
+      and i.updated_at = p_expected_updated_at
+    returning i.* into v_invoice;
+
+    if not found then
+      raise exception 'invoice_sent_conflict' using errcode = '40001';
+    end if;
+  end if;
+
+  select pg_catalog.coalesce(
+    pg_catalog.jsonb_agg(
+      pg_catalog.jsonb_build_object(
+        'id', t.id,
+        'status', t.status,
+        'updated_at', t.updated_at
+      ) order by t.id
+    ),
+    '[]'::jsonb
+  ) into v_timelog_rows
+  from public.timelogs t
+  join (
+    select v_invoice.timelog_id as id
+    where v_invoice.timelog_id is not null
+    union
+    select link.timelog_id
+    from public.invoice_timelogs link
+    where link.invoice_id = p_invoice_id
+  ) linked on linked.id = t.id;
+
+  select pg_catalog.coalesce(
+    pg_catalog.jsonb_agg(
+      pg_catalog.jsonb_build_object(
+        'id', r.id,
+        'status', r.status,
+        'updated_at', r.updated_at
+      ) order by r.id
+    ),
+    '[]'::jsonb
+  ) into v_receipt_rows
+  from public.receipts r
+  join public.invoice_receipts link on link.receipt_id = r.id
+  where link.invoice_id = p_invoice_id;
+
+  return query
+  select
+    v_invoice.id,
+    v_invoice.status,
+    v_invoice.updated_at,
+    v_invoice.paid_at,
+    v_timelog_rows,
+    v_receipt_rows;
+end;
+$$;
+
 create or replace function public.mark_invoice_paid_atomic(
   p_invoice_id uuid,
   p_expected_status public.invoice_status,
@@ -2584,13 +3405,14 @@ returns table (
   receipts jsonb
 )
 language plpgsql
-security invoker
+security definer
 set search_path = ''
 as $$
 declare
   v_invoice public.invoices%rowtype;
   v_timelog_rows jsonb;
   v_receipt_rows jsonb;
+  v_previous_marker text;
 begin
   if auth.uid() is null
     or not public.has_role(auth.uid(), 'coo'::public.app_role) then
@@ -2678,12 +3500,33 @@ begin
   end if;
 
   begin
-    update public.receipts r
-    set status = 'reimbursed'::public.receipt_status
-    from public.invoice_receipts link
-    where link.invoice_id = p_invoice_id
-      and link.receipt_id = r.id
-      and r.status = 'attached'::public.receipt_status;
+    v_previous_marker := pg_catalog.current_setting(
+      'crewflow.invoice_receipt_mutation',
+      true
+    );
+    perform pg_catalog.set_config('crewflow.invoice_receipt_mutation', 'on', true);
+    begin
+      update public.receipts r
+      set status = 'reimbursed'::public.receipt_status
+      from public.invoice_receipts link
+      where link.invoice_id = p_invoice_id
+        and link.receipt_id = r.id
+        and r.status = 'attached'::public.receipt_status;
+
+      perform pg_catalog.set_config(
+        'crewflow.invoice_receipt_mutation',
+        pg_catalog.coalesce(v_previous_marker, ''),
+        true
+      );
+    exception
+      when others then
+        perform pg_catalog.set_config(
+          'crewflow.invoice_receipt_mutation',
+          pg_catalog.coalesce(v_previous_marker, ''),
+          true
+        );
+        raise;
+    end;
 
     update public.timelogs t
     set status = 'paid'::public.timelog_status
@@ -2797,7 +3640,7 @@ returns table (
   receipts jsonb
 )
 language plpgsql
-security invoker
+security definer
 set search_path = ''
 as $$
 declare
@@ -2805,6 +3648,7 @@ declare
   v_timelog_rows jsonb;
   v_receipt_rows jsonb;
   v_deleted_invoice_id uuid;
+  v_previous_marker text;
 begin
   if auth.uid() is null
     or not public.has_role(auth.uid(), 'coo'::public.app_role) then
@@ -2887,12 +3731,33 @@ begin
   end if;
 
   begin
-    update public.receipts r
-    set status = 'approved'::public.receipt_status
-    from public.invoice_receipts link
-    where link.invoice_id = p_invoice_id
-      and link.receipt_id = r.id
-      and r.status = 'attached'::public.receipt_status;
+    v_previous_marker := pg_catalog.current_setting(
+      'crewflow.invoice_receipt_mutation',
+      true
+    );
+    perform pg_catalog.set_config('crewflow.invoice_receipt_mutation', 'on', true);
+    begin
+      update public.receipts r
+      set status = 'approved'::public.receipt_status
+      from public.invoice_receipts link
+      where link.invoice_id = p_invoice_id
+        and link.receipt_id = r.id
+        and r.status = 'attached'::public.receipt_status;
+
+      perform pg_catalog.set_config(
+        'crewflow.invoice_receipt_mutation',
+        pg_catalog.coalesce(v_previous_marker, ''),
+        true
+      );
+    exception
+      when others then
+        perform pg_catalog.set_config(
+          'crewflow.invoice_receipt_mutation',
+          pg_catalog.coalesce(v_previous_marker, ''),
+          true
+        );
+        raise;
+    end;
 
     update public.timelogs t
     set status = 'approved'::public.timelog_status
@@ -3379,6 +4244,10 @@ revoke all on function public.transition_timelog_statuses_atomic(jsonb, public.t
 revoke all on function public.transition_timelog_statuses_atomic(jsonb, public.timelog_status, public.timelog_status) from anon;
 grant execute on function public.transition_timelog_statuses_atomic(jsonb, public.timelog_status, public.timelog_status) to authenticated;
 
+revoke all on function public.transition_receipt_statuses_atomic(jsonb, public.receipt_status, public.receipt_status) from public;
+revoke all on function public.transition_receipt_statuses_atomic(jsonb, public.receipt_status, public.receipt_status) from anon;
+grant execute on function public.transition_receipt_statuses_atomic(jsonb, public.receipt_status, public.receipt_status) to authenticated;
+
 revoke all on function public.delete_timelog_atomic(uuid, timestamptz, public.timelog_status) from public;
 revoke all on function public.delete_timelog_atomic(uuid, timestamptz, public.timelog_status) from anon;
 grant execute on function public.delete_timelog_atomic(uuid, timestamptz, public.timelog_status) to authenticated;
@@ -3394,6 +4263,10 @@ grant execute on function public.delete_event_atomic(uuid) to authenticated;
 revoke all on function public.create_invoice_atomic(jsonb, jsonb, jsonb, jsonb) from public;
 revoke all on function public.create_invoice_atomic(jsonb, jsonb, jsonb, jsonb) from anon;
 grant execute on function public.create_invoice_atomic(jsonb, jsonb, jsonb, jsonb) to authenticated;
+
+revoke all on function public.mark_invoice_sent_atomic(uuid, timestamptz, timestamptz) from public;
+revoke all on function public.mark_invoice_sent_atomic(uuid, timestamptz, timestamptz) from anon;
+grant execute on function public.mark_invoice_sent_atomic(uuid, timestamptz, timestamptz) to authenticated;
 
 revoke all on function public.mark_invoice_paid_atomic(uuid, public.invoice_status, timestamptz, timestamptz) from public;
 revoke all on function public.mark_invoice_paid_atomic(uuid, public.invoice_status, timestamptz, timestamptz) from anon;

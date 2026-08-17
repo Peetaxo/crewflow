@@ -59,6 +59,8 @@ declare
   v_delete_event_id uuid;
   v_protected_event_id uuid;
   v_event_receipt_id uuid;
+  v_second_receipt_id uuid;
+  v_second_receipt_updated_at timestamptz;
   v_invoice_event_id uuid;
   v_invoice_id uuid;
   v_delete_invoice_id uuid;
@@ -80,6 +82,10 @@ declare
   v_invoice_paid_at timestamptz;
   v_event_after jsonb;
   v_days_after jsonb;
+  v_receipt_before jsonb;
+  v_receipt_after jsonb;
+  v_invoice_relation_before jsonb;
+  v_invoice_relation_after jsonb;
 begin
   select oid into v_authenticated_role_oid
   from pg_catalog.pg_roles
@@ -278,6 +284,9 @@ begin
       values
         ('public.timelogs'::pg_catalog.regclass),
         ('public.timelog_days'::pg_catalog.regclass),
+        ('public.events'::pg_catalog.regclass),
+        ('public.receipts'::pg_catalog.regclass),
+        ('public.invoices'::pg_catalog.regclass),
         ('public.invoice_items'::pg_catalog.regclass),
         ('public.invoice_timelogs'::pg_catalog.regclass),
         ('public.invoice_receipts'::pg_catalog.regclass)
@@ -313,15 +322,48 @@ begin
     ) required_tables (relation_id)
     where pg_catalog.has_table_privilege('anon', relation_id, 'SELECT,INSERT,UPDATE,DELETE')
       or not pg_catalog.has_table_privilege('authenticated', relation_id, 'SELECT')
-      or not pg_catalog.has_table_privilege('authenticated', relation_id, 'INSERT')
-      or not pg_catalog.has_table_privilege('authenticated', relation_id, 'DELETE')
       or pg_catalog.has_table_privilege(
         'authenticated',
         relation_id,
-        'UPDATE,TRUNCATE,REFERENCES,TRIGGER'
+        'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'
       )
   ) then
     raise exception 'verification failed: invoice link table ACL is incompatible';
+  end if;
+
+  if pg_catalog.has_table_privilege('anon', 'public.events', 'SELECT,INSERT,UPDATE,DELETE')
+    or not pg_catalog.has_table_privilege('authenticated', 'public.events', 'SELECT')
+    or not pg_catalog.has_table_privilege('authenticated', 'public.events', 'INSERT')
+    or not pg_catalog.has_table_privilege('authenticated', 'public.events', 'UPDATE')
+    or pg_catalog.has_table_privilege(
+      'authenticated',
+      'public.events',
+      'DELETE,TRUNCATE,REFERENCES,TRIGGER'
+    ) then
+    raise exception 'verification failed: event table ACL is incompatible';
+  end if;
+
+  if pg_catalog.has_table_privilege('anon', 'public.receipts', 'SELECT,INSERT,UPDATE,DELETE')
+    or not pg_catalog.has_table_privilege('authenticated', 'public.receipts', 'SELECT')
+    or not pg_catalog.has_table_privilege('authenticated', 'public.receipts', 'INSERT')
+    or not pg_catalog.has_table_privilege('authenticated', 'public.receipts', 'UPDATE')
+    or not pg_catalog.has_table_privilege('authenticated', 'public.receipts', 'DELETE')
+    or pg_catalog.has_table_privilege(
+      'authenticated',
+      'public.receipts',
+      'TRUNCATE,REFERENCES,TRIGGER'
+    ) then
+    raise exception 'verification failed: receipt table ACL is incompatible';
+  end if;
+
+  if pg_catalog.has_table_privilege('anon', 'public.invoices', 'SELECT,INSERT,UPDATE,DELETE')
+    or not pg_catalog.has_table_privilege('authenticated', 'public.invoices', 'SELECT')
+    or pg_catalog.has_table_privilege(
+      'authenticated',
+      'public.invoices',
+      'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'
+    ) then
+    raise exception 'verification failed: invoice table ACL is incompatible';
   end if;
 
   if exists (
@@ -387,15 +429,107 @@ begin
     select 1
     from (
       values
+        ('Crew can view assigned events', 'r'::"char", true, false),
+        ('CrewHead and COO can view events', 'r'::"char", true, false),
+        ('CrewHead and COO can create events', 'a'::"char", false, true),
+        ('CrewHead and COO can update events', 'w'::"char", true, true)
+    ) expected_policy (policy_name, command, needs_qual, needs_check)
+    left join pg_catalog.pg_policy policy
+      on policy.polrelid = 'public.events'::pg_catalog.regclass
+      and policy.polname = expected_policy.policy_name
+      and policy.polcmd = expected_policy.command
+      and policy.polroles = array[v_authenticated_role_oid]
+      and policy.polpermissive
+    where policy.oid is null
+      or (policy.polqual is not null) is distinct from expected_policy.needs_qual
+      or (policy.polwithcheck is not null) is distinct from expected_policy.needs_check
+  ) or (
+    select pg_catalog.count(*)
+    from pg_catalog.pg_policy policy
+    where policy.polrelid = 'public.events'::pg_catalog.regclass
+  ) <> 4 then
+    raise exception 'verification failed: event policy catalog is incompatible';
+  end if;
+
+  if exists (
+    select 1
+    from (
+      values
+        ('Crew can view own receipts', 'r'::"char", true, false),
+        ('CrewHead and COO can view all receipts', 'r'::"char", true, false),
+        ('Crew can create own draft receipts', 'a'::"char", false, true),
+        ('CrewHead and COO can create draft receipts', 'a'::"char", false, true),
+        ('Crew can update own editable receipts', 'w'::"char", true, true),
+        ('CrewHead and COO can review submitted receipts', 'w'::"char", true, true),
+        ('COO can update invoice receipt status', 'w'::"char", true, true),
+        ('Crew can delete own disposable receipts', 'd'::"char", true, false),
+        ('CrewHead and COO can delete disposable receipts', 'd'::"char", true, false)
+    ) expected_policy (policy_name, command, needs_qual, needs_check)
+    left join pg_catalog.pg_policy policy
+      on policy.polrelid = 'public.receipts'::pg_catalog.regclass
+      and policy.polname = expected_policy.policy_name
+      and policy.polcmd = expected_policy.command
+      and policy.polroles = array[v_authenticated_role_oid]
+      and policy.polpermissive
+    where policy.oid is null
+      or (policy.polqual is not null) is distinct from expected_policy.needs_qual
+      or (policy.polwithcheck is not null) is distinct from expected_policy.needs_check
+  ) or (
+    select pg_catalog.count(*)
+    from pg_catalog.pg_policy policy
+    where policy.polrelid = 'public.receipts'::pg_catalog.regclass
+  ) <> 9 then
+    raise exception 'verification failed: receipt workflow policy catalog is incompatible';
+  end if;
+
+  if exists (
+    select 1
+    from (
+      values
+        ('Crew can view own invoices', 'r'::"char", true, false),
+        ('CrewHead and COO can view all invoices', 'r'::"char", true, false)
+    ) expected_policy (policy_name, command, needs_qual, needs_check)
+    left join pg_catalog.pg_policy policy
+      on policy.polrelid = 'public.invoices'::pg_catalog.regclass
+      and policy.polname = expected_policy.policy_name
+      and policy.polcmd = expected_policy.command
+      and policy.polroles = array[v_authenticated_role_oid]
+      and policy.polpermissive
+    where policy.oid is null
+      or (policy.polqual is not null) is distinct from expected_policy.needs_qual
+      or (policy.polwithcheck is not null) is distinct from expected_policy.needs_check
+  ) or (
+    select pg_catalog.count(*)
+    from pg_catalog.pg_policy policy
+    where policy.polrelid = 'public.invoices'::pg_catalog.regclass
+  ) <> 2 then
+    raise exception 'verification failed: invoice policy catalog is incompatible';
+  end if;
+
+  if exists (
+    select 1
+    from pg_catalog.pg_policy policy
+    where policy.polrelid in (
+      'public.invoice_items'::pg_catalog.regclass,
+      'public.invoice_timelogs'::pg_catalog.regclass,
+      'public.invoice_receipts'::pg_catalog.regclass
+    )
+      and policy.polcmd <> 'r'::"char"
+  ) then
+    raise exception 'verification failed: invoice link write policy exists';
+  end if;
+
+  if exists (
+    select 1
+    from (
+      values
         ('public.invoice_items'::pg_catalog.regclass, 'invoice_items'),
         ('public.invoice_timelogs'::pg_catalog.regclass, 'invoice_timelogs'),
         ('public.invoice_receipts'::pg_catalog.regclass, 'invoice_receipts')
     ) required_tables (relation_id, policy_prefix)
     cross join (
       values
-        ('_select_management', 'r'::"char", true, false),
-        ('_insert_management', 'a'::"char", false, true),
-        ('_delete_management', 'd'::"char", true, false)
+        ('_select_management', 'r'::"char", true, false)
     ) expected_policy (name_suffix, command, needs_qual, needs_check)
     left join pg_catalog.pg_policy policy
       on policy.polrelid = required_tables.relation_id
@@ -406,6 +540,22 @@ begin
     where policy.oid is null
       or (policy.polqual is not null) is distinct from expected_policy.needs_qual
       or (policy.polwithcheck is not null) is distinct from expected_policy.needs_check
+      or pg_catalog.strpos(
+        pg_catalog.coalesce(
+          pg_catalog.pg_get_expr(policy.polqual, policy.polrelid),
+          pg_catalog.pg_get_expr(policy.polwithcheck, policy.polrelid),
+          ''
+        ),
+        'coo'
+      ) = 0
+      or pg_catalog.strpos(
+        pg_catalog.coalesce(
+          pg_catalog.pg_get_expr(policy.polqual, policy.polrelid),
+          pg_catalog.pg_get_expr(policy.polwithcheck, policy.polrelid),
+          ''
+        ),
+        'crewhead'
+      ) = 0
   ) or exists (
     select 1
     from (
@@ -418,7 +568,7 @@ begin
       select pg_catalog.count(*)
       from pg_catalog.pg_policy policy
       where policy.polrelid = required_tables.relation_id
-    ) <> 3
+    ) <> 1
   ) then
     raise exception 'verification failed: invoice link policy catalog is incompatible';
   end if;
@@ -429,10 +579,12 @@ begin
     'public.approve_event_withdrawal(uuid, uuid, uuid)'::pg_catalog.regprocedure,
     'public.save_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, public.timelog_status, jsonb)'::pg_catalog.regprocedure,
     'public.transition_timelog_statuses_atomic(jsonb, public.timelog_status, public.timelog_status)'::pg_catalog.regprocedure,
+    'public.transition_receipt_statuses_atomic(jsonb, public.receipt_status, public.receipt_status)'::pg_catalog.regprocedure,
     'public.delete_timelog_atomic(uuid, timestamptz, public.timelog_status)'::pg_catalog.regprocedure,
     'public.import_approved_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, jsonb)'::pg_catalog.regprocedure,
     'public.delete_event_atomic(uuid)'::pg_catalog.regprocedure,
     'public.create_invoice_atomic(jsonb, jsonb, jsonb, jsonb)'::pg_catalog.regprocedure,
+    'public.mark_invoice_sent_atomic(uuid, timestamptz, timestamptz)'::pg_catalog.regprocedure,
     'public.mark_invoice_paid_atomic(uuid, public.invoice_status, timestamptz, timestamptz)'::pg_catalog.regprocedure,
     'public.delete_invoice_atomic(uuid, public.invoice_status, timestamptz)'::pg_catalog.regprocedure
   ] loop
@@ -477,6 +629,24 @@ begin
         v_function_signature;
     end if;
   end loop;
+
+  if exists (
+    select 1
+    from (
+      values
+        ('public.delete_event_atomic(uuid)'::pg_catalog.regprocedure, true),
+        ('public.create_invoice_atomic(jsonb, jsonb, jsonb, jsonb)'::pg_catalog.regprocedure, true),
+        ('public.mark_invoice_sent_atomic(uuid, timestamptz, timestamptz)'::pg_catalog.regprocedure, true),
+        ('public.mark_invoice_paid_atomic(uuid, public.invoice_status, timestamptz, timestamptz)'::pg_catalog.regprocedure, true),
+        ('public.delete_invoice_atomic(uuid, public.invoice_status, timestamptz)'::pg_catalog.regprocedure, true),
+        ('public.transition_receipt_statuses_atomic(jsonb, public.receipt_status, public.receipt_status)'::pg_catalog.regprocedure, false)
+    ) expected_function (signature, is_security_definer)
+    join pg_catalog.pg_proc function_row on function_row.oid = expected_function.signature::oid
+    where function_row.prosecdef is distinct from expected_function.is_security_definer
+      or not ('search_path=""' = any(pg_catalog.coalesce(function_row.proconfig, array[]::text[])))
+  ) then
+    raise exception 'verification failed: atomic function security mode is incompatible';
+  end if;
 
   select
     p.proowner,
@@ -540,6 +710,51 @@ begin
       and trigger_row.tgenabled <> 'D'
   ) then
     raise exception 'verification failed: timelog permission trigger is missing or disabled';
+  end if;
+
+  foreach v_function_signature in array array[
+    'public.enforce_receipt_lifecycle_update()'::pg_catalog.regprocedure,
+    'public.handle_timelog_approved()'::pg_catalog.regprocedure
+  ] loop
+    select
+      p.proowner,
+      coalesce(pg_catalog.bool_or(acl.grantee <> p.proowner), false)
+    into v_function_owner_oid, v_has_unexpected_execute_grantee
+    from pg_catalog.pg_proc p
+    cross join lateral pg_catalog.aclexplode(
+      coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))
+    ) acl
+    where p.oid = v_function_signature::oid
+    group by p.proowner;
+
+    if v_function_owner_oid is null then
+      raise exception 'verification failed: receipt trigger function does not exist: %',
+        v_function_signature;
+    end if;
+    if v_has_unexpected_execute_grantee then
+      if v_function_signature = 'public.enforce_receipt_lifecycle_update()'::pg_catalog.regprocedure then
+        raise exception 'verification failed: receipt lifecycle trigger function is directly executable';
+      end if;
+      raise exception 'verification failed: timelog approval invoice trigger function is directly executable';
+    end if;
+  end loop;
+
+  if not exists (
+    select 1
+    from pg_catalog.pg_trigger trigger_row
+    where trigger_row.tgrelid = 'public.receipts'::pg_catalog.regclass
+      and trigger_row.tgname = 'enforce_receipt_lifecycle_update'
+      and not trigger_row.tgisinternal
+      and trigger_row.tgenabled <> 'D'
+  ) or not exists (
+    select 1
+    from pg_catalog.pg_trigger trigger_row
+    where trigger_row.tgrelid = 'public.timelogs'::pg_catalog.regclass
+      and trigger_row.tgname = 'trg_timelog_approved'
+      and not trigger_row.tgisinternal
+      and trigger_row.tgenabled <> 'D'
+  ) then
+    raise exception 'verification failed: receipt or invoice trigger is missing or disabled';
   end if;
 
   select p.id, p.user_id
@@ -1732,8 +1947,98 @@ begin
     raise exception 'verification failed: crew-only user imported approved timelog';
   end if;
 
+  insert into public.receipts (contractor_id, name, amount, status)
+  values (v_profile_id, 'atomic receipt first', 11, 'draft'::public.receipt_status)
+  returning id, updated_at into v_event_receipt_id, v_invoice_receipt_updated_at;
+
+  insert into public.receipts (contractor_id, name, amount, status)
+  values (v_profile_id, 'atomic receipt second', 12, 'draft'::public.receipt_status)
+  returning id, updated_at into v_second_receipt_id, v_second_receipt_updated_at;
+
+  v_expected_error := false;
+  execute 'set local role authenticated';
+  begin
+    perform public.transition_receipt_statuses_atomic(
+      pg_catalog.jsonb_build_array(
+        pg_catalog.jsonb_build_object(
+          'id', v_event_receipt_id,
+          'expected_updated_at', v_invoice_receipt_updated_at
+        ),
+        pg_catalog.jsonb_build_object(
+          'id', v_second_receipt_id,
+          'expected_updated_at', '2000-01-01T00:00:00Z'
+        )
+      ),
+      'draft'::public.receipt_status,
+      'submitted'::public.receipt_status
+    );
+  exception
+    when sqlstate '40001' then
+      get stacked diagnostics v_error_message = message_text;
+      if v_error_message <> 'receipt_mutation_conflict' then
+        raise;
+      end if;
+      v_expected_error := true;
+  end;
+  execute 'reset role';
+  if not v_expected_error or exists (
+    select 1
+    from public.receipts
+    where id in (v_event_receipt_id, v_second_receipt_id)
+      and status <> 'draft'::public.receipt_status
+  ) then
+    raise exception 'verification failed: atomic receipt transition partially changed rows';
+  end if;
+
+  execute 'set local role authenticated';
+  v_result := public.transition_receipt_statuses_atomic(
+    pg_catalog.jsonb_build_array(
+      pg_catalog.jsonb_build_object(
+        'id', v_event_receipt_id,
+        'expected_updated_at', v_invoice_receipt_updated_at
+      ),
+      pg_catalog.jsonb_build_object(
+        'id', v_second_receipt_id,
+        'expected_updated_at', v_second_receipt_updated_at
+      )
+    ),
+    'draft'::public.receipt_status,
+    'submitted'::public.receipt_status
+  );
+  execute 'reset role';
+
+  if pg_catalog.jsonb_array_length(v_result) <> 2 or exists (
+    select 1
+    from public.receipts
+    where id in (v_event_receipt_id, v_second_receipt_id)
+      and status <> 'submitted'::public.receipt_status
+  ) then
+    raise exception 'verification failed: valid atomic receipt transition failed';
+  end if;
+
   insert into public.user_roles (user_id, role)
   values (v_manager_user_id, 'coo'::public.app_role);
+
+  select pg_catalog.jsonb_agg(
+    pg_catalog.jsonb_build_object(
+      'id', r.id,
+      'expected_updated_at', r.updated_at
+    ) order by r.id
+  ) into v_result
+  from public.receipts r
+  where r.id in (v_event_receipt_id, v_second_receipt_id);
+
+  execute 'set local role authenticated';
+  v_result := public.transition_receipt_statuses_atomic(
+    v_result,
+    'submitted'::public.receipt_status,
+    'approved'::public.receipt_status
+  );
+  execute 'reset role';
+
+  if pg_catalog.jsonb_array_length(v_result) <> 2 then
+    raise exception 'verification failed: manager atomic receipt review failed';
+  end if;
 
   v_expected_error := false;
   execute 'set local role authenticated';
@@ -1859,6 +2164,24 @@ begin
   );
   v_atomic_fourth_updated_at := (v_result->0->>'updated_at')::timestamptz;
 
+  execute 'reset role';
+  insert into public.receipts (
+    contractor_id,
+    event_id,
+    job_number,
+    name,
+    amount,
+    status
+  ) values (
+    v_profile_id,
+    v_atomic_event_id,
+    'VERIFY-AUTO',
+    'auto invoice receipt',
+    33,
+    'approved'::public.receipt_status
+  ) returning id, updated_at into v_event_receipt_id, v_invoice_receipt_updated_at;
+  execute 'set local role authenticated';
+
   v_result := public.import_approved_timelog_atomic(
     v_atomic_fourth_timelog_id,
     v_atomic_event_id,
@@ -1876,6 +2199,34 @@ begin
     raise exception 'verification failed: pending COO import did not return canonical invoiced status';
   end if;
 
+  select i.id, i.updated_at
+  into v_delete_invoice_id, v_delete_invoice_updated_at
+  from public.invoices i
+  where i.timelog_id = v_atomic_fourth_timelog_id;
+  if not exists (
+    select 1
+    from public.invoice_timelogs link
+    where link.invoice_id = v_delete_invoice_id
+      and link.timelog_id = v_atomic_fourth_timelog_id
+  ) or not exists (
+    select 1
+    from public.invoice_receipts link
+    where link.invoice_id = v_delete_invoice_id
+      and link.receipt_id = v_event_receipt_id
+  ) or not exists (
+    select 1
+    from public.invoice_items item
+    where item.invoice_id = v_delete_invoice_id
+      and item.amount_receipts = 33
+  ) or not exists (
+    select 1
+    from public.receipts r
+    where r.id = v_event_receipt_id
+      and r.status = 'attached'::public.receipt_status
+  ) then
+    raise exception 'verification failed: timelog approval did not link and attach exact receipts';
+  end if;
+
   v_result := public.import_approved_timelog_atomic(
     v_atomic_fourth_timelog_id,
     v_atomic_event_id,
@@ -1889,29 +2240,50 @@ begin
   if (v_result->>'updated_at')::timestamptz is distinct from v_atomic_fourth_updated_at then
     raise exception 'verification failed: invoiced import exact retry mutated the row';
   end if;
-
-  v_result := public.transition_timelog_statuses_atomic(
-    pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
-      'id', v_atomic_fourth_timelog_id,
-      'expected_updated_at', v_atomic_fourth_updated_at
-    )),
-    'invoiced'::public.timelog_status,
-    'approved'::public.timelog_status
-  );
-  v_atomic_fourth_updated_at := (v_result->0->>'updated_at')::timestamptz;
-  if v_result->0->>'status' <> 'approved' then
-    raise exception 'verification failed: invoice deletion did not reopen timelog';
+  select pg_catalog.count(*) into v_count
+  from public.invoices
+  where timelog_id = v_atomic_fourth_timelog_id;
+  if v_count <> 1 then
+    raise exception 'verification failed: timelog approval receipt was refactured';
   end if;
 
-  v_result := public.transition_timelog_statuses_atomic(
-    pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
-      'id', v_atomic_fourth_timelog_id,
-      'expected_updated_at', v_atomic_fourth_updated_at
-    )),
-    'approved'::public.timelog_status,
-    'invoiced'::public.timelog_status
+  select pg_catalog.to_jsonb(deleted_invoice) into v_result
+  from public.delete_invoice_atomic(
+    v_delete_invoice_id,
+    'draft'::public.invoice_status,
+    v_delete_invoice_updated_at
+  ) deleted_invoice;
+  v_atomic_fourth_updated_at := (
+    select t.updated_at from public.timelogs t where t.id = v_atomic_fourth_timelog_id
   );
-  v_atomic_fourth_updated_at := (v_result->0->>'updated_at')::timestamptz;
+  if exists (select 1 from public.invoices where id = v_delete_invoice_id)
+    or not exists (
+      select 1 from public.timelogs
+      where id = v_atomic_fourth_timelog_id
+        and status = 'approved'::public.timelog_status
+    ) or not exists (
+      select 1 from public.receipts
+      where id = v_event_receipt_id
+        and status = 'approved'::public.receipt_status
+    ) then
+    raise exception 'verification failed: invoice deletion did not reopen linked approval rows';
+  end if;
+
+  v_result := public.import_approved_timelog_atomic(
+    v_atomic_fourth_timelog_id,
+    v_atomic_event_id,
+    v_profile_id,
+    v_atomic_fourth_updated_at,
+    'approved'::public.timelog_status,
+    3,
+    'canonical invoice import',
+    '[{"date":"2099-03-04","time_from":"08:00","time_to":"14:00","day_type":"instal","note":"invoice hours"}]'::jsonb
+  );
+  if exists (
+    select 1 from public.invoices where timelog_id = v_atomic_fourth_timelog_id
+  ) then
+    raise exception 'verification failed: timelog approval receipt was refactured';
+  end if;
 
   insert into public.events (name, status)
   values (
@@ -1942,6 +2314,101 @@ begin
     or exists (select 1 from public.timelog_days where timelog_id = v_atomic_delete_timelog_id) then
     raise exception 'verification failed: atomic parent delete did not cascade days';
   end if;
+
+  execute 'reset role';
+  delete from public.user_roles
+  where user_id = v_manager_user_id
+    and role = 'coo'::public.app_role;
+
+  insert into public.events (name, status)
+  values (
+    'CrewHead direct event delete verification ' || pg_catalog.gen_random_uuid()::text,
+    'planning'::public.event_status
+  )
+  returning id into v_delete_event_id;
+
+  v_expected_error := false;
+  execute 'set local role authenticated';
+  begin
+    delete from public.events where id = v_delete_event_id;
+  exception
+    when sqlstate '42501' then
+      v_expected_error := true;
+  end;
+  if not v_expected_error then
+    raise exception 'verification failed: CrewHead directly deleted an event';
+  end if;
+
+  select pg_catalog.to_jsonb(deleted) into v_result
+  from public.delete_event_atomic(v_delete_event_id) deleted;
+  execute 'reset role';
+  if (v_result->>'event_id')::uuid is distinct from v_delete_event_id then
+    raise exception 'verification failed: CrewHead event delete RPC failed';
+  end if;
+
+  delete from public.user_roles
+  where user_id = v_manager_user_id
+    and role = 'crewhead'::public.app_role;
+
+  insert into public.events (name, status)
+  values (
+    'Crew unauthorized event delete verification ' || pg_catalog.gen_random_uuid()::text,
+    'planning'::public.event_status
+  )
+  returning id into v_delete_event_id;
+
+  v_expected_error := false;
+  execute 'set local role authenticated';
+  begin
+    perform public.delete_event_atomic(v_delete_event_id);
+  exception
+    when sqlstate '42501' then
+      get stacked diagnostics v_error_message = message_text;
+      if v_error_message <> 'event_delete_conflict' then
+        raise;
+      end if;
+      v_expected_error := true;
+  end;
+  execute 'reset role';
+  if not v_expected_error or not exists (
+    select 1 from public.events where id = v_delete_event_id
+  ) then
+    raise exception 'verification failed: Crew-only user deleted an event through RPC';
+  end if;
+
+  perform pg_catalog.set_config('request.jwt.claim.sub', '', true);
+  perform pg_catalog.set_config('request.jwt.claims', '{"role":"authenticated"}', true);
+  v_expected_error := false;
+  execute 'set local role authenticated';
+  begin
+    perform public.delete_event_atomic(v_delete_event_id);
+  exception
+    when sqlstate '42501' then
+      get stacked diagnostics v_error_message = message_text;
+      if v_error_message <> 'event_delete_conflict' then
+        raise;
+      end if;
+      v_expected_error := true;
+  end;
+  execute 'reset role';
+  if not v_expected_error or not exists (
+    select 1 from public.events where id = v_delete_event_id
+  ) then
+    raise exception 'verification failed: unauthenticated caller deleted an event through RPC';
+  end if;
+
+  perform pg_catalog.set_config('request.jwt.claim.sub', v_manager_user_id::text, true);
+  perform pg_catalog.set_config(
+    'request.jwt.claims',
+    pg_catalog.jsonb_build_object(
+      'sub', v_manager_user_id::text,
+      'role', 'authenticated'
+    )::text,
+    true
+  );
+  insert into public.user_roles (user_id, role)
+  values (v_manager_user_id, 'coo'::public.app_role);
+  execute 'set local role authenticated';
 
   insert into public.events (name, status)
   values (
@@ -1976,6 +2443,17 @@ begin
     10,
     'draft'::public.receipt_status
   ) returning id into v_event_receipt_id;
+
+  v_expected_error := false;
+  begin
+    delete from public.events where id = v_delete_event_id;
+  exception
+    when sqlstate '42501' then
+      v_expected_error := true;
+  end;
+  if not v_expected_error then
+    raise exception 'verification failed: COO directly deleted an event';
+  end if;
 
   select pg_catalog.to_jsonb(deleted) into v_result
   from public.delete_event_atomic(v_delete_event_id) deleted;
@@ -2053,6 +2531,137 @@ begin
         and status = 'pending_ch'::public.timelog_status
     ) then
     raise exception 'verification failed: protected timelog allowed event deletion';
+  end if;
+
+  insert into public.events (name, status)
+  values (
+    'protected receipt event delete verification ' || pg_catalog.gen_random_uuid()::text,
+    'planning'::public.event_status
+  )
+  returning id into v_protected_event_id;
+
+  execute 'reset role';
+  insert into public.receipts (contractor_id, event_id, name, amount, status)
+  values (
+    v_profile_id,
+    v_protected_event_id,
+    'protected event receipt',
+    31,
+    'approved'::public.receipt_status
+  )
+  returning id into v_event_receipt_id;
+  select pg_catalog.to_jsonb(r) into v_receipt_before
+  from public.receipts r
+  where r.id = v_event_receipt_id;
+
+  execute 'set local role authenticated';
+  v_expected_error := false;
+  begin
+    update public.receipts
+    set note = 'forbidden COO edit'
+    where id = v_event_receipt_id;
+  exception
+    when sqlstate '42501' then
+      get stacked diagnostics v_error_message = message_text;
+      if v_error_message <> 'receipt_lifecycle_unauthorized' then
+        raise;
+      end if;
+      v_expected_error := true;
+  end;
+  if not v_expected_error then
+    raise exception 'verification failed: protected receipt was mutated directly';
+  end if;
+
+  v_expected_error := false;
+  begin
+    update public.receipts
+    set event_id = v_other_event_id
+    where id = v_event_receipt_id;
+  exception
+    when sqlstate '42501' then
+      get stacked diagnostics v_error_message = message_text;
+      if v_error_message <> 'receipt_lifecycle_unauthorized' then
+        raise;
+      end if;
+      v_expected_error := true;
+  end;
+  if not v_expected_error then
+    raise exception 'verification failed: COO moved protected receipt identity';
+  end if;
+
+  v_expected_error := false;
+  begin
+    update public.receipts
+    set status = 'attached'::public.receipt_status
+    where id = v_event_receipt_id;
+  exception
+    when sqlstate '42501' then
+      v_expected_error := true;
+  end;
+  if not v_expected_error then
+    raise exception 'verification failed: COO bypassed invoice receipt marker';
+  end if;
+
+  delete from public.receipts where id = v_event_receipt_id;
+  get diagnostics v_status_count = row_count;
+  if v_status_count <> 0 then
+    raise exception 'verification failed: COO deleted protected receipt';
+  end if;
+  execute 'reset role';
+
+  delete from public.user_roles
+  where user_id = v_manager_user_id
+    and role = 'coo'::public.app_role;
+  insert into public.user_roles (user_id, role)
+  values (v_manager_user_id, 'crewhead'::public.app_role);
+  execute 'set local role authenticated';
+  update public.receipts set note = 'forbidden CrewHead edit'
+  where id = v_event_receipt_id;
+  get diagnostics v_status_count = row_count;
+  delete from public.receipts where id = v_event_receipt_id;
+  get diagnostics v_count = row_count;
+  execute 'reset role';
+  if v_status_count <> 0 or v_count <> 0 then
+    raise exception 'verification failed: CrewHead mutated protected receipt';
+  end if;
+
+  delete from public.user_roles
+  where user_id = v_manager_user_id
+    and role = 'crewhead'::public.app_role;
+  execute 'set local role authenticated';
+  update public.receipts set note = 'forbidden Crew edit'
+  where id = v_event_receipt_id;
+  get diagnostics v_status_count = row_count;
+  delete from public.receipts where id = v_event_receipt_id;
+  get diagnostics v_count = row_count;
+  execute 'reset role';
+  if v_status_count <> 0 or v_count <> 0 then
+    raise exception 'verification failed: Crew mutated protected receipt';
+  end if;
+
+  select pg_catalog.to_jsonb(r) into v_receipt_after
+  from public.receipts r
+  where r.id = v_event_receipt_id;
+  if v_receipt_after is distinct from v_receipt_before then
+    raise exception 'verification failed: protected receipt snapshot changed';
+  end if;
+
+  insert into public.user_roles (user_id, role)
+  values (v_manager_user_id, 'coo'::public.app_role);
+  execute 'set local role authenticated';
+  v_expected_error := false;
+  begin
+    perform public.delete_event_atomic(v_protected_event_id);
+  exception
+    when sqlstate 'P0001' then
+      get stacked diagnostics v_error_message = message_text;
+      if v_error_message <> 'event_has_protected_receipts' then
+        raise;
+      end if;
+      v_expected_error := true;
+  end;
+  if not v_expected_error then
+    raise exception 'verification failed: protected receipt allowed event deletion';
   end if;
 
   insert into public.events (name, status)
@@ -2220,12 +2829,234 @@ begin
     raise exception 'verification failed: invoice create canonical result is inconsistent';
   end if;
 
-  update public.invoices
-  set status = 'sent'::public.invoice_status,
-    sent_at = pg_catalog.now()
-  where id = v_invoice_id
-    and status = 'draft'::public.invoice_status
-  returning updated_at into v_invoice_updated_at;
+  select pg_catalog.jsonb_build_object(
+    'invoice', (select pg_catalog.to_jsonb(i) from public.invoices i where i.id = v_invoice_id),
+    'items', (
+      select pg_catalog.coalesce(
+        pg_catalog.jsonb_agg(pg_catalog.to_jsonb(item_row) order by item_row.id),
+        '[]'::jsonb
+      ) from public.invoice_items item_row where item_row.invoice_id = v_invoice_id
+    ),
+    'timelogs', (
+      select pg_catalog.coalesce(
+        pg_catalog.jsonb_agg(pg_catalog.to_jsonb(link_row) order by link_row.id),
+        '[]'::jsonb
+      ) from public.invoice_timelogs link_row where link_row.invoice_id = v_invoice_id
+    ),
+    'receipts', (
+      select pg_catalog.coalesce(
+        pg_catalog.jsonb_agg(pg_catalog.to_jsonb(link_row) order by link_row.id),
+        '[]'::jsonb
+      ) from public.invoice_receipts link_row where link_row.invoice_id = v_invoice_id
+    ),
+    'receipt_rows', (
+      select pg_catalog.coalesce(
+        pg_catalog.jsonb_agg(pg_catalog.to_jsonb(receipt_row) order by receipt_row.id),
+        '[]'::jsonb
+      )
+      from public.receipts receipt_row
+      join public.invoice_receipts link_row on link_row.receipt_id = receipt_row.id
+      where link_row.invoice_id = v_invoice_id
+    )
+  ) into v_invoice_relation_before;
+
+  v_expected_error := false;
+  begin
+    update public.invoices
+    set status = 'sent'::public.invoice_status
+    where id = v_invoice_id;
+  exception
+    when sqlstate '42501' then
+      v_expected_error := true;
+  end;
+  if not v_expected_error then
+    raise exception 'verification failed: COO directly updated an invoice';
+  end if;
+
+  v_expected_error := false;
+  begin
+    delete from public.invoice_timelogs where invoice_id = v_invoice_id;
+  exception
+    when sqlstate '42501' then
+      v_expected_error := true;
+  end;
+  if not v_expected_error then
+    raise exception 'verification failed: COO directly deleted an invoice link';
+  end if;
+
+  v_expected_error := false;
+  begin
+    insert into public.invoice_items (invoice_id, job_number)
+    values (v_invoice_id, 'FORBIDDEN');
+  exception
+    when sqlstate '42501' then
+      v_expected_error := true;
+  end;
+  if not v_expected_error then
+    raise exception 'verification failed: COO directly inserted an invoice item';
+  end if;
+
+  v_expected_error := false;
+  begin
+    update public.receipts
+    set note = 'forbidden attached COO edit'
+    where id = v_invoice_receipt_id;
+  exception
+    when sqlstate '42501' then
+      get stacked diagnostics v_error_message = message_text;
+      if v_error_message <> 'receipt_lifecycle_unauthorized' then
+        raise;
+      end if;
+      v_expected_error := true;
+  end;
+  delete from public.receipts where id = v_invoice_receipt_id;
+  get diagnostics v_status_count = row_count;
+  if not v_expected_error or v_status_count <> 0 then
+    raise exception 'verification failed: COO mutated attached receipt';
+  end if;
+  execute 'reset role';
+
+  delete from public.user_roles
+  where user_id = v_manager_user_id
+    and role = 'coo'::public.app_role;
+  insert into public.user_roles (user_id, role)
+  values (v_manager_user_id, 'crewhead'::public.app_role);
+  execute 'set local role authenticated';
+  v_expected_error := false;
+  begin
+    perform public.mark_invoice_sent_atomic(
+      v_invoice_id,
+      v_invoice_updated_at,
+      pg_catalog.now()
+    );
+  exception
+    when sqlstate '42501' then
+      get stacked diagnostics v_error_message = message_text;
+      if v_error_message <> 'invoice_unauthorized' then
+        raise;
+      end if;
+      v_expected_error := true;
+  end;
+  if not v_expected_error then
+    raise exception 'verification failed: CrewHead called invoice mutation RPC';
+  end if;
+
+  update public.receipts
+  set note = 'forbidden attached CrewHead edit'
+  where id = v_invoice_receipt_id;
+  get diagnostics v_status_count = row_count;
+  delete from public.receipts where id = v_invoice_receipt_id;
+  get diagnostics v_count = row_count;
+  if v_status_count <> 0 or v_count <> 0 then
+    raise exception 'verification failed: CrewHead mutated attached receipt';
+  end if;
+
+  v_expected_error := false;
+  begin
+    delete from public.invoice_receipts where invoice_id = v_invoice_id;
+  exception
+    when sqlstate '42501' then
+      v_expected_error := true;
+  end;
+  execute 'reset role';
+  if not v_expected_error then
+    raise exception 'verification failed: CrewHead changed invoice relation snapshot directly';
+  end if;
+
+  delete from public.user_roles
+  where user_id = v_manager_user_id
+    and role = 'crewhead'::public.app_role;
+  execute 'set local role authenticated';
+  v_expected_error := false;
+  begin
+    perform public.mark_invoice_sent_atomic(
+      v_invoice_id,
+      v_invoice_updated_at,
+      pg_catalog.now()
+    );
+  exception
+    when sqlstate '42501' then
+      get stacked diagnostics v_error_message = message_text;
+      if v_error_message <> 'invoice_unauthorized' then
+        raise;
+      end if;
+      v_expected_error := true;
+  end;
+  execute 'reset role';
+  if not v_expected_error then
+    raise exception 'verification failed: Crew called invoice mutation RPC';
+  end if;
+
+  execute 'set local role authenticated';
+  update public.receipts
+  set note = 'forbidden attached Crew edit'
+  where id = v_invoice_receipt_id;
+  get diagnostics v_status_count = row_count;
+  delete from public.receipts where id = v_invoice_receipt_id;
+  get diagnostics v_count = row_count;
+  execute 'reset role';
+  if v_status_count <> 0 or v_count <> 0 then
+    raise exception 'verification failed: Crew mutated attached receipt';
+  end if;
+
+  select pg_catalog.jsonb_build_object(
+    'invoice', (select pg_catalog.to_jsonb(i) from public.invoices i where i.id = v_invoice_id),
+    'items', (
+      select pg_catalog.coalesce(
+        pg_catalog.jsonb_agg(pg_catalog.to_jsonb(item_row) order by item_row.id),
+        '[]'::jsonb
+      ) from public.invoice_items item_row where item_row.invoice_id = v_invoice_id
+    ),
+    'timelogs', (
+      select pg_catalog.coalesce(
+        pg_catalog.jsonb_agg(pg_catalog.to_jsonb(link_row) order by link_row.id),
+        '[]'::jsonb
+      ) from public.invoice_timelogs link_row where link_row.invoice_id = v_invoice_id
+    ),
+    'receipts', (
+      select pg_catalog.coalesce(
+        pg_catalog.jsonb_agg(pg_catalog.to_jsonb(link_row) order by link_row.id),
+        '[]'::jsonb
+      ) from public.invoice_receipts link_row where link_row.invoice_id = v_invoice_id
+    ),
+    'receipt_rows', (
+      select pg_catalog.coalesce(
+        pg_catalog.jsonb_agg(pg_catalog.to_jsonb(receipt_row) order by receipt_row.id),
+        '[]'::jsonb
+      )
+      from public.receipts receipt_row
+      join public.invoice_receipts link_row on link_row.receipt_id = receipt_row.id
+      where link_row.invoice_id = v_invoice_id
+    )
+  ) into v_invoice_relation_after;
+  if v_invoice_relation_after is distinct from v_invoice_relation_before then
+    raise exception 'verification failed: direct invoice DML changed relation snapshot';
+  end if;
+
+  insert into public.user_roles (user_id, role)
+  values (v_manager_user_id, 'coo'::public.app_role);
+  execute 'set local role authenticated';
+  v_invoice_paid_at := pg_catalog.now();
+  select pg_catalog.to_jsonb(sent_result) into v_result
+  from public.mark_invoice_sent_atomic(
+    v_invoice_id,
+    v_invoice_updated_at,
+    v_invoice_paid_at
+  ) sent_result;
+  v_invoice_updated_at := (v_result->>'invoice_updated_at')::timestamptz;
+  if v_result->>'invoice_status' <> 'sent' then
+    raise exception 'verification failed: invoice sent RPC returned inconsistent status';
+  end if;
+
+  select pg_catalog.to_jsonb(sent_retry) into v_result
+  from public.mark_invoice_sent_atomic(
+    v_invoice_id,
+    v_invoice_updated_at,
+    v_invoice_paid_at
+  ) sent_retry;
+  if (v_result->>'invoice_updated_at')::timestamptz is distinct from v_invoice_updated_at then
+    raise exception 'verification failed: sent invoice exact retry mutated the invoice';
+  end if;
 
   v_invoice_paid_at := pg_catalog.now();
   v_expected_error := false;
@@ -2280,6 +3111,23 @@ begin
       where id = v_invoice_receipt_id and status <> 'reimbursed'::public.receipt_status
     ) then
     raise exception 'verification failed: invoice payment canonical result is inconsistent';
+  end if;
+
+  update public.receipts
+  set note = 'forbidden reimbursed COO edit'
+  where id = v_invoice_receipt_id;
+  get diagnostics v_status_count = row_count;
+  delete from public.receipts where id = v_invoice_receipt_id;
+  get diagnostics v_count = row_count;
+  if v_status_count <> 0
+    or v_count <> 0
+    or not exists (
+      select 1
+      from public.receipts
+      where id = v_invoice_receipt_id
+        and status = 'reimbursed'::public.receipt_status
+    ) then
+    raise exception 'verification failed: COO mutated reimbursed receipt';
   end if;
 
   select pg_catalog.to_jsonb(paid_retry) into v_result

@@ -105,6 +105,89 @@ const toCrewApplicationLifecycleMutationError = (error: unknown, conflictMessage
   return new Error(CREW_LIFECYCLE_ERROR_MESSAGE);
 };
 
+const requireEventApplicationMutationRow = (
+  value: unknown,
+  expectedEventId: string,
+  expectedProfileId: string,
+  expectedStatus: EventApplicationStatus,
+): EventApplicationRow => {
+  if (
+    !isEventApplicationRow(value)
+    || value.event_id !== expectedEventId
+    || value.profile_id !== expectedProfileId
+    || value.status !== expectedStatus
+  ) {
+    console.error('Unexpected Crew application lifecycle mutation response', value);
+    throw new Error(CREW_LIFECYCLE_ERROR_MESSAGE);
+  }
+
+  return value;
+};
+
+const mapEventApplicationMutationRow = (
+  row: EventApplicationRow,
+  fallback: EventApplication,
+): EventApplication => ({
+  ...fallback,
+  supabaseId: row.id,
+  eventSupabaseId: row.event_id,
+  contractorProfileId: row.profile_id,
+  status: row.status,
+  note: row.note ?? '',
+  plannedFrom: row.planned_from ?? null,
+  plannedTo: row.planned_to ?? null,
+  createdAt: row.created_at,
+});
+
+const reconcilePersistedEventApplication = (
+  applications: EventApplication[],
+  events: Event[],
+  persistedApplication: EventApplication,
+): { applications: EventApplication[]; application: EventApplication } => {
+  const currentEvent = persistedApplication.eventSupabaseId
+    ? events.find((event) => event.supabaseId === persistedApplication.eventSupabaseId)
+    : undefined;
+  const matchesStableApplicationId = (application: EventApplication) => (
+    Boolean(persistedApplication.supabaseId)
+    && application.supabaseId === persistedApplication.supabaseId
+  );
+  const matchesStableEventProfile = (application: EventApplication) => (
+    application.contractorProfileId === persistedApplication.contractorProfileId
+    && (
+      application.eventSupabaseId === persistedApplication.eventSupabaseId
+      || (
+        !application.eventSupabaseId
+        && currentEvent !== undefined
+        && application.eventId === currentEvent.id
+      )
+    )
+  );
+  const matchesPersistedApplication = (application: EventApplication) => (
+    matchesStableApplicationId(application) || matchesStableEventProfile(application)
+  );
+  const currentApplication = applications.find(matchesStableApplicationId)
+    ?? applications.find(matchesStableEventProfile);
+  const canonicalApplication = {
+    ...persistedApplication,
+    id: currentApplication?.id
+      ?? Math.max(0, ...applications.map((application) => application.id)) + 1,
+    eventId: currentEvent?.id ?? currentApplication?.eventId ?? persistedApplication.eventId,
+  };
+  let inserted = false;
+  const reconciledApplications = applications.flatMap((application) => {
+    if (!matchesPersistedApplication(application)) return [application];
+    if (inserted) return [];
+    inserted = true;
+    return [canonicalApplication];
+  });
+
+  if (!inserted) {
+    reconciledApplications.push(canonicalApplication);
+  }
+
+  return { applications: reconciledApplications, application: canonicalApplication };
+};
+
 const throwAssignmentLifecycleValidationError = ({
   requestedEventId,
   requestedProfileId,
@@ -889,8 +972,12 @@ export const applyForEvent = async (
     createdAt: existingApplication?.createdAt ?? new Date().toISOString(),
   };
 
-  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
-    const eventRowId = await getSupabaseEventRowId(event.id);
+  const persistsToSupabase = appDataSource === 'supabase' && Boolean(supabase) && isSupabaseConfigured;
+  if (persistsToSupabase && supabase) {
+    if (!event.supabaseId) {
+      throw new Error(CREW_LIFECYCLE_ERROR_MESSAGE);
+    }
+    const eventRowId = event.supabaseId;
     const applicationResult = await supabase
       .from('event_applications')
       .upsert({
@@ -911,19 +998,30 @@ export const applyForEvent = async (
       );
     }
 
-    nextApplication = {
-      ...nextApplication,
-      supabaseId: applicationResult.data.id,
-      eventSupabaseId: applicationResult.data.event_id,
-      status: applicationResult.data.status,
-      note: applicationResult.data.note ?? '',
-      plannedFrom: applicationResult.data.planned_from ?? null,
-      plannedTo: applicationResult.data.planned_to ?? null,
-      createdAt: applicationResult.data.created_at,
-    };
+    const applicationRow = requireEventApplicationMutationRow(
+      applicationResult.data,
+      eventRowId,
+      contractorProfileId,
+      'pending',
+    );
+    nextApplication = mapEventApplicationMutationRow(applicationRow, nextApplication);
+    advanceLifecycleSnapshotGeneration();
   }
 
   updateLocalAppState((currentSnapshot) => {
+    if (persistsToSupabase) {
+      const reconciled = reconcilePersistedEventApplication(
+        currentSnapshot.eventApplications ?? [],
+        currentSnapshot.events ?? [],
+        nextApplication,
+      );
+      nextApplication = reconciled.application;
+      return {
+        ...currentSnapshot,
+        eventApplications: reconciled.applications,
+      };
+    }
+
     const otherApplications = (currentSnapshot.eventApplications ?? []).filter((application) => !(
       application.eventId === event.id && application.contractorProfileId === contractorProfileId
     ));
@@ -945,14 +1043,17 @@ export const updateEventApplicationStatus = async (
 ): Promise<EventApplication | null> => {
   const snapshot = getLocalAppState();
   const application = (snapshot.eventApplications ?? []).find((item) => item.id === applicationId);
+  const conflictMessage = EVENT_APPLICATION_STATUS_CONFLICT_MESSAGE;
   if (!application) {
     throw new Error('Prihlaska nebyla nalezena.');
   }
   if (expectedStatus && application.status !== expectedStatus) {
-    throw new Error(EVENT_APPLICATION_STATUS_CONFLICT_MESSAGE);
+    throw new Error(conflictMessage);
   }
 
-  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+  let nextApplication = { ...application, status };
+  const persistsToSupabase = appDataSource === 'supabase' && Boolean(supabase) && isSupabaseConfigured;
+  if (persistsToSupabase && supabase) {
     if (!application.supabaseId) {
       throw new Error('Prihlaska nema UUID zaznam v Supabase.');
     }
@@ -967,32 +1068,56 @@ export const updateEventApplicationStatus = async (
     const updateResult = await conditionalUpdate.select('*');
 
     if (updateResult.error) {
-      throw new Error(updateResult.error.message);
+      throw toCrewApplicationLifecycleMutationError(updateResult.error, conflictMessage);
     }
     if (updateResult.data?.length === 0) {
-      throw new Error(EVENT_APPLICATION_STATUS_CONFLICT_MESSAGE);
+      throw new Error(conflictMessage);
     }
 
     const updatedRow = updateResult.data?.[0];
     if (
       updateResult.data?.length !== 1
-      || !isEventApplicationRow(updatedRow)
-      || updatedRow.id !== application.supabaseId
-      || updatedRow.status !== status
-      || updatedRow.profile_id !== application.contractorProfileId
-      || (application.eventSupabaseId && updatedRow.event_id !== application.eventSupabaseId)
+      || !application.eventSupabaseId
     ) {
+      console.error('Unexpected Crew application lifecycle mutation response', updateResult.data);
       throw new Error(CREW_LIFECYCLE_ERROR_MESSAGE);
     }
+
+    const applicationRow = requireEventApplicationMutationRow(
+      updatedRow,
+      application.eventSupabaseId,
+      application.contractorProfileId,
+      status,
+    );
+    if (applicationRow.id !== application.supabaseId) {
+      console.error('Unexpected Crew application lifecycle mutation response', updateResult.data);
+      throw new Error(CREW_LIFECYCLE_ERROR_MESSAGE);
+    }
+    nextApplication = mapEventApplicationMutationRow(applicationRow, application);
+    advanceLifecycleSnapshotGeneration();
   }
 
-  const nextApplication = { ...application, status };
-  updateLocalAppState((currentSnapshot) => ({
-    ...currentSnapshot,
-    eventApplications: (currentSnapshot.eventApplications ?? []).map((item) => (
-      item.id === applicationId ? nextApplication : item
-    )),
-  }));
+  updateLocalAppState((currentSnapshot) => {
+    if (persistsToSupabase) {
+      const reconciled = reconcilePersistedEventApplication(
+        currentSnapshot.eventApplications ?? [],
+        currentSnapshot.events ?? [],
+        nextApplication,
+      );
+      nextApplication = reconciled.application;
+      return {
+        ...currentSnapshot,
+        eventApplications: reconciled.applications,
+      };
+    }
+
+    return {
+      ...currentSnapshot,
+      eventApplications: (currentSnapshot.eventApplications ?? []).map((item) => (
+        item.id === applicationId ? nextApplication : item
+      )),
+    };
+  });
 
   invalidateEventQueries();
   return nextApplication;
@@ -1055,8 +1180,12 @@ export const requestEventWithdrawal = async (
     createdAt: existingApplication?.createdAt ?? new Date().toISOString(),
   };
 
-  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
-    const eventRowId = await getSupabaseEventRowId(event.id);
+  const persistsToSupabase = appDataSource === 'supabase' && Boolean(supabase) && isSupabaseConfigured;
+  if (persistsToSupabase && supabase) {
+    if (!event.supabaseId) {
+      throw new Error(CREW_LIFECYCLE_ERROR_MESSAGE);
+    }
+    const eventRowId = event.supabaseId;
     const applicationResult = await supabase
       .from('event_applications')
       .upsert({
@@ -1077,19 +1206,30 @@ export const requestEventWithdrawal = async (
       );
     }
 
-    nextApplication = {
-      ...nextApplication,
-      supabaseId: applicationResult.data.id,
-      eventSupabaseId: applicationResult.data.event_id,
-      status: applicationResult.data.status,
-      note: applicationResult.data.note ?? '',
-      plannedFrom: applicationResult.data.planned_from ?? null,
-      plannedTo: applicationResult.data.planned_to ?? null,
-      createdAt: applicationResult.data.created_at,
-    };
+    const applicationRow = requireEventApplicationMutationRow(
+      applicationResult.data,
+      eventRowId,
+      contractorProfileId,
+      'withdrawal_requested',
+    );
+    nextApplication = mapEventApplicationMutationRow(applicationRow, nextApplication);
+    advanceLifecycleSnapshotGeneration();
   }
 
   updateLocalAppState((currentSnapshot) => {
+    if (persistsToSupabase) {
+      const reconciled = reconcilePersistedEventApplication(
+        currentSnapshot.eventApplications ?? [],
+        currentSnapshot.events ?? [],
+        nextApplication,
+      );
+      nextApplication = reconciled.application;
+      return {
+        ...currentSnapshot,
+        eventApplications: reconciled.applications,
+      };
+    }
+
     const otherApplications = (currentSnapshot.eventApplications ?? []).filter((application) => !(
       application.eventId === event.id && application.contractorProfileId === contractorProfileId
     ));

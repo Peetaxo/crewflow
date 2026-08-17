@@ -1413,6 +1413,368 @@ describe('events.service write flow', () => {
     expect(harness.getSnapshot()).toEqual(before);
   });
 
+  it('reconciles a successful Crew re-application by stable UUID after a concurrent reindex', async () => {
+    const upsertDeferred = createDeferred<{
+      data: {
+        id: string;
+        event_id: string;
+        profile_id: string;
+        status: EventApplication['status'];
+        note: null;
+        planned_from: null;
+        planned_to: null;
+        created_at: string;
+      };
+      error: null;
+    }>();
+    const initialSnapshot = createSnapshot({
+      events: [lifecycleEvent],
+      eventApplications: [{ ...lifecycleApplication, status: 'withdrawn' }],
+    });
+    const harness = await setupLifecycleService({ initialSnapshot });
+    harness.eventApplicationsUpsertSingle.mockReturnValueOnce(upsertDeferred.promise);
+
+    const applicationPromise = harness.service.applyForEvent(1, 'profile-uuid-1');
+    await vi.waitFor(() => expect(harness.eventApplicationsUpsertSingle).toHaveBeenCalledOnce());
+
+    const otherEvent = { ...lifecycleEvent, id: 1, supabaseId: 'event-row-other', name: 'Other event' };
+    const currentEvent = { ...lifecycleEvent, id: 2 };
+    const otherApplication: EventApplication = {
+      ...lifecycleApplication,
+      id: 1,
+      supabaseId: 'application-row-other',
+      eventId: 1,
+      eventSupabaseId: 'event-row-other',
+      status: 'pending',
+    };
+    const currentApplication: EventApplication = {
+      ...lifecycleApplication,
+      id: 2,
+      eventId: 2,
+      status: 'withdrawn',
+    };
+    harness.setSnapshot((snapshot) => ({
+      ...snapshot,
+      events: [otherEvent, currentEvent],
+      eventApplications: [otherApplication, currentApplication],
+    }));
+    upsertDeferred.resolve({
+      data: {
+        id: 'application-row-1',
+        event_id: 'event-row-1',
+        profile_id: 'profile-uuid-1',
+        status: 'pending',
+        note: null,
+        planned_from: null,
+        planned_to: null,
+        created_at: '2026-04-10T08:00:00Z',
+      },
+      error: null,
+    });
+
+    await expect(applicationPromise).resolves.toMatchObject({
+      id: 2,
+      eventId: 2,
+      supabaseId: 'application-row-1',
+      eventSupabaseId: 'event-row-1',
+      status: 'pending',
+    });
+    expect(harness.getSnapshot().eventApplications).toEqual([
+      otherApplication,
+      expect.objectContaining({
+        id: 2,
+        eventId: 2,
+        supabaseId: 'application-row-1',
+        eventSupabaseId: 'event-row-1',
+        status: 'pending',
+      }),
+    ]);
+  });
+
+  it('reconciles a successful withdrawal request by stable UUID after a concurrent reindex', async () => {
+    const upsertDeferred = createDeferred<{
+      data: {
+        id: string;
+        event_id: string;
+        profile_id: string;
+        status: EventApplication['status'];
+        note: null;
+        planned_from: null;
+        planned_to: null;
+        created_at: string;
+      };
+      error: null;
+    }>();
+    const initialSnapshot = createSnapshot({
+      events: [lifecycleEvent],
+      timelogs: [canonicalTimelog],
+      eventApplications: [{ ...lifecycleApplication, status: 'approved' }],
+    });
+    const harness = await setupLifecycleService({ initialSnapshot });
+    harness.eventApplicationsUpsertSingle.mockReturnValueOnce(upsertDeferred.promise);
+
+    const withdrawalPromise = harness.service.requestEventWithdrawal(1, 'profile-uuid-1');
+    await vi.waitFor(() => expect(harness.eventApplicationsUpsertSingle).toHaveBeenCalledOnce());
+
+    const otherEvent = { ...lifecycleEvent, id: 1, supabaseId: 'event-row-other', name: 'Other event' };
+    const currentEvent = { ...lifecycleEvent, id: 2 };
+    const otherApplication: EventApplication = {
+      ...lifecycleApplication,
+      id: 1,
+      supabaseId: 'application-row-other',
+      eventId: 1,
+      eventSupabaseId: 'event-row-other',
+      status: 'pending',
+    };
+    const currentApplication: EventApplication = {
+      ...lifecycleApplication,
+      id: 2,
+      eventId: 2,
+      status: 'approved',
+    };
+    harness.setSnapshot((snapshot) => ({
+      ...snapshot,
+      events: [otherEvent, currentEvent],
+      timelogs: [{ ...canonicalTimelog, id: 2, eid: 2 }],
+      eventApplications: [otherApplication, currentApplication],
+    }));
+    upsertDeferred.resolve({
+      data: {
+        id: 'application-row-1',
+        event_id: 'event-row-1',
+        profile_id: 'profile-uuid-1',
+        status: 'withdrawal_requested',
+        note: null,
+        planned_from: null,
+        planned_to: null,
+        created_at: '2026-04-10T08:00:00Z',
+      },
+      error: null,
+    });
+
+    await expect(withdrawalPromise).resolves.toMatchObject({
+      id: 2,
+      eventId: 2,
+      supabaseId: 'application-row-1',
+      eventSupabaseId: 'event-row-1',
+      status: 'withdrawal_requested',
+    });
+    expect(harness.getSnapshot().eventApplications).toEqual([
+      otherApplication,
+      expect.objectContaining({
+        id: 2,
+        eventId: 2,
+        supabaseId: 'application-row-1',
+        eventSupabaseId: 'event-row-1',
+        status: 'withdrawal_requested',
+      }),
+    ]);
+  });
+
+  it('reconciles a conditional application update by stable UUID after a concurrent reindex', async () => {
+    const updateDeferred = createDeferred<{
+      data: Array<{
+        id: string;
+        event_id: string;
+        profile_id: string;
+        status: EventApplication['status'];
+        note: null;
+        planned_from: null;
+        planned_to: null;
+        created_at: string;
+      }>;
+      error: null;
+    }>();
+    const harness = await setupLifecycleService();
+    harness.eventApplicationsSelect.mockReturnValueOnce(updateDeferred.promise);
+
+    const updatePromise = harness.service.updateEventApplicationStatus(1, 'rejected', 'pending');
+    await vi.waitFor(() => expect(harness.eventApplicationsUpdate).toHaveBeenCalledOnce());
+
+    const otherEvent = { ...lifecycleEvent, id: 1, supabaseId: 'event-row-other', name: 'Other event' };
+    const currentEvent = { ...lifecycleEvent, id: 2 };
+    const otherApplication: EventApplication = {
+      ...lifecycleApplication,
+      id: 1,
+      supabaseId: 'application-row-other',
+      eventId: 1,
+      eventSupabaseId: 'event-row-other',
+    };
+    const currentApplication: EventApplication = {
+      ...lifecycleApplication,
+      id: 2,
+      eventId: 2,
+    };
+    harness.setSnapshot((snapshot) => ({
+      ...snapshot,
+      events: [otherEvent, currentEvent],
+      eventApplications: [otherApplication, currentApplication],
+    }));
+    updateDeferred.resolve({
+      data: [{
+        id: 'application-row-1',
+        event_id: 'event-row-1',
+        profile_id: 'profile-uuid-1',
+        status: 'rejected',
+        note: null,
+        planned_from: null,
+        planned_to: null,
+        created_at: '2026-04-10T08:00:00Z',
+      }],
+      error: null,
+    });
+
+    await expect(updatePromise).resolves.toMatchObject({
+      id: 2,
+      eventId: 2,
+      supabaseId: 'application-row-1',
+      status: 'rejected',
+    });
+    expect(harness.getSnapshot().eventApplications).toEqual([
+      otherApplication,
+      expect.objectContaining({
+        id: 2,
+        eventId: 2,
+        supabaseId: 'application-row-1',
+        status: 'rejected',
+      }),
+    ]);
+  });
+
+  it('does not let a fetch started before re-application restore the stale application status', async () => {
+    const initialSnapshot = createSnapshot({
+      events: [lifecycleEvent],
+      eventApplications: [{ ...lifecycleApplication, status: 'withdrawn' }],
+    });
+    const harness = await setupLifecycleService({
+      initialSnapshot,
+      deferredPublicEvents: [lifecycleEvent],
+      refreshedApplicationStatus: 'withdrawn',
+    });
+
+    const staleFetch = harness.service.fetchEventsSnapshot();
+    await vi.waitFor(() => expect(harness.eventsSelect).toHaveBeenCalledOnce());
+    await expect(harness.service.applyForEvent(1, 'profile-uuid-1'))
+      .resolves.toMatchObject({ status: 'pending' });
+    harness.resolveDeferredPublicEvents();
+    await staleFetch;
+
+    expect(harness.getSnapshot().eventApplications).toEqual([
+      expect.objectContaining({ supabaseId: 'application-row-1', status: 'pending' }),
+    ]);
+  });
+
+  it.each([
+    {
+      label: 'trigger token',
+      databaseError: { message: 'crew_lifecycle_unauthorized' },
+      expectedMessage: 'Stav přihlášky se mezitím změnil. Obnovte detail akce a zkuste to znovu.',
+      expectsDiagnostic: false,
+    },
+    {
+      label: 'unexpected database detail',
+      databaseError: { message: 'new row violates row-level security policy' },
+      expectedMessage: 'Operaci s Crew se nepodařilo dokončit.',
+      expectsDiagnostic: true,
+    },
+  ])('keeps a conditional Crew withdrawal $label out of the UI error', async ({
+    databaseError,
+    expectedMessage,
+    expectsDiagnostic,
+  }) => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const harness = await setupLifecycleService();
+      const before = harness.getSnapshot();
+      harness.eventApplicationsSelect.mockResolvedValueOnce({ data: null, error: databaseError });
+
+      const error = await harness.service.withdrawEventApplication(1, 'profile-uuid-1')
+        .catch((cause: unknown) => cause);
+
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe(expectedMessage);
+      expect((error as Error).message).not.toContain(databaseError.message);
+      expect(harness.getSnapshot()).toEqual(before);
+      if (expectsDiagnostic) {
+        expect(consoleError).toHaveBeenCalledWith(
+          'Unexpected Crew application lifecycle mutation error',
+          databaseError,
+        );
+      } else {
+        expect(consoleError).not.toHaveBeenCalled();
+      }
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('maps a malformed successful Crew application response to a diagnostic-only generic error', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const initialSnapshot = createSnapshot({
+        events: [lifecycleEvent],
+        eventApplications: [{ ...lifecycleApplication, status: 'withdrawn' }],
+      });
+      const harness = await setupLifecycleService({ initialSnapshot });
+      const before = harness.getSnapshot();
+      harness.eventApplicationsUpsertSingle.mockResolvedValueOnce({ data: null, error: null });
+
+      await expect(harness.service.applyForEvent(1, 'profile-uuid-1'))
+        .rejects.toThrow('Operaci s Crew se nepodařilo dokončit.');
+
+      expect(consoleError).toHaveBeenCalledWith(
+        'Unexpected Crew application lifecycle mutation response',
+        null,
+      );
+      expect(harness.getSnapshot()).toEqual(before);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it.each([
+    {
+      label: 're-application',
+      initialSnapshot: createSnapshot({
+        events: [{ ...lifecycleEvent, supabaseId: undefined }],
+        eventApplications: [{
+          ...lifecycleApplication,
+          supabaseId: undefined,
+          eventSupabaseId: undefined,
+          status: 'withdrawn',
+        }],
+      }),
+      run: (service: Awaited<ReturnType<typeof setupLifecycleService>>['service']) => (
+        service.applyForEvent(1, 'profile-uuid-1')
+      ),
+    },
+    {
+      label: 'withdrawal request',
+      initialSnapshot: createSnapshot({
+        events: [{ ...lifecycleEvent, supabaseId: undefined }],
+        timelogs: [{ ...canonicalTimelog, eventSupabaseId: undefined }],
+        eventApplications: [{
+          ...lifecycleApplication,
+          supabaseId: undefined,
+          eventSupabaseId: undefined,
+          status: 'approved',
+        }],
+      }),
+      run: (service: Awaited<ReturnType<typeof setupLifecycleService>>['service']) => (
+        service.requestEventWithdrawal(1, 'profile-uuid-1')
+      ),
+    },
+  ])('fails closed before a Crew $label without the event UUID', async ({ initialSnapshot, run }) => {
+    const harness = await setupLifecycleService({ initialSnapshot });
+    const before = harness.getSnapshot();
+
+    await expect(run(harness.service))
+      .rejects.toThrow('Operaci s Crew se nepodařilo dokončit.');
+
+    expect(harness.eventApplicationsUpsertSingle).not.toHaveBeenCalled();
+    expect(harness.getSnapshot()).toEqual(before);
+  });
+
   it.each([
     {
       label: 'application',

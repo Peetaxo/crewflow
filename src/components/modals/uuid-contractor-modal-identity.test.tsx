@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Event, ReceiptItem, Timelog } from '../../types';
 
@@ -57,6 +57,10 @@ let mockCrew = [] as ModalContractor[];
 const assignCrewToEvent = vi.fn();
 const getContractorConflictsForEvent = vi.fn(() => new Map());
 const getEventDetailData = vi.fn(() => ({ timelogs: [] }));
+const toastMocks = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+}));
 
 vi.mock('framer-motion', () => ({
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -69,8 +73,8 @@ vi.mock('framer-motion', () => ({
 
 vi.mock('sonner', () => ({
   toast: {
-    success: vi.fn(),
-    error: vi.fn(),
+    success: toastMocks.success,
+    error: toastMocks.error,
   },
 }));
 
@@ -310,6 +314,47 @@ describe('modal contractor identity handling', () => {
     opener.unmount();
   });
 
+  it('captures and restores the current opener across persistent modal reopen cycles', () => {
+    const event: Event = {
+      id: 1,
+      name: 'Test Event',
+      job: 'JOB-1',
+      startDate: '2026-04-24',
+      endDate: '2026-04-24',
+      city: 'Praha',
+      needed: 1,
+      filled: 0,
+      status: 'upcoming',
+      client: 'Client',
+    };
+    const Harness = () => {
+      const [assigningEvent, setAssigningEvent] = React.useState<Event | null>(null);
+      return (
+        <>
+          <button type="button" onClick={() => setAssigningEvent(event)}>Opener A</button>
+          <button type="button" onClick={() => setAssigningEvent(event)}>Opener B</button>
+          <AssignCrewModal event={assigningEvent} onClose={() => setAssigningEvent(null)} />
+        </>
+      );
+    };
+
+    render(<Harness />);
+    const openerA = screen.getByRole('button', { name: 'Opener A' });
+    const openerB = screen.getByRole('button', { name: 'Opener B' });
+
+    openerA.focus();
+    act(() => openerA.click());
+    expect(screen.getByPlaceholderText('Hledat v crew...')).toHaveFocus();
+    act(() => screen.getByRole('button', { name: 'Zavřít obsazení crew' }).click());
+    expect(openerA).toHaveFocus();
+
+    openerB.focus();
+    act(() => openerB.click());
+    expect(screen.getByPlaceholderText('Hledat v crew...')).toHaveFocus();
+    act(() => screen.getByRole('button', { name: 'Zavřít obsazení crew' }).click());
+    expect(openerB).toHaveFocus();
+  });
+
   it('ignores Escape when the assignment dialog is not open', () => {
     const onClose = vi.fn();
     render(<AssignCrewModal event={null} onClose={onClose} />);
@@ -368,8 +413,10 @@ describe('modal contractor identity handling', () => {
 
     const contractorRow = screen.getByRole('button', { name: /Free Contractor/i });
 
-    fireEvent.click(contractorRow);
-    fireEvent.click(contractorRow);
+    act(() => {
+      contractorRow.click();
+      contractorRow.click();
+    });
 
     expect(assignCrewToEvent).toHaveBeenCalledWith(1, 'profile-uuid-2', undefined);
     expect(assignCrewToEvent).toHaveBeenCalledTimes(1);
@@ -391,6 +438,92 @@ describe('modal contractor identity handling', () => {
     resolveAssignment();
 
     await waitFor(() => expect(contractorRow).toBeEnabled());
+  });
+
+  it('does not notify after a pending assignment succeeds after unmount', async () => {
+    let resolveAssignment!: () => void;
+    assignCrewToEvent.mockReturnValue(new Promise<void>((resolve) => { resolveAssignment = resolve; }));
+    mockCrew = [{
+      id: 2,
+      profileId: 'profile-uuid-2',
+      name: 'Free Contractor',
+      ii: 'FC',
+      bg: '#111',
+      fg: '#fff',
+      tags: [],
+      reliable: true,
+      city: 'Brno',
+    }];
+    const view = render(
+      <AssignCrewModal
+        event={{
+          id: 1,
+          name: 'Test Event',
+          job: 'JOB-1',
+          startDate: '2026-04-24',
+          endDate: '2026-04-24',
+          city: 'Praha',
+          needed: 1,
+          filled: 0,
+          status: 'upcoming',
+          client: 'Client',
+        }}
+        onClose={vi.fn()}
+      />,
+    );
+
+    act(() => screen.getByRole('button', { name: /Free Contractor/i }).click());
+    view.unmount();
+    await act(async () => {
+      resolveAssignment();
+      await Promise.resolve();
+    });
+
+    expect(toastMocks.success).not.toHaveBeenCalled();
+    expect(toastMocks.error).not.toHaveBeenCalled();
+  });
+
+  it('does not notify after a pending assignment fails after unmount', async () => {
+    let rejectAssignment!: (reason?: unknown) => void;
+    assignCrewToEvent.mockReturnValue(new Promise<void>((_resolve, reject) => { rejectAssignment = reject; }));
+    mockCrew = [{
+      id: 2,
+      profileId: 'profile-uuid-2',
+      name: 'Free Contractor',
+      ii: 'FC',
+      bg: '#111',
+      fg: '#fff',
+      tags: [],
+      reliable: true,
+      city: 'Brno',
+    }];
+    const view = render(
+      <AssignCrewModal
+        event={{
+          id: 1,
+          name: 'Test Event',
+          job: 'JOB-1',
+          startDate: '2026-04-24',
+          endDate: '2026-04-24',
+          city: 'Praha',
+          needed: 1,
+          filled: 0,
+          status: 'upcoming',
+          client: 'Client',
+        }}
+        onClose={vi.fn()}
+      />,
+    );
+
+    act(() => screen.getByRole('button', { name: /Free Contractor/i }).click());
+    view.unmount();
+    await act(async () => {
+      rejectAssignment(new Error('Assignment failed'));
+      await Promise.resolve();
+    });
+
+    expect(toastMocks.success).not.toHaveBeenCalled();
+    expect(toastMocks.error).not.toHaveBeenCalled();
   });
 
   it('clears the assignment lock after an error and permits retry', async () => {

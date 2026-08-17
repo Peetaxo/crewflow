@@ -36,6 +36,7 @@ import { canCreateTimelog, canEditTimelog } from '../features/timelogs/services/
 import { isDisposableTimelogStatus } from '../features/events/services/event-assignment-lifecycle.service';
 
 const EMPTY_APPROVAL_DOCUMENTS: InvoiceApprovalDocument[] = [];
+const CREW_ACTION_NAVIGATION_GUARD_MESSAGE = 'Probíhá změna v obsazení Crew. Počkejte prosím na její dokončení.';
 
 const getApprovalDocumentBadgeStatus = (document: InvoiceApprovalDocument) => (
   document.approvalStatus === 'unknown' ? 'needs_review' : document.approvalStatus
@@ -54,6 +55,7 @@ const EventDetailView = () => {
   const {
     role,
     selectedEventId,
+    setNavigationGuardMessage,
     setSelectedEventId,
     eventTab,
     setEventTab,
@@ -73,6 +75,7 @@ const EventDetailView = () => {
   const pendingCrewActionRef = useRef<string | null>(null);
   const isMountedRef = useRef(false);
   const invoiceApprovalsQuery = useInvoiceApprovalsQuery();
+  const anyCrewActionPending = pendingCrewAction !== null;
 
   const beginCrewAction = (actionKey: string) => {
     if (pendingCrewActionRef.current !== null) return false;
@@ -97,6 +100,13 @@ const EventDetailView = () => {
       isMountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    setNavigationGuardMessage(anyCrewActionPending ? CREW_ACTION_NAVIGATION_GUARD_MESSAGE : null);
+    return () => {
+      setNavigationGuardMessage(null);
+    };
+  }, [anyCrewActionPending, setNavigationGuardMessage]);
 
   useEffect(() => {
     loadDetail();
@@ -199,8 +209,6 @@ const EventDetailView = () => {
           : timelog.status === 'pending_coo'
       ))
     : [];
-  const anyCrewActionPending = pendingCrewAction !== null;
-
   const getPhasesForDate = (date: string) => (
     event.showDayTypes
       ? PHASE_CONFIG.filter((phase) => (
@@ -917,7 +925,7 @@ const EventDetailView = () => {
                                           aria-label={removalBlocked
                                             ? 'Crew nelze odebrat – výkaz byl odeslán'
                                             : `Odebrat ${contractor.name} z akce`}
-                                          className="rounded-lg p-1.5 text-[color:var(--nodu-text-soft)] transition-all hover:bg-[color:var(--nodu-error-bg)] hover:text-[color:var(--nodu-error-text)]"
+                                          className="rounded-lg p-1.5 text-[color:var(--nodu-text-soft)] transition-all hover:bg-[color:var(--nodu-error-bg)] hover:text-[color:var(--nodu-error-text)] disabled:cursor-not-allowed disabled:opacity-50"
                                           title={removalBlocked
                                             ? 'Crew nelze odebrat, protože výkaz už byl odeslán ke kontrole.'
                                             : 'Odebrat z akce'}

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   approveEventWithdrawal: vi.fn(),
   getEventDetailData: vi.fn(),
   removeContractorFromEvent: vi.fn(),
+  setNavigationGuardMessage: vi.fn(),
   setSelectedEventId: vi.fn(),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
@@ -45,6 +46,7 @@ vi.mock('../context/useAppContext', () => ({
   useAppContext: () => ({
     role: state.role,
     selectedEventId: 'event-uuid-1',
+    setNavigationGuardMessage: mocks.setNavigationGuardMessage,
     setSelectedEventId: mocks.setSelectedEventId,
     eventTab: 'overview',
     setEventTab: vi.fn(),
@@ -231,6 +233,8 @@ describe('EventDetailView Crew lifecycle guards', () => {
       'title',
       'Crew nelze odebrat, protože výkaz už byl odeslán ke kontrole.',
     );
+    expect(remove).toHaveClass('disabled:cursor-not-allowed', 'disabled:opacity-50');
+    expect(remove).not.toHaveClass('pointer-events-none');
   });
 
   it.each(['pending_crew_confirmation', 'approved'] satisfies TimelogStatus[])(
@@ -305,8 +309,10 @@ describe('EventDetailView Crew lifecycle guards', () => {
     renderManagerDetail({ pendingApplication: true });
     const approve = screen.getByRole('button', { name: 'Schvalit' });
 
-    fireEvent.click(approve);
-    fireEvent.click(approve);
+    act(() => {
+      approve.click();
+      approve.click();
+    });
 
     expect(mocks.approveEventApplication).toHaveBeenCalledTimes(1);
     expect(approve).toBeDisabled();
@@ -327,9 +333,11 @@ describe('EventDetailView Crew lifecycle guards', () => {
     const approve = screen.getByRole('button', { name: 'Schvalit' });
     const back = screen.getByRole('button', { name: 'Zpet na Akce' });
 
-    fireEvent.click(reject);
-    fireEvent.click(reject);
-    fireEvent.click(approve);
+    act(() => {
+      reject.click();
+      reject.click();
+      approve.click();
+    });
     fireEvent.click(back);
 
     expect(mocks.updateEventApplicationStatus).toHaveBeenCalledTimes(1);
@@ -347,6 +355,25 @@ describe('EventDetailView Crew lifecycle guards', () => {
 
     await waitFor(() => expect(reject).toBeEnabled());
     expect(mocks.getEventDetailData).toHaveBeenCalledTimes(detailCallsBeforeAction + 1);
+  });
+
+  it('sets a navigation guard while a Crew action is pending and clears it on settlement', async () => {
+    let resolveApproval!: () => void;
+    mocks.approveEventApplication.mockReturnValue(new Promise<void>((resolve) => { resolveApproval = resolve; }));
+    renderManagerDetail({ pendingApplication: true });
+    mocks.setNavigationGuardMessage.mockClear();
+
+    act(() => screen.getByRole('button', { name: 'Schvalit' }).click());
+
+    await waitFor(() => {
+      expect(mocks.setNavigationGuardMessage).toHaveBeenLastCalledWith(
+        'Probíhá změna v obsazení Crew. Počkejte prosím na její dokončení.',
+      );
+    });
+
+    resolveApproval();
+
+    await waitFor(() => expect(mocks.setNavigationGuardMessage).toHaveBeenLastCalledWith(null));
   });
 
   it('keeps the mobile Back action disabled while a Crew lifecycle action is pending', async () => {
@@ -399,6 +426,7 @@ describe('EventDetailView Crew lifecycle guards', () => {
     expect(mocks.getEventDetailData).toHaveBeenCalledTimes(detailCallsBeforeAction);
     expect(mocks.toastSuccess).not.toHaveBeenCalled();
     expect(mocks.toastError).not.toHaveBeenCalled();
+    expect(mocks.setNavigationGuardMessage).toHaveBeenLastCalledWith(null);
   });
 
   it('clears the application approval lock after rejection and permits retry', async () => {

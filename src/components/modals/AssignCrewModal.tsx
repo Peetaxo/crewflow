@@ -46,6 +46,7 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const isMountedRef = useRef(false);
+  const wasDialogOpenRef = useRef(false);
   const dialogTitleId = useId();
 
   const contractors = useMemo(() => getCrew({ search }), [search]);
@@ -69,13 +70,24 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
 
   useEffect(() => {
     isMountedRef.current = true;
-    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    if (event) searchInputRef.current?.focus();
 
     return () => {
       isMountedRef.current = false;
       restoreFocus();
+      returnFocusRef.current = null;
     };
+  }, [restoreFocus]);
+
+  useEffect(() => {
+    const isDialogOpen = event !== null;
+    if (isDialogOpen && !wasDialogOpenRef.current) {
+      returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      searchInputRef.current?.focus();
+    } else if (!isDialogOpen && wasDialogOpenRef.current) {
+      restoreFocus();
+      returnFocusRef.current = null;
+    }
+    wasDialogOpenRef.current = isDialogOpen;
   }, [event, restoreFocus]);
 
   useEffect(() => {
@@ -109,10 +121,12 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
       if (isMountedRef.current) {
         setPendingContractorSelection(null);
         setSelectedPhaseOptions([]);
+        toast.success('Clen crew byl prirazen bez kolize.');
       }
-      toast.success('Clen crew byl prirazen bez kolize.');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Nepodarilo se priradit clena crew.');
+      if (isMountedRef.current) {
+        toast.error(error instanceof Error ? error.message : 'Nepodarilo se priradit clena crew.');
+      }
     } finally {
       if (assigningProfileIdRef.current === contractorProfileId) {
         assigningProfileIdRef.current = null;

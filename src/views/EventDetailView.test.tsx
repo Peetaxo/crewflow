@@ -13,6 +13,7 @@ vi.mock('../app/providers/useAuth', () => ({
 }));
 
 const setEditingTimelog = vi.fn();
+const setNavigationGuardMessage = vi.fn();
 const setSelectedEventId = vi.fn();
 const updateTimelogStatus = vi.fn();
 const requestEventWithdrawalMock = vi.fn();
@@ -137,6 +138,7 @@ describe('EventDetailView', () => {
       useAppContext: () => ({
         role: 'crew',
         selectedEventId: 'event-uuid-1',
+        setNavigationGuardMessage,
         setSelectedEventId,
         eventTab: 'overview',
         setEventTab: vi.fn(),
@@ -217,6 +219,7 @@ describe('EventDetailView', () => {
       useAppContext: () => ({
         role: 'crew',
         selectedEventId: 'event-uuid-1',
+        setNavigationGuardMessage,
         setSelectedEventId,
         eventTab: 'overview',
         setEventTab: vi.fn(),
@@ -290,6 +293,7 @@ describe('EventDetailView', () => {
       useAppContext: () => ({
         role: 'crew',
         selectedEventId: 'event-uuid-1',
+        setNavigationGuardMessage,
         setSelectedEventId,
         eventTab: 'overview',
         setEventTab: vi.fn(),
@@ -366,6 +370,7 @@ describe('EventDetailView', () => {
       useAppContext: () => ({
         role: 'crew',
         selectedEventId: 'event-uuid-1',
+        setNavigationGuardMessage,
         setSelectedEventId,
         eventTab: 'overview',
         setEventTab: vi.fn(),
@@ -429,6 +434,7 @@ describe('EventDetailView', () => {
       useAppContext: () => ({
         role: 'crew',
         selectedEventId: 'event-uuid-1',
+        setNavigationGuardMessage,
         setSelectedEventId,
         eventTab: 'overview',
         setEventTab: vi.fn(),
@@ -486,6 +492,7 @@ describe('EventDetailView', () => {
       useAppContext: () => ({
         role: 'crewhead',
         selectedEventId: 'event-uuid-1',
+        setNavigationGuardMessage,
         setSelectedEventId,
         eventTab: 'overview',
         setEventTab: vi.fn(),
@@ -542,6 +549,7 @@ describe('EventDetailView', () => {
       useAppContext: () => ({
         role: 'coo',
         selectedEventId: 'event-uuid-1',
+        setNavigationGuardMessage,
         setSelectedEventId,
         eventTab: 'overview',
         setEventTab: vi.fn(),
@@ -598,6 +606,7 @@ describe('EventDetailView', () => {
       useAppContext: () => ({
         role: 'crewhead',
         selectedEventId: 'event-uuid-1',
+        setNavigationGuardMessage,
         setSelectedEventId,
         eventTab: 'overview',
         setEventTab: vi.fn(),
@@ -654,6 +663,7 @@ describe('EventDetailView', () => {
       useAppContext: () => ({
         role: 'crewhead',
         selectedEventId: 'event-uuid-1',
+        setNavigationGuardMessage,
         setSelectedEventId,
         eventTab: 'overview',
         setEventTab: vi.fn(),
@@ -721,6 +731,7 @@ describe('EventDetailView', () => {
       useAppContext: () => ({
         role: 'coo',
         selectedEventId: 'event-uuid-1',
+        setNavigationGuardMessage,
         setSelectedEventId,
         eventTab: 'overview',
         setEventTab: vi.fn(),
@@ -842,6 +853,7 @@ describe('EventDetailView', () => {
       useAppContext: () => ({
         role: 'coo',
         selectedEventId: 'event-uuid-1',
+        setNavigationGuardMessage,
         setSelectedEventId,
         eventTab: 'overview',
         setEventTab: vi.fn(),
@@ -907,6 +919,7 @@ describe('EventDetailView', () => {
       useAppContext: () => ({
         role: 'coo',
         selectedEventId: 'event-uuid-1',
+        setNavigationGuardMessage,
         setSelectedEventId,
         eventTab: 'overview',
         setEventTab: vi.fn(),
@@ -984,6 +997,7 @@ describe('EventDetailView', () => {
       useAppContext: () => ({
         role: 'coo',
         selectedEventId: 'event-uuid-1',
+        setNavigationGuardMessage,
         setSelectedEventId,
         eventTab: 'overview',
         setEventTab: vi.fn(),
@@ -1063,6 +1077,7 @@ describe('EventDetailView', () => {
       useAppContext: () => ({
         role: 'coo',
         selectedEventId: 'event-uuid-1',
+        setNavigationGuardMessage,
         setSelectedEventId,
         eventTab: 'overview',
         setEventTab: vi.fn(),
@@ -1137,6 +1152,7 @@ describe('EventDetailView', () => {
       useAppContext: () => ({
         role: 'crew',
         selectedEventId: 'event-uuid-1',
+        setNavigationGuardMessage,
         setSelectedEventId,
         eventTab: 'overview',
         setEventTab: vi.fn(),

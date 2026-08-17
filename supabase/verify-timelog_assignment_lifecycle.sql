@@ -8,8 +8,6 @@ declare
   v_authenticated_can_execute boolean;
   v_has_unexpected_execute_grantee boolean;
   v_manager_user_id uuid;
-  v_crewhead_user_id uuid;
-  v_coo_user_id uuid;
   v_crew_user_id uuid;
   v_profile_id uuid;
   v_event_id uuid;
@@ -142,47 +140,6 @@ begin
     raise exception 'verification failed: event application lifecycle trigger is missing or disabled';
   end if;
 
-  select ur.user_id
-  into v_crewhead_user_id
-  from public.user_roles ur
-  where ur.role = 'crewhead'::public.app_role
-  order by ur.user_id
-  limit 1;
-
-  if v_crewhead_user_id is null then
-    raise exception 'verification fixture missing: no crewhead user exists';
-  end if;
-
-  select ur.user_id
-  into v_coo_user_id
-  from public.user_roles ur
-  where ur.role = 'coo'::public.app_role
-    and not exists (
-      select 1
-      from public.user_roles crewhead_role
-      where crewhead_role.user_id = ur.user_id
-        and crewhead_role.role = 'crewhead'::public.app_role
-    )
-  order by ur.user_id
-  limit 1;
-
-  if v_coo_user_id is null then
-    raise exception 'verification fixture missing: no coo user exists';
-  end if;
-
-  v_manager_user_id := v_crewhead_user_id;
-
-  perform pg_catalog.set_config('request.jwt.claim.sub', v_manager_user_id::text, true);
-  perform pg_catalog.set_config('request.jwt.claim.role', 'authenticated', true);
-  perform pg_catalog.set_config(
-    'request.jwt.claims',
-    pg_catalog.jsonb_build_object(
-      'sub', v_manager_user_id::text,
-      'role', 'authenticated'
-    )::text,
-    true
-  );
-
   select p.id, p.user_id
   into v_profile_id, v_crew_user_id
   from public.profiles p
@@ -205,6 +162,21 @@ begin
   if v_profile_id is null or v_crew_user_id is null then
     raise exception 'verification fixture missing: no crew-only profile exists';
   end if;
+
+  v_manager_user_id := v_crew_user_id;
+  perform pg_catalog.set_config('request.jwt.claim.sub', v_manager_user_id::text, true);
+  perform pg_catalog.set_config('request.jwt.claim.role', 'authenticated', true);
+  perform pg_catalog.set_config(
+    'request.jwt.claims',
+    pg_catalog.jsonb_build_object(
+      'sub', v_manager_user_id::text,
+      'role', 'authenticated'
+    )::text,
+    true
+  );
+
+  insert into public.user_roles (user_id, role)
+  values (v_manager_user_id, 'crewhead'::public.app_role);
 
   insert into public.events (name, status)
   values (
@@ -258,15 +230,16 @@ begin
     raise exception 'verification failed: first assignment did not create its rows';
   end if;
 
-  perform pg_catalog.set_config('request.jwt.claim.sub', v_coo_user_id::text, true);
-  perform pg_catalog.set_config(
-    'request.jwt.claims',
-    pg_catalog.jsonb_build_object(
-      'sub', v_coo_user_id::text,
-      'role', 'authenticated'
-    )::text,
-    true
-  );
+  delete from public.user_roles
+  where user_id = v_manager_user_id
+    and role = 'crewhead'::public.app_role;
+  get diagnostics v_status_count = row_count;
+  if v_status_count <> 1 then
+    raise exception 'verification failed: temporary CrewHead role was not removed';
+  end if;
+
+  insert into public.user_roles (user_id, role)
+  values (v_manager_user_id, 'coo'::public.app_role);
 
   v_result := public.assign_event_crew(
     v_event_id,
@@ -326,6 +299,17 @@ begin
   ) then
     raise exception 'verification failed: assignment did not approve the application';
   end if;
+
+  delete from public.user_roles
+  where user_id = v_manager_user_id
+    and role = 'coo'::public.app_role;
+  get diagnostics v_status_count = row_count;
+  if v_status_count <> 1 then
+    raise exception 'verification failed: temporary COO role was not removed';
+  end if;
+
+  insert into public.user_roles (user_id, role)
+  values (v_manager_user_id, 'crewhead'::public.app_role);
 
   perform pg_catalog.set_config('request.jwt.claim.sub', v_manager_user_id::text, true);
   perform pg_catalog.set_config(
@@ -618,6 +602,14 @@ begin
   from public.timelog_days d
   where d.timelog_id = v_blocked_timelog_id;
 
+  delete from public.user_roles
+  where user_id = v_manager_user_id
+    and role = 'crewhead'::public.app_role;
+  get diagnostics v_status_count = row_count;
+  if v_status_count <> 1 then
+    raise exception 'verification failed: temporary CrewHead role was not removed for Crew checks';
+  end if;
+
   perform pg_catalog.set_config('request.jwt.claim.sub', v_crew_user_id::text, true);
   perform pg_catalog.set_config('request.jwt.claim.role', 'authenticated', true);
   perform pg_catalog.set_config(
@@ -806,6 +798,9 @@ begin
   if not found then
     raise exception 'verification failed: valid Crew withdrawal request was rejected';
   end if;
+
+  insert into public.user_roles (user_id, role)
+  values (v_manager_user_id, 'crewhead'::public.app_role);
 
   perform pg_catalog.set_config('request.jwt.claim.sub', v_manager_user_id::text, true);
   perform pg_catalog.set_config(

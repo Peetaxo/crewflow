@@ -533,7 +533,7 @@ describe('timelog assignment lifecycle migration', () => {
   it('verifies exact lifecycle RPC execute ACLs before creating fixtures', () => {
     const sql = readVerificationScript();
     const aclStart = sql.indexOf("select oid into v_authenticated_role_oid\n  from pg_catalog.pg_roles");
-    const fixtureStart = sql.indexOf('select ur.user_id\n  into v_crewhead_user_id');
+    const fixtureStart = sql.indexOf('select p.id, p.user_id\n  into v_profile_id, v_crew_user_id');
     const aclSql = sql.slice(aclStart, fixtureStart);
 
     expect(aclStart).toBeGreaterThanOrEqual(0);
@@ -565,13 +565,57 @@ describe('timelog assignment lifecycle migration', () => {
     );
   });
 
-  it('verifies both manager roles plus stale-state and Crew trigger adversarial cases', () => {
+  it('self-contains both temporary manager-role paths plus Crew adversarial cases', () => {
     const sql = readVerificationScript();
 
-    expect(sql).toContain("where ur.role = 'crewhead'::public.app_role");
-    expect(sql).toContain("where ur.role = 'coo'::public.app_role");
-    expect(sql).toContain("raise exception 'verification fixture missing: no crewhead user exists'");
-    expect(sql).toContain("raise exception 'verification fixture missing: no coo user exists'");
+    expect(sql).not.toContain("verification fixture missing: no crewhead user exists");
+    expect(sql).not.toContain("verification fixture missing: no coo user exists");
+    const crewheadInsert = "insert into public.user_roles (user_id, role)\n  values (v_manager_user_id, 'crewhead'::public.app_role)";
+    const crewheadDelete = "delete from public.user_roles\n  where user_id = v_manager_user_id\n    and role = 'crewhead'::public.app_role";
+    const cooInsert = "insert into public.user_roles (user_id, role)\n  values (v_manager_user_id, 'coo'::public.app_role)";
+    const cooDelete = "delete from public.user_roles\n  where user_id = v_manager_user_id\n    and role = 'coo'::public.app_role";
+    const firstCrewheadInsert = sql.indexOf(crewheadInsert);
+    const firstAssignment = sql.indexOf('v_result := public.assign_event_crew(', firstCrewheadInsert);
+    const firstCrewheadDelete = sql.indexOf(crewheadDelete, firstAssignment);
+    const cooRoleInsert = sql.indexOf(cooInsert, firstCrewheadDelete);
+    const repeatedAssignment = sql.indexOf(
+      'verification failed: repeated assignment was not idempotent',
+      cooRoleInsert,
+    );
+    const cooRoleDelete = sql.indexOf(cooDelete, repeatedAssignment);
+    const secondCrewheadInsert = sql.indexOf(crewheadInsert, cooRoleDelete);
+    const crewChecksDelete = sql.indexOf(crewheadDelete, secondCrewheadInsert);
+    const crewUnauthorizedCheck = sql.indexOf(
+      'verification failed: crew-only user could approve event withdrawal',
+      crewChecksDelete,
+    );
+    const thirdCrewheadInsert = sql.indexOf(crewheadInsert, crewUnauthorizedCheck);
+    expect([
+      firstCrewheadInsert,
+      firstAssignment,
+      firstCrewheadDelete,
+      cooRoleInsert,
+      repeatedAssignment,
+      cooRoleDelete,
+      secondCrewheadInsert,
+      crewChecksDelete,
+      crewUnauthorizedCheck,
+      thirdCrewheadInsert,
+    ]).toEqual([...new Set([
+      firstCrewheadInsert,
+      firstAssignment,
+      firstCrewheadDelete,
+      cooRoleInsert,
+      repeatedAssignment,
+      cooRoleDelete,
+      secondCrewheadInsert,
+      crewChecksDelete,
+      crewUnauthorizedCheck,
+      thirdCrewheadInsert,
+    ])].sort((a, b) => a - b));
+    expect(firstCrewheadInsert).toBeGreaterThanOrEqual(0);
+    expect(sql.match(/insert into public\.user_roles \(user_id, role\)/g)).toHaveLength(4);
+    expect(sql.match(/delete from public\.user_roles/g)).toHaveLength(3);
     expect(sql).toContain('foreach v_application_status in array v_disallowed_approval_statuses loop');
     expect(sql).toContain('foreach v_application_status in array v_disallowed_withdrawal_statuses loop');
     expect(sql).toContain("v_error_message <> 'crew_application_conflict'");

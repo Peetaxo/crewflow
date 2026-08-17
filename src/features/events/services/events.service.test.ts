@@ -1283,15 +1283,47 @@ describe('events.service write flow', () => {
     const harness = await setupLifecycleService({ failEventsRefresh: true });
     const before = harness.getSnapshot();
 
-    await expect(harness.service.assignCrewToEvent(1, 'profile-uuid-1'))
-      .rejects.toThrow('Operaci s Crew se nepodařilo dokončit.');
+    try {
+      await expect(harness.service.assignCrewToEvent(1, 'profile-uuid-1'))
+        .rejects.toThrow('Operaci s Crew se nepodařilo dokončit.');
 
-    expect(harness.assignEventCrewRpc).toHaveBeenCalledOnce();
-    expect(consoleError).toHaveBeenCalledWith(
-      'Failed to refresh Crew lifecycle state',
-      expect.any(Error),
-    );
-    expect(harness.getSnapshot()).toEqual(before);
+      expect(harness.assignEventCrewRpc).toHaveBeenCalledOnce();
+      expect(consoleError).toHaveBeenCalledWith(
+        'Failed to refresh Crew lifecycle state',
+        expect.any(Error),
+      );
+      expect(harness.getSnapshot()).toEqual(before);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('restores the entire snapshot when timelog refresh fails after the event refresh succeeds', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const harness = await setupLifecycleService({
+      refreshedEvents: [{
+        ...lifecycleEvent,
+        name: 'Authoritative refreshed event',
+        filled: 2,
+      }],
+      refreshedApplicationStatus: 'withdrawn',
+      failTimelogsRefresh: true,
+    });
+    const before = harness.getSnapshot();
+
+    try {
+      await expect(harness.service.assignCrewToEvent(1, 'profile-uuid-1'))
+        .rejects.toThrow('Operaci s Crew se nepodařilo dokončit.');
+
+      expect(harness.assignEventCrewRpc).toHaveBeenCalledOnce();
+      expect(consoleError).toHaveBeenCalledWith(
+        'Failed to refresh Crew lifecycle state',
+        expect.any(Error),
+      );
+      expect(harness.getSnapshot()).toEqual(before);
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it.each([

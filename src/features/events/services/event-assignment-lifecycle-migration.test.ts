@@ -5,11 +5,18 @@ import { describe, expect, it } from 'vitest';
 const migrationDirectory = join(process.cwd(), 'supabase', 'migrations');
 const migrationFiles = readdirSync(migrationDirectory)
   .filter((name) => name.endsWith('_timelog_assignment_lifecycle.sql'));
+const verificationScriptPath = join(
+  process.cwd(),
+  'supabase',
+  'verify-timelog_assignment_lifecycle.sql',
+);
 
 const readMigration = () => {
   expect(migrationFiles).toHaveLength(1);
   return readFileSync(join(migrationDirectory, migrationFiles[0]), 'utf8').toLowerCase();
 };
+
+const readVerificationScript = () => readFileSync(verificationScriptPath, 'utf8').toLowerCase();
 
 const repairPairs = [
   ['5e062036-278f-4e39-b0cd-8d02d33ced13', 'c55d4794-42d3-46be-aba4-931c40e495c0'],
@@ -354,5 +361,28 @@ describe('timelog assignment lifecycle migration', () => {
     expect(sql.match(/\bcommit\s*;/g)).toHaveLength(1);
     expect(sql.trimEnd()).toMatch(/commit;$/);
     expect(sql).not.toMatch(/\bassert\b/);
+  });
+
+  it('resets each blocked-status fixture before setting and checking the target status', () => {
+    const sql = readVerificationScript();
+    const loopStart = sql.indexOf('foreach v_status in array v_non_disposable_statuses loop');
+    const loopEnd = sql.indexOf('\n  end loop;', loopStart);
+    const loopSql = sql.slice(loopStart, loopEnd);
+
+    expect(loopStart).toBeGreaterThanOrEqual(0);
+    expect(loopEnd).toBeGreaterThan(loopStart);
+    expectMarkersInOrder(loopSql, [
+      "update public.timelogs\n    set status = 'draft'::public.timelog_status\n    where id = v_blocked_timelog_id",
+      'get diagnostics v_reset_count = row_count',
+      'update public.timelogs set status = v_status where id = v_blocked_timelog_id',
+      'get diagnostics v_status_count = row_count',
+      'and status = v_status',
+    ]);
+    expect(loopSql).toContain(
+      "raise exception 'verification failed: blocking-loop timelog reset failed before %'",
+    );
+    expect(loopSql).toContain(
+      "raise exception 'verification failed: blocking-loop timelog status update failed before %'",
+    );
   });
 });

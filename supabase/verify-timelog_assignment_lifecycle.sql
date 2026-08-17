@@ -15,6 +15,8 @@ declare
   v_error_message text;
   v_expected_error boolean;
   v_count integer;
+  v_reset_count integer;
+  v_status_count integer;
   v_status public.timelog_status;
   v_non_disposable_statuses public.timelog_status[] := array[
     'pending_ch'::public.timelog_status,
@@ -349,12 +351,21 @@ begin
     if v_toggle_update_trigger then
       execute 'alter table public.timelogs disable trigger enforce_timelog_update_permissions';
     end if;
+    update public.timelogs
+    set status = 'draft'::public.timelog_status
+    where id = v_blocked_timelog_id;
+    get diagnostics v_reset_count = row_count;
+
     update public.timelogs set status = v_status where id = v_blocked_timelog_id;
+    get diagnostics v_status_count = row_count;
     if v_toggle_update_trigger then
       execute 'alter table public.timelogs enable trigger enforce_timelog_update_permissions';
     end if;
-    if not found then
-      raise exception 'verification failed: blocking-loop timelog disappeared before %', v_status;
+    if v_reset_count <> 1 then
+      raise exception 'verification failed: blocking-loop timelog reset failed before %', v_status;
+    end if;
+    if v_status_count <> 1 then
+      raise exception 'verification failed: blocking-loop timelog status update failed before %', v_status;
     end if;
 
     v_expected_error := false;

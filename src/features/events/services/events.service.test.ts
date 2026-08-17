@@ -312,6 +312,327 @@ describe('events.service write flow', () => {
     vi.clearAllMocks();
   });
 
+  const lifecycleEvent: Event = {
+    id: 1,
+    supabaseId: 'event-row-1',
+    name: 'Akce 1',
+    job: 'AK001',
+    startDate: '2026-04-20',
+    endDate: '2026-04-21',
+    startTime: '08:00',
+    endTime: '17:00',
+    city: 'Praha',
+    needed: 2,
+    filled: 0,
+    status: 'upcoming',
+    client: 'Klient A',
+    showDayTypes: false,
+  };
+
+  const canonicalTimelog: Timelog = {
+    id: 1,
+    eid: 1,
+    contractorProfileId: 'profile-uuid-1',
+    days: [
+      { d: '2026-04-20', f: '08:00', t: '17:00', type: 'instal' },
+      { d: '2026-04-21', f: '08:00', t: '17:00', type: 'instal' },
+    ],
+    km: 0,
+    note: '',
+    status: 'draft',
+  };
+
+  const lifecycleApplication: EventApplication = {
+    id: 1,
+    supabaseId: 'application-row-1',
+    eventId: 1,
+    eventSupabaseId: 'event-row-1',
+    contractorProfileId: 'profile-uuid-1',
+    status: 'pending',
+    note: '',
+    createdAt: '2026-04-10T08:00:00Z',
+  };
+
+  const rpcAssignment = {
+    event_id: 'event-row-1',
+    profile_id: 'profile-uuid-1',
+    assignment_id: 'assignment-row-1',
+    timelog_id: 'timelog-row-1',
+    application_id: null,
+    timelog_created: true,
+    crew_filled: 1,
+  };
+
+  const rpcRemoval = {
+    event_id: 'event-row-1',
+    profile_id: 'profile-uuid-1',
+    application_id: null,
+    assignment_removed: true,
+    timelog_removed: true,
+    crew_filled: 0,
+  };
+
+  const setupLifecycleService = async ({
+    dataSource = 'supabase',
+    initialSnapshot = createSnapshot({
+      events: [lifecycleEvent],
+      eventApplications: [lifecycleApplication],
+    }),
+    refreshedEvents = [lifecycleEvent],
+    refreshedTimelogs = [canonicalTimelog],
+    refreshedApplicationStatus = 'approved' as EventApplication['status'],
+    failEventsRefresh = false,
+    failTimelogsRefresh = false,
+  } = {}) => {
+    let snapshot = structuredClone(initialSnapshot);
+    const assignEventCrewRpc = vi.fn().mockResolvedValue(rpcAssignment);
+    const removeEventCrewRpc = vi.fn().mockResolvedValue(rpcRemoval);
+    const isDisposableTimelogStatus = vi.fn((status: Timelog['status']) => (
+      status === 'draft' || status === 'rejected'
+    ));
+    const timelogsInsert = vi.fn(() => ({
+      select: vi.fn(() => ({
+        single: vi.fn().mockResolvedValue({ data: { id: 'timelog-row-1' }, error: null }),
+      })),
+    }));
+    const timelogsDelete = vi.fn(() => ({
+      in: vi.fn().mockResolvedValue({ error: null }),
+    }));
+    const timelogDaysInsert = vi.fn().mockResolvedValue({ error: null });
+    const timelogDaysDelete = vi.fn(() => ({
+      in: vi.fn().mockResolvedValue({ error: null }),
+    }));
+    const eventAssignmentsInsert = vi.fn().mockResolvedValue({ error: null });
+    const eventAssignmentsDelete = vi.fn(() => ({
+      eq: vi.fn(() => ({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      })),
+    }));
+    const eventsUpdate = vi.fn(() => ({
+      eq: vi.fn().mockResolvedValue({ error: null }),
+    }));
+    const eventApplicationsUpdate = vi.fn(() => ({
+      eq: vi.fn(() => ({
+        select: vi.fn(() => ({
+          single: vi.fn().mockResolvedValue({ data: {}, error: null }),
+        })),
+      })),
+    }));
+
+    const eventRows = refreshedEvents.map((event) => ({
+      id: event.supabaseId,
+      project_id: 'project-row-1',
+      job_number: event.job,
+      client_name: event.client,
+      name: event.name,
+      date_from: event.startDate,
+      date_to: event.endDate,
+      time_from: event.startTime ?? null,
+      time_to: event.endTime ?? null,
+      city: event.city,
+      crew_needed: event.needed,
+      crew_filled: event.filled,
+      status: event.status,
+      description: null,
+      contact_person: null,
+      dresscode: null,
+      meeting_point: null,
+      show_day_types: event.showDayTypes ?? false,
+      day_types: null,
+      phase_times: null,
+      phase_schedules: null,
+    }));
+    const applicationRows = (initialSnapshot.eventApplications ?? []).map((application) => ({
+      id: application.supabaseId ?? 'application-row-1',
+      event_id: application.eventSupabaseId ?? 'event-row-1',
+      profile_id: application.contractorProfileId,
+      status: refreshedApplicationStatus,
+      note: application.note ?? null,
+      planned_from: application.plannedFrom ?? null,
+      planned_to: application.plannedTo ?? null,
+      created_at: application.createdAt ?? '2026-04-10T08:00:00Z',
+    }));
+    const fetchTimelogsSnapshot = vi.fn(async () => {
+      snapshot = {
+        ...snapshot,
+        timelogs: structuredClone(refreshedTimelogs),
+      };
+      if (failTimelogsRefresh) {
+        throw new Error('timelog refresh failed');
+      }
+      return structuredClone(refreshedTimelogs);
+    });
+
+    vi.doMock('../../../lib/app-config', () => ({
+      appDataSource: dataSource,
+    }));
+
+    vi.doMock('./event-assignment-lifecycle.service', () => ({
+      assignEventCrewRpc,
+      removeEventCrewRpc,
+      isDisposableTimelogStatus,
+    }));
+
+    vi.doMock('../../timelogs/services/timelogs.service', () => ({
+      ensureSupabaseTimelogsLoaded: vi.fn(),
+      fetchTimelogsSnapshot,
+    }));
+
+    const from = vi.fn((table: string) => {
+      if (table === 'events') {
+        return {
+          select: vi.fn(() => ({
+            order: vi.fn(() => ({
+              order: vi.fn().mockResolvedValue({
+                data: eventRows,
+                error: failEventsRefresh ? { message: 'event refresh failed' } : null,
+              }),
+            })),
+          })),
+          update: eventsUpdate,
+        };
+      }
+      if (table === 'projects') {
+        return {
+          select: vi.fn(() => ({
+            order: vi.fn().mockResolvedValue({
+              data: [{
+                id: 'project-row-1',
+                job_number: 'AK001',
+                client_id: 'client-row-1',
+                name: 'Projekt 1',
+                note: null,
+                created_at: '2026-04-10',
+                updated_at: '2026-04-10',
+              }],
+              error: null,
+            }),
+          })),
+        };
+      }
+      if (table === 'clients') {
+        return {
+          select: vi.fn(() => ({
+            order: vi.fn().mockResolvedValue({
+              data: [{ id: 'client-row-1', name: 'Klient A', city: 'Praha' }],
+              error: null,
+            }),
+          })),
+        };
+      }
+      if (table === 'timelogs') {
+        return {
+          select: vi.fn((columns: string) => {
+            if (columns === 'event_id,contractor_id') {
+              return Promise.resolve({
+                data: refreshedTimelogs.map((timelog) => ({
+                  event_id: 'event-row-1',
+                  contractor_id: timelog.contractorProfileId ?? null,
+                })),
+                error: null,
+              });
+            }
+            return {
+              eq: vi.fn(() => ({
+                eq: vi.fn().mockResolvedValue({ data: [{ id: 'timelog-row-1' }], error: null }),
+              })),
+            };
+          }),
+          insert: timelogsInsert,
+          delete: timelogsDelete,
+        };
+      }
+      if (table === 'timelog_days') {
+        return { insert: timelogDaysInsert, delete: timelogDaysDelete };
+      }
+      if (table === 'event_assignments') {
+        return {
+          select: vi.fn(() => ({
+            order: vi.fn().mockResolvedValue({ data: [], error: null }),
+          })),
+          insert: eventAssignmentsInsert,
+          delete: eventAssignmentsDelete,
+        };
+      }
+      if (table === 'grason_event_confirmations') {
+        return {
+          select: vi.fn(() => ({
+            order: vi.fn().mockResolvedValue({ data: [], error: null }),
+          })),
+        };
+      }
+      if (table === 'event_applications') {
+        return {
+          select: vi.fn(() => ({
+            order: vi.fn().mockResolvedValue({ data: applicationRows, error: null }),
+          })),
+          update: eventApplicationsUpdate,
+        };
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: dataSource === 'supabase',
+      supabase: dataSource === 'supabase'
+        ? {
+            from,
+            rpc: vi.fn().mockResolvedValue({ data: [], error: null }),
+          }
+        : null,
+    }));
+
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapClient: (row: { name: string; city: string }) => ({
+        id: Number.NaN,
+        name: row.name,
+        city: row.city,
+      }),
+      mapEvent: (row: typeof eventRows[number]) => ({
+        id: Number.NaN,
+        supabaseId: row.id,
+        name: row.name,
+        job: row.job_number,
+        startDate: row.date_from,
+        endDate: row.date_to,
+        startTime: row.time_from ?? undefined,
+        endTime: row.time_to ?? undefined,
+        city: row.city,
+        needed: row.crew_needed,
+        filled: row.crew_filled,
+        status: row.status,
+        client: row.client_name,
+        showDayTypes: row.show_day_types,
+      }),
+    }));
+
+    return {
+      service: await import('./events.service'),
+      getSnapshot: () => structuredClone(snapshot),
+      assignEventCrewRpc,
+      removeEventCrewRpc,
+      eventApplicationsUpdate,
+      directWrites: {
+        timelogsInsert,
+        timelogsDelete,
+        timelogDaysInsert,
+        timelogDaysDelete,
+        eventAssignmentsInsert,
+        eventAssignmentsDelete,
+        eventsUpdate,
+      },
+    };
+  };
+
   it('requests timelog hydration when reading event detail data', async () => {
     const ensureSupabaseTimelogsLoaded = vi.fn();
     const snapshot = createSnapshot({
@@ -852,214 +1173,203 @@ describe('events.service write flow', () => {
     expect(copy.phaseSchedules?.instal?.[0].id).not.toBe('slot-i');
   });
 
-  it('assigns crew by contractor profile id without profiles lookup', async () => {
-    let snapshot = createSnapshot({
-      events: [
-        {
-          id: 1,
-          name: 'Akce 1',
-          job: 'AK001',
-          startDate: '2026-04-20',
-          endDate: '2026-04-21',
-          startTime: '08:00',
-          endTime: '17:00',
-          city: 'Praha',
-          needed: 2,
-          filled: 1,
-          status: 'upcoming',
-          client: 'Klient A',
-          showDayTypes: false,
-        },
-      ],
+  it('assigns Crew with one RPC and performs no direct lifecycle writes', async () => {
+    const harness = await setupLifecycleService();
+
+    const result = await harness.service.assignCrewToEvent(1, 'profile-uuid-1');
+
+    expect(harness.assignEventCrewRpc).toHaveBeenCalledOnce();
+    expect(harness.assignEventCrewRpc).toHaveBeenCalledWith({
+      eventId: 'event-row-1',
+      profileId: 'profile-uuid-1',
+      applicationId: null,
+      days: canonicalTimelog.days,
     });
-
-    const eventsSelect = vi.fn(() => ({
-      order: vi.fn(() => ({
-        order: vi.fn().mockResolvedValue({
-          data: [{ id: 'event-row-1' }],
-          error: null,
-        }),
-      })),
-    }));
-    const timelogsInsertSingle = vi.fn().mockResolvedValue({
-      data: { id: 'timelog-row-1' },
-      error: null,
-    });
-    const timelogsInsertSelect = vi.fn(() => ({ single: timelogsInsertSingle }));
-    const timelogsInsert = vi.fn(() => ({ select: timelogsInsertSelect }));
-    const timelogDaysInsert = vi.fn().mockResolvedValue({ error: null });
-    const eventsUpdateEq = vi.fn().mockResolvedValue({ error: null });
-    const eventsUpdate = vi.fn(() => ({ eq: eventsUpdateEq }));
-
-    vi.doMock('../../../lib/app-config', () => ({
-      appDataSource: 'supabase',
-    }));
-
-    vi.doMock('../../../lib/supabase', () => ({
-      isSupabaseConfigured: true,
-      supabase: {
-        from: vi.fn((table: string) => {
-          if (table === 'events') return { select: eventsSelect, update: eventsUpdate };
-          if (table === 'timelogs') return { insert: timelogsInsert };
-          if (table === 'timelog_days') return { insert: timelogDaysInsert };
-          throw new Error(`Unexpected table ${table}`);
-        }),
-      },
-    }));
-
-    vi.doMock('../../../lib/app-data', () => ({
-      getLocalAppState: () => structuredClone(snapshot),
-      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
-        snapshot = structuredClone(updater(structuredClone(snapshot)));
-        return structuredClone(snapshot);
-      },
-      subscribeToLocalAppState: vi.fn(() => () => undefined),
-    }));
-
-    vi.doMock('../../../lib/supabase-mappers', () => ({
-      mapClient: vi.fn(),
-      mapEvent: vi.fn(),
-    }));
-
-    const { assignCrewToEvent } = await import('./events.service');
-
-    const assignment = await assignCrewToEvent(1, 'profile-uuid-1');
-
-    expect(timelogsInsert).toHaveBeenCalledWith({
-      event_id: 'event-row-1',
-      contractor_id: 'profile-uuid-1',
-      km: 0,
-      note: '',
-      status: 'draft',
-    });
-    expect(timelogDaysInsert).toHaveBeenCalledWith([
-      {
-        timelog_id: 'timelog-row-1',
-        date: '2026-04-20',
-        time_from: '08:00',
-        time_to: '17:00',
-        day_type: 'instal',
-      },
-      {
-        timelog_id: 'timelog-row-1',
-        date: '2026-04-21',
-        time_from: '08:00',
-        time_to: '17:00',
-        day_type: 'instal',
-      },
-    ]);
-    expect(eventsUpdate).toHaveBeenCalledWith({ crew_filled: 1 });
-    expect(eventsUpdateEq).toHaveBeenCalledWith('id', 'event-row-1');
-    expect(assignment.event.filled).toBe(1);
-    expect(snapshot.timelogs).toHaveLength(1);
-    expect(snapshot.timelogs[0].contractorProfileId).toBe('profile-uuid-1');
+    expect(harness.directWrites.timelogsInsert).not.toHaveBeenCalled();
+    expect(harness.directWrites.timelogDaysInsert).not.toHaveBeenCalled();
+    expect(harness.directWrites.eventAssignmentsInsert).not.toHaveBeenCalled();
+    expect(harness.directWrites.eventsUpdate).not.toHaveBeenCalled();
+    expect(harness.eventApplicationsUpdate).not.toHaveBeenCalled();
+    expect(result.rpc).toEqual(rpcAssignment);
   });
 
-  it('removes crew by contractor profile id without profiles lookup', async () => {
-    let snapshot = createSnapshot({
-      events: [
-        {
-          id: 1,
-          name: 'Akce 1',
-          job: 'AK001',
-          startDate: '2026-04-20',
-          endDate: '2026-04-21',
-          startTime: '08:00',
-          endTime: '17:00',
-          city: 'Praha',
-          needed: 2,
-          filled: 2,
-          status: 'upcoming',
-          client: 'Klient A',
-          showDayTypes: false,
-        },
-      ],
+  it('approves an application with one assignment RPC and no separate status update', async () => {
+    const harness = await setupLifecycleService();
+
+    await harness.service.approveEventApplication(1);
+
+    expect(harness.assignEventCrewRpc).toHaveBeenCalledWith(expect.objectContaining({
+      eventId: 'event-row-1',
+      profileId: 'profile-uuid-1',
+      applicationId: 'application-row-1',
+    }));
+    expect(harness.eventApplicationsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('requires an application UUID before approving in Supabase mode', async () => {
+    const initialSnapshot = createSnapshot({
+      events: [lifecycleEvent],
+      eventApplications: [{ ...lifecycleApplication, supabaseId: undefined }],
+    });
+    const harness = await setupLifecycleService({ initialSnapshot });
+    const before = harness.getSnapshot();
+
+    await expect(harness.service.approveEventApplication(1))
+      .rejects.toThrow('Operaci s Crew se nepodařilo dokončit.');
+
+    expect(harness.assignEventCrewRpc).not.toHaveBeenCalled();
+    expect(harness.getSnapshot()).toEqual(before);
+  });
+
+  it('hydrates the canonical timelog returned by repeated assignment', async () => {
+    const initialSnapshot = createSnapshot({
+      events: [{ ...lifecycleEvent, filled: 1 }],
+      timelogs: [canonicalTimelog],
+    });
+    const harness = await setupLifecycleService({ initialSnapshot });
+    harness.assignEventCrewRpc.mockResolvedValue({ ...rpcAssignment, timelog_created: false });
+
+    const result = await harness.service.assignCrewToEvent(1, 'profile-uuid-1');
+    const snapshot = harness.getSnapshot();
+
+    expect(result.timelog.contractorProfileId).toBe('profile-uuid-1');
+    expect(snapshot.timelogs.filter((item) => item.contractorProfileId === 'profile-uuid-1')).toHaveLength(1);
+    expect(result.rpc).toEqual({ ...rpcAssignment, timelog_created: false });
+  });
+
+  it('uses the removal RPC for direct removal and withdrawal approval', async () => {
+    const initialSnapshot = createSnapshot({
+      events: [{ ...lifecycleEvent, filled: 1 }],
+      timelogs: [canonicalTimelog],
+      eventApplications: [{ ...lifecycleApplication, status: 'withdrawal_requested' }],
+    });
+    const harness = await setupLifecycleService({
+      initialSnapshot,
+      refreshedTimelogs: [],
+      refreshedApplicationStatus: 'withdrawn',
+    });
+
+    await harness.service.removeContractorFromEvent(1, 'profile-uuid-1');
+    await harness.service.approveEventWithdrawal(1);
+
+    expect(harness.removeEventCrewRpc).toHaveBeenNthCalledWith(1, 'event-row-1', 'profile-uuid-1');
+    expect(harness.removeEventCrewRpc).toHaveBeenNthCalledWith(2, 'event-row-1', 'profile-uuid-1');
+    expect(harness.eventApplicationsUpdate).not.toHaveBeenCalled();
+    expect(harness.directWrites.timelogsDelete).not.toHaveBeenCalled();
+    expect(harness.directWrites.timelogDaysDelete).not.toHaveBeenCalled();
+    expect(harness.directWrites.eventAssignmentsDelete).not.toHaveBeenCalled();
+    expect(harness.directWrites.eventsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('keeps local state unchanged when removal is blocked', async () => {
+    const initialSnapshot = createSnapshot({
+      events: [{ ...lifecycleEvent, filled: 1 }],
+      timelogs: [canonicalTimelog],
+    });
+    const harness = await setupLifecycleService({ initialSnapshot });
+    harness.removeEventCrewRpc.mockRejectedValue(
+      new Error('Crew nelze odebrat, protože výkaz už byl odeslán ke kontrole.'),
+    );
+    const before = harness.getSnapshot();
+
+    await expect(harness.service.removeContractorFromEvent(1, 'profile-uuid-1'))
+      .rejects.toThrow('Crew nelze odebrat');
+
+    expect(harness.getSnapshot()).toEqual(before);
+  });
+
+  it('rolls back refresh mutations and reports a generic lifecycle error when refresh fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const harness = await setupLifecycleService({ failEventsRefresh: true });
+    const before = harness.getSnapshot();
+
+    await expect(harness.service.assignCrewToEvent(1, 'profile-uuid-1'))
+      .rejects.toThrow('Operaci s Crew se nepodařilo dokončit.');
+
+    expect(harness.assignEventCrewRpc).toHaveBeenCalledOnce();
+    expect(consoleError).toHaveBeenCalledWith(
+      'Failed to refresh Crew lifecycle state',
+      expect.any(Error),
+    );
+    expect(harness.getSnapshot()).toEqual(before);
+  });
+
+  it.each([
+    ['event', [], [canonicalTimelog]],
+    ['canonical timelog', [lifecycleEvent], []],
+  ])('throws the generic lifecycle error when the refreshed %s is missing', async (_label, refreshedEvents, refreshedTimelogs) => {
+    const harness = await setupLifecycleService({ refreshedEvents, refreshedTimelogs });
+
+    await expect(harness.service.assignCrewToEvent(1, 'profile-uuid-1'))
+      .rejects.toThrow('Operaci s Crew se nepodařilo dokončit.');
+
+    expect(harness.assignEventCrewRpc).toHaveBeenCalledOnce();
+    expect(harness.getSnapshot().timelogs).toEqual(refreshedTimelogs);
+  });
+
+  it('blocks local removal when any matching timelog is non-disposable without changing state', async () => {
+    const initialSnapshot = createSnapshot({
+      events: [{ ...lifecycleEvent, supabaseId: undefined, filled: 1 }],
       timelogs: [
-        {
-          id: 1,
-          eid: 1,
-          contractorProfileId: 'profile-uuid-1',
-          days: [{ d: '2026-04-20', f: '08:00', t: '17:00', type: 'instal' }],
-          km: 0,
-          note: '',
-          status: 'draft',
-        },
+        canonicalTimelog,
+        { ...canonicalTimelog, id: 2, status: 'pending_ch' },
+      ],
+      eventApplications: [{ ...lifecycleApplication, supabaseId: undefined, status: 'withdrawal_requested' }],
+    });
+    const harness = await setupLifecycleService({ dataSource: 'local', initialSnapshot });
+    const before = harness.getSnapshot();
+
+    await expect(harness.service.removeContractorFromEvent(1, 'profile-uuid-1'))
+      .rejects.toThrow('Crew nelze odebrat, protože výkaz už byl odeslán ke kontrole.');
+
+    expect(harness.getSnapshot()).toEqual(before);
+    expect(harness.removeEventCrewRpc).not.toHaveBeenCalled();
+  });
+
+  it('atomically removes all local disposable timelogs and related lifecycle state', async () => {
+    const initialSnapshot = createSnapshot({
+      events: [{ ...lifecycleEvent, supabaseId: undefined, filled: 2 }],
+      timelogs: [
+        canonicalTimelog,
+        { ...canonicalTimelog, id: 2, status: 'rejected' },
+        { ...canonicalTimelog, id: 3, contractorProfileId: 'profile-uuid-2' },
+      ],
+      eventApplications: [{ ...lifecycleApplication, supabaseId: undefined, status: 'withdrawal_requested' }],
+      eventCrewAssignments: [
+        { eventId: 1, contractorProfileId: 'profile-uuid-1', name: 'Test User' },
+        { eventId: 1, contractorProfileId: 'profile-uuid-1', name: 'Test User duplicate' },
+        { eventId: 1, contractorProfileId: 'profile-uuid-2', name: 'Other User' },
       ],
     });
+    const harness = await setupLifecycleService({ dataSource: 'local', initialSnapshot });
 
-    const eventsSelect = vi.fn(() => ({
-      order: vi.fn(() => ({
-        order: vi.fn().mockResolvedValue({
-          data: [{ id: 'event-row-1' }],
-          error: null,
-        }),
-      })),
-    }));
-    const timelogSelectEqContractor = vi.fn().mockResolvedValue({
-      data: [{ id: 'timelog-row-1' }],
-      error: null,
+    const result = await harness.service.removeContractorFromEvent(1, 'profile-uuid-1');
+    const snapshot = harness.getSnapshot();
+
+    expect(snapshot.timelogs.map((timelog) => timelog.contractorProfileId)).toEqual(['profile-uuid-2']);
+    expect(snapshot.eventCrewAssignments.map((assignment) => assignment.contractorProfileId)).toEqual(['profile-uuid-2']);
+    expect(snapshot.eventApplications[0].status).toBe('withdrawn');
+    expect(snapshot.events[0].filled).toBe(1);
+    expect(result.event.filled).toBe(1);
+    expect(harness.removeEventCrewRpc).not.toHaveBeenCalled();
+  });
+
+  it('keeps local approval and withdrawal lifecycle functional without RPC calls', async () => {
+    const initialSnapshot = createSnapshot({
+      events: [{ ...lifecycleEvent, supabaseId: undefined }],
+      eventApplications: [{ ...lifecycleApplication, supabaseId: undefined }],
     });
-    const timelogSelectEqEvent = vi.fn(() => ({ eq: timelogSelectEqContractor }));
-    const timelogSelect = vi.fn(() => ({ eq: timelogSelectEqEvent }));
-    const timelogDeleteIn = vi.fn().mockResolvedValue({ error: null });
-    const timelogDaysDeleteIn = vi.fn().mockResolvedValue({ error: null });
-    const eventsUpdateEq = vi.fn().mockResolvedValue({ error: null });
+    const harness = await setupLifecycleService({ dataSource: 'local', initialSnapshot });
 
-    vi.doMock('../../../lib/app-config', () => ({
-      appDataSource: 'supabase',
-    }));
+    await harness.service.approveEventApplication(1);
+    expect(harness.getSnapshot().eventApplications[0].status).toBe('approved');
+    expect(harness.getSnapshot().timelogs).toHaveLength(1);
 
-    vi.doMock('../../../lib/supabase', () => ({
-      isSupabaseConfigured: true,
-      supabase: {
-        from: vi.fn((table: string) => {
-          if (table === 'events') {
-            return {
-              select: eventsSelect,
-              update: vi.fn(() => ({ eq: eventsUpdateEq })),
-            };
-          }
-          if (table === 'timelogs') {
-            return {
-              select: timelogSelect,
-              delete: vi.fn(() => ({ in: timelogDeleteIn })),
-            };
-          }
-          if (table === 'timelog_days') {
-            return {
-              delete: vi.fn(() => ({ in: timelogDaysDeleteIn })),
-            };
-          }
-          throw new Error(`Unexpected table ${table}`);
-        }),
-      },
-    }));
-
-    vi.doMock('../../../lib/app-data', () => ({
-      getLocalAppState: () => structuredClone(snapshot),
-      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
-        snapshot = structuredClone(updater(structuredClone(snapshot)));
-        return structuredClone(snapshot);
-      },
-      subscribeToLocalAppState: vi.fn(() => () => undefined),
-    }));
-
-    vi.doMock('../../../lib/supabase-mappers', () => ({
-      mapClient: vi.fn(),
-      mapEvent: vi.fn(),
-    }));
-
-    const { removeContractorFromEvent } = await import('./events.service');
-
-    const result = await removeContractorFromEvent(1, 'profile-uuid-1');
-
-    expect(timelogSelectEqEvent).toHaveBeenCalledWith('event_id', 'event-row-1');
-    expect(timelogSelectEqContractor).toHaveBeenCalledWith('contractor_id', 'profile-uuid-1');
-    expect(timelogDaysDeleteIn).toHaveBeenCalledWith('timelog_id', ['timelog-row-1']);
-    expect(timelogDeleteIn).toHaveBeenCalledWith('id', ['timelog-row-1']);
-    expect(eventsUpdateEq).toHaveBeenCalledWith('id', 'event-row-1');
-    expect(result.event.filled).toBe(0);
-    expect(snapshot.timelogs).toHaveLength(0);
+    await harness.service.approveEventWithdrawal(1);
+    expect(harness.getSnapshot().eventApplications[0].status).toBe('withdrawn');
+    expect(harness.getSnapshot().timelogs).toHaveLength(0);
+    expect(harness.assignEventCrewRpc).not.toHaveBeenCalled();
+    expect(harness.removeEventCrewRpc).not.toHaveBeenCalled();
   });
 
   it('deletes only the Supabase event matching the UUID when local event ids collide', async () => {

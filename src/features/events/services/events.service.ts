@@ -7,9 +7,11 @@ import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { getDatesBetween, getEventStatus } from '../../../utils';
 import { Client, Contractor, Event, EventApplication, EventApplicationStatus, EventCrewAssignment, EventPhaseSlot, GrasonEventConfirmation, Project, ReceiptItem, Timelog, TimelogType } from '../../../types';
 import { EventAssignmentResult, EventConflictDetail, EventFilter, EventWithDerivedStatus } from '../types/events.types';
+import { assignEventCrewRpc, isDisposableTimelogStatus, removeEventCrewRpc } from './event-assignment-lifecycle.service';
 
 const DEFAULT_TIME_FROM = '08:00';
 const DEFAULT_TIME_TO = '17:00';
+const CREW_LIFECYCLE_ERROR_MESSAGE = 'Operaci s Crew se nepodařilo dokončit.';
 const EVENT_PHASE_TYPES: TimelogType[] = ['instal', 'provoz', 'deinstal'];
 type TimelogAssignmentRow = { event_id: string | null; contractor_id: string | null };
 type EventAssignmentRow = { event_id: string | null; profile_id: string | null; assigned_at?: string | null };
@@ -452,6 +454,22 @@ const invalidateEventQueries = () => {
   void queryClient.invalidateQueries({ queryKey: queryKeys.events.all });
   void queryClient.invalidateQueries({ queryKey: queryKeys.timelogs.all });
   void queryClient.invalidateQueries({ queryKey: queryKeys.receipts.all });
+};
+
+const refreshEventLifecycleState = async (): Promise<void> => {
+  const previousSnapshot = structuredClone(getLocalAppState());
+  const { fetchTimelogsSnapshot } = await import('../../timelogs/services/timelogs.service');
+  const refreshes = [fetchEventsSnapshot(), fetchTimelogsSnapshot()];
+
+  try {
+    await Promise.all(refreshes);
+    invalidateEventQueries();
+  } catch (error) {
+    await Promise.allSettled(refreshes);
+    updateLocalAppState(() => previousSnapshot);
+    console.error('Failed to refresh Crew lifecycle state', error);
+    throw new Error(CREW_LIFECYCLE_ERROR_MESSAGE);
+  }
 };
 
 const getSupabaseClientRows = async (): Promise<Array<{ id: string; name: string }>> => {
@@ -941,13 +959,17 @@ export const approveEventApplication = async (applicationId: number): Promise<vo
     throw new Error('Prihlaska nebyla nalezena.');
   }
 
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured && !application.supabaseId) {
+    throw new Error(CREW_LIFECYCLE_ERROR_MESSAGE);
+  }
+
   const event = (snapshot.events ?? []).find((item) => item.id === application.eventId);
   await assignCrewToEvent(
     application.eventId,
     application.contractorProfileId,
+    application.supabaseId ?? null,
     event?.showDayTypes ? ['all'] : undefined,
   );
-  await updateEventApplicationStatus(applicationId, 'approved');
 };
 
 export const approveEventWithdrawal = async (applicationId: number): Promise<void> => {
@@ -958,7 +980,6 @@ export const approveEventWithdrawal = async (applicationId: number): Promise<voi
   }
 
   await removeContractorFromEvent(application.eventId, application.contractorProfileId);
-  await updateEventApplicationStatus(applicationId, 'withdrawn');
 };
 
 export const getEventFormOptions = (): { projects: Project[]; clients: Client[] } => {
@@ -1442,64 +1463,38 @@ export const getEventCrew = (eventId: number): Contractor[] => {
 };
 
 export const removeContractorFromEvent = async (eventId: number, contractorProfileId: string) => {
-  let nextEvent: Event | null = null;
-  let nextTimelogs: Timelog[] = [];
-  let nextEventCrewAssignments: EventCrewAssignment[] = [];
   const currentSnapshot = getLocalAppState();
   const currentEvent = (currentSnapshot.events ?? []).find((item) => item.id === eventId);
-  const hasCrewAssignment = Boolean(currentEvent && (currentSnapshot.eventCrewAssignments ?? []).some((assignment) => (
-    assignment.contractorProfileId === contractorProfileId
-    && assignmentMatchesEvent(assignment, currentEvent)
-  )));
+  if (!currentEvent) {
+    throw new Error('Akce nebyla nalezena.');
+  }
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
     const eventRowId = await getSupabaseEventRowId(eventId);
+    await removeEventCrewRpc(eventRowId, contractorProfileId);
+    await refreshEventLifecycleState();
 
-    const timelogRows = await supabase
-      .from('timelogs')
-      .select('id')
-      .eq('event_id', eventRowId)
-      .eq('contractor_id', contractorProfileId);
-
-    if (timelogRows.error) {
-      throw new Error(timelogRows.error.message);
+    const refreshed = getLocalAppState();
+    const refreshedEvent = (refreshed.events ?? []).find((item) => item.supabaseId === eventRowId);
+    if (!refreshedEvent) {
+      throw new Error(CREW_LIFECYCLE_ERROR_MESSAGE);
     }
 
-    const timelogRowIds = (timelogRows.data ?? []).map((row) => row.id);
-
-    if (timelogRowIds.length > 0) {
-      const timelogDaysDelete = await supabase
-        .from('timelog_days')
-        .delete()
-        .in('timelog_id', timelogRowIds);
-
-      if (timelogDaysDelete.error) {
-        throw new Error(timelogDaysDelete.error.message);
-      }
-
-      const timelogDelete = await supabase
-        .from('timelogs')
-        .delete()
-        .in('id', timelogRowIds);
-
-      if (timelogDelete.error) {
-        throw new Error(timelogDelete.error.message);
-      }
-    }
-
-    if (hasCrewAssignment) {
-      const assignmentDelete = await supabase
-        .from('event_assignments')
-        .delete()
-        .eq('event_id', eventRowId)
-        .eq('profile_id', contractorProfileId);
-
-      if (assignmentDelete.error) {
-        throw new Error(assignmentDelete.error.message);
-      }
-    }
+    return {
+      event: refreshedEvent,
+      timelogs: refreshed.timelogs ?? [],
+    };
   }
 
+  const matchingTimelogs = (currentSnapshot.timelogs ?? []).filter((timelog) => (
+    timelog.eid === eventId && timelog.contractorProfileId === contractorProfileId
+  ));
+  if (matchingTimelogs.some((timelog) => !isDisposableTimelogStatus(timelog.status))) {
+    throw new Error('Crew nelze odebrat, protože výkaz už byl odeslán ke kontrole.');
+  }
+
+  let nextEvent: Event | null = null;
+  let nextTimelogs: Timelog[] = [];
   updateLocalAppState((snapshot) => {
     const event = snapshot.events.find((item) => item.id === eventId);
     if (!event) {
@@ -1510,7 +1505,7 @@ export const removeContractorFromEvent = async (eventId: number, contractorProfi
       timelog.eid === eventId
       && timelog.contractorProfileId === contractorProfileId
     ));
-    nextEventCrewAssignments = (snapshot.eventCrewAssignments ?? []).filter((assignment) => !(
+    const nextEventCrewAssignments = (snapshot.eventCrewAssignments ?? []).filter((assignment) => !(
       assignment.contractorProfileId === contractorProfileId
       && assignmentMatchesEvent(assignment, event)
     ));
@@ -1524,20 +1519,13 @@ export const removeContractorFromEvent = async (eventId: number, contractorProfi
       events: snapshot.events.map((item) => item.id === eventId ? nextEvent as Event : item),
       timelogs: nextTimelogs,
       eventCrewAssignments: nextEventCrewAssignments,
+      eventApplications: (snapshot.eventApplications ?? []).map((application) => (
+        application.eventId === eventId && application.contractorProfileId === contractorProfileId
+          ? { ...application, status: 'withdrawn' as const }
+          : application
+      )),
     };
   });
-
-  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured && nextEvent) {
-    const eventRowId = await getSupabaseEventRowId(eventId);
-    const eventUpdate = await supabase
-      .from('events')
-      .update({ crew_filled: nextEvent.filled })
-      .eq('id', eventRowId);
-
-    if (eventUpdate.error) {
-      throw new Error(eventUpdate.error.message);
-    }
-  }
 
   invalidateEventQueries();
   return {
@@ -1635,11 +1623,18 @@ export const buildTimelogDaysForEvent = (
 export const assignCrewToEvent = async (
   eventId: number,
   contractorProfileId: string,
-  phaseChoices?: Array<TimelogType | 'all'>,
+  applicationSupabaseIdOrPhaseChoices?: string | null | Array<TimelogType | 'all'>,
+  explicitPhaseChoices?: Array<TimelogType | 'all'>,
 ): Promise<EventAssignmentResult> => {
   const snapshot = getLocalAppState();
   const event = snapshot.events.find((item) => item.id === eventId);
   const contractor = getContractorByProfileId(contractorProfileId);
+  const applicationSupabaseId = Array.isArray(applicationSupabaseIdOrPhaseChoices)
+    ? null
+    : applicationSupabaseIdOrPhaseChoices ?? null;
+  const phaseChoices = Array.isArray(applicationSupabaseIdOrPhaseChoices)
+    ? applicationSupabaseIdOrPhaseChoices
+    : explicitPhaseChoices;
 
   if (!event) {
     throw new Error('Akce nebyla nalezena.');
@@ -1662,6 +1657,32 @@ export const assignCrewToEvent = async (
 
   if (hasCollision) {
     throw new Error('Tento clen crew ma ve stejnem terminu jinou akci.');
+  }
+
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    const eventRowId = await getSupabaseEventRowId(event.id);
+    const rpc = await assignEventCrewRpc({
+      eventId: eventRowId,
+      profileId: contractorProfileId,
+      applicationId: applicationSupabaseId,
+      days: initialDays,
+    });
+    await refreshEventLifecycleState();
+
+    const refreshed = getLocalAppState();
+    const refreshedEvent = (refreshed.events ?? []).find((item) => item.supabaseId === rpc.event_id);
+    const canonicalTimelog = (refreshed.timelogs ?? []).find((item) => (
+      item.eid === refreshedEvent?.id && item.contractorProfileId === contractorProfileId
+    ));
+    if (!refreshedEvent || !canonicalTimelog) {
+      throw new Error(CREW_LIFECYCLE_ERROR_MESSAGE);
+    }
+
+    return {
+      event: refreshedEvent,
+      timelog: canonicalTimelog,
+      rpc,
+    };
   }
 
   const isAlreadyAssigned = snapshot.timelogs.some((timelog) => (
@@ -1691,58 +1712,15 @@ export const assignCrewToEvent = async (
     timelog,
   };
 
-  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
-    const eventRowId = await getSupabaseEventRowId(event.id);
-
-    const timelogInsert = await supabase
-      .from('timelogs')
-      .insert({
-        event_id: eventRowId,
-        contractor_id: contractorProfileId,
-        km: 0,
-        note: '',
-        status: 'draft',
-      })
-      .select('id')
-      .single();
-
-    if (timelogInsert.error) {
-      throw new Error(timelogInsert.error.message);
-    }
-
-    const timelogRowId = timelogInsert.data?.id;
-    if (!timelogRowId) {
-      throw new Error('Nepodarilo se vytvorit vykaz pro prirazeni crew.');
-    }
-
-    const timelogDaysInsert = await supabase
-      .from('timelog_days')
-      .insert(assignment.timelog.days.map((day) => ({
-        timelog_id: timelogRowId,
-        date: day.d,
-        time_from: day.f,
-        time_to: day.t,
-        day_type: day.type,
-      })));
-
-    if (timelogDaysInsert.error) {
-      throw new Error(timelogDaysInsert.error.message);
-    }
-
-    const eventUpdate = await supabase
-      .from('events')
-      .update({ crew_filled: assignment.event.filled })
-      .eq('id', eventRowId);
-
-    if (eventUpdate.error) {
-      throw new Error(eventUpdate.error.message);
-    }
-  }
-
   updateLocalAppState((currentSnapshot) => ({
     ...currentSnapshot,
     events: currentSnapshot.events.map((item) => item.id === eventId ? assignment.event : item),
     timelogs: [...currentSnapshot.timelogs, assignment.timelog],
+    eventApplications: (currentSnapshot.eventApplications ?? []).map((application) => (
+      application.eventId === eventId && application.contractorProfileId === contractorProfileId
+        ? { ...application, status: 'approved' as const }
+        : application
+    )),
   }));
 
   invalidateEventQueries();

@@ -56,11 +56,28 @@ declare
   v_atomic_third_timelog_id uuid;
   v_atomic_fourth_timelog_id uuid;
   v_atomic_delete_timelog_id uuid;
+  v_delete_event_id uuid;
+  v_protected_event_id uuid;
+  v_event_receipt_id uuid;
+  v_invoice_event_id uuid;
+  v_invoice_id uuid;
+  v_delete_invoice_id uuid;
+  v_invoice_timelog_id uuid;
+  v_delete_invoice_timelog_id uuid;
+  v_invoice_receipt_id uuid;
+  v_delete_invoice_receipt_id uuid;
   v_atomic_updated_at timestamptz;
   v_atomic_second_updated_at timestamptz;
   v_atomic_third_updated_at timestamptz;
   v_atomic_fourth_updated_at timestamptz;
   v_atomic_delete_updated_at timestamptz;
+  v_invoice_updated_at timestamptz;
+  v_delete_invoice_updated_at timestamptz;
+  v_invoice_timelog_updated_at timestamptz;
+  v_delete_invoice_timelog_updated_at timestamptz;
+  v_invoice_receipt_updated_at timestamptz;
+  v_delete_invoice_receipt_updated_at timestamptz;
+  v_invoice_paid_at timestamptz;
   v_event_after jsonb;
   v_days_after jsonb;
 begin
@@ -103,6 +120,309 @@ begin
     raise exception 'verification failed: assignment event/profile uniqueness is incompatible';
   end if;
 
+  if exists (
+    select 1
+    from (
+      values
+        ('invoices', 'invoice_number', 'text', 'YES', null::integer, null::integer),
+        ('invoices', 'issue_date', 'date', 'YES', null::integer, null::integer),
+        ('invoices', 'taxable_supply_date', 'date', 'YES', null::integer, null::integer),
+        ('invoices', 'due_date', 'date', 'YES', null::integer, null::integer),
+        ('invoices', 'currency', 'text', 'NO', null::integer, null::integer),
+        ('invoices', 'supplier_snapshot', 'jsonb', 'YES', null::integer, null::integer),
+        ('invoices', 'customer_snapshot', 'jsonb', 'YES', null::integer, null::integer),
+        ('invoices', 'pdf_path', 'text', 'YES', null::integer, null::integer),
+        ('invoices', 'pdf_generated_at', 'timestamptz', 'YES', null::integer, null::integer),
+        ('invoice_items', 'id', 'uuid', 'NO', null::integer, null::integer),
+        ('invoice_items', 'invoice_id', 'uuid', 'NO', null::integer, null::integer),
+        ('invoice_items', 'job_number', 'text', 'NO', null::integer, null::integer),
+        ('invoice_items', 'event_id', 'uuid', 'YES', null::integer, null::integer),
+        ('invoice_items', 'hours', 'numeric', 'NO', 10, 2),
+        ('invoice_items', 'amount_hours', 'numeric', 'NO', 12, 2),
+        ('invoice_items', 'km', 'numeric', 'NO', 10, 2),
+        ('invoice_items', 'amount_km', 'numeric', 'NO', 12, 2),
+        ('invoice_items', 'amount_receipts', 'numeric', 'NO', 12, 2),
+        ('invoice_items', 'amount_meals', 'numeric', 'NO', null::integer, null::integer),
+        ('invoice_items', 'total_amount', 'numeric', 'NO', 12, 2),
+        ('invoice_items', 'created_at', 'timestamptz', 'NO', null::integer, null::integer),
+        ('invoice_timelogs', 'id', 'uuid', 'NO', null::integer, null::integer),
+        ('invoice_timelogs', 'invoice_id', 'uuid', 'NO', null::integer, null::integer),
+        ('invoice_timelogs', 'timelog_id', 'uuid', 'NO', null::integer, null::integer),
+        ('invoice_timelogs', 'created_at', 'timestamptz', 'NO', null::integer, null::integer),
+        ('invoice_receipts', 'id', 'uuid', 'NO', null::integer, null::integer),
+        ('invoice_receipts', 'invoice_id', 'uuid', 'NO', null::integer, null::integer),
+        ('invoice_receipts', 'receipt_id', 'uuid', 'NO', null::integer, null::integer),
+        ('invoice_receipts', 'created_at', 'timestamptz', 'NO', null::integer, null::integer)
+    ) required_columns (
+      table_name,
+      column_name,
+      udt_name,
+      is_nullable,
+      numeric_precision,
+      numeric_scale
+    )
+    left join information_schema.columns c
+      on c.table_schema = 'public'
+      and c.table_name = required_columns.table_name
+      and c.column_name = required_columns.column_name
+    where c.column_name is null
+      or c.udt_name <> required_columns.udt_name
+      or c.is_nullable <> required_columns.is_nullable
+      or c.numeric_precision is distinct from required_columns.numeric_precision
+      or c.numeric_scale is distinct from required_columns.numeric_scale
+  ) or not exists (
+    select 1 from information_schema.columns c
+    where c.table_schema = 'public'
+      and c.table_name = 'invoices'
+      and c.column_name = 'currency'
+      and c.column_default = '''CZK''::text'
+  ) or exists (
+    select 1
+    from information_schema.columns c
+    where c.table_schema = 'public'
+      and c.table_name = 'invoice_items'
+      and c.column_name in (
+        'hours',
+        'amount_hours',
+        'km',
+        'amount_km',
+        'amount_receipts',
+        'amount_meals',
+        'total_amount'
+      )
+      and c.column_default is distinct from '0'
+  ) or exists (
+    select 1
+    from (
+      values
+        ('invoice_items', 'id', 'gen_random_uuid()'),
+        ('invoice_items', 'created_at', 'now()'),
+        ('invoice_timelogs', 'id', 'gen_random_uuid()'),
+        ('invoice_timelogs', 'created_at', 'now()'),
+        ('invoice_receipts', 'id', 'gen_random_uuid()'),
+        ('invoice_receipts', 'created_at', 'now()')
+    ) expected_defaults (table_name, column_name, column_default)
+    left join information_schema.columns c
+      on c.table_schema = 'public'
+      and c.table_name = expected_defaults.table_name
+      and c.column_name = expected_defaults.column_name
+    where c.column_name is null
+      or c.column_default is distinct from expected_defaults.column_default
+  ) then
+    raise exception 'verification failed: invoice core column catalog is incompatible';
+  end if;
+
+  if exists (
+    select 1
+    from (
+      values
+        ('public.invoice_items'::pg_catalog.regclass, 'p'::"char", 'PRIMARY KEY (id)'),
+        ('public.invoice_items'::pg_catalog.regclass, 'f'::"char", 'FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE'),
+        ('public.invoice_items'::pg_catalog.regclass, 'f'::"char", 'FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE SET NULL'),
+        ('public.invoice_timelogs'::pg_catalog.regclass, 'p'::"char", 'PRIMARY KEY (id)'),
+        ('public.invoice_timelogs'::pg_catalog.regclass, 'u'::"char", 'UNIQUE (invoice_id, timelog_id)'),
+        ('public.invoice_timelogs'::pg_catalog.regclass, 'u'::"char", 'UNIQUE (timelog_id)'),
+        ('public.invoice_timelogs'::pg_catalog.regclass, 'f'::"char", 'FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE'),
+        ('public.invoice_timelogs'::pg_catalog.regclass, 'f'::"char", 'FOREIGN KEY (timelog_id) REFERENCES timelogs(id) ON DELETE CASCADE'),
+        ('public.invoice_receipts'::pg_catalog.regclass, 'p'::"char", 'PRIMARY KEY (id)'),
+        ('public.invoice_receipts'::pg_catalog.regclass, 'u'::"char", 'UNIQUE (invoice_id, receipt_id)'),
+        ('public.invoice_receipts'::pg_catalog.regclass, 'u'::"char", 'UNIQUE (receipt_id)'),
+        ('public.invoice_receipts'::pg_catalog.regclass, 'f'::"char", 'FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE'),
+        ('public.invoice_receipts'::pg_catalog.regclass, 'f'::"char", 'FOREIGN KEY (receipt_id) REFERENCES receipts(id) ON DELETE CASCADE'),
+        ('public.invoices'::pg_catalog.regclass, 'f'::"char", 'FOREIGN KEY (timelog_id) REFERENCES timelogs(id) ON DELETE SET NULL')
+    ) expected_constraints (relation_id, constraint_type, definition)
+    left join pg_catalog.pg_constraint c
+      on c.conrelid = expected_constraints.relation_id
+      and c.contype = expected_constraints.constraint_type
+      and pg_catalog.pg_get_constraintdef(c.oid) = expected_constraints.definition
+    where c.oid is null
+  ) then
+    raise exception 'verification failed: invoice relation constraints are incompatible';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_catalog.pg_index i
+    join pg_catalog.pg_class index_relation on index_relation.oid = i.indexrelid
+    join pg_catalog.pg_attribute indexed_column
+      on indexed_column.attrelid = i.indrelid
+      and indexed_column.attname = 'invoice_number'
+      and not indexed_column.attisdropped
+    where i.indrelid = 'public.invoices'::pg_catalog.regclass
+      and index_relation.relname = 'invoices_invoice_number_key'
+      and i.indisunique
+      and i.indnkeyatts = 1
+      and i.indkey[0] = indexed_column.attnum
+      and pg_catalog.pg_get_expr(i.indpred, i.indrelid) = '(invoice_number IS NOT NULL)'
+  ) or not exists (
+    select 1
+    from pg_catalog.pg_index i
+    join pg_catalog.pg_class index_relation on index_relation.oid = i.indexrelid
+    join pg_catalog.pg_attribute indexed_column
+      on indexed_column.attrelid = i.indrelid
+      and indexed_column.attname = 'pdf_path'
+      and not indexed_column.attisdropped
+    where i.indrelid = 'public.invoices'::pg_catalog.regclass
+      and index_relation.relname = 'idx_invoices_pdf_path'
+      and not i.indisunique
+      and i.indnkeyatts = 1
+      and i.indkey[0] = indexed_column.attnum
+      and pg_catalog.pg_get_expr(i.indpred, i.indrelid) = '(pdf_path IS NOT NULL)'
+  ) then
+    raise exception 'verification failed: invoice billing indexes are incompatible';
+  end if;
+
+  if exists (
+    select 1
+    from (
+      values
+        ('public.timelogs'::pg_catalog.regclass),
+        ('public.timelog_days'::pg_catalog.regclass),
+        ('public.invoice_items'::pg_catalog.regclass),
+        ('public.invoice_timelogs'::pg_catalog.regclass),
+        ('public.invoice_receipts'::pg_catalog.regclass)
+    ) required_tables (relation_id)
+    join pg_catalog.pg_class relation on relation.oid = required_tables.relation_id
+    where not relation.relrowsecurity or relation.relforcerowsecurity
+  ) then
+    raise exception 'verification failed: required workflow RLS configuration is incompatible';
+  end if;
+
+  if pg_catalog.has_table_privilege('anon', 'public.timelogs', 'SELECT,INSERT,UPDATE,DELETE')
+    or pg_catalog.has_table_privilege('anon', 'public.timelog_days', 'SELECT,INSERT,UPDATE,DELETE')
+    or not pg_catalog.has_table_privilege('authenticated', 'public.timelogs', 'SELECT')
+    or not pg_catalog.has_table_privilege('authenticated', 'public.timelogs', 'INSERT')
+    or not pg_catalog.has_table_privilege('authenticated', 'public.timelogs', 'UPDATE')
+    or not pg_catalog.has_table_privilege('authenticated', 'public.timelogs', 'DELETE')
+    or not pg_catalog.has_table_privilege('authenticated', 'public.timelog_days', 'SELECT')
+    or not pg_catalog.has_table_privilege('authenticated', 'public.timelog_days', 'INSERT')
+    or not pg_catalog.has_table_privilege('authenticated', 'public.timelog_days', 'UPDATE')
+    or not pg_catalog.has_table_privilege('authenticated', 'public.timelog_days', 'DELETE')
+    or pg_catalog.has_table_privilege('authenticated', 'public.timelogs', 'TRUNCATE,REFERENCES,TRIGGER')
+    or pg_catalog.has_table_privilege('authenticated', 'public.timelog_days', 'TRUNCATE,REFERENCES,TRIGGER') then
+    raise exception 'verification failed: timelog table ACL is incompatible';
+  end if;
+
+  if exists (
+    select 1
+    from (
+      values
+        ('public.invoice_items'::pg_catalog.regclass),
+        ('public.invoice_timelogs'::pg_catalog.regclass),
+        ('public.invoice_receipts'::pg_catalog.regclass)
+    ) required_tables (relation_id)
+    where pg_catalog.has_table_privilege('anon', relation_id, 'SELECT,INSERT,UPDATE,DELETE')
+      or not pg_catalog.has_table_privilege('authenticated', relation_id, 'SELECT')
+      or not pg_catalog.has_table_privilege('authenticated', relation_id, 'INSERT')
+      or not pg_catalog.has_table_privilege('authenticated', relation_id, 'DELETE')
+      or pg_catalog.has_table_privilege(
+        'authenticated',
+        relation_id,
+        'UPDATE,TRUNCATE,REFERENCES,TRIGGER'
+      )
+  ) then
+    raise exception 'verification failed: invoice link table ACL is incompatible';
+  end if;
+
+  if exists (
+    select 1
+    from (
+      values
+        ('Crew can view own timelogs', 'r'::"char", true, false),
+        ('Crew can create own draft timelogs', 'a'::"char", false, true),
+        ('Crew can update own editable timelogs', 'w'::"char", true, true),
+        ('Crew can delete own draft and rejected timelogs', 'd'::"char", true, false),
+        ('CrewHead can view all timelogs', 'r'::"char", true, false),
+        ('CrewHead can create assignment draft timelogs', 'a'::"char", false, true),
+        ('CrewHead can create proposed timelogs', 'a'::"char", false, true),
+        ('CrewHead can update draft and CH timelogs', 'w'::"char", true, true),
+        ('CrewHead can delete disposable timelogs', 'd'::"char", true, false),
+        ('COO can view all timelogs', 'r'::"char", true, false),
+        ('COO can status-update COO timelogs', 'w'::"char", true, true)
+    ) expected_policy (policy_name, command, needs_qual, needs_check)
+    left join pg_catalog.pg_policy policy
+      on policy.polrelid = 'public.timelogs'::pg_catalog.regclass
+      and policy.polname = expected_policy.policy_name
+      and policy.polcmd = expected_policy.command
+      and policy.polroles = array[v_authenticated_role_oid]
+      and policy.polpermissive
+    where policy.oid is null
+      or (policy.polqual is not null) is distinct from expected_policy.needs_qual
+      or (policy.polwithcheck is not null) is distinct from expected_policy.needs_check
+  ) or (
+    select pg_catalog.count(*)
+    from pg_catalog.pg_policy policy
+    where policy.polrelid = 'public.timelogs'::pg_catalog.regclass
+  ) <> 11 then
+    raise exception 'verification failed: timelog workflow policy catalog is incompatible';
+  end if;
+
+  if exists (
+    select 1
+    from (
+      values
+        ('Users can view timelog days via visible timelog', 'r'::"char", true, false),
+        ('Users can insert timelog days via editable timelog', 'a'::"char", false, true),
+        ('Users can update timelog days via editable timelog', 'w'::"char", true, true),
+        ('Users can delete timelog days via editable timelog', 'd'::"char", true, false)
+    ) expected_policy (policy_name, command, needs_qual, needs_check)
+    left join pg_catalog.pg_policy policy
+      on policy.polrelid = 'public.timelog_days'::pg_catalog.regclass
+      and policy.polname = expected_policy.policy_name
+      and policy.polcmd = expected_policy.command
+      and policy.polroles = array[v_authenticated_role_oid]
+      and policy.polpermissive
+    where policy.oid is null
+      or (policy.polqual is not null) is distinct from expected_policy.needs_qual
+      or (policy.polwithcheck is not null) is distinct from expected_policy.needs_check
+  ) or (
+    select pg_catalog.count(*)
+    from pg_catalog.pg_policy policy
+    where policy.polrelid = 'public.timelog_days'::pg_catalog.regclass
+  ) <> 4 then
+    raise exception 'verification failed: timelog-day workflow policy catalog is incompatible';
+  end if;
+
+  if exists (
+    select 1
+    from (
+      values
+        ('public.invoice_items'::pg_catalog.regclass, 'invoice_items'),
+        ('public.invoice_timelogs'::pg_catalog.regclass, 'invoice_timelogs'),
+        ('public.invoice_receipts'::pg_catalog.regclass, 'invoice_receipts')
+    ) required_tables (relation_id, policy_prefix)
+    cross join (
+      values
+        ('_select_management', 'r'::"char", true, false),
+        ('_insert_management', 'a'::"char", false, true),
+        ('_delete_management', 'd'::"char", true, false)
+    ) expected_policy (name_suffix, command, needs_qual, needs_check)
+    left join pg_catalog.pg_policy policy
+      on policy.polrelid = required_tables.relation_id
+      and policy.polname = required_tables.policy_prefix || expected_policy.name_suffix
+      and policy.polcmd = expected_policy.command
+      and policy.polroles = array[v_authenticated_role_oid]
+      and policy.polpermissive
+    where policy.oid is null
+      or (policy.polqual is not null) is distinct from expected_policy.needs_qual
+      or (policy.polwithcheck is not null) is distinct from expected_policy.needs_check
+  ) or exists (
+    select 1
+    from (
+      values
+        ('public.invoice_items'::pg_catalog.regclass),
+        ('public.invoice_timelogs'::pg_catalog.regclass),
+        ('public.invoice_receipts'::pg_catalog.regclass)
+    ) required_tables (relation_id)
+    where (
+      select pg_catalog.count(*)
+      from pg_catalog.pg_policy policy
+      where policy.polrelid = required_tables.relation_id
+    ) <> 3
+  ) then
+    raise exception 'verification failed: invoice link policy catalog is incompatible';
+  end if;
+
   foreach v_function_signature in array array[
     'public.assign_event_crew(uuid, uuid, uuid, jsonb)'::pg_catalog.regprocedure,
     'public.remove_event_crew(uuid, uuid)'::pg_catalog.regprocedure,
@@ -110,7 +430,11 @@ begin
     'public.save_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, public.timelog_status, jsonb)'::pg_catalog.regprocedure,
     'public.transition_timelog_statuses_atomic(jsonb, public.timelog_status, public.timelog_status)'::pg_catalog.regprocedure,
     'public.delete_timelog_atomic(uuid, timestamptz, public.timelog_status)'::pg_catalog.regprocedure,
-    'public.import_approved_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, jsonb)'::pg_catalog.regprocedure
+    'public.import_approved_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, jsonb)'::pg_catalog.regprocedure,
+    'public.delete_event_atomic(uuid)'::pg_catalog.regprocedure,
+    'public.create_invoice_atomic(jsonb, jsonb, jsonb, jsonb)'::pg_catalog.regprocedure,
+    'public.mark_invoice_paid_atomic(uuid, public.invoice_status, timestamptz, timestamptz)'::pg_catalog.regprocedure,
+    'public.delete_invoice_atomic(uuid, public.invoice_status, timestamptz)'::pg_catalog.regprocedure
   ] loop
     select
       p.proowner,
@@ -1208,6 +1532,7 @@ begin
   )
   returning id into v_atomic_event_id;
 
+  execute 'set local role authenticated';
   v_result := public.save_timelog_atomic(
     null,
     v_atomic_event_id,
@@ -1221,6 +1546,7 @@ begin
   );
   v_atomic_first_timelog_id := (v_result->>'id')::uuid;
   v_atomic_updated_at := (v_result->>'updated_at')::timestamptz;
+  execute 'reset role';
 
   insert into public.events (name, status)
   values (
@@ -1229,6 +1555,7 @@ begin
   )
   returning id into v_atomic_event_id;
 
+  execute 'set local role authenticated';
   v_result := public.save_timelog_atomic(
     null,
     v_atomic_event_id,
@@ -1242,12 +1569,14 @@ begin
   );
   v_atomic_second_timelog_id := (v_result->>'id')::uuid;
   v_atomic_second_updated_at := (v_result->>'updated_at')::timestamptz;
+  execute 'reset role';
 
   if v_atomic_first_timelog_id is null or v_atomic_second_timelog_id is null then
     raise exception 'verification failed: atomic draft create returned no identity';
   end if;
 
   v_expected_error := false;
+  execute 'set local role authenticated';
   begin
     perform public.transition_timelog_statuses_atomic(
       pg_catalog.jsonb_build_array(
@@ -1271,6 +1600,7 @@ begin
       end if;
       v_expected_error := true;
   end;
+  execute 'reset role';
   if not v_expected_error or exists (
     select 1
     from public.timelogs
@@ -1280,6 +1610,7 @@ begin
     raise exception 'verification failed: atomic batch conflict partially changed rows';
   end if;
 
+  execute 'set local role authenticated';
   v_result := public.transition_timelog_statuses_atomic(
     pg_catalog.jsonb_build_array(
       pg_catalog.jsonb_build_object(
@@ -1294,10 +1625,38 @@ begin
     'draft'::public.timelog_status,
     'pending_ch'::public.timelog_status
   );
+  execute 'reset role';
 
   select updated_at into v_atomic_updated_at
   from public.timelogs
   where id = v_atomic_first_timelog_id;
+
+  execute 'set local role authenticated';
+  update public.timelogs
+  set km = km + 1
+  where id = v_atomic_first_timelog_id;
+  get diagnostics v_status_count = row_count;
+  if v_status_count <> 0 or exists (
+    select 1
+    from public.timelogs
+    where id = v_atomic_first_timelog_id
+      and km <> 12
+  ) then
+    raise exception 'verification failed: Crew directly changed protected timelog';
+  end if;
+
+  update public.timelog_days
+  set note = 'forbidden direct edit'
+  where timelog_id = v_atomic_first_timelog_id;
+  get diagnostics v_status_count = row_count;
+  if v_status_count <> 0 or exists (
+    select 1
+    from public.timelog_days
+    where timelog_id = v_atomic_first_timelog_id
+      and note = 'forbidden direct edit'
+  ) then
+    raise exception 'verification failed: Crew directly changed protected timelog day';
+  end if;
 
   v_expected_error := false;
   begin
@@ -1319,6 +1678,7 @@ begin
     or not exists (select 1 from public.timelog_days where timelog_id = v_atomic_first_timelog_id) then
     raise exception 'verification failed: pending CH timelog was deleted';
   end if;
+  execute 'reset role';
 
   insert into public.events (name, status)
   values (
@@ -1327,6 +1687,7 @@ begin
   )
   returning id into v_atomic_event_id;
 
+  execute 'set local role authenticated';
   v_result := public.save_timelog_atomic(
     null,
     v_atomic_event_id,
@@ -1361,6 +1722,7 @@ begin
       end if;
       v_expected_error := true;
   end;
+  execute 'reset role';
   if not v_expected_error or not exists (
     select 1 from public.timelogs
     where id = v_atomic_third_timelog_id
@@ -1374,6 +1736,7 @@ begin
   values (v_manager_user_id, 'coo'::public.app_role);
 
   v_expected_error := false;
+  execute 'set local role authenticated';
   begin
     update public.timelogs
     set km = 99,
@@ -1383,6 +1746,7 @@ begin
     when sqlstate '42501' then
       v_expected_error := true;
   end;
+  execute 'reset role';
   if not v_expected_error or not exists (
     select 1 from public.timelogs
     where id = v_atomic_third_timelog_id
@@ -1393,6 +1757,7 @@ begin
     raise exception 'verification failed: direct COO timelog update bypassed import RPC';
   end if;
 
+  execute 'set local role authenticated';
   v_result := public.import_approved_timelog_atomic(
     v_atomic_third_timelog_id,
     v_atomic_event_id,
@@ -1445,6 +1810,7 @@ begin
   if not v_expected_error then
     raise exception 'verification failed: approved import accepted changed historical payload';
   end if;
+  execute 'reset role';
 
   insert into public.events (name, status)
   values (
@@ -1453,6 +1819,7 @@ begin
   )
   returning id into v_atomic_event_id;
 
+  execute 'set local role authenticated';
   v_result := public.save_timelog_atomic(
     null,
     v_atomic_event_id,
@@ -1477,9 +1844,11 @@ begin
   );
   v_atomic_fourth_updated_at := (v_result->0->>'updated_at')::timestamptz;
 
+  execute 'reset role';
   insert into public.user_roles (user_id, role)
   values (v_manager_user_id, 'crewhead'::public.app_role);
 
+  execute 'set local role authenticated';
   v_result := public.transition_timelog_statuses_atomic(
     pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
       'id', v_atomic_fourth_timelog_id,
@@ -1573,6 +1942,518 @@ begin
     or exists (select 1 from public.timelog_days where timelog_id = v_atomic_delete_timelog_id) then
     raise exception 'verification failed: atomic parent delete did not cascade days';
   end if;
+
+  insert into public.events (name, status)
+  values (
+    'atomic event delete verification ' || pg_catalog.gen_random_uuid()::text,
+    'planning'::public.event_status
+  )
+  returning id into v_delete_event_id;
+
+  v_result := public.save_timelog_atomic(
+    null,
+    v_delete_event_id,
+    v_profile_id,
+    null,
+    null,
+    0,
+    'event delete disposable',
+    'draft'::public.timelog_status,
+    '[{"date":"2099-04-01","time_from":"08:00","time_to":"10:00","day_type":"deinstal"}]'::jsonb
+  );
+  v_atomic_delete_timelog_id := (v_result->>'id')::uuid;
+
+  insert into public.receipts (
+    contractor_id,
+    event_id,
+    name,
+    amount,
+    status
+  ) values (
+    v_profile_id,
+    v_delete_event_id,
+    'event delete receipt',
+    10,
+    'draft'::public.receipt_status
+  ) returning id into v_event_receipt_id;
+
+  select pg_catalog.to_jsonb(deleted) into v_result
+  from public.delete_event_atomic(v_delete_event_id) deleted;
+
+  if (v_result->>'event_id')::uuid is distinct from v_delete_event_id
+    or exists (select 1 from public.events where id = v_delete_event_id)
+    or exists (select 1 from public.receipts where id = v_event_receipt_id)
+    or exists (select 1 from public.timelogs where id = v_atomic_delete_timelog_id)
+    or exists (select 1 from public.timelog_days where timelog_id = v_atomic_delete_timelog_id) then
+    raise exception 'verification failed: disposable event was not deleted atomically';
+  end if;
+
+  v_expected_error := false;
+  begin
+    perform public.delete_event_atomic(v_delete_event_id);
+  exception
+    when sqlstate 'P0002' then
+      get stacked diagnostics v_error_message = message_text;
+      if v_error_message <> 'event_not_found' then
+        raise;
+      end if;
+      v_expected_error := true;
+  end;
+  if not v_expected_error then
+    raise exception 'verification failed: event delete retry did not return not found';
+  end if;
+
+  insert into public.events (name, status)
+  values (
+    'protected event delete verification ' || pg_catalog.gen_random_uuid()::text,
+    'planning'::public.event_status
+  )
+  returning id into v_protected_event_id;
+
+  v_result := public.save_timelog_atomic(
+    null,
+    v_protected_event_id,
+    v_profile_id,
+    null,
+    null,
+    0,
+    'event delete protected',
+    'draft'::public.timelog_status,
+    '[{"date":"2099-04-02","time_from":"08:00","time_to":"12:00","day_type":"provoz"}]'::jsonb
+  );
+  v_atomic_delete_timelog_id := (v_result->>'id')::uuid;
+  v_atomic_delete_updated_at := (v_result->>'updated_at')::timestamptz;
+
+  v_result := public.transition_timelog_statuses_atomic(
+    pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
+      'id', v_atomic_delete_timelog_id,
+      'expected_updated_at', v_atomic_delete_updated_at
+    )),
+    'draft'::public.timelog_status,
+    'pending_ch'::public.timelog_status
+  );
+
+  v_expected_error := false;
+  begin
+    perform public.delete_event_atomic(v_protected_event_id);
+  exception
+    when sqlstate 'P0001' then
+      get stacked diagnostics v_error_message = message_text;
+      if v_error_message <> 'event_has_protected_timelogs' then
+        raise;
+      end if;
+      v_expected_error := true;
+  end;
+  if not v_expected_error
+    or not exists (select 1 from public.events where id = v_protected_event_id)
+    or not exists (
+      select 1
+      from public.timelogs
+      where id = v_atomic_delete_timelog_id
+        and status = 'pending_ch'::public.timelog_status
+    ) then
+    raise exception 'verification failed: protected timelog allowed event deletion';
+  end if;
+
+  insert into public.events (name, status)
+  values (
+    'atomic invoice mutation verification ' || pg_catalog.gen_random_uuid()::text,
+    'planning'::public.event_status
+  )
+  returning id into v_invoice_event_id;
+
+  v_result := public.save_timelog_atomic(
+    null,
+    v_invoice_event_id,
+    v_profile_id,
+    null,
+    null,
+    0,
+    'invoice create source',
+    'draft'::public.timelog_status,
+    '[{"date":"2099-04-03","time_from":"08:00","time_to":"16:00","day_type":"provoz"}]'::jsonb
+  );
+  v_invoice_timelog_id := (v_result->>'id')::uuid;
+  v_invoice_timelog_updated_at := (v_result->>'updated_at')::timestamptz;
+
+  v_result := public.import_approved_timelog_atomic(
+    v_invoice_timelog_id,
+    v_invoice_event_id,
+    v_profile_id,
+    v_invoice_timelog_updated_at,
+    'draft'::public.timelog_status,
+    0,
+    'invoice create source',
+    '[{"date":"2099-04-03","time_from":"08:00","time_to":"16:00","day_type":"provoz"}]'::jsonb
+  );
+  v_invoice_timelog_updated_at := (v_result->>'updated_at')::timestamptz;
+
+  insert into public.receipts (
+    contractor_id,
+    event_id,
+    job_number,
+    name,
+    amount,
+    status
+  ) values (
+    v_profile_id,
+    v_invoice_event_id,
+    'VERIFY-INVOICE',
+    'invoice create receipt',
+    25,
+    'approved'::public.receipt_status
+  ) returning id, updated_at into v_invoice_receipt_id, v_invoice_receipt_updated_at;
+
+  select pg_catalog.count(*) into v_count from public.invoices;
+  v_expected_error := false;
+  begin
+    perform public.create_invoice_atomic(
+      pg_catalog.jsonb_build_object(
+        'contractor_id', v_profile_id,
+        'event_id', v_invoice_event_id,
+        'job_number', 'VERIFY-INVOICE',
+        'total_hours', 8,
+        'amount_hours', 800,
+        'amount_km', 0,
+        'amount_receipts', 25,
+        'total_amount', 825,
+        'invoice_number', 'VERIFY-' || pg_catalog.gen_random_uuid()::text,
+        'issue_date', '2099-04-03',
+        'taxable_supply_date', '2099-04-03',
+        'due_date', '2099-04-17',
+        'currency', 'CZK',
+        'supplier_snapshot', pg_catalog.jsonb_build_object('profileId', v_profile_id),
+        'customer_snapshot', pg_catalog.jsonb_build_object('name', 'Verifier')
+      ),
+      pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
+        'job_number', 'VERIFY-INVOICE',
+        'event_id', v_invoice_event_id,
+        'hours', 8,
+        'amount_hours', 800,
+        'km', 0,
+        'amount_km', 0,
+        'amount_receipts', 25,
+        'total_amount', 825
+      )),
+      pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
+        'id', v_invoice_timelog_id,
+        'expected_updated_at', v_invoice_timelog_updated_at
+      )),
+      pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
+        'id', v_invoice_receipt_id,
+        'expected_updated_at', '2000-01-01T00:00:00Z'
+      ))
+    );
+  exception
+    when sqlstate '40001' then
+      get stacked diagnostics v_error_message = message_text;
+      if v_error_message <> 'invoice_create_conflict' then
+        raise;
+      end if;
+      v_expected_error := true;
+  end;
+  select pg_catalog.count(*) into v_status_count from public.invoices;
+  if not v_expected_error
+    or v_status_count <> v_count
+    or not exists (
+      select 1 from public.timelogs
+      where id = v_invoice_timelog_id and status = 'approved'::public.timelog_status
+    )
+    or not exists (
+      select 1 from public.receipts
+      where id = v_invoice_receipt_id and status = 'approved'::public.receipt_status
+    ) then
+    raise exception 'verification failed: invoice create partially mutated rows';
+  end if;
+
+  select pg_catalog.to_jsonb(created) into v_result
+  from public.create_invoice_atomic(
+    pg_catalog.jsonb_build_object(
+      'contractor_id', v_profile_id,
+      'event_id', v_invoice_event_id,
+      'job_number', 'VERIFY-INVOICE',
+      'total_hours', 8,
+      'amount_hours', 800,
+      'amount_km', 0,
+      'amount_receipts', 25,
+      'total_amount', 825,
+      'invoice_number', 'VERIFY-' || pg_catalog.gen_random_uuid()::text,
+      'issue_date', '2099-04-03',
+      'taxable_supply_date', '2099-04-03',
+      'due_date', '2099-04-17',
+      'currency', 'CZK',
+      'supplier_snapshot', pg_catalog.jsonb_build_object('profileId', v_profile_id),
+      'customer_snapshot', pg_catalog.jsonb_build_object('name', 'Verifier')
+    ),
+    pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
+      'job_number', 'VERIFY-INVOICE',
+      'event_id', v_invoice_event_id,
+      'hours', 8,
+      'amount_hours', 800,
+      'km', 0,
+      'amount_km', 0,
+      'amount_receipts', 25,
+      'total_amount', 825
+    )),
+    pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
+      'id', v_invoice_timelog_id,
+      'expected_updated_at', v_invoice_timelog_updated_at
+    )),
+    pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
+      'id', v_invoice_receipt_id,
+      'expected_updated_at', v_invoice_receipt_updated_at
+    ))
+  ) created;
+  v_invoice_id := (v_result->>'invoice_id')::uuid;
+  v_invoice_updated_at := (v_result->>'invoice_updated_at')::timestamptz;
+
+  if v_invoice_id is null
+    or v_result->>'invoice_status' <> 'draft'
+    or not exists (
+      select 1 from public.timelogs
+      where id = v_invoice_timelog_id and status = 'invoiced'::public.timelog_status
+    )
+    or not exists (
+      select 1 from public.receipts
+      where id = v_invoice_receipt_id and status = 'attached'::public.receipt_status
+    ) then
+    raise exception 'verification failed: invoice create canonical result is inconsistent';
+  end if;
+
+  update public.invoices
+  set status = 'sent'::public.invoice_status,
+    sent_at = pg_catalog.now()
+  where id = v_invoice_id
+    and status = 'draft'::public.invoice_status
+  returning updated_at into v_invoice_updated_at;
+
+  v_invoice_paid_at := pg_catalog.now();
+  v_expected_error := false;
+  begin
+    perform public.mark_invoice_paid_atomic(
+      v_invoice_id,
+      'sent'::public.invoice_status,
+      '2000-01-01T00:00:00Z',
+      v_invoice_paid_at
+    );
+  exception
+    when sqlstate '40001' then
+      get stacked diagnostics v_error_message = message_text;
+      if v_error_message <> 'invoice_paid_conflict' then
+        raise;
+      end if;
+      v_expected_error := true;
+  end;
+  if not v_expected_error
+    or not exists (
+      select 1 from public.invoices
+      where id = v_invoice_id and status = 'sent'::public.invoice_status
+    )
+    or not exists (
+      select 1 from public.timelogs
+      where id = v_invoice_timelog_id and status = 'invoiced'::public.timelog_status
+    )
+    or not exists (
+      select 1 from public.receipts
+      where id = v_invoice_receipt_id and status = 'attached'::public.receipt_status
+    ) then
+    raise exception 'verification failed: invoice payment partially mutated rows';
+  end if;
+
+  select pg_catalog.to_jsonb(paid_result) into v_result
+  from public.mark_invoice_paid_atomic(
+    v_invoice_id,
+    'sent'::public.invoice_status,
+    v_invoice_updated_at,
+    v_invoice_paid_at
+  ) paid_result;
+  v_invoice_updated_at := (v_result->>'invoice_updated_at')::timestamptz;
+
+  if v_result->>'invoice_status' <> 'paid'
+    or v_result->>'paid_at' is null
+    or exists (
+      select 1 from public.timelogs
+      where id = v_invoice_timelog_id and status <> 'paid'::public.timelog_status
+    )
+    or exists (
+      select 1 from public.receipts
+      where id = v_invoice_receipt_id and status <> 'reimbursed'::public.receipt_status
+    ) then
+    raise exception 'verification failed: invoice payment canonical result is inconsistent';
+  end if;
+
+  select pg_catalog.to_jsonb(paid_retry) into v_result
+  from public.mark_invoice_paid_atomic(
+    v_invoice_id,
+    'paid'::public.invoice_status,
+    v_invoice_updated_at,
+    v_invoice_paid_at
+  ) paid_retry;
+  if (v_result->>'invoice_updated_at')::timestamptz is distinct from v_invoice_updated_at then
+    raise exception 'verification failed: paid invoice exact retry mutated the invoice';
+  end if;
+
+  insert into public.events (name, status)
+  values (
+    'atomic invoice delete verification ' || pg_catalog.gen_random_uuid()::text,
+    'planning'::public.event_status
+  )
+  returning id into v_invoice_event_id;
+
+  v_result := public.save_timelog_atomic(
+    null,
+    v_invoice_event_id,
+    v_profile_id,
+    null,
+    null,
+    0,
+    'invoice delete source',
+    'draft'::public.timelog_status,
+    '[{"date":"2099-04-04","time_from":"08:00","time_to":"12:00","day_type":"provoz"}]'::jsonb
+  );
+  v_delete_invoice_timelog_id := (v_result->>'id')::uuid;
+  v_delete_invoice_timelog_updated_at := (v_result->>'updated_at')::timestamptz;
+
+  v_result := public.import_approved_timelog_atomic(
+    v_delete_invoice_timelog_id,
+    v_invoice_event_id,
+    v_profile_id,
+    v_delete_invoice_timelog_updated_at,
+    'draft'::public.timelog_status,
+    0,
+    'invoice delete source',
+    '[{"date":"2099-04-04","time_from":"08:00","time_to":"12:00","day_type":"provoz"}]'::jsonb
+  );
+  v_delete_invoice_timelog_updated_at := (v_result->>'updated_at')::timestamptz;
+
+  insert into public.receipts (
+    contractor_id,
+    event_id,
+    job_number,
+    name,
+    amount,
+    status
+  ) values (
+    v_profile_id,
+    v_invoice_event_id,
+    'VERIFY-DELETE',
+    'invoice delete receipt',
+    15,
+    'approved'::public.receipt_status
+  ) returning id, updated_at
+  into v_delete_invoice_receipt_id, v_delete_invoice_receipt_updated_at;
+
+  select pg_catalog.to_jsonb(created) into v_result
+  from public.create_invoice_atomic(
+    pg_catalog.jsonb_build_object(
+      'contractor_id', v_profile_id,
+      'event_id', v_invoice_event_id,
+      'job_number', 'VERIFY-DELETE',
+      'total_hours', 4,
+      'amount_hours', 400,
+      'amount_km', 0,
+      'amount_receipts', 15,
+      'total_amount', 415,
+      'invoice_number', 'VERIFY-' || pg_catalog.gen_random_uuid()::text,
+      'issue_date', '2099-04-04',
+      'taxable_supply_date', '2099-04-04',
+      'due_date', '2099-04-18',
+      'currency', 'CZK',
+      'supplier_snapshot', pg_catalog.jsonb_build_object('profileId', v_profile_id),
+      'customer_snapshot', pg_catalog.jsonb_build_object('name', 'Verifier')
+    ),
+    pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
+      'job_number', 'VERIFY-DELETE',
+      'event_id', v_invoice_event_id,
+      'hours', 4,
+      'amount_hours', 400,
+      'km', 0,
+      'amount_km', 0,
+      'amount_receipts', 15,
+      'total_amount', 415
+    )),
+    pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
+      'id', v_delete_invoice_timelog_id,
+      'expected_updated_at', v_delete_invoice_timelog_updated_at
+    )),
+    pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
+      'id', v_delete_invoice_receipt_id,
+      'expected_updated_at', v_delete_invoice_receipt_updated_at
+    ))
+  ) created;
+  v_delete_invoice_id := (v_result->>'invoice_id')::uuid;
+  v_delete_invoice_updated_at := (v_result->>'invoice_updated_at')::timestamptz;
+
+  v_expected_error := false;
+  begin
+    perform public.delete_invoice_atomic(
+      v_delete_invoice_id,
+      'draft'::public.invoice_status,
+      '2000-01-01T00:00:00Z'
+    );
+  exception
+    when sqlstate '40001' then
+      get stacked diagnostics v_error_message = message_text;
+      if v_error_message <> 'invoice_delete_conflict' then
+        raise;
+      end if;
+      v_expected_error := true;
+  end;
+  if not v_expected_error
+    or not exists (select 1 from public.invoices where id = v_delete_invoice_id)
+    or not exists (
+      select 1 from public.timelogs
+      where id = v_delete_invoice_timelog_id and status = 'invoiced'::public.timelog_status
+    )
+    or not exists (
+      select 1 from public.receipts
+      where id = v_delete_invoice_receipt_id and status = 'attached'::public.receipt_status
+    ) then
+    raise exception 'verification failed: invoice deletion partially mutated rows';
+  end if;
+
+  select pg_catalog.to_jsonb(deleted_invoice) into v_result
+  from public.delete_invoice_atomic(
+    v_delete_invoice_id,
+    'draft'::public.invoice_status,
+    v_delete_invoice_updated_at
+  ) deleted_invoice;
+
+  if (v_result->>'invoice_id')::uuid is distinct from v_delete_invoice_id
+    or exists (select 1 from public.invoices where id = v_delete_invoice_id)
+    or exists (select 1 from public.invoice_timelogs where invoice_id = v_delete_invoice_id)
+    or exists (select 1 from public.invoice_receipts where invoice_id = v_delete_invoice_id)
+    or not exists (
+      select 1 from public.timelogs
+      where id = v_delete_invoice_timelog_id and status = 'approved'::public.timelog_status
+    )
+    or not exists (
+      select 1 from public.receipts
+      where id = v_delete_invoice_receipt_id and status = 'approved'::public.receipt_status
+    ) then
+    raise exception 'verification failed: invoice deletion canonical result is inconsistent';
+  end if;
+
+  v_expected_error := false;
+  begin
+    perform public.delete_invoice_atomic(
+      v_delete_invoice_id,
+      'draft'::public.invoice_status,
+      v_delete_invoice_updated_at
+    );
+  exception
+    when sqlstate 'P0002' then
+      get stacked diagnostics v_error_message = message_text;
+      if v_error_message <> 'invoice_not_found' then
+        raise;
+      end if;
+      v_expected_error := true;
+  end;
+  if not v_expected_error then
+    raise exception 'verification failed: invoice delete retry did not return not found';
+  end if;
+
+  execute 'reset role';
 
   raise notice 'timelog assignment lifecycle verification passed';
 end

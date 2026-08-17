@@ -10,6 +10,7 @@ const verificationScriptPath = join(
   'supabase',
   'verify-timelog_assignment_lifecycle.sql',
 );
+const databaseTypesPath = join(process.cwd(), 'src', 'lib', 'database.types.ts');
 
 const readMigration = () => {
   expect(migrationFiles).toHaveLength(1);
@@ -17,6 +18,7 @@ const readMigration = () => {
 };
 
 const readVerificationScript = () => readFileSync(verificationScriptPath, 'utf8').toLowerCase();
+const readDatabaseTypes = () => readFileSync(databaseTypesPath, 'utf8');
 
 const repairPairs = [
   ['5e062036-278f-4e39-b0cd-8d02d33ced13', 'c55d4794-42d3-46be-aba4-931c40e495c0'],
@@ -59,6 +61,21 @@ const readFunction = (sql: string, functionName: string) => {
 };
 
 describe('timelog assignment lifecycle migration', () => {
+  it('commits a newly-added enum label before using it in replayed schema objects', () => {
+    const sql = readMigration();
+    const addition = sql.indexOf("add value if not exists 'pending_crew_confirmation'");
+    const enumCommit = sql.indexOf('commit;', addition);
+    const lifecycleTransaction = sql.indexOf('begin;', enumCommit);
+    const firstTypedUse = sql.indexOf(
+      "'pending_crew_confirmation'::public.timelog_status",
+    );
+
+    expect(addition).toBeGreaterThanOrEqual(0);
+    expect(enumCommit).toBeGreaterThan(addition);
+    expect(lifecycleTransaction).toBeGreaterThan(enumCommit);
+    expect(firstTypedUse).toBeGreaterThan(lifecycleTransaction);
+  });
+
   it('contains the complete explicit production repair map', () => {
     const sql = readMigration();
 
@@ -140,7 +157,7 @@ describe('timelog assignment lifecycle migration', () => {
     ]);
     expect(authenticatedGrants).toHaveLength(1);
     expect(authenticatedGrants[0]?.[1]).toBe('select, insert, update');
-    expect(sql).not.toMatch(/grant\s+[^;]*\bdelete\b[^;]*\s+to authenticated\s*;/);
+    expect(authenticatedGrants[0]?.[1]).not.toContain('delete');
     expect(sql).not.toMatch(/(?:to|from)\s+service_role\b/);
     expect(updatePolicies.map((match) => match[1])).toEqual([
       'crew can renew own event applications',
@@ -480,7 +497,7 @@ describe('timelog assignment lifecycle migration', () => {
     expect(assignFunction.slice(returnIndex)).not.toContain('when invalid_datetime_format');
   });
 
-  it('exposes lifecycle RPCs only to authenticated users and commits exactly once at the end', () => {
+  it('exposes lifecycle RPCs only to authenticated users and closes both replay-safe transactions', () => {
     const sql = readMigration();
     const assignSignature = 'public.assign_event_crew(uuid, uuid, uuid, jsonb)';
     const removeSignature = 'public.remove_event_crew(uuid, uuid)';
@@ -502,7 +519,7 @@ describe('timelog assignment lifecycle migration', () => {
     expect(sql).toContain('crew_removal_blocked');
     expect(sql).toContain('crew_application_conflict');
     expect(sql).toContain('crew_withdrawal_conflict');
-    expect(sql.match(/\bcommit\s*;/g)).toHaveLength(1);
+    expect(sql.match(/\bcommit\s*;/g)).toHaveLength(2);
     expect(sql.trimEnd()).toMatch(/commit;$/);
     expect(sql).not.toMatch(/\bassert\b/);
   });
@@ -578,7 +595,7 @@ describe('timelog assignment lifecycle migration', () => {
     );
   });
 
-  it('exposes exactly seven authenticated lifecycle/timelog RPCs and keeps trigger helpers private', () => {
+  it('exposes exactly eleven authenticated lifecycle/timelog/invoice RPCs and keeps trigger helpers private', () => {
     const sql = readMigration();
     const publicSignatures = [
       'public.assign_event_crew(uuid, uuid, uuid, jsonb)',
@@ -588,6 +605,10 @@ describe('timelog assignment lifecycle migration', () => {
       'public.transition_timelog_statuses_atomic(jsonb, public.timelog_status, public.timelog_status)',
       'public.delete_timelog_atomic(uuid, timestamptz, public.timelog_status)',
       'public.import_approved_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, jsonb)',
+      'public.delete_event_atomic(uuid)',
+      'public.create_invoice_atomic(jsonb, jsonb, jsonb, jsonb)',
+      'public.mark_invoice_paid_atomic(uuid, public.invoice_status, timestamptz, timestamptz)',
+      'public.delete_invoice_atomic(uuid, public.invoice_status, timestamptz)',
     ];
 
     publicSignatures.forEach((signature) => {
@@ -650,6 +671,18 @@ describe('timelog assignment lifecycle migration', () => {
     );
     expect(aclSql).toContain(
       "'public.approve_event_withdrawal(uuid, uuid, uuid)'::pg_catalog.regprocedure",
+    );
+    expect(aclSql).toContain(
+      "'public.delete_event_atomic(uuid)'::pg_catalog.regprocedure",
+    );
+    expect(aclSql).toContain(
+      "'public.create_invoice_atomic(jsonb, jsonb, jsonb, jsonb)'::pg_catalog.regprocedure",
+    );
+    expect(aclSql).toContain(
+      "'public.mark_invoice_paid_atomic(uuid, public.invoice_status, timestamptz, timestamptz)'::pg_catalog.regprocedure",
+    );
+    expect(aclSql).toContain(
+      "'public.delete_invoice_atomic(uuid, public.invoice_status, timestamptz)'::pg_catalog.regprocedure",
     );
     expect(aclSql).toContain(
       "'public.enforce_event_application_lifecycle_update()'::pg_catalog.regprocedure",
@@ -729,5 +762,164 @@ describe('timelog assignment lifecycle migration', () => {
     expect(sql).toContain('verification failed: crew moved application identity');
     expect(sql).toContain('verification failed: pending rejection race did not preserve the first transition');
     expect(sql).toContain('verification failed: withdrawal rejection race did not preserve the first transition');
+  });
+
+  it('reconciles the invoice schema required by a clean migration replay', () => {
+    const sql = readMigration();
+    const verifier = readVerificationScript();
+
+    ['invoice_items', 'invoice_timelogs', 'invoice_receipts'].forEach((table) => {
+      expect(sql).toContain(`create table if not exists public.${table}`);
+      expect(sql).toContain(`alter table public.${table} enable row level security;`);
+      expect(sql).toContain(`revoke all on table public.${table} from public;`);
+      expect(sql).toContain(`revoke all on table public.${table} from anon;`);
+      expect(sql).toContain(`revoke all on table public.${table} from authenticated;`);
+    });
+    expect(sql).toContain('amount_meals numeric not null default 0');
+    expect(sql).toContain("raise exception 'invoice_items core columns are incompatible'");
+    expect(sql).toContain("raise exception 'invoice_timelogs core columns are incompatible'");
+    expect(sql).toContain("raise exception 'invoice_receipts core columns are incompatible'");
+    expect(sql).toContain("raise exception 'invoice_timelogs constraints are incompatible'");
+    expect(sql).toContain("raise exception 'invoice_receipts constraints are incompatible'");
+    expect(sql).toContain("raise exception 'invoices timelog_id foreign key is incompatible'");
+    expect(sql).toContain("raise exception 'invoices billing columns are incompatible'");
+    expect(sql).toContain('create unique index if not exists invoices_invoice_number_key');
+    expect(sql).toContain('where invoice_number is not null');
+    expect(sql).toContain('create index if not exists idx_invoices_pdf_path');
+    expect(sql).toContain('where pdf_path is not null');
+    expect(verifier).toContain(
+      'verification failed: invoice core column catalog is incompatible',
+    );
+    expect(verifier).toContain(
+      'verification failed: invoice relation constraints are incompatible',
+    );
+    expect(verifier).toContain(
+      'verification failed: invoice billing indexes are incompatible',
+    );
+  });
+
+  it('defines atomic event deletion with deterministic protected-timelog locking', () => {
+    const sql = readMigration();
+    const deleteEventFunction = readFunction(sql, 'delete_event_atomic');
+
+    expect(deleteEventFunction).toMatch(
+      /function\s+public\.delete_event_atomic\s*\(\s*p_event_id uuid\s*\)/,
+    );
+    expect(deleteEventFunction).toMatch(
+      /returns\s+table\s*\(\s*event_id uuid\s*\)\s+language\s+plpgsql\s+security invoker/,
+    );
+    expect(deleteEventFunction).toContain("set search_path = ''");
+    expectMarkersInOrder(deleteEventFunction, [
+      'from public.events',
+      'for update;',
+      'from public.timelogs',
+      'order by t.id\n  for share;',
+      "status not in ('draft', 'rejected')",
+      'delete from public.receipts',
+      'delete from public.events',
+    ]);
+    expect(deleteEventFunction).toContain("raise exception 'event_has_protected_timelogs'");
+    expect(deleteEventFunction).toContain("raise exception 'event_delete_conflict'");
+    expect(deleteEventFunction).toContain("raise exception 'event_not_found'");
+  });
+
+  it('defines atomic invoice create, payment, and deletion contracts', () => {
+    const sql = readMigration();
+    const createFunction = readFunction(sql, 'create_invoice_atomic');
+    const paidFunction = readFunction(sql, 'mark_invoice_paid_atomic');
+    const deleteFunction = readFunction(sql, 'delete_invoice_atomic');
+
+    expect(createFunction).toMatch(
+      /function\s+public\.create_invoice_atomic\s*\(\s*p_invoice jsonb,\s*p_items jsonb,\s*p_timelogs jsonb,\s*p_receipts jsonb\s*\)/,
+    );
+    expect(paidFunction).toMatch(
+      /function\s+public\.mark_invoice_paid_atomic\s*\(\s*p_invoice_id uuid,\s*p_expected_status public\.invoice_status,\s*p_expected_updated_at timestamptz,\s*p_paid_at timestamptz\s*\)/,
+    );
+    expect(deleteFunction).toMatch(
+      /function\s+public\.delete_invoice_atomic\s*\(\s*p_invoice_id uuid,\s*p_expected_status public\.invoice_status,\s*p_expected_updated_at timestamptz\s*\)/,
+    );
+
+    [createFunction, paidFunction, deleteFunction].forEach((functionSql) => {
+      expect(functionSql).toMatch(/returns\s+table\s*\([\s\S]*?invoice_id uuid,[\s\S]*?invoice_status public\.invoice_status,[\s\S]*?invoice_updated_at timestamptz,[\s\S]*?paid_at timestamptz,[\s\S]*?timelogs jsonb,[\s\S]*?receipts jsonb[\s\S]*?\)\s+language\s+plpgsql\s+security invoker/);
+      expect(functionSql).toContain("set search_path = ''");
+      expect(functionSql).toContain("raise exception 'invoice_unauthorized'");
+    });
+
+    expect(createFunction).toContain("raise exception 'invoice_mutation_invalid'");
+    expect(createFunction).toContain("raise exception 'invoice_create_conflict'");
+    expect(createFunction).toContain('v_total_hours is null');
+    expect(createFunction).toContain("nullif(target->>'expected_updated_at', '') is null");
+    expect(createFunction).toMatch(
+      /case\s+when pg_catalog\.jsonb_typeof\(item\) <> 'object' then true/,
+    );
+    expect(createFunction).toMatch(
+      /(?:when|or)\s+numeric_value_out_of_range[\s\S]*raise exception 'invoice_mutation_invalid'/,
+    );
+    expect(createFunction).toContain('insert into public.invoice_items');
+    expect(createFunction).toContain('insert into public.invoice_timelogs');
+    expect(createFunction).toContain('insert into public.invoice_receipts');
+    expectMarkersInOrder(createFunction, [
+      'order by (target->>\'id\')::uuid',
+      'for update of t;',
+      'insert into public.invoices',
+      'insert into public.invoice_items',
+      'insert into public.invoice_timelogs',
+      'insert into public.invoice_receipts',
+      "set status = 'attached'",
+      "set status = 'invoiced'",
+    ]);
+
+    expect(paidFunction).toContain("raise exception 'invoice_paid_conflict'");
+    expect(paidFunction).toContain("set status = 'reimbursed'");
+    expect(paidFunction).toContain("set status = 'paid'");
+    expect(deleteFunction).toContain("raise exception 'invoice_delete_conflict'");
+    expect(deleteFunction).toContain("raise exception 'invoice_has_protected_items'");
+    expect(deleteFunction).toContain("set status = 'approved'");
+    expect(deleteFunction).toContain('delete from public.invoices');
+  });
+
+  it('runs invoker RPC and direct-write adversarial checks as authenticated', () => {
+    const sql = readVerificationScript();
+    const compactSql = sql.replace(/\s+/g, ' ');
+    const firstRoleSet = sql.indexOf("execute 'set local role authenticated'");
+    const firstInvokerCall = sql.indexOf('v_result := public.save_timelog_atomic(');
+
+    expect(firstRoleSet).toBeGreaterThanOrEqual(0);
+    expect(firstRoleSet).toBeLessThan(firstInvokerCall);
+    expect(sql).toContain("execute 'reset role'");
+    expect(sql).toContain('verification failed: crew directly changed protected timelog');
+    expect(sql).toContain('verification failed: crew directly changed protected timelog day');
+    expect(sql).toContain('verification failed: protected timelog allowed event deletion');
+    expect(sql).toContain('verification failed: invoice create partially mutated rows');
+    expect(sql).toContain('verification failed: invoice payment partially mutated rows');
+    expect(sql).toContain('verification failed: invoice deletion partially mutated rows');
+    ['timelogs', 'timelog_days'].forEach((table) => {
+      ['SELECT', 'INSERT', 'UPDATE', 'DELETE'].forEach((privilege) => {
+        expect(compactSql).toContain(
+          `pg_catalog.has_table_privilege('authenticated', 'public.${table}', '${privilege.toLowerCase()}')`,
+        );
+      });
+    });
+    expect(compactSql).not.toMatch(
+      /not pg_catalog\.has_table_privilege\('authenticated', '[^']+', 'select,insert/,
+    );
+  });
+
+  it('tracks typed rows for every event and invoice atomic RPC', () => {
+    const types = readDatabaseTypes();
+
+    [
+      'delete_event_atomic',
+      'create_invoice_atomic',
+      'mark_invoice_paid_atomic',
+      'delete_invoice_atomic',
+    ].forEach((functionName) => {
+      expect(types).toContain(`${functionName}: {`);
+    });
+    expect(types).toContain('p_expected_status: InvoiceStatus;');
+    expect(types).toContain('invoice_updated_at: string;');
+    expect(types).toContain('timelogs: Json;');
+    expect(types).toContain('receipts: Json;');
+    expect(types).toContain('amount_meals: number;');
   });
 });

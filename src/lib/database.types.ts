@@ -394,6 +394,7 @@ export interface Database {
           km: number;
           amount_km: number;
           amount_receipts: number;
+          amount_meals: number;
           total_amount: number;
           created_at: string;
         };
@@ -512,6 +513,45 @@ export interface Database {
         };
         Returns: Json;
       };
+      create_invoice_atomic: {
+        Args: {
+          p_invoice: Json;
+          p_items: Json;
+          p_timelogs: Json;
+          p_receipts: Json;
+        };
+        Returns: Array<{
+          invoice_id: string;
+          invoice_status: InvoiceStatus;
+          invoice_updated_at: string;
+          paid_at: string | null;
+          timelogs: Json;
+          receipts: Json;
+        }>;
+      };
+      delete_event_atomic: {
+        Args: {
+          p_event_id: string;
+        };
+        Returns: Array<{
+          event_id: string;
+        }>;
+      };
+      delete_invoice_atomic: {
+        Args: {
+          p_invoice_id: string;
+          p_expected_status: InvoiceStatus;
+          p_expected_updated_at: string;
+        };
+        Returns: Array<{
+          invoice_id: string;
+          invoice_status: InvoiceStatus;
+          invoice_updated_at: string;
+          paid_at: string | null;
+          timelogs: Json;
+          receipts: Json;
+        }>;
+      };
       delete_timelog_atomic: {
         Args: {
           p_timelog_id: string;
@@ -519,6 +559,22 @@ export interface Database {
           p_expected_status: TimelogStatus;
         };
         Returns: Json;
+      };
+      mark_invoice_paid_atomic: {
+        Args: {
+          p_invoice_id: string;
+          p_expected_status: InvoiceStatus;
+          p_expected_updated_at: string;
+          p_paid_at: string;
+        };
+        Returns: Array<{
+          invoice_id: string;
+          invoice_status: InvoiceStatus;
+          invoice_updated_at: string;
+          paid_at: string | null;
+          timelogs: Json;
+          receipts: Json;
+        }>;
       };
       import_approved_timelog_atomic: {
         Args: {

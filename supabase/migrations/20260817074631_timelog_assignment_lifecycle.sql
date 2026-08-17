@@ -5,6 +5,15 @@ set local lock_timeout = '5s';
 alter type public.timelog_status
   add value if not exists 'pending_crew_confirmation' after 'pending_ch';
 
+-- PostgreSQL forbids using a freshly-added enum label until the transaction
+-- that added it commits. Keeping this small, idempotent step separate makes a
+-- clean replay safe while the lifecycle/schema work below stays atomic.
+commit;
+
+begin;
+
+set local lock_timeout = '5s';
+
 create table if not exists public.event_applications (
   id uuid primary key default gen_random_uuid(),
   event_id uuid not null references public.events(id) on delete cascade,
@@ -129,6 +138,470 @@ begin
       and c.confdeltype = 'c'
   ) then
     raise exception 'event_applications profile_id foreign key is incompatible';
+  end if;
+end
+$$;
+
+alter table public.invoices
+  add column if not exists invoice_number text,
+  add column if not exists issue_date date,
+  add column if not exists taxable_supply_date date,
+  add column if not exists due_date date,
+  add column if not exists currency text not null default 'CZK',
+  add column if not exists supplier_snapshot jsonb,
+  add column if not exists customer_snapshot jsonb,
+  add column if not exists pdf_path text,
+  add column if not exists pdf_generated_at timestamptz;
+
+create table if not exists public.invoice_items (
+  id uuid primary key default gen_random_uuid(),
+  invoice_id uuid not null references public.invoices(id) on delete cascade,
+  job_number text not null,
+  event_id uuid references public.events(id) on delete set null,
+  hours numeric(10,2) not null default 0,
+  amount_hours numeric(12,2) not null default 0,
+  km numeric(10,2) not null default 0,
+  amount_km numeric(12,2) not null default 0,
+  amount_receipts numeric(12,2) not null default 0,
+  amount_meals numeric not null default 0,
+  total_amount numeric(12,2) not null default 0,
+  created_at timestamptz not null default now()
+);
+
+alter table public.invoice_items
+  add column if not exists amount_meals numeric not null default 0;
+
+create table if not exists public.invoice_timelogs (
+  id uuid primary key default gen_random_uuid(),
+  invoice_id uuid not null references public.invoices(id) on delete cascade,
+  timelog_id uuid not null references public.timelogs(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  constraint invoice_timelogs_invoice_id_timelog_id_key unique (invoice_id, timelog_id),
+  constraint invoice_timelogs_timelog_id_key unique (timelog_id)
+);
+
+create table if not exists public.invoice_receipts (
+  id uuid primary key default gen_random_uuid(),
+  invoice_id uuid not null references public.invoices(id) on delete cascade,
+  receipt_id uuid not null references public.receipts(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  constraint invoice_receipts_invoice_id_receipt_id_key unique (invoice_id, receipt_id),
+  constraint invoice_receipts_receipt_id_key unique (receipt_id)
+);
+
+do $$
+begin
+  if exists (
+    select 1
+    from (
+      values
+        ('invoice_number', 'text', 'YES'),
+        ('issue_date', 'date', 'YES'),
+        ('taxable_supply_date', 'date', 'YES'),
+        ('due_date', 'date', 'YES'),
+        ('currency', 'text', 'NO'),
+        ('supplier_snapshot', 'jsonb', 'YES'),
+        ('customer_snapshot', 'jsonb', 'YES'),
+        ('pdf_path', 'text', 'YES'),
+        ('pdf_generated_at', 'timestamptz', 'YES')
+    ) as required_columns (column_name, udt_name, is_nullable)
+    left join information_schema.columns c
+      on c.table_schema = 'public'
+      and c.table_name = 'invoices'
+      and c.column_name = required_columns.column_name
+    where c.column_name is null
+      or c.udt_name <> required_columns.udt_name
+      or c.is_nullable <> required_columns.is_nullable
+  ) or not exists (
+    select 1
+    from information_schema.columns c
+    where c.table_schema = 'public'
+      and c.table_name = 'invoices'
+      and c.column_name = 'currency'
+      and c.column_default = '''CZK''::text'
+  ) then
+    raise exception 'invoices billing columns are incompatible';
+  end if;
+
+  if exists (
+    select 1
+    from (
+      values
+        ('id', 'uuid', 'NO', null::integer, null::integer),
+        ('invoice_id', 'uuid', 'NO', null::integer, null::integer),
+        ('job_number', 'text', 'NO', null::integer, null::integer),
+        ('event_id', 'uuid', 'YES', null::integer, null::integer),
+        ('hours', 'numeric', 'NO', 10, 2),
+        ('amount_hours', 'numeric', 'NO', 12, 2),
+        ('km', 'numeric', 'NO', 10, 2),
+        ('amount_km', 'numeric', 'NO', 12, 2),
+        ('amount_receipts', 'numeric', 'NO', 12, 2),
+        ('amount_meals', 'numeric', 'NO', null::integer, null::integer),
+        ('total_amount', 'numeric', 'NO', 12, 2),
+        ('created_at', 'timestamptz', 'NO', null::integer, null::integer)
+    ) as required_columns (
+      column_name,
+      udt_name,
+      is_nullable,
+      numeric_precision,
+      numeric_scale
+    )
+    left join information_schema.columns c
+      on c.table_schema = 'public'
+      and c.table_name = 'invoice_items'
+      and c.column_name = required_columns.column_name
+    where c.column_name is null
+      or c.udt_name <> required_columns.udt_name
+      or c.is_nullable <> required_columns.is_nullable
+      or c.numeric_precision is distinct from required_columns.numeric_precision
+      or c.numeric_scale is distinct from required_columns.numeric_scale
+  ) or not exists (
+    select 1
+    from information_schema.columns c
+    where c.table_schema = 'public'
+      and c.table_name = 'invoice_items'
+      and c.column_name = 'id'
+      and c.column_default = 'gen_random_uuid()'
+  ) or exists (
+    select 1
+    from information_schema.columns c
+    where c.table_schema = 'public'
+      and c.table_name = 'invoice_items'
+      and c.column_name in (
+        'hours',
+        'amount_hours',
+        'km',
+        'amount_km',
+        'amount_receipts',
+        'amount_meals',
+        'total_amount'
+      )
+      and c.column_default is distinct from '0'
+  ) or not exists (
+    select 1
+    from information_schema.columns c
+    where c.table_schema = 'public'
+      and c.table_name = 'invoice_items'
+      and c.column_name = 'created_at'
+      and c.column_default = 'now()'
+  ) then
+    raise exception 'invoice_items core columns are incompatible';
+  end if;
+
+  if exists (
+    select 1
+    from (
+      values
+        ('id', 'uuid', 'NO'),
+        ('invoice_id', 'uuid', 'NO'),
+        ('timelog_id', 'uuid', 'NO'),
+        ('created_at', 'timestamptz', 'NO')
+    ) as required_columns (column_name, udt_name, is_nullable)
+    left join information_schema.columns c
+      on c.table_schema = 'public'
+      and c.table_name = 'invoice_timelogs'
+      and c.column_name = required_columns.column_name
+    where c.column_name is null
+      or c.udt_name <> required_columns.udt_name
+      or c.is_nullable <> required_columns.is_nullable
+  ) or not exists (
+    select 1
+    from information_schema.columns c
+    where c.table_schema = 'public'
+      and c.table_name = 'invoice_timelogs'
+      and c.column_name = 'id'
+      and c.column_default = 'gen_random_uuid()'
+  ) or not exists (
+    select 1
+    from information_schema.columns c
+    where c.table_schema = 'public'
+      and c.table_name = 'invoice_timelogs'
+      and c.column_name = 'created_at'
+      and c.column_default = 'now()'
+  ) then
+    raise exception 'invoice_timelogs core columns are incompatible';
+  end if;
+
+  if exists (
+    select 1
+    from (
+      values
+        ('id', 'uuid', 'NO'),
+        ('invoice_id', 'uuid', 'NO'),
+        ('receipt_id', 'uuid', 'NO'),
+        ('created_at', 'timestamptz', 'NO')
+    ) as required_columns (column_name, udt_name, is_nullable)
+    left join information_schema.columns c
+      on c.table_schema = 'public'
+      and c.table_name = 'invoice_receipts'
+      and c.column_name = required_columns.column_name
+    where c.column_name is null
+      or c.udt_name <> required_columns.udt_name
+      or c.is_nullable <> required_columns.is_nullable
+  ) or not exists (
+    select 1
+    from information_schema.columns c
+    where c.table_schema = 'public'
+      and c.table_name = 'invoice_receipts'
+      and c.column_name = 'id'
+      and c.column_default = 'gen_random_uuid()'
+  ) or not exists (
+    select 1
+    from information_schema.columns c
+    where c.table_schema = 'public'
+      and c.table_name = 'invoice_receipts'
+      and c.column_name = 'created_at'
+      and c.column_default = 'now()'
+  ) then
+    raise exception 'invoice_receipts core columns are incompatible';
+  end if;
+end
+$$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    join pg_catalog.pg_attribute id_column
+      on id_column.attrelid = c.conrelid
+      and id_column.attname = 'id'
+      and not id_column.attisdropped
+    where c.conrelid = 'public.invoice_items'::pg_catalog.regclass
+      and c.contype = 'p'
+      and c.conkey = array[id_column.attnum]
+  ) or not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    join pg_catalog.pg_attribute local_column
+      on local_column.attrelid = c.conrelid
+      and local_column.attname = 'invoice_id'
+      and not local_column.attisdropped
+    join pg_catalog.pg_attribute referenced_column
+      on referenced_column.attrelid = c.confrelid
+      and referenced_column.attname = 'id'
+      and not referenced_column.attisdropped
+    where c.conrelid = 'public.invoice_items'::pg_catalog.regclass
+      and c.contype = 'f'
+      and c.conkey = array[local_column.attnum]
+      and c.confrelid = 'public.invoices'::pg_catalog.regclass
+      and c.confkey = array[referenced_column.attnum]
+      and c.confdeltype = 'c'
+  ) or not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    join pg_catalog.pg_attribute local_column
+      on local_column.attrelid = c.conrelid
+      and local_column.attname = 'event_id'
+      and not local_column.attisdropped
+    join pg_catalog.pg_attribute referenced_column
+      on referenced_column.attrelid = c.confrelid
+      and referenced_column.attname = 'id'
+      and not referenced_column.attisdropped
+    where c.conrelid = 'public.invoice_items'::pg_catalog.regclass
+      and c.contype = 'f'
+      and c.conkey = array[local_column.attnum]
+      and c.confrelid = 'public.events'::pg_catalog.regclass
+      and c.confkey = array[referenced_column.attnum]
+      and c.confdeltype = 'n'
+  ) then
+    raise exception 'invoice_items constraints are incompatible';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    join pg_catalog.pg_attribute local_column
+      on local_column.attrelid = c.conrelid
+      and local_column.attname = 'timelog_id'
+      and not local_column.attisdropped
+    join pg_catalog.pg_attribute referenced_column
+      on referenced_column.attrelid = c.confrelid
+      and referenced_column.attname = 'id'
+      and not referenced_column.attisdropped
+    where c.conrelid = 'public.invoices'::pg_catalog.regclass
+      and c.contype = 'f'
+      and c.conkey = array[local_column.attnum]
+      and c.confrelid = 'public.timelogs'::pg_catalog.regclass
+      and c.confkey = array[referenced_column.attnum]
+      and c.confdeltype = 'n'
+  ) then
+    raise exception 'invoices timelog_id foreign key is incompatible';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    join pg_catalog.pg_attribute id_column
+      on id_column.attrelid = c.conrelid
+      and id_column.attname = 'id'
+      and not id_column.attisdropped
+    where c.conrelid = 'public.invoice_timelogs'::pg_catalog.regclass
+      and c.contype = 'p'
+      and c.conkey = array[id_column.attnum]
+  ) or not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    where c.conrelid = 'public.invoice_timelogs'::pg_catalog.regclass
+      and c.contype = 'u'
+      and pg_catalog.pg_get_constraintdef(c.oid) = 'UNIQUE (invoice_id, timelog_id)'
+  ) or not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    where c.conrelid = 'public.invoice_timelogs'::pg_catalog.regclass
+      and c.contype = 'u'
+      and pg_catalog.pg_get_constraintdef(c.oid) = 'UNIQUE (timelog_id)'
+  ) or not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    join pg_catalog.pg_attribute local_column
+      on local_column.attrelid = c.conrelid
+      and local_column.attname = 'invoice_id'
+      and not local_column.attisdropped
+    join pg_catalog.pg_attribute referenced_column
+      on referenced_column.attrelid = c.confrelid
+      and referenced_column.attname = 'id'
+      and not referenced_column.attisdropped
+    where c.conrelid = 'public.invoice_timelogs'::pg_catalog.regclass
+      and c.contype = 'f'
+      and c.conkey = array[local_column.attnum]
+      and c.confrelid = 'public.invoices'::pg_catalog.regclass
+      and c.confkey = array[referenced_column.attnum]
+      and c.confdeltype = 'c'
+  ) or not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    join pg_catalog.pg_attribute local_column
+      on local_column.attrelid = c.conrelid
+      and local_column.attname = 'timelog_id'
+      and not local_column.attisdropped
+    join pg_catalog.pg_attribute referenced_column
+      on referenced_column.attrelid = c.confrelid
+      and referenced_column.attname = 'id'
+      and not referenced_column.attisdropped
+    where c.conrelid = 'public.invoice_timelogs'::pg_catalog.regclass
+      and c.contype = 'f'
+      and c.conkey = array[local_column.attnum]
+      and c.confrelid = 'public.timelogs'::pg_catalog.regclass
+      and c.confkey = array[referenced_column.attnum]
+      and c.confdeltype = 'c'
+  ) then
+    raise exception 'invoice_timelogs constraints are incompatible';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    join pg_catalog.pg_attribute id_column
+      on id_column.attrelid = c.conrelid
+      and id_column.attname = 'id'
+      and not id_column.attisdropped
+    where c.conrelid = 'public.invoice_receipts'::pg_catalog.regclass
+      and c.contype = 'p'
+      and c.conkey = array[id_column.attnum]
+  ) or not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    where c.conrelid = 'public.invoice_receipts'::pg_catalog.regclass
+      and c.contype = 'u'
+      and pg_catalog.pg_get_constraintdef(c.oid) = 'UNIQUE (invoice_id, receipt_id)'
+  ) or not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    where c.conrelid = 'public.invoice_receipts'::pg_catalog.regclass
+      and c.contype = 'u'
+      and pg_catalog.pg_get_constraintdef(c.oid) = 'UNIQUE (receipt_id)'
+  ) or not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    join pg_catalog.pg_attribute local_column
+      on local_column.attrelid = c.conrelid
+      and local_column.attname = 'invoice_id'
+      and not local_column.attisdropped
+    join pg_catalog.pg_attribute referenced_column
+      on referenced_column.attrelid = c.confrelid
+      and referenced_column.attname = 'id'
+      and not referenced_column.attisdropped
+    where c.conrelid = 'public.invoice_receipts'::pg_catalog.regclass
+      and c.contype = 'f'
+      and c.conkey = array[local_column.attnum]
+      and c.confrelid = 'public.invoices'::pg_catalog.regclass
+      and c.confkey = array[referenced_column.attnum]
+      and c.confdeltype = 'c'
+  ) or not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    join pg_catalog.pg_attribute local_column
+      on local_column.attrelid = c.conrelid
+      and local_column.attname = 'receipt_id'
+      and not local_column.attisdropped
+    join pg_catalog.pg_attribute referenced_column
+      on referenced_column.attrelid = c.confrelid
+      and referenced_column.attname = 'id'
+      and not referenced_column.attisdropped
+    where c.conrelid = 'public.invoice_receipts'::pg_catalog.regclass
+      and c.contype = 'f'
+      and c.conkey = array[local_column.attnum]
+      and c.confrelid = 'public.receipts'::pg_catalog.regclass
+      and c.confkey = array[referenced_column.attnum]
+      and c.confdeltype = 'c'
+  ) then
+    raise exception 'invoice_receipts constraints are incompatible';
+  end if;
+end
+$$;
+
+create unique index if not exists invoices_invoice_number_key
+  on public.invoices (invoice_number)
+  where invoice_number is not null;
+create index if not exists idx_invoices_pdf_path
+  on public.invoices (pdf_path)
+  where pdf_path is not null;
+create index if not exists idx_invoice_items_invoice_id
+  on public.invoice_items (invoice_id);
+create index if not exists idx_invoice_items_event_id
+  on public.invoice_items (event_id);
+create index if not exists idx_invoice_timelogs_invoice_id
+  on public.invoice_timelogs (invoice_id);
+create index if not exists idx_invoice_timelogs_timelog_id
+  on public.invoice_timelogs (timelog_id);
+create index if not exists idx_invoice_receipts_invoice_id
+  on public.invoice_receipts (invoice_id);
+create index if not exists idx_invoice_receipts_receipt_id
+  on public.invoice_receipts (receipt_id);
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_catalog.pg_index i
+    join pg_catalog.pg_class index_relation on index_relation.oid = i.indexrelid
+    join pg_catalog.pg_attribute indexed_column
+      on indexed_column.attrelid = i.indrelid
+      and indexed_column.attname = 'invoice_number'
+      and not indexed_column.attisdropped
+    where i.indrelid = 'public.invoices'::pg_catalog.regclass
+      and index_relation.relname = 'invoices_invoice_number_key'
+      and i.indisunique
+      and i.indnkeyatts = 1
+      and i.indkey[0] = indexed_column.attnum
+      and pg_catalog.pg_get_expr(i.indpred, i.indrelid) = '(invoice_number IS NOT NULL)'
+  ) or not exists (
+    select 1
+    from pg_catalog.pg_index i
+    join pg_catalog.pg_class index_relation on index_relation.oid = i.indexrelid
+    join pg_catalog.pg_attribute indexed_column
+      on indexed_column.attrelid = i.indrelid
+      and indexed_column.attname = 'pdf_path'
+      and not indexed_column.attisdropped
+    where i.indrelid = 'public.invoices'::pg_catalog.regclass
+      and index_relation.relname = 'idx_invoices_pdf_path'
+      and not i.indisunique
+      and i.indnkeyatts = 1
+      and i.indkey[0] = indexed_column.attnum
+      and pg_catalog.pg_get_expr(i.indpred, i.indrelid) = '(pdf_path IS NOT NULL)'
+  ) then
+    raise exception 'invoices billing indexes are incompatible';
   end if;
 end
 $$;
@@ -572,6 +1045,349 @@ begin
 end
 $$;
 
+create or replace function public.can_edit_timelog_data(
+  p_contractor_id uuid,
+  p_status public.timelog_status
+)
+returns boolean
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select
+    (
+      public.has_role(auth.uid(), 'crew'::public.app_role)
+      and p_contractor_id = public.current_profile_id()
+      and p_status in (
+        'draft'::public.timelog_status,
+        'rejected'::public.timelog_status,
+        'pending_crew_confirmation'::public.timelog_status
+      )
+    )
+    or (
+      public.has_role(auth.uid(), 'crewhead'::public.app_role)
+      and p_status in (
+        'draft'::public.timelog_status,
+        'pending_ch'::public.timelog_status
+      )
+    );
+$$;
+
+revoke all on function public.can_edit_timelog_data(uuid, public.timelog_status) from public;
+revoke all on function public.can_edit_timelog_data(uuid, public.timelog_status) from anon;
+grant execute on function public.can_edit_timelog_data(uuid, public.timelog_status) to authenticated;
+
+alter table public.timelogs enable row level security;
+revoke all on table public.timelogs from public;
+revoke all on table public.timelogs from anon;
+revoke all on table public.timelogs from authenticated;
+grant select, insert, update, delete on table public.timelogs to authenticated;
+
+drop policy if exists "Crew can manage own timelogs" on public.timelogs;
+drop policy if exists "COO can manage all timelogs" on public.timelogs;
+drop policy if exists "CrewHead and COO can create assignment timelogs" on public.timelogs;
+drop policy if exists "CrewHead can submit and update CH timelogs" on public.timelogs;
+drop policy if exists "CrewHead can update pending CH timelogs" on public.timelogs;
+drop policy if exists "CrewHead can delete draft and CH timelogs" on public.timelogs;
+drop policy if exists "Crew can view own timelogs" on public.timelogs;
+drop policy if exists "Crew can create own draft timelogs" on public.timelogs;
+drop policy if exists "Crew can update own draft and rejected timelogs" on public.timelogs;
+drop policy if exists "Crew can update own editable timelogs" on public.timelogs;
+drop policy if exists "Crew can delete own draft and rejected timelogs" on public.timelogs;
+drop policy if exists "CrewHead can view all timelogs" on public.timelogs;
+drop policy if exists "CrewHead can create assignment draft timelogs" on public.timelogs;
+drop policy if exists "CrewHead can create proposed timelogs" on public.timelogs;
+drop policy if exists "CrewHead can update draft and CH timelogs" on public.timelogs;
+drop policy if exists "CrewHead can delete disposable timelogs" on public.timelogs;
+drop policy if exists "COO can view all timelogs" on public.timelogs;
+drop policy if exists "COO can status-update COO timelogs" on public.timelogs;
+
+create policy "Crew can view own timelogs"
+on public.timelogs
+for select
+to authenticated
+using (
+  public.has_role((select auth.uid()), 'crew'::public.app_role)
+  and contractor_id = public.current_profile_id()
+);
+
+create policy "Crew can create own draft timelogs"
+on public.timelogs
+for insert
+to authenticated
+with check (
+  public.has_role((select auth.uid()), 'crew'::public.app_role)
+  and contractor_id = public.current_profile_id()
+  and status = 'draft'::public.timelog_status
+);
+
+create policy "Crew can update own editable timelogs"
+on public.timelogs
+for update
+to authenticated
+using (
+  public.has_role((select auth.uid()), 'crew'::public.app_role)
+  and contractor_id = public.current_profile_id()
+  and status in (
+    'draft'::public.timelog_status,
+    'rejected'::public.timelog_status,
+    'pending_crew_confirmation'::public.timelog_status
+  )
+)
+with check (
+  public.has_role((select auth.uid()), 'crew'::public.app_role)
+  and contractor_id = public.current_profile_id()
+  and status in (
+    'draft'::public.timelog_status,
+    'rejected'::public.timelog_status,
+    'pending_crew_confirmation'::public.timelog_status,
+    'pending_ch'::public.timelog_status
+  )
+);
+
+create policy "Crew can delete own draft and rejected timelogs"
+on public.timelogs
+for delete
+to authenticated
+using (
+  public.has_role((select auth.uid()), 'crew'::public.app_role)
+  and contractor_id = public.current_profile_id()
+  and status in (
+    'draft'::public.timelog_status,
+    'rejected'::public.timelog_status
+  )
+);
+
+create policy "CrewHead can view all timelogs"
+on public.timelogs
+for select
+to authenticated
+using (public.has_role((select auth.uid()), 'crewhead'::public.app_role));
+
+create policy "CrewHead can create assignment draft timelogs"
+on public.timelogs
+for insert
+to authenticated
+with check (
+  public.has_role((select auth.uid()), 'crewhead'::public.app_role)
+  and status = 'draft'::public.timelog_status
+);
+
+create policy "CrewHead can create proposed timelogs"
+on public.timelogs
+for insert
+to authenticated
+with check (
+  public.has_role((select auth.uid()), 'crewhead'::public.app_role)
+  and status = 'pending_ch'::public.timelog_status
+);
+
+create policy "CrewHead can update draft and CH timelogs"
+on public.timelogs
+for update
+to authenticated
+using (
+  public.has_role((select auth.uid()), 'crewhead'::public.app_role)
+  and status in (
+    'draft'::public.timelog_status,
+    'pending_ch'::public.timelog_status
+  )
+)
+with check (
+  public.has_role((select auth.uid()), 'crewhead'::public.app_role)
+  and status in (
+    'draft'::public.timelog_status,
+    'pending_ch'::public.timelog_status,
+    'pending_crew_confirmation'::public.timelog_status,
+    'pending_coo'::public.timelog_status,
+    'rejected'::public.timelog_status
+  )
+);
+
+create policy "CrewHead can delete disposable timelogs"
+on public.timelogs
+for delete
+to authenticated
+using (
+  public.has_role((select auth.uid()), 'crewhead'::public.app_role)
+  and status in (
+    'draft'::public.timelog_status,
+    'rejected'::public.timelog_status
+  )
+);
+
+create policy "COO can view all timelogs"
+on public.timelogs
+for select
+to authenticated
+using (public.has_role((select auth.uid()), 'coo'::public.app_role));
+
+create policy "COO can status-update COO timelogs"
+on public.timelogs
+for update
+to authenticated
+using (
+  public.has_role((select auth.uid()), 'coo'::public.app_role)
+  and status in (
+    'pending_coo'::public.timelog_status,
+    'approved'::public.timelog_status,
+    'invoiced'::public.timelog_status
+  )
+)
+with check (
+  public.has_role((select auth.uid()), 'coo'::public.app_role)
+  and status in (
+    'approved'::public.timelog_status,
+    'rejected'::public.timelog_status,
+    'invoiced'::public.timelog_status,
+    'paid'::public.timelog_status
+  )
+);
+
+alter table public.timelog_days enable row level security;
+revoke all on table public.timelog_days from public;
+revoke all on table public.timelog_days from anon;
+revoke all on table public.timelog_days from authenticated;
+grant select, insert, update, delete on table public.timelog_days to authenticated;
+
+drop policy if exists "Users can manage timelog days via timelog" on public.timelog_days;
+drop policy if exists "CrewHead and COO can create assignment timelog days" on public.timelog_days;
+drop policy if exists "Users can view timelog days via visible timelog" on public.timelog_days;
+drop policy if exists "Users can insert timelog days via editable timelog" on public.timelog_days;
+drop policy if exists "Users can update timelog days via editable timelog" on public.timelog_days;
+drop policy if exists "Users can delete timelog days via editable timelog" on public.timelog_days;
+
+create policy "Users can view timelog days via visible timelog"
+on public.timelog_days
+for select
+to authenticated
+using (
+  exists (
+    select 1
+    from public.timelogs t
+    where t.id = timelog_days.timelog_id
+      and (
+        t.contractor_id = public.current_profile_id()
+        or public.has_role((select auth.uid()), 'crewhead'::public.app_role)
+        or public.has_role((select auth.uid()), 'coo'::public.app_role)
+      )
+  )
+);
+
+create policy "Users can insert timelog days via editable timelog"
+on public.timelog_days
+for insert
+to authenticated
+with check (
+  exists (
+    select 1
+    from public.timelogs t
+    where t.id = timelog_days.timelog_id
+      and public.can_edit_timelog_data(t.contractor_id, t.status)
+  )
+);
+
+create policy "Users can update timelog days via editable timelog"
+on public.timelog_days
+for update
+to authenticated
+using (
+  exists (
+    select 1
+    from public.timelogs t
+    where t.id = timelog_days.timelog_id
+      and public.can_edit_timelog_data(t.contractor_id, t.status)
+  )
+)
+with check (
+  exists (
+    select 1
+    from public.timelogs t
+    where t.id = timelog_days.timelog_id
+      and public.can_edit_timelog_data(t.contractor_id, t.status)
+  )
+);
+
+create policy "Users can delete timelog days via editable timelog"
+on public.timelog_days
+for delete
+to authenticated
+using (
+  exists (
+    select 1
+    from public.timelogs t
+    where t.id = timelog_days.timelog_id
+      and public.can_edit_timelog_data(t.contractor_id, t.status)
+  )
+);
+
+alter table public.invoice_items enable row level security;
+alter table public.invoice_timelogs enable row level security;
+alter table public.invoice_receipts enable row level security;
+
+revoke all on table public.invoice_items from public;
+revoke all on table public.invoice_items from anon;
+revoke all on table public.invoice_items from authenticated;
+grant select, insert, delete on table public.invoice_items to authenticated;
+revoke all on table public.invoice_timelogs from public;
+revoke all on table public.invoice_timelogs from anon;
+revoke all on table public.invoice_timelogs from authenticated;
+grant select, insert, delete on table public.invoice_timelogs to authenticated;
+revoke all on table public.invoice_receipts from public;
+revoke all on table public.invoice_receipts from anon;
+revoke all on table public.invoice_receipts from authenticated;
+grant select, insert, delete on table public.invoice_receipts to authenticated;
+
+do $$
+declare
+  v_table_name text;
+begin
+  foreach v_table_name in array array[
+    'invoice_items',
+    'invoice_timelogs',
+    'invoice_receipts'
+  ] loop
+    execute pg_catalog.format(
+      'drop policy if exists %I on public.%I',
+      v_table_name || '_select_management',
+      v_table_name
+    );
+    execute pg_catalog.format(
+      'drop policy if exists %I on public.%I',
+      v_table_name || '_insert_management',
+      v_table_name
+    );
+    execute pg_catalog.format(
+      'drop policy if exists %I on public.%I',
+      v_table_name || '_delete_management',
+      v_table_name
+    );
+    execute pg_catalog.format(
+      'create policy %I on public.%I for select to authenticated using (' ||
+      'public.has_role((select auth.uid()), ''crewhead''::public.app_role) or ' ||
+      'public.has_role((select auth.uid()), ''coo''::public.app_role))',
+      v_table_name || '_select_management',
+      v_table_name
+    );
+    execute pg_catalog.format(
+      'create policy %I on public.%I for insert to authenticated with check (' ||
+      'public.has_role((select auth.uid()), ''crewhead''::public.app_role) or ' ||
+      'public.has_role((select auth.uid()), ''coo''::public.app_role))',
+      v_table_name || '_insert_management',
+      v_table_name
+    );
+    execute pg_catalog.format(
+      'create policy %I on public.%I for delete to authenticated using (' ||
+      'public.has_role((select auth.uid()), ''crewhead''::public.app_role) or ' ||
+      'public.has_role((select auth.uid()), ''coo''::public.app_role))',
+      v_table_name || '_delete_management',
+      v_table_name
+    );
+  end loop;
+end
+$$;
+
 create or replace function public.enforce_timelog_update_permissions()
 returns trigger
 language plpgsql
@@ -606,10 +1422,15 @@ begin
 
   if public.has_role(auth.uid(), 'crew'::public.app_role)
     and old.contractor_id = public.current_profile_id()
-    and old.status in ('draft'::public.timelog_status, 'rejected'::public.timelog_status)
+    and old.status in (
+      'draft'::public.timelog_status,
+      'rejected'::public.timelog_status,
+      'pending_crew_confirmation'::public.timelog_status
+    )
     and new.status in (
       'draft'::public.timelog_status,
       'rejected'::public.timelog_status,
+      'pending_crew_confirmation'::public.timelog_status,
       'pending_ch'::public.timelog_status
     ) then
     return new;
@@ -1253,6 +2074,910 @@ begin
 end;
 $$;
 
+create or replace function public.delete_event_atomic(
+  p_event_id uuid
+)
+returns table (
+  event_id uuid
+)
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_event_id uuid;
+  v_receipt_count integer;
+  v_deleted_receipt_count integer;
+begin
+  if auth.uid() is null then
+    raise exception 'event_delete_conflict' using errcode = '42501';
+  end if;
+
+  select e.id into v_event_id
+  from public.events e
+  where e.id = p_event_id
+  for update;
+
+  if not found then
+    raise exception 'event_not_found' using errcode = 'P0002';
+  end if;
+
+  perform t.id
+  from public.timelogs t
+  where t.event_id = p_event_id
+  order by t.id
+  for share;
+
+  if exists (
+    select 1
+    from public.timelogs t
+    where t.event_id = p_event_id
+      and t.status not in ('draft', 'rejected')
+  ) then
+    raise exception 'event_has_protected_timelogs' using errcode = 'P0001';
+  end if;
+
+  select pg_catalog.count(*)::integer into v_receipt_count
+  from public.receipts r
+  where r.event_id = p_event_id;
+
+  begin
+    delete from public.receipts r
+    where r.event_id = p_event_id;
+    get diagnostics v_deleted_receipt_count = row_count;
+
+    if v_deleted_receipt_count <> v_receipt_count then
+      raise exception 'event_delete_conflict' using errcode = '40001';
+    end if;
+
+    delete from public.events e
+    where e.id = p_event_id
+    returning e.id into v_event_id;
+
+    if not found then
+      raise exception 'event_delete_conflict' using errcode = '40001';
+    end if;
+  exception
+    when insufficient_privilege then
+      raise exception 'event_delete_conflict' using errcode = '42501';
+  end;
+
+  return query select v_event_id;
+end;
+$$;
+
+create or replace function public.create_invoice_atomic(
+  p_invoice jsonb,
+  p_items jsonb,
+  p_timelogs jsonb,
+  p_receipts jsonb
+)
+returns table (
+  invoice_id uuid,
+  invoice_status public.invoice_status,
+  invoice_updated_at timestamptz,
+  paid_at timestamptz,
+  timelogs jsonb,
+  receipts jsonb
+)
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_invoice public.invoices%rowtype;
+  v_contractor_id uuid;
+  v_event_id uuid;
+  v_total_hours numeric;
+  v_amount_hours numeric;
+  v_amount_km numeric;
+  v_amount_receipts numeric;
+  v_total_amount numeric;
+  v_issue_date date;
+  v_taxable_supply_date date;
+  v_due_date date;
+  v_target_count integer;
+  v_matching_count integer;
+  v_timelog_rows jsonb;
+  v_receipt_rows jsonb;
+begin
+  if auth.uid() is null
+    or not public.has_role(auth.uid(), 'coo'::public.app_role) then
+    raise exception 'invoice_unauthorized' using errcode = '42501';
+  end if;
+
+  if p_invoice is null
+    or pg_catalog.jsonb_typeof(p_invoice) <> 'object'
+    or p_items is null
+    or pg_catalog.jsonb_typeof(p_items) <> 'array'
+    or p_timelogs is null
+    or pg_catalog.jsonb_typeof(p_timelogs) <> 'array'
+    or p_receipts is null
+    or pg_catalog.jsonb_typeof(p_receipts) <> 'array'
+    or pg_catalog.jsonb_array_length(p_items) = 0
+    or (
+      pg_catalog.jsonb_array_length(p_timelogs) = 0
+      and pg_catalog.jsonb_array_length(p_receipts) = 0
+    ) then
+    raise exception 'invoice_mutation_invalid' using errcode = '22023';
+  end if;
+
+  if (
+    select pg_catalog.array_agg(key order by key)
+    from pg_catalog.jsonb_object_keys(p_invoice) key
+  ) is distinct from array[
+    'amount_hours',
+    'amount_km',
+    'amount_receipts',
+    'contractor_id',
+    'currency',
+    'customer_snapshot',
+    'due_date',
+    'event_id',
+    'invoice_number',
+    'issue_date',
+    'job_number',
+    'supplier_snapshot',
+    'taxable_supply_date',
+    'total_amount',
+    'total_hours'
+  ]::text[] then
+    raise exception 'invoice_mutation_invalid' using errcode = '22023';
+  end if;
+
+  if exists (
+    select 1
+    from pg_catalog.jsonb_array_elements(p_items) item
+    where case
+      when pg_catalog.jsonb_typeof(item) <> 'object' then true
+      else (
+          select pg_catalog.array_agg(key order by key)
+          from pg_catalog.jsonb_object_keys(item) key
+        ) is distinct from array[
+          'amount_hours',
+          'amount_km',
+          'amount_receipts',
+          'event_id',
+          'hours',
+          'job_number',
+          'km',
+          'total_amount'
+        ]::text[]
+      end
+  ) or exists (
+    select 1
+    from (
+      select target
+      from pg_catalog.jsonb_array_elements(p_timelogs) target
+      union all
+      select target
+      from pg_catalog.jsonb_array_elements(p_receipts) target
+    ) targets
+    where case
+      when pg_catalog.jsonb_typeof(target) <> 'object' then true
+      else (
+          select pg_catalog.array_agg(key order by key)
+          from pg_catalog.jsonb_object_keys(target) key
+        ) is distinct from array['expected_updated_at', 'id']::text[]
+      end
+  ) then
+    raise exception 'invoice_mutation_invalid' using errcode = '22023';
+  end if;
+
+  begin
+    v_contractor_id := (p_invoice->>'contractor_id')::uuid;
+    v_event_id := nullif(p_invoice->>'event_id', '')::uuid;
+    v_total_hours := (p_invoice->>'total_hours')::numeric;
+    v_amount_hours := (p_invoice->>'amount_hours')::numeric;
+    v_amount_km := (p_invoice->>'amount_km')::numeric;
+    v_amount_receipts := (p_invoice->>'amount_receipts')::numeric;
+    v_total_amount := (p_invoice->>'total_amount')::numeric;
+    v_issue_date := nullif(p_invoice->>'issue_date', '')::date;
+    v_taxable_supply_date := nullif(p_invoice->>'taxable_supply_date', '')::date;
+    v_due_date := nullif(p_invoice->>'due_date', '')::date;
+
+    perform
+      nullif(item->>'event_id', '')::uuid,
+      (item->>'hours')::numeric,
+      (item->>'amount_hours')::numeric,
+      (item->>'km')::numeric,
+      (item->>'amount_km')::numeric,
+      (item->>'amount_receipts')::numeric,
+      (item->>'total_amount')::numeric
+    from pg_catalog.jsonb_array_elements(p_items) item;
+
+    perform
+      (target->>'id')::uuid,
+      (target->>'expected_updated_at')::timestamptz
+    from (
+      select target
+      from pg_catalog.jsonb_array_elements(p_timelogs) target
+      union all
+      select target
+      from pg_catalog.jsonb_array_elements(p_receipts) target
+    ) targets;
+  exception
+    when invalid_text_representation
+      or invalid_datetime_format
+      or datetime_field_overflow
+      or numeric_value_out_of_range then
+      raise exception 'invoice_mutation_invalid' using errcode = '22023';
+  end;
+
+  if v_contractor_id is null
+    or nullif(pg_catalog.btrim(coalesce(p_invoice->>'currency', '')), '') is null
+    or v_total_hours is null
+    or v_amount_hours is null
+    or v_amount_km is null
+    or v_amount_receipts is null
+    or v_total_amount is null
+    or v_total_hours::text in ('NaN', 'Infinity', '-Infinity')
+    or v_amount_hours::text in ('NaN', 'Infinity', '-Infinity')
+    or v_amount_km::text in ('NaN', 'Infinity', '-Infinity')
+    or v_amount_receipts::text in ('NaN', 'Infinity', '-Infinity')
+    or v_total_amount::text in ('NaN', 'Infinity', '-Infinity')
+    or v_total_hours < 0
+    or v_amount_hours < 0
+    or v_amount_km < 0
+    or v_amount_receipts < 0
+    or v_total_amount < 0
+    or exists (
+      select 1
+      from pg_catalog.jsonb_array_elements(p_items) item
+      where nullif(pg_catalog.btrim(coalesce(item->>'job_number', '')), '') is null
+        or item->>'hours' is null
+        or item->>'amount_hours' is null
+        or item->>'km' is null
+        or item->>'amount_km' is null
+        or item->>'amount_receipts' is null
+        or item->>'total_amount' is null
+        or (item->>'hours')::numeric::text in ('NaN', 'Infinity', '-Infinity')
+        or (item->>'amount_hours')::numeric::text in ('NaN', 'Infinity', '-Infinity')
+        or (item->>'km')::numeric::text in ('NaN', 'Infinity', '-Infinity')
+        or (item->>'amount_km')::numeric::text in ('NaN', 'Infinity', '-Infinity')
+        or (item->>'amount_receipts')::numeric::text in ('NaN', 'Infinity', '-Infinity')
+        or (item->>'total_amount')::numeric::text in ('NaN', 'Infinity', '-Infinity')
+        or (item->>'hours')::numeric < 0
+        or (item->>'amount_hours')::numeric < 0
+        or (item->>'km')::numeric < 0
+        or (item->>'amount_km')::numeric < 0
+        or (item->>'amount_receipts')::numeric < 0
+        or (item->>'total_amount')::numeric < 0
+    )
+    or exists (
+      select 1
+      from (
+        select target
+        from pg_catalog.jsonb_array_elements(p_timelogs) target
+        union all
+        select target
+        from pg_catalog.jsonb_array_elements(p_receipts) target
+      ) targets
+      where nullif(target->>'id', '') is null
+        or nullif(target->>'expected_updated_at', '') is null
+    )
+    or pg_catalog.jsonb_typeof(p_invoice->'supplier_snapshot') not in ('object', 'null')
+    or pg_catalog.jsonb_typeof(p_invoice->'customer_snapshot') not in ('object', 'null') then
+    raise exception 'invoice_mutation_invalid' using errcode = '22023';
+  end if;
+
+  select pg_catalog.jsonb_array_length(p_timelogs) into v_target_count;
+  if v_target_count <> (
+    select pg_catalog.count(distinct target->>'id')::integer
+    from pg_catalog.jsonb_array_elements(p_timelogs) target
+  ) then
+    raise exception 'invoice_mutation_invalid' using errcode = '22023';
+  end if;
+
+  select pg_catalog.jsonb_array_length(p_receipts) into v_target_count;
+  if v_target_count <> (
+    select pg_catalog.count(distinct target->>'id')::integer
+    from pg_catalog.jsonb_array_elements(p_receipts) target
+  ) then
+    raise exception 'invoice_mutation_invalid' using errcode = '22023';
+  end if;
+
+  perform t.id
+  from pg_catalog.jsonb_array_elements(p_timelogs) target
+  join public.timelogs t on t.id = (target->>'id')::uuid
+  order by (target->>'id')::uuid
+  for update of t;
+
+  select pg_catalog.count(*)::integer into v_matching_count
+  from pg_catalog.jsonb_array_elements(p_timelogs) target
+  join public.timelogs t on t.id = (target->>'id')::uuid
+  where t.updated_at = (target->>'expected_updated_at')::timestamptz
+    and t.contractor_id = v_contractor_id
+    and t.status = 'approved'::public.timelog_status;
+
+  if v_matching_count <> pg_catalog.jsonb_array_length(p_timelogs) then
+    raise exception 'invoice_create_conflict' using errcode = '40001';
+  end if;
+
+  perform r.id
+  from pg_catalog.jsonb_array_elements(p_receipts) target
+  join public.receipts r on r.id = (target->>'id')::uuid
+  order by (target->>'id')::uuid
+  for update of r;
+
+  select pg_catalog.count(*)::integer into v_matching_count
+  from pg_catalog.jsonb_array_elements(p_receipts) target
+  join public.receipts r on r.id = (target->>'id')::uuid
+  where r.updated_at = (target->>'expected_updated_at')::timestamptz
+    and r.contractor_id = v_contractor_id
+    and r.status = 'approved'::public.receipt_status;
+
+  if v_matching_count <> pg_catalog.jsonb_array_length(p_receipts) then
+    raise exception 'invoice_create_conflict' using errcode = '40001';
+  end if;
+
+  begin
+    insert into public.invoices (
+      contractor_id,
+      event_id,
+      timelog_id,
+      job_number,
+      total_hours,
+      amount_hours,
+      amount_km,
+      amount_receipts,
+      total_amount,
+      invoice_number,
+      issue_date,
+      taxable_supply_date,
+      due_date,
+      currency,
+      supplier_snapshot,
+      customer_snapshot,
+      pdf_path,
+      pdf_generated_at,
+      status,
+      sent_at,
+      paid_at
+    ) values (
+      v_contractor_id,
+      v_event_id,
+      null,
+      nullif(pg_catalog.btrim(coalesce(p_invoice->>'job_number', '')), ''),
+      v_total_hours,
+      v_amount_hours,
+      v_amount_km,
+      v_amount_receipts,
+      v_total_amount,
+      nullif(pg_catalog.btrim(coalesce(p_invoice->>'invoice_number', '')), ''),
+      v_issue_date,
+      v_taxable_supply_date,
+      v_due_date,
+      p_invoice->>'currency',
+      nullif(p_invoice->'supplier_snapshot', 'null'::jsonb),
+      nullif(p_invoice->'customer_snapshot', 'null'::jsonb),
+      null,
+      null,
+      'draft'::public.invoice_status,
+      null,
+      null
+    )
+    returning * into v_invoice;
+
+    insert into public.invoice_items (
+      invoice_id,
+      job_number,
+      event_id,
+      hours,
+      amount_hours,
+      km,
+      amount_km,
+      amount_receipts,
+      amount_meals,
+      total_amount
+    )
+    select
+      v_invoice.id,
+      item->>'job_number',
+      nullif(item->>'event_id', '')::uuid,
+      (item->>'hours')::numeric,
+      (item->>'amount_hours')::numeric,
+      (item->>'km')::numeric,
+      (item->>'amount_km')::numeric,
+      (item->>'amount_receipts')::numeric,
+      0,
+      (item->>'total_amount')::numeric
+    from pg_catalog.jsonb_array_elements(p_items) with ordinality source(item, ordinal)
+    order by item->>'job_number', nullif(item->>'event_id', '')::uuid, ordinal;
+
+    insert into public.invoice_timelogs (invoice_id, timelog_id)
+    select v_invoice.id, (target->>'id')::uuid
+    from pg_catalog.jsonb_array_elements(p_timelogs) target
+    order by (target->>'id')::uuid;
+
+    insert into public.invoice_receipts (invoice_id, receipt_id)
+    select v_invoice.id, (target->>'id')::uuid
+    from pg_catalog.jsonb_array_elements(p_receipts) target
+    order by (target->>'id')::uuid;
+
+    update public.receipts r
+    set status = 'attached'::public.receipt_status
+    from pg_catalog.jsonb_array_elements(p_receipts) target
+    where r.id = (target->>'id')::uuid
+      and r.status = 'approved'::public.receipt_status;
+
+    get diagnostics v_matching_count = row_count;
+    if v_matching_count <> pg_catalog.jsonb_array_length(p_receipts) then
+      raise exception 'invoice_create_conflict' using errcode = '40001';
+    end if;
+
+    update public.timelogs t
+    set status = 'invoiced'::public.timelog_status
+    from pg_catalog.jsonb_array_elements(p_timelogs) target
+    where t.id = (target->>'id')::uuid
+      and t.status = 'approved'::public.timelog_status;
+
+    get diagnostics v_matching_count = row_count;
+    if v_matching_count <> pg_catalog.jsonb_array_length(p_timelogs) then
+      raise exception 'invoice_create_conflict' using errcode = '40001';
+    end if;
+  exception
+    when unique_violation or foreign_key_violation then
+      raise exception 'invoice_create_conflict' using errcode = '40001';
+    when not_null_violation
+      or check_violation
+      or numeric_value_out_of_range
+      or invalid_text_representation
+      or invalid_datetime_format
+      or datetime_field_overflow then
+      raise exception 'invoice_mutation_invalid' using errcode = '22023';
+    when insufficient_privilege then
+      raise exception 'invoice_unauthorized' using errcode = '42501';
+  end;
+
+  select coalesce(
+    pg_catalog.jsonb_agg(
+      pg_catalog.jsonb_build_object(
+        'id', t.id,
+        'status', t.status,
+        'updated_at', t.updated_at
+      ) order by t.id
+    ),
+    '[]'::jsonb
+  ) into v_timelog_rows
+  from public.timelogs t
+  join pg_catalog.jsonb_array_elements(p_timelogs) target
+    on t.id = (target->>'id')::uuid;
+
+  select coalesce(
+    pg_catalog.jsonb_agg(
+      pg_catalog.jsonb_build_object(
+        'id', r.id,
+        'status', r.status,
+        'updated_at', r.updated_at
+      ) order by r.id
+    ),
+    '[]'::jsonb
+  ) into v_receipt_rows
+  from public.receipts r
+  join pg_catalog.jsonb_array_elements(p_receipts) target
+    on r.id = (target->>'id')::uuid;
+
+  return query
+  select
+    v_invoice.id,
+    v_invoice.status,
+    v_invoice.updated_at,
+    v_invoice.paid_at,
+    v_timelog_rows,
+    v_receipt_rows;
+end;
+$$;
+
+create or replace function public.mark_invoice_paid_atomic(
+  p_invoice_id uuid,
+  p_expected_status public.invoice_status,
+  p_expected_updated_at timestamptz,
+  p_paid_at timestamptz
+)
+returns table (
+  invoice_id uuid,
+  invoice_status public.invoice_status,
+  invoice_updated_at timestamptz,
+  paid_at timestamptz,
+  timelogs jsonb,
+  receipts jsonb
+)
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_invoice public.invoices%rowtype;
+  v_timelog_rows jsonb;
+  v_receipt_rows jsonb;
+begin
+  if auth.uid() is null
+    or not public.has_role(auth.uid(), 'coo'::public.app_role) then
+    raise exception 'invoice_unauthorized' using errcode = '42501';
+  end if;
+
+  if p_invoice_id is null
+    or p_expected_status is null
+    or p_expected_updated_at is null
+    or p_paid_at is null then
+    raise exception 'invoice_mutation_invalid' using errcode = '22023';
+  end if;
+
+  select i.* into v_invoice
+  from public.invoices i
+  where i.id = p_invoice_id
+  for update;
+
+  if not found then
+    raise exception 'invoice_not_found' using errcode = 'P0002';
+  end if;
+
+  if v_invoice.status is distinct from p_expected_status
+    or v_invoice.updated_at is distinct from p_expected_updated_at
+    or v_invoice.status not in ('sent', 'paid')
+    or (
+      v_invoice.status = 'paid'::public.invoice_status
+      and v_invoice.paid_at is distinct from p_paid_at
+    ) then
+    raise exception 'invoice_paid_conflict' using errcode = '40001';
+  end if;
+
+  perform link.id
+  from public.invoice_timelogs link
+  where link.invoice_id = p_invoice_id
+  order by link.id
+  for update;
+
+  perform link.id
+  from public.invoice_receipts link
+  where link.invoice_id = p_invoice_id
+  order by link.id
+  for update;
+
+  perform t.id
+  from public.timelogs t
+  join (
+    select v_invoice.timelog_id as id
+    where v_invoice.timelog_id is not null
+    union
+    select link.timelog_id
+    from public.invoice_timelogs link
+    where link.invoice_id = p_invoice_id
+  ) linked on linked.id = t.id
+  order by t.id
+  for update of t;
+
+  perform r.id
+  from public.receipts r
+  join public.invoice_receipts link on link.receipt_id = r.id
+  where link.invoice_id = p_invoice_id
+  order by r.id
+  for update of r;
+
+  if exists (
+    select 1
+    from public.timelogs t
+    join (
+      select v_invoice.timelog_id as id
+      where v_invoice.timelog_id is not null
+      union
+      select link.timelog_id
+      from public.invoice_timelogs link
+      where link.invoice_id = p_invoice_id
+    ) linked on linked.id = t.id
+    where t.status not in ('invoiced', 'paid')
+  ) or exists (
+    select 1
+    from public.receipts r
+    join public.invoice_receipts link on link.receipt_id = r.id
+    where link.invoice_id = p_invoice_id
+      and r.status not in ('attached', 'reimbursed')
+  ) then
+    raise exception 'invoice_has_protected_items' using errcode = 'P0001';
+  end if;
+
+  begin
+    update public.receipts r
+    set status = 'reimbursed'::public.receipt_status
+    from public.invoice_receipts link
+    where link.invoice_id = p_invoice_id
+      and link.receipt_id = r.id
+      and r.status = 'attached'::public.receipt_status;
+
+    update public.timelogs t
+    set status = 'paid'::public.timelog_status
+    from (
+      select v_invoice.timelog_id as id
+      where v_invoice.timelog_id is not null
+      union
+      select link.timelog_id
+      from public.invoice_timelogs link
+      where link.invoice_id = p_invoice_id
+    ) linked
+    where linked.id = t.id
+      and t.status = 'invoiced'::public.timelog_status;
+
+    if v_invoice.status = 'sent'::public.invoice_status then
+      update public.invoices i
+      set status = 'paid'::public.invoice_status,
+        paid_at = p_paid_at
+      where i.id = p_invoice_id
+        and i.status = 'sent'::public.invoice_status
+        and i.updated_at = p_expected_updated_at
+      returning i.* into v_invoice;
+
+      if not found then
+        raise exception 'invoice_paid_conflict' using errcode = '40001';
+      end if;
+    end if;
+  exception
+    when insufficient_privilege then
+      raise exception 'invoice_unauthorized' using errcode = '42501';
+  end;
+
+  if exists (
+    select 1
+    from public.timelogs t
+    join (
+      select v_invoice.timelog_id as id
+      where v_invoice.timelog_id is not null
+      union
+      select link.timelog_id
+      from public.invoice_timelogs link
+      where link.invoice_id = p_invoice_id
+    ) linked on linked.id = t.id
+    where t.status <> 'paid'::public.timelog_status
+  ) or exists (
+    select 1
+    from public.receipts r
+    join public.invoice_receipts link on link.receipt_id = r.id
+    where link.invoice_id = p_invoice_id
+      and r.status <> 'reimbursed'::public.receipt_status
+  ) then
+    raise exception 'invoice_paid_conflict' using errcode = '40001';
+  end if;
+
+  select coalesce(
+    pg_catalog.jsonb_agg(
+      pg_catalog.jsonb_build_object(
+        'id', t.id,
+        'status', t.status,
+        'updated_at', t.updated_at
+      ) order by t.id
+    ),
+    '[]'::jsonb
+  ) into v_timelog_rows
+  from public.timelogs t
+  join (
+    select v_invoice.timelog_id as id
+    where v_invoice.timelog_id is not null
+    union
+    select link.timelog_id
+    from public.invoice_timelogs link
+    where link.invoice_id = p_invoice_id
+  ) linked on linked.id = t.id;
+
+  select coalesce(
+    pg_catalog.jsonb_agg(
+      pg_catalog.jsonb_build_object(
+        'id', r.id,
+        'status', r.status,
+        'updated_at', r.updated_at
+      ) order by r.id
+    ),
+    '[]'::jsonb
+  ) into v_receipt_rows
+  from public.receipts r
+  join public.invoice_receipts link on link.receipt_id = r.id
+  where link.invoice_id = p_invoice_id;
+
+  return query
+  select
+    v_invoice.id,
+    v_invoice.status,
+    v_invoice.updated_at,
+    v_invoice.paid_at,
+    v_timelog_rows,
+    v_receipt_rows;
+end;
+$$;
+
+create or replace function public.delete_invoice_atomic(
+  p_invoice_id uuid,
+  p_expected_status public.invoice_status,
+  p_expected_updated_at timestamptz
+)
+returns table (
+  invoice_id uuid,
+  invoice_status public.invoice_status,
+  invoice_updated_at timestamptz,
+  paid_at timestamptz,
+  timelogs jsonb,
+  receipts jsonb
+)
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_invoice public.invoices%rowtype;
+  v_timelog_rows jsonb;
+  v_receipt_rows jsonb;
+  v_deleted_invoice_id uuid;
+begin
+  if auth.uid() is null
+    or not public.has_role(auth.uid(), 'coo'::public.app_role) then
+    raise exception 'invoice_unauthorized' using errcode = '42501';
+  end if;
+
+  if p_invoice_id is null
+    or p_expected_status is null
+    or p_expected_updated_at is null then
+    raise exception 'invoice_mutation_invalid' using errcode = '22023';
+  end if;
+
+  select i.* into v_invoice
+  from public.invoices i
+  where i.id = p_invoice_id
+  for update;
+
+  if not found then
+    raise exception 'invoice_not_found' using errcode = 'P0002';
+  end if;
+
+  if v_invoice.status is distinct from p_expected_status
+    or v_invoice.updated_at is distinct from p_expected_updated_at
+    or v_invoice.status <> 'draft'::public.invoice_status then
+    raise exception 'invoice_delete_conflict' using errcode = '40001';
+  end if;
+
+  perform link.id
+  from public.invoice_timelogs link
+  where link.invoice_id = p_invoice_id
+  order by link.id
+  for update;
+
+  perform link.id
+  from public.invoice_receipts link
+  where link.invoice_id = p_invoice_id
+  order by link.id
+  for update;
+
+  perform t.id
+  from public.timelogs t
+  join (
+    select v_invoice.timelog_id as id
+    where v_invoice.timelog_id is not null
+    union
+    select link.timelog_id
+    from public.invoice_timelogs link
+    where link.invoice_id = p_invoice_id
+  ) linked on linked.id = t.id
+  order by t.id
+  for update of t;
+
+  perform r.id
+  from public.receipts r
+  join public.invoice_receipts link on link.receipt_id = r.id
+  where link.invoice_id = p_invoice_id
+  order by r.id
+  for update of r;
+
+  if exists (
+    select 1
+    from public.timelogs t
+    join (
+      select v_invoice.timelog_id as id
+      where v_invoice.timelog_id is not null
+      union
+      select link.timelog_id
+      from public.invoice_timelogs link
+      where link.invoice_id = p_invoice_id
+    ) linked on linked.id = t.id
+    where t.status not in ('invoiced', 'approved')
+  ) or exists (
+    select 1
+    from public.receipts r
+    join public.invoice_receipts link on link.receipt_id = r.id
+    where link.invoice_id = p_invoice_id
+      and r.status not in ('attached', 'approved')
+  ) then
+    raise exception 'invoice_has_protected_items' using errcode = 'P0001';
+  end if;
+
+  begin
+    update public.receipts r
+    set status = 'approved'::public.receipt_status
+    from public.invoice_receipts link
+    where link.invoice_id = p_invoice_id
+      and link.receipt_id = r.id
+      and r.status = 'attached'::public.receipt_status;
+
+    update public.timelogs t
+    set status = 'approved'::public.timelog_status
+    from (
+      select v_invoice.timelog_id as id
+      where v_invoice.timelog_id is not null
+      union
+      select link.timelog_id
+      from public.invoice_timelogs link
+      where link.invoice_id = p_invoice_id
+    ) linked
+    where linked.id = t.id
+      and t.status = 'invoiced'::public.timelog_status;
+
+    select coalesce(
+      pg_catalog.jsonb_agg(
+        pg_catalog.jsonb_build_object(
+          'id', t.id,
+          'status', t.status,
+          'updated_at', t.updated_at
+        ) order by t.id
+      ),
+      '[]'::jsonb
+    ) into v_timelog_rows
+    from public.timelogs t
+    join (
+      select v_invoice.timelog_id as id
+      where v_invoice.timelog_id is not null
+      union
+      select link.timelog_id
+      from public.invoice_timelogs link
+      where link.invoice_id = p_invoice_id
+    ) linked on linked.id = t.id;
+
+    select coalesce(
+      pg_catalog.jsonb_agg(
+        pg_catalog.jsonb_build_object(
+          'id', r.id,
+          'status', r.status,
+          'updated_at', r.updated_at
+        ) order by r.id
+      ),
+      '[]'::jsonb
+    ) into v_receipt_rows
+    from public.receipts r
+    join public.invoice_receipts link on link.receipt_id = r.id
+    where link.invoice_id = p_invoice_id;
+
+    if exists (
+      select 1
+      from pg_catalog.jsonb_array_elements(v_timelog_rows) row_value
+      where row_value->>'status' <> 'approved'
+    ) or exists (
+      select 1
+      from pg_catalog.jsonb_array_elements(v_receipt_rows) row_value
+      where row_value->>'status' <> 'approved'
+    ) then
+      raise exception 'invoice_delete_conflict' using errcode = '40001';
+    end if;
+
+    delete from public.invoices i
+    where i.id = p_invoice_id
+      and i.status = 'draft'::public.invoice_status
+      and i.updated_at = p_expected_updated_at
+    returning i.id into v_deleted_invoice_id;
+
+    if not found then
+      raise exception 'invoice_delete_conflict' using errcode = '40001';
+    end if;
+  exception
+    when insufficient_privilege then
+      raise exception 'invoice_unauthorized' using errcode = '42501';
+  end;
+
+  return query
+  select
+    v_deleted_invoice_id,
+    v_invoice.status,
+    v_invoice.updated_at,
+    v_invoice.paid_at,
+    v_timelog_rows,
+    v_receipt_rows;
+end;
+$$;
+
 create or replace function public.assign_event_crew(
   p_event_id uuid,
   p_profile_id uuid,
@@ -1661,5 +3386,21 @@ grant execute on function public.delete_timelog_atomic(uuid, timestamptz, public
 revoke all on function public.import_approved_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, jsonb) from public;
 revoke all on function public.import_approved_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, jsonb) from anon;
 grant execute on function public.import_approved_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, jsonb) to authenticated;
+
+revoke all on function public.delete_event_atomic(uuid) from public;
+revoke all on function public.delete_event_atomic(uuid) from anon;
+grant execute on function public.delete_event_atomic(uuid) to authenticated;
+
+revoke all on function public.create_invoice_atomic(jsonb, jsonb, jsonb, jsonb) from public;
+revoke all on function public.create_invoice_atomic(jsonb, jsonb, jsonb, jsonb) from anon;
+grant execute on function public.create_invoice_atomic(jsonb, jsonb, jsonb, jsonb) to authenticated;
+
+revoke all on function public.mark_invoice_paid_atomic(uuid, public.invoice_status, timestamptz, timestamptz) from public;
+revoke all on function public.mark_invoice_paid_atomic(uuid, public.invoice_status, timestamptz, timestamptz) from anon;
+grant execute on function public.mark_invoice_paid_atomic(uuid, public.invoice_status, timestamptz, timestamptz) to authenticated;
+
+revoke all on function public.delete_invoice_atomic(uuid, public.invoice_status, timestamptz) from public;
+revoke all on function public.delete_invoice_atomic(uuid, public.invoice_status, timestamptz) from anon;
+grant execute on function public.delete_invoice_atomic(uuid, public.invoice_status, timestamptz) to authenticated;
 
 commit;

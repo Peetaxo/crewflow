@@ -154,6 +154,8 @@ export interface Timelog {
   /** Stabilni UUID akce v Supabase */
   eventSupabaseId?: string;
   contractorProfileId?: string;
+  /** Optimisticka verze radku ze Supabase */
+  updatedAt?: string;
   days: TimelogDay[];
   /** Cestovne v km */
   km: number;

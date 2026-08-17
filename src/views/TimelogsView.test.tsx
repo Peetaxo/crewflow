@@ -220,6 +220,49 @@ describe('TimelogsView', () => {
     expect(updateTimelogStatus).not.toHaveBeenCalled();
   });
 
+  it('sends a bulk approval through one atomic status request', async () => {
+    const updateTimelogStatus = vi.fn();
+    const updateTimelogStatuses = vi.fn().mockResolvedValue([]);
+    const batchTimelogs = [
+      pendingCrewheadTimelogs[0],
+      {
+        ...pendingCrewheadTimelogs[0],
+        id: 3,
+        contractorProfileId: 'profile-2',
+      },
+    ];
+    mockEmptyPowerAppsPreview();
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockContext,
+        role: 'crewhead',
+        timelogFilter: 'pending_ch',
+      }),
+    }));
+    vi.doMock('../app/providers/useAuth', () => ({
+      useAuth: () => ({ currentProfileId: null }),
+    }));
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
+      useTimelogsQuery: () => ({ data: batchTimelogs }),
+    }));
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      getTimelogDependencies: () => ({ contractors, events }),
+      updateTimelogStatus,
+      updateTimelogStatuses,
+    }));
+
+    const { default: TimelogsView } = await import('./TimelogsView');
+    render(<TimelogsView />);
+
+    fireEvent.click(screen.getByRole('button', {
+      name: 'Schválit vše a poslat COO (2)',
+    }));
+
+    await waitFor(() => expect(updateTimelogStatuses).toHaveBeenCalledWith([1, 3], 'ch'));
+    expect(updateTimelogStatus).not.toHaveBeenCalled();
+  });
+
   it('labels the mine scope as Schvalovani for crew', async () => {
     mockEmptyPowerAppsPreview();
 

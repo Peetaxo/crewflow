@@ -16,6 +16,7 @@ const createSnapshot = (): Snapshot => ({
   events: [
     {
       id: 1,
+      supabaseId: 'event-row-1',
       projectId: 'project-uuid-1',
       name: 'Akce 1',
       job: 'AK001',
@@ -59,11 +60,14 @@ const createSnapshot = (): Snapshot => ({
     {
       id: 1,
       eid: 1,
+      supabaseId: 'timelog-row-1',
+      eventSupabaseId: 'event-row-1',
       contractorProfileId: 'profile-uuid-1',
+      updatedAt: '2026-08-17T10:00:00.000Z',
       days: [{ d: '2026-04-10', f: '08:00', t: '16:00', type: 'instal' }],
       km: 12,
       note: '',
-      status: 'approved',
+      status: 'draft',
     },
   ],
   receipts: [],
@@ -88,12 +92,6 @@ describe('UUID write flows integration', () => {
     let profileSelectCalls = 0;
     const invalidateQueries = vi.fn().mockResolvedValue(undefined);
     const setQueryData = vi.fn();
-    const timelogStatusSelect = vi.fn().mockResolvedValue({ data: [{ id: 'timelog-row-1' }], error: null });
-    const timelogStatusEq = vi.fn(() => ({ select: timelogStatusSelect }));
-    const timelogStatusIn = vi.fn().mockResolvedValue({ error: null });
-    const timelogUpdateEq = vi.fn().mockResolvedValue({ error: null });
-    const timelogDaysDeleteEq = vi.fn().mockResolvedValue({ error: null });
-    const timelogDaysInsert = vi.fn().mockResolvedValue({ error: null });
     const receiptUpdateEq = vi.fn().mockResolvedValue({ error: null });
     const receiptUpdateIn = vi.fn().mockResolvedValue({ error: null });
     const receiptInsert = vi.fn((payload: Record<string, unknown>) => {
@@ -143,8 +141,6 @@ describe('UUID write flows integration', () => {
               error: null,
             }),
           })),
-          delete: vi.fn(() => ({ eq: timelogDaysDeleteEq })),
-          insert: timelogDaysInsert,
         };
       }
 
@@ -156,12 +152,6 @@ describe('UUID write flows integration', () => {
               error: null,
             }),
           })),
-          update: vi.fn((payload: Record<string, unknown>) => {
-            if ('contractor_id' in payload || 'event_id' in payload || 'km' in payload) {
-              return { eq: timelogUpdateEq };
-            }
-            return { eq: timelogStatusEq, in: timelogStatusIn };
-          }),
         };
       }
 
@@ -202,11 +192,37 @@ describe('UUID write flows integration', () => {
     });
 
     vi.doMock('../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    let timelogRpcVersion = 10;
+    const rpc = vi.fn(async (name: string, args: Record<string, unknown>) => {
+      if (name === 'save_timelog_atomic') {
+        timelogRpcVersion += 1;
+        return {
+          data: {
+            id: args.p_timelog_id,
+            updated_at: `2026-08-17T${timelogRpcVersion}:00:00.000Z`,
+            status: args.p_status,
+          },
+          error: null,
+        };
+      }
+      if (name === 'transition_timelog_statuses_atomic') {
+        timelogRpcVersion += 1;
+        return {
+          data: (args.p_targets as Array<{ id: string }>).map(({ id }) => ({
+            id,
+            updated_at: `2026-08-17T${timelogRpcVersion}:00:00.000Z`,
+            status: args.p_next_status,
+          })),
+          error: null,
+        };
+      }
+      return { data: 1, error: null };
+    });
     vi.doMock('../lib/supabase', () => ({
       isSupabaseConfigured: true,
       supabase: {
         from: fromMock,
-        rpc: vi.fn().mockResolvedValue({ data: 1, error: null }),
+        rpc,
       },
     }));
     vi.doMock('../lib/app-data', () => ({
@@ -248,7 +264,7 @@ describe('UUID write flows integration', () => {
       },
     }));
 
-    const { saveTimelog } = await import('./timelogs/services/timelogs.service');
+    const { saveTimelog, updateTimelogStatus } = await import('./timelogs/services/timelogs.service');
     const { createEmptyReceipt, saveReceipt } = await import('./receipts/services/receipts.service');
     const { createInvoiceFromSelection, getInvoiceCreateCandidates } = await import('./invoices/services/invoices.service');
 
@@ -256,6 +272,9 @@ describe('UUID write flows integration', () => {
       ...snapshot.timelogs[0],
       note: 'UUID first timelog',
     });
+    await updateTimelogStatus(savedTimelog.id, 'sub');
+    await updateTimelogStatus(savedTimelog.id, 'ch');
+    await updateTimelogStatus(savedTimelog.id, 'coo');
 
     const receiptDraft = createEmptyReceipt('profile-uuid-1');
     const savedReceipt = await saveReceipt({
@@ -287,7 +306,10 @@ describe('UUID write flows integration', () => {
     expect(receiptInsert).toHaveBeenCalledWith(expect.objectContaining({
       contractor_id: 'profile-uuid-1',
     }));
-    expect(timelogUpdateEq).toHaveBeenCalledWith('id', 'timelog-row-1');
+    expect(rpc).toHaveBeenCalledWith('save_timelog_atomic', expect.objectContaining({
+      p_timelog_id: 'timelog-row-1',
+      p_contractor_id: 'profile-uuid-1',
+    }));
     expect(snapshot.timelogs[0].status).toBe('invoiced');
     expect(snapshot.receipts[0].status).toBe('attached');
   });

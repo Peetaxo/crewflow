@@ -10,6 +10,7 @@ import type { Contractor, Event, Invoice, ReceiptItem, Timelog } from '../../../
 import { calculateTotalHours } from '../../../utils';
 import {
   getTimelogs,
+  markTimelogsAsApproved,
   markTimelogsAsInvoiced,
   markTimelogsAsPaid,
   markTimelogsAsPaidForInvoice,
@@ -866,14 +867,6 @@ const persistSupabaseGeneratedInvoice = async (invoice: Invoice): Promise<string
     if (linkInsert.error) {
       throw new Error(linkInsert.error.message);
     }
-
-    const timelogStatusUpdate = await supabase
-      .from('timelogs')
-      .update({ status: 'invoiced' })
-      .in('id', timelogRowIds);
-    if (timelogStatusUpdate.error) {
-      throw new Error(timelogStatusUpdate.error.message);
-    }
   }
 
   if (receiptRowIds.length > 0) {
@@ -1091,26 +1084,11 @@ export const approveInvoice = async (id: string): Promise<Invoice | null> => {
       throw new Error(invoiceUpdate.error.message);
     }
 
-    const timelogIdMap = await getSupabaseTimelogIdMap();
     const receiptIdMap = await getSupabaseReceiptIdMap();
 
-    const timelogRowIds = (invoice.timelogIds ?? [])
-      .map((timelogId) => timelogIdMap.get(timelogId))
-      .filter((value): value is string => Boolean(value));
     const receiptRowIds = (invoice.receiptIds ?? [])
       .map((receiptId) => receiptIdMap.get(receiptId))
       .filter((value): value is string => Boolean(value));
-
-    if (timelogRowIds.length > 0) {
-      const timelogUpdate = await supabase
-        .from('timelogs')
-        .update({ status: 'paid' })
-        .in('id', timelogRowIds);
-
-      if (timelogUpdate.error) {
-        throw new Error(timelogUpdate.error.message);
-      }
-    }
 
     if (receiptRowIds.length > 0) {
       const receiptUpdate = await supabase
@@ -1198,27 +1176,16 @@ export const deleteInvoice = async (id: string): Promise<boolean> => {
     return false;
   }
 
+  if ((invoice.timelogIds ?? []).length > 0) {
+    await markTimelogsAsApproved(invoice.timelogIds ?? []);
+  }
+
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
-    const timelogIdMap = await getSupabaseTimelogIdMap();
     const receiptIdMap = await getSupabaseReceiptIdMap();
 
-    const timelogRowIds = (invoice.timelogIds ?? [])
-      .map((timelogId) => timelogIdMap.get(timelogId))
-      .filter((value): value is string => Boolean(value));
     const receiptRowIds = (invoice.receiptIds ?? [])
       .map((receiptId) => receiptIdMap.get(receiptId))
       .filter((value): value is string => Boolean(value));
-
-    if (timelogRowIds.length > 0) {
-      const timelogUpdate = await supabase
-        .from('timelogs')
-        .update({ status: 'approved' })
-        .in('id', timelogRowIds);
-
-      if (timelogUpdate.error) {
-        throw new Error(timelogUpdate.error.message);
-      }
-    }
 
     if (receiptRowIds.length > 0) {
       const receiptUpdate = await supabase
@@ -1249,11 +1216,6 @@ export const deleteInvoice = async (id: string): Promise<boolean> => {
   if ((invoice.timelogIds ?? []).length > 0 || (invoice.receiptIds ?? []).length > 0) {
     updateLocalAppState((currentSnapshot) => ({
       ...currentSnapshot,
-      timelogs: (currentSnapshot.timelogs ?? []).map((timelog) => (
-        invoice.timelogIds?.includes(timelog.id)
-          ? { ...timelog, status: 'approved' as const }
-          : timelog
-      )),
       receipts: (currentSnapshot.receipts ?? []).map((receipt) => (
         invoice.receiptIds?.includes(receipt.id)
           ? { ...receipt, status: 'approved' as const }

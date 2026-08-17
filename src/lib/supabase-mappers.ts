@@ -245,6 +245,7 @@ export function mapTimelog(row: TimelogRow, days: TimelogDayRow[] = []): Timelog
     id: Number.NaN,
     eid: Number.NaN,
     contractorProfileId: row.contractor_id,
+    updatedAt: row.updated_at,
     days: days.map(mapTimelogDay),
     km: Number(row.km ?? 0),
     note: row.note ?? '',

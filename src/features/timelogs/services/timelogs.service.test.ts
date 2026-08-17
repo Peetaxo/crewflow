@@ -30,6 +30,7 @@ const setupStableUuidWriteHarness = async ({
   timelogInsertResult,
   timelogUpdateResult,
   timelogDaysDeleteResult,
+  rpcImplementation,
 }: {
   timelogs?: Timelog[];
   snapshotEventSupabaseId?: string;
@@ -38,9 +39,18 @@ const setupStableUuidWriteHarness = async ({
   timelogInsertResult?: Promise<{ data: { id: string } | null; error: null }>;
   timelogUpdateResult?: Promise<{ data: null; error: null }>;
   timelogDaysDeleteResult?: Promise<{ error: null }>;
+  rpcImplementation?: (
+    name: string,
+    args: Record<string, unknown>,
+  ) => Promise<{ data: unknown; error: unknown }>;
 }) => {
+  const versionedTimelogs = timelogs.map((timelog) => (
+    timelog.supabaseId && !timelog.updatedAt
+      ? { ...timelog, updatedAt: '2026-08-17T10:00:00.000Z' }
+      : timelog
+  ));
   let snapshot = {
-    ...createSnapshot(timelogs),
+    ...createSnapshot(versionedTimelogs),
     events: events ?? [{ id: 1, supabaseId: snapshotEventSupabaseId }],
   };
   const setQueryData = vi.fn();
@@ -92,6 +102,61 @@ const setupStableUuidWriteHarness = async ({
   };
   legacyEventOrder.mockReturnValue(legacyEventQuery);
   const eventsSelect = vi.fn(() => legacyEventQuery);
+  const defaultRpcImplementation = async (name: string, args: Record<string, unknown>) => {
+    if (name === 'save_timelog_atomic') {
+      if (args.p_timelog_id == null) {
+        const inserted = await (timelogInsertResult ?? Promise.resolve({
+          data: { id: insertedTimelogSupabaseId },
+          error: null,
+        }));
+        return {
+          data: inserted.data ? {
+            id: inserted.data.id,
+            updated_at: '2026-08-17T11:00:00.000Z',
+            status: args.p_status,
+          } : null,
+          error: inserted.error,
+        };
+      }
+
+      await (timelogUpdateResult ?? Promise.resolve({ data: null, error: null }));
+      return {
+        data: {
+          id: args.p_timelog_id,
+          updated_at: '2026-08-17T11:00:00.000Z',
+          status: args.p_status,
+        },
+        error: null,
+      };
+    }
+
+    if (name === 'transition_timelog_statuses_atomic') {
+      await (timelogUpdateResult ?? Promise.resolve({ data: null, error: null }));
+      return {
+        data: (args.p_targets as Array<{ id: string }>).map((target) => ({
+          id: target.id,
+          updated_at: '2026-08-17T12:00:00.000Z',
+          status: args.p_next_status,
+        })),
+        error: null,
+      };
+    }
+
+    if (name === 'delete_timelog_atomic') {
+      await (timelogDaysDeleteResult ?? Promise.resolve({ error: null }));
+      return {
+        data: {
+          id: args.p_timelog_id,
+          updated_at: args.p_expected_updated_at,
+          status: args.p_expected_status,
+        },
+        error: null,
+      };
+    }
+
+    throw new Error(`Unexpected RPC ${name}`);
+  };
+  const rpc = vi.fn(rpcImplementation ?? defaultRpcImplementation);
 
   vi.doMock('../../../lib/app-config', () => ({
     appDataSource: 'supabase',
@@ -100,6 +165,7 @@ const setupStableUuidWriteHarness = async ({
   vi.doMock('../../../lib/supabase', () => ({
     isSupabaseConfigured: true,
     supabase: {
+      rpc,
       from: vi.fn((table: string) => {
         if (table === 'timelogs') {
           return {
@@ -167,6 +233,7 @@ const setupStableUuidWriteHarness = async ({
     timelogUpdateEq,
     timelogDeleteEq,
     timelogDaysDeleteEq,
+    rpc,
     timelogsSelect,
     eventsSelect,
   };
@@ -274,6 +341,7 @@ describe('timelogs.service write flow', () => {
       km: 0,
       note: 'Current',
       status: 'draft',
+      updatedAt: '2026-08-17T10:00:00.000Z',
     };
     let snapshot = createSnapshot([]);
     const updateLocalAppState = vi.fn((updater: (state: typeof snapshot) => typeof snapshot) => {
@@ -357,6 +425,7 @@ describe('timelogs.service write flow', () => {
       km: 0,
       note: 'Current',
       status: 'draft',
+      updatedAt: '2026-08-17T10:00:00.000Z',
     };
     let snapshot = {
       ...createSnapshot([targetTimelog]),
@@ -384,6 +453,14 @@ describe('timelogs.service write flow', () => {
     vi.doMock('../../../lib/supabase', () => ({
       isSupabaseConfigured: true,
       supabase: {
+        rpc: vi.fn(async (_name: string, args: Record<string, unknown>) => ({
+          data: (args.p_targets as Array<{ id: string }>).map(({ id }) => ({
+            id,
+            updated_at: '2026-08-17T11:00:00.000Z',
+            status: args.p_next_status,
+          })),
+          error: null,
+        })),
         from: vi.fn((table: string) => {
           if (table === 'timelogs') {
             return { select: timelogSelect, update: timelogUpdate };
@@ -453,236 +530,92 @@ describe('timelogs.service write flow', () => {
   });
 
   it('updates timelog status in Supabase using the mapped row id', async () => {
-    let snapshot = createSnapshot([
-      { id: 1, eid: 1, contractorProfileId: 'profile-uuid-1', days: [], km: 0, note: '', status: 'draft' },
-    ]);
-    const setQueryData = vi.fn();
-    const invalidateQueries = vi.fn();
-
-    const updateSelect = vi.fn().mockResolvedValue({ data: [{ id: 'timelog-uuid-1' }], error: null });
-    const updateEq = vi.fn(() => ({ select: updateSelect }));
-    const updateMock = vi.fn(() => ({ eq: updateEq }));
-    const selectMock = vi.fn(() => ({
-      order: vi.fn(() => Promise.resolve({
-        data: [{ id: 'timelog-uuid-1' }],
-        error: null,
-      })),
-    }));
-
-    const fromMock = vi.fn((table: string) => {
-      if (table !== 'timelogs') {
-        throw new Error(`Unexpected table ${table}`);
-      }
-
-      return {
-        select: selectMock,
-        update: updateMock,
-      };
+    const harness = await setupStableUuidWriteHarness({
+      timelogs: [{
+        id: 1,
+        eid: 1,
+        supabaseId: 'timelog-uuid-1',
+        eventSupabaseId: 'event-uuid-1',
+        contractorProfileId: 'profile-uuid-1',
+        days: [],
+        km: 0,
+        note: '',
+        status: 'draft',
+      }],
     });
 
-    vi.doMock('../../../lib/app-config', () => ({
-      appDataSource: 'supabase',
-    }));
+    const result = await harness.service.updateTimelogStatus(1, 'sub');
 
-    vi.doMock('../../../lib/supabase', () => ({
-      isSupabaseConfigured: true,
-      supabase: {
-        from: fromMock,
-      },
-    }));
-
-    vi.doMock('../../../lib/supabase-mappers', () => ({
-      mapTimelog: vi.fn(),
-    }));
-
-    vi.doMock('../../../lib/app-data', () => ({
-      getLocalAppState: () => structuredClone(snapshot),
-      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
-        snapshot = structuredClone(updater(structuredClone(snapshot)));
-        return structuredClone(snapshot);
-      },
-      subscribeToLocalAppState: vi.fn(() => () => undefined),
-    }));
-
-    vi.doMock('../../../lib/query-client', () => ({
-      queryClient: {
-        setQueryData,
-        invalidateQueries,
-      },
-    }));
-
-    vi.doMock('../../../lib/query-keys', () => ({
-      queryKeys: {
-        timelogs: {
-          all: ['timelogs'],
-        },
-      },
-    }));
-
-    const { updateTimelogStatus } = await import('./timelogs.service');
-
-    const result = await updateTimelogStatus(1, 'sub');
-
-    expect(selectMock).toHaveBeenCalledWith('id');
-    expect(updateMock).toHaveBeenCalledWith({ status: 'pending_ch' });
-    expect(updateEq).toHaveBeenCalledWith('id', 'timelog-uuid-1');
-    expect(updateSelect).toHaveBeenCalledWith('id');
+    expect(harness.rpc).toHaveBeenCalledWith('transition_timelog_statuses_atomic', {
+      p_targets: [{
+        id: 'timelog-uuid-1',
+        expected_updated_at: '2026-08-17T10:00:00.000Z',
+      }],
+      p_expected_status: 'draft',
+      p_next_status: 'pending_ch',
+    });
     expect(result.status).toBe('pending_ch');
-    expect(snapshot.timelogs[0].contractorProfileId).toBe('profile-uuid-1');
-    expect(snapshot.timelogs[0].status).toBe('pending_ch');
-    expect(setQueryData).toHaveBeenCalledWith(['timelogs'], snapshot.timelogs);
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['timelogs'] });
+    expect(harness.getSnapshot().timelogs[0]).toMatchObject({
+      contractorProfileId: 'profile-uuid-1',
+      status: 'pending_ch',
+      updatedAt: '2026-08-17T12:00:00.000Z',
+    });
   });
 
-  it('does not update local state when Supabase status update affects no rows', async () => {
-    let snapshot = createSnapshot([
-      { id: 1, eid: 1, contractorProfileId: 'profile-uuid-1', days: [], km: 0, note: '', status: 'draft' },
-    ]);
-    const setQueryData = vi.fn();
-    const invalidateQueries = vi.fn();
+  it('keeps local state unchanged when the atomic status RPC reports a conflict', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const harness = await setupStableUuidWriteHarness({
+      timelogs: [{
+        id: 1,
+        eid: 1,
+        supabaseId: 'timelog-uuid-1',
+        eventSupabaseId: 'event-uuid-1',
+        contractorProfileId: 'profile-uuid-1',
+        days: [],
+        km: 0,
+        note: '',
+        status: 'draft',
+      }],
+      rpcImplementation: async () => ({
+        data: null,
+        error: { message: 'timelog_mutation_conflict' },
+      }),
+    });
 
-    const updateSelect = vi.fn().mockResolvedValue({ data: [], error: null });
-    const updateEq = vi.fn(() => ({ select: updateSelect }));
-    const updateMock = vi.fn(() => ({ eq: updateEq }));
-    const selectMock = vi.fn(() => ({
-      order: vi.fn(() => Promise.resolve({
-        data: [{ id: 'timelog-uuid-1' }],
-        error: null,
-      })),
-    }));
+    await expect(harness.service.updateTimelogStatus(1, 'sub')).rejects.toThrow(
+      'Výkaz se mezitím změnil. Obnovte data a zkuste to znovu.',
+    );
 
-    vi.doMock('../../../lib/app-config', () => ({
-      appDataSource: 'supabase',
-    }));
-
-    vi.doMock('../../../lib/supabase', () => ({
-      isSupabaseConfigured: true,
-      supabase: {
-        from: vi.fn((table: string) => {
-          if (table !== 'timelogs') {
-            throw new Error(`Unexpected table ${table}`);
-          }
-
-          return {
-            select: selectMock,
-            update: updateMock,
-          };
-        }),
-      },
-    }));
-
-    vi.doMock('../../../lib/supabase-mappers', () => ({
-      mapTimelog: vi.fn(),
-    }));
-
-    vi.doMock('../../../lib/app-data', () => ({
-      getLocalAppState: () => structuredClone(snapshot),
-      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
-        snapshot = structuredClone(updater(structuredClone(snapshot)));
-        return structuredClone(snapshot);
-      },
-      subscribeToLocalAppState: vi.fn(() => () => undefined),
-    }));
-
-    vi.doMock('../../../lib/query-client', () => ({
-      queryClient: {
-        setQueryData,
-        invalidateQueries,
-      },
-    }));
-
-    vi.doMock('../../../lib/query-keys', () => ({
-      queryKeys: {
-        timelogs: {
-          all: ['timelogs'],
-        },
-      },
-    }));
-
-    const { updateTimelogStatus } = await import('./timelogs.service');
-
-    await expect(updateTimelogStatus(1, 'sub')).rejects.toThrow('Nepodarilo se aktualizovat vykaz v databazi.');
-
-    expect(updateSelect).toHaveBeenCalledWith('id');
-    expect(snapshot.timelogs[0].status).toBe('draft');
-    expect(setQueryData).not.toHaveBeenCalled();
-    expect(invalidateQueries).not.toHaveBeenCalled();
+    expect(harness.getSnapshot().timelogs[0].status).toBe('draft');
+    consoleError.mockRestore();
   });
 
   it('approves all matching event timelogs in Supabase and updates local state', async () => {
-    let snapshot = createSnapshot([
-      { id: 1, eid: 7, supabaseId: 'stable-timelog-uuid-1', contractorProfileId: 'profile-uuid-1', days: [], km: 0, note: '', status: 'pending_coo' },
-      { id: 2, eid: 7, contractorProfileId: 'profile-uuid-2', days: [], km: 0, note: '', status: 'pending_coo' },
-      { id: 3, eid: 8, contractorProfileId: 'profile-uuid-3', days: [], km: 0, note: '', status: 'pending_coo' },
-    ]);
-
-    const eqCalls: Array<[string, string]> = [];
-    const updateMock = vi.fn(() => ({
-      eq: vi.fn((field: string, value: string) => {
-        eqCalls.push([field, value]);
-        return {
-          select: vi.fn().mockResolvedValue({ data: [{ id: value }], error: null }),
-        };
-      }),
-    }));
-    const rowsResult = Promise.resolve({
-        data: [
-          { id: 'timelog-uuid-1' },
-          { id: 'timelog-uuid-2' },
-          { id: 'timelog-uuid-3' },
-        ],
-        error: null,
+    const harness = await setupStableUuidWriteHarness({
+      timelogs: [
+        { id: 1, eid: 7, supabaseId: 'timelog-uuid-1', contractorProfileId: 'profile-uuid-1', days: [], km: 0, note: '', status: 'pending_coo' },
+        { id: 2, eid: 7, supabaseId: 'timelog-uuid-2', contractorProfileId: 'profile-uuid-2', days: [], km: 0, note: '', status: 'pending_coo' },
+        { id: 3, eid: 8, supabaseId: 'timelog-uuid-3', contractorProfileId: 'profile-uuid-3', days: [], km: 0, note: '', status: 'pending_coo' },
+      ],
     });
-    const rowsOrder = vi.fn();
-    const rowsQuery = { order: rowsOrder, then: rowsResult.then.bind(rowsResult) };
-    rowsOrder.mockReturnValue(rowsQuery);
-    const selectMock = vi.fn(() => rowsQuery);
 
-    vi.doMock('../../../lib/app-config', () => ({
-      appDataSource: 'supabase',
-    }));
+    const approved = await harness.service.approveAllTimelogsForEvent(7);
 
-    vi.doMock('../../../lib/supabase', () => ({
-      isSupabaseConfigured: true,
-      supabase: {
-        from: vi.fn(() => ({
-          select: selectMock,
-          update: updateMock,
-        })),
-      },
-    }));
-
-    vi.doMock('../../../lib/supabase-mappers', () => ({
-      mapTimelog: vi.fn(),
-    }));
-
-    vi.doMock('../../../lib/app-data', () => ({
-      getLocalAppState: () => structuredClone(snapshot),
-      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
-        snapshot = structuredClone(updater(structuredClone(snapshot)));
-        return structuredClone(snapshot);
-      },
-      subscribeToLocalAppState: vi.fn(() => () => undefined),
-    }));
-
-    const { approveAllTimelogsForEvent } = await import('./timelogs.service');
-
-    const approved = await approveAllTimelogsForEvent(7);
-
-    expect(updateMock).toHaveBeenCalledWith({ status: 'approved' });
-    expect(eqCalls).toEqual([
-      ['id', 'stable-timelog-uuid-1'],
-      ['id', 'timelog-uuid-2'],
-    ]);
-    expect(rowsOrder.mock.calls).toEqual([
-      ['created_at'],
-      ['id'],
-    ]);
+    expect(harness.rpc).toHaveBeenCalledOnce();
+    expect(harness.rpc).toHaveBeenCalledWith('transition_timelog_statuses_atomic', {
+      p_targets: [
+        { id: 'timelog-uuid-1', expected_updated_at: '2026-08-17T10:00:00.000Z' },
+        { id: 'timelog-uuid-2', expected_updated_at: '2026-08-17T10:00:00.000Z' },
+      ],
+      p_expected_status: 'pending_coo',
+      p_next_status: 'approved',
+    });
     expect(approved).toHaveLength(2);
-    expect(snapshot.timelogs[0].contractorProfileId).toBe('profile-uuid-1');
-    expect(snapshot.timelogs[0].status).toBe('approved');
-    expect(snapshot.timelogs[1].status).toBe('approved');
-    expect(snapshot.timelogs[2].status).toBe('pending_coo');
+    expect(harness.getSnapshot().timelogs.map(({ status }) => status)).toEqual([
+      'approved',
+      'approved',
+      'pending_coo',
+    ]);
   });
 
   it('preserves contractor profile UUIDs during Supabase hydration', async () => {
@@ -820,8 +753,9 @@ describe('timelogs.service write flow', () => {
       status: 'draft',
     });
 
-    expect(harness.timelogInsert).toHaveBeenCalledWith(expect.objectContaining({
-      event_id: 'explicit-event-uuid',
+    expect(harness.rpc).toHaveBeenCalledWith('save_timelog_atomic', expect.objectContaining({
+      p_timelog_id: null,
+      p_event_id: 'explicit-event-uuid',
     }));
     expect(created).toMatchObject({
       eid: 2,
@@ -844,17 +778,19 @@ describe('timelogs.service write flow', () => {
       supabaseId: 'created-timelog-uuid',
       eventSupabaseId: 'explicit-event-uuid',
     });
-    expect(harness.timelogUpdate).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      event_id: 'explicit-event-uuid',
+    expect(harness.rpc).toHaveBeenCalledWith('save_timelog_atomic', expect.objectContaining({
+      p_timelog_id: 'created-timelog-uuid',
+      p_event_id: 'explicit-event-uuid',
     }));
-    expect(harness.timelogUpdateEq).toHaveBeenCalledWith('id', 'created-timelog-uuid');
 
     await harness.service.updateTimelogStatus(created.id, 'sub');
     await harness.service.deleteTimelog(created.id);
 
     expect(harness.timelogsSelect).not.toHaveBeenCalled();
     expect(harness.eventsSelect).not.toHaveBeenCalled();
-    expect(harness.timelogDeleteEq).toHaveBeenCalledWith('id', 'created-timelog-uuid');
+    expect(harness.rpc).toHaveBeenCalledWith('delete_timelog_atomic', expect.objectContaining({
+      p_timelog_id: 'created-timelog-uuid',
+    }));
   });
 
   it('rejects a Supabase create without an explicit canonical event UUID', async () => {
@@ -871,7 +807,7 @@ describe('timelogs.service write flow', () => {
       status: 'draft',
     })).rejects.toThrow('Nepodarilo se sparovat akci s databazovym zaznamem.');
 
-    expect(harness.timelogInsert).not.toHaveBeenCalled();
+    expect(harness.rpc).not.toHaveBeenCalled();
     expect(harness.eventsSelect).not.toHaveBeenCalled();
   });
 
@@ -901,10 +837,10 @@ describe('timelogs.service write flow', () => {
       status: 'draft',
     });
 
-    expect(harness.timelogUpdate).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      event_id: 'snapshot-event-uuid',
+    expect(harness.rpc).toHaveBeenCalledWith('save_timelog_atomic', expect.objectContaining({
+      p_timelog_id: 'stable-timelog-uuid',
+      p_event_id: 'snapshot-event-uuid',
     }));
-    expect(harness.timelogUpdateEq).toHaveBeenCalledWith('id', 'stable-timelog-uuid');
     expect(saved).toMatchObject({
       supabaseId: 'stable-timelog-uuid',
       eventSupabaseId: 'snapshot-event-uuid',
@@ -923,7 +859,9 @@ describe('timelogs.service write flow', () => {
 
     expect(harness.timelogsSelect).not.toHaveBeenCalled();
     expect(harness.eventsSelect).not.toHaveBeenCalled();
-    expect(harness.timelogDeleteEq).toHaveBeenCalledWith('id', 'stable-timelog-uuid');
+    expect(harness.rpc).toHaveBeenCalledWith('delete_timelog_atomic', expect.objectContaining({
+      p_timelog_id: 'stable-timelog-uuid',
+    }));
   });
 
   it('reconciles a stale reindexed save by timelog UUID without overwriting the new numeric occupant', async () => {
@@ -937,6 +875,7 @@ describe('timelogs.service write flow', () => {
       km: 0,
       note: 'Current B',
       status: 'draft',
+      updatedAt: '2026-08-17T10:00:00.000Z',
     };
     const currentTimelogA: Timelog = {
       id: 2,
@@ -965,7 +904,9 @@ describe('timelogs.service write flow', () => {
       note: 'Saved stale A',
     });
 
-    expect(harness.timelogUpdateEq).toHaveBeenCalledWith('id', 'timelog-a-uuid');
+    expect(harness.rpc).toHaveBeenCalledWith('save_timelog_atomic', expect.objectContaining({
+      p_timelog_id: 'timelog-a-uuid',
+    }));
     expect(saved).toMatchObject({
       id: 2,
       eid: 2,
@@ -1007,6 +948,7 @@ describe('timelogs.service write flow', () => {
       km: 0,
       note: 'Current B',
       status: 'draft',
+      updatedAt: '2026-08-17T10:00:00.000Z',
     };
     const currentTimelogA: Timelog = {
       id: 2,
@@ -1042,7 +984,9 @@ describe('timelogs.service write flow', () => {
       eventSupabaseId: 'event-a-uuid',
       days: [],
     });
-    expect(harness.timelogDeleteEq).toHaveBeenCalledWith('id', 'timelog-a-uuid');
+    expect(harness.rpc).toHaveBeenCalledWith('delete_timelog_atomic', expect.objectContaining({
+      p_timelog_id: 'timelog-a-uuid',
+    }));
     expect(harness.getSnapshot().timelogs).toEqual([currentTimelogB]);
     expect(harness.setQueryData).toHaveBeenLastCalledWith(['timelogs'], [currentTimelogB]);
     expect(harness.timelogsSelect).not.toHaveBeenCalled();
@@ -1086,7 +1030,7 @@ describe('timelogs.service write flow', () => {
       note: 'Created while refreshing',
       status: 'draft',
     });
-    await vi.waitFor(() => expect(harness.timelogInsert).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(harness.rpc).toHaveBeenCalledOnce());
 
     harness.setSnapshot({
       ...createSnapshot([currentOtherTimelog, hydratedCreatedTimelog]),
@@ -1149,7 +1093,7 @@ describe('timelogs.service write flow', () => {
       ...initialTimelog,
       note: 'Saved while refreshing',
     });
-    await vi.waitFor(() => expect(harness.timelogUpdate).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(harness.rpc).toHaveBeenCalledOnce());
 
     harness.setSnapshot({
       ...createSnapshot([currentOtherTimelog, currentTargetTimelog]),
@@ -1208,7 +1152,7 @@ describe('timelogs.service write flow', () => {
     });
 
     const statusPromise = harness.service.updateTimelogStatus(1, 'sub');
-    await vi.waitFor(() => expect(harness.timelogUpdate).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(harness.rpc).toHaveBeenCalledOnce());
     harness.setSnapshot({
       ...createSnapshot([currentOther, currentTarget]),
       events: [{ id: 1, supabaseId: 'target-event-uuid' }],
@@ -1252,7 +1196,7 @@ describe('timelogs.service write flow', () => {
     });
 
     const deletePromise = harness.service.deleteTimelog(1);
-    await vi.waitFor(() => expect(harness.timelogDaysDeleteEq).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(harness.rpc).toHaveBeenCalledOnce());
     harness.setSnapshot({
       ...createSnapshot([currentOther, currentTarget]),
       events: [{ id: 1, supabaseId: 'target-event-uuid' }],
@@ -1261,7 +1205,9 @@ describe('timelogs.service write flow', () => {
 
     await deletePromise;
 
-    expect(harness.timelogDeleteEq).toHaveBeenCalledWith('id', 'target-timelog-uuid');
+    expect(harness.rpc).toHaveBeenCalledWith('delete_timelog_atomic', expect.objectContaining({
+      p_timelog_id: 'target-timelog-uuid',
+    }));
     expect(harness.getSnapshot().timelogs).toEqual([currentOther]);
   });
 
@@ -1293,7 +1239,7 @@ describe('timelogs.service write flow', () => {
     });
 
     const batchPromise = harness.service.markTimelogsAsInvoiced([1]);
-    await vi.waitFor(() => expect(harness.timelogUpdate).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(harness.rpc).toHaveBeenCalledOnce());
     harness.setSnapshot({
       ...createSnapshot([currentOther, currentTarget]),
       events: [{ id: 1, supabaseId: 'target-event-uuid' }],
@@ -1312,105 +1258,24 @@ describe('timelogs.service write flow', () => {
   });
 
   it('persists timelog edits to Supabase and rewrites timelog days for the mapped row id', async () => {
-    let snapshot = createSnapshot([
-      {
-        id: 1,
-        eid: 1,
-        contractorProfileId: 'profile-uuid-1',
-        days: [{ d: '2026-04-10', f: '08:00', t: '16:00', type: 'instal' }],
-        km: 10,
-        note: 'Puvodni',
-        status: 'draft',
-      },
-    ]);
-
-    const timelogUpdateEq = vi.fn().mockResolvedValue({ error: null });
-    const timelogUpdate = vi.fn(() => ({ eq: timelogUpdateEq }));
-    const timelogDaysDeleteEq = vi.fn().mockResolvedValue({ error: null });
-    const timelogDaysDelete = vi.fn(() => ({ eq: timelogDaysDeleteEq }));
-    const timelogDaysInsert = vi.fn().mockResolvedValue({ error: null });
-    const timelogsSelectMock = vi.fn(() => ({
-      order: vi.fn(() => Promise.resolve({
-        data: [{ id: 'timelog-row-1' }],
-        error: null,
-      })),
-    }));
-    const profilesSelectMock = vi.fn(() => ({
-      order: vi.fn(() => ({
-        order: vi.fn(() => Promise.resolve({
-          data: [{ id: 'profile-uuid-1' }],
-          error: null,
-        })),
-      })),
-    }));
-    const eventsResult = Promise.resolve({
-      data: [{ id: 'event-row-1' }],
-      error: null,
-    });
-    const eventsOrder = vi.fn();
-    const eventsQuery = {
-      order: eventsOrder,
-      then: eventsResult.then.bind(eventsResult),
+    const original: Timelog = {
+      id: 1,
+      eid: 1,
+      supabaseId: 'timelog-row-1',
+      eventSupabaseId: 'event-row-1',
+      contractorProfileId: 'profile-uuid-1',
+      days: [{ d: '2026-04-10', f: '08:00', t: '16:00', type: 'instal' }],
+      km: 10,
+      note: 'Puvodni',
+      status: 'draft',
     };
-    eventsOrder.mockReturnValue(eventsQuery);
-    const eventsSelectMock = vi.fn(() => eventsQuery);
+    const harness = await setupStableUuidWriteHarness({
+      events: [{ id: 1, supabaseId: 'event-row-1' }],
+      timelogs: [original],
+    });
 
-    vi.doMock('../../../lib/app-config', () => ({
-      appDataSource: 'supabase',
-    }));
-
-    vi.doMock('../../../lib/supabase', () => ({
-      isSupabaseConfigured: true,
-      supabase: {
-        from: vi.fn((table: string) => {
-          if (table === 'timelogs') {
-            return {
-              select: timelogsSelectMock,
-              update: timelogUpdate,
-            };
-          }
-
-          if (table === 'timelog_days') {
-            return {
-              delete: timelogDaysDelete,
-              insert: timelogDaysInsert,
-            };
-          }
-
-          if (table === 'profiles') {
-            return {
-              select: profilesSelectMock,
-            };
-          }
-
-          if (table === 'events') {
-            return {
-              select: eventsSelectMock,
-            };
-          }
-
-          throw new Error(`Unexpected table ${table}`);
-        }),
-      },
-    }));
-
-    vi.doMock('../../../lib/supabase-mappers', () => ({
-      mapTimelog: vi.fn(),
-    }));
-
-    vi.doMock('../../../lib/app-data', () => ({
-      getLocalAppState: () => structuredClone(snapshot),
-      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
-        snapshot = structuredClone(updater(structuredClone(snapshot)));
-        return structuredClone(snapshot);
-      },
-      subscribeToLocalAppState: vi.fn(() => () => undefined),
-    }));
-
-    const { saveTimelog } = await import('./timelogs.service');
-
-    const updated = await saveTimelog({
-      ...snapshot.timelogs[0],
+    const updated = await harness.service.saveTimelog({
+      ...original,
       km: 25,
       note: 'Aktualizovano',
       days: [
@@ -1419,19 +1284,17 @@ describe('timelogs.service write flow', () => {
       ],
     });
 
-    expect(timelogsSelectMock).toHaveBeenCalledWith('id');
-    expect(timelogUpdate).toHaveBeenCalledWith({
-      event_id: 'event-row-1',
-      contractor_id: 'profile-uuid-1',
-      km: 25,
-      note: 'Aktualizovano',
-      status: 'draft',
-    });
-    expect(timelogUpdateEq).toHaveBeenCalledWith('id', 'timelog-row-1');
-    expect(timelogDaysDeleteEq).toHaveBeenCalledWith('timelog_id', 'timelog-row-1');
-    expect(timelogDaysInsert).toHaveBeenCalledWith([
+    expect(harness.rpc).toHaveBeenCalledWith('save_timelog_atomic', {
+      p_timelog_id: 'timelog-row-1',
+      p_event_id: 'event-row-1',
+      p_contractor_id: 'profile-uuid-1',
+      p_expected_updated_at: '2026-08-17T10:00:00.000Z',
+      p_expected_status: 'draft',
+      p_km: 25,
+      p_note: 'Aktualizovano',
+      p_status: 'draft',
+      p_days: [
       {
-        timelog_id: 'timelog-row-1',
         date: '2026-04-10',
         time_from: '08:00',
         time_to: '18:00',
@@ -1439,21 +1302,24 @@ describe('timelogs.service write flow', () => {
         note: 'Ranni priprava',
       },
       {
-        timelog_id: 'timelog-row-1',
         date: '2026-04-11',
         time_from: '09:00',
         time_to: '15:00',
         day_type: 'provoz',
         note: null,
       },
-    ]);
+      ],
+    });
     expect(updated.days).toEqual([
       { d: '2026-04-10', f: '08:00', t: '18:00', type: 'instal', note: 'Ranni priprava' },
       { d: '2026-04-11', f: '09:00', t: '15:00', type: 'provoz' },
     ]);
-    expect(snapshot.timelogs[0].days).toEqual(updated.days);
-    expect(snapshot.timelogs[0].note).toBe('Aktualizovano');
-    expect(snapshot.timelogs[0].km).toBe(25);
+    expect(harness.getSnapshot().timelogs[0]).toMatchObject({
+      days: updated.days,
+      note: 'Aktualizovano',
+      km: 25,
+      updatedAt: '2026-08-17T11:00:00.000Z',
+    });
   });
 
   it('creates a new timelog when saving an unsaved draft', async () => {
@@ -1521,91 +1387,35 @@ describe('timelogs.service write flow', () => {
   });
 
   it('prefers the stable timelog UUID when deleting a saved timelog', async () => {
-    let snapshot = {
-      ...createSnapshot([
-        {
-          id: 1,
-          eid: 1,
-          supabaseId: 'stable-timelog-row',
-          contractorProfileId: 'profile-uuid-1',
-          days: [{ d: '2026-04-10', f: '23:00', t: '01:00', type: 'provoz' as const }],
-          km: 0,
-          note: '',
-          status: 'draft' as const,
-        },
-      ]),
-      events: [{ id: 1 }],
-      contractors: [{ id: 1, profileId: 'profile-uuid-1', name: 'Crew member' }],
+    const original: Timelog = {
+      id: 1,
+      eid: 1,
+      supabaseId: 'stable-timelog-row',
+      eventSupabaseId: 'event-row-1',
+      contractorProfileId: 'profile-uuid-1',
+      days: [{ d: '2026-04-10', f: '23:00', t: '01:00', type: 'provoz' }],
+      km: 0,
+      note: '',
+      status: 'draft',
     };
+    const harness = await setupStableUuidWriteHarness({
+      timelogs: [original],
+      events: [{ id: 1, supabaseId: 'event-row-1' }],
+    });
 
-    const timelogDeleteEq = vi.fn().mockResolvedValue({ error: null });
-    const timelogDelete = vi.fn(() => ({ eq: timelogDeleteEq }));
-    const timelogUpdate = vi.fn();
-    const timelogDaysDeleteEq = vi.fn().mockResolvedValue({ error: null });
-    const timelogDaysDelete = vi.fn(() => ({ eq: timelogDaysDeleteEq }));
-    const timelogDaysInsert = vi.fn();
-    const timelogsSelectMock = vi.fn(() => ({
-      order: vi.fn(() => Promise.resolve({
-        data: [{ id: 'positionally-wrong-timelog-row' }],
-        error: null,
-      })),
-    }));
-
-    vi.doMock('../../../lib/app-config', () => ({
-      appDataSource: 'supabase',
-    }));
-
-    vi.doMock('../../../lib/supabase', () => ({
-      isSupabaseConfigured: true,
-      supabase: {
-        from: vi.fn((table: string) => {
-          if (table === 'timelogs') {
-            return {
-              select: timelogsSelectMock,
-              update: timelogUpdate,
-              delete: timelogDelete,
-            };
-          }
-
-          if (table === 'timelog_days') {
-            return {
-              delete: timelogDaysDelete,
-              insert: timelogDaysInsert,
-            };
-          }
-
-          throw new Error(`Unexpected table ${table}`);
-        }),
-      },
-    }));
-
-    vi.doMock('../../../lib/supabase-mappers', () => ({
-      mapTimelog: vi.fn(),
-    }));
-
-    vi.doMock('../../../lib/app-data', () => ({
-      getLocalAppState: () => structuredClone(snapshot),
-      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
-        snapshot = structuredClone(updater(structuredClone(snapshot)));
-        return structuredClone(snapshot);
-      },
-      subscribeToLocalAppState: vi.fn(() => () => undefined),
-    }));
-
-    const { saveTimelog } = await import('./timelogs.service');
-
-    const result = await saveTimelog({
-      ...snapshot.timelogs[0],
+    const result = await harness.service.saveTimelog({
+      ...original,
       days: [],
     });
 
-    expect(timelogsSelectMock).not.toHaveBeenCalled();
-    expect(timelogDaysDeleteEq).toHaveBeenCalledWith('timelog_id', 'stable-timelog-row');
-    expect(timelogDeleteEq).toHaveBeenCalledWith('id', 'stable-timelog-row');
-    expect(timelogUpdate).not.toHaveBeenCalled();
-    expect(timelogDaysInsert).not.toHaveBeenCalled();
+    expect(harness.rpc).toHaveBeenCalledWith('delete_timelog_atomic', {
+      p_timelog_id: 'stable-timelog-row',
+      p_expected_updated_at: '2026-08-17T10:00:00.000Z',
+      p_expected_status: 'draft',
+    });
+    expect(harness.timelogsSelect).not.toHaveBeenCalled();
     expect(result.days).toEqual([]);
-    expect(snapshot.timelogs).toEqual([]);
+    expect(harness.getSnapshot().timelogs).toEqual([]);
   });
 
   it('throws when saving a timelog without contractorProfileId', async () => {

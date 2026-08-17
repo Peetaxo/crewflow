@@ -6,15 +6,18 @@ import { mapTimelog } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { Contractor, Event, Timelog, TimelogStatus } from '../../../types';
 import { getLifecycleSnapshotGeneration } from '../../event-lifecycle-generation';
+import {
+  deleteTimelogAtomicRpc,
+  importApprovedTimelogAtomicRpc,
+  saveTimelogAtomicRpc,
+  transitionTimelogStatusesAtomicRpc,
+} from './timelog-mutation-rpc.service';
 
 type TimelogAction = 'sub' | 'ch' | 'coo' | 'rej';
-type PersistedTimelogTarget = {
-  localId: number;
-  rowId: string;
-};
 let timelogsHydrationPromise: Promise<void> | null = null;
 let timelogsLoaded = false;
 let timelogSnapshotGeneration = 0;
+const timelogMutationTails = new Map<string, Promise<void>>();
 const statusMap: Record<TimelogAction, TimelogStatus> = {
   sub: 'pending_ch',
   ch: 'pending_coo',
@@ -66,17 +69,6 @@ const reconcilePersistedTimelog = (
   }
 
   return { timelogs: reconciledTimelogs, timelog: canonicalTimelog };
-};
-
-const matchesPersistedTimelogTarget = (
-  timelog: Timelog,
-  targets: PersistedTimelogTarget[],
-): boolean => {
-  if (timelog.supabaseId) {
-    return targets.some((target) => target.rowId === timelog.supabaseId);
-  }
-
-  return targets.some((target) => target.localId === timelog.id);
 };
 
 const matchesSearch = (
@@ -180,6 +172,61 @@ export const fetchTimelogsSnapshot = async (): Promise<Timelog[]> => {
   return supabaseTimelogs;
 };
 
+const reloadAuthoritativeTimelogsAfterMutationFailure = async (): Promise<void> => {
+  while (true) {
+    const generationAtLoadStart = timelogSnapshotGeneration;
+    const authoritativeTimelogs = await loadTimelogsSnapshot();
+
+    if (generationAtLoadStart !== timelogSnapshotGeneration) {
+      continue;
+    }
+
+    updateLocalAppState((snapshot) => ({
+      ...snapshot,
+      timelogs: authoritativeTimelogs,
+    }));
+    syncTimelogQueryData(authoritativeTimelogs);
+    return;
+  }
+};
+
+const runTimelogMutation = async <T,>(
+  requestedKeys: string[],
+  mutation: () => Promise<T>,
+): Promise<T> => {
+  const keys = [...new Set(['timelog:global', ...requestedKeys])].sort();
+  const predecessors = keys.map((key) => timelogMutationTails.get(key) ?? Promise.resolve());
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const reservation = Promise.all(predecessors).then(() => released);
+
+  keys.forEach((key) => timelogMutationTails.set(key, reservation));
+  await Promise.all(predecessors);
+  timelogSnapshotGeneration += 1;
+
+  try {
+    return await mutation();
+  } catch (error) {
+    if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+      try {
+        await reloadAuthoritativeTimelogsAfterMutationFailure();
+      } catch (reloadError) {
+        console.error('Authoritative timelog reload failed after mutation error', reloadError);
+      }
+    }
+    throw error;
+  } finally {
+    release();
+    keys.forEach((key) => {
+      if (timelogMutationTails.get(key) === reservation) {
+        timelogMutationTails.delete(key);
+      }
+    });
+  }
+};
+
 const hydrateTimelogsFromSupabase = async (): Promise<void> => {
   await fetchTimelogsSnapshot();
 };
@@ -233,7 +280,8 @@ const getSupabaseEventIdMap = async (): Promise<Map<number, string>> => {
     : await eventRowsQuery;
 
   if (result.error) {
-    throw new Error(result.error.message);
+    console.error('Unable to resolve legacy event identity for timelog mutation', result.error);
+    throw new Error('Nepodařilo se spárovat výkaz s databázovým záznamem.');
   }
 
   return new Map((result.data ?? []).map((row, index) => [index + 1, row.id]));
@@ -256,92 +304,187 @@ const getSupabaseEventRowId = async ({
   return (await getSupabaseEventIdMap()).get(eid) ?? null;
 };
 
-const getSupabaseTimelogRowIds = async (): Promise<string[]> => {
-  if (!supabase) {
-    throw new Error('Supabase klient neni dostupny.');
-  }
-
-  const timelogRowsQuery = supabase
-    .from('timelogs')
-    .select('id')
-    .order('created_at');
-  const result = typeof timelogRowsQuery.order === 'function'
-    ? await timelogRowsQuery.order('id')
-    : await timelogRowsQuery;
-
-  if (result.error) {
-    throw new Error(result.error.message);
-  }
-
-  return (result.data ?? []).map((row) => row.id);
+const commitAuthoritativeTimelogSnapshot = (timelogs: Timelog[]) => {
+  updateLocalAppState((snapshot) => ({
+    ...snapshot,
+    timelogs,
+  }));
+  syncTimelogQueryData(timelogs);
 };
 
-const getSupabaseTimelogRowId = async (
-  localTimelogId: number,
+const findTimelogForMutation = (
+  localId: number,
   preferredSupabaseId?: string,
-): Promise<string> => {
+): Timelog | undefined => {
+  const timelogs = getLocalAppState().timelogs ?? [];
+  return preferredSupabaseId
+    ? timelogs.find((timelog) => timelog.supabaseId === preferredSupabaseId)
+    : timelogs.find((timelog) => timelog.id === localId);
+};
+
+const findTimelogForIdentity = (
+  localId: number,
+  preferredSupabaseId?: string,
+  identityHint?: Pick<Timelog, 'eventSupabaseId' | 'contractorProfileId'>,
+): Timelog | undefined => {
   if (preferredSupabaseId) {
-    return preferredSupabaseId;
+    return findTimelogForMutation(localId, preferredSupabaseId);
   }
 
-  const stableRowId = (getLocalAppState().timelogs ?? [])
-    .find((timelog) => timelog.id === localTimelogId)?.supabaseId;
-  if (stableRowId) {
-    return stableRowId;
+  const timelogs = getLocalAppState().timelogs ?? [];
+  const localMatch = timelogs.find((timelog) => timelog.id === localId);
+  const eventSupabaseId = identityHint?.eventSupabaseId;
+  const contractorProfileId = identityHint?.contractorProfileId;
+  if (!eventSupabaseId || !contractorProfileId) {
+    return localMatch;
   }
 
-  const timelogRowIds = await getSupabaseTimelogRowIds();
-  const rowId = timelogRowIds[localTimelogId - 1];
-
-  if (!rowId) {
-    throw new Error('Nepodarilo se sparovat vykaz s databazovym zaznamem.');
+  if (
+    localMatch?.eventSupabaseId === eventSupabaseId
+    && localMatch.contractorProfileId === contractorProfileId
+  ) {
+    return localMatch;
   }
 
-  return rowId;
+  return timelogs.find((timelog) => (
+    timelog.eventSupabaseId === eventSupabaseId
+    && timelog.contractorProfileId === contractorProfileId
+  ));
+};
+
+const getTimelogMutationKeys = (localId: number, supabaseId?: string): string[] => [
+  `local:${localId}`,
+  ...(supabaseId ? [`timelog:${supabaseId}`] : []),
+];
+
+const resolvePersistedTimelog = async (
+  localId: number,
+  preferredSupabaseId?: string,
+  identityHint?: Pick<Timelog, 'eventSupabaseId' | 'contractorProfileId'>,
+): Promise<Timelog> => {
+  let timelog = findTimelogForIdentity(localId, preferredSupabaseId, identityHint);
+  if (timelog?.supabaseId && timelog.updatedAt) {
+    return timelog;
+  }
+
+  try {
+    commitAuthoritativeTimelogSnapshot(await loadTimelogsSnapshot());
+  } catch (error) {
+    console.error('Unable to refresh timelog identity before mutation', error);
+    throw new Error('Výkaz se nepodařilo načíst. Obnovte data a zkuste to znovu.');
+  }
+
+  timelog = findTimelogForIdentity(localId, preferredSupabaseId, identityHint ?? timelog);
+  if (!timelog?.supabaseId || !timelog.updatedAt) {
+    throw new Error('Výkaz už neexistuje nebo k němu nemáte přístup.');
+  }
+
+  return timelog;
 };
 
 const persistSupabaseTimelogStatus = async (
   localTimelogIds: number[],
   nextStatus: TimelogStatus,
-): Promise<PersistedTimelogTarget[] | null> => {
+): Promise<Timelog[] | null> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
     return null;
   }
 
-  const timelogsByLocalId = new Map(
-    (getLocalAppState().timelogs ?? []).map((timelog) => [timelog.id, timelog]),
-  );
-  const requiresLegacyLookup = localTimelogIds.some(
-    (localId) => !timelogsByLocalId.get(localId)?.supabaseId,
-  );
-  const timelogRowIds = requiresLegacyLookup ? await getSupabaseTimelogRowIds() : [];
-  const targets = localTimelogIds.map((localId) => {
-    const rowId = timelogsByLocalId.get(localId)?.supabaseId ?? timelogRowIds[localId - 1];
-    if (!rowId) {
-      throw new Error('Nepodarilo se sparovat vykaz s databazovym zaznamem.');
-    }
-    return { localId, rowId };
-  });
-  const rowIds = Array.from(new Set(targets.map((target) => target.rowId)));
-
-  await Promise.all(rowIds.map(async (rowId) => {
-    const result = await supabase
-      .from('timelogs')
-      .update({ status: nextStatus })
-      .eq('id', rowId)
-      .select('id');
-
-    if (result.error) {
-      throw new Error(result.error.message);
-    }
-
-    if ((result.data ?? []).length === 0) {
-      throw new Error('Nepodarilo se aktualizovat vykaz v databazi.');
-    }
+  const initialTargets = localTimelogIds.map((localId) => ({
+    localId,
+    timelog: findTimelogForMutation(localId),
   }));
+  const keys = initialTargets.flatMap(({ localId, timelog }) => (
+    getTimelogMutationKeys(localId, timelog?.supabaseId)
+  ));
 
-  timelogSnapshotGeneration += 1;
-  return targets;
+  return runTimelogMutation(keys, async () => {
+    const missingIdentity = initialTargets.find(({ timelog }) => (
+      !timelog?.supabaseId || !timelog.updatedAt
+    ));
+    if (missingIdentity) {
+      await resolvePersistedTimelog(
+        missingIdentity.localId,
+        missingIdentity.timelog?.supabaseId,
+        missingIdentity.timelog,
+      );
+    }
+
+    const targets = initialTargets.map(({ localId, timelog: initialTimelog }) => {
+      const timelog = findTimelogForIdentity(
+        localId,
+        initialTimelog?.supabaseId,
+        initialTimelog,
+      );
+      if (!timelog?.supabaseId || !timelog.updatedAt) {
+        throw new Error('Výkaz už neexistuje nebo k němu nemáte přístup.');
+      }
+      return { localId, timelog };
+    });
+    const expectedStatuses = new Set(targets.map(({ timelog }) => timelog.status));
+    if (expectedStatuses.size !== 1) {
+      throw new Error('Vybrané výkazy nejsou ve stejném stavu. Obnovte data a zkuste to znovu.');
+    }
+    const expectedStatus = targets[0]?.timelog.status;
+    if (!expectedStatus) {
+      return [];
+    }
+
+    const results = await transitionTimelogStatusesAtomicRpc({
+      targets: targets
+        .map(({ timelog }) => ({
+          id: timelog.supabaseId as string,
+          expectedUpdatedAt: timelog.updatedAt as string,
+        }))
+        .sort((left, right) => left.id.localeCompare(right.id)),
+      expectedStatus,
+      nextStatus,
+    });
+    const resultsById = new Map(results.map((result) => [result.id, result]));
+    if (resultsById.size !== targets.length) {
+      throw new Error('Operaci s výkazy se nepodařilo dokončit.');
+    }
+
+    const persistedTargets = targets.map(({ localId, timelog }) => {
+      const result = resultsById.get(timelog.supabaseId as string);
+      if (!result) {
+        throw new Error('Operaci s výkazy se nepodařilo dokončit.');
+      }
+      return {
+        localId,
+        rowId: result.id,
+        status: result.status,
+        updatedAt: result.updated_at,
+      };
+    });
+
+    const updatedTimelogs: Timelog[] = [];
+    updateLocalAppState((snapshot) => ({
+      ...snapshot,
+      timelogs: (snapshot.timelogs ?? []).map((timelog) => {
+        const persistedTarget = persistedTargets.find((target) => (
+          target.rowId === timelog.supabaseId
+          || (!timelog.supabaseId && target.localId === timelog.id)
+        ));
+        if (!persistedTarget) return timelog;
+
+        const updatedTimelog = {
+          ...timelog,
+          status: persistedTarget.status,
+          updatedAt: persistedTarget.updatedAt,
+        };
+        updatedTimelogs.push(updatedTimelog);
+        return updatedTimelog;
+      }),
+    }));
+
+    if (updatedTimelogs.length !== new Set(localTimelogIds).size) {
+      throw new Error('Výkaz nebyl nalezen.');
+    }
+
+    invalidateTimelogQueries();
+    return updatedTimelogs;
+  });
 };
 
 export const getTimelogs = (search = ''): Timelog[] => {
@@ -374,33 +517,48 @@ export const getTimelogDependencies = (): { contractors: Contractor[]; events: E
   };
 };
 
-export const updateTimelogStatus = async (id: number, action: TimelogAction): Promise<Timelog> => {
-  const nextStatus = statusMap[action];
-  const persistedTargets = await persistSupabaseTimelogStatus([id], nextStatus);
-  let updatedTimelog: Timelog | null = null;
+const updateTimelogStatusesTo = async (
+  ids: number[],
+  nextStatus: TimelogStatus,
+): Promise<Timelog[]> => {
+  if (ids.length === 0) return [];
 
-  updateLocalAppState((snapshot) => ({
-    ...snapshot,
-    timelogs: (snapshot.timelogs ?? []).map((timelog) => {
-      const isTarget = persistedTargets
-        ? matchesPersistedTimelogTarget(timelog, persistedTargets)
-        : timelog.id === id;
-      if (!isTarget) return timelog;
-
-      updatedTimelog = {
-        ...timelog,
-        status: nextStatus,
-      };
-
-      return updatedTimelog;
-    }),
-  }));
-
-  if (!updatedTimelog) {
-    throw new Error('Vykaz nebyl nalezen.');
+  const persistedTimelogs = await persistSupabaseTimelogStatus(ids, nextStatus);
+  if (persistedTimelogs) {
+    return persistedTimelogs;
   }
 
-  invalidateTimelogQueries();
+  return runTimelogMutation(ids.map((id) => `local:${id}`), async () => {
+    const updatedTimelogs: Timelog[] = [];
+    updateLocalAppState((snapshot) => ({
+      ...snapshot,
+      timelogs: (snapshot.timelogs ?? []).map((timelog) => {
+        if (!ids.includes(timelog.id)) return timelog;
+        const updatedTimelog = { ...timelog, status: nextStatus };
+        updatedTimelogs.push(updatedTimelog);
+        return updatedTimelog;
+      }),
+    }));
+
+    if (updatedTimelogs.length !== new Set(ids).size) {
+      throw new Error('Výkaz nebyl nalezen.');
+    }
+
+    invalidateTimelogQueries();
+    return updatedTimelogs;
+  });
+};
+
+export const updateTimelogStatuses = async (
+  ids: number[],
+  action: TimelogAction,
+): Promise<Timelog[]> => updateTimelogStatusesTo(ids, statusMap[action]);
+
+export const updateTimelogStatus = async (id: number, action: TimelogAction): Promise<Timelog> => {
+  const [updatedTimelog] = await updateTimelogStatuses([id], action);
+  if (!updatedTimelog) {
+    throw new Error('Výkaz nebyl nalezen.');
+  }
   return updatedTimelog;
 };
 
@@ -415,124 +573,200 @@ export const approveAllTimelogsForEvent = async (eventId: number): Promise<Timel
     return approvedTimelogs;
   }
 
-  const persistedTargets = await persistSupabaseTimelogStatus(localTimelogIds, 'approved');
-
-  updateLocalAppState((snapshot) => ({
-    ...snapshot,
-    timelogs: (snapshot.timelogs ?? []).map((timelog) => {
-      const isTarget = persistedTargets
-        ? matchesPersistedTimelogTarget(timelog, persistedTargets)
-        : localTimelogIds.includes(timelog.id);
-      if (!isTarget) return timelog;
-
-      const approvedTimelog = {
-        ...timelog,
-        status: 'approved' as const,
-      };
-
-      approvedTimelogs.push(approvedTimelog);
-      return approvedTimelog;
-    }),
-  }));
-
-  invalidateTimelogQueries();
+  approvedTimelogs.push(...await updateTimelogStatusesTo(localTimelogIds, 'approved'));
   return approvedTimelogs;
 };
 
 export const createTimelog = async (timelog: Omit<Timelog, 'id'>): Promise<Timelog> => {
-  const normalizedTimelog: Timelog = {
-    ...timelog,
-    id: Math.max(0, ...(getLocalAppState().timelogs ?? []).map((item) => item.id)) + 1,
-    days: sortTimelogDays(timelog.days),
-  };
-  let persistedTimelog = normalizedTimelog;
-
-  if (normalizedTimelog.days.length === 0) {
+  const normalizedDays = sortTimelogDays(timelog.days);
+  if (normalizedDays.length === 0) {
     throw new Error('Vykaz musi obsahovat alespon jeden den.');
   }
 
-  if (!normalizedTimelog.contractorProfileId) {
+  if (!timelog.contractorProfileId) {
     throw new Error('Nepodarilo se dohledat UUID identitu clena crew.');
   }
 
   const persistsToSupabase = appDataSource === 'supabase' && Boolean(supabase) && isSupabaseConfigured;
-  if (persistsToSupabase && supabase) {
-    const eventRowId = normalizedTimelog.eventSupabaseId;
+  if (persistsToSupabase && !timelog.eventSupabaseId) {
+    throw new Error('Nepodarilo se sparovat akci s databazovym zaznamem.');
+  }
+  const mutationKey = persistsToSupabase
+    ? `create:${timelog.eventSupabaseId}:${timelog.contractorProfileId}`
+    : 'local:create';
+
+  return runTimelogMutation([mutationKey], async () => {
+    const normalizedTimelog: Timelog = {
+      ...timelog,
+      id: Math.max(0, ...(getLocalAppState().timelogs ?? []).map((item) => item.id)) + 1,
+      days: normalizedDays,
+    };
+    let persistedTimelog = normalizedTimelog;
+
+    if (persistsToSupabase && supabase) {
+      const eventRowId = normalizedTimelog.eventSupabaseId;
+      const contractorProfileId = normalizedTimelog.contractorProfileId;
+      if (!eventRowId || !contractorProfileId) {
+        throw new Error('Nepodarilo se sparovat vykaz s databazovym zaznamem.');
+      }
     const currentEvent = (getLocalAppState().events ?? [])
       .find((event) => event.supabaseId === eventRowId);
 
-    if (!eventRowId || !currentEvent) {
-      throw new Error('Nepodarilo se sparovat akci s databazovym zaznamem.');
-    }
+      if (!currentEvent) {
+        throw new Error('Nepodarilo se sparovat akci s databazovym zaznamem.');
+      }
 
-    const timelogInsert = await supabase
-      .from('timelogs')
-      .insert({
-        event_id: eventRowId,
-        contractor_id: normalizedTimelog.contractorProfileId,
+      const result = await saveTimelogAtomicRpc({
+        timelogId: null,
+        eventId: eventRowId,
+        contractorId: contractorProfileId,
+        expectedUpdatedAt: null,
+        expectedStatus: null,
         km: normalizedTimelog.km,
         note: normalizedTimelog.note,
         status: normalizedTimelog.status,
-      })
-      .select('id')
-      .single();
+        days: normalizedTimelog.days,
+      });
 
-    if (timelogInsert.error) {
-      throw new Error(timelogInsert.error.message);
+      persistedTimelog = {
+        ...normalizedTimelog,
+        eid: currentEvent.id,
+        supabaseId: result.id,
+        eventSupabaseId: eventRowId,
+        updatedAt: result.updated_at,
+        status: result.status,
+      };
     }
 
-    const timelogRowId = timelogInsert.data?.id;
-    if (!timelogRowId) {
-      throw new Error('Nepodarilo se vytvorit vykaz v databazi.');
-    }
+    updateLocalAppState((snapshot) => {
+      if (persistsToSupabase) {
+        const reconciled = reconcilePersistedTimelog(
+          snapshot.timelogs ?? [],
+          snapshot.events ?? [],
+          persistedTimelog,
+        );
+        persistedTimelog = reconciled.timelog;
+        return {
+          ...snapshot,
+          timelogs: reconciled.timelogs,
+        };
+      }
 
-    persistedTimelog = {
-      ...normalizedTimelog,
-      eid: currentEvent.id,
-      supabaseId: timelogRowId,
-      eventSupabaseId: eventRowId,
-    };
+      return {
+        ...snapshot,
+        timelogs: [...(snapshot.timelogs ?? []), persistedTimelog],
+      };
+    });
 
-    const timelogDaysInsert = await supabase
-      .from('timelog_days')
-      .insert(normalizedTimelog.days.map((day) => ({
-        timelog_id: timelogRowId,
-        date: day.d,
-        time_from: day.f,
-        time_to: day.t,
-        day_type: day.type,
-        note: day.note?.trim() || null,
-      })));
+    invalidateTimelogQueries();
+    return persistedTimelog;
+  });
+};
 
-    if (timelogDaysInsert.error) {
-      throw new Error(timelogDaysInsert.error.message);
-    }
+type ApprovedTimelogImport = Omit<Timelog, 'id'> & { id?: number };
 
-    timelogSnapshotGeneration += 1;
+export const importApprovedTimelog = async (
+  imported: ApprovedTimelogImport,
+): Promise<Timelog> => {
+  const normalizedDays = sortTimelogDays(imported.days);
+  if (normalizedDays.length === 0) {
+    throw new Error('Vykaz musi obsahovat alespon jeden den.');
+  }
+  if (!imported.eventSupabaseId || !imported.contractorProfileId) {
+    throw new Error('Nepodarilo se sparovat vykaz s databazovym zaznamem.');
   }
 
-  updateLocalAppState((snapshot) => {
-    if (persistsToSupabase) {
+  const initialSnapshot = getLocalAppState();
+  const initialTimelog = imported.supabaseId
+    ? (initialSnapshot.timelogs ?? []).find((timelog) => timelog.supabaseId === imported.supabaseId)
+    : (initialSnapshot.timelogs ?? []).find((timelog) => (
+      (imported.id !== undefined && timelog.id === imported.id)
+      || (
+        timelog.eventSupabaseId === imported.eventSupabaseId
+        && timelog.contractorProfileId === imported.contractorProfileId
+      )
+    ));
+  const normalizedImport: ApprovedTimelogImport = {
+    ...imported,
+    id: initialTimelog?.id ?? imported.id,
+    eid: initialTimelog?.eid ?? imported.eid,
+    days: normalizedDays,
+    status: 'approved',
+  };
+  const persistsToSupabase = appDataSource === 'supabase' && Boolean(supabase) && isSupabaseConfigured;
+  if (!persistsToSupabase) {
+    if (initialTimelog) {
+      return saveTimelog({
+        ...initialTimelog,
+        ...normalizedImport,
+        id: initialTimelog.id,
+      });
+    }
+    const { id: _unusedId, ...newTimelog } = normalizedImport;
+    return createTimelog(newTimelog);
+  }
+
+  const mutationKeys = initialTimelog
+    ? getTimelogMutationKeys(initialTimelog.id, initialTimelog.supabaseId)
+    : [`create:${imported.eventSupabaseId}:${imported.contractorProfileId}`];
+
+  return runTimelogMutation(mutationKeys, async () => {
+    let currentTimelog = initialTimelog
+      ? findTimelogForIdentity(
+        initialTimelog.id,
+        initialTimelog.supabaseId,
+        initialTimelog,
+      )
+      : (getLocalAppState().timelogs ?? []).find((timelog) => (
+        timelog.eventSupabaseId === imported.eventSupabaseId
+        && timelog.contractorProfileId === imported.contractorProfileId
+      ));
+    if (currentTimelog && (!currentTimelog.supabaseId || !currentTimelog.updatedAt)) {
+      currentTimelog = await resolvePersistedTimelog(
+        currentTimelog.id,
+        currentTimelog.supabaseId,
+        currentTimelog,
+      );
+    }
+
+    const result = await importApprovedTimelogAtomicRpc({
+      timelogId: currentTimelog?.supabaseId ?? null,
+      eventId: imported.eventSupabaseId,
+      contractorId: imported.contractorProfileId,
+      expectedUpdatedAt: currentTimelog?.updatedAt ?? null,
+      expectedStatus: currentTimelog?.status ?? null,
+      km: normalizedImport.km,
+      note: normalizedImport.note,
+      days: normalizedDays,
+    });
+    const currentEvent = (getLocalAppState().events ?? [])
+      .find((event) => event.supabaseId === imported.eventSupabaseId);
+    let persistedTimelog: Timelog = {
+      ...normalizedImport,
+      id: currentTimelog?.id
+        ?? normalizedImport.id
+        ?? Math.max(0, ...(getLocalAppState().timelogs ?? []).map((timelog) => timelog.id)) + 1,
+      eid: currentEvent?.id ?? currentTimelog?.eid ?? normalizedImport.eid,
+      supabaseId: result.id,
+      eventSupabaseId: imported.eventSupabaseId,
+      contractorProfileId: imported.contractorProfileId,
+      updatedAt: result.updated_at,
+      status: result.status,
+    };
+
+    updateLocalAppState((snapshot) => {
       const reconciled = reconcilePersistedTimelog(
         snapshot.timelogs ?? [],
         snapshot.events ?? [],
         persistedTimelog,
+        currentTimelog?.id ?? normalizedImport.id,
       );
       persistedTimelog = reconciled.timelog;
-      return {
-        ...snapshot,
-        timelogs: reconciled.timelogs,
-      };
-    }
-
-    return {
-      ...snapshot,
-      timelogs: [...(snapshot.timelogs ?? []), persistedTimelog],
-    };
+      return { ...snapshot, timelogs: reconciled.timelogs };
+    });
+    invalidateTimelogQueries();
+    return persistedTimelog;
   });
-
-  invalidateTimelogQueries();
-  return persistedTimelog;
 };
 
 export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
@@ -557,8 +791,6 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
     eventSupabaseId: preferredEventSupabaseId,
     days: sortTimelogDays(updated.days),
   };
-  let persistedTimelog = normalizedTimelog;
-
   if (!existingTimelog) {
     const { id: _unsavedId, ...timelogToCreate } = normalizedTimelog;
     return createTimelog(timelogToCreate);
@@ -574,271 +806,165 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
   }
 
   const persistsToSupabase = appDataSource === 'supabase' && Boolean(supabase) && isSupabaseConfigured;
-  if (persistsToSupabase && supabase) {
-    const [timelogRowId, eventRowId] = await Promise.all([
-      getSupabaseTimelogRowId(
+  const mutationKeys = getTimelogMutationKeys(existingTimelog.id, existingTimelog.supabaseId);
+
+  return runTimelogMutation(mutationKeys, async () => {
+    let currentTimelog = existingTimelog.supabaseId
+      ? findTimelogForMutation(existingTimelog.id, existingTimelog.supabaseId)
+      : findTimelogForMutation(existingTimelog.id);
+    if (persistsToSupabase && (!currentTimelog?.supabaseId || !currentTimelog.updatedAt)) {
+      currentTimelog = await resolvePersistedTimelog(
         existingTimelog.id,
         updated.supabaseId ?? existingTimelog.supabaseId,
-      ),
-      getSupabaseEventRowId(normalizedTimelog),
-    ]);
-    const contractorRowId = normalizedTimelog.contractorProfileId;
-
-    if (!contractorRowId || !eventRowId) {
-      throw new Error('Nepodarilo se sparovat vykaz s databazovym zaznamem.');
+        existingTimelog,
+      );
+    }
+    if (!currentTimelog) {
+      throw new Error('Výkaz už neexistuje nebo k němu nemáte přístup.');
     }
 
-    const timelogUpdate = await supabase
-      .from('timelogs')
-      .update({
-        event_id: eventRowId,
-        contractor_id: contractorRowId,
-        km: normalizedTimelog.km,
-        note: normalizedTimelog.note,
-        status: normalizedTimelog.status,
-      })
-      .eq('id', timelogRowId);
-
-    if (timelogUpdate.error) {
-      throw new Error(timelogUpdate.error.message);
-    }
-
-    const timelogDaysDelete = await supabase
-      .from('timelog_days')
-      .delete()
-      .eq('timelog_id', timelogRowId);
-
-    if (timelogDaysDelete.error) {
-      throw new Error(timelogDaysDelete.error.message);
-    }
-
-    if (normalizedTimelog.days.length > 0) {
-      const timelogDaysInsert = await supabase
-        .from('timelog_days')
-        .insert(normalizedTimelog.days.map((day) => ({
-          timelog_id: timelogRowId,
-          date: day.d,
-          time_from: day.f,
-          time_to: day.t,
-          day_type: day.type,
-          note: day.note?.trim() || null,
-        })));
-
-      if (timelogDaysInsert.error) {
-        throw new Error(timelogDaysInsert.error.message);
-      }
-    }
-
-    persistedTimelog = {
+    let persistedTimelog: Timelog = {
       ...normalizedTimelog,
-      eid: (getLocalAppState().events ?? [])
-        .find((event) => event.supabaseId === eventRowId)?.id ?? normalizedTimelog.eid,
-      supabaseId: timelogRowId,
-      eventSupabaseId: eventRowId,
+      id: currentTimelog.id,
+      eid: currentTimelog.eid,
+      supabaseId: currentTimelog.supabaseId,
+      eventSupabaseId: normalizedTimelog.eventSupabaseId ?? currentTimelog.eventSupabaseId,
+      contractorProfileId: normalizedTimelog.contractorProfileId
+        ?? currentTimelog.contractorProfileId,
     };
 
-    timelogSnapshotGeneration += 1;
-  }
-
-  updateLocalAppState((snapshot) => {
     if (persistsToSupabase) {
-      const reconciled = reconcilePersistedTimelog(
-        snapshot.timelogs ?? [],
-        snapshot.events ?? [],
-        persistedTimelog,
-        existingTimelog.id,
-      );
-      persistedTimelog = reconciled.timelog;
-      return {
-        ...snapshot,
-        timelogs: reconciled.timelogs,
+      const timelogRowId = currentTimelog.supabaseId;
+      const expectedUpdatedAt = currentTimelog.updatedAt;
+      const eventRowId = await getSupabaseEventRowId(persistedTimelog);
+      const contractorRowId = persistedTimelog.contractorProfileId;
+      if (!timelogRowId || !expectedUpdatedAt || !contractorRowId || !eventRowId) {
+        throw new Error('Nepodarilo se sparovat vykaz s databazovym zaznamem.');
+      }
+
+      const result = await saveTimelogAtomicRpc({
+        timelogId: timelogRowId,
+        eventId: eventRowId,
+        contractorId: contractorRowId,
+        expectedUpdatedAt,
+        expectedStatus: currentTimelog.status,
+        km: persistedTimelog.km,
+        note: persistedTimelog.note,
+        status: persistedTimelog.status,
+        days: persistedTimelog.days,
+      });
+
+      persistedTimelog = {
+        ...persistedTimelog,
+        eid: (getLocalAppState().events ?? [])
+          .find((event) => event.supabaseId === eventRowId)?.id ?? persistedTimelog.eid,
+        supabaseId: result.id,
+        eventSupabaseId: eventRowId,
+        updatedAt: result.updated_at,
+        status: result.status,
       };
     }
 
-    return {
-      ...snapshot,
-      timelogs: snapshot.timelogs.map((timelog) => (
-        timelog.id === existingTimelog.id ? persistedTimelog : timelog
-      )),
-    };
-  });
+    updateLocalAppState((currentSnapshot) => {
+      if (persistsToSupabase) {
+        const reconciled = reconcilePersistedTimelog(
+          currentSnapshot.timelogs ?? [],
+          currentSnapshot.events ?? [],
+          persistedTimelog,
+          currentTimelog.id,
+        );
+        persistedTimelog = reconciled.timelog;
+        return { ...currentSnapshot, timelogs: reconciled.timelogs };
+      }
 
-  invalidateTimelogQueries();
-  return persistedTimelog;
+      return {
+        ...currentSnapshot,
+        timelogs: currentSnapshot.timelogs.map((timelog) => (
+          timelog.id === currentTimelog.id ? persistedTimelog : timelog
+        )),
+      };
+    });
+
+    invalidateTimelogQueries();
+    return persistedTimelog;
+  });
 };
 
 export const deleteTimelog = async (id: number): Promise<{ id: number }> => {
-  let persistedTarget: PersistedTimelogTarget | null = null;
-  let deletedLocalId = id;
-  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
-    const timelogRowId = await getSupabaseTimelogRowId(id);
-    persistedTarget = { localId: id, rowId: timelogRowId };
-
-    const timelogDaysDelete = await supabase
-      .from('timelog_days')
-      .delete()
-      .eq('timelog_id', timelogRowId);
-
-    if (timelogDaysDelete.error) {
-      throw new Error(timelogDaysDelete.error.message);
-    }
-
-    const timelogDelete = await supabase
-      .from('timelogs')
-      .delete()
-      .eq('id', timelogRowId);
-
-    if (timelogDelete.error) {
-      throw new Error(timelogDelete.error.message);
-    }
-
-    timelogSnapshotGeneration += 1;
+  const persistsToSupabase = appDataSource === 'supabase' && Boolean(supabase) && isSupabaseConfigured;
+  const initialTimelog = findTimelogForMutation(id);
+  if (!initialTimelog) {
+    throw new Error('Výkaz nebyl nalezen.');
   }
+  const mutationKeys = getTimelogMutationKeys(initialTimelog.id, initialTimelog.supabaseId);
 
-  updateLocalAppState((snapshot) => {
-    const deletedTimelog = persistedTarget
-      ? snapshot.timelogs.find((timelog) => matchesPersistedTimelogTarget(timelog, [persistedTarget]))
-      : snapshot.timelogs.find((timelog) => timelog.id === id);
-    deletedLocalId = deletedTimelog?.id ?? id;
+  return runTimelogMutation(mutationKeys, async () => {
+    let currentTimelog = initialTimelog.supabaseId
+      ? findTimelogForMutation(initialTimelog.id, initialTimelog.supabaseId)
+      : findTimelogForMutation(initialTimelog.id);
+    if (persistsToSupabase && (!currentTimelog?.supabaseId || !currentTimelog.updatedAt)) {
+      currentTimelog = await resolvePersistedTimelog(
+        initialTimelog.id,
+        initialTimelog.supabaseId,
+        initialTimelog,
+      );
+    }
+    if (!currentTimelog) {
+      throw new Error('Výkaz už neexistuje nebo k němu nemáte přístup.');
+    }
 
-    return {
+    if (persistsToSupabase) {
+      if (!currentTimelog.supabaseId || !currentTimelog.updatedAt) {
+        throw new Error('Výkaz už neexistuje nebo k němu nemáte přístup.');
+      }
+      await deleteTimelogAtomicRpc({
+        id: currentTimelog.supabaseId,
+        expectedUpdatedAt: currentTimelog.updatedAt,
+        expectedStatus: currentTimelog.status,
+      });
+    }
+
+    updateLocalAppState((snapshot) => ({
       ...snapshot,
       timelogs: snapshot.timelogs.filter((timelog) => (
-        persistedTarget
-          ? !matchesPersistedTimelogTarget(timelog, [persistedTarget])
-          : timelog.id !== id
+        currentTimelog.supabaseId
+          ? timelog.supabaseId !== currentTimelog.supabaseId
+          : timelog.id !== currentTimelog.id
       )),
-    };
+    }));
+    invalidateTimelogQueries();
+    return { id: currentTimelog.id };
   });
-
-  invalidateTimelogQueries();
-  return { id: deletedLocalId };
 };
 
 export const markApprovedTimelogsAsInvoiced = async (): Promise<Timelog[]> => {
-  const updatedTimelogs: Timelog[] = [];
   const localTimelogIds = (getLocalAppState().timelogs ?? [])
     .filter((timelog) => timelog.status === 'approved')
     .map((timelog) => timelog.id);
-  const persistedTargets = localTimelogIds.length > 0
-    ? await persistSupabaseTimelogStatus(localTimelogIds, 'invoiced')
-    : null;
-
-  updateLocalAppState((snapshot) => ({
-    ...snapshot,
-    timelogs: snapshot.timelogs.map((timelog) => {
-      const isTarget = persistedTargets
-        ? matchesPersistedTimelogTarget(timelog, persistedTargets)
-        : localTimelogIds.includes(timelog.id);
-      if (!isTarget) return timelog;
-
-      const updatedTimelog = {
-        ...timelog,
-        status: 'invoiced' as const,
-      };
-
-      updatedTimelogs.push(updatedTimelog);
-      return updatedTimelog;
-    }),
-  }));
-
-  invalidateTimelogQueries();
-  return updatedTimelogs;
+  return updateTimelogStatusesTo(localTimelogIds, 'invoiced');
 };
 
 export const markTimelogsAsInvoiced = async (timelogIds: number[]): Promise<Timelog[]> => {
-  const idSet = new Set(timelogIds);
-  const updatedTimelogs: Timelog[] = [];
+  return updateTimelogStatusesTo(timelogIds, 'invoiced');
+};
 
-  const persistedTargets = timelogIds.length > 0
-    ? await persistSupabaseTimelogStatus(timelogIds, 'invoiced')
-    : null;
-
-  updateLocalAppState((snapshot) => ({
-    ...snapshot,
-    timelogs: snapshot.timelogs.map((timelog) => {
-      const isTarget = persistedTargets
-        ? matchesPersistedTimelogTarget(timelog, persistedTargets)
-        : idSet.has(timelog.id);
-      if (!isTarget) return timelog;
-
-      const updatedTimelog = {
-        ...timelog,
-        status: 'invoiced' as const,
-      };
-
-      updatedTimelogs.push(updatedTimelog);
-      return updatedTimelog;
-    }),
-  }));
-
-  invalidateTimelogQueries();
-  return updatedTimelogs;
+export const markTimelogsAsApproved = async (timelogIds: number[]): Promise<Timelog[]> => {
+  return updateTimelogStatusesTo(timelogIds, 'approved');
 };
 
 export const markTimelogsAsPaidForInvoice = async (
   eventId: number,
   contractorProfileId: string,
 ): Promise<Timelog[]> => {
-  const updatedTimelogs: Timelog[] = [];
   const localTimelogIds = (getLocalAppState().timelogs ?? [])
     .filter((timelog) => timelog.eid === eventId && timelog.contractorProfileId === contractorProfileId && timelog.status === 'invoiced')
     .map((timelog) => timelog.id);
 
-  const persistedTargets = localTimelogIds.length > 0
-    ? await persistSupabaseTimelogStatus(localTimelogIds, 'paid')
-    : null;
-
-  updateLocalAppState((snapshot) => ({
-    ...snapshot,
-    timelogs: snapshot.timelogs.map((timelog) => {
-      const isTarget = persistedTargets
-        ? matchesPersistedTimelogTarget(timelog, persistedTargets)
-        : localTimelogIds.includes(timelog.id);
-      if (!isTarget) return timelog;
-
-      const updatedTimelog = {
-        ...timelog,
-        status: 'paid' as const,
-      };
-
-      updatedTimelogs.push(updatedTimelog);
-      return updatedTimelog;
-    }),
-  }));
-
-  invalidateTimelogQueries();
-  return updatedTimelogs;
+  return updateTimelogStatusesTo(localTimelogIds, 'paid');
 };
 
 export const markTimelogsAsPaid = async (timelogIds: number[]): Promise<Timelog[]> => {
-  const idSet = new Set(timelogIds);
-  const updatedTimelogs: Timelog[] = [];
-
-  const persistedTargets = timelogIds.length > 0
-    ? await persistSupabaseTimelogStatus(timelogIds, 'paid')
-    : null;
-
-  updateLocalAppState((snapshot) => ({
-    ...snapshot,
-    timelogs: snapshot.timelogs.map((timelog) => {
-      const isTarget = persistedTargets
-        ? matchesPersistedTimelogTarget(timelog, persistedTargets)
-        : idSet.has(timelog.id);
-      if (!isTarget) return timelog;
-
-      const updatedTimelog = {
-        ...timelog,
-        status: 'paid' as const,
-      };
-
-      updatedTimelogs.push(updatedTimelog);
-      return updatedTimelog;
-    }),
-  }));
-
-  invalidateTimelogQueries();
-  return updatedTimelogs;
+  return updateTimelogStatusesTo(timelogIds, 'paid');
 };
 
 export const subscribeToTimelogChanges = (listener: () => void): (() => void) => {

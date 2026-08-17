@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Invoice, ReceiptItem, Timelog } from '../../../types';
 
@@ -112,6 +114,18 @@ describe('invoices.service billing batches', () => {
     vi.useRealTimers();
     vi.resetModules();
     vi.clearAllMocks();
+  });
+
+  it('delegates every timelog status write to the atomic timelog service', () => {
+    const serviceSource = readFileSync(resolve(
+      process.cwd(),
+      'src/features/invoices/services/invoices.service.ts',
+    ), 'utf8');
+
+    expect(serviceSource).not.toMatch(/\.from\('timelogs'\)\s*\.update\(/);
+    expect(serviceSource).toContain('await markTimelogsAsInvoiced(');
+    expect(serviceSource).toContain('await markTimelogsAsPaid(');
+    expect(serviceSource).toContain('await markTimelogsAsApproved(');
   });
 
   it('creates one invoice batch for one contractor with multiple job numbers', async () => {
@@ -500,6 +514,7 @@ describe('invoices.service billing batches', () => {
     expect(invoiceReceiptsInsert).toHaveBeenCalledWith([
       { invoice_id: 'invoice-uuid-1', receipt_id: 'receipt-uuid-11' },
     ]);
+    expect(timelogsUpdateIn).not.toHaveBeenCalled();
     expect(markTimelogsAsInvoiced).toHaveBeenCalledWith([2]);
     expect(markReceiptsAsAttached).toHaveBeenCalledWith([11]);
   });

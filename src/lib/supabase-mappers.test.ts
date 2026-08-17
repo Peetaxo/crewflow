@@ -192,6 +192,9 @@ describe('supabase mappers', () => {
       d: '2026-07-13',
       note: 'Příprava mimo standardní plán',
     });
+    expect(mapTimelog(timelogRow, [dayRow]).updatedAt).toBe(
+      '2026-04-28T00:00:00Z',
+    );
     expect(mapTimelog(timelogRow, [{ ...dayRow, note: null }]).days[0].note).toBe('');
   });
 });

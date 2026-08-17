@@ -36,6 +36,7 @@ import {
   createInvoiceAtomicRpc,
   deleteInvoiceAtomicRpc,
   markInvoicePaidAtomicRpc,
+  markInvoiceSentAtomicRpc,
   type InvoiceMutationRpcResult,
 } from './invoice-mutation-rpc.service';
 
@@ -727,10 +728,6 @@ const ensureSupabaseInvoicesLoaded = () => {
 };
 
 const INVALID_INVOICE_SELECTION_MESSAGE = 'Faktura obsahuje neplatné nebo neúplné údaje.';
-const invoiceWriteError = (context: string, error: unknown): Error => {
-  console.error(`Unexpected invoice ${context} error`, error);
-  return new Error('Operaci s fakturou se nepodařilo dokončit.');
-};
 
 const requireStableTargets = <T extends { id: number; supabaseId?: string; updatedAt?: string }>(
   allRows: T[],
@@ -1138,33 +1135,35 @@ export const sendInvoice = async (id: string): Promise<Invoice | null> => {
   }
 
   const sentAt = new Date().toISOString();
-
-  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
-    const invoiceUpdate = await supabase
-      .from('invoices')
-      .update({
-        status: 'sent',
-        sent_at: sentAt,
-      })
-      .eq('id', id);
-
-    if (invoiceUpdate.error) {
-      throw invoiceWriteError('send', invoiceUpdate.error);
-    }
-  }
+  const persisted = appDataSource === 'supabase'
+    ? await markInvoiceSentAtomicRpc({
+      id,
+      expectedUpdatedAt: invoice.updatedAt ?? (() => { throw new Error(INVALID_INVOICE_SELECTION_MESSAGE); })(),
+      sentAt,
+    })
+    : null;
 
   updateLocalAppState((currentSnapshot) => ({
     ...currentSnapshot,
     invoices: (currentSnapshot.invoices ?? []).map((item) => (
-      item.id === id ? { ...item, status: 'sent', sentAt } : item
+      item.id === id ? {
+        ...item,
+        status: 'sent',
+        sentAt,
+        updatedAt: persisted?.invoice.updatedAt ?? item.updatedAt,
+      } : item
     )),
   }));
+  if (persisted) {
+    reconcileInvoiceMutationChildren(persisted);
+  }
   syncInvoiceQueryData();
 
   return {
     ...invoice,
     status: 'sent',
     sentAt,
+    updatedAt: persisted?.invoice.updatedAt ?? invoice.updatedAt,
   };
 };
 

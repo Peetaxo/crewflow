@@ -8,6 +8,7 @@ const ERROR_MESSAGES = {
   invoice_mutation_invalid: 'Faktura obsahuje neplatné nebo neúplné údaje.',
   invoice_not_found: 'Faktura už neexistuje nebo k ní nemáte přístup.',
   invoice_create_conflict: 'Vybrané položky se mezitím změnily. Obnovte data a zkuste to znovu.',
+  invoice_sent_conflict: 'Faktura nebo její položky se mezitím změnily. Obnovte data a zkuste to znovu.',
   invoice_paid_conflict: 'Faktura nebo její položky se mezitím změnily. Obnovte data a zkuste to znovu.',
   invoice_delete_conflict: 'Faktura nebo její položky se mezitím změnily. Obnovte data a zkuste to znovu.',
   invoice_has_protected_items: 'Fakturu nelze změnit, protože obsahuje položky v chráněném stavu.',
@@ -100,6 +101,12 @@ interface VersionedInvoiceMutationInput {
 
 interface MarkInvoicePaidAtomicInput extends VersionedInvoiceMutationInput {
   paidAt: string;
+}
+
+interface MarkInvoiceSentAtomicInput {
+  id: string;
+  expectedUpdatedAt: string;
+  sentAt: string;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => (
@@ -204,7 +211,7 @@ const assertClient = () => {
 };
 
 const runRpc = async (
-  functionName: 'create_invoice_atomic' | 'mark_invoice_paid_atomic' | 'delete_invoice_atomic',
+  functionName: 'create_invoice_atomic' | 'mark_invoice_sent_atomic' | 'mark_invoice_paid_atomic' | 'delete_invoice_atomic',
   args: Record<string, Json | undefined>,
   expected: Parameters<typeof parseMutationResult>[1],
 ): Promise<InvoiceMutationRpcResult> => {
@@ -249,6 +256,23 @@ export const markInvoicePaidAtomicRpc = async (
     invoiceStatus: 'paid',
     timelogStatus: 'paid',
     receiptStatus: 'reimbursed',
+  },
+);
+
+export const markInvoiceSentAtomicRpc = async (
+  input: MarkInvoiceSentAtomicInput,
+): Promise<InvoiceMutationRpcResult> => runRpc(
+  'mark_invoice_sent_atomic',
+  {
+    p_invoice_id: input.id,
+    p_expected_updated_at: input.expectedUpdatedAt,
+    p_sent_at: input.sentAt,
+  },
+  {
+    invoiceId: input.id,
+    invoiceStatus: 'sent',
+    timelogStatus: 'invoiced',
+    receiptStatus: 'attached',
   },
 );
 

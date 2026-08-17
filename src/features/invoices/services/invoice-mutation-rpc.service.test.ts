@@ -104,6 +104,42 @@ describe('invoice mutation RPC adapter', () => {
     });
   });
 
+  it('marks the exact invoice sent through the exact versioned RPC contract', async () => {
+    const data = [{
+      invoice_id: 'invoice-uuid-1',
+      invoice_status: 'sent',
+      invoice_updated_at: '2026-04-28T09:30:00Z',
+      paid_at: null,
+      timelogs: [{ id: 'timelog-uuid-1', status: 'invoiced', updated_at: '2026-04-27T10:00:00Z' }],
+      receipts: [{ id: 'receipt-uuid-1', status: 'attached', updated_at: '2026-04-27T10:00:00Z' }],
+    }];
+    const rpc = vi.fn().mockResolvedValue({ data, error: null });
+    vi.doMock('../../../lib/supabase', () => ({ supabase: { rpc } }));
+
+    const { markInvoiceSentAtomicRpc } = await import('./invoice-mutation-rpc.service');
+    const input = {
+      id: 'invoice-uuid-1',
+      expectedUpdatedAt: '2026-04-28T09:00:00Z',
+      sentAt: '2026-04-28T09:30:00Z',
+    };
+
+    await expect(markInvoiceSentAtomicRpc(input)).resolves.toEqual({
+      invoice: {
+        id: 'invoice-uuid-1',
+        status: 'sent',
+        updatedAt: '2026-04-28T09:30:00Z',
+        paidAt: null,
+      },
+      timelogs: [{ id: 'timelog-uuid-1', status: 'invoiced', updatedAt: '2026-04-27T10:00:00Z' }],
+      receipts: [{ id: 'receipt-uuid-1', status: 'attached', updatedAt: '2026-04-27T10:00:00Z' }],
+    });
+    expect(rpc).toHaveBeenCalledWith('mark_invoice_sent_atomic', {
+      p_invoice_id: input.id,
+      p_expected_updated_at: input.expectedUpdatedAt,
+      p_sent_at: input.sentAt,
+    });
+  });
+
   it('deletes the exact draft invoice and restores linked rows through one versioned RPC', async () => {
     const data = [{
       invoice_id: 'invoice-uuid-1',
@@ -139,6 +175,7 @@ describe('invoice mutation RPC adapter', () => {
     ['invoice_mutation_invalid', 'Faktura obsahuje neplatné nebo neúplné údaje.'],
     ['invoice_not_found', 'Faktura už neexistuje nebo k ní nemáte přístup.'],
     ['invoice_create_conflict', 'Vybrané položky se mezitím změnily. Obnovte data a zkuste to znovu.'],
+    ['invoice_sent_conflict', 'Faktura nebo její položky se mezitím změnily. Obnovte data a zkuste to znovu.'],
     ['invoice_paid_conflict', 'Faktura nebo její položky se mezitím změnily. Obnovte data a zkuste to znovu.'],
     ['invoice_delete_conflict', 'Faktura nebo její položky se mezitím změnily. Obnovte data a zkuste to znovu.'],
     ['invoice_has_protected_items', 'Fakturu nelze změnit, protože obsahuje položky v chráněném stavu.'],

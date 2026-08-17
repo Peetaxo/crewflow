@@ -136,8 +136,10 @@ describe('invoices.service billing batches', () => {
     expect(serviceSource).not.toContain('getSupabaseEventIdMap');
     expect(serviceSource).not.toContain('getSupabaseReceiptIdMap');
     expect(serviceSource).toContain('createInvoiceAtomicRpc({');
+    expect(serviceSource).toContain('await markInvoiceSentAtomicRpc(');
     expect(serviceSource).toContain('await markInvoicePaidAtomicRpc(');
     expect(serviceSource).toContain('await deleteInvoiceAtomicRpc(');
+    expect(serviceSource).not.toMatch(/\.from\('invoices'\)\s*\.update\(/);
     const safeSelectSource = serviceSource.slice(
       serviceSource.indexOf('const safeSelect'),
       serviceSource.indexOf('const getSupabaseIdRows'),
@@ -739,6 +741,67 @@ describe('invoices.service billing batches', () => {
     expect(snapshot.timelogs.find((row) => row.supabaseId === 'timelog-uuid-2')?.status).toBe('approved');
     expect(snapshot.receipts[0].status).toBe('approved');
     expect(markTimelogsAsApproved).not.toHaveBeenCalled();
+  });
+
+  it('marks sent through the atomic RPC and reconciles the canonical invoice version by UUID', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-28T09:30:00Z'));
+    let snapshot = createSnapshot({
+      invoices: [{
+        id: 'invoice-uuid-1', updatedAt: '2026-04-28T09:00:00Z', contractorProfileId: 'profile-uuid-1',
+        eid: 2, eventIds: [2], timelogIds: [2], timelogSupabaseIds: ['timelog-uuid-2'],
+        receiptIds: [11], receiptSupabaseIds: ['receipt-uuid-11'], hours: 7, hAmt: 1750,
+        km: 0, kAmt: 0, receiptAmt: 300, total: 2050, job: 'AK002', status: 'draft', sentAt: null,
+      }],
+      timelogs: createSnapshot().timelogs.map((row) => row.id === 2 ? { ...row, status: 'invoiced' as const } : row),
+      receipts: createSnapshot().receipts.map((row) => ({ ...row, status: 'attached' as const })),
+    });
+    const from = vi.fn(() => { throw new Error('Sending an invoice must not use REST DML'); });
+    const rpc = vi.fn().mockResolvedValue({
+      data: [{
+        invoice_id: 'invoice-uuid-1', invoice_status: 'sent', invoice_updated_at: '2026-04-28T09:31:00Z', paid_at: null,
+        timelogs: [{ id: 'timelog-uuid-2', status: 'invoiced', updated_at: '2026-04-20T11:00:00Z' }],
+        receipts: [{ id: 'receipt-uuid-11', status: 'attached', updated_at: '2026-04-20T12:00:00Z' }],
+      }],
+      error: null,
+    });
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({ isSupabaseConfigured: true, supabase: { from, rpc } }));
+    vi.doMock('../../../lib/supabase-mappers', () => ({ mapInvoice: vi.fn() }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+    vi.doMock('../../timelogs/services/timelogs.service', () => ({
+      getTimelogs: () => structuredClone(snapshot.timelogs), markTimelogsAsInvoiced: vi.fn(),
+      markTimelogsAsPaid: vi.fn(), markTimelogsAsApproved: vi.fn(), markTimelogsAsPaidForInvoice: vi.fn(),
+    }));
+    vi.doMock('../../receipts/services/receipts.service', () => ({
+      getReceipts: () => structuredClone(snapshot.receipts), markReceiptsAsAttached: vi.fn(),
+      markReceiptsAsReimbursed: vi.fn(), markReceiptsAsReimbursedForInvoice: vi.fn(),
+    }));
+    vi.doMock('sonner', () => ({ toast: { info: vi.fn(), success: vi.fn() } }));
+
+    const { sendInvoice } = await import('./invoices.service');
+    const sent = await sendInvoice('invoice-uuid-1');
+
+    expect(rpc).toHaveBeenCalledWith('mark_invoice_sent_atomic', {
+      p_invoice_id: 'invoice-uuid-1',
+      p_expected_updated_at: '2026-04-28T09:00:00Z',
+      p_sent_at: '2026-04-28T09:30:00.000Z',
+    });
+    expect(from).not.toHaveBeenCalled();
+    expect(snapshot.invoices[0]).toMatchObject({
+      id: 'invoice-uuid-1', status: 'sent', sentAt: '2026-04-28T09:30:00.000Z', updatedAt: '2026-04-28T09:31:00Z',
+    });
+    expect(sent).toMatchObject({
+      id: 'invoice-uuid-1', status: 'sent', sentAt: '2026-04-28T09:30:00.000Z', updatedAt: '2026-04-28T09:31:00Z',
+    });
   });
 
   it('preserves contractor and legacy timelog UUIDs during Supabase hydration', async () => {

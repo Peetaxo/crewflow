@@ -9,7 +9,7 @@ export type Json =
 export type AppRole = 'crew' | 'crewhead' | 'coo';
 export type EventStatus = 'planning' | 'upcoming' | 'full' | 'past';
 export type TimelogType = 'instal' | 'provoz' | 'deinstal';
-export type TimelogStatus = 'draft' | 'pending_ch' | 'pending_coo' | 'approved' | 'invoiced' | 'paid' | 'rejected';
+export type TimelogStatus = 'draft' | 'pending_crew_confirmation' | 'pending_ch' | 'pending_coo' | 'approved' | 'invoiced' | 'paid' | 'rejected';
 export type InvoiceStatus = 'draft' | 'sent' | 'paid';
 export type InvoiceApprovalDocumentSource = 'powerapps_document_approval';
 export type PowerAppsApprovalStatus = 'pending' | 'approved' | 'rejected' | 'unknown';
@@ -504,6 +504,15 @@ export interface Database {
       };
     };
     Functions: {
+      assign_event_crew: {
+        Args: {
+          p_event_id: string;
+          p_profile_id: string;
+          p_application_id?: string | null;
+          p_days?: Json;
+        };
+        Returns: Json;
+      };
       list_event_crew_assignments: {
         Args: Record<string, never>;
         Returns: Array<{
@@ -519,6 +528,13 @@ export interface Database {
           p_supplier_profile_id: string;
         };
         Returns: number;
+      };
+      remove_event_crew: {
+        Args: {
+          p_event_id: string;
+          p_profile_id: string;
+        };
+        Returns: Json;
       };
       set_current_user_role: {
         Args: {

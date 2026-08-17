@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Clock, Copy, FileText, MapPin, Receipt, Shirt, Trash2, User, Users, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -33,6 +33,7 @@ import { useInvoiceApprovalsQuery } from '../features/invoices/queries/useInvoic
 import { getEventApprovalDocuments } from '../features/invoices/services/invoice-approval-sync.service';
 import { updateTimelogStatus } from '../features/timelogs/services/timelogs.service';
 import { canCreateTimelog, canEditTimelog } from '../features/timelogs/services/timelog-permissions';
+import { isDisposableTimelogStatus } from '../features/events/services/event-assignment-lifecycle.service';
 
 const EMPTY_APPROVAL_DOCUMENTS: InvoiceApprovalDocument[] = [];
 
@@ -68,7 +69,22 @@ const EventDetailView = () => {
   const [applicationDraftTimes, setApplicationDraftTimes] = useState({ from: '', to: '' });
   const [crewPanelTab, setCrewPanelTab] = useState<'assigned' | 'approval'>('assigned');
   const [showWithdrawalConfirm, setShowWithdrawalConfirm] = useState(false);
+  const [pendingCrewAction, setPendingCrewAction] = useState<string | null>(null);
+  const pendingCrewActionRef = useRef<string | null>(null);
   const invoiceApprovalsQuery = useInvoiceApprovalsQuery();
+
+  const beginCrewAction = (actionKey: string) => {
+    if (pendingCrewActionRef.current !== null) return false;
+    pendingCrewActionRef.current = actionKey;
+    setPendingCrewAction(actionKey);
+    return true;
+  };
+
+  const endCrewAction = (actionKey: string) => {
+    if (pendingCrewActionRef.current !== actionKey) return;
+    pendingCrewActionRef.current = null;
+    setPendingCrewAction(null);
+  };
 
   const loadDetail = useCallback(() => {
     setDetail(getEventDetailData(selectedEventId));
@@ -175,6 +191,7 @@ const EventDetailView = () => {
           : timelog.status === 'pending_coo'
       ))
     : [];
+  const anyCrewActionPending = pendingCrewAction !== null;
 
   const getPhasesForDate = (date: string) => (
     event.showDayTypes
@@ -185,15 +202,23 @@ const EventDetailView = () => {
       : []
   );
 
-  const handleRemoveFromEvent = (contractorProfileId: string | undefined) => {
+  const handleRemoveFromEvent = async (contractorProfileId: string | undefined) => {
     if (!contractorProfileId) {
       toast.error('Nepodařilo se dohledat UUID identitu člena crew.');
       return;
     }
 
-    void removeContractorFromEvent(event.id, contractorProfileId).catch((error) => {
+    const actionKey = `remove:${contractorProfileId}`;
+    if (!beginCrewAction(actionKey)) return;
+
+    try {
+      await removeContractorFromEvent(event.id, contractorProfileId);
+      loadDetail();
+    } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Nepodařilo se odebrat člena crew.');
-    });
+    } finally {
+      endCrewAction(actionKey);
+    }
   };
 
   const buildDraftTimelogForCrew = (contractor: Contractor): Timelog | null => {
@@ -278,15 +303,23 @@ const EventDetailView = () => {
       });
   };
 
-  const handleApproveApplication = (applicationId: number) => {
-    void approveEventApplication(applicationId)
-      .then(() => toast.success('Crew byla prirazena na akci.'))
-      .catch((error) => {
-        toast.error(error instanceof Error ? error.message : 'Prihlasku se nepodarilo schvalit.');
-      });
+  const handleApproveApplication = async (applicationId: number) => {
+    const actionKey = `approve-application:${applicationId}`;
+    if (!beginCrewAction(actionKey)) return;
+
+    try {
+      await approveEventApplication(applicationId);
+      loadDetail();
+      toast.success('Crew byla prirazena na akci.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Prihlasku se nepodarilo schvalit.');
+    } finally {
+      endCrewAction(actionKey);
+    }
   };
 
   const handleRejectApplication = (applicationId: number) => {
+    if (pendingCrewActionRef.current !== null) return;
     void updateEventApplicationStatus(applicationId, 'rejected')
       .then(() => toast.success('Prihlaska byla zamitnuta.'))
       .catch((error) => {
@@ -294,15 +327,23 @@ const EventDetailView = () => {
       });
   };
 
-  const handleApproveWithdrawal = (applicationId: number) => {
-    void approveEventWithdrawal(applicationId)
-      .then(() => toast.success('Crew byla odhlasena z akce.'))
-      .catch((error) => {
-        toast.error(error instanceof Error ? error.message : 'Odhlaseni se nepodarilo schvalit.');
-      });
+  const handleApproveWithdrawal = async (applicationId: number) => {
+    const actionKey = `approve-withdrawal:${applicationId}`;
+    if (!beginCrewAction(actionKey)) return;
+
+    try {
+      await approveEventWithdrawal(applicationId);
+      loadDetail();
+      toast.success('Crew byla odhlasena z akce.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Odhlaseni se nepodarilo schvalit.');
+    } finally {
+      endCrewAction(actionKey);
+    }
   };
 
   const handleRejectWithdrawal = (applicationId: number) => {
+    if (pendingCrewActionRef.current !== null) return;
     void updateEventApplicationStatus(applicationId, 'approved')
       .then(() => toast.success('Zadost o odhlaseni byla zamitnuta.'))
       .catch((error) => {
@@ -767,6 +808,11 @@ const EventDetailView = () => {
                               const timelog = eventTimelogs.find((item) => item.contractorProfileId === contractor.profileId);
                               const hours = timelog ? calculateTotalHours(timelog.days) : 0;
                               const canOpenTimelog = timelog ? canEditTimelog(timelog, role) : canCreateTimelog(role);
+                              const matchingTimelogs = eventTimelogs.filter((item) => (
+                                item.eid === event.id && item.contractorProfileId === contractor.profileId
+                              ));
+                              const removalBlocked = matchingTimelogs.some((item) => !isDisposableTimelogStatus(item.status));
+                              const removalPending = pendingCrewAction === `remove:${contractor.profileId}`;
 
                               return (
                                 <tr
@@ -816,10 +862,17 @@ const EventDetailView = () => {
                                         <button
                                           onClick={(clickEvent) => {
                                             clickEvent.stopPropagation();
-                                            handleRemoveFromEvent(contractor.profileId);
+                                            void handleRemoveFromEvent(contractor.profileId);
                                           }}
+                                          disabled={removalBlocked || anyCrewActionPending}
+                                          aria-busy={removalPending || undefined}
+                                          aria-label={removalBlocked
+                                            ? 'Crew nelze odebrat – výkaz byl odeslán'
+                                            : `Odebrat ${contractor.name} z akce`}
                                           className="rounded-lg p-1.5 text-[color:var(--nodu-text-soft)] transition-all hover:bg-[color:var(--nodu-error-bg)] hover:text-[color:var(--nodu-error-text)]"
-                                          title="Odebrat z akce"
+                                          title={removalBlocked
+                                            ? 'Crew nelze odebrat, protože výkaz už byl odeslán ke kontrole.'
+                                            : 'Odebrat z akce'}
                                         >
                                           <Trash2 size={14} />
                                         </button>
@@ -928,36 +981,46 @@ const EventDetailView = () => {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-[color:rgb(var(--nodu-text-rgb)/0.06)]">
-                            {pendingApplications.map(({ application, contractor }) => (
-                              <tr key={application.id} className="bg-white">
-                                <td className="px-4 py-3">
-                                  <div className="flex items-center gap-2">
-                                    <div className="av h-7 w-7 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
-                                    <span className="text-xs font-medium text-[color:var(--nodu-text)]">{contractor.name}</span>
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text-soft)]">
-                                  {application.plannedFrom && application.plannedTo ? `${application.plannedFrom} - ${application.plannedTo}` : '-'}
-                                </td>
-                                <td className="px-4 py-3">
-                                  <span className="rounded-full border border-[color:rgb(var(--nodu-text-rgb)/0.16)] bg-[color:rgb(var(--nodu-text-rgb)/0.08)] px-2.5 py-1 text-[10px] font-semibold text-[color:var(--nodu-text-soft)]">
-                                    Ceka na schvaleni
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3 text-right">
-                                  {canManageEvents && (
-                                    <div className="flex justify-end gap-1.5">
-                                      <Button size="sm" className="h-8 text-[11px]" onClick={() => handleApproveApplication(application.id)}>
-                                        Schvalit
-                                      </Button>
-                                      <Button size="sm" variant="outline" className="h-8 border-[#e8b4a3] text-[11px] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]" onClick={() => handleRejectApplication(application.id)}>
-                                        Zamitnout
-                                      </Button>
+                            {pendingApplications.map(({ application, contractor }) => {
+                              const approvalPending = pendingCrewAction === `approve-application:${application.id}`;
+
+                              return (
+                                <tr key={application.id} className="bg-white">
+                                  <td className="px-4 py-3">
+                                    <div className="flex items-center gap-2">
+                                      <div className="av h-7 w-7 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
+                                      <span className="text-xs font-medium text-[color:var(--nodu-text)]">{contractor.name}</span>
                                     </div>
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
+                                  </td>
+                                  <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text-soft)]">
+                                    {application.plannedFrom && application.plannedTo ? `${application.plannedFrom} - ${application.plannedTo}` : '-'}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <span className="rounded-full border border-[color:rgb(var(--nodu-text-rgb)/0.16)] bg-[color:rgb(var(--nodu-text-rgb)/0.08)] px-2.5 py-1 text-[10px] font-semibold text-[color:var(--nodu-text-soft)]">
+                                      Ceka na schvaleni
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 text-right">
+                                    {canManageEvents && (
+                                      <div className="flex justify-end gap-1.5">
+                                        <Button
+                                          size="sm"
+                                          className="h-8 text-[11px]"
+                                          onClick={() => void handleApproveApplication(application.id)}
+                                          disabled={anyCrewActionPending}
+                                          aria-busy={approvalPending || undefined}
+                                        >
+                                          Schvalit
+                                        </Button>
+                                        <Button size="sm" variant="outline" className="h-8 border-[#e8b4a3] text-[11px] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]" onClick={() => handleRejectApplication(application.id)} disabled={anyCrewActionPending}>
+                                          Zamitnout
+                                        </Button>
+                                      </div>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       ) : (
@@ -985,31 +1048,41 @@ const EventDetailView = () => {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[color:rgb(var(--nodu-text-rgb)/0.06)]">
-                          {withdrawalRequests.map(({ application, contractor }) => (
-                            <tr key={application.id} className="bg-white">
-                              <td className="px-4 py-3">
-                                <div className="flex items-center gap-2">
-                                  <div className="av h-7 w-7 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
-                                  <span className="text-xs font-medium text-[color:var(--nodu-text)]">{contractor.name}</span>
-                                </div>
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className="rounded-full border border-[color:rgb(var(--nodu-text-rgb)/0.16)] bg-[color:rgb(var(--nodu-text-rgb)/0.08)] px-2.5 py-1 text-[10px] font-semibold text-[color:var(--nodu-text-soft)]">
-                                  Ceka na schvaleni odhlaseni
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 text-right">
-                                <div className="flex justify-end gap-1.5">
-                                  <Button size="sm" className="h-8 text-[11px]" onClick={() => handleApproveWithdrawal(application.id)}>
-                                    Schvalit odhlaseni
-                                  </Button>
-                                  <Button size="sm" variant="outline" className="h-8 border-[#e8b4a3] text-[11px] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]" onClick={() => handleRejectWithdrawal(application.id)}>
-                                    Zamitnout
-                                  </Button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
+                          {withdrawalRequests.map(({ application, contractor }) => {
+                            const approvalPending = pendingCrewAction === `approve-withdrawal:${application.id}`;
+
+                            return (
+                              <tr key={application.id} className="bg-white">
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center gap-2">
+                                    <div className="av h-7 w-7 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
+                                    <span className="text-xs font-medium text-[color:var(--nodu-text)]">{contractor.name}</span>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className="rounded-full border border-[color:rgb(var(--nodu-text-rgb)/0.16)] bg-[color:rgb(var(--nodu-text-rgb)/0.08)] px-2.5 py-1 text-[10px] font-semibold text-[color:var(--nodu-text-soft)]">
+                                    Ceka na schvaleni odhlaseni
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  <div className="flex justify-end gap-1.5">
+                                    <Button
+                                      size="sm"
+                                      className="h-8 text-[11px]"
+                                      onClick={() => void handleApproveWithdrawal(application.id)}
+                                      disabled={anyCrewActionPending}
+                                      aria-busy={approvalPending || undefined}
+                                    >
+                                      Schvalit odhlaseni
+                                    </Button>
+                                    <Button size="sm" variant="outline" className="h-8 border-[#e8b4a3] text-[11px] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]" onClick={() => handleRejectWithdrawal(application.id)} disabled={anyCrewActionPending}>
+                                      Zamitnout
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>

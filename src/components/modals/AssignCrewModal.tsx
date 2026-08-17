@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Plus, Search, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -40,6 +40,8 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
   const [pendingContractorSelection, setPendingContractorSelection] = useState<string | null>(null);
   const [selectedPhaseOptions, setSelectedPhaseOptions] = useState<Array<TimelogType | 'all'>>([]);
   const [search, setSearch] = useState('');
+  const [assigningProfileId, setAssigningProfileId] = useState<string | null>(null);
+  const assigningProfileIdRef = useRef<string | null>(null);
 
   const contractors = useMemo(() => getCrew({ search }), [search]);
   const pendingContractor = useMemo(
@@ -58,6 +60,10 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
   );
 
   const assignContractor = async (contractorProfileId: string, phaseChoices?: Array<TimelogType | 'all'>) => {
+    if (assigningProfileIdRef.current !== null) return;
+    assigningProfileIdRef.current = contractorProfileId;
+    setAssigningProfileId(contractorProfileId);
+
     try {
       await assignCrewToEvent(event.id, contractorProfileId, phaseChoices);
       setPendingContractorSelection(null);
@@ -65,6 +71,11 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
       toast.success('Clen crew byl prirazen bez kolize.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Nepodarilo se priradit clena crew.');
+    } finally {
+      if (assigningProfileIdRef.current === contractorProfileId) {
+        assigningProfileIdRef.current = null;
+        setAssigningProfileId(null);
+      }
     }
   };
 
@@ -180,7 +191,8 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
                 <button
                   type="button"
                   onClick={() => pendingContractor?.profileId ? void assignContractor(pendingContractor.profileId, selectedPhaseOptions) : undefined}
-                  disabled={selectedPhaseOptions.length === 0}
+                  disabled={selectedPhaseOptions.length === 0 || assigningProfileId !== null}
+                  aria-busy={assigningProfileId === pendingContractor.profileId || undefined}
                   className="rounded-xl border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] px-4 py-2 text-xs font-semibold text-[color:var(--nodu-success-text)] transition-colors hover:bg-[color:var(--nodu-success-bg-hover)] disabled:cursor-not-allowed disabled:border-[color:var(--nodu-border)] disabled:bg-[color:rgb(var(--nodu-text-rgb)/0.06)] disabled:text-[color:var(--nodu-text-soft)]"
                 >
                   Potvrdit prirazeni
@@ -198,11 +210,14 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
               const conflicts = contractorConflicts.get(contractor.id) || [];
               const hasConflict = conflicts.length > 0;
               const isMissingProfileId = !contractor.profileId;
+              const assignmentPending = assigningProfileId === contractor.profileId;
+              const anyAssignmentPending = assigningProfileId !== null;
 
               return (
                 <button
                   key={contractor.id}
-                  disabled={isAlreadyAssigned || hasConflict || isMissingProfileId}
+                  disabled={isAlreadyAssigned || hasConflict || isMissingProfileId || anyAssignmentPending}
+                  aria-busy={assignmentPending || undefined}
                   onClick={() => {
                     if (hasConflict) {
                       toast.error('Tento clen crew ma ve stejnem terminu jinou akci.');

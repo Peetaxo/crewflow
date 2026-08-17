@@ -103,6 +103,8 @@ import AssignCrewModal from './AssignCrewModal';
 describe('modal contractor identity handling', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    assignCrewToEvent.mockReset();
+    assignCrewToEvent.mockResolvedValue(undefined);
     mockAppContext = {
       role: 'crewhead',
       editingTimelog: null,
@@ -267,7 +269,9 @@ describe('modal contractor identity handling', () => {
     expect(screen.getByRole('button', { name: /Assigned Contractor/i })).toBeDisabled();
   });
 
-  it('assigns crew through contractorProfileId', () => {
+  it('assigns crew through contractorProfileId only once while the request is pending', async () => {
+    let resolveAssignment!: () => void;
+    assignCrewToEvent.mockReturnValue(new Promise<void>((resolve) => { resolveAssignment = resolve; }));
     mockCrew = [
       {
         id: 2,
@@ -279,6 +283,17 @@ describe('modal contractor identity handling', () => {
         tags: [],
         reliable: true,
         city: 'Brno',
+      },
+      {
+        id: 3,
+        profileId: 'profile-uuid-3',
+        name: 'Other Contractor',
+        ii: 'OC',
+        bg: '#222',
+        fg: '#fff',
+        tags: [],
+        reliable: true,
+        city: 'Praha',
       },
     ];
 
@@ -300,9 +315,117 @@ describe('modal contractor identity handling', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /Free Contractor/i }));
+    const contractorRow = screen.getByRole('button', { name: /Free Contractor/i });
+
+    fireEvent.click(contractorRow);
+    fireEvent.click(contractorRow);
 
     expect(assignCrewToEvent).toHaveBeenCalledWith(1, 'profile-uuid-2', undefined);
+    expect(assignCrewToEvent).toHaveBeenCalledTimes(1);
+    expect(contractorRow).toBeDisabled();
+    expect(contractorRow).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('button', { name: /Other Contractor/i })).toBeDisabled();
+
+    resolveAssignment();
+
+    await waitFor(() => expect(contractorRow).toBeEnabled());
+  });
+
+  it('clears the assignment lock after an error and permits retry', async () => {
+    assignCrewToEvent.mockRejectedValueOnce(new Error('Assignment failed')).mockResolvedValueOnce(undefined);
+    mockCrew = [{
+      id: 2,
+      profileId: 'profile-uuid-2',
+      name: 'Free Contractor',
+      ii: 'FC',
+      bg: '#111',
+      fg: '#fff',
+      tags: [],
+      reliable: true,
+      city: 'Brno',
+    }];
+
+    render(
+      <AssignCrewModal
+        event={{
+          id: 1,
+          name: 'Test Event',
+          job: 'JOB-1',
+          startDate: '2026-04-24',
+          endDate: '2026-04-24',
+          city: 'Praha',
+          needed: 1,
+          filled: 0,
+          status: 'upcoming',
+          client: 'Client',
+        }}
+        onClose={vi.fn()}
+      />,
+    );
+
+    const contractorRow = screen.getByRole('button', { name: /Free Contractor/i });
+    fireEvent.click(contractorRow);
+
+    await waitFor(() => expect(contractorRow).toBeEnabled());
+
+    fireEvent.click(contractorRow);
+    await waitFor(() => expect(assignCrewToEvent).toHaveBeenCalledTimes(2));
+  });
+
+  it('submits a multi-phase assignment only once while confirmation is pending', async () => {
+    let resolveAssignment!: () => void;
+    assignCrewToEvent.mockReturnValue(new Promise<void>((resolve) => { resolveAssignment = resolve; }));
+    mockCrew = [{
+      id: 2,
+      profileId: 'profile-uuid-2',
+      name: 'Free Contractor',
+      ii: 'FC',
+      bg: '#111',
+      fg: '#fff',
+      tags: [],
+      reliable: true,
+      city: 'Brno',
+    }];
+
+    render(
+      <AssignCrewModal
+        event={{
+          id: 1,
+          name: 'Test Event',
+          job: 'JOB-1',
+          startDate: '2026-04-24',
+          endDate: '2026-04-25',
+          city: 'Praha',
+          needed: 1,
+          filled: 0,
+          status: 'upcoming',
+          client: 'Client',
+          showDayTypes: true,
+          dayTypes: {
+            '2026-04-24': 'instal',
+            '2026-04-25': 'provoz',
+          },
+        }}
+        onClose={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Free Contractor/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^I Instal$/i }));
+    const confirm = screen.getByRole('button', { name: 'Potvrdit prirazeni' });
+
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+
+    expect(assignCrewToEvent).toHaveBeenCalledWith(1, 'profile-uuid-2', ['instal']);
+    expect(assignCrewToEvent).toHaveBeenCalledTimes(1);
+    expect(confirm).toBeDisabled();
+    expect(confirm).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('button', { name: /Free Contractor/i })).toBeDisabled();
+
+    resolveAssignment();
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Potvrdit prirazeni' })).not.toBeInTheDocument());
   });
 
   it('assigns the only available day type immediately on typed single-phase events', async () => {

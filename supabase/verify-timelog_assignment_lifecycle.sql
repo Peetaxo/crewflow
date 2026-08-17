@@ -767,26 +767,36 @@ begin
     raise exception 'verification failed: Crew moved application identity';
   end if;
 
-  if not exists (
-    select 1
-    from public.event_applications
-    where id = v_application_id
-      and event_id = v_event_id
-      and profile_id = v_profile_id
-      and status = 'approved'
-  ) or not exists (
-    select 1
-    from public.event_assignments
-    where id = v_assignment_id
-      and event_id = v_event_id
-      and profile_id = v_profile_id
-  ) or not exists (
-    select 1
-    from public.timelogs
-    where id = v_blocked_timelog_id
-      and event_id = v_event_id
-      and contractor_id = v_profile_id
-  ) then
+  select pg_catalog.to_jsonb(ea)
+  into v_assignment_after
+  from public.event_assignments ea
+  where ea.id = v_assignment_id;
+
+  select pg_catalog.to_jsonb(t)
+  into v_timelog_after
+  from public.timelogs t
+  where t.id = v_blocked_timelog_id;
+
+  select pg_catalog.to_jsonb(a)
+  into v_application_after
+  from public.event_applications a
+  where a.id = v_application_id;
+
+  select pg_catalog.to_jsonb(e)
+  into v_event_after
+  from public.events e
+  where e.id = v_event_id;
+
+  select pg_catalog.jsonb_agg(pg_catalog.to_jsonb(d) order by d.id)
+  into v_days_after
+  from public.timelog_days d
+  where d.timelog_id = v_blocked_timelog_id;
+
+  if v_assignment_after is distinct from v_assignment_before
+    or v_timelog_after is distinct from v_timelog_before
+    or v_application_after is distinct from v_application_before
+    or v_event_after is distinct from v_event_before
+    or v_days_after is distinct from v_days_before then
     raise exception 'verification failed: Crew application attacks changed lifecycle rows';
   end if;
 

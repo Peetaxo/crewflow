@@ -30,6 +30,16 @@ const repairPairs = [
 const canonicalIds = [...new Set(repairPairs.map(([canonicalId]) => canonicalId))];
 const duplicateIds = repairPairs.map(([, duplicateId]) => duplicateId);
 
+const expectMarkersInOrder = (sql: string, markers: readonly string[]) => {
+  let previousIndex = -1;
+
+  markers.forEach((marker) => {
+    const markerIndex = sql.indexOf(marker);
+    expect(markerIndex, `missing or out-of-order SQL marker: ${marker}`).toBeGreaterThan(previousIndex);
+    previousIndex = markerIndex;
+  });
+};
+
 describe('timelog assignment lifecycle migration', () => {
   it('contains the complete explicit production repair map', () => {
     const sql = readMigration();
@@ -46,18 +56,116 @@ describe('timelog assignment lifecycle migration', () => {
         new RegExp(`\\(\\s*'${canonicalId}'\\s*,\\s*'${duplicateId}'\\s*,`),
       );
     });
-    expect(sql).toContain("assert v_present_count = 22");
-    expect(sql).toContain("assert v_mapping_count = 13");
-    expect(sql).toMatch(/assert\s+v_present_count\s*=\s*22\b/);
-    expect(sql).toMatch(/assert\s+v_mapping_count\s*=\s*13\b/);
-    expect(sql).toContain("to_regclass('public.invoice_timelogs')");
+    expect(sql).toContain("raise exception 'timelog repair map must contain 13 duplicate rows'");
+    expect(sql).toContain("raise exception 'known timelog repair set is only partially present'");
+    expect(sql).toContain("pg_catalog.to_regclass('public.invoice_timelogs')");
     expect(sql).toContain('from public.invoice_timelogs');
     expect(sql).toContain('where it.timelog_id in');
-    expect(sql).toContain('assert not v_has_invoice_link');
+    expect(sql).toContain("raise exception 'known duplicate timelog is linked to an invoice'");
   });
 
-  it('verifies normalized content before deleting and adds uniqueness last', () => {
+  it('uses explicit exception gates that cannot be disabled', () => {
     const sql = readMigration();
+
+    expect(sql).not.toMatch(/\bassert\b/);
+    [
+      'known timelog identity or status changed',
+      'an exact duplicate payload changed',
+      'complete Miss Agro canonical payload changed',
+      'complete Miss Agro duplicate payload changed',
+      'complete Miss Agro day set changed',
+      'subset Miss Agro day set changed',
+      'timelog duplicates remain; unique constraint was not added',
+    ].forEach((message) => {
+      expect(sql).toContain(`raise exception '${message.toLowerCase()}'`);
+    });
+    expect(sql).toContain('get diagnostics v_deleted_count = row_count');
+    expect(sql).toMatch(
+      /if\s+v_deleted_count\s*<>\s*13\s+then\s+raise exception 'known timelog repair deleted an unexpected number of rows'/,
+    );
+  });
+
+  it('reconciles the prerequisite schema, policies, and exact privileges', () => {
+    const sql = readMigration();
+    const authenticatedGrants = [
+      ...sql.matchAll(
+        /grant\s+([^;]+)\s+on public\.event_applications to authenticated\s*;/g,
+      ),
+    ];
+    const updatePolicies = [
+      ...sql.matchAll(
+        /create policy "([^"]+)"\s+on public\.event_applications for update to authenticated/g,
+      ),
+    ];
+
+    expect(sql).toContain('add column if not exists planned_from time');
+    expect(sql).toContain('add column if not exists planned_to time');
+    expect(sql).toContain('drop constraint if exists event_applications_status_check');
+    expect(sql).toContain('add constraint event_applications_status_check');
+    expect(sql).toContain('event_applications_event_profile_unique');
+    expect(sql).toContain("raise exception 'event_applications core columns are incompatible'");
+    expect(sql).toContain("raise exception 'event_applications primary key is incompatible'");
+    expect(sql).toContain("raise exception 'event_applications event_id foreign key is incompatible'");
+    expect(sql).toContain("raise exception 'event_applications profile_id foreign key is incompatible'");
+    expect(sql).toContain('from pg_catalog.pg_constraint');
+    expect(sql).toContain('pg_catalog.pg_get_constraintdef');
+    expect(sql).toContain(
+      'drop policy if exists "crew can renew own event applications" on public.event_applications',
+    );
+    expect(sql).toContain(
+      'drop policy if exists "crew can update own event applications" on public.event_applications',
+    );
+    expectMarkersInOrder(sql, [
+      'revoke all on public.event_applications from authenticated',
+      'grant select, insert, update on public.event_applications to authenticated',
+      'revoke all on public.event_applications from anon',
+    ]);
+    expect(authenticatedGrants).toHaveLength(1);
+    expect(authenticatedGrants[0]?.[1]).toBe('select, insert, update');
+    expect(sql).not.toMatch(/grant\s+[^;]*\bdelete\b[^;]*\s+to authenticated\s*;/);
+    expect(sql).not.toMatch(/(?:to|from)\s+service_role\b/);
+    expect(updatePolicies.map((match) => match[1])).toEqual([
+      'crew can renew own event applications',
+    ]);
+    expect(sql).not.toContain('create policy "crew can update own event applications"');
+  });
+
+  it('locks every mutable repair dependency in a fixed order', () => {
+    const sql = readMigration();
+
+    expect(sql).toContain("set local lock_timeout = '5s'");
+    expectMarkersInOrder(sql, [
+      'lock table public.timelogs in share row exclusive mode',
+      'lock table public.timelog_days in share row exclusive mode',
+      'lock table public.invoices in share row exclusive mode',
+      "execute 'lock table public.invoice_timelogs in share row exclusive mode'",
+      'select count(*) into v_mapping_count from timelog_duplicate_repair_map',
+    ]);
+  });
+
+  it('protects invoice links and the reviewed divergent parent payload', () => {
+    const sql = readMigration();
+
+    expect(sql).toContain('from public.invoices i');
+    expect(sql).toContain('where i.timelog_id in');
+    expect(sql).toContain(
+      "raise exception 'known timelog is linked through public.invoices.timelog_id'",
+    );
+    expect(sql).toContain(
+      "pg_catalog.to_jsonb(c) - 'id' - 'created_at' - 'updated_at' - 'note'",
+    );
+    expect(sql).toContain(
+      "pg_catalog.to_jsonb(d) - 'id' - 'created_at' - 'updated_at' - 'note'",
+    );
+    expect(sql).toContain(
+      '{"status":"approved","km":0.00,"note":"powerapps: rebros-2026-015.pdf"}',
+    );
+    expect(sql).toContain('{"status":"approved","km":0.00,"note":""}');
+    expect(sql).toContain("where t.id = 'ddfaf624-b422-48bf-889e-c43ecd4bc8b5'");
+    expect(sql).toContain("where t.id = '0ee6341d-ecc3-444d-bf4c-740392e13ac1'");
+    expect(sql).toMatch(
+      /order by d\.date, d\.time_from, d\.time_to, d\.day_type, d\.note, d\.id/,
+    );
     expect(sql).toContain('timelog_duplicate_repair_map');
     expect(sql).toContain('normalized_timelog_days');
     expect(sql).toContain('pg_temp.normalized_timelog_days(c.id)');
@@ -69,9 +177,56 @@ describe('timelog assignment lifecycle migration', () => {
     expect(sql).toContain(
       "pg_temp.normalized_timelog_days('0ee6341d-ecc3-444d-bf4c-740392e13ac1')",
     );
+  });
+
+  it('keeps validation and exact deletion in one guard before adding uniqueness', () => {
+    const sql = readMigration();
+    const guardedBlockStart = sql.indexOf('do $$\ndeclare\n  v_mapping_count integer');
+    const zeroReplayGuard = sql.indexOf('if v_present_count = 0 then', guardedBlockStart);
+    const replayReturn = sql.indexOf('return;', zeroReplayGuard);
+    const deleteIndex = sql.indexOf('delete from public.timelogs t', guardedBlockStart);
+    const rowCountIndex = sql.indexOf('get diagnostics v_deleted_count = row_count', deleteIndex);
+    const guardedBlockEnd = sql.indexOf('\nend\n$$;', rowCountIndex);
+    const globalDuplicateCheck = sql.indexOf(
+      "raise exception 'timelog duplicates remain; unique constraint was not added'",
+      guardedBlockEnd,
+    );
+    const addConstraintIndex = sql.search(
+      /alter\s+table\s+public\.timelogs\s+add\s+constraint\s+timelogs_event_contractor_unique\b/,
+    );
+
+    expect(guardedBlockStart).toBeGreaterThanOrEqual(0);
+    expect(zeroReplayGuard).toBeGreaterThan(guardedBlockStart);
+    expect(replayReturn).toBeGreaterThan(zeroReplayGuard);
+    expect(replayReturn).toBeLessThan(deleteIndex);
+    [
+      "raise exception 'known timelog repair set is only partially present'",
+      "raise exception 'known timelog identity or status changed'",
+      "raise exception 'an exact duplicate payload changed'",
+      "raise exception 'divergent miss agro parent payload changed'",
+      "raise exception 'complete miss agro canonical payload changed'",
+      "raise exception 'complete miss agro duplicate payload changed'",
+      "raise exception 'complete miss agro day set changed'",
+      "raise exception 'subset miss agro day set changed'",
+      "raise exception 'known timelog is linked through public.invoices.timelog_id'",
+      "raise exception 'known duplicate timelog is linked to an invoice'",
+    ].forEach((marker) => {
+      const markerIndex = sql.indexOf(marker, replayReturn);
+      expect(markerIndex, `missing repair guard before deletion: ${marker}`).toBeGreaterThan(
+        replayReturn,
+      );
+      expect(markerIndex, `repair guard occurs after deletion: ${marker}`).toBeLessThan(deleteIndex);
+    });
+    expect(rowCountIndex).toBeGreaterThan(deleteIndex);
+    expect(guardedBlockEnd).toBeGreaterThan(rowCountIndex);
+    expect(globalDuplicateCheck).toBeGreaterThan(guardedBlockEnd);
+    expect(addConstraintIndex).toBeGreaterThan(globalDuplicateCheck);
+    expect(sql.match(/delete from public\.timelogs/g)).toHaveLength(1);
+    expect(sql).toMatch(
+      /delete from public\.timelogs t\s+using timelog_duplicate_repair_map m\s+where t\.id = m\.duplicate_id;/,
+    );
     expect(sql).toContain('delete from public.timelogs');
     expect(sql).toMatch(/add\s+constraint\s+timelogs_event_contractor_unique\b/);
-    expect(sql.indexOf('delete from public.timelogs'))
-      .toBeLessThan(sql.search(/add\s+constraint\s+timelogs_event_contractor_unique\b/));
+    expect(sql).not.toMatch(/\bcommit\s*;/);
   });
 });

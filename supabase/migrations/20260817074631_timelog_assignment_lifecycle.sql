@@ -1,5 +1,7 @@
 begin;
 
+set local lock_timeout = '5s';
+
 alter type public.timelog_status
   add value if not exists 'pending_crew_confirmation' after 'pending_ch';
 
@@ -17,6 +19,150 @@ create table if not exists public.event_applications (
   unique (event_id, profile_id)
 );
 
+alter table public.event_applications
+  add column if not exists status text not null default 'pending',
+  add column if not exists note text,
+  add column if not exists planned_from time,
+  add column if not exists planned_to time,
+  add column if not exists created_at timestamptz not null default now(),
+  add column if not exists updated_at timestamptz not null default now();
+
+do $$
+begin
+  if exists (
+    select 1
+    from (
+      values
+        ('id', 'uuid', 'NO'),
+        ('event_id', 'uuid', 'NO'),
+        ('profile_id', 'uuid', 'NO'),
+        ('status', 'text', 'NO'),
+        ('note', 'text', 'YES'),
+        ('planned_from', 'time', 'YES'),
+        ('planned_to', 'time', 'YES'),
+        ('created_at', 'timestamptz', 'NO'),
+        ('updated_at', 'timestamptz', 'NO')
+    ) as required_columns (column_name, udt_name, is_nullable)
+    left join information_schema.columns c
+      on c.table_schema = 'public'
+      and c.table_name = 'event_applications'
+      and c.column_name = required_columns.column_name
+    where c.column_name is null
+      or c.udt_name <> required_columns.udt_name
+      or c.is_nullable <> required_columns.is_nullable
+  ) or not exists (
+    select 1
+    from information_schema.columns c
+    where c.table_schema = 'public'
+      and c.table_name = 'event_applications'
+      and c.column_name = 'id'
+      and c.column_default is not null
+  ) or not exists (
+    select 1
+    from information_schema.columns c
+    where c.table_schema = 'public'
+      and c.table_name = 'event_applications'
+      and c.column_name = 'status'
+      and c.column_default = '''pending''::text'
+  ) or exists (
+    select 1
+    from information_schema.columns c
+    where c.table_schema = 'public'
+      and c.table_name = 'event_applications'
+      and c.column_name in ('created_at', 'updated_at')
+      and c.column_default is null
+  ) then
+    raise exception 'event_applications core columns are incompatible';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    join pg_catalog.pg_attribute id_column
+      on id_column.attrelid = c.conrelid
+      and id_column.attname = 'id'
+      and not id_column.attisdropped
+    where c.conrelid = 'public.event_applications'::pg_catalog.regclass
+      and c.contype = 'p'
+      and c.conkey = array[id_column.attnum]
+  ) then
+    raise exception 'event_applications primary key is incompatible';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    join pg_catalog.pg_attribute local_column
+      on local_column.attrelid = c.conrelid
+      and local_column.attname = 'event_id'
+      and not local_column.attisdropped
+    join pg_catalog.pg_attribute referenced_column
+      on referenced_column.attrelid = c.confrelid
+      and referenced_column.attname = 'id'
+      and not referenced_column.attisdropped
+    where c.conrelid = 'public.event_applications'::pg_catalog.regclass
+      and c.contype = 'f'
+      and c.conkey = array[local_column.attnum]
+      and c.confrelid = 'public.events'::pg_catalog.regclass
+      and c.confkey = array[referenced_column.attnum]
+      and c.confdeltype = 'c'
+  ) then
+    raise exception 'event_applications event_id foreign key is incompatible';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    join pg_catalog.pg_attribute local_column
+      on local_column.attrelid = c.conrelid
+      and local_column.attname = 'profile_id'
+      and not local_column.attisdropped
+    join pg_catalog.pg_attribute referenced_column
+      on referenced_column.attrelid = c.confrelid
+      and referenced_column.attname = 'id'
+      and not referenced_column.attisdropped
+    where c.conrelid = 'public.event_applications'::pg_catalog.regclass
+      and c.contype = 'f'
+      and c.conkey = array[local_column.attnum]
+      and c.confrelid = 'public.profiles'::pg_catalog.regclass
+      and c.confkey = array[referenced_column.attnum]
+      and c.confdeltype = 'c'
+  ) then
+    raise exception 'event_applications profile_id foreign key is incompatible';
+  end if;
+end
+$$;
+
+alter table public.event_applications
+  drop constraint if exists event_applications_status_check,
+  add constraint event_applications_status_check
+    check (status in ('pending', 'approved', 'rejected', 'withdrawn', 'withdrawal_requested'));
+
+do $$
+begin
+  if exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    where c.conrelid = 'public.event_applications'::pg_catalog.regclass
+      and c.conname = 'event_applications_event_profile_unique'
+      and pg_catalog.pg_get_constraintdef(c.oid) <> 'UNIQUE (event_id, profile_id)'
+  ) then
+    raise exception 'event_applications_event_profile_unique has an unexpected definition';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    where c.conrelid = 'public.event_applications'::pg_catalog.regclass
+      and c.contype = 'u'
+      and pg_catalog.pg_get_constraintdef(c.oid) = 'UNIQUE (event_id, profile_id)'
+  ) then
+    alter table public.event_applications
+      add constraint event_applications_event_profile_unique unique (event_id, profile_id);
+  end if;
+end
+$$;
+
 alter table public.events
   add column if not exists allow_crew_time_proposal boolean not null default false;
 
@@ -28,6 +174,7 @@ create index if not exists event_applications_status_idx
   on public.event_applications (status);
 
 alter table public.event_applications enable row level security;
+revoke all on public.event_applications from authenticated;
 grant select, insert, update on public.event_applications to authenticated;
 revoke all on public.event_applications from anon;
 
@@ -56,6 +203,7 @@ with check (
 );
 
 drop policy if exists "Crew can renew own event applications" on public.event_applications;
+drop policy if exists "Crew can update own event applications" on public.event_applications;
 create policy "Crew can renew own event applications"
 on public.event_applications for update to authenticated
 using (profile_id = public.current_profile_id())
@@ -125,7 +273,7 @@ as $$
         'time_to', d.time_to,
         'day_type', d.day_type,
         'note', d.note
-      ) order by d.date, d.time_from, d.time_to, d.day_type, d.id
+      ) order by d.date, d.time_from, d.time_to, d.day_type, d.note, d.id
     ),
     '[]'::jsonb
   )
@@ -133,14 +281,30 @@ as $$
   where d.timelog_id = p_timelog_id;
 $$;
 
+lock table public.timelogs in share row exclusive mode;
+lock table public.timelog_days in share row exclusive mode;
+lock table public.invoices in share row exclusive mode;
+
+do $$
+begin
+  if pg_catalog.to_regclass('public.invoice_timelogs') is not null then
+    execute 'lock table public.invoice_timelogs in share row exclusive mode';
+  end if;
+end
+$$;
+
 do $$
 declare
   v_mapping_count integer;
   v_present_count integer;
+  v_has_legacy_invoice_link boolean := false;
   v_has_invoice_link boolean := false;
+  v_deleted_count integer;
 begin
   select count(*) into v_mapping_count from timelog_duplicate_repair_map;
-  assert v_mapping_count = 13, 'timelog repair map must contain 13 duplicate rows';
+  if v_mapping_count <> 13 then
+    raise exception 'timelog repair map must contain 13 duplicate rows';
+  end if;
 
   select count(distinct t.id)
   into v_present_count
@@ -155,9 +319,11 @@ begin
     return;
   end if;
 
-  assert v_present_count = 22, 'known timelog repair set is only partially present';
+  if v_present_count <> 22 then
+    raise exception 'known timelog repair set is only partially present';
+  end if;
 
-  assert not exists (
+  if exists (
     select 1
     from timelog_duplicate_repair_map m
     join public.timelogs c on c.id = m.canonical_id
@@ -168,39 +334,97 @@ begin
       or d.contractor_id <> m.contractor_id
       or c.status <> m.expected_status
       or d.status <> m.expected_status
-  ), 'known timelog identity or status changed';
+  ) then
+    raise exception 'known timelog identity or status changed';
+  end if;
 
-  assert not exists (
+  if exists (
     select 1
     from timelog_duplicate_repair_map m
     join public.timelogs c on c.id = m.canonical_id
     join public.timelogs d on d.id = m.duplicate_id
     where m.comparison = 'exact'
       and (
-        (to_jsonb(c) - 'id' - 'created_at' - 'updated_at')
+        (pg_catalog.to_jsonb(c) - 'id' - 'created_at' - 'updated_at')
           is distinct from
-        (to_jsonb(d) - 'id' - 'created_at' - 'updated_at')
+        (pg_catalog.to_jsonb(d) - 'id' - 'created_at' - 'updated_at')
         or pg_temp.normalized_timelog_days(c.id)
           is distinct from pg_temp.normalized_timelog_days(d.id)
       )
-  ), 'an exact duplicate payload changed';
+  ) then
+    raise exception 'an exact duplicate payload changed';
+  end if;
 
-  assert (
-    select jsonb_build_object('status', t.status, 'km', t.km, 'note', coalesce(t.note, ''))
+  if exists (
+    select 1
+    from public.timelogs c
+    cross join public.timelogs d
+    where c.id = 'ddfaf624-b422-48bf-889e-c43ecd4bc8b5'
+      and d.id = '0ee6341d-ecc3-444d-bf4c-740392e13ac1'
+      and (pg_catalog.to_jsonb(c) - 'id' - 'created_at' - 'updated_at' - 'note')
+        is distinct from
+        (pg_catalog.to_jsonb(d) - 'id' - 'created_at' - 'updated_at' - 'note')
+  ) then
+    raise exception 'divergent Miss Agro parent payload changed';
+  end if;
+
+  if (
+    select pg_catalog.jsonb_build_object(
+      'status', t.status,
+      'km', t.km,
+      'note', coalesce(t.note, '')
+    )
     from public.timelogs t
     where t.id = 'ddfaf624-b422-48bf-889e-c43ecd4bc8b5'
-  ) = '{"status":"approved","km":0.00,"note":"PowerApps: Rebros-2026-015.pdf"}'::jsonb,
-  'complete Miss Agro canonical payload changed';
+  ) is distinct from
+    '{"status":"approved","km":0.00,"note":"PowerApps: Rebros-2026-015.pdf"}'::jsonb
+  then
+    raise exception 'complete Miss Agro canonical payload changed';
+  end if;
 
-  assert pg_temp.normalized_timelog_days('ddfaf624-b422-48bf-889e-c43ecd4bc8b5') =
-    '[{"date":"2026-05-12","time_from":"08:00","time_to":"14:00","day_type":"provoz","note":null},{"date":"2026-05-12","time_from":"22:30","time_to":"03:30","day_type":"provoz","note":null}]'::jsonb,
-    'complete Miss Agro day set changed';
+  if (
+    select pg_catalog.jsonb_build_object(
+      'status', t.status,
+      'km', t.km,
+      'note', coalesce(t.note, '')
+    )
+    from public.timelogs t
+    where t.id = '0ee6341d-ecc3-444d-bf4c-740392e13ac1'
+  ) is distinct from
+    '{"status":"approved","km":0.00,"note":""}'::jsonb
+  then
+    raise exception 'complete Miss Agro duplicate payload changed';
+  end if;
 
-  assert pg_temp.normalized_timelog_days('0ee6341d-ecc3-444d-bf4c-740392e13ac1') =
-    '[{"date":"2026-05-12","time_from":"22:30","time_to":"03:30","day_type":"instal","note":null}]'::jsonb,
-    'subset Miss Agro day set changed';
+  if pg_temp.normalized_timelog_days('ddfaf624-b422-48bf-889e-c43ecd4bc8b5')
+    is distinct from
+    '[{"date":"2026-05-12","time_from":"08:00","time_to":"14:00","day_type":"provoz","note":null},{"date":"2026-05-12","time_from":"22:30","time_to":"03:30","day_type":"provoz","note":null}]'::jsonb
+  then
+    raise exception 'complete Miss Agro day set changed';
+  end if;
 
-  if to_regclass('public.invoice_timelogs') is not null then
+  if pg_temp.normalized_timelog_days('0ee6341d-ecc3-444d-bf4c-740392e13ac1')
+    is distinct from
+    '[{"date":"2026-05-12","time_from":"22:30","time_to":"03:30","day_type":"instal","note":null}]'::jsonb
+  then
+    raise exception 'subset Miss Agro day set changed';
+  end if;
+
+  select exists (
+    select 1
+    from public.invoices i
+    where i.timelog_id in (
+      select canonical_id from timelog_duplicate_repair_map
+      union
+      select duplicate_id from timelog_duplicate_repair_map
+    )
+  ) into v_has_legacy_invoice_link;
+
+  if v_has_legacy_invoice_link then
+    raise exception 'known timelog is linked through public.invoices.timelog_id';
+  end if;
+
+  if pg_catalog.to_regclass('public.invoice_timelogs') is not null then
     execute $query$
       select exists (
         select 1
@@ -212,23 +436,20 @@ begin
         )
       )
     $query$ into v_has_invoice_link;
-    assert not v_has_invoice_link, 'known duplicate timelog is linked to an invoice';
+
+    if v_has_invoice_link then
+      raise exception 'known duplicate timelog is linked to an invoice';
+    end if;
   end if;
-end
-$$;
 
-delete from public.timelogs t
-using timelog_duplicate_repair_map m
-where t.id = m.duplicate_id;
+  delete from public.timelogs t
+  using timelog_duplicate_repair_map m
+  where t.id = m.duplicate_id;
 
-do $$
-begin
-  assert not exists (
-    select 1
-    from public.timelogs
-    group by event_id, contractor_id
-    having count(*) > 1
-  ), 'timelog duplicates remain; unique constraint was not added';
+  get diagnostics v_deleted_count = row_count;
+  if v_deleted_count <> 13 then
+    raise exception 'known timelog repair deleted an unexpected number of rows';
+  end if;
 end
 $$;
 
@@ -236,19 +457,32 @@ do $$
 begin
   if exists (
     select 1
-    from pg_constraint
-    where conrelid = 'public.timelogs'::regclass
-      and conname = 'timelogs_event_contractor_unique'
-      and pg_get_constraintdef(oid) <> 'UNIQUE (event_id, contractor_id)'
+    from public.timelogs
+    group by event_id, contractor_id
+    having count(*) > 1
+  ) then
+    raise exception 'timelog duplicates remain; unique constraint was not added';
+  end if;
+end
+$$;
+
+do $$
+begin
+  if exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    where c.conrelid = 'public.timelogs'::pg_catalog.regclass
+      and c.conname = 'timelogs_event_contractor_unique'
+      and pg_catalog.pg_get_constraintdef(c.oid) <> 'UNIQUE (event_id, contractor_id)'
   ) then
     raise exception 'timelogs_event_contractor_unique has an unexpected definition';
   end if;
 
   if not exists (
     select 1
-    from pg_constraint
-    where conrelid = 'public.timelogs'::regclass
-      and conname = 'timelogs_event_contractor_unique'
+    from pg_catalog.pg_constraint c
+    where c.conrelid = 'public.timelogs'::pg_catalog.regclass
+      and c.conname = 'timelogs_event_contractor_unique'
   ) then
     alter table public.timelogs
       add constraint timelogs_event_contractor_unique unique (event_id, contractor_id);

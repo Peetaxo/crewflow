@@ -521,8 +521,15 @@ begin
     pg_catalog.hashtextextended(p_event_id::text || ':' || p_profile_id::text, 0)
   );
 
-  if not exists (select 1 from public.events where id = p_event_id)
-    or not exists (select 1 from public.profiles where id = p_profile_id) then
+  perform id
+  from public.events
+  where id = p_event_id
+  for update;
+  if not found then
+    raise exception 'crew_lifecycle_not_found' using errcode = 'P0002';
+  end if;
+
+  if not exists (select 1 from public.profiles where id = p_profile_id) then
     raise exception 'crew_lifecycle_not_found' using errcode = 'P0002';
   end if;
 
@@ -569,10 +576,15 @@ begin
 
     -- Also force-cast all dates and both times solely for validation before inserts.
     -- Keep stored time strings in their original HH:MM form.
-    perform (day->>'date')::date,
-      (day->>'time_from')::time,
-      (day->>'time_to')::time
-    from pg_catalog.jsonb_array_elements(p_days) day;
+    begin
+      perform (day->>'date')::date,
+        (day->>'time_from')::time,
+        (day->>'time_to')::time
+      from pg_catalog.jsonb_array_elements(p_days) day;
+    exception
+      when invalid_datetime_format or datetime_field_overflow or invalid_text_representation then
+        raise exception 'crew_assignment_invalid_days' using errcode = '22023';
+    end;
 
     insert into public.timelogs (event_id, contractor_id, km, note, status)
     values (p_event_id, p_profile_id, 0, '', 'draft')
@@ -628,9 +640,6 @@ begin
     'timelog_created', v_timelog_created,
     'crew_filled', v_crew_filled
   );
-exception
-  when invalid_datetime_format or datetime_field_overflow or invalid_text_representation then
-    raise exception 'crew_assignment_invalid_days' using errcode = '22023';
 end;
 $$;
 
@@ -660,8 +669,15 @@ begin
     pg_catalog.hashtextextended(p_event_id::text || ':' || p_profile_id::text, 0)
   );
 
-  if not exists (select 1 from public.events where id = p_event_id)
-    or not exists (select 1 from public.profiles where id = p_profile_id) then
+  perform id
+  from public.events
+  where id = p_event_id
+  for update;
+  if not found then
+    raise exception 'crew_lifecycle_not_found' using errcode = 'P0002';
+  end if;
+
+  if not exists (select 1 from public.profiles where id = p_profile_id) then
     raise exception 'crew_lifecycle_not_found' using errcode = 'P0002';
   end if;
 

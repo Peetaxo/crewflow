@@ -2,6 +2,11 @@ begin;
 
 do $$
 declare
+  v_authenticated_role_oid oid;
+  v_function_signature pg_catalog.regprocedure;
+  v_function_owner_oid oid;
+  v_authenticated_can_execute boolean;
+  v_has_unexpected_execute_grantee boolean;
   v_manager_user_id uuid;
   v_crew_user_id uuid;
   v_profile_id uuid;
@@ -38,6 +43,60 @@ declare
   v_event_after jsonb;
   v_days_after jsonb;
 begin
+  select oid into v_authenticated_role_oid
+  from pg_catalog.pg_roles
+  where rolname = 'authenticated';
+
+  if v_authenticated_role_oid is null then
+    raise exception 'verification failed: authenticated role does not exist';
+  end if;
+
+  foreach v_function_signature in array array[
+    'public.assign_event_crew(uuid, uuid, uuid, jsonb)'::pg_catalog.regprocedure,
+    'public.remove_event_crew(uuid, uuid)'::pg_catalog.regprocedure
+  ] loop
+    select
+      p.proowner,
+      coalesce(
+        pg_catalog.bool_or(
+          acl.privilege_type = 'EXECUTE'
+          and acl.grantee = v_authenticated_role_oid
+        ),
+        false
+      ),
+      coalesce(
+        pg_catalog.bool_or(
+          acl.privilege_type = 'EXECUTE'
+          and acl.grantee <> p.proowner
+          and acl.grantee <> v_authenticated_role_oid
+        ),
+        false
+      )
+    into
+      v_function_owner_oid,
+      v_authenticated_can_execute,
+      v_has_unexpected_execute_grantee
+    from pg_catalog.pg_proc p
+    cross join lateral pg_catalog.aclexplode(
+      coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))
+    ) acl
+    where p.oid = v_function_signature::oid
+    group by p.proowner;
+
+    if v_function_owner_oid is null then
+      raise exception 'verification failed: lifecycle function does not exist: %',
+        v_function_signature;
+    end if;
+    if not v_authenticated_can_execute then
+      raise exception 'verification failed: authenticated lacks EXECUTE on %',
+        v_function_signature;
+    end if;
+    if v_has_unexpected_execute_grantee then
+      raise exception 'verification failed: unexpected EXECUTE grantee on %',
+        v_function_signature;
+    end if;
+  end loop;
+
   select ur.user_id
   into v_manager_user_id
   from public.user_roles ur

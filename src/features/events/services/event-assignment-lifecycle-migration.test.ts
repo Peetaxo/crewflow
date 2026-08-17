@@ -274,6 +274,37 @@ describe('timelog assignment lifecycle migration', () => {
     expect(removeFunction).toContain("status not in ('draft', 'rejected')");
   });
 
+  it('serializes event-wide crew counts before reading or mutating lifecycle rows', () => {
+    const sql = readMigration();
+    const assignFunction = readFunction(sql, 'assign_event_crew');
+    const removeFunction = readFunction(sql, 'remove_event_crew');
+    const pairLock =
+      "perform pg_catalog.pg_advisory_xact_lock(\n    pg_catalog.hashtextextended(p_event_id::text || ':' || p_profile_id::text, 0)\n  )";
+    const eventLock =
+      'perform id\n  from public.events\n  where id = p_event_id\n  for update;';
+    const eventNotFound =
+      "if not found then\n    raise exception 'crew_lifecycle_not_found' using errcode = 'p0002';\n  end if;";
+    const profileNotFound =
+      "if not exists (select 1 from public.profiles where id = p_profile_id) then\n    raise exception 'crew_lifecycle_not_found' using errcode = 'p0002';\n  end if;";
+
+    expect(assignFunction.match(/perform id\s+from public\.events\s+where id = p_event_id\s+for update;/g)).toHaveLength(1);
+    expect(removeFunction.match(/perform id\s+from public\.events\s+where id = p_event_id\s+for update;/g)).toHaveLength(1);
+    expectMarkersInOrder(assignFunction, [
+      pairLock,
+      eventLock,
+      eventNotFound,
+      profileNotFound,
+      'select id into v_existing_assignment_id\n  from public.event_assignments',
+    ]);
+    expectMarkersInOrder(removeFunction, [
+      pairLock,
+      eventLock,
+      eventNotFound,
+      profileNotFound,
+      'perform id\n  from public.timelogs',
+    ]);
+  });
+
   it('fully qualifies lifecycle RPC relations and catalog functions', () => {
     const sql = readMigration();
     const lifecycleFunctions = [
@@ -339,6 +370,28 @@ describe('timelog assignment lifecycle migration', () => {
     expect(removeFunction).toContain("status in ('draft', 'rejected')");
   });
 
+  it('maps only forced day casts to the invalid-days token', () => {
+    const sql = readMigration();
+    const assignFunction = readFunction(sql, 'assign_event_crew');
+    const createBranchStart = assignFunction.indexOf('if v_timelog_id is null then');
+    const validationHandler =
+      "exception\n      when invalid_datetime_format or datetime_field_overflow or invalid_text_representation then\n        raise exception 'crew_assignment_invalid_days' using errcode = '22023';";
+    const returnIndex = assignFunction.indexOf('return pg_catalog.jsonb_build_object');
+
+    expectMarkersInOrder(assignFunction, [
+      'if v_timelog_id is null then',
+      "begin\n      perform (day->>'date')::date,",
+      'from pg_catalog.jsonb_array_elements(p_days) day;',
+      validationHandler,
+      'end;',
+      'insert into public.timelogs',
+    ]);
+    expect(assignFunction.match(/when invalid_datetime_format/g)).toHaveLength(1);
+    expect(createBranchStart).toBeGreaterThanOrEqual(0);
+    expect(returnIndex).toBeGreaterThan(createBranchStart);
+    expect(assignFunction.slice(returnIndex)).not.toContain('when invalid_datetime_format');
+  });
+
   it('exposes lifecycle RPCs only to authenticated users and commits exactly once at the end', () => {
     const sql = readMigration();
     const assignSignature = 'public.assign_event_crew(uuid, uuid, uuid, jsonb)';
@@ -383,6 +436,32 @@ describe('timelog assignment lifecycle migration', () => {
     );
     expect(loopSql).toContain(
       "raise exception 'verification failed: blocking-loop timelog status update failed before %'",
+    );
+  });
+
+  it('verifies exact lifecycle RPC execute ACLs before creating fixtures', () => {
+    const sql = readVerificationScript();
+    const aclStart = sql.indexOf("select oid into v_authenticated_role_oid\n  from pg_catalog.pg_roles");
+    const fixtureStart = sql.indexOf('select ur.user_id\n  into v_manager_user_id');
+    const aclSql = sql.slice(aclStart, fixtureStart);
+
+    expect(aclStart).toBeGreaterThanOrEqual(0);
+    expect(fixtureStart).toBeGreaterThan(aclStart);
+    expect(aclSql).toContain(
+      "'public.assign_event_crew(uuid, uuid, uuid, jsonb)'::pg_catalog.regprocedure",
+    );
+    expect(aclSql).toContain(
+      "'public.remove_event_crew(uuid, uuid)'::pg_catalog.regprocedure",
+    );
+    expect(aclSql).toContain('from pg_catalog.pg_proc p');
+    expect(aclSql).toContain('pg_catalog.aclexplode(');
+    expect(aclSql).toContain("coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))");
+    expect(aclSql).toContain("acl.privilege_type = 'execute'");
+    expect(aclSql).toContain(
+      "raise exception 'verification failed: authenticated lacks execute on %'",
+    );
+    expect(aclSql).toContain(
+      "raise exception 'verification failed: unexpected execute grantee on %'",
     );
   });
 });

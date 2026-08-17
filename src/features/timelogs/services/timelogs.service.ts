@@ -8,8 +8,13 @@ import { Contractor, Event, Timelog, TimelogStatus } from '../../../types';
 import { getLifecycleSnapshotGeneration } from '../../event-lifecycle-generation';
 
 type TimelogAction = 'sub' | 'ch' | 'coo' | 'rej';
+type PersistedTimelogTarget = {
+  localId: number;
+  rowId: string;
+};
 let timelogsHydrationPromise: Promise<void> | null = null;
 let timelogsLoaded = false;
+let timelogSnapshotGeneration = 0;
 const statusMap: Record<TimelogAction, TimelogStatus> = {
   sub: 'pending_ch',
   ch: 'pending_coo',
@@ -20,6 +25,59 @@ const statusMap: Record<TimelogAction, TimelogStatus> = {
 const sortTimelogDays = (days: Timelog['days']) => (
   [...days].sort((a, b) => `${a.d}${a.f}${a.type}`.localeCompare(`${b.d}${b.f}${b.type}`))
 );
+
+const reconcilePersistedTimelog = (
+  timelogs: Timelog[],
+  events: Event[],
+  persistedTimelog: Timelog,
+  fallbackLocalId?: number,
+): { timelogs: Timelog[]; timelog: Timelog } => {
+  const matchesStableId = (timelog: Timelog) => (
+    Boolean(persistedTimelog.supabaseId)
+    && timelog.supabaseId === persistedTimelog.supabaseId
+  );
+  const matchesFallbackId = (timelog: Timelog) => (
+    !timelog.supabaseId
+    && fallbackLocalId !== undefined
+    && timelog.id === fallbackLocalId
+  );
+  const matchesPersistedTimelog = (timelog: Timelog) => (
+    matchesStableId(timelog) || matchesFallbackId(timelog)
+  );
+  const currentTimelog = timelogs.find(matchesStableId) ?? timelogs.find(matchesFallbackId);
+  const currentEvent = persistedTimelog.eventSupabaseId
+    ? events.find((event) => event.supabaseId === persistedTimelog.eventSupabaseId)
+    : events.find((event) => event.id === persistedTimelog.eid);
+  const canonicalTimelog = {
+    ...persistedTimelog,
+    id: currentTimelog?.id ?? Math.max(0, ...timelogs.map((timelog) => timelog.id)) + 1,
+    eid: currentEvent?.id ?? currentTimelog?.eid ?? persistedTimelog.eid,
+  };
+  let inserted = false;
+  const reconciledTimelogs = timelogs.flatMap((timelog) => {
+    if (!matchesPersistedTimelog(timelog)) return [timelog];
+    if (inserted) return [];
+    inserted = true;
+    return [canonicalTimelog];
+  });
+
+  if (!inserted) {
+    reconciledTimelogs.push(canonicalTimelog);
+  }
+
+  return { timelogs: reconciledTimelogs, timelog: canonicalTimelog };
+};
+
+const matchesPersistedTimelogTarget = (
+  timelog: Timelog,
+  targets: PersistedTimelogTarget[],
+): boolean => {
+  if (timelog.supabaseId) {
+    return targets.some((target) => target.rowId === timelog.supabaseId);
+  }
+
+  return targets.some((target) => target.localId === timelog.id);
+};
 
 const matchesSearch = (
   timelog: Timelog,
@@ -99,14 +157,18 @@ export const loadTimelogsSnapshot = async (): Promise<Timelog[]> => {
 };
 
 export const fetchTimelogsSnapshot = async (): Promise<Timelog[]> => {
-  const generation = getLifecycleSnapshotGeneration();
+  const lifecycleGeneration = getLifecycleSnapshotGeneration();
+  const timelogGeneration = timelogSnapshotGeneration;
   const supabaseTimelogs = await loadTimelogsSnapshot();
 
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
     return supabaseTimelogs;
   }
 
-  if (generation !== getLifecycleSnapshotGeneration()) {
+  if (
+    lifecycleGeneration !== getLifecycleSnapshotGeneration()
+    || timelogGeneration !== timelogSnapshotGeneration
+  ) {
     return getLocalAppState().timelogs ?? [];
   }
 
@@ -241,9 +303,9 @@ const getSupabaseTimelogRowId = async (
 const persistSupabaseTimelogStatus = async (
   localTimelogIds: number[],
   nextStatus: TimelogStatus,
-): Promise<void> => {
+): Promise<PersistedTimelogTarget[] | null> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
-    return;
+    return null;
   }
 
   const timelogsByLocalId = new Map(
@@ -253,13 +315,14 @@ const persistSupabaseTimelogStatus = async (
     (localId) => !timelogsByLocalId.get(localId)?.supabaseId,
   );
   const timelogRowIds = requiresLegacyLookup ? await getSupabaseTimelogRowIds() : [];
-  const rowIds = Array.from(new Set(localTimelogIds.map((localId) => {
+  const targets = localTimelogIds.map((localId) => {
     const rowId = timelogsByLocalId.get(localId)?.supabaseId ?? timelogRowIds[localId - 1];
     if (!rowId) {
       throw new Error('Nepodarilo se sparovat vykaz s databazovym zaznamem.');
     }
-    return rowId;
-  })));
+    return { localId, rowId };
+  });
+  const rowIds = Array.from(new Set(targets.map((target) => target.rowId)));
 
   await Promise.all(rowIds.map(async (rowId) => {
     const result = await supabase
@@ -276,6 +339,9 @@ const persistSupabaseTimelogStatus = async (
       throw new Error('Nepodarilo se aktualizovat vykaz v databazi.');
     }
   }));
+
+  timelogSnapshotGeneration += 1;
+  return targets;
 };
 
 export const getTimelogs = (search = ''): Timelog[] => {
@@ -310,13 +376,16 @@ export const getTimelogDependencies = (): { contractors: Contractor[]; events: E
 
 export const updateTimelogStatus = async (id: number, action: TimelogAction): Promise<Timelog> => {
   const nextStatus = statusMap[action];
-  await persistSupabaseTimelogStatus([id], nextStatus);
+  const persistedTargets = await persistSupabaseTimelogStatus([id], nextStatus);
   let updatedTimelog: Timelog | null = null;
 
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     timelogs: (snapshot.timelogs ?? []).map((timelog) => {
-      if (timelog.id !== id) return timelog;
+      const isTarget = persistedTargets
+        ? matchesPersistedTimelogTarget(timelog, persistedTargets)
+        : timelog.id === id;
+      if (!isTarget) return timelog;
 
       updatedTimelog = {
         ...timelog,
@@ -346,12 +415,15 @@ export const approveAllTimelogsForEvent = async (eventId: number): Promise<Timel
     return approvedTimelogs;
   }
 
-  await persistSupabaseTimelogStatus(localTimelogIds, 'approved');
+  const persistedTargets = await persistSupabaseTimelogStatus(localTimelogIds, 'approved');
 
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     timelogs: (snapshot.timelogs ?? []).map((timelog) => {
-      if (timelog.eid !== eventId || timelog.status !== 'pending_coo') return timelog;
+      const isTarget = persistedTargets
+        ? matchesPersistedTimelogTarget(timelog, persistedTargets)
+        : localTimelogIds.includes(timelog.id);
+      if (!isTarget) return timelog;
 
       const approvedTimelog = {
         ...timelog,
@@ -383,7 +455,8 @@ export const createTimelog = async (timelog: Omit<Timelog, 'id'>): Promise<Timel
     throw new Error('Nepodarilo se dohledat UUID identitu clena crew.');
   }
 
-  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+  const persistsToSupabase = appDataSource === 'supabase' && Boolean(supabase) && isSupabaseConfigured;
+  if (persistsToSupabase && supabase) {
     const eventRowId = normalizedTimelog.eventSupabaseId;
     const currentEvent = (getLocalAppState().events ?? [])
       .find((event) => event.supabaseId === eventRowId);
@@ -434,12 +507,29 @@ export const createTimelog = async (timelog: Omit<Timelog, 'id'>): Promise<Timel
     if (timelogDaysInsert.error) {
       throw new Error(timelogDaysInsert.error.message);
     }
+
+    timelogSnapshotGeneration += 1;
   }
 
-  updateLocalAppState((snapshot) => ({
-    ...snapshot,
-    timelogs: [...(snapshot.timelogs ?? []), persistedTimelog],
-  }));
+  updateLocalAppState((snapshot) => {
+    if (persistsToSupabase) {
+      const reconciled = reconcilePersistedTimelog(
+        snapshot.timelogs ?? [],
+        snapshot.events ?? [],
+        persistedTimelog,
+      );
+      persistedTimelog = reconciled.timelog;
+      return {
+        ...snapshot,
+        timelogs: reconciled.timelogs,
+      };
+    }
+
+    return {
+      ...snapshot,
+      timelogs: [...(snapshot.timelogs ?? []), persistedTimelog],
+    };
+  });
 
   invalidateTimelogQueries();
   return persistedTimelog;
@@ -483,7 +573,8 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
     throw new Error('Nepodarilo se dohledat UUID identitu clena crew.');
   }
 
-  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+  const persistsToSupabase = appDataSource === 'supabase' && Boolean(supabase) && isSupabaseConfigured;
+  if (persistsToSupabase && supabase) {
     const [timelogRowId, eventRowId] = await Promise.all([
       getSupabaseTimelogRowId(
         existingTimelog.id,
@@ -545,22 +636,43 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
       supabaseId: timelogRowId,
       eventSupabaseId: eventRowId,
     };
+
+    timelogSnapshotGeneration += 1;
   }
 
-  updateLocalAppState((snapshot) => ({
-    ...snapshot,
-    timelogs: snapshot.timelogs.map((timelog) => (
-      timelog.id === existingTimelog.id ? persistedTimelog : timelog
-    )),
-  }));
+  updateLocalAppState((snapshot) => {
+    if (persistsToSupabase) {
+      const reconciled = reconcilePersistedTimelog(
+        snapshot.timelogs ?? [],
+        snapshot.events ?? [],
+        persistedTimelog,
+        existingTimelog.id,
+      );
+      persistedTimelog = reconciled.timelog;
+      return {
+        ...snapshot,
+        timelogs: reconciled.timelogs,
+      };
+    }
+
+    return {
+      ...snapshot,
+      timelogs: snapshot.timelogs.map((timelog) => (
+        timelog.id === existingTimelog.id ? persistedTimelog : timelog
+      )),
+    };
+  });
 
   invalidateTimelogQueries();
   return persistedTimelog;
 };
 
 export const deleteTimelog = async (id: number): Promise<{ id: number }> => {
+  let persistedTarget: PersistedTimelogTarget | null = null;
+  let deletedLocalId = id;
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
     const timelogRowId = await getSupabaseTimelogRowId(id);
+    persistedTarget = { localId: id, rowId: timelogRowId };
 
     const timelogDaysDelete = await supabase
       .from('timelog_days')
@@ -579,15 +691,28 @@ export const deleteTimelog = async (id: number): Promise<{ id: number }> => {
     if (timelogDelete.error) {
       throw new Error(timelogDelete.error.message);
     }
+
+    timelogSnapshotGeneration += 1;
   }
 
-  updateLocalAppState((snapshot) => ({
-    ...snapshot,
-    timelogs: snapshot.timelogs.filter((timelog) => timelog.id !== id),
-  }));
+  updateLocalAppState((snapshot) => {
+    const deletedTimelog = persistedTarget
+      ? snapshot.timelogs.find((timelog) => matchesPersistedTimelogTarget(timelog, [persistedTarget]))
+      : snapshot.timelogs.find((timelog) => timelog.id === id);
+    deletedLocalId = deletedTimelog?.id ?? id;
+
+    return {
+      ...snapshot,
+      timelogs: snapshot.timelogs.filter((timelog) => (
+        persistedTarget
+          ? !matchesPersistedTimelogTarget(timelog, [persistedTarget])
+          : timelog.id !== id
+      )),
+    };
+  });
 
   invalidateTimelogQueries();
-  return { id };
+  return { id: deletedLocalId };
 };
 
 export const markApprovedTimelogsAsInvoiced = async (): Promise<Timelog[]> => {
@@ -595,15 +720,17 @@ export const markApprovedTimelogsAsInvoiced = async (): Promise<Timelog[]> => {
   const localTimelogIds = (getLocalAppState().timelogs ?? [])
     .filter((timelog) => timelog.status === 'approved')
     .map((timelog) => timelog.id);
-
-  if (localTimelogIds.length > 0) {
-    await persistSupabaseTimelogStatus(localTimelogIds, 'invoiced');
-  }
+  const persistedTargets = localTimelogIds.length > 0
+    ? await persistSupabaseTimelogStatus(localTimelogIds, 'invoiced')
+    : null;
 
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     timelogs: snapshot.timelogs.map((timelog) => {
-      if (timelog.status !== 'approved') return timelog;
+      const isTarget = persistedTargets
+        ? matchesPersistedTimelogTarget(timelog, persistedTargets)
+        : localTimelogIds.includes(timelog.id);
+      if (!isTarget) return timelog;
 
       const updatedTimelog = {
         ...timelog,
@@ -623,14 +750,17 @@ export const markTimelogsAsInvoiced = async (timelogIds: number[]): Promise<Time
   const idSet = new Set(timelogIds);
   const updatedTimelogs: Timelog[] = [];
 
-  if (timelogIds.length > 0) {
-    await persistSupabaseTimelogStatus(timelogIds, 'invoiced');
-  }
+  const persistedTargets = timelogIds.length > 0
+    ? await persistSupabaseTimelogStatus(timelogIds, 'invoiced')
+    : null;
 
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     timelogs: snapshot.timelogs.map((timelog) => {
-      if (!idSet.has(timelog.id)) return timelog;
+      const isTarget = persistedTargets
+        ? matchesPersistedTimelogTarget(timelog, persistedTargets)
+        : idSet.has(timelog.id);
+      if (!isTarget) return timelog;
 
       const updatedTimelog = {
         ...timelog,
@@ -655,14 +785,17 @@ export const markTimelogsAsPaidForInvoice = async (
     .filter((timelog) => timelog.eid === eventId && timelog.contractorProfileId === contractorProfileId && timelog.status === 'invoiced')
     .map((timelog) => timelog.id);
 
-  if (localTimelogIds.length > 0) {
-    await persistSupabaseTimelogStatus(localTimelogIds, 'paid');
-  }
+  const persistedTargets = localTimelogIds.length > 0
+    ? await persistSupabaseTimelogStatus(localTimelogIds, 'paid')
+    : null;
 
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     timelogs: snapshot.timelogs.map((timelog) => {
-      if (timelog.eid !== eventId || timelog.contractorProfileId !== contractorProfileId || timelog.status !== 'invoiced') return timelog;
+      const isTarget = persistedTargets
+        ? matchesPersistedTimelogTarget(timelog, persistedTargets)
+        : localTimelogIds.includes(timelog.id);
+      if (!isTarget) return timelog;
 
       const updatedTimelog = {
         ...timelog,
@@ -682,14 +815,17 @@ export const markTimelogsAsPaid = async (timelogIds: number[]): Promise<Timelog[
   const idSet = new Set(timelogIds);
   const updatedTimelogs: Timelog[] = [];
 
-  if (timelogIds.length > 0) {
-    await persistSupabaseTimelogStatus(timelogIds, 'paid');
-  }
+  const persistedTargets = timelogIds.length > 0
+    ? await persistSupabaseTimelogStatus(timelogIds, 'paid')
+    : null;
 
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     timelogs: snapshot.timelogs.map((timelog) => {
-      if (!idSet.has(timelog.id)) return timelog;
+      const isTarget = persistedTargets
+        ? matchesPersistedTimelogTarget(timelog, persistedTargets)
+        : idSet.has(timelog.id);
+      if (!isTarget) return timelog;
 
       const updatedTimelog = {
         ...timelog,

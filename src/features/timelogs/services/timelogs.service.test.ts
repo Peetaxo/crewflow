@@ -27,11 +27,17 @@ const setupStableUuidWriteHarness = async ({
   snapshotEventSupabaseId,
   events,
   insertedTimelogSupabaseId = 'created-timelog-uuid',
+  timelogInsertResult,
+  timelogUpdateResult,
+  timelogDaysDeleteResult,
 }: {
   timelogs?: Timelog[];
   snapshotEventSupabaseId?: string;
   events?: Array<{ id: number; supabaseId?: string }>;
   insertedTimelogSupabaseId?: string;
+  timelogInsertResult?: Promise<{ data: { id: string } | null; error: null }>;
+  timelogUpdateResult?: Promise<{ data: null; error: null }>;
+  timelogDaysDeleteResult?: Promise<{ error: null }>;
 }) => {
   let snapshot = {
     ...createSnapshot(timelogs),
@@ -40,16 +46,19 @@ const setupStableUuidWriteHarness = async ({
   const setQueryData = vi.fn();
   const invalidateQueries = vi.fn();
 
-  const timelogInsertSingle = vi.fn().mockResolvedValue({
+  const timelogInsertSingle = vi.fn(() => timelogInsertResult ?? Promise.resolve({
     data: { id: insertedTimelogSupabaseId },
     error: null,
-  });
+  }));
   const timelogInsertSelect = vi.fn(() => ({ single: timelogInsertSingle }));
   const timelogInsert = vi.fn(() => ({ select: timelogInsertSelect }));
   const timelogUpdateEq = vi.fn((_field: string, value: string) => {
-    const result = Promise.resolve({ data: null, error: null });
+    const result = timelogUpdateResult ?? Promise.resolve({ data: null, error: null });
     return {
-      select: vi.fn().mockResolvedValue({ data: [{ id: value }], error: null }),
+      select: vi.fn(async () => {
+        await result;
+        return { data: [{ id: value }], error: null };
+      }),
       then: result.then.bind(result),
     };
   });
@@ -57,7 +66,7 @@ const setupStableUuidWriteHarness = async ({
   const timelogDeleteEq = vi.fn().mockResolvedValue({ error: null });
   const timelogDelete = vi.fn(() => ({ eq: timelogDeleteEq }));
   const timelogDaysInsert = vi.fn().mockResolvedValue({ error: null });
-  const timelogDaysDeleteEq = vi.fn().mockResolvedValue({ error: null });
+  const timelogDaysDeleteEq = vi.fn(() => timelogDaysDeleteResult ?? Promise.resolve({ error: null }));
   const timelogDaysDelete = vi.fn(() => ({ eq: timelogDaysDeleteEq }));
 
   const legacyTimelogResult = Promise.resolve({
@@ -149,11 +158,15 @@ const setupStableUuidWriteHarness = async ({
   return {
     service,
     getSnapshot: () => structuredClone(snapshot),
+    setSnapshot: (nextSnapshot: typeof snapshot) => {
+      snapshot = structuredClone(nextSnapshot);
+    },
     setQueryData,
     timelogInsert,
     timelogUpdate,
     timelogUpdateEq,
     timelogDeleteEq,
+    timelogDaysDeleteEq,
     timelogsSelect,
     eventsSelect,
   };
@@ -331,6 +344,112 @@ describe('timelogs.service write flow', () => {
     await expect(oldFetch).resolves.toEqual([currentTimelog]);
     expect(snapshot.timelogs).toEqual([currentTimelog]);
     expect(updateLocalAppState).toHaveBeenCalledOnce();
+  });
+
+  it('invalidates an older public fetch after a successful status mutation', async () => {
+    const targetTimelog: Timelog = {
+      id: 1,
+      eid: 1,
+      supabaseId: 'target-timelog-row',
+      eventSupabaseId: 'event-row-1',
+      contractorProfileId: 'profile-uuid-1',
+      days: [],
+      km: 0,
+      note: 'Current',
+      status: 'draft',
+    };
+    let snapshot = {
+      ...createSnapshot([targetTimelog]),
+      events: [{ id: 1, supabaseId: 'event-row-1' }],
+    };
+    const staleFetch = createDeferred<{
+      data: Array<Record<string, unknown>>;
+      error: null;
+    }>();
+    const createOrderedQuery = <T,>(result: Promise<{ data: T[]; error: null }>) => {
+      const order = vi.fn();
+      const query = { order, then: result.then.bind(result) };
+      order.mockReturnValue(query);
+      return query;
+    };
+    const timelogSelect = vi.fn(() => createOrderedQuery(staleFetch.promise));
+    const statusSelect = vi.fn().mockResolvedValue({
+      data: [{ id: 'target-timelog-row' }],
+      error: null,
+    });
+    const statusEq = vi.fn(() => ({ select: statusSelect }));
+    const timelogUpdate = vi.fn(() => ({ eq: statusEq }));
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: vi.fn((table: string) => {
+          if (table === 'timelogs') {
+            return { select: timelogSelect, update: timelogUpdate };
+          }
+          if (table === 'timelog_days') {
+            return { select: vi.fn(() => createOrderedQuery(Promise.resolve({ data: [], error: null }))) };
+          }
+          if (table === 'profiles') {
+            return { select: vi.fn(() => createOrderedQuery(Promise.resolve({ data: [{ id: 'profile-uuid-1' }], error: null }))) };
+          }
+          if (table === 'events') {
+            return { select: vi.fn(() => createOrderedQuery(Promise.resolve({ data: [{ id: 'event-row-1' }], error: null }))) };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    }));
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapTimelog: () => ({
+        id: Number.NaN,
+        eid: Number.NaN,
+        days: [],
+        km: 0,
+        note: 'Stale',
+        status: 'draft',
+      }),
+    }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+    vi.doMock('../../../lib/query-client', () => ({
+      queryClient: {
+        setQueryData: vi.fn(),
+        invalidateQueries: vi.fn(),
+      },
+    }));
+    vi.doMock('../../../lib/query-keys', () => ({
+      queryKeys: { timelogs: { all: ['timelogs'] } },
+    }));
+
+    const { fetchTimelogsSnapshot, updateTimelogStatus } = await import('./timelogs.service');
+    const oldFetch = fetchTimelogsSnapshot();
+    await vi.waitFor(() => expect(timelogSelect).toHaveBeenCalledOnce());
+
+    await updateTimelogStatus(1, 'sub');
+    staleFetch.resolve({
+      data: [{
+        id: 'target-timelog-row',
+        event_id: 'event-row-1',
+        contractor_id: 'profile-uuid-1',
+        status: 'draft',
+      }],
+      error: null,
+    });
+
+    await expect(oldFetch).resolves.toEqual([
+      expect.objectContaining({ supabaseId: 'target-timelog-row', status: 'pending_ch' }),
+    ]);
+    expect(snapshot.timelogs).toEqual([
+      expect.objectContaining({ supabaseId: 'target-timelog-row', status: 'pending_ch' }),
+    ]);
   });
 
   it('updates timelog status in Supabase using the mapped row id', async () => {
@@ -927,6 +1046,269 @@ describe('timelogs.service write flow', () => {
     expect(harness.getSnapshot().timelogs).toEqual([currentTimelogB]);
     expect(harness.setQueryData).toHaveBeenLastCalledWith(['timelogs'], [currentTimelogB]);
     expect(harness.timelogsSelect).not.toHaveBeenCalled();
+  });
+
+  it('merges a pending create by returned UUID against a refreshed current snapshot', async () => {
+    const insertDeferred = createDeferred<{ data: { id: string } | null; error: null }>();
+    const currentOtherTimelog: Timelog = {
+      id: 1,
+      eid: 1,
+      supabaseId: 'other-timelog-uuid',
+      eventSupabaseId: 'other-event-uuid',
+      contractorProfileId: 'profile-other',
+      days: [{ d: '2026-04-10', f: '08:00', t: '12:00', type: 'provoz' }],
+      km: 0,
+      note: 'Other current row',
+      status: 'draft',
+    };
+    const hydratedCreatedTimelog: Timelog = {
+      id: 2,
+      eid: 2,
+      supabaseId: 'created-timelog-uuid',
+      eventSupabaseId: 'target-event-uuid',
+      contractorProfileId: 'profile-target',
+      days: [],
+      km: 0,
+      note: '',
+      status: 'draft',
+    };
+    const harness = await setupStableUuidWriteHarness({
+      events: [{ id: 1, supabaseId: 'target-event-uuid' }],
+      timelogInsertResult: insertDeferred.promise,
+    });
+
+    const createPromise = harness.service.createTimelog({
+      eid: 1,
+      eventSupabaseId: 'target-event-uuid',
+      contractorProfileId: 'profile-target',
+      days: [{ d: '2026-04-10', f: '13:00', t: '17:00', type: 'instal' }],
+      km: 12,
+      note: 'Created while refreshing',
+      status: 'draft',
+    });
+    await vi.waitFor(() => expect(harness.timelogInsert).toHaveBeenCalledOnce());
+
+    harness.setSnapshot({
+      ...createSnapshot([currentOtherTimelog, hydratedCreatedTimelog]),
+      events: [
+        { id: 1, supabaseId: 'other-event-uuid' },
+        { id: 2, supabaseId: 'target-event-uuid' },
+      ],
+    });
+    insertDeferred.resolve({ data: { id: 'created-timelog-uuid' }, error: null });
+
+    const created = await createPromise;
+
+    expect(created).toMatchObject({
+      id: 2,
+      eid: 2,
+      supabaseId: 'created-timelog-uuid',
+      eventSupabaseId: 'target-event-uuid',
+      note: 'Created while refreshing',
+    });
+    expect(harness.getSnapshot().timelogs).toEqual([
+      currentOtherTimelog,
+      expect.objectContaining({
+        id: 2,
+        eid: 2,
+        supabaseId: 'created-timelog-uuid',
+        note: 'Created while refreshing',
+      }),
+    ]);
+  });
+
+  it('reconciles a save by UUID when a refresh reindexes rows during the write', async () => {
+    const updateDeferred = createDeferred<{ data: null; error: null }>();
+    const initialTimelog: Timelog = {
+      id: 1,
+      eid: 1,
+      supabaseId: 'target-timelog-uuid',
+      eventSupabaseId: 'target-event-uuid',
+      contractorProfileId: 'profile-target',
+      days: [{ d: '2026-04-10', f: '08:00', t: '16:00', type: 'instal' }],
+      km: 0,
+      note: 'Initial target',
+      status: 'draft',
+    };
+    const currentOtherTimelog: Timelog = {
+      ...initialTimelog,
+      id: 1,
+      supabaseId: 'other-timelog-uuid',
+      eventSupabaseId: 'other-event-uuid',
+      contractorProfileId: 'profile-other',
+      note: 'Current other row',
+    };
+    const currentTargetTimelog: Timelog = { ...initialTimelog, id: 2, eid: 2 };
+    const harness = await setupStableUuidWriteHarness({
+      events: [{ id: 1, supabaseId: 'target-event-uuid' }],
+      timelogs: [initialTimelog],
+      timelogUpdateResult: updateDeferred.promise,
+    });
+
+    const savePromise = harness.service.saveTimelog({
+      ...initialTimelog,
+      note: 'Saved while refreshing',
+    });
+    await vi.waitFor(() => expect(harness.timelogUpdate).toHaveBeenCalledOnce());
+
+    harness.setSnapshot({
+      ...createSnapshot([currentOtherTimelog, currentTargetTimelog]),
+      events: [
+        { id: 1, supabaseId: 'other-event-uuid' },
+        { id: 2, supabaseId: 'target-event-uuid' },
+      ],
+    });
+    updateDeferred.resolve({ data: null, error: null });
+
+    const saved = await savePromise;
+
+    expect(saved).toMatchObject({
+      id: 2,
+      eid: 2,
+      supabaseId: 'target-timelog-uuid',
+      eventSupabaseId: 'target-event-uuid',
+      note: 'Saved while refreshing',
+    });
+    expect(harness.getSnapshot().timelogs).toEqual([
+      currentOtherTimelog,
+      expect.objectContaining({
+        id: 2,
+        eid: 2,
+        supabaseId: 'target-timelog-uuid',
+        note: 'Saved while refreshing',
+      }),
+    ]);
+  });
+
+  it('updates status by UUID when a refresh reindexes rows during the write', async () => {
+    const updateDeferred = createDeferred<{ data: null; error: null }>();
+    const initialTarget: Timelog = {
+      id: 1,
+      eid: 1,
+      supabaseId: 'target-timelog-uuid',
+      eventSupabaseId: 'target-event-uuid',
+      contractorProfileId: 'profile-target',
+      days: [],
+      km: 0,
+      note: 'Target',
+      status: 'draft',
+    };
+    const currentOther: Timelog = {
+      ...initialTarget,
+      id: 1,
+      supabaseId: 'other-timelog-uuid',
+      contractorProfileId: 'profile-other',
+      note: 'Other',
+    };
+    const currentTarget: Timelog = { ...initialTarget, id: 2 };
+    const harness = await setupStableUuidWriteHarness({
+      snapshotEventSupabaseId: 'target-event-uuid',
+      timelogs: [initialTarget],
+      timelogUpdateResult: updateDeferred.promise,
+    });
+
+    const statusPromise = harness.service.updateTimelogStatus(1, 'sub');
+    await vi.waitFor(() => expect(harness.timelogUpdate).toHaveBeenCalledOnce());
+    harness.setSnapshot({
+      ...createSnapshot([currentOther, currentTarget]),
+      events: [{ id: 1, supabaseId: 'target-event-uuid' }],
+    });
+    updateDeferred.resolve({ data: null, error: null });
+
+    const updated = await statusPromise;
+
+    expect(updated).toMatchObject({ id: 2, supabaseId: 'target-timelog-uuid', status: 'pending_ch' });
+    expect(harness.getSnapshot().timelogs).toEqual([
+      currentOther,
+      expect.objectContaining({ id: 2, supabaseId: 'target-timelog-uuid', status: 'pending_ch' }),
+    ]);
+  });
+
+  it('deletes by UUID when a refresh reindexes rows during the write', async () => {
+    const deleteDeferred = createDeferred<{ error: null }>();
+    const initialTarget: Timelog = {
+      id: 1,
+      eid: 1,
+      supabaseId: 'target-timelog-uuid',
+      eventSupabaseId: 'target-event-uuid',
+      contractorProfileId: 'profile-target',
+      days: [],
+      km: 0,
+      note: 'Target',
+      status: 'draft',
+    };
+    const currentOther: Timelog = {
+      ...initialTarget,
+      id: 1,
+      supabaseId: 'other-timelog-uuid',
+      contractorProfileId: 'profile-other',
+      note: 'Other',
+    };
+    const currentTarget: Timelog = { ...initialTarget, id: 2 };
+    const harness = await setupStableUuidWriteHarness({
+      snapshotEventSupabaseId: 'target-event-uuid',
+      timelogs: [initialTarget],
+      timelogDaysDeleteResult: deleteDeferred.promise,
+    });
+
+    const deletePromise = harness.service.deleteTimelog(1);
+    await vi.waitFor(() => expect(harness.timelogDaysDeleteEq).toHaveBeenCalledOnce());
+    harness.setSnapshot({
+      ...createSnapshot([currentOther, currentTarget]),
+      events: [{ id: 1, supabaseId: 'target-event-uuid' }],
+    });
+    deleteDeferred.resolve({ error: null });
+
+    await deletePromise;
+
+    expect(harness.timelogDeleteEq).toHaveBeenCalledWith('id', 'target-timelog-uuid');
+    expect(harness.getSnapshot().timelogs).toEqual([currentOther]);
+  });
+
+  it('updates a batch by stable UUIDs when a refresh reindexes rows during the writes', async () => {
+    const updateDeferred = createDeferred<{ data: null; error: null }>();
+    const initialTarget: Timelog = {
+      id: 1,
+      eid: 1,
+      supabaseId: 'target-timelog-uuid',
+      eventSupabaseId: 'target-event-uuid',
+      contractorProfileId: 'profile-target',
+      days: [],
+      km: 0,
+      note: 'Target',
+      status: 'approved',
+    };
+    const currentOther: Timelog = {
+      ...initialTarget,
+      id: 1,
+      supabaseId: 'other-timelog-uuid',
+      contractorProfileId: 'profile-other',
+      note: 'Other',
+    };
+    const currentTarget: Timelog = { ...initialTarget, id: 2 };
+    const harness = await setupStableUuidWriteHarness({
+      snapshotEventSupabaseId: 'target-event-uuid',
+      timelogs: [initialTarget],
+      timelogUpdateResult: updateDeferred.promise,
+    });
+
+    const batchPromise = harness.service.markTimelogsAsInvoiced([1]);
+    await vi.waitFor(() => expect(harness.timelogUpdate).toHaveBeenCalledOnce());
+    harness.setSnapshot({
+      ...createSnapshot([currentOther, currentTarget]),
+      events: [{ id: 1, supabaseId: 'target-event-uuid' }],
+    });
+    updateDeferred.resolve({ data: null, error: null });
+
+    const updated = await batchPromise;
+
+    expect(updated).toEqual([
+      expect.objectContaining({ id: 2, supabaseId: 'target-timelog-uuid', status: 'invoiced' }),
+    ]);
+    expect(harness.getSnapshot().timelogs).toEqual([
+      currentOther,
+      expect.objectContaining({ id: 2, supabaseId: 'target-timelog-uuid', status: 'invoiced' }),
+    ]);
   });
 
   it('persists timelog edits to Supabase and rewrites timelog days for the mapped row id', async () => {

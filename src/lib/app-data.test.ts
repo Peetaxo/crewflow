@@ -108,7 +108,11 @@ describe('app-data Supabase loading', () => {
         created_at: '2026-04-28T00:00:00Z',
         updated_at: '2026-04-28T00:00:00Z',
       }],
-      timelogs: [],
+      timelogs: [{
+        id: 'linked-timelog-uuid', event_id: 'event-uuid-1', contractor_id: 'profile-uuid-1',
+        km: 0, note: null, status: 'invoiced', submitted_at: null, approved_at: null,
+        created_at: '2026-04-28T00:00:00Z', updated_at: '2026-04-28T09:00:00Z',
+      }],
       timelog_days: [],
       crew_ratings: [{
         id: 'rating-uuid-1',
@@ -121,8 +125,25 @@ describe('app-data Supabase loading', () => {
         created_at: '2026-04-28T00:00:00Z',
         updated_at: '2026-04-28T00:00:00Z',
       }],
-      invoices: [],
-      receipts: [],
+      invoices: [{
+        id: 'invoice-uuid-1', contractor_id: 'profile-uuid-1', event_id: 'event-uuid-1',
+        timelog_id: null, job_number: 'AKV104', total_hours: 0, amount_hours: 0,
+        amount_km: 0, amount_receipts: 0, total_amount: 0, status: 'draft', sent_at: null,
+        paid_at: null, created_at: '2026-04-28T00:00:00Z', updated_at: '2026-04-28T10:00:00Z',
+      }],
+      invoice_timelogs: [{
+        id: 'link-uuid-1', invoice_id: 'invoice-uuid-1', timelog_id: 'linked-timelog-uuid',
+        created_at: '2026-04-28T10:00:00Z',
+      }],
+      invoice_receipts: [{
+        id: 'receipt-link-uuid-1', invoice_id: 'invoice-uuid-1', receipt_id: 'receipt-uuid-1',
+        created_at: '2026-04-28T10:00:00Z',
+      }],
+      receipts: [{
+        id: 'receipt-uuid-1', event_id: 'event-uuid-1', contractor_id: 'profile-uuid-1',
+        job_number: 'AKV104', name: 'Parkovne', supplier: null, amount: 100, paid_at: null,
+        note: null, status: 'attached', created_at: '2026-04-28T00:00:00Z', updated_at: '2026-04-28T09:30:00Z',
+      }],
       candidates: [],
       fleet_vehicles: [{
         id: 'vehicle-uuid-1',
@@ -229,6 +250,16 @@ describe('app-data Supabase loading', () => {
         source: 'event',
         rating: 9,
         note: 'Skvela prace',
+      }),
+    ]);
+    expect(snapshot.invoices).toEqual([
+      expect.objectContaining({
+        id: 'invoice-uuid-1',
+        updatedAt: '2026-04-28T10:00:00Z',
+        timelogIds: [1],
+        timelogSupabaseIds: ['linked-timelog-uuid'],
+        receiptIds: [1],
+        receiptSupabaseIds: ['receipt-uuid-1'],
       }),
     ]);
     expect(snapshot.fleetReservations).toEqual([

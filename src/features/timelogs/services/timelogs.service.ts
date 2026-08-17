@@ -5,7 +5,7 @@ import { queryKeys } from '../../../lib/query-keys';
 import { mapTimelog } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { Contractor, Event, Timelog, TimelogStatus } from '../../../types';
-import { getLifecycleSnapshotGeneration } from '../../event-lifecycle-generation';
+import { getLifecycleSnapshotGeneration, runLifecycleDataMutation } from '../../event-lifecycle-generation';
 import {
   deleteTimelogAtomicRpc,
   importApprovedTimelogAtomicRpc,
@@ -17,7 +17,6 @@ type TimelogAction = 'sub' | 'ch' | 'coo' | 'rej';
 let timelogsHydrationPromise: Promise<void> | null = null;
 let timelogsLoaded = false;
 let timelogSnapshotGeneration = 0;
-const timelogMutationTails = new Map<string, Promise<void>>();
 const statusMap: Record<TimelogAction, TimelogStatus> = {
   sub: 'pending_ch',
   ch: 'pending_coo',
@@ -193,39 +192,24 @@ const reloadAuthoritativeTimelogsAfterMutationFailure = async (): Promise<void> 
 const runTimelogMutation = async <T,>(
   requestedKeys: string[],
   mutation: () => Promise<T>,
-): Promise<T> => {
-  const keys = [...new Set(['timelog:global', ...requestedKeys])].sort();
-  const predecessors = keys.map((key) => timelogMutationTails.get(key) ?? Promise.resolve());
-  let release!: () => void;
-  const released = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const reservation = Promise.all(predecessors).then(() => released);
-
-  keys.forEach((key) => timelogMutationTails.set(key, reservation));
-  await Promise.all(predecessors);
-  timelogSnapshotGeneration += 1;
-
-  try {
-    return await mutation();
-  } catch (error) {
-    if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
-      try {
-        await reloadAuthoritativeTimelogsAfterMutationFailure();
-      } catch (reloadError) {
-        console.error('Authoritative timelog reload failed after mutation error', reloadError);
+): Promise<T> => runLifecycleDataMutation(
+  requestedKeys.map((key) => `timelog:${key}`),
+  async () => {
+    timelogSnapshotGeneration += 1;
+    try {
+      return await mutation();
+    } catch (error) {
+      if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+        try {
+          await reloadAuthoritativeTimelogsAfterMutationFailure();
+        } catch (reloadError) {
+          console.error('Authoritative timelog reload failed after mutation error', reloadError);
+        }
       }
+      throw error;
     }
-    throw error;
-  } finally {
-    release();
-    keys.forEach((key) => {
-      if (timelogMutationTails.get(key) === reservation) {
-        timelogMutationTails.delete(key);
-      }
-    });
-  }
-};
+  },
+);
 
 const hydrateTimelogsFromSupabase = async (): Promise<void> => {
   await fetchTimelogsSnapshot();

@@ -279,7 +279,7 @@ export const updateReceiptStatus = async (id: number, action: ReceiptAction): Pr
 };
 
 export const saveReceipt = async (updated: ReceiptItem): Promise<ReceiptItem> => {
-  const normalizedReceipt = normalizeReceipt({
+  let normalizedReceipt = normalizeReceipt({
     ...updated,
   });
 
@@ -322,11 +322,19 @@ export const saveReceipt = async (updated: ReceiptItem): Promise<ReceiptItem> =>
     } else {
       const receiptInsert = await supabase
         .from('receipts')
-        .insert(payload);
+        .insert(payload)
+        .select('id,updated_at')
+        .single();
 
-      if (receiptInsert.error) {
-        throw new Error(receiptInsert.error.message);
+      if (receiptInsert.error || !receiptInsert.data?.id || !receiptInsert.data.updated_at) {
+        throw new Error(receiptInsert.error?.message ?? 'Nepodarilo se ulozit uctenku.');
       }
+      normalizedReceipt = {
+        ...normalizedReceipt,
+        supabaseId: receiptInsert.data.id,
+        updatedAt: receiptInsert.data.updated_at,
+        eventSupabaseId: eventRowId,
+      };
     }
   }
 

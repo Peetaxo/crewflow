@@ -2231,7 +2231,7 @@ describe('events.service write flow', () => {
     expect(harness.getSnapshot().contractors[0].note).toBe('Concurrent contractor edit');
   });
 
-  it('serializes overlapping lifecycle refreshes and continues after the first load fails', async () => {
+  it('serializes whole overlapping lifecycle mutations and continues after the first refresh fails', async () => {
     const firstTimelogLoad = createDeferred<Timelog[]>();
     const harness = await setupLifecycleService();
     harness.loadTimelogsSnapshot.mockReset();
@@ -2246,7 +2246,7 @@ describe('events.service write flow', () => {
       const secondAssignment = harness.service.assignCrewToEvent(1, 'profile-uuid-1');
 
       await vi.waitFor(() => {
-        expect(harness.assignEventCrewRpc).toHaveBeenCalledTimes(2);
+        expect(harness.assignEventCrewRpc).toHaveBeenCalledOnce();
         expect(harness.loadTimelogsSnapshot).toHaveBeenCalledOnce();
       });
 
@@ -2254,6 +2254,7 @@ describe('events.service write flow', () => {
       await expect(firstAssignment).resolves.toEqual(expect.objectContaining({
         message: 'Operaci s Crew se nepodařilo dokončit.',
       }));
+      await vi.waitFor(() => expect(harness.assignEventCrewRpc).toHaveBeenCalledTimes(2));
       await expect(secondAssignment).resolves.toEqual(expect.objectContaining({
         timelog: expect.objectContaining({ supabaseId: 'timelog-row-1' }),
       }));
@@ -2347,7 +2348,7 @@ describe('events.service write flow', () => {
     expect(harness.removeEventCrewRpc).not.toHaveBeenCalled();
   });
 
-  it('deletes only the Supabase event matching the UUID when local event ids collide', async () => {
+  it('deletes the exact Supabase event UUID through one atomic RPC when local event ids collide', async () => {
     let snapshot = createSnapshot({
       events: [
         {
@@ -2383,20 +2384,12 @@ describe('events.service write flow', () => {
       receipts: [],
     });
 
-    const timelogsSelectEq = vi.fn().mockResolvedValue({ data: [], error: null });
-    const eventDeleteEq = vi.fn().mockResolvedValue({ error: null });
-    const receiptDeleteEq = vi.fn().mockResolvedValue({ error: null });
-    const from = vi.fn((table: string) => {
-      if (table === 'timelogs') {
-        return { select: vi.fn(() => ({ eq: timelogsSelectEq })) };
-      }
-      if (table === 'receipts') {
-        return { delete: vi.fn(() => ({ eq: receiptDeleteEq })) };
-      }
-      if (table === 'events') {
-        return { delete: vi.fn(() => ({ eq: eventDeleteEq })) };
-      }
-      throw new Error(`Unexpected table ${table}`);
+    const from = vi.fn(() => {
+      throw new Error('Atomic event deletion must not issue direct table mutations');
+    });
+    const rpc = vi.fn().mockResolvedValue({
+      data: [{ event_id: 'event-uuid-1' }],
+      error: null,
     });
 
     vi.doMock('../../../lib/app-config', () => ({
@@ -2407,6 +2400,7 @@ describe('events.service write flow', () => {
       isSupabaseConfigured: true,
       supabase: {
         from,
+        rpc,
       },
     }));
 
@@ -2428,9 +2422,8 @@ describe('events.service write flow', () => {
 
     await deleteEvent('event-uuid-1');
 
-    expect(from).not.toHaveBeenCalledWith('timelogs');
-    expect(from).not.toHaveBeenCalledWith('timelog_days');
-    expect(eventDeleteEq).toHaveBeenCalledWith('id', 'event-uuid-1');
+    expect(rpc).toHaveBeenCalledWith('delete_event_atomic', { p_event_id: 'event-uuid-1' });
+    expect(from).not.toHaveBeenCalled();
     expect(snapshot.events).toHaveLength(1);
     expect(snapshot.events[0].supabaseId).toBe('event-uuid-2');
   });
@@ -2459,22 +2452,15 @@ describe('events.service write flow', () => {
       message: 'update or delete on table "events" violates foreign key constraint internal_event_fk',
       details: 'Sensitive internal relationship detail',
     };
-    const eventDeleteEq = vi.fn().mockResolvedValue({ error: databaseError });
-    const receiptDeleteEq = vi.fn().mockResolvedValue({ error: null });
-    const from = vi.fn((table: string) => {
-      if (table === 'receipts') {
-        return { delete: vi.fn(() => ({ eq: receiptDeleteEq })) };
-      }
-      if (table === 'events') {
-        return { delete: vi.fn(() => ({ eq: eventDeleteEq })) };
-      }
-      throw new Error(`Unexpected child delete request for ${table}`);
+    const from = vi.fn(() => {
+      throw new Error('Atomic event deletion must not issue direct table mutations');
     });
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: databaseError });
 
     vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
     vi.doMock('../../../lib/supabase', () => ({
       isSupabaseConfigured: true,
-      supabase: { from },
+      supabase: { from, rpc },
     }));
     vi.doMock('../../../lib/app-data', () => ({
       getLocalAppState: () => structuredClone(snapshot),
@@ -2494,7 +2480,8 @@ describe('events.service write flow', () => {
       const { deleteEvent } = await import('./events.service');
 
       await expect(deleteEvent('event-uuid-1')).rejects.toThrow('Akci se nepodařilo smazat.');
-      expect(consoleError).toHaveBeenCalledWith('Failed to delete event from Supabase', databaseError);
+      expect(consoleError).toHaveBeenCalledWith('Unexpected atomic event delete RPC error', databaseError);
+      expect(from).not.toHaveBeenCalled();
       expect(snapshot.events).toHaveLength(1);
     } finally {
       consoleError.mockRestore();

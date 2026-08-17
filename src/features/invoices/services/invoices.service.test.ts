@@ -11,6 +11,7 @@ const createSnapshot = (overrides?: Partial<{
   events: [
     {
       id: 1,
+      supabaseId: 'event-uuid-1',
       projectId: 'project-uuid-1',
       name: 'Akce 1',
       job: 'AK001',
@@ -24,6 +25,7 @@ const createSnapshot = (overrides?: Partial<{
     },
     {
       id: 2,
+      supabaseId: 'event-uuid-2',
       projectId: 'project-uuid-2',
       name: 'Akce 2',
       job: 'AK002',
@@ -66,6 +68,9 @@ const createSnapshot = (overrides?: Partial<{
   timelogs: [
     {
       id: 1,
+      supabaseId: 'timelog-uuid-1',
+      eventSupabaseId: 'event-uuid-1',
+      updatedAt: '2026-04-20T10:00:00Z',
       eid: 1,
       contractorProfileId: 'profile-uuid-1',
       days: [{ d: '2026-04-10', f: '08:00', t: '18:00', type: 'instal' as const }],
@@ -75,6 +80,9 @@ const createSnapshot = (overrides?: Partial<{
     },
     {
       id: 2,
+      supabaseId: 'timelog-uuid-2',
+      eventSupabaseId: 'event-uuid-2',
+      updatedAt: '2026-04-20T11:00:00Z',
       eid: 2,
       contractorProfileId: 'profile-uuid-1',
       days: [{ d: '2026-04-11', f: '09:00', t: '16:00', type: 'provoz' as const }],
@@ -86,6 +94,8 @@ const createSnapshot = (overrides?: Partial<{
   receipts: [
     {
       id: 11,
+      supabaseId: 'receipt-uuid-11',
+      updatedAt: '2026-04-20T12:00:00Z',
       contractorProfileId: 'profile-uuid-1',
       eid: 2,
       job: 'AK002',
@@ -116,16 +126,24 @@ describe('invoices.service billing batches', () => {
     vi.clearAllMocks();
   });
 
-  it('delegates every timelog status write to the atomic timelog service', () => {
+  it('routes Supabase invoice lifecycle writes through atomic invoice RPCs', () => {
     const serviceSource = readFileSync(resolve(
       process.cwd(),
       'src/features/invoices/services/invoices.service.ts',
     ), 'utf8');
 
-    expect(serviceSource).not.toMatch(/\.from\('timelogs'\)\s*\.update\(/);
-    expect(serviceSource).toContain('await markTimelogsAsInvoiced(');
-    expect(serviceSource).toContain('await markTimelogsAsPaid(');
-    expect(serviceSource).toContain('await markTimelogsAsApproved(');
+    expect(serviceSource).not.toContain('getSupabaseTimelogIdMap');
+    expect(serviceSource).not.toContain('getSupabaseEventIdMap');
+    expect(serviceSource).not.toContain('getSupabaseReceiptIdMap');
+    expect(serviceSource).toContain('createInvoiceAtomicRpc({');
+    expect(serviceSource).toContain('await markInvoicePaidAtomicRpc(');
+    expect(serviceSource).toContain('await deleteInvoiceAtomicRpc(');
+    const safeSelectSource = serviceSource.slice(
+      serviceSource.indexOf('const safeSelect'),
+      serviceSource.indexOf('const getSupabaseIdRows'),
+    );
+    expect(safeSelectSource).not.toContain('return [];');
+    expect(safeSelectSource).toContain("throw new Error('Faktury se nepodařilo načíst.')");
   });
 
   it('creates one invoice batch for one contractor with multiple job numbers', async () => {
@@ -218,6 +236,9 @@ describe('invoices.service billing batches', () => {
         ...createSnapshot().contractors,
         {
           id: 2,
+          supabaseId: 'timelog-uuid-2',
+          eventSupabaseId: 'event-uuid-2',
+          updatedAt: '2026-04-20T11:00:00Z',
           name: 'Bez schvaleni',
           ii: 'BS',
           bg: '#111',
@@ -433,31 +454,25 @@ describe('invoices.service billing batches', () => {
     let snapshot = createSnapshot();
     const markTimelogsAsInvoiced = vi.fn();
     const markReceiptsAsAttached = vi.fn();
-    const invoiceInsertSingle = vi.fn().mockResolvedValue({ data: { id: 'invoice-uuid-1' }, error: null });
-    const invoiceInsert = vi.fn(() => ({ select: vi.fn(() => ({ single: invoiceInsertSingle })) }));
-    const invoiceItemsInsert = vi.fn().mockResolvedValue({ error: null });
-    const invoiceTimelogsInsert = vi.fn().mockResolvedValue({ error: null });
-    const invoiceReceiptsInsert = vi.fn().mockResolvedValue({ error: null });
-    const timelogsUpdateIn = vi.fn().mockResolvedValue({ error: null });
-    const receiptsUpdateIn = vi.fn().mockResolvedValue({ error: null });
-
-    const fromMock = vi.fn((table: string) => {
-      if (table === 'invoices') return { insert: invoiceInsert };
-      if (table === 'invoice_items') return { insert: invoiceItemsInsert };
-      if (table === 'invoice_timelogs') return { insert: invoiceTimelogsInsert };
-      if (table === 'invoice_receipts') return { insert: invoiceReceiptsInsert };
-      if (table === 'timelogs') return { select: vi.fn(() => ({ order: vi.fn().mockResolvedValue({ data: [{ id: 'timelog-uuid-1' }, { id: 'timelog-uuid-2' }], error: null }) })), update: vi.fn(() => ({ in: timelogsUpdateIn })) };
-      if (table === 'receipts') return { select: vi.fn(() => ({ order: vi.fn().mockResolvedValue({ data: [{ id: 'receipt-uuid-11' }], error: null }) })), update: vi.fn(() => ({ in: receiptsUpdateIn })) };
-      if (table === 'events') return { select: vi.fn(() => ({ order: vi.fn().mockResolvedValue({ data: [{ id: 'event-uuid-1', date_from: '2026-04-10', name: 'Akce 1' }, { id: 'event-uuid-2', date_from: '2026-04-11', name: 'Akce 2' }], error: null }) })) };
-      throw new Error(`Unexpected table ${table}`);
+    const rpc = vi.fn((name: string) => {
+      if (name === 'next_self_billing_invoice_sequence') return Promise.resolve({ data: 1, error: null });
+      if (name === 'create_invoice_atomic') return Promise.resolve({
+        data: [{
+          invoice_id: 'invoice-uuid-1', invoice_status: 'draft', invoice_updated_at: '2026-04-27T10:00:00Z', paid_at: null,
+          timelogs: [{ id: 'timelog-uuid-2', status: 'invoiced', updated_at: '2026-04-27T10:00:00Z' }],
+          receipts: [{ id: 'receipt-uuid-11', status: 'attached', updated_at: '2026-04-27T10:00:00Z' }],
+        }],
+        error: null,
+      });
+      throw new Error(`Unexpected RPC ${name}`);
     });
 
     vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
     vi.doMock('../../../lib/supabase', () => ({
       isSupabaseConfigured: true,
       supabase: {
-        from: fromMock,
-        rpc: vi.fn().mockResolvedValue({ data: 1, error: null }),
+        from: vi.fn(() => { throw new Error('Invoice creation must not use REST writes'); }),
+        rpc,
       },
     }));
     vi.doMock('../../../lib/supabase-mappers', () => ({ mapInvoice: vi.fn() }));
@@ -499,24 +514,35 @@ describe('invoices.service billing batches', () => {
     expect(created?.timelogIds).toEqual([2]);
     expect(created?.receiptIds).toEqual([11]);
     expect(created?.total).toBe(2050);
-    expect(invoiceItemsInsert).toHaveBeenCalledWith([
-      expect.objectContaining({
-        job_number: 'AK002',
-        amount_hours: 1750,
-        amount_km: 0,
-        amount_receipts: 300,
-        total_amount: 2050,
-      }),
-    ]);
-    expect(invoiceTimelogsInsert).toHaveBeenCalledWith([
-      { invoice_id: 'invoice-uuid-1', timelog_id: 'timelog-uuid-2' },
-    ]);
-    expect(invoiceReceiptsInsert).toHaveBeenCalledWith([
-      { invoice_id: 'invoice-uuid-1', receipt_id: 'receipt-uuid-11' },
-    ]);
-    expect(timelogsUpdateIn).not.toHaveBeenCalled();
-    expect(markTimelogsAsInvoiced).toHaveBeenCalledWith([2]);
-    expect(markReceiptsAsAttached).toHaveBeenCalledWith([11]);
+    expect(rpc).toHaveBeenCalledWith('create_invoice_atomic', expect.objectContaining({
+      p_timelogs: [{ id: 'timelog-uuid-2', expected_updated_at: '2026-04-20T11:00:00Z' }],
+      p_receipts: [{ id: 'receipt-uuid-11', expected_updated_at: '2026-04-20T12:00:00Z' }],
+    }));
+    expect(markTimelogsAsInvoiced).not.toHaveBeenCalled();
+    expect(markReceiptsAsAttached).not.toHaveBeenCalled();
+    expect(snapshot.timelogs.find((item) => item.supabaseId === 'timelog-uuid-2')?.status).toBe('invoiced');
+    expect(snapshot.receipts.find((item) => item.supabaseId === 'receipt-uuid-11')?.status).toBe('attached');
+
+    snapshot = {
+      ...snapshot,
+      invoices: [],
+      timelogs: snapshot.timelogs.map((row) => row.id === 2
+        ? { ...row, supabaseId: undefined, status: 'approved' as const }
+        : row),
+      receipts: snapshot.receipts.map((row) => ({ ...row, status: 'approved' as const })),
+    };
+    await expect(createInvoiceFromSelection('profile-uuid-1', [2], [11])).rejects.toThrow(
+      'Faktura obsahuje neplatné nebo neúplné údaje.',
+    );
+
+    snapshot = {
+      ...snapshot,
+      timelogs: snapshot.timelogs.map((row) => row.id === 2 ? { ...row, supabaseId: 'timelog-uuid-2' } : row),
+    };
+    await expect(createInvoiceFromSelection('profile-uuid-1', [2, 2], [11])).rejects.toThrow(
+      'Faktura obsahuje neplatné nebo neúplné údaje.',
+    );
+    expect(rpc.mock.calls.filter(([name]) => name === 'create_invoice_atomic')).toHaveLength(1);
   });
 
   it('persists invoice number dates and billing snapshots when creating an invoice', async () => {
@@ -524,6 +550,9 @@ describe('invoices.service billing batches', () => {
       timelogs: [
         {
           id: 2,
+          supabaseId: 'timelog-uuid-2',
+          eventSupabaseId: 'event-uuid-2',
+          updatedAt: '2026-04-20T11:00:00Z',
           eid: 2,
           contractorProfileId: 'profile-uuid-1',
           days: [{ d: '2026-04-11', f: '09:00', t: '16:00', type: 'provoz' as const }],
@@ -535,6 +564,8 @@ describe('invoices.service billing batches', () => {
       receipts: [
         {
           id: 11,
+          supabaseId: 'receipt-uuid-11',
+          updatedAt: '2026-04-20T12:00:00Z',
           contractorProfileId: 'profile-uuid-1',
           eid: 2,
           job: 'AK002',
@@ -568,19 +599,17 @@ describe('invoices.service billing batches', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-04-27T10:00:00Z'));
 
-    const invoiceInsertSingle = vi.fn().mockResolvedValue({ data: { id: 'invoice-uuid-1' }, error: null });
-    const invoiceInsert = vi.fn(() => ({ select: vi.fn(() => ({ single: invoiceInsertSingle })) }));
-    const rpc = vi.fn().mockResolvedValue({ data: 1, error: null });
-    const fromMock = vi.fn((table: string) => {
-      if (table === 'invoices') return { insert: invoiceInsert };
-      if (table === 'invoice_items') return { insert: vi.fn().mockResolvedValue({ error: null }) };
-      if (table === 'invoice_timelogs') return { insert: vi.fn().mockResolvedValue({ error: null }) };
-      if (table === 'invoice_receipts') return { insert: vi.fn().mockResolvedValue({ error: null }) };
-      if (table === 'timelogs') return { select: vi.fn(() => ({ order: vi.fn().mockResolvedValue({ data: [{ id: 'timelog-uuid-2' }], error: null }) })), update: vi.fn(() => ({ in: vi.fn().mockResolvedValue({ error: null }) })) };
-      if (table === 'receipts') return { select: vi.fn(() => ({ order: vi.fn().mockResolvedValue({ data: [{ id: 'receipt-uuid-11' }], error: null }) })), update: vi.fn(() => ({ in: vi.fn().mockResolvedValue({ error: null }) })) };
-      if (table === 'events') return { select: vi.fn(() => ({ order: vi.fn().mockResolvedValue({ data: [{ id: 'event-uuid-2', date_from: '2026-04-11', name: 'Akce 2' }], error: null }) })) };
-      throw new Error(`Unexpected table ${table}`);
-    });
+    const rpc = vi.fn((name: string) => Promise.resolve(name === 'next_self_billing_invoice_sequence'
+      ? { data: 1, error: null }
+      : {
+        data: [{
+          invoice_id: 'invoice-uuid-1', invoice_status: 'draft', invoice_updated_at: '2026-04-27T10:00:00Z', paid_at: null,
+          timelogs: [{ id: 'timelog-uuid-2', status: 'invoiced', updated_at: '2026-04-27T10:00:00Z' }],
+          receipts: [{ id: 'receipt-uuid-11', status: 'attached', updated_at: '2026-04-27T10:00:00Z' }],
+        }],
+        error: null,
+      }));
+    const fromMock = vi.fn(() => { throw new Error('Invoice creation must not use REST writes'); });
 
     vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
     vi.doMock('../../../lib/supabase', () => ({ isSupabaseConfigured: true, supabase: { from: fromMock, rpc } }));
@@ -616,19 +645,109 @@ describe('invoices.service billing batches', () => {
       p_invoice_year: 2026,
       p_supplier_profile_id: 'profile-uuid-1',
     });
-    expect(invoiceInsert).toHaveBeenCalledWith(expect.objectContaining({
-      invoice_number: 'SF-2026-NOVAK-T-0001',
-      issue_date: '2026-04-27',
-      taxable_supply_date: '2026-04-27',
-      due_date: '2026-05-11',
-      currency: 'CZK',
-      supplier_snapshot: expect.objectContaining({ vatPayer: false, ico: '12345678' }),
-      customer_snapshot: expect.objectContaining({ clientId: 'client-uuid-2', name: 'Klient B' }),
+    expect(rpc).toHaveBeenCalledWith('create_invoice_atomic', expect.objectContaining({
+      p_invoice: expect.objectContaining({
+        invoice_number: 'SF-2026-NOVAK-T-0001',
+        issue_date: '2026-04-27',
+        taxable_supply_date: '2026-04-27',
+        due_date: '2026-05-11',
+        currency: 'CZK',
+        supplier_snapshot: expect.objectContaining({ vatPayer: false, ico: '12345678' }),
+        customer_snapshot: expect.objectContaining({ clientId: 'client-uuid-2', name: 'Klient B' }),
+      }),
     }));
   });
 
-  it('preserves contractor profile UUIDs during Supabase hydration', async () => {
-    let snapshot = createSnapshot();
+  it('marks paid and deletes through atomic RPCs and reconciles children by stable UUID', async () => {
+    let snapshot = createSnapshot({
+      invoices: [{
+        id: 'invoice-uuid-1', updatedAt: '2026-04-28T10:00:00Z', contractorProfileId: 'profile-uuid-1',
+        eid: 2, eventIds: [2], timelogIds: [2], timelogSupabaseIds: ['timelog-uuid-2'],
+        receiptIds: [11], receiptSupabaseIds: ['receipt-uuid-11'], hours: 7, hAmt: 1750,
+        km: 0, kAmt: 0, receiptAmt: 300, total: 2050, job: 'AK002', status: 'sent', sentAt: '2026-04-28T09:00:00Z',
+      }],
+      timelogs: createSnapshot().timelogs.map((row) => row.id === 2 ? { ...row, status: 'invoiced' as const } : row),
+      receipts: createSnapshot().receipts.map((row) => ({ ...row, status: 'attached' as const })),
+    });
+    const rpc = vi.fn((name: string) => Promise.resolve(name === 'mark_invoice_paid_atomic'
+      ? {
+        data: [{
+          invoice_id: 'invoice-uuid-1', invoice_status: 'paid', invoice_updated_at: '2026-04-28T11:00:00Z', paid_at: '2026-04-28T11:00:00Z',
+          timelogs: [{ id: 'timelog-uuid-2', status: 'paid', updated_at: '2026-04-28T11:00:00Z' }],
+          receipts: [{ id: 'receipt-uuid-11', status: 'reimbursed', updated_at: '2026-04-28T11:00:00Z' }],
+        }], error: null,
+      }
+      : {
+        data: [{
+          invoice_id: 'invoice-uuid-1', invoice_status: 'draft', invoice_updated_at: '2026-04-28T12:00:00Z', paid_at: null,
+          timelogs: [{ id: 'timelog-uuid-2', status: 'approved', updated_at: '2026-04-28T12:00:00Z' }],
+          receipts: [{ id: 'receipt-uuid-11', status: 'approved', updated_at: '2026-04-28T12:00:00Z' }],
+        }], error: null,
+      }));
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: { from: vi.fn(() => { throw new Error('Lifecycle mutations must not use REST'); }), rpc },
+    }));
+    vi.doMock('../../../lib/supabase-mappers', () => ({ mapInvoice: vi.fn() }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+    const markTimelogsAsPaid = vi.fn();
+    const markTimelogsAsApproved = vi.fn();
+    vi.doMock('../../timelogs/services/timelogs.service', () => ({
+      getTimelogs: () => structuredClone(snapshot.timelogs), markTimelogsAsInvoiced: vi.fn(),
+      markTimelogsAsPaid, markTimelogsAsApproved, markTimelogsAsPaidForInvoice: vi.fn(),
+    }));
+    const markReceiptsAsReimbursed = vi.fn();
+    vi.doMock('../../receipts/services/receipts.service', () => ({
+      getReceipts: () => structuredClone(snapshot.receipts), markReceiptsAsAttached: vi.fn(),
+      markReceiptsAsReimbursed, markReceiptsAsReimbursedForInvoice: vi.fn(),
+    }));
+    vi.doMock('sonner', () => ({ toast: { info: vi.fn(), success: vi.fn() } }));
+
+    const { approveInvoice, deleteInvoice } = await import('./invoices.service');
+    await approveInvoice('invoice-uuid-1');
+
+    expect(rpc).toHaveBeenCalledWith('mark_invoice_paid_atomic', {
+      p_invoice_id: 'invoice-uuid-1', p_expected_status: 'sent',
+      p_expected_updated_at: '2026-04-28T10:00:00Z', p_paid_at: expect.any(String),
+    });
+    expect(snapshot.timelogs.find((row) => row.supabaseId === 'timelog-uuid-2')?.status).toBe('paid');
+    expect(snapshot.receipts[0].status).toBe('reimbursed');
+    expect(markTimelogsAsPaid).not.toHaveBeenCalled();
+    expect(markReceiptsAsReimbursed).not.toHaveBeenCalled();
+
+    snapshot = {
+      ...snapshot,
+      invoices: snapshot.invoices.map((invoice) => ({ ...invoice, status: 'draft' as const, updatedAt: '2026-04-28T11:30:00Z' })),
+      timelogs: snapshot.timelogs.map((row) => row.supabaseId === 'timelog-uuid-2' ? { ...row, status: 'invoiced' as const } : row),
+      receipts: snapshot.receipts.map((row) => ({ ...row, status: 'attached' as const })),
+    };
+    await deleteInvoice('invoice-uuid-1');
+
+    expect(rpc).toHaveBeenCalledWith('delete_invoice_atomic', {
+      p_invoice_id: 'invoice-uuid-1', p_expected_status: 'draft', p_expected_updated_at: '2026-04-28T11:30:00Z',
+    });
+    expect(snapshot.invoices).toEqual([]);
+    expect(snapshot.timelogs.find((row) => row.supabaseId === 'timelog-uuid-2')?.status).toBe('approved');
+    expect(snapshot.receipts[0].status).toBe('approved');
+    expect(markTimelogsAsApproved).not.toHaveBeenCalled();
+  });
+
+  it('preserves contractor and legacy timelog UUIDs during Supabase hydration', async () => {
+    let snapshot = createSnapshot({
+      timelogs: [
+        { ...createSnapshot().timelogs[0], id: 1, supabaseId: 'other-timelog-uuid' },
+        { ...createSnapshot().timelogs[1], id: 2, supabaseId: 'legacy-timelog-uuid', status: 'invoiced' },
+      ],
+    });
     const createDoubleOrderMock = <T,>(data: T[]) => {
       const secondOrder = vi.fn().mockResolvedValue({ data, error: null });
       const firstOrder = vi.fn(() => ({ order: secondOrder }));
@@ -649,7 +768,7 @@ describe('invoices.service billing batches', () => {
                       id: 'invoice-row-1',
                       contractor_id: 'profile-uuid-1',
                       event_id: 'event-row-1',
-                      timelog_id: null,
+                      timelog_id: 'legacy-timelog-uuid',
                       job_number: 'AK001',
                       total_hours: 8,
                       amount_hours: 2000,
@@ -690,7 +809,18 @@ describe('invoices.service billing batches', () => {
             };
           }
 
-          if (table === 'timelogs' || table === 'receipts') {
+          if (table === 'timelogs') {
+            return {
+              select: vi.fn(() => ({
+                order: vi.fn().mockResolvedValue({
+                  data: [{ id: 'other-timelog-uuid' }, { id: 'legacy-timelog-uuid' }],
+                  error: null,
+                }),
+              })),
+            };
+          }
+
+          if (table === 'receipts') {
             return {
               select: vi.fn(() => ({
                 order: vi.fn().mockResolvedValue({ data: [], error: null }),
@@ -732,13 +862,12 @@ describe('invoices.service billing batches', () => {
     const { getInvoices } = await import('./invoices.service');
 
     getInvoices();
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      await Promise.resolve();
-      if (getInvoices().length > 0) break;
-    }
+    await vi.waitFor(() => expect(getInvoices()).toHaveLength(1));
     const invoices = getInvoices();
 
     expect(invoices[0].contractorProfileId).toBe('profile-uuid-1');
     expect(invoices[0].eid).toBe(1);
+    expect(invoices[0].timelogIds).toEqual([2]);
+    expect(invoices[0].timelogSupabaseIds).toEqual(['legacy-timelog-uuid']);
   });
 });

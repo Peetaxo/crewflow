@@ -32,6 +32,12 @@ import {
   resolveSingleInvoiceClient,
   validateInvoiceSnapshots,
 } from './invoice-customer-resolution';
+import {
+  createInvoiceAtomicRpc,
+  deleteInvoiceAtomicRpc,
+  markInvoicePaidAtomicRpc,
+  type InvoiceMutationRpcResult,
+} from './invoice-mutation-rpc.service';
 
 type BillingItem = {
   jobNumber: string;
@@ -171,13 +177,13 @@ const normalizeJobNumber = (jobNumber: string | null | undefined): string => {
 
 const safeSelect = async <TRow>(table: string, select = '*', orderBy = 'created_at'): Promise<TRow[]> => {
   if (!supabase) {
-    return [];
+    throw new Error('Faktury se nepodařilo načíst.');
   }
 
   const result = await supabase.from(table).select(select).order(orderBy);
   if (result.error) {
-    console.warn(`Nepodarilo se nacist ${table} ze Supabase.`, result.error);
-    return [];
+    console.error(`Unexpected invoice hydration error for ${table}`, result.error);
+    throw new Error('Faktury se nepodařilo načíst.');
   }
 
   return (result.data ?? []) as TRow[];
@@ -187,30 +193,6 @@ const getSupabaseIdRows = async (
   table: string,
   orderBy: string,
 ): Promise<Array<{ id: string }>> => safeSelect<{ id: string }>(table, 'id', orderBy);
-
-const getSupabaseTimelogIdMap = async (): Promise<Map<number, string>> => {
-  const rows = await getSupabaseIdRows('timelogs', 'created_at');
-  const localIds = (getLocalAppState().timelogs ?? []).map((timelog) => timelog.id);
-  return new Map(rows.map((row, index) => [localIds[index], row.id]).filter(([localId]) => localId != null));
-};
-
-const getSupabaseReceiptIdMap = async (): Promise<Map<number, string>> => {
-  const rows = await getSupabaseIdRows('receipts', 'created_at');
-  const localIds = (getLocalAppState().receipts ?? []).map((receipt) => receipt.id);
-  return new Map(rows.map((row, index) => [localIds[index], row.id]).filter(([localId]) => localId != null));
-};
-
-const getSupabaseEventIdMap = async (): Promise<Map<number, string>> => {
-  const rows = await safeSelect<{ id: string; date_from: string | null; name: string }>(
-    'events',
-    'id,date_from,name',
-    'date_from',
-  );
-  const sortedRows = [...rows].sort((a, b) => (
-    `${a.date_from ?? ''}|${a.name}`.localeCompare(`${b.date_from ?? ''}|${b.name}`)
-  ));
-  return new Map(sortedRows.map((row, index) => [index + 1, row.id]));
-};
 
 const getNextInvoiceSequence = async (invoiceYear: number, contractorProfileId: string): Promise<number> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
@@ -227,7 +209,8 @@ const getNextInvoiceSequence = async (invoiceYear: number, contractorProfileId: 
   });
 
   if (result.error || typeof result.data !== 'number') {
-    throw new Error(result.error?.message ?? 'Nepodarilo se vygenerovat cislo faktury.');
+    console.error('Unexpected invoice sequence RPC error', result.error ?? result.data);
+    throw new Error('Číslo faktury se nepodařilo vygenerovat.');
   }
 
   return result.data;
@@ -620,14 +603,21 @@ const mapSupabaseInvoices = (
       row.event_id ? (eventIdMap.get(row.event_id) ?? Number.NaN) : Number.NaN,
       ...(localInvoice?.eventIds ?? []),
     ].filter((itemId) => !Number.isNaN(itemId)));
+    const timelogSupabaseIds = uniqueSortedStrings([
+      row.timelog_id ?? '',
+      ...(invoiceTimelogsByInvoiceId.get(row.id) ?? []).map((item) => item.timelog_id),
+    ]);
+    const receiptSupabaseIds = uniqueSortedStrings(
+      (invoiceReceiptsByInvoiceId.get(row.id) ?? []).map((item) => item.receipt_id),
+    );
     const linkedTimelogIds = uniqueSortedNumbers(
-      (invoiceTimelogsByInvoiceId.get(row.id) ?? [])
-        .map((item) => timelogIdMap.get(item.timelog_id) ?? Number.NaN)
+      timelogSupabaseIds
+        .map((timelogId) => timelogIdMap.get(timelogId) ?? Number.NaN)
         .filter((itemId) => !Number.isNaN(itemId)),
     );
     const linkedReceiptIds = uniqueSortedNumbers(
-      (invoiceReceiptsByInvoiceId.get(row.id) ?? [])
-        .map((item) => receiptIdMap.get(item.receipt_id) ?? Number.NaN)
+      receiptSupabaseIds
+        .map((receiptId) => receiptIdMap.get(receiptId) ?? Number.NaN)
         .filter((itemId) => !Number.isNaN(itemId)),
     );
     const timelogIds = linkedTimelogIds.length > 0 ? linkedTimelogIds : (localInvoice?.timelogIds ?? []);
@@ -640,13 +630,15 @@ const mapSupabaseInvoices = (
       job: jobNumbers.join(', ') || localInvoice?.job || row.job_number || '',
       jobNumbers,
       timelogIds,
+      timelogSupabaseIds,
       receiptIds,
+      receiptSupabaseIds,
       eventIds,
     };
   });
 };
 
-export const fetchInvoicesSnapshot = async (): Promise<Invoice[]> => {
+const fetchInvoicesSnapshotUnsafe = async (): Promise<Invoice[]> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
     return getLocalAppState().invoices ?? [];
   }
@@ -673,7 +665,8 @@ export const fetchInvoicesSnapshot = async (): Promise<Invoice[]> => {
 
   const firstError = invoicesResult.error ?? profilesResult.error ?? eventsResult.error;
   if (firstError) {
-    throw new Error(firstError.message);
+    console.error('Unexpected invoice hydration error', firstError);
+    throw new Error('Faktury se nepodařilo načíst.');
   }
 
   return mapSupabaseInvoices(
@@ -686,6 +679,18 @@ export const fetchInvoicesSnapshot = async (): Promise<Invoice[]> => {
     timelogRows,
     receiptRows,
   );
+};
+
+export const fetchInvoicesSnapshot = async (): Promise<Invoice[]> => {
+  try {
+    return await fetchInvoicesSnapshotUnsafe();
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Faktury se nepodařilo načíst.') {
+      throw error;
+    }
+    console.error('Unexpected invoice snapshot load failure', error);
+    throw new Error('Faktury se nepodařilo načíst.');
+  }
 };
 
 const hydrateInvoicesFromSupabase = async (): Promise<void> => {
@@ -721,175 +726,153 @@ const ensureSupabaseInvoicesLoaded = () => {
     });
 };
 
-const persistSupabaseGeneratedInvoice = async (invoice: Invoice): Promise<string | null> => {
+const INVALID_INVOICE_SELECTION_MESSAGE = 'Faktura obsahuje neplatné nebo neúplné údaje.';
+const invoiceWriteError = (context: string, error: unknown): Error => {
+  console.error(`Unexpected invoice ${context} error`, error);
+  return new Error('Operaci s fakturou se nepodařilo dokončit.');
+};
+
+const requireStableTargets = <T extends { id: number; supabaseId?: string; updatedAt?: string }>(
+  allRows: T[],
+  selectedIds: number[],
+): Array<{ id: string; expected_updated_at: string }> => {
+  const requestedIds = uniqueSortedNumbers(selectedIds);
+  if (requestedIds.length !== selectedIds.length) {
+    throw new Error(INVALID_INVOICE_SELECTION_MESSAGE);
+  }
+  const selectedRows = requestedIds.map((id) => allRows.find((row) => row.id === id));
+  if (
+    selectedRows.some((row) => !row?.supabaseId || !row.updatedAt)
+    || selectedRows.length !== requestedIds.length
+  ) {
+    throw new Error(INVALID_INVOICE_SELECTION_MESSAGE);
+  }
+
+  const targets = selectedRows.map((row) => ({
+    id: row!.supabaseId!,
+    expected_updated_at: row!.updatedAt!,
+  }));
+  if (new Set(targets.map((target) => target.id)).size !== targets.length) {
+    throw new Error(INVALID_INVOICE_SELECTION_MESSAGE);
+  }
+  if (targets.some((target) => allRows.filter((row) => row.supabaseId === target.id).length !== 1)) {
+    throw new Error(INVALID_INVOICE_SELECTION_MESSAGE);
+  }
+  return targets.sort((left, right) => left.id.localeCompare(right.id));
+};
+
+const reconcileInvoiceMutationChildren = (
+  result: InvoiceMutationRpcResult,
+  removeInvoiceId?: string,
+) => {
+  const timelogsById = new Map(result.timelogs.map((row) => [row.id, row]));
+  const receiptsById = new Map(result.receipts.map((row) => [row.id, row]));
+  updateLocalAppState((snapshot) => ({
+    ...snapshot,
+    invoices: removeInvoiceId
+      ? (snapshot.invoices ?? []).filter((invoice) => invoice.id !== removeInvoiceId)
+      : snapshot.invoices,
+    timelogs: (snapshot.timelogs ?? []).map((timelog) => {
+      const canonical = timelog.supabaseId ? timelogsById.get(timelog.supabaseId) : undefined;
+      return canonical
+        ? { ...timelog, status: canonical.status, updatedAt: canonical.updatedAt }
+        : timelog;
+    }),
+    receipts: (snapshot.receipts ?? []).map((receipt) => {
+      const canonical = receipt.supabaseId ? receiptsById.get(receipt.supabaseId) : undefined;
+      return canonical
+        ? { ...receipt, status: canonical.status, updatedAt: canonical.updatedAt }
+        : receipt;
+    }),
+  }));
+};
+
+const persistSupabaseGeneratedInvoice = async (
+  invoice: Invoice,
+): Promise<InvoiceMutationRpcResult | null> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
     return null;
   }
 
-  const [eventIdMap, timelogIdMap, receiptIdMap] = await Promise.all([
-    getSupabaseEventIdMap(),
-    getSupabaseTimelogIdMap(),
-    getSupabaseReceiptIdMap(),
-  ]);
-
-  const contractorRowId = invoice.contractorProfileId
-    ?? findContractorByIdentity(getLocalAppState().contractors ?? [], invoice.contractorProfileId)?.profileId;
-  if (!contractorRowId) {
-    throw new Error('Nepodarilo se sparovat kontraktora pro fakturaci.');
+  const snapshot = getLocalAppState();
+  const contractorId = invoice.contractorProfileId;
+  if (!contractorId || !invoice.supplierSnapshot || !invoice.customerSnapshot) {
+    throw new Error(INVALID_INVOICE_SELECTION_MESSAGE);
   }
 
-  const eventRowIds = (invoice.eventIds ?? [])
-    .map((eventId) => eventIdMap.get(eventId))
-    .filter((value): value is string => Boolean(value));
-  const timelogRowIds = (invoice.timelogIds ?? [])
-    .map((timelogId) => timelogIdMap.get(timelogId))
-    .filter((value): value is string => Boolean(value));
-  const receiptRowIds = (invoice.receiptIds ?? [])
-    .map((receiptId) => receiptIdMap.get(receiptId))
-    .filter((value): value is string => Boolean(value));
+  const eventsById = new Map((snapshot.events ?? []).map((event) => [event.id, event]));
+  const timelogs = snapshot.timelogs ?? [];
+  const receipts = snapshot.receipts ?? [];
+  const timelogTargets = requireStableTargets(timelogs, invoice.timelogIds ?? []);
+  const receiptTargets = requireStableTargets(receipts, invoice.receiptIds ?? []);
+  const eventIds = uniqueSortedNumbers(invoice.eventIds ?? []);
+  const eventRows = eventIds.map((id) => eventsById.get(id));
+  if (
+    eventRows.some((event) => !event?.supabaseId)
+    || new Set(eventRows.map((event) => event!.supabaseId)).size !== eventRows.length
+  ) {
+    throw new Error(INVALID_INVOICE_SELECTION_MESSAGE);
+  }
 
-  const invoiceInsert = await supabase
-    .from('invoices')
-    .insert({
-      contractor_id: contractorRowId,
-      event_id: eventRowIds[0] ?? null,
-      timelog_id: null,
+  const items = (invoice.jobNumbers ?? []).map((jobNumber) => {
+    const itemTimelogs = timelogs.filter((timelog) => (
+      (invoice.timelogIds ?? []).includes(timelog.id)
+      && normalizeJobNumber(eventsById.get(timelog.eid)?.job) === jobNumber
+    ));
+    const itemReceipts = receipts.filter((receipt) => (
+      (invoice.receiptIds ?? []).includes(receipt.id)
+      && normalizeJobNumber(receipt.job || eventsById.get(receipt.eid)?.job) === jobNumber
+    ));
+    const itemEventIds = uniqueSortedNumbers([
+      ...itemTimelogs.map((timelog) => timelog.eid),
+      ...itemReceipts.map((receipt) => receipt.eid),
+    ]);
+    const itemEventRows = itemEventIds.map((id) => eventsById.get(id));
+    if (itemEventRows.some((event) => !event?.supabaseId)) {
+      throw new Error(INVALID_INVOICE_SELECTION_MESSAGE);
+    }
+    const hours = round2(itemTimelogs.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0));
+    const amountHours = itemTimelogs.reduce((sum, timelog) => {
+      const contractor = findContractorByIdentity(snapshot.contractors ?? [], timelog.contractorProfileId);
+      return sum + Math.round(calculateTotalHours(timelog.days) * (contractor?.rate ?? 0));
+    }, 0);
+    const km = round2(itemTimelogs.reduce((sum, timelog) => sum + timelog.km, 0));
+    const amountKm = itemTimelogs.reduce((sum, timelog) => sum + Math.round(timelog.km * KM_RATE), 0);
+    const amountReceipts = itemReceipts.reduce((sum, receipt) => sum + Math.round(receipt.amount), 0);
+    return {
+      job_number: jobNumber,
+      event_id: itemEventRows[0]?.supabaseId ?? null,
+      hours,
+      amount_hours: amountHours,
+      km,
+      amount_km: amountKm,
+      amount_receipts: amountReceipts,
+      total_amount: amountHours + amountKm + amountReceipts,
+    };
+  });
+
+  return createInvoiceAtomicRpc({
+    invoice: {
+      contractor_id: contractorId,
+      event_id: eventRows[0]?.supabaseId ?? null,
       job_number: invoice.job,
       total_hours: invoice.hours,
       amount_hours: invoice.hAmt,
       amount_km: invoice.kAmt,
       amount_receipts: invoice.receiptAmt ?? 0,
       total_amount: invoice.total,
-      invoice_number: invoice.invoiceNumber ?? null,
-      issue_date: invoice.issueDate ?? null,
-      taxable_supply_date: invoice.taxableSupplyDate ?? null,
-      due_date: invoice.dueDate ?? null,
+      invoice_number: invoice.invoiceNumber ?? '',
+      issue_date: invoice.issueDate ?? '',
+      taxable_supply_date: invoice.taxableSupplyDate ?? '',
+      due_date: invoice.dueDate ?? '',
       currency: invoice.currency ?? 'CZK',
-      supplier_snapshot: invoice.supplierSnapshot ?? null,
-      customer_snapshot: invoice.customerSnapshot ?? null,
-      pdf_path: invoice.pdfPath ?? null,
-      pdf_generated_at: invoice.pdfGeneratedAt ?? null,
-      status: invoice.status,
-      sent_at: invoice.sentAt,
-    })
-    .select('id')
-    .single();
-
-  if (invoiceInsert.error || !invoiceInsert.data) {
-    throw new Error(invoiceInsert.error?.message ?? 'Nepodarilo se vytvorit fakturu.');
-  }
-
-  const persistedInvoiceId = invoiceInsert.data.id;
-
-  const snapshot = getLocalAppState();
-  const timelogById = new Map((snapshot.timelogs ?? []).map((timelog) => [timelog.id, timelog]));
-  const receiptById = new Map((snapshot.receipts ?? []).map((receipt) => [receipt.id, receipt]));
-  const eventById = new Map((snapshot.events ?? []).map((event) => [event.id, event]));
-  const contractor = findContractorByIdentity(snapshot.contractors ?? [], invoice.contractorProfileId);
-
-  const items = new Map<string, BillingItem>();
-  (invoice.timelogIds ?? []).forEach((timelogId) => {
-    const timelog = timelogById.get(timelogId);
-    if (!timelog || !contractor) return;
-    const event = eventById.get(timelog.eid);
-    const jobNumber = normalizeJobNumber(event?.job);
-    const current = items.get(jobNumber) ?? {
-      jobNumber,
-      eventIds: new Set<number>(),
-      timelogIds: [],
-      receiptIds: [],
-      hours: 0,
-      amountHours: 0,
-      km: 0,
-      amountKm: 0,
-      amountReceipts: 0,
-    };
-    const hours = round2(calculateTotalHours(timelog.days));
-    current.hours = round2(current.hours + hours);
-    current.amountHours += Math.round(hours * contractor.rate);
-    current.km = round2(current.km + timelog.km);
-    current.amountKm += Math.round(timelog.km * KM_RATE);
-    current.timelogIds.push(timelogId);
-    if (timelog.eid) current.eventIds.add(timelog.eid);
-    items.set(jobNumber, current);
+      supplier_snapshot: invoice.supplierSnapshot as unknown as import('../../../lib/database.types').Json,
+      customer_snapshot: invoice.customerSnapshot as unknown as import('../../../lib/database.types').Json,
+    },
+    items,
+    timelogs: timelogTargets,
+    receipts: receiptTargets,
   });
-
-  (invoice.receiptIds ?? []).forEach((receiptId) => {
-    const receipt = receiptById.get(receiptId);
-    if (!receipt) return;
-    const event = eventById.get(receipt.eid);
-    const jobNumber = normalizeJobNumber(receipt.job || event?.job);
-    const current = items.get(jobNumber) ?? {
-      jobNumber,
-      eventIds: new Set<number>(),
-      timelogIds: [],
-      receiptIds: [],
-      hours: 0,
-      amountHours: 0,
-      km: 0,
-      amountKm: 0,
-      amountReceipts: 0,
-    };
-    current.amountReceipts += Math.round(receipt.amount);
-    current.receiptIds.push(receiptId);
-    if (receipt.eid) current.eventIds.add(receipt.eid);
-    items.set(jobNumber, current);
-  });
-
-  const itemRows = Array.from(items.values()).map((item) => ({
-    invoice_id: persistedInvoiceId,
-    job_number: item.jobNumber,
-    event_id: Array.from(item.eventIds)
-      .map((eventId) => eventIdMap.get(eventId))
-      .find(Boolean) ?? null,
-    hours: item.hours,
-    amount_hours: item.amountHours,
-    km: item.km,
-    amount_km: item.amountKm,
-    amount_receipts: item.amountReceipts,
-    total_amount: item.amountHours + item.amountKm + item.amountReceipts,
-  }));
-
-  if (itemRows.length > 0) {
-    const itemInsert = await supabase.from('invoice_items').insert(itemRows);
-    if (itemInsert.error) {
-      throw new Error(itemInsert.error.message);
-    }
-  }
-
-  if (timelogRowIds.length > 0) {
-    const linkInsert = await supabase.from('invoice_timelogs').insert(
-      timelogRowIds.map((timelogRowId) => ({
-        invoice_id: persistedInvoiceId,
-        timelog_id: timelogRowId,
-      })),
-    );
-    if (linkInsert.error) {
-      throw new Error(linkInsert.error.message);
-    }
-  }
-
-  if (receiptRowIds.length > 0) {
-    const receiptLinkInsert = await supabase.from('invoice_receipts').insert(
-      receiptRowIds.map((receiptRowId) => ({
-        invoice_id: persistedInvoiceId,
-        receipt_id: receiptRowId,
-      })),
-    );
-    if (receiptLinkInsert.error) {
-      throw new Error(receiptLinkInsert.error.message);
-    }
-
-    const receiptStatusUpdate = await supabase
-      .from('receipts')
-      .update({ status: 'attached' })
-      .in('id', receiptRowIds);
-    if (receiptStatusUpdate.error) {
-      throw new Error(receiptStatusUpdate.error.message);
-    }
-  }
-
-  return persistedInvoiceId;
 };
 
 export const getInvoices = (search = ''): Invoice[] => {
@@ -991,6 +974,23 @@ export const createInvoiceFromSelection = async (
   selectedTimelogIds: number[],
   selectedReceiptIds: number[],
 ): Promise<Invoice | null> => {
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    const currentSnapshot = getLocalAppState();
+    const selectedTimelogs = selectedTimelogIds.map((id) => (
+      (currentSnapshot.timelogs ?? []).find((row) => row.id === id)
+    ));
+    const selectedReceipts = selectedReceiptIds.map((id) => (
+      (currentSnapshot.receipts ?? []).find((row) => row.id === id)
+    ));
+    requireStableTargets(currentSnapshot.timelogs ?? [], selectedTimelogIds);
+    requireStableTargets(currentSnapshot.receipts ?? [], selectedReceiptIds);
+    if (
+      selectedTimelogs.some((row) => row?.status !== 'approved' || row.contractorProfileId !== contractorProfileId)
+      || selectedReceipts.some((row) => row?.status !== 'approved' || row.contractorProfileId !== contractorProfileId)
+    ) {
+      throw new Error(INVALID_INVOICE_SELECTION_MESSAGE);
+    }
+  }
   const batch = buildBatchFromSelection(contractorProfileId, selectedTimelogIds, selectedReceiptIds);
   if (!batch) {
     toast.info('Neni co fakturovat.');
@@ -1043,19 +1043,30 @@ export const createInvoiceFromSelection = async (
     pdfPath: null,
     pdfGeneratedAt: null,
   };
-  const persistedInvoiceId = await persistSupabaseGeneratedInvoice(draftInvoice);
-  const invoice = persistedInvoiceId ? { ...draftInvoice, id: persistedInvoiceId } : draftInvoice;
+  const persisted = await persistSupabaseGeneratedInvoice(draftInvoice);
+  const invoice = persisted ? {
+    ...draftInvoice,
+    id: persisted.invoice.id,
+    updatedAt: persisted.invoice.updatedAt,
+    status: persisted.invoice.status,
+    paidAt: persisted.invoice.paidAt,
+    timelogSupabaseIds: persisted.timelogs.map((row) => row.id),
+    receiptSupabaseIds: persisted.receipts.map((row) => row.id),
+  } : draftInvoice;
 
   updateLocalAppState((currentSnapshot) => ({
     ...currentSnapshot,
     invoices: [...(currentSnapshot.invoices ?? []), invoice],
   }));
+  if (persisted) {
+    reconcileInvoiceMutationChildren(persisted);
+  }
   syncInvoiceQueryData();
 
-  if ((invoice.timelogIds ?? []).length > 0) {
+  if (!persisted && (invoice.timelogIds ?? []).length > 0) {
     await markTimelogsAsInvoiced(invoice.timelogIds ?? []);
   }
-  if ((invoice.receiptIds ?? []).length > 0) {
+  if (!persisted && (invoice.receiptIds ?? []).length > 0) {
     await markReceiptsAsAttached(invoice.receiptIds ?? []);
   }
 
@@ -1071,53 +1082,40 @@ export const approveInvoice = async (id: string): Promise<Invoice | null> => {
     return null;
   }
 
-  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
-    const invoiceUpdate = await supabase
-      .from('invoices')
-      .update({
-        status: 'paid',
-        paid_at: new Date().toISOString(),
-      })
-      .eq('id', id);
-
-    if (invoiceUpdate.error) {
-      throw new Error(invoiceUpdate.error.message);
-    }
-
-    const receiptIdMap = await getSupabaseReceiptIdMap();
-
-    const receiptRowIds = (invoice.receiptIds ?? [])
-      .map((receiptId) => receiptIdMap.get(receiptId))
-      .filter((value): value is string => Boolean(value));
-
-    if (receiptRowIds.length > 0) {
-      const receiptUpdate = await supabase
-        .from('receipts')
-        .update({ status: 'reimbursed' })
-        .in('id', receiptRowIds);
-
-      if (receiptUpdate.error) {
-        throw new Error(receiptUpdate.error.message);
-      }
-    }
-  }
+  const paidAt = new Date().toISOString();
+  const persisted = appDataSource === 'supabase' && supabase && isSupabaseConfigured
+    ? await markInvoicePaidAtomicRpc({
+      id,
+      expectedStatus: invoice.status,
+      expectedUpdatedAt: invoice.updatedAt ?? (() => { throw new Error(INVALID_INVOICE_SELECTION_MESSAGE); })(),
+      paidAt,
+    })
+    : null;
 
   updateLocalAppState((currentSnapshot) => ({
     ...currentSnapshot,
-    invoices: (currentSnapshot.invoices ?? []).map((item) => item.id === id ? { ...item, status: 'paid' } : item),
+    invoices: (currentSnapshot.invoices ?? []).map((item) => item.id === id ? {
+      ...item,
+      status: 'paid',
+      paidAt: persisted?.invoice.paidAt ?? paidAt,
+      updatedAt: persisted?.invoice.updatedAt ?? item.updatedAt,
+    } : item),
   }));
+  if (persisted) {
+    reconcileInvoiceMutationChildren(persisted);
+  }
   syncInvoiceQueryData();
 
-  if ((invoice.timelogIds ?? []).length > 0) {
+  if (!persisted && (invoice.timelogIds ?? []).length > 0) {
     await markTimelogsAsPaid(invoice.timelogIds ?? []);
-  } else {
+  } else if (!persisted) {
     if (invoice.contractorProfileId) {
       await markTimelogsAsPaidForInvoice(invoice.eid, invoice.contractorProfileId);
     }
   }
-  if ((invoice.receiptIds ?? []).length > 0) {
+  if (!persisted && (invoice.receiptIds ?? []).length > 0) {
     await markReceiptsAsReimbursed(invoice.receiptIds ?? []);
-  } else {
+  } else if (!persisted) {
     if (invoice.contractorProfileId) {
       await markReceiptsAsReimbursedForInvoice(invoice.eid, invoice.contractorProfileId);
     }
@@ -1126,6 +1124,8 @@ export const approveInvoice = async (id: string): Promise<Invoice | null> => {
   return {
     ...invoice,
     status: 'paid',
+    paidAt: persisted?.invoice.paidAt ?? paidAt,
+    updatedAt: persisted?.invoice.updatedAt ?? invoice.updatedAt,
   };
 };
 
@@ -1149,7 +1149,7 @@ export const sendInvoice = async (id: string): Promise<Invoice | null> => {
       .eq('id', id);
 
     if (invoiceUpdate.error) {
-      throw new Error(invoiceUpdate.error.message);
+      throw invoiceWriteError('send', invoiceUpdate.error);
     }
   }
 
@@ -1176,42 +1176,25 @@ export const deleteInvoice = async (id: string): Promise<boolean> => {
     return false;
   }
 
-  if ((invoice.timelogIds ?? []).length > 0) {
+  if (appDataSource !== 'supabase' && (invoice.timelogIds ?? []).length > 0) {
     await markTimelogsAsApproved(invoice.timelogIds ?? []);
   }
 
-  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
-    const receiptIdMap = await getSupabaseReceiptIdMap();
-
-    const receiptRowIds = (invoice.receiptIds ?? [])
-      .map((receiptId) => receiptIdMap.get(receiptId))
-      .filter((value): value is string => Boolean(value));
-
-    if (receiptRowIds.length > 0) {
-      const receiptUpdate = await supabase
-        .from('receipts')
-        .update({ status: 'approved' })
-        .in('id', receiptRowIds);
-
-      if (receiptUpdate.error) {
-        throw new Error(receiptUpdate.error.message);
-      }
-    }
-
-    const invoiceDelete = await supabase
-      .from('invoices')
-      .delete()
-      .eq('id', id);
-
-    if (invoiceDelete.error) {
-      throw new Error(invoiceDelete.error.message);
-    }
-  }
+  const persisted = appDataSource === 'supabase' && supabase && isSupabaseConfigured
+    ? await deleteInvoiceAtomicRpc({
+      id,
+      expectedStatus: invoice.status,
+      expectedUpdatedAt: invoice.updatedAt ?? (() => { throw new Error(INVALID_INVOICE_SELECTION_MESSAGE); })(),
+    })
+    : null;
 
   updateLocalAppState((currentSnapshot) => ({
     ...currentSnapshot,
     invoices: (currentSnapshot.invoices ?? []).filter((item) => item.id !== id),
   }));
+  if (persisted) {
+    reconcileInvoiceMutationChildren(persisted, id);
+  }
 
   if ((invoice.timelogIds ?? []).length > 0 || (invoice.receiptIds ?? []).length > 0) {
     updateLocalAppState((currentSnapshot) => ({

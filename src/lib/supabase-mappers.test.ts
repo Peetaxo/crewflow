@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Database } from './database.types';
-import { mapContractor, mapEvent, mapFleetReservation, mapFleetVehicle, mapProject, mapTimelog } from './supabase-mappers';
+import { mapContractor, mapEvent, mapFleetReservation, mapFleetVehicle, mapInvoice, mapProject, mapReceipt, mapTimelog } from './supabase-mappers';
 
 type EventRow = Database['public']['Tables']['events']['Row'];
 type FleetReservationRow = Database['public']['Tables']['fleet_reservations']['Row'];
@@ -9,8 +9,38 @@ type ProfileRow = Database['public']['Tables']['profiles']['Row'];
 type ProjectRow = Database['public']['Tables']['projects']['Row'];
 type TimelogRow = Database['public']['Tables']['timelogs']['Row'];
 type TimelogDayRow = Database['public']['Tables']['timelog_days']['Row'];
+type InvoiceRow = Database['public']['Tables']['invoices']['Row'];
+type ReceiptRow = Database['public']['Tables']['receipts']['Row'];
 
 describe('supabase mappers', () => {
+  it('preserves stable invoice and receipt identities and versions', () => {
+    const invoice = mapInvoice({
+      id: 'invoice-uuid-1',
+      updated_at: '2026-04-28T10:00:00Z',
+      paid_at: null,
+      status: 'draft',
+    } as InvoiceRow);
+    const receipt = mapReceipt({
+      id: 'receipt-uuid-1',
+      updated_at: '2026-04-28T11:00:00Z',
+      event_id: 'event-uuid-1',
+      contractor_id: 'profile-uuid-1',
+      job_number: 'JOB-1',
+      name: 'Parkovne',
+      supplier: null,
+      amount: 100,
+      paid_at: null,
+      note: null,
+      status: 'approved',
+    } as ReceiptRow);
+
+    expect(invoice).toMatchObject({ id: 'invoice-uuid-1', updatedAt: '2026-04-28T10:00:00Z' });
+    expect(receipt).toMatchObject({
+      supabaseId: 'receipt-uuid-1',
+      updatedAt: '2026-04-28T11:00:00Z',
+    });
+  });
+
   it('maps contractor rating only from the aggregated profile rating', () => {
     const row: ProfileRow = {
       id: 'profile-uuid-1',

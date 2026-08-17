@@ -6,9 +6,10 @@ import { mapClient, mapEvent } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { getDatesBetween, getEventStatus } from '../../../utils';
 import { Client, Contractor, Event, EventApplication, EventApplicationStatus, EventCrewAssignment, EventPhaseSlot, GrasonEventConfirmation, Project, ReceiptItem, Timelog, TimelogType } from '../../../types';
-import { advanceLifecycleSnapshotGeneration, getLifecycleSnapshotGeneration } from '../../event-lifecycle-generation';
+import { advanceLifecycleSnapshotGeneration, getLifecycleSnapshotGeneration, runLifecycleDataMutation } from '../../event-lifecycle-generation';
 import { EventAssignmentResult, EventConflictDetail, EventFilter, EventWithDerivedStatus } from '../types/events.types';
 import { approveEventWithdrawalRpc, assignEventCrewRpc, isDisposableTimelogStatus, removeEventCrewRpc } from './event-assignment-lifecycle.service';
+import { deleteEventAtomicRpc } from './event-mutation-rpc.service';
 
 const DEFAULT_TIME_FROM = '08:00';
 const DEFAULT_TIME_TO = '17:00';
@@ -642,7 +643,7 @@ const invalidateEventQueries = () => {
   void queryClient.invalidateQueries({ queryKey: queryKeys.receipts.all });
 };
 
-const refreshEventLifecycleState = (): Promise<void> => {
+const refreshEventLifecycleStateUncoordinated = (): Promise<void> => {
   const queuedRefresh = eventLifecycleRefreshQueue.then(async () => {
     let eventLifecycleSnapshot: EventLifecycleSnapshot;
     let timelogs: Timelog[];
@@ -675,6 +676,9 @@ const refreshEventLifecycleState = (): Promise<void> => {
   return queuedRefresh;
 };
 
+const runCrewLifecycleMutation = <T>(mutation: () => Promise<T>): Promise<T> => (
+  runLifecycleDataMutation(['event:lifecycle-mutation'], mutation)
+);
 const getSupabaseClientRows = async (): Promise<Array<{ id: string; name: string }>> => {
   if (!supabase) {
     throw new Error('Supabase klient neni dostupny.');
@@ -1270,6 +1274,7 @@ export const approveEventWithdrawal = async (applicationId: number): Promise<voi
   }
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    return runCrewLifecycleMutation(async () => {
     const event = (snapshot.events ?? []).find((item) => item.id === application.eventId);
     if (
       !application.supabaseId
@@ -1293,7 +1298,7 @@ export const approveEventWithdrawal = async (applicationId: number): Promise<voi
       throw new Error(CREW_LIFECYCLE_ERROR_MESSAGE);
     }
 
-    await refreshEventLifecycleState();
+    await refreshEventLifecycleStateUncoordinated();
     const refreshed = getLocalAppState();
     const refreshedApplication = (refreshed.eventApplications ?? []).find((item) => (
       item.supabaseId === application.supabaseId
@@ -1306,6 +1311,7 @@ export const approveEventWithdrawal = async (applicationId: number): Promise<voi
       throw new Error(CREW_LIFECYCLE_ERROR_MESSAGE);
     }
     return;
+    });
   }
 
   if (application.status !== 'withdrawal_requested') {
@@ -1599,31 +1605,16 @@ const removeEventRowIdMapping = (eventId: EventIdentifier) => {
 
 export const deleteEvent = async (eventId: EventIdentifier): Promise<{ id: EventIdentifier }> => {
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    let eventRowId: string;
     try {
-      const eventRowId = await getSupabaseEventRowId(eventId);
-      const receiptDelete = await supabase
-        .from('receipts')
-        .delete()
-        .eq('event_id', eventRowId);
-
-      if (receiptDelete.error) {
-        throw receiptDelete.error;
-      }
-
-      const eventDelete = await supabase
-        .from('events')
-        .delete()
-        .eq('id', eventRowId);
-
-      if (eventDelete.error) {
-        throw eventDelete.error;
-      }
-
-      removeEventRowIdMapping(eventId);
+      eventRowId = await getSupabaseEventRowId(eventId);
     } catch (error) {
-      console.error('Failed to delete event from Supabase', error);
+      console.error('Failed to resolve event identity before atomic delete', error);
       throw new Error(EVENT_DELETE_ERROR_MESSAGE);
     }
+
+    await deleteEventAtomicRpc(eventRowId);
+    removeEventRowIdMapping(eventId);
   }
 
   updateLocalAppState((snapshot) => {
@@ -1716,6 +1707,7 @@ export const removeContractorFromEvent = async (eventId: number, contractorProfi
   }
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    return runCrewLifecycleMutation(async () => {
     const eventRowId = await getSupabaseEventRowId(eventId);
     const rpc = await removeEventCrewRpc(eventRowId, contractorProfileId);
     if (rpc.event_id !== eventRowId || rpc.profile_id !== contractorProfileId) {
@@ -1727,7 +1719,7 @@ export const removeContractorFromEvent = async (eventId: number, contractorProfi
       });
       throw new Error(CREW_LIFECYCLE_ERROR_MESSAGE);
     }
-    await refreshEventLifecycleState();
+    await refreshEventLifecycleStateUncoordinated();
 
     const refreshed = getLocalAppState();
     const refreshedEvent = (refreshed.events ?? []).find((item) => item.supabaseId === rpc.event_id);
@@ -1745,6 +1737,7 @@ export const removeContractorFromEvent = async (eventId: number, contractorProfi
       event: refreshedEvent,
       timelogs: refreshed.timelogs ?? [],
     };
+    });
   }
 
   const matchingTimelogs = (currentSnapshot.timelogs ?? []).filter((timelog) => (
@@ -1921,6 +1914,7 @@ export const assignCrewToEvent = async (
   }
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    return runCrewLifecycleMutation(async () => {
     const eventRowId = await getSupabaseEventRowId(event.id);
     const rpc = await assignEventCrewRpc({
       eventId: eventRowId,
@@ -1935,7 +1929,7 @@ export const assignCrewToEvent = async (
         rpc,
       });
     }
-    await refreshEventLifecycleState();
+    await refreshEventLifecycleStateUncoordinated();
 
     const refreshed = getLocalAppState();
     const refreshedEvent = (refreshed.events ?? []).find((item) => item.supabaseId === rpc.event_id);
@@ -1961,6 +1955,7 @@ export const assignCrewToEvent = async (
       timelog: canonicalTimelog,
       rpc,
     };
+    });
   }
 
   const isAlreadyAssigned = snapshot.timelogs.some((timelog) => (

@@ -255,6 +255,7 @@ export interface InvoiceCustomerSnapshot {
 /** Faktura */
 export interface Invoice {
   id: string;
+  updatedAt?: string;
   contractorProfileId?: string;
   /** ID akce */
   eid: number;
@@ -273,8 +274,12 @@ export interface Invoice {
   jobNumbers?: string[];
   /** Navazane timelogy zahrnute do faktury */
   timelogIds?: number[];
+  /** Stabilni Supabase UUID navazanych timelogu */
+  timelogSupabaseIds?: string[];
   /** Navazane uctenky zahrnute do faktury */
   receiptIds?: number[];
+  /** Stabilni Supabase UUID navazanych uctenek */
+  receiptSupabaseIds?: string[];
   /** Vsechny navazane akce zahrnute do faktury */
   eventIds?: number[];
   invoiceNumber?: string;
@@ -288,6 +293,7 @@ export interface Invoice {
   pdfGeneratedAt?: string | null;
   status: InvoiceStatus;
   sentAt: string | null;
+  paidAt?: string | null;
 }
 
 /** Status účtenky */
@@ -296,6 +302,8 @@ export type ReceiptStatus = 'draft' | 'submitted' | 'approved' | 'attached' | 'r
 /** Účtenka / výdaj crew k akci */
 export interface ReceiptItem {
   id: number;
+  supabaseId?: string;
+  updatedAt?: string;
   eventSupabaseId?: string;
   contractorProfileId?: string;
   eid: number;

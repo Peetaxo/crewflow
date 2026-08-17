@@ -131,10 +131,12 @@ describe('receipts.service write flow', () => {
       receipts: [],
     });
 
-    const receiptsInsert = vi.fn().mockResolvedValue({
-      data: [{ id: 'receipt-row-2' }],
-      error: null,
+    const receiptInsertSingle = vi.fn().mockResolvedValue({
+      data: { id: 'receipt-row-2', updated_at: '2026-04-12T10:00:00Z' }, error: null,
     });
+    const receiptsInsert = vi.fn(() => ({
+      select: vi.fn(() => ({ single: receiptInsertSingle })),
+    }));
     const receiptsSelect = vi.fn(() => ({
       order: vi.fn(() => Promise.resolve({
         data: [{ id: 'receipt-row-1' }],
@@ -233,6 +235,8 @@ describe('receipts.service write flow', () => {
     expect(created.title).toBe('Parkovne');
     expect(created.vendor).toBe('Garage');
     expect(created.note).toBe('Poznamka');
+    expect(created.supabaseId).toBe('receipt-row-2');
+    expect(created.updatedAt).toBe('2026-04-12T10:00:00Z');
     expect(snapshot.receipts).toHaveLength(1);
     expect(snapshot.receipts[0].title).toBe('Parkovne');
   });
@@ -242,10 +246,13 @@ describe('receipts.service write flow', () => {
       receipts: [],
     });
 
-    const receiptsInsert = vi.fn().mockResolvedValue({
-      data: [{ id: 'receipt-row-2' }],
-      error: null,
-    });
+    const receiptsInsert = vi.fn(() => ({
+      select: vi.fn(() => ({
+        single: vi.fn().mockResolvedValue({
+          data: { id: 'receipt-row-2', updated_at: '2026-04-12T10:00:00Z' }, error: null,
+        }),
+      })),
+    }));
     const eventsSelect = vi.fn(() => ({
       order: vi.fn(() => ({
         order: vi.fn().mockResolvedValue({

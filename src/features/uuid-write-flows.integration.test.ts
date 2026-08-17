@@ -94,16 +94,21 @@ describe('UUID write flows integration', () => {
     const setQueryData = vi.fn();
     const receiptUpdateEq = vi.fn().mockResolvedValue({ error: null });
     const receiptUpdateIn = vi.fn().mockResolvedValue({ error: null });
+    const receiptRows: Array<Record<string, unknown> & { id: string; updated_at: string }> = [];
     const receiptInsert = vi.fn((payload: Record<string, unknown>) => {
-      receiptRows.push({ id: `receipt-row-${receiptRows.length + 1}`, ...payload });
-      return Promise.resolve({ error: null });
+      const row = { id: `receipt-row-${receiptRows.length + 1}`, updated_at: '2026-08-17T14:00:00.000Z' };
+      receiptRows.push({ ...row, ...payload });
+      return {
+        select: vi.fn(() => ({
+          single: vi.fn().mockResolvedValue({ data: row, error: null }),
+        })),
+      };
     });
     const invoiceInsertSingle = vi.fn().mockResolvedValue({ data: { id: 'invoice-row-1' }, error: null });
     const invoiceInsert = vi.fn(() => ({ select: vi.fn(() => ({ single: invoiceInsertSingle })) }));
     const invoiceItemsInsert = vi.fn().mockResolvedValue({ error: null });
     const invoiceTimelogsInsert = vi.fn().mockResolvedValue({ error: null });
     const invoiceReceiptsInsert = vi.fn().mockResolvedValue({ error: null });
-    const receiptRows: Array<{ id: string }> = [];
 
     const fromMock = vi.fn((table: string) => {
       if (table === 'profiles') {
@@ -159,7 +164,7 @@ describe('UUID write flows integration', () => {
         return {
           select: vi.fn(() => ({
             order: vi.fn().mockResolvedValue({
-              data: receiptRows.map((row) => ({ id: row.id })),
+              data: receiptRows,
               error: null,
             }),
           })),
@@ -216,6 +221,16 @@ describe('UUID write flows integration', () => {
           error: null,
         };
       }
+      if (name === 'create_invoice_atomic') {
+        return {
+          data: [{
+            invoice_id: 'invoice-row-1', invoice_status: 'draft', invoice_updated_at: '2026-08-17T15:00:00.000Z', paid_at: null,
+            timelogs: [{ id: 'timelog-row-1', status: 'invoiced', updated_at: '2026-08-17T15:00:00.000Z' }],
+            receipts: [{ id: 'receipt-row-1', status: 'attached', updated_at: '2026-08-17T15:00:00.000Z' }],
+          }],
+          error: null,
+        };
+      }
       return { data: 1, error: null };
     });
     vi.doMock('../lib/supabase', () => ({
@@ -245,7 +260,21 @@ describe('UUID write flows integration', () => {
     }));
     vi.doMock('../lib/supabase-mappers', () => ({
       mapTimelog: vi.fn(),
-      mapReceipt: vi.fn(),
+      mapReceipt: vi.fn((row: Record<string, unknown>) => ({
+        id: Number.NaN,
+        supabaseId: row.id,
+        updatedAt: row.updated_at,
+        contractorProfileId: row.contractor_id,
+        eventSupabaseId: row.event_id,
+        eid: Number.NaN,
+        job: row.job_number,
+        title: row.name,
+        vendor: row.supplier,
+        amount: row.amount,
+        paidAt: row.paid_at,
+        note: row.note,
+        status: row.status,
+      })),
       mapInvoice: vi.fn(),
     }));
     vi.doMock('../data', () => ({ KM_RATE: 5 }));
@@ -300,8 +329,9 @@ describe('UUID write flows integration', () => {
       }),
     ]);
     expect(createdInvoice?.contractorProfileId).toBe('profile-uuid-1');
-    expect(invoiceInsert).toHaveBeenCalledWith(expect.objectContaining({
-      contractor_id: 'profile-uuid-1',
+    expect(rpc).toHaveBeenCalledWith('create_invoice_atomic', expect.objectContaining({
+      p_invoice: expect.objectContaining({ contractor_id: 'profile-uuid-1' }),
+      p_receipts: [{ id: 'receipt-row-1', expected_updated_at: '2026-08-17T14:00:00.000Z' }],
     }));
     expect(receiptInsert).toHaveBeenCalledWith(expect.objectContaining({
       contractor_id: 'profile-uuid-1',

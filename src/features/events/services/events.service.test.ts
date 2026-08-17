@@ -1089,7 +1089,7 @@ describe('events.service write flow', () => {
     expect(snapshot.events).toHaveLength(1);
   });
 
-  it('persists synced timelog day times to Supabase when an event time changes', async () => {
+  it('saves event-only changes without directly writing or changing existing timelogs', async () => {
     let snapshot = createSnapshot({
       events: [
         {
@@ -1143,6 +1143,14 @@ describe('events.service write flow', () => {
         error: null,
       }),
     }));
+    const from = vi.fn((table: string) => {
+      if (table === 'events') return { update: eventsUpdate };
+      if (table === 'projects') return { select: projectsSelect };
+      if (table === 'clients') return { select: clientsSelect };
+      if (table === 'timelogs') return { select: timelogsSelect };
+      if (table === 'timelog_days') return { delete: timelogDaysDelete, insert: timelogDaysInsert };
+      throw new Error(`Unexpected table ${table}`);
+    });
 
     vi.doMock('../../../lib/app-config', () => ({
       appDataSource: 'supabase',
@@ -1151,14 +1159,7 @@ describe('events.service write flow', () => {
     vi.doMock('../../../lib/supabase', () => ({
       isSupabaseConfigured: true,
       supabase: {
-        from: vi.fn((table: string) => {
-          if (table === 'events') return { update: eventsUpdate };
-          if (table === 'projects') return { select: projectsSelect };
-          if (table === 'clients') return { select: clientsSelect };
-          if (table === 'timelogs') return { select: timelogsSelect };
-          if (table === 'timelog_days') return { delete: timelogDaysDelete, insert: timelogDaysInsert };
-          throw new Error(`Unexpected table ${table}`);
-        }),
+        from,
       },
     }));
 
@@ -1184,20 +1185,91 @@ describe('events.service write flow', () => {
       endTime: '16:00',
     });
 
-    expect(timelogDaysDeleteEq).toHaveBeenCalledWith('timelog_id', 'timelog-row-1');
-    expect(timelogDaysInsert).toHaveBeenCalledWith([
-      {
-        timelog_id: 'timelog-row-1',
-        date: '2026-05-12',
-        time_from: '10:00',
-        time_to: '16:00',
-        day_type: 'instal',
-        note: null,
-      },
-    ]);
+    expect(from).not.toHaveBeenCalledWith('timelogs');
+    expect(from).not.toHaveBeenCalledWith('timelog_days');
+    expect(timelogsSelect).not.toHaveBeenCalled();
+    expect(timelogDaysDelete).not.toHaveBeenCalled();
+    expect(timelogDaysInsert).not.toHaveBeenCalled();
     expect(snapshot.timelogs[0].days).toEqual([
-      { d: '2026-05-12', f: '10:00', t: '16:00', type: 'instal' },
+      { d: '2026-05-12', f: '08:00', t: '14:00', type: 'instal' },
     ]);
+    expect(snapshot.events[0].startTime).toBe('10:00');
+    expect(snapshot.events[0].endTime).toBe('16:00');
+  });
+
+  it('does not expose raw database details when saving a Supabase event fails', async () => {
+    let snapshot = createSnapshot({
+      events: [{
+        id: 1,
+        supabaseId: 'event-row-1',
+        name: 'Akce 1',
+        job: 'AK001',
+        startDate: '2026-05-12',
+        endDate: '2026-05-12',
+        city: 'Praha',
+        needed: 2,
+        filled: 1,
+        status: 'upcoming',
+        client: 'Klient A',
+        showDayTypes: false,
+      }],
+    });
+    const databaseError = {
+      code: '23514',
+      message: 'new row for relation "events" violates check constraint internal_event_rule',
+      details: 'Sensitive internal constraint detail',
+    };
+    const eventsUpdateEq = vi.fn().mockResolvedValue({ error: databaseError });
+    const eventsUpdate = vi.fn(() => ({ eq: eventsUpdateEq }));
+    const projectsSelect = vi.fn(() => ({
+      order: vi.fn().mockResolvedValue({
+        data: [{ id: 'project-row-1', job_number: 'AK001', client_id: 'client-row-1' }],
+        error: null,
+      }),
+    }));
+    const clientsSelect = vi.fn(() => ({
+      order: vi.fn().mockResolvedValue({
+        data: [{ id: 'client-row-1', name: 'Klient A' }],
+        error: null,
+      }),
+    }));
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: vi.fn((table: string) => {
+          if (table === 'events') return { update: eventsUpdate };
+          if (table === 'projects') return { select: projectsSelect };
+          if (table === 'clients') return { select: clientsSelect };
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapClient: vi.fn(),
+      mapEvent: vi.fn(),
+    }));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const { saveEvent } = await import('./events.service');
+
+      await expect(saveEvent({ ...snapshot.events[0], name: 'Změněná akce' }))
+        .rejects.toThrow('Akci se nepodařilo uložit.');
+      expect(consoleError).toHaveBeenCalledWith('Failed to save event to Supabase', databaseError);
+      expect(snapshot.events[0].name).toBe('Akce 1');
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it('creates an unsaved copy of an event on the next available day without crew assignments', async () => {
@@ -2314,6 +2386,18 @@ describe('events.service write flow', () => {
     const timelogsSelectEq = vi.fn().mockResolvedValue({ data: [], error: null });
     const eventDeleteEq = vi.fn().mockResolvedValue({ error: null });
     const receiptDeleteEq = vi.fn().mockResolvedValue({ error: null });
+    const from = vi.fn((table: string) => {
+      if (table === 'timelogs') {
+        return { select: vi.fn(() => ({ eq: timelogsSelectEq })) };
+      }
+      if (table === 'receipts') {
+        return { delete: vi.fn(() => ({ eq: receiptDeleteEq })) };
+      }
+      if (table === 'events') {
+        return { delete: vi.fn(() => ({ eq: eventDeleteEq })) };
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
 
     vi.doMock('../../../lib/app-config', () => ({
       appDataSource: 'supabase',
@@ -2322,18 +2406,7 @@ describe('events.service write flow', () => {
     vi.doMock('../../../lib/supabase', () => ({
       isSupabaseConfigured: true,
       supabase: {
-        from: vi.fn((table: string) => {
-          if (table === 'timelogs') {
-            return { select: vi.fn(() => ({ eq: timelogsSelectEq })) };
-          }
-          if (table === 'receipts') {
-            return { delete: vi.fn(() => ({ eq: receiptDeleteEq })) };
-          }
-          if (table === 'events') {
-            return { delete: vi.fn(() => ({ eq: eventDeleteEq })) };
-          }
-          throw new Error(`Unexpected table ${table}`);
-        }),
+        from,
       },
     }));
 
@@ -2355,8 +2428,76 @@ describe('events.service write flow', () => {
 
     await deleteEvent('event-uuid-1');
 
+    expect(from).not.toHaveBeenCalledWith('timelogs');
+    expect(from).not.toHaveBeenCalledWith('timelog_days');
     expect(eventDeleteEq).toHaveBeenCalledWith('id', 'event-uuid-1');
     expect(snapshot.events).toHaveLength(1);
     expect(snapshot.events[0].supabaseId).toBe('event-uuid-2');
+  });
+
+  it('does not expose raw database details when deleting a Supabase event fails', async () => {
+    let snapshot = createSnapshot({
+      events: [{
+        id: 1,
+        supabaseId: 'event-uuid-1',
+        name: 'Mladi ladi jazz',
+        job: 'AK001',
+        startDate: '2026-04-30',
+        endDate: '2026-04-30',
+        city: 'Praha',
+        needed: 2,
+        filled: 0,
+        status: 'upcoming',
+        client: 'Klient A',
+        showDayTypes: false,
+      }],
+      timelogs: [],
+      receipts: [],
+    });
+    const databaseError = {
+      code: '23503',
+      message: 'update or delete on table "events" violates foreign key constraint internal_event_fk',
+      details: 'Sensitive internal relationship detail',
+    };
+    const eventDeleteEq = vi.fn().mockResolvedValue({ error: databaseError });
+    const receiptDeleteEq = vi.fn().mockResolvedValue({ error: null });
+    const from = vi.fn((table: string) => {
+      if (table === 'receipts') {
+        return { delete: vi.fn(() => ({ eq: receiptDeleteEq })) };
+      }
+      if (table === 'events') {
+        return { delete: vi.fn(() => ({ eq: eventDeleteEq })) };
+      }
+      throw new Error(`Unexpected child delete request for ${table}`);
+    });
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: { from },
+    }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapClient: vi.fn(),
+      mapEvent: vi.fn(),
+    }));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const { deleteEvent } = await import('./events.service');
+
+      await expect(deleteEvent('event-uuid-1')).rejects.toThrow('Akci se nepodařilo smazat.');
+      expect(consoleError).toHaveBeenCalledWith('Failed to delete event from Supabase', databaseError);
+      expect(snapshot.events).toHaveLength(1);
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 });

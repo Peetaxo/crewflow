@@ -13,6 +13,8 @@ import { approveEventWithdrawalRpc, assignEventCrewRpc, isDisposableTimelogStatu
 const DEFAULT_TIME_FROM = '08:00';
 const DEFAULT_TIME_TO = '17:00';
 const CREW_LIFECYCLE_ERROR_MESSAGE = 'Operaci s Crew se nepodařilo dokončit.';
+const EVENT_SAVE_ERROR_MESSAGE = 'Akci se nepodařilo uložit.';
+const EVENT_DELETE_ERROR_MESSAGE = 'Akci se nepodařilo smazat.';
 const EVENT_APPLICATION_STATUS_CONFLICT_MESSAGE = 'Stav přihlášky se mezitím změnil. Obnovte detail akce a zkuste to znovu.';
 const EVENT_WITHDRAWAL_STATUS_CONFLICT_MESSAGE = 'Stav žádosti o odhlášení se mezitím změnil. Obnovte detail akce a zkuste to znovu.';
 const ASSIGNMENT_LIFECYCLE_VALIDATION_DIAGNOSTIC = 'Failed to validate refreshed Crew assignment lifecycle state';
@@ -34,10 +36,6 @@ type EventCrewAssignmentRow = {
   profile_id: string;
   first_name: string | null;
   last_name: string | null;
-};
-type EventTimelogRow = {
-  id: string;
-  contractor_id: string | null;
 };
 type EventIdentifier = number | string;
 type GrasonEventConfirmationRow = {
@@ -1528,103 +1526,43 @@ export const syncEventTimelogs = (timelogs: Timelog[], event: Event): Timelog[] 
   })
 );
 
-const syncSupabaseEventTimelogDays = async (eventRowId: string, timelogs: Timelog[]) => {
-  if (!supabase || timelogs.length === 0) return;
-
-  const timelogRowsResult = await supabase
-    .from('timelogs')
-    .select('id,contractor_id')
-    .eq('event_id', eventRowId);
-
-  if (timelogRowsResult.error) {
-    throw new Error(timelogRowsResult.error.message);
-  }
-
-  const timelogRows = (timelogRowsResult.data ?? []) as EventTimelogRow[];
-  const timelogsByContractor = timelogs.reduce((acc, timelog) => {
-    if (!timelog.contractorProfileId) return acc;
-    const current = acc.get(timelog.contractorProfileId) ?? [];
-    current.push(timelog);
-    acc.set(timelog.contractorProfileId, current);
-    return acc;
-  }, new Map<string, Timelog[]>());
-
-  for (const row of timelogRows) {
-    if (!row.contractor_id) continue;
-    const contractorTimelogs = timelogsByContractor.get(row.contractor_id);
-    const timelog = contractorTimelogs?.shift();
-    if (!timelog) continue;
-
-    const timelogDaysDelete = await supabase
-      .from('timelog_days')
-      .delete()
-      .eq('timelog_id', row.id);
-
-    if (timelogDaysDelete.error) {
-      throw new Error(timelogDaysDelete.error.message);
-    }
-
-    if (timelog.days.length === 0) continue;
-
-    const timelogDaysInsert = await supabase
-      .from('timelog_days')
-      .insert(timelog.days.map((day) => ({
-        timelog_id: row.id,
-        date: day.d,
-        time_from: day.f,
-        time_to: day.t,
-        day_type: day.type,
-        note: day.note?.trim() || null,
-      })));
-
-    if (timelogDaysInsert.error) {
-      throw new Error(timelogDaysInsert.error.message);
-    }
-  }
-};
-
 export const saveEvent = async (event: Event): Promise<Event> => {
   const normalized = normalizeEvent(event);
   validateEvent(normalized);
-  const syncedTimelogs = syncEventTimelogs(getLocalAppState().timelogs ?? [], normalized);
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
-    const exists = (getLocalAppState().events ?? []).some((item) => item.id === normalized.id);
-    const payload = await toSupabaseEventPayload(normalized);
-    let eventRowId: string | null = null;
+    try {
+      const exists = (getLocalAppState().events ?? []).some((item) => item.id === normalized.id);
+      const payload = await toSupabaseEventPayload(normalized);
 
-    if (exists) {
-      eventRowId = await getSupabaseEventRowId(normalized.id);
-      const eventUpdate = await supabase
-        .from('events')
-        .update(payload)
-        .eq('id', eventRowId);
+      if (exists) {
+        const eventRowId = await getSupabaseEventRowId(normalized.id);
+        const eventUpdate = await supabase
+          .from('events')
+          .update(payload)
+          .eq('id', eventRowId);
 
-      if (eventUpdate.error) {
-        throw new Error(eventUpdate.error.message);
+        if (eventUpdate.error) {
+          throw eventUpdate.error;
+        }
+      } else {
+        const eventInsert = await supabase
+          .from('events')
+          .insert(payload)
+          .select('id')
+          .single();
+
+        if (eventInsert.error) {
+          throw eventInsert.error;
+        }
+
+        if (eventInsert.data?.id) {
+          eventRowIdByLocalId.set(normalized.id, eventInsert.data.id);
+        }
       }
-    } else {
-      const eventInsert = await supabase
-        .from('events')
-        .insert(payload)
-        .select('id')
-        .single();
-
-      if (eventInsert.error) {
-        throw new Error(eventInsert.error.message);
-      }
-
-      if (eventInsert.data?.id) {
-        eventRowId = eventInsert.data.id;
-        eventRowIdByLocalId.set(normalized.id, eventRowId);
-      }
-    }
-
-    if (eventRowId) {
-      await syncSupabaseEventTimelogDays(
-        eventRowId,
-        syncedTimelogs.filter((timelog) => timelog.eid === normalized.id),
-      );
+    } catch (error) {
+      console.error('Failed to save event to Supabase', error);
+      throw new Error(EVENT_SAVE_ERROR_MESSAGE);
     }
   }
 
@@ -1638,7 +1576,6 @@ export const saveEvent = async (event: Event): Promise<Event> => {
       ...snapshot,
       events: nextEvents,
       projects: ensureProjectForEvent(snapshot.projects, normalized),
-      timelogs: syncedTimelogs,
     };
   });
 
@@ -1662,57 +1599,31 @@ const removeEventRowIdMapping = (eventId: EventIdentifier) => {
 
 export const deleteEvent = async (eventId: EventIdentifier): Promise<{ id: EventIdentifier }> => {
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
-    const eventRowId = await getSupabaseEventRowId(eventId);
-    const eventTimelogs = await supabase
-      .from('timelogs')
-      .select('id')
-      .eq('event_id', eventRowId);
-
-    if (eventTimelogs.error) {
-      throw new Error(eventTimelogs.error.message);
-    }
-
-    const timelogRowIds = (eventTimelogs.data ?? []).map((row) => row.id);
-
-    if (timelogRowIds.length > 0) {
-      const timelogDaysDelete = await supabase
-        .from('timelog_days')
+    try {
+      const eventRowId = await getSupabaseEventRowId(eventId);
+      const receiptDelete = await supabase
+        .from('receipts')
         .delete()
-        .in('timelog_id', timelogRowIds);
+        .eq('event_id', eventRowId);
 
-      if (timelogDaysDelete.error) {
-        throw new Error(timelogDaysDelete.error.message);
+      if (receiptDelete.error) {
+        throw receiptDelete.error;
       }
 
-      const timelogDelete = await supabase
-        .from('timelogs')
+      const eventDelete = await supabase
+        .from('events')
         .delete()
-        .in('id', timelogRowIds);
+        .eq('id', eventRowId);
 
-      if (timelogDelete.error) {
-        throw new Error(timelogDelete.error.message);
+      if (eventDelete.error) {
+        throw eventDelete.error;
       }
+
+      removeEventRowIdMapping(eventId);
+    } catch (error) {
+      console.error('Failed to delete event from Supabase', error);
+      throw new Error(EVENT_DELETE_ERROR_MESSAGE);
     }
-
-    const receiptDelete = await supabase
-      .from('receipts')
-      .delete()
-      .eq('event_id', eventRowId);
-
-    if (receiptDelete.error) {
-      throw new Error(receiptDelete.error.message);
-    }
-
-    const eventDelete = await supabase
-      .from('events')
-      .delete()
-      .eq('id', eventRowId);
-
-    if (eventDelete.error) {
-      throw new Error(eventDelete.error.message);
-    }
-
-    removeEventRowIdMapping(eventId);
   }
 
   updateLocalAppState((snapshot) => {

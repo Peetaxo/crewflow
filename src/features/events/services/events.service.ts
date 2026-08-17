@@ -6,6 +6,7 @@ import { mapClient, mapEvent } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { getDatesBetween, getEventStatus } from '../../../utils';
 import { Client, Contractor, Event, EventApplication, EventApplicationStatus, EventCrewAssignment, EventPhaseSlot, GrasonEventConfirmation, Project, ReceiptItem, Timelog, TimelogType } from '../../../types';
+import { advanceLifecycleSnapshotGeneration, getLifecycleSnapshotGeneration } from '../../event-lifecycle-generation';
 import { EventAssignmentResult, EventConflictDetail, EventFilter, EventWithDerivedStatus } from '../types/events.types';
 import { assignEventCrewRpc, isDisposableTimelogStatus, removeEventCrewRpc } from './event-assignment-lifecycle.service';
 
@@ -469,7 +470,11 @@ export const fetchEventsSnapshot = async (): Promise<Event[]> => {
     return getLocalAppState().events ?? [];
   }
 
+  const generation = getLifecycleSnapshotGeneration();
   const lifecycleSnapshot = await loadEventsLifecycleSnapshot();
+  if (generation !== getLifecycleSnapshotGeneration()) {
+    return getLocalAppState().events ?? [];
+  }
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     events: lifecycleSnapshot.events,
@@ -511,11 +516,15 @@ export const ensureSupabaseEventsLoaded = () => {
     });
 };
 
-const invalidateEventQueries = () => {
+const syncEventQueryCache = () => {
   const snapshot = getLocalAppState();
   queryClient.setQueryData(queryKeys.events.all, snapshot.events ?? []);
   queryClient.setQueryData(queryKeys.timelogs.all, snapshot.timelogs ?? []);
   queryClient.setQueryData(queryKeys.receipts.all, snapshot.receipts ?? []);
+};
+
+const invalidateEventQueries = () => {
+  syncEventQueryCache();
   void queryClient.invalidateQueries({ queryKey: queryKeys.events.all });
   void queryClient.invalidateQueries({ queryKey: queryKeys.timelogs.all });
   void queryClient.invalidateQueries({ queryKey: queryKeys.receipts.all });
@@ -537,6 +546,7 @@ const refreshEventLifecycleState = (): Promise<void> => {
       throw new Error(CREW_LIFECYCLE_ERROR_MESSAGE);
     }
 
+    advanceLifecycleSnapshotGeneration();
     updateLocalAppState((snapshot) => ({
       ...snapshot,
       events: eventLifecycleSnapshot.events,
@@ -546,7 +556,7 @@ const refreshEventLifecycleState = (): Promise<void> => {
       timelogs,
     }));
     applyEventRowIdMap(eventLifecycleSnapshot.eventRowIdByLocalId);
-    invalidateEventQueries();
+    syncEventQueryCache();
   });
 
   eventLifecycleRefreshQueue = queuedRefresh.catch(() => undefined);

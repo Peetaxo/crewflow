@@ -5,6 +5,7 @@ import { queryKeys } from '../../../lib/query-keys';
 import { mapTimelog } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { Contractor, Event, Timelog, TimelogStatus } from '../../../types';
+import { getLifecycleSnapshotGeneration } from '../../event-lifecycle-generation';
 
 type TimelogAction = 'sub' | 'ch' | 'coo' | 'rej';
 let timelogsHydrationPromise: Promise<void> | null = null;
@@ -98,10 +99,15 @@ export const loadTimelogsSnapshot = async (): Promise<Timelog[]> => {
 };
 
 export const fetchTimelogsSnapshot = async (): Promise<Timelog[]> => {
+  const generation = getLifecycleSnapshotGeneration();
   const supabaseTimelogs = await loadTimelogsSnapshot();
 
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
     return supabaseTimelogs;
+  }
+
+  if (generation !== getLifecycleSnapshotGeneration()) {
+    return getLocalAppState().timelogs ?? [];
   }
 
   updateLocalAppState((snapshot) => ({
@@ -176,10 +182,13 @@ const getSupabaseTimelogRowIds = async (): Promise<string[]> => {
     throw new Error('Supabase klient neni dostupny.');
   }
 
-  const result = await supabase
+  const timelogRowsQuery = supabase
     .from('timelogs')
     .select('id')
     .order('created_at');
+  const result = typeof timelogRowsQuery.order === 'function'
+    ? await timelogRowsQuery.order('id')
+    : await timelogRowsQuery;
 
   if (result.error) {
     throw new Error(result.error.message);
@@ -189,6 +198,12 @@ const getSupabaseTimelogRowIds = async (): Promise<string[]> => {
 };
 
 const getSupabaseTimelogRowId = async (localTimelogId: number): Promise<string> => {
+  const stableRowId = (getLocalAppState().timelogs ?? [])
+    .find((timelog) => timelog.id === localTimelogId)?.supabaseId;
+  if (stableRowId) {
+    return stableRowId;
+  }
+
   const timelogRowIds = await getSupabaseTimelogRowIds();
   const rowId = timelogRowIds[localTimelogId - 1];
 
@@ -207,9 +222,15 @@ const persistSupabaseTimelogStatus = async (
     return;
   }
 
-  const timelogRowIds = await getSupabaseTimelogRowIds();
+  const timelogsByLocalId = new Map(
+    (getLocalAppState().timelogs ?? []).map((timelog) => [timelog.id, timelog]),
+  );
+  const requiresLegacyLookup = localTimelogIds.some(
+    (localId) => !timelogsByLocalId.get(localId)?.supabaseId,
+  );
+  const timelogRowIds = requiresLegacyLookup ? await getSupabaseTimelogRowIds() : [];
   const rowIds = Array.from(new Set(localTimelogIds.map((localId) => {
-    const rowId = timelogRowIds[localId - 1];
+    const rowId = timelogsByLocalId.get(localId)?.supabaseId ?? timelogRowIds[localId - 1];
     if (!rowId) {
       throw new Error('Nepodarilo se sparovat vykaz s databazovym zaznamem.');
     }

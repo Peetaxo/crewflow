@@ -397,6 +397,7 @@ describe('events.service write flow', () => {
     refreshedApplicationStatus = 'approved' as EventApplication['status'],
     failEventsRefresh = false,
     failTimelogsRefresh = false,
+    deferredPublicEvents = null as Event[] | null,
   } = {}) => {
     let snapshot = structuredClone(initialSnapshot);
     const assignEventCrewRpc = vi.fn().mockResolvedValue(rpcAssignment);
@@ -435,7 +436,7 @@ describe('events.service write flow', () => {
       })),
     }));
 
-    const eventRows = refreshedEvents.map((event) => ({
+    const toEventRow = (event: Event) => ({
       id: event.supabaseId,
       project_id: 'project-row-1',
       job_number: event.job,
@@ -457,7 +458,8 @@ describe('events.service write flow', () => {
       day_types: null,
       phase_times: null,
       phase_schedules: null,
-    }));
+    });
+    const eventRows = refreshedEvents.map(toEventRow);
     const applicationRows = (initialSnapshot.eventApplications ?? []).map((application) => ({
       id: application.supabaseId ?? 'application-row-1',
       event_id: application.eventSupabaseId ?? 'event-row-1',
@@ -506,21 +508,36 @@ describe('events.service write flow', () => {
       },
     }));
 
-    const eventsResult = Promise.resolve({
+    const createEventsQuery = (result: Promise<{
+      data: typeof eventRows;
+      error: { message: string } | null;
+    }>) => {
+      const order = vi.fn();
+      const query = {
+        order,
+        then: result.then.bind(result),
+      };
+      order.mockReturnValue(query);
+      return query;
+    };
+    const eventsQuery = createEventsQuery(Promise.resolve({
       data: eventRows,
       error: failEventsRefresh ? { message: 'event refresh failed' } : null,
-    });
-    const eventsOrder = vi.fn();
-    const eventsQuery = {
-      order: eventsOrder,
-      then: eventsResult.then.bind(eventsResult),
-    };
-    eventsOrder.mockReturnValue(eventsQuery);
+    }));
+    const deferredPublicEventsResult = createDeferred<{
+      data: typeof eventRows;
+      error: null;
+    }>();
+    const deferredPublicEventsQuery = createEventsQuery(deferredPublicEventsResult.promise);
+    const eventsSelect = vi.fn(() => eventsQuery);
+    if (deferredPublicEvents) {
+      eventsSelect.mockImplementationOnce(() => deferredPublicEventsQuery);
+    }
 
     const from = vi.fn((table: string) => {
       if (table === 'events') {
         return {
-          select: vi.fn(() => eventsQuery),
+          select: eventsSelect,
           update: eventsUpdate,
         };
       }
@@ -661,7 +678,14 @@ describe('events.service write flow', () => {
       updateLocalAppState,
       setQueryData,
       invalidateQueries,
-      eventsOrder,
+      eventsOrder: eventsQuery.order,
+      eventsSelect,
+      resolveDeferredPublicEvents: () => {
+        deferredPublicEventsResult.resolve({
+          data: (deferredPublicEvents ?? []).map(toEventRow),
+          error: null,
+        });
+      },
       eventApplicationsUpdate,
       directWrites: {
         timelogsInsert,
@@ -1463,6 +1487,7 @@ describe('events.service write flow', () => {
     expect(result.timelog.supabaseId).toBe('timelog-row-1');
     expect(harness.setQueryData).toHaveBeenCalledWith(['events'], snapshot.events);
     expect(harness.setQueryData).toHaveBeenCalledWith(['timelogs'], snapshot.timelogs);
+    expect(harness.invalidateQueries).not.toHaveBeenCalled();
     expect(harness.updateLocalAppState.mock.invocationCallOrder[0])
       .toBeLessThan(harness.setQueryData.mock.invocationCallOrder[0]);
     expect(harness.eventsOrder.mock.calls).toEqual([
@@ -1470,6 +1495,57 @@ describe('events.service write flow', () => {
       ['name'],
       ['id'],
     ]);
+  });
+
+  it('does not let an older public event fetch overwrite a newer lifecycle commit or query cache', async () => {
+    const staleEvent = { ...lifecycleEvent, name: 'Stale event' };
+    const freshEvent = { ...lifecycleEvent, name: 'Fresh event' };
+    const harness = await setupLifecycleService({
+      refreshedEvents: [freshEvent],
+      deferredPublicEvents: [staleEvent],
+    });
+
+    const staleFetch = harness.service.fetchEventsSnapshot();
+    await vi.waitFor(() => expect(harness.eventsSelect).toHaveBeenCalledOnce());
+
+    await expect(harness.service.assignCrewToEvent(1, 'profile-uuid-1')).resolves.toEqual(
+      expect.objectContaining({ event: expect.objectContaining({ name: 'Fresh event' }) }),
+    );
+    harness.resolveDeferredPublicEvents();
+
+    await expect(staleFetch).resolves.toEqual([
+      expect.objectContaining({ name: 'Fresh event', supabaseId: 'event-row-1' }),
+    ]);
+    expect(harness.getSnapshot().events).toEqual([
+      expect.objectContaining({ name: 'Fresh event', supabaseId: 'event-row-1' }),
+    ]);
+    expect(harness.updateLocalAppState).toHaveBeenCalledOnce();
+    expect(harness.setQueryData).toHaveBeenLastCalledWith(
+      ['receipts'],
+      harness.getSnapshot().receipts,
+    );
+    expect(harness.setQueryData).toHaveBeenCalledWith(['events'], harness.getSnapshot().events);
+    expect(harness.invalidateQueries).not.toHaveBeenCalled();
+  });
+
+  it('does not advance lifecycle generation on refresh failure and leaves ordinary fetches usable', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const harness = await setupLifecycleService({ failTimelogsRefresh: true });
+    const { getLifecycleSnapshotGeneration } = await import('../../event-lifecycle-generation');
+    const before = getLifecycleSnapshotGeneration();
+
+    try {
+      await expect(harness.service.assignCrewToEvent(1, 'profile-uuid-1'))
+        .rejects.toThrow('Operaci s Crew se nepodařilo dokončit.');
+      expect(getLifecycleSnapshotGeneration()).toBe(before);
+
+      await expect(harness.service.fetchEventsSnapshot()).resolves.toEqual([
+        expect.objectContaining({ supabaseId: 'event-row-1' }),
+      ]);
+      expect(harness.updateLocalAppState).toHaveBeenCalledOnce();
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it('preserves unrelated state changed while pure lifecycle reads are in flight', async () => {

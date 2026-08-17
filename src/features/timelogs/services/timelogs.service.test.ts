@@ -14,6 +14,14 @@ const createSnapshot = (timelogs: Timelog[]) => ({
   clients: [],
 });
 
+const createDeferred = <T,>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+};
+
 describe('timelogs.service write flow', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -103,6 +111,89 @@ describe('timelogs.service write flow', () => {
       ['id'],
     ]);
     expect(updateLocalAppState).not.toHaveBeenCalled();
+  });
+
+  it('does not let an older public timelog fetch overwrite a newer lifecycle generation', async () => {
+    const currentTimelog: Timelog = {
+      id: 2,
+      eid: 1,
+      supabaseId: 'current-timelog-row',
+      eventSupabaseId: 'event-row-1',
+      contractorProfileId: 'profile-uuid-1',
+      days: [],
+      km: 0,
+      note: 'Current',
+      status: 'draft',
+    };
+    let snapshot = createSnapshot([]);
+    const updateLocalAppState = vi.fn((updater: (state: typeof snapshot) => typeof snapshot) => {
+      snapshot = structuredClone(updater(structuredClone(snapshot)));
+      return structuredClone(snapshot);
+    });
+    const deferredTimelogs = createDeferred<{
+      data: Array<Record<string, unknown>>;
+      error: null;
+    }>();
+    const createOrderedQuery = <T,>(result: Promise<{ data: T[]; error: null }>) => {
+      const order = vi.fn();
+      const query = { order, then: result.then.bind(result) };
+      order.mockReturnValue(query);
+      return query;
+    };
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: vi.fn((table: string) => ({
+          select: vi.fn(() => {
+            if (table === 'timelogs') return createOrderedQuery(deferredTimelogs.promise);
+            if (table === 'timelog_days') return createOrderedQuery(Promise.resolve({ data: [], error: null }));
+            if (table === 'profiles') return createOrderedQuery(Promise.resolve({ data: [{ id: 'profile-uuid-1' }], error: null }));
+            if (table === 'events') return createOrderedQuery(Promise.resolve({ data: [{ id: 'event-row-1' }], error: null }));
+            throw new Error(`Unexpected table ${table}`);
+          }),
+        })),
+      },
+    }));
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapTimelog: () => ({
+        id: Number.NaN,
+        eid: Number.NaN,
+        days: [],
+        km: 0,
+        note: 'Stale',
+        status: 'draft',
+      }),
+    }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState,
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    const { fetchTimelogsSnapshot } = await import('./timelogs.service');
+    const { advanceLifecycleSnapshotGeneration } = await import('../../event-lifecycle-generation');
+    const oldFetch = fetchTimelogsSnapshot();
+
+    advanceLifecycleSnapshotGeneration();
+    updateLocalAppState((current) => ({
+      ...current,
+      timelogs: [currentTimelog],
+    }));
+    deferredTimelogs.resolve({
+      data: [{
+        id: 'stale-timelog-row',
+        event_id: 'event-row-1',
+        contractor_id: 'profile-uuid-1',
+        status: 'draft',
+      }],
+      error: null,
+    });
+
+    await expect(oldFetch).resolves.toEqual([currentTimelog]);
+    expect(snapshot.timelogs).toEqual([currentTimelog]);
+    expect(updateLocalAppState).toHaveBeenCalledOnce();
   });
 
   it('updates timelog status in Supabase using the mapped row id', async () => {
@@ -264,7 +355,7 @@ describe('timelogs.service write flow', () => {
 
   it('approves all matching event timelogs in Supabase and updates local state', async () => {
     let snapshot = createSnapshot([
-      { id: 1, eid: 7, contractorProfileId: 'profile-uuid-1', days: [], km: 0, note: '', status: 'pending_coo' },
+      { id: 1, eid: 7, supabaseId: 'stable-timelog-uuid-1', contractorProfileId: 'profile-uuid-1', days: [], km: 0, note: '', status: 'pending_coo' },
       { id: 2, eid: 7, contractorProfileId: 'profile-uuid-2', days: [], km: 0, note: '', status: 'pending_coo' },
       { id: 3, eid: 8, contractorProfileId: 'profile-uuid-3', days: [], km: 0, note: '', status: 'pending_coo' },
     ]);
@@ -278,16 +369,18 @@ describe('timelogs.service write flow', () => {
         };
       }),
     }));
-    const selectMock = vi.fn(() => ({
-      order: vi.fn(() => Promise.resolve({
+    const rowsResult = Promise.resolve({
         data: [
           { id: 'timelog-uuid-1' },
           { id: 'timelog-uuid-2' },
           { id: 'timelog-uuid-3' },
         ],
         error: null,
-      })),
-    }));
+    });
+    const rowsOrder = vi.fn();
+    const rowsQuery = { order: rowsOrder, then: rowsResult.then.bind(rowsResult) };
+    rowsOrder.mockReturnValue(rowsQuery);
+    const selectMock = vi.fn(() => rowsQuery);
 
     vi.doMock('../../../lib/app-config', () => ({
       appDataSource: 'supabase',
@@ -322,8 +415,12 @@ describe('timelogs.service write flow', () => {
 
     expect(updateMock).toHaveBeenCalledWith({ status: 'approved' });
     expect(eqCalls).toEqual([
-      ['id', 'timelog-uuid-1'],
+      ['id', 'stable-timelog-uuid-1'],
       ['id', 'timelog-uuid-2'],
+    ]);
+    expect(rowsOrder.mock.calls).toEqual([
+      ['created_at'],
+      ['id'],
     ]);
     expect(approved).toHaveLength(2);
     expect(snapshot.timelogs[0].contractorProfileId).toBe('profile-uuid-1');
@@ -658,12 +755,13 @@ describe('timelogs.service write flow', () => {
     ]);
   });
 
-  it('deletes the timelog when saving it without any days', async () => {
+  it('prefers the stable timelog UUID when deleting a saved timelog', async () => {
     let snapshot = {
       ...createSnapshot([
         {
           id: 1,
           eid: 1,
+          supabaseId: 'stable-timelog-row',
           contractorProfileId: 'profile-uuid-1',
           days: [{ d: '2026-04-10', f: '23:00', t: '01:00', type: 'provoz' as const }],
           km: 0,
@@ -683,7 +781,7 @@ describe('timelogs.service write flow', () => {
     const timelogDaysInsert = vi.fn();
     const timelogsSelectMock = vi.fn(() => ({
       order: vi.fn(() => Promise.resolve({
-        data: [{ id: 'timelog-row-1' }],
+        data: [{ id: 'positionally-wrong-timelog-row' }],
         error: null,
       })),
     }));
@@ -736,8 +834,9 @@ describe('timelogs.service write flow', () => {
       days: [],
     });
 
-    expect(timelogDaysDeleteEq).toHaveBeenCalledWith('timelog_id', 'timelog-row-1');
-    expect(timelogDeleteEq).toHaveBeenCalledWith('id', 'timelog-row-1');
+    expect(timelogsSelectMock).not.toHaveBeenCalled();
+    expect(timelogDaysDeleteEq).toHaveBeenCalledWith('timelog_id', 'stable-timelog-row');
+    expect(timelogDeleteEq).toHaveBeenCalledWith('id', 'stable-timelog-row');
     expect(timelogUpdate).not.toHaveBeenCalled();
     expect(timelogDaysInsert).not.toHaveBeenCalled();
     expect(result.days).toEqual([]);

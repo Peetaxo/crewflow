@@ -89,6 +89,8 @@ describe('invoice mutation RPC adapter', () => {
       id: 'invoice-uuid-1',
       expectedStatus: 'sent' as const,
       expectedUpdatedAt: '2026-04-28T09:00:00Z',
+      expectedTimelogIds: ['timelog-uuid-1'],
+      expectedReceiptIds: ['receipt-uuid-1'],
       paidAt: '2026-04-28T10:00:00Z',
     };
     await expect(markInvoicePaidAtomicRpc(input)).resolves.toMatchObject({
@@ -120,6 +122,8 @@ describe('invoice mutation RPC adapter', () => {
     const input = {
       id: 'invoice-uuid-1',
       expectedUpdatedAt: '2026-04-28T09:00:00Z',
+      expectedTimelogIds: ['timelog-uuid-1'],
+      expectedReceiptIds: ['receipt-uuid-1'],
       sentAt: '2026-04-28T09:30:00Z',
     };
 
@@ -158,6 +162,8 @@ describe('invoice mutation RPC adapter', () => {
       id: 'invoice-uuid-1',
       expectedStatus: 'draft' as const,
       expectedUpdatedAt: '2026-04-28T09:00:00Z',
+      expectedTimelogIds: ['timelog-uuid-1'],
+      expectedReceiptIds: ['receipt-uuid-1'],
     };
     await expect(deleteInvoiceAtomicRpc(input)).resolves.toMatchObject({
       invoice: { id: 'invoice-uuid-1', status: 'draft' },
@@ -193,6 +199,8 @@ describe('invoice mutation RPC adapter', () => {
       id: 'invoice-uuid-1',
       expectedStatus: 'draft',
       expectedUpdatedAt: '2026-04-28T09:00:00Z',
+      expectedTimelogIds: ['timelog-uuid-1'],
+      expectedReceiptIds: ['receipt-uuid-1'],
     })).rejects.toThrow(expectedMessage);
   });
 
@@ -201,6 +209,16 @@ describe('invoice mutation RPC adapter', () => {
     [],
     [{ ...createResult[0], invoice_id: '' }],
     [{ ...createResult[0], timelogs: [{ id: 'timelog-uuid-1', status: 'approved', updated_at: '' }] }],
+    [{ ...createResult[0], timelogs: [] }],
+    [{ ...createResult[0], timelogs: [
+      ...createResult[0].timelogs,
+      { id: 'timelog-uuid-extra', status: 'invoiced', updated_at: '2026-04-27T10:00:00Z' },
+    ] }],
+    [{ ...createResult[0], receipts: [] }],
+    [{ ...createResult[0], receipts: [
+      ...createResult[0].receipts,
+      { id: 'receipt-uuid-extra', status: 'attached', updated_at: '2026-04-27T10:00:00Z' },
+    ] }],
     [createResult[0], createResult[0]],
   ])('fails closed on malformed create response %#', async (data) => {
     const rpc = vi.fn().mockResolvedValue({ data, error: null });
@@ -230,8 +248,106 @@ describe('invoice mutation RPC adapter', () => {
         id: 'invoice-uuid-1',
         expectedStatus: 'draft',
         expectedUpdatedAt: '2026-04-28T09:00:00Z',
+        expectedTimelogIds: ['timelog-uuid-1'],
+        expectedReceiptIds: ['receipt-uuid-1'],
       })).rejects.toThrow('Operaci s fakturou se nepodařilo dokončit.');
       expect(consoleError).toHaveBeenCalledWith('Unexpected atomic invoice mutation RPC error', databaseError);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it.each([
+    ['missing timelog', { timelogs: [] }],
+    ['extra timelog', { timelogs: [
+      { id: 'timelog-uuid-1', status: 'paid', updated_at: '2026-04-28T10:00:00Z' },
+      { id: 'timelog-uuid-extra', status: 'paid', updated_at: '2026-04-28T10:00:00Z' },
+    ] }],
+    ['missing receipt', { receipts: [] }],
+    ['extra receipt', { receipts: [
+      { id: 'receipt-uuid-1', status: 'reimbursed', updated_at: '2026-04-28T10:00:00Z' },
+      { id: 'receipt-uuid-extra', status: 'reimbursed', updated_at: '2026-04-28T10:00:00Z' },
+    ] }],
+  ])('fails closed when paid result has an exact-set mismatch: %s', async (_label, override) => {
+    const canonical = {
+      invoice_id: 'invoice-uuid-1',
+      invoice_status: 'paid',
+      invoice_updated_at: '2026-04-28T10:00:00Z',
+      paid_at: '2026-04-28T10:00:00Z',
+      timelogs: [{ id: 'timelog-uuid-1', status: 'paid', updated_at: '2026-04-28T10:00:00Z' }],
+      receipts: [{ id: 'receipt-uuid-1', status: 'reimbursed', updated_at: '2026-04-28T10:00:00Z' }],
+    };
+    const rpc = vi.fn().mockResolvedValue({ data: [{ ...canonical, ...override }], error: null });
+    vi.doMock('../../../lib/supabase', () => ({ supabase: { rpc } }));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const { markInvoicePaidAtomicRpc } = await import('./invoice-mutation-rpc.service');
+
+      await expect(markInvoicePaidAtomicRpc({
+        id: 'invoice-uuid-1',
+        expectedStatus: 'sent',
+        expectedUpdatedAt: '2026-04-28T09:00:00Z',
+        expectedTimelogIds: ['timelog-uuid-1'],
+        expectedReceiptIds: ['receipt-uuid-1'],
+        paidAt: '2026-04-28T10:00:00Z',
+      })).rejects.toThrow('Operaci s fakturou se nepodařilo dokončit.');
+      expect(consoleError).toHaveBeenCalledWith(
+        'Unexpected atomic invoice mutation response',
+        expect.anything(),
+      );
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it.each([
+    {
+      name: 'sent',
+      call: 'markInvoiceSentAtomicRpc' as const,
+      input: {
+        id: 'invoice-uuid-1',
+        expectedUpdatedAt: '2026-04-28T09:00:00Z',
+        expectedTimelogIds: ['timelog-uuid-1'],
+        expectedReceiptIds: ['receipt-uuid-1'],
+        sentAt: '2026-04-28T09:30:00Z',
+      },
+      row: {
+        invoice_id: 'invoice-uuid-1', invoice_status: 'sent',
+        invoice_updated_at: '2026-04-28T09:30:00Z', paid_at: null,
+        timelogs: [],
+        receipts: [{ id: 'receipt-uuid-1', status: 'attached', updated_at: '2026-04-28T09:30:00Z' }],
+      },
+    },
+    {
+      name: 'delete',
+      call: 'deleteInvoiceAtomicRpc' as const,
+      input: {
+        id: 'invoice-uuid-1',
+        expectedStatus: 'draft' as const,
+        expectedUpdatedAt: '2026-04-28T09:00:00Z',
+        expectedTimelogIds: ['timelog-uuid-1'],
+        expectedReceiptIds: ['receipt-uuid-1'],
+      },
+      row: {
+        invoice_id: 'invoice-uuid-1', invoice_status: 'draft',
+        invoice_updated_at: '2026-04-28T10:00:00Z', paid_at: null,
+        timelogs: [
+          { id: 'timelog-uuid-1', status: 'approved', updated_at: '2026-04-28T10:00:00Z' },
+          { id: 'timelog-uuid-extra', status: 'approved', updated_at: '2026-04-28T10:00:00Z' },
+        ],
+        receipts: [{ id: 'receipt-uuid-1', status: 'approved', updated_at: '2026-04-28T10:00:00Z' }],
+      },
+    },
+  ])('fails closed on a $name exact-set mismatch', async ({ call, input, row }) => {
+    const rpc = vi.fn().mockResolvedValue({ data: [row], error: null });
+    vi.doMock('../../../lib/supabase', () => ({ supabase: { rpc } }));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const service = await import('./invoice-mutation-rpc.service');
+      await expect(service[call](input as never))
+        .rejects.toThrow('Operaci s fakturou se nepodařilo dokončit.');
     } finally {
       consoleError.mockRestore();
     }

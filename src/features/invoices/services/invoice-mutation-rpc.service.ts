@@ -97,6 +97,8 @@ interface VersionedInvoiceMutationInput {
   id: string;
   expectedStatus: InvoiceStatus;
   expectedUpdatedAt: string;
+  expectedTimelogIds: string[];
+  expectedReceiptIds: string[];
 }
 
 interface MarkInvoicePaidAtomicInput extends VersionedInvoiceMutationInput {
@@ -106,6 +108,8 @@ interface MarkInvoicePaidAtomicInput extends VersionedInvoiceMutationInput {
 interface MarkInvoiceSentAtomicInput {
   id: string;
   expectedUpdatedAt: string;
+  expectedTimelogIds: string[];
+  expectedReceiptIds: string[];
   sentAt: string;
 }
 
@@ -167,6 +171,8 @@ const parseMutationResult = (
     invoiceStatus: InvoiceStatus;
     timelogStatus: TimelogStatus;
     receiptStatus: ReceiptStatus;
+    timelogIds: string[];
+    receiptIds: string[];
   },
 ): InvoiceMutationRpcResult => {
   const row = Array.isArray(data) && data.length === 1 ? data[0] : null;
@@ -176,6 +182,15 @@ const parseMutationResult = (
   const receipts = isRecord(row)
     ? parseChildResults(row.receipts, RECEIPT_STATUSES, expected.receiptStatus)
     : null;
+  const hasExactIds = (
+    results: Array<{ id: string }> | null,
+    expectedIds: string[],
+  ): boolean => {
+    if (results === null || new Set(expectedIds).size !== expectedIds.length) return false;
+    const sortedExpectedIds = [...expectedIds].sort((left, right) => left.localeCompare(right));
+    return results.length === sortedExpectedIds.length
+      && results.every((result, index) => result.id === sortedExpectedIds[index]);
+  };
   if (
     !isRecord(row)
     || !hasText(row.invoice_id)
@@ -186,6 +201,8 @@ const parseMutationResult = (
     || (row.paid_at !== null && !hasText(row.paid_at))
     || timelogs === null
     || receipts === null
+    || !hasExactIds(timelogs, expected.timelogIds)
+    || !hasExactIds(receipts, expected.receiptIds)
   ) {
     console.error('Unexpected atomic invoice mutation response', data);
     throw new Error(GENERIC_ERROR_MESSAGE);
@@ -238,6 +255,8 @@ export const createInvoiceAtomicRpc = async (
     invoiceStatus: 'draft',
     timelogStatus: 'invoiced',
     receiptStatus: 'attached',
+    timelogIds: input.timelogs.map((target) => target.id),
+    receiptIds: input.receipts.map((target) => target.id),
   },
 );
 
@@ -256,6 +275,8 @@ export const markInvoicePaidAtomicRpc = async (
     invoiceStatus: 'paid',
     timelogStatus: 'paid',
     receiptStatus: 'reimbursed',
+    timelogIds: input.expectedTimelogIds,
+    receiptIds: input.expectedReceiptIds,
   },
 );
 
@@ -273,6 +294,8 @@ export const markInvoiceSentAtomicRpc = async (
     invoiceStatus: 'sent',
     timelogStatus: 'invoiced',
     receiptStatus: 'attached',
+    timelogIds: input.expectedTimelogIds,
+    receiptIds: input.expectedReceiptIds,
   },
 );
 
@@ -290,5 +313,7 @@ export const deleteInvoiceAtomicRpc = async (
     invoiceStatus: 'draft',
     timelogStatus: 'approved',
     receiptStatus: 'approved',
+    timelogIds: input.expectedTimelogIds,
+    receiptIds: input.expectedReceiptIds,
   },
 );

@@ -758,6 +758,23 @@ const requireStableTargets = <T extends { id: number; supabaseId?: string; updat
   return targets.sort((left, right) => left.id.localeCompare(right.id));
 };
 
+const requireInvoiceLinkedIds = (
+  supabaseIds: string[] | undefined,
+  localIds: number[] | undefined,
+): string[] => {
+  const expectedLocalCount = uniqueSortedNumbers(localIds ?? []).length;
+  const ids = [...(supabaseIds ?? [])];
+  const sortedIds = uniqueSortedStrings(ids);
+  if (
+    expectedLocalCount !== (localIds ?? []).length
+    || sortedIds.length !== ids.length
+    || sortedIds.length !== expectedLocalCount
+  ) {
+    throw new Error(INVALID_INVOICE_SELECTION_MESSAGE);
+  }
+  return sortedIds;
+};
+
 const reconcileInvoiceMutationChildren = (
   result: InvoiceMutationRpcResult,
   removeInvoiceId?: string,
@@ -1085,6 +1102,8 @@ export const approveInvoice = async (id: string): Promise<Invoice | null> => {
       id,
       expectedStatus: invoice.status,
       expectedUpdatedAt: invoice.updatedAt ?? (() => { throw new Error(INVALID_INVOICE_SELECTION_MESSAGE); })(),
+      expectedTimelogIds: requireInvoiceLinkedIds(invoice.timelogSupabaseIds, invoice.timelogIds),
+      expectedReceiptIds: requireInvoiceLinkedIds(invoice.receiptSupabaseIds, invoice.receiptIds),
       paidAt,
     })
     : null;
@@ -1139,6 +1158,8 @@ export const sendInvoice = async (id: string): Promise<Invoice | null> => {
     ? await markInvoiceSentAtomicRpc({
       id,
       expectedUpdatedAt: invoice.updatedAt ?? (() => { throw new Error(INVALID_INVOICE_SELECTION_MESSAGE); })(),
+      expectedTimelogIds: requireInvoiceLinkedIds(invoice.timelogSupabaseIds, invoice.timelogIds),
+      expectedReceiptIds: requireInvoiceLinkedIds(invoice.receiptSupabaseIds, invoice.receiptIds),
       sentAt,
     })
     : null;
@@ -1184,6 +1205,8 @@ export const deleteInvoice = async (id: string): Promise<boolean> => {
       id,
       expectedStatus: invoice.status,
       expectedUpdatedAt: invoice.updatedAt ?? (() => { throw new Error(INVALID_INVOICE_SELECTION_MESSAGE); })(),
+      expectedTimelogIds: requireInvoiceLinkedIds(invoice.timelogSupabaseIds, invoice.timelogIds),
+      expectedReceiptIds: requireInvoiceLinkedIds(invoice.receiptSupabaseIds, invoice.receiptIds),
     })
     : null;
 

@@ -504,6 +504,14 @@ export interface Database {
       };
     };
     Functions: {
+      approve_event_withdrawal: {
+        Args: {
+          p_event_id: string;
+          p_profile_id: string;
+          p_application_id: string;
+        };
+        Returns: Json;
+      };
       assign_event_crew: {
         Args: {
           p_event_id: string;

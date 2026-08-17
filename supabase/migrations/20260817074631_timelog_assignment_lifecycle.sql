@@ -133,6 +133,41 @@ begin
 end
 $$;
 
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    join pg_catalog.pg_attribute local_column
+      on local_column.attrelid = c.conrelid
+      and local_column.attname = 'timelog_id'
+      and not local_column.attisdropped
+    join pg_catalog.pg_attribute referenced_column
+      on referenced_column.attrelid = c.confrelid
+      and referenced_column.attname = 'id'
+      and not referenced_column.attisdropped
+    where c.conrelid = 'public.timelog_days'::pg_catalog.regclass
+      and c.contype = 'f'
+      and c.conkey = array[local_column.attnum]
+      and c.confrelid = 'public.timelogs'::pg_catalog.regclass
+      and c.confkey = array[referenced_column.attnum]
+      and c.confdeltype = 'c'
+  ) then
+    raise exception 'timelog_days timelog_id foreign key is incompatible';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    where c.conrelid = 'public.event_assignments'::pg_catalog.regclass
+      and c.contype = 'u'
+      and pg_catalog.pg_get_constraintdef(c.oid) = 'UNIQUE (event_id, profile_id)'
+  ) then
+    raise exception 'event_assignments event/profile uniqueness is incompatible';
+  end if;
+end
+$$;
+
 alter table public.event_applications
   drop constraint if exists event_applications_status_check,
   add constraint event_applications_status_check
@@ -210,7 +245,7 @@ using (profile_id = public.current_profile_id())
 with check (
   profile_id = public.current_profile_id()
   and (
-    status in ('pending', 'withdrawn')
+    status in ('pending', 'approved', 'rejected', 'withdrawn')
     or (
       status = 'withdrawal_requested'
       and exists (
@@ -234,6 +269,53 @@ with check (
   public.has_role((select auth.uid()), 'crewhead'::public.app_role)
   or public.has_role((select auth.uid()), 'coo'::public.app_role)
 );
+
+create or replace function public.enforce_event_application_lifecycle_update()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  new.updated_at := pg_catalog.now();
+
+  if auth.uid() is null then
+    return new;
+  end if;
+
+  if public.has_role(auth.uid(), 'crewhead'::public.app_role)
+    or public.has_role(auth.uid(), 'coo'::public.app_role) then
+    return new;
+  end if;
+
+  if not public.has_role(auth.uid(), 'crew'::public.app_role)
+    or old.profile_id is distinct from public.current_profile_id()
+    or new.id is distinct from old.id
+    or new.event_id is distinct from old.event_id
+    or new.profile_id is distinct from old.profile_id
+    or new.created_at is distinct from old.created_at then
+    raise exception 'crew_lifecycle_unauthorized' using errcode = '42501';
+  end if;
+
+  if new.status is not distinct from old.status
+    or (old.status = 'pending' and new.status = 'withdrawn')
+    or (old.status in ('rejected', 'withdrawn') and new.status = 'pending')
+    or (old.status = 'approved' and new.status = 'withdrawal_requested') then
+    return new;
+  end if;
+
+  raise exception 'crew_lifecycle_unauthorized' using errcode = '42501';
+end;
+$$;
+
+revoke all on function public.enforce_event_application_lifecycle_update() from public;
+revoke all on function public.enforce_event_application_lifecycle_update() from anon;
+revoke all on function public.enforce_event_application_lifecycle_update() from authenticated;
+
+drop trigger if exists enforce_event_application_lifecycle_update on public.event_applications;
+create trigger enforce_event_application_lifecycle_update
+before update on public.event_applications
+for each row execute function public.enforce_event_application_lifecycle_update();
 
 create temporary table timelog_duplicate_repair_map (
   canonical_id uuid not null,
@@ -509,6 +591,8 @@ declare
   v_timelog_created boolean := false;
   v_crew_filled integer;
   v_application_id uuid;
+  v_application_status text;
+  v_application_already_approved boolean := false;
 begin
   if auth.uid() is null or not (
     public.has_role(auth.uid(), 'crewhead'::public.app_role)
@@ -533,6 +617,23 @@ begin
     raise exception 'crew_lifecycle_not_found' using errcode = 'P0002';
   end if;
 
+  if p_application_id is not null then
+    select id, status into v_application_id, v_application_status
+    from public.event_applications
+    where id = p_application_id
+      and event_id = p_event_id
+      and profile_id = p_profile_id
+    for update;
+
+    if not found then
+      raise exception 'crew_lifecycle_not_found' using errcode = 'P0002';
+    end if;
+
+    if v_application_status not in ('pending', 'approved') then
+      raise exception 'crew_application_conflict' using errcode = 'P0001';
+    end if;
+  end if;
+
   select id into v_existing_assignment_id
   from public.event_assignments
   where event_id = p_event_id and profile_id = p_profile_id
@@ -542,6 +643,13 @@ begin
   from public.timelogs
   where event_id = p_event_id and contractor_id = p_profile_id
   for update;
+
+  if v_application_status = 'approved' then
+    if v_existing_assignment_id is null or v_timelog_id is null then
+      raise exception 'crew_application_conflict' using errcode = 'P0001';
+    end if;
+    v_application_already_approved := true;
+  end if;
 
   if v_timelog_id is not null
     and v_existing_assignment_id is null
@@ -605,18 +713,20 @@ begin
     v_timelog_created := true;
   end if;
 
-  if p_application_id is not null then
+  if p_application_id is not null and not v_application_already_approved then
+    v_application_id := null;
     update public.event_applications
     set status = 'approved', updated_at = pg_catalog.now()
     where id = p_application_id
       and event_id = p_event_id
       and profile_id = p_profile_id
+      and status = 'pending'
     returning id into v_application_id;
 
     if v_application_id is null then
-      raise exception 'crew_lifecycle_not_found' using errcode = 'P0002';
+      raise exception 'crew_application_conflict' using errcode = 'P0001';
     end if;
-  else
+  elsif p_application_id is null then
     update public.event_applications
     set status = 'approved', updated_at = pg_catalog.now()
     where event_id = p_event_id and profile_id = p_profile_id
@@ -730,6 +840,119 @@ begin
 end;
 $$;
 
+create or replace function public.approve_event_withdrawal(
+  p_event_id uuid,
+  p_profile_id uuid,
+  p_application_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_assignment_id uuid;
+  v_assignment_removed boolean := false;
+  v_timelog_id uuid;
+  v_timelog_status public.timelog_status;
+  v_timelog_removed boolean := false;
+  v_application_id uuid;
+  v_application_status text;
+  v_crew_filled integer;
+begin
+  if auth.uid() is null or not (
+    public.has_role(auth.uid(), 'crewhead'::public.app_role)
+    or public.has_role(auth.uid(), 'coo'::public.app_role)
+  ) then
+    raise exception 'crew_lifecycle_unauthorized' using errcode = '42501';
+  end if;
+
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(p_event_id::text || ':' || p_profile_id::text, 0)
+  );
+
+  perform id
+  from public.events
+  where id = p_event_id
+  for update;
+  if not found then
+    raise exception 'crew_lifecycle_not_found' using errcode = 'P0002';
+  end if;
+
+  if not exists (select 1 from public.profiles where id = p_profile_id) then
+    raise exception 'crew_lifecycle_not_found' using errcode = 'P0002';
+  end if;
+
+  select id, status into v_application_id, v_application_status
+  from public.event_applications
+  where id = p_application_id
+    and event_id = p_event_id
+    and profile_id = p_profile_id
+  for update;
+  if not found then
+    raise exception 'crew_lifecycle_not_found' using errcode = 'P0002';
+  end if;
+
+  select id into v_assignment_id
+  from public.event_assignments
+  where event_id = p_event_id and profile_id = p_profile_id
+  for update;
+
+  select id, status into v_timelog_id, v_timelog_status
+  from public.timelogs
+  where event_id = p_event_id and contractor_id = p_profile_id
+  for update;
+
+  if v_application_status = 'withdrawn' then
+    if v_assignment_id is not null or v_timelog_id is not null then
+      raise exception 'crew_withdrawal_conflict' using errcode = 'P0001';
+    end if;
+  elsif v_application_status <> 'withdrawal_requested' then
+    raise exception 'crew_withdrawal_conflict' using errcode = 'P0001';
+  else
+    if v_timelog_id is not null and v_timelog_status not in ('draft', 'rejected') then
+      raise exception 'crew_removal_blocked' using errcode = 'P0001';
+    end if;
+
+    delete from public.timelogs
+    where id = v_timelog_id
+      and status in ('draft', 'rejected');
+    v_timelog_removed := found;
+
+    delete from public.event_assignments
+    where id = v_assignment_id;
+    v_assignment_removed := found;
+
+    update public.event_applications
+    set status = 'withdrawn', updated_at = pg_catalog.now()
+    where id = p_application_id
+      and event_id = p_event_id
+      and profile_id = p_profile_id
+      and status = 'withdrawal_requested';
+    if not found then
+      raise exception 'crew_withdrawal_conflict' using errcode = 'P0001';
+    end if;
+  end if;
+
+  select count(*)::integer into v_crew_filled
+  from public.event_assignments
+  where event_id = p_event_id;
+
+  update public.events
+  set crew_filled = v_crew_filled
+  where id = p_event_id;
+
+  return pg_catalog.jsonb_build_object(
+    'event_id', p_event_id,
+    'profile_id', p_profile_id,
+    'application_id', v_application_id,
+    'assignment_removed', v_assignment_removed,
+    'timelog_removed', v_timelog_removed,
+    'crew_filled', v_crew_filled
+  );
+end;
+$$;
+
 revoke all on function public.assign_event_crew(uuid, uuid, uuid, jsonb) from public;
 revoke all on function public.assign_event_crew(uuid, uuid, uuid, jsonb) from anon;
 grant execute on function public.assign_event_crew(uuid, uuid, uuid, jsonb) to authenticated;
@@ -737,5 +960,9 @@ grant execute on function public.assign_event_crew(uuid, uuid, uuid, jsonb) to a
 revoke all on function public.remove_event_crew(uuid, uuid) from public;
 revoke all on function public.remove_event_crew(uuid, uuid) from anon;
 grant execute on function public.remove_event_crew(uuid, uuid) to authenticated;
+
+revoke all on function public.approve_event_withdrawal(uuid, uuid, uuid) from public;
+revoke all on function public.approve_event_withdrawal(uuid, uuid, uuid) from anon;
+grant execute on function public.approve_event_withdrawal(uuid, uuid, uuid) to authenticated;
 
 commit;

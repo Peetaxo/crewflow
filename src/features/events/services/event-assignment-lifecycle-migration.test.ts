@@ -146,6 +146,49 @@ describe('timelog assignment lifecycle migration', () => {
       'crew can renew own event applications',
     ]);
     expect(sql).not.toContain('create policy "crew can update own event applications"');
+    expect(sql).toContain("raise exception 'timelog_days timelog_id foreign key is incompatible'");
+    expect(sql).toContain("raise exception 'event_assignments event/profile uniqueness is incompatible'");
+    expect(sql).toContain("c.confrelid = 'public.timelogs'::pg_catalog.regclass");
+    expect(sql).toContain("c.confdeltype = 'c'");
+    expect(sql).toContain("pg_catalog.pg_get_constraintdef(c.oid) = 'unique (event_id, profile_id)'");
+  });
+
+  it('enforces Crew-owned application identity and lifecycle transitions before every update', () => {
+    const sql = readMigration();
+    const guardFunction = readFunction(sql, 'enforce_event_application_lifecycle_update');
+
+    expect(guardFunction).toMatch(/returns\s+trigger\s+language\s+plpgsql\s+security definer/);
+    expect(guardFunction).toContain("set search_path = ''");
+    expect(guardFunction).toContain('new.updated_at := pg_catalog.now()');
+    expect(guardFunction).toMatch(/if\s+auth\.uid\(\) is null then\s+return new/);
+    expect(guardFunction).toMatch(
+      /public\.has_role\(auth\.uid\(\), 'crewhead'::public\.app_role\)[\s\S]*public\.has_role\(auth\.uid\(\), 'coo'::public\.app_role\)/,
+    );
+    expect(guardFunction).toContain('old.profile_id is distinct from public.current_profile_id()');
+    expect(guardFunction).toContain(
+      "not public.has_role(auth.uid(), 'crew'::public.app_role)",
+    );
+    ['id', 'event_id', 'profile_id', 'created_at'].forEach((column) => {
+      expect(guardFunction).toContain(`new.${column} is distinct from old.${column}`);
+    });
+    expect(guardFunction).toContain('new.status is not distinct from old.status');
+    expect(guardFunction).toMatch(/old\.status = 'pending'[\s\S]*new\.status = 'withdrawn'/);
+    expect(guardFunction).toMatch(/old\.status in \('rejected', 'withdrawn'\)[\s\S]*new\.status = 'pending'/);
+    expect(guardFunction).toMatch(/old\.status = 'approved'[\s\S]*new\.status = 'withdrawal_requested'/);
+    expect(guardFunction).toContain("raise exception 'crew_lifecycle_unauthorized'");
+    expect(sql).toContain(
+      'create trigger enforce_event_application_lifecycle_update\n' +
+      'before update on public.event_applications',
+    );
+    expect(sql).toContain(
+      'revoke all on function public.enforce_event_application_lifecycle_update() from public;',
+    );
+    expect(sql).toContain(
+      'revoke all on function public.enforce_event_application_lifecycle_update() from anon;',
+    );
+    expect(sql).toContain(
+      'revoke all on function public.enforce_event_application_lifecycle_update() from authenticated;',
+    );
   });
 
   it('locks every mutable repair dependency in a fixed order', () => {
@@ -247,19 +290,23 @@ describe('timelog assignment lifecycle migration', () => {
     expect(sql).toMatch(/add\s+constraint\s+timelogs_event_contractor_unique\b/);
   });
 
-  it('defines both atomic lifecycle RPCs with exact hardened signatures', () => {
+  it('defines all three atomic lifecycle RPCs with exact hardened signatures', () => {
     const sql = readMigration();
     const assignFunction = readFunction(sql, 'assign_event_crew');
     const removeFunction = readFunction(sql, 'remove_event_crew');
+    const withdrawalFunction = readFunction(sql, 'approve_event_withdrawal');
 
-    expect(sql.match(/security definer/g)).toHaveLength(2);
+    expect(sql.match(/security definer/g)).toHaveLength(4);
     expect(assignFunction).toMatch(
       /function\s+public\.assign_event_crew\s*\(\s*p_event_id uuid,\s*p_profile_id uuid,\s*p_application_id uuid default null,\s*p_days jsonb default '\[\]'::jsonb\s*\)/,
     );
     expect(removeFunction).toMatch(
       /function\s+public\.remove_event_crew\s*\(\s*p_event_id uuid,\s*p_profile_id uuid\s*\)/,
     );
-    [assignFunction, removeFunction].forEach((functionSql) => {
+    expect(withdrawalFunction).toMatch(
+      /function\s+public\.approve_event_withdrawal\s*\(\s*p_event_id uuid,\s*p_profile_id uuid,\s*p_application_id uuid\s*\)/,
+    );
+    [assignFunction, removeFunction, withdrawalFunction].forEach((functionSql) => {
       expect(functionSql).toMatch(/returns\s+jsonb\s+language\s+plpgsql\s+security definer/);
       expect(functionSql).toContain("set search_path = ''");
       expect(functionSql).toMatch(
@@ -269,7 +316,7 @@ describe('timelog assignment lifecycle migration', () => {
 
     const lockExpression =
       /perform\s+pg_catalog\.pg_advisory_xact_lock\(\s*pg_catalog\.hashtextextended\(p_event_id::text \|\| ':' \|\| p_profile_id::text, 0\)\s*\)/g;
-    expect(sql.match(lockExpression)).toHaveLength(2);
+    expect(sql.match(lockExpression)).toHaveLength(3);
     expect(assignFunction).toContain('on conflict (event_id, profile_id) do nothing');
     expect(removeFunction).toContain("status not in ('draft', 'rejected')");
   });
@@ -278,6 +325,7 @@ describe('timelog assignment lifecycle migration', () => {
     const sql = readMigration();
     const assignFunction = readFunction(sql, 'assign_event_crew');
     const removeFunction = readFunction(sql, 'remove_event_crew');
+    const withdrawalFunction = readFunction(sql, 'approve_event_withdrawal');
     const pairLock =
       "perform pg_catalog.pg_advisory_xact_lock(\n    pg_catalog.hashtextextended(p_event_id::text || ':' || p_profile_id::text, 0)\n  )";
     const eventLock =
@@ -289,6 +337,7 @@ describe('timelog assignment lifecycle migration', () => {
 
     expect(assignFunction.match(/perform id\s+from public\.events\s+where id = p_event_id\s+for update;/g)).toHaveLength(1);
     expect(removeFunction.match(/perform id\s+from public\.events\s+where id = p_event_id\s+for update;/g)).toHaveLength(1);
+    expect(withdrawalFunction.match(/perform id\s+from public\.events\s+where id = p_event_id\s+for update;/g)).toHaveLength(1);
     expectMarkersInOrder(assignFunction, [
       pairLock,
       eventLock,
@@ -303,6 +352,44 @@ describe('timelog assignment lifecycle migration', () => {
       profileNotFound,
       'perform id\n  from public.timelogs',
     ]);
+    expectMarkersInOrder(withdrawalFunction, [
+      pairLock,
+      eventLock,
+      eventNotFound,
+      profileNotFound,
+      'select id, status into v_application_id, v_application_status\n  from public.event_applications',
+      'select id into v_assignment_id\n  from public.event_assignments',
+      'select id, status into v_timelog_id, v_timelog_status\n  from public.timelogs',
+    ]);
+  });
+
+  it('locks exact applications and rejects stale approval or withdrawal states', () => {
+    const sql = readMigration();
+    const assignFunction = readFunction(sql, 'assign_event_crew');
+    const withdrawalFunction = readFunction(sql, 'approve_event_withdrawal');
+
+    expectMarkersInOrder(assignFunction, [
+      'if p_application_id is not null then',
+      'select id, status into v_application_id, v_application_status',
+      'where id = p_application_id\n      and event_id = p_event_id\n      and profile_id = p_profile_id\n    for update;',
+      "if v_application_status not in ('pending', 'approved') then",
+      'select id into v_existing_assignment_id',
+      'select id, status into v_timelog_id, v_timelog_status',
+      "if v_application_status = 'approved'",
+    ]);
+    expect(assignFunction).toContain("raise exception 'crew_application_conflict'");
+    expect(assignFunction).toMatch(
+      /update public\.event_applications\s+set status = 'approved'[\s\S]*where id = p_application_id[\s\S]*and status = 'pending'[\s\S]*if v_application_id is null then\s+raise exception 'crew_application_conflict'/,
+    );
+
+    expect(withdrawalFunction).toContain("if v_application_status = 'withdrawn'");
+    expect(withdrawalFunction).toContain("if v_application_status <> 'withdrawal_requested' then");
+    expect(withdrawalFunction).toContain("raise exception 'crew_withdrawal_conflict'");
+    expect(withdrawalFunction).toContain("status not in ('draft', 'rejected')");
+    expect(withdrawalFunction).toMatch(
+      /update public\.event_applications\s+set status = 'withdrawn'[\s\S]*where id = p_application_id[\s\S]*and status = 'withdrawal_requested'[\s\S]*if not found then\s+raise exception 'crew_withdrawal_conflict'/,
+    );
+    expect(withdrawalFunction).not.toContain('remove_event_crew(');
   });
 
   it('fully qualifies lifecycle RPC relations and catalog functions', () => {
@@ -310,6 +397,7 @@ describe('timelog assignment lifecycle migration', () => {
     const lifecycleFunctions = [
       readFunction(sql, 'assign_event_crew'),
       readFunction(sql, 'remove_event_crew'),
+      readFunction(sql, 'approve_event_withdrawal'),
     ];
 
     lifecycleFunctions.forEach((functionSql) => {
@@ -396,8 +484,9 @@ describe('timelog assignment lifecycle migration', () => {
     const sql = readMigration();
     const assignSignature = 'public.assign_event_crew(uuid, uuid, uuid, jsonb)';
     const removeSignature = 'public.remove_event_crew(uuid, uuid)';
+    const withdrawalSignature = 'public.approve_event_withdrawal(uuid, uuid, uuid)';
 
-    [assignSignature, removeSignature].forEach((signature) => {
+    [assignSignature, removeSignature, withdrawalSignature].forEach((signature) => {
       expect(sql).toContain(`revoke all on function ${signature} from public;`);
       expect(sql).toContain(`revoke all on function ${signature} from anon;`);
       expect(sql).toContain(`grant execute on function ${signature} to authenticated;`);
@@ -411,6 +500,8 @@ describe('timelog assignment lifecycle migration', () => {
     expect(sql).toContain('crew_assignment_conflict');
     expect(sql).toContain('crew_assignment_invalid_days');
     expect(sql).toContain('crew_removal_blocked');
+    expect(sql).toContain('crew_application_conflict');
+    expect(sql).toContain('crew_withdrawal_conflict');
     expect(sql.match(/\bcommit\s*;/g)).toHaveLength(1);
     expect(sql.trimEnd()).toMatch(/commit;$/);
     expect(sql).not.toMatch(/\bassert\b/);
@@ -442,7 +533,7 @@ describe('timelog assignment lifecycle migration', () => {
   it('verifies exact lifecycle RPC execute ACLs before creating fixtures', () => {
     const sql = readVerificationScript();
     const aclStart = sql.indexOf("select oid into v_authenticated_role_oid\n  from pg_catalog.pg_roles");
-    const fixtureStart = sql.indexOf('select ur.user_id\n  into v_manager_user_id');
+    const fixtureStart = sql.indexOf('select ur.user_id\n  into v_crewhead_user_id');
     const aclSql = sql.slice(aclStart, fixtureStart);
 
     expect(aclStart).toBeGreaterThanOrEqual(0);
@@ -452,6 +543,12 @@ describe('timelog assignment lifecycle migration', () => {
     );
     expect(aclSql).toContain(
       "'public.remove_event_crew(uuid, uuid)'::pg_catalog.regprocedure",
+    );
+    expect(aclSql).toContain(
+      "'public.approve_event_withdrawal(uuid, uuid, uuid)'::pg_catalog.regprocedure",
+    );
+    expect(aclSql).toContain(
+      "'public.enforce_event_application_lifecycle_update()'::pg_catalog.regprocedure",
     );
     expect(aclSql).toContain('from pg_catalog.pg_proc p');
     expect(aclSql).toContain('pg_catalog.aclexplode(');
@@ -463,5 +560,26 @@ describe('timelog assignment lifecycle migration', () => {
     expect(aclSql).toContain(
       "raise exception 'verification failed: unexpected execute grantee on %'",
     );
+    expect(aclSql).toContain(
+      "raise exception 'verification failed: event application lifecycle trigger function is directly executable'",
+    );
+  });
+
+  it('verifies both manager roles plus stale-state and Crew trigger adversarial cases', () => {
+    const sql = readVerificationScript();
+
+    expect(sql).toContain("where ur.role = 'crewhead'::public.app_role");
+    expect(sql).toContain("where ur.role = 'coo'::public.app_role");
+    expect(sql).toContain("raise exception 'verification fixture missing: no crewhead user exists'");
+    expect(sql).toContain("raise exception 'verification fixture missing: no coo user exists'");
+    expect(sql).toContain('foreach v_application_status in array v_disallowed_approval_statuses loop');
+    expect(sql).toContain('foreach v_application_status in array v_disallowed_withdrawal_statuses loop');
+    expect(sql).toContain("v_error_message <> 'crew_application_conflict'");
+    expect(sql).toContain("v_error_message <> 'crew_withdrawal_conflict'");
+    expect(sql).toContain('verification failed: crew-only user could approve event withdrawal');
+    expect(sql).toContain('verification failed: crew changed approved application directly');
+    expect(sql).toContain('verification failed: crew moved application identity');
+    expect(sql).toContain('verification failed: pending rejection race did not preserve the first transition');
+    expect(sql).toContain('verification failed: withdrawal rejection race did not preserve the first transition');
   });
 });

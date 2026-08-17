@@ -8,7 +8,7 @@ import { getDatesBetween, getEventStatus } from '../../../utils';
 import { Client, Contractor, Event, EventApplication, EventApplicationStatus, EventCrewAssignment, EventPhaseSlot, GrasonEventConfirmation, Project, ReceiptItem, Timelog, TimelogType } from '../../../types';
 import { advanceLifecycleSnapshotGeneration, getLifecycleSnapshotGeneration } from '../../event-lifecycle-generation';
 import { EventAssignmentResult, EventConflictDetail, EventFilter, EventWithDerivedStatus } from '../types/events.types';
-import { assignEventCrewRpc, isDisposableTimelogStatus, removeEventCrewRpc } from './event-assignment-lifecycle.service';
+import { approveEventWithdrawalRpc, assignEventCrewRpc, isDisposableTimelogStatus, removeEventCrewRpc } from './event-assignment-lifecycle.service';
 
 const DEFAULT_TIME_FROM = '08:00';
 const DEFAULT_TIME_TO = '17:00';
@@ -1106,6 +1106,49 @@ export const approveEventWithdrawal = async (applicationId: number): Promise<voi
   const application = (snapshot.eventApplications ?? []).find((item) => item.id === applicationId);
   if (!application) {
     throw new Error('Zadost o odhlaseni nebyla nalezena.');
+  }
+
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    const event = (snapshot.events ?? []).find((item) => item.id === application.eventId);
+    if (
+      !application.supabaseId
+      || !application.eventSupabaseId
+      || !event?.supabaseId
+      || event.supabaseId !== application.eventSupabaseId
+    ) {
+      throw new Error(CREW_LIFECYCLE_ERROR_MESSAGE);
+    }
+
+    const rpc = await approveEventWithdrawalRpc(
+      application.eventSupabaseId,
+      application.contractorProfileId,
+      application.supabaseId,
+    );
+    if (
+      rpc.event_id !== application.eventSupabaseId
+      || rpc.profile_id !== application.contractorProfileId
+      || rpc.application_id !== application.supabaseId
+    ) {
+      throw new Error(CREW_LIFECYCLE_ERROR_MESSAGE);
+    }
+
+    await refreshEventLifecycleState();
+    const refreshed = getLocalAppState();
+    const refreshedApplication = (refreshed.eventApplications ?? []).find((item) => (
+      item.supabaseId === application.supabaseId
+    ));
+    const timelogStillExists = (refreshed.timelogs ?? []).some((item) => (
+      item.eventSupabaseId === application.eventSupabaseId
+      && item.contractorProfileId === application.contractorProfileId
+    ));
+    if (!refreshedApplication || refreshedApplication.status !== 'withdrawn' || timelogStillExists) {
+      throw new Error(CREW_LIFECYCLE_ERROR_MESSAGE);
+    }
+    return;
+  }
+
+  if (application.status !== 'withdrawal_requested') {
+    throw new Error('Stav žádosti o odhlášení se mezitím změnil. Obnovte detail akce a zkuste to znovu.');
   }
 
   await removeContractorFromEvent(application.eventId, application.contractorProfileId);

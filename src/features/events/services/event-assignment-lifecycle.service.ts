@@ -9,6 +9,8 @@ const ERROR_MESSAGES = {
   crew_assignment_conflict: 'Výkaz pro tuto Crew a akci už existuje a nelze ho přepsat.',
   crew_assignment_invalid_days: 'Pro přiřazení Crew nejsou k dispozici platné směny.',
   crew_removal_blocked: 'Crew nelze odebrat, protože výkaz už byl odeslán ke kontrole.',
+  crew_application_conflict: 'Stav přihlášky se mezitím změnil. Obnovte detail akce a zkuste to znovu.',
+  crew_withdrawal_conflict: 'Stav žádosti o odhlášení se mezitím změnil. Obnovte detail akce a zkuste to znovu.',
 } as const;
 
 export interface AssignEventCrewRpcResult {
@@ -148,6 +150,29 @@ export const removeEventCrewRpc = async (
   const result = await supabase.rpc('remove_event_crew', {
     p_event_id: eventId,
     p_profile_id: profileId,
+  });
+
+  if (result.error) {
+    throw toDomainError(result.error);
+  }
+
+  assertRemoveEventCrewRpcResult(result.data);
+  return result.data;
+};
+
+export const approveEventWithdrawalRpc = async (
+  eventId: string,
+  profileId: string,
+  applicationId: string,
+): Promise<RemoveEventCrewRpcResult> => {
+  if (!supabase) {
+    throw new Error(GENERIC_ERROR_MESSAGE);
+  }
+
+  const result = await supabase.rpc('approve_event_withdrawal', {
+    p_event_id: eventId,
+    p_profile_id: profileId,
+    p_application_id: applicationId,
   });
 
   if (result.error) {

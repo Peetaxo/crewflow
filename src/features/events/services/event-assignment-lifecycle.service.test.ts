@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Timelog, TimelogStatus } from '../../../types';
 import {
+  approveEventWithdrawalRpc,
   assignEventCrewRpc,
   isDisposableTimelogStatus,
   removeEventCrewRpc,
@@ -147,12 +148,34 @@ describe('event assignment lifecycle RPC adapter', () => {
     expect(result).toEqual(removalResult);
   });
 
+  it('calls approve_event_withdrawal with stable UUIDs and returns its typed removal object', async () => {
+    supabaseMock.rpc.mockResolvedValue({
+      data: { ...removalResult, application_id: 'application-1' },
+      error: null,
+    });
+
+    const result = await approveEventWithdrawalRpc(
+      'event-1',
+      'profile-1',
+      'application-1',
+    );
+
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('approve_event_withdrawal', {
+      p_event_id: 'event-1',
+      p_profile_id: 'profile-1',
+      p_application_id: 'application-1',
+    });
+    expect(result).toEqual({ ...removalResult, application_id: 'application-1' });
+  });
+
   it.each([
     ['crew_lifecycle_unauthorized', 'Tuto akci může provést pouze CrewHead nebo COO.'],
     ['crew_lifecycle_not_found', 'Akce nebo člen Crew nebyl nalezen.'],
     ['crew_assignment_conflict', 'Výkaz pro tuto Crew a akci už existuje a nelze ho přepsat.'],
     ['crew_assignment_invalid_days', 'Pro přiřazení Crew nejsou k dispozici platné směny.'],
     ['crew_removal_blocked', 'Crew nelze odebrat, protože výkaz už byl odeslán ke kontrole.'],
+    ['crew_application_conflict', 'Stav přihlášky se mezitím změnil. Obnovte detail akce a zkuste to znovu.'],
+    ['crew_withdrawal_conflict', 'Stav žádosti o odhlášení se mezitím změnil. Obnovte detail akce a zkuste to znovu.'],
   ])('maps %s inside a Supabase error to a stable Czech message', async (token, message) => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     supabaseMock.rpc.mockResolvedValue({

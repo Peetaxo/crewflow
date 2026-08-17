@@ -386,6 +386,11 @@ describe('events.service write flow', () => {
     crew_filled: 0,
   };
 
+  const rpcWithdrawalApproval = {
+    ...rpcRemoval,
+    application_id: 'application-row-1',
+  };
+
   const setupLifecycleService = async ({
     dataSource = 'supabase',
     initialSnapshot = createSnapshot({
@@ -402,6 +407,7 @@ describe('events.service write flow', () => {
     let snapshot = structuredClone(initialSnapshot);
     const assignEventCrewRpc = vi.fn().mockResolvedValue(rpcAssignment);
     const removeEventCrewRpc = vi.fn().mockResolvedValue(rpcRemoval);
+    const approveEventWithdrawalRpc = vi.fn().mockResolvedValue(rpcWithdrawalApproval);
     const setQueryData = vi.fn();
     const invalidateQueries = vi.fn();
     const isDisposableTimelogStatus = vi.fn((status: Timelog['status']) => (
@@ -492,6 +498,7 @@ describe('events.service write flow', () => {
     }));
 
     vi.doMock('./event-assignment-lifecycle.service', () => ({
+      approveEventWithdrawalRpc,
       assignEventCrewRpc,
       removeEventCrewRpc,
       isDisposableTimelogStatus,
@@ -684,6 +691,7 @@ describe('events.service write flow', () => {
       },
       assignEventCrewRpc,
       removeEventCrewRpc,
+      approveEventWithdrawalRpc,
       loadTimelogsSnapshot,
       updateLocalAppState,
       setQueryData,
@@ -1441,7 +1449,7 @@ describe('events.service write flow', () => {
     }
   });
 
-  it('uses the removal RPC for direct removal and withdrawal approval', async () => {
+  it('keeps the two-argument removal RPC for intentional direct removal', async () => {
     const initialSnapshot = createSnapshot({
       events: [{ ...lifecycleEvent, filled: 1 }],
       timelogs: [canonicalTimelog],
@@ -1454,15 +1462,63 @@ describe('events.service write flow', () => {
     });
 
     await harness.service.removeContractorFromEvent(1, 'profile-uuid-1');
-    await harness.service.approveEventWithdrawal(1);
-
-    expect(harness.removeEventCrewRpc).toHaveBeenNthCalledWith(1, 'event-row-1', 'profile-uuid-1');
-    expect(harness.removeEventCrewRpc).toHaveBeenNthCalledWith(2, 'event-row-1', 'profile-uuid-1');
+    expect(harness.removeEventCrewRpc).toHaveBeenCalledOnce();
+    expect(harness.removeEventCrewRpc).toHaveBeenCalledWith('event-row-1', 'profile-uuid-1');
+    expect(harness.approveEventWithdrawalRpc).not.toHaveBeenCalled();
     expect(harness.eventApplicationsUpdate).not.toHaveBeenCalled();
     expect(harness.directWrites.timelogsDelete).not.toHaveBeenCalled();
     expect(harness.directWrites.timelogDaysDelete).not.toHaveBeenCalled();
     expect(harness.directWrites.eventAssignmentsDelete).not.toHaveBeenCalled();
     expect(harness.directWrites.eventsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('approves a withdrawal through the dedicated application-scoped RPC', async () => {
+    const initialSnapshot = createSnapshot({
+      events: [{ ...lifecycleEvent, filled: 1 }],
+      timelogs: [canonicalTimelog],
+      eventApplications: [{ ...lifecycleApplication, status: 'withdrawal_requested' }],
+    });
+    const harness = await setupLifecycleService({
+      initialSnapshot,
+      refreshedTimelogs: [],
+      refreshedApplicationStatus: 'withdrawn',
+    });
+
+    await harness.service.approveEventWithdrawal(1);
+
+    expect(harness.approveEventWithdrawalRpc).toHaveBeenCalledWith(
+      'event-row-1',
+      'profile-uuid-1',
+      'application-row-1',
+    );
+    expect(harness.removeEventCrewRpc).not.toHaveBeenCalled();
+    expect(harness.eventApplicationsUpdate).not.toHaveBeenCalled();
+    expect(harness.directWrites.timelogsDelete).not.toHaveBeenCalled();
+    expect(harness.directWrites.timelogDaysDelete).not.toHaveBeenCalled();
+    expect(harness.directWrites.eventAssignmentsDelete).not.toHaveBeenCalled();
+    expect(harness.directWrites.eventsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('requires stable application and event UUIDs before approving a Supabase withdrawal', async () => {
+    const initialSnapshot = createSnapshot({
+      events: [{ ...lifecycleEvent, supabaseId: undefined, filled: 1 }],
+      timelogs: [canonicalTimelog],
+      eventApplications: [{
+        ...lifecycleApplication,
+        supabaseId: undefined,
+        eventSupabaseId: undefined,
+        status: 'withdrawal_requested',
+      }],
+    });
+    const harness = await setupLifecycleService({ initialSnapshot });
+    const before = harness.getSnapshot();
+
+    await expect(harness.service.approveEventWithdrawal(1))
+      .rejects.toThrow('Operaci s Crew se nepodařilo dokončit.');
+
+    expect(harness.approveEventWithdrawalRpc).not.toHaveBeenCalled();
+    expect(harness.removeEventCrewRpc).not.toHaveBeenCalled();
+    expect(harness.getSnapshot()).toEqual(before);
   });
 
   it('keeps local state unchanged when removal is blocked', async () => {
@@ -1751,6 +1807,9 @@ describe('events.service write flow', () => {
     await harness.service.approveEventApplication(1);
     expect(harness.getSnapshot().eventApplications[0].status).toBe('approved');
     expect(harness.getSnapshot().timelogs).toHaveLength(1);
+
+    await harness.service.requestEventWithdrawal(1, 'profile-uuid-1');
+    expect(harness.getSnapshot().eventApplications[0].status).toBe('withdrawal_requested');
 
     await harness.service.approveEventWithdrawal(1);
     expect(harness.getSnapshot().eventApplications[0].status).toBe('withdrawn');

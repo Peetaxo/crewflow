@@ -715,6 +715,7 @@ describe('EventDetailView', () => {
     expect(setEditingTimelog).toHaveBeenCalledWith(expect.objectContaining({
       id: expect.any(Number),
       eid: 1,
+      eventSupabaseId: 'event-uuid-1',
       contractorProfileId: 'profile-1',
       days: [
         { d: '2026-04-16', f: '14:00', t: '17:00', type: 'provoz' },

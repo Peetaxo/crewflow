@@ -1082,6 +1082,7 @@ export const applyApprovalTimelogPreview = async (
   if (existingTimelog) {
     return saveTimelog({
       ...existingTimelog,
+      eventSupabaseId: row.matchedEvent.supabaseId ?? existingTimelog.eventSupabaseId,
       days: nextDays,
       note: withApprovalNote(existingTimelog.note, row),
       status: 'approved',
@@ -1090,6 +1091,7 @@ export const applyApprovalTimelogPreview = async (
 
   return createTimelog({
     eid: row.matchedEvent.id,
+    eventSupabaseId: row.matchedEvent.supabaseId,
     contractorProfileId: row.matchedContractor.profileId,
     days: nextDays,
     km: 0,

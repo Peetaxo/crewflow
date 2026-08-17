@@ -384,9 +384,11 @@ export const createTimelog = async (timelog: Omit<Timelog, 'id'>): Promise<Timel
   }
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
-    const eventRowId = await getSupabaseEventRowId(normalizedTimelog);
+    const eventRowId = normalizedTimelog.eventSupabaseId;
+    const currentEvent = (getLocalAppState().events ?? [])
+      .find((event) => event.supabaseId === eventRowId);
 
-    if (!eventRowId) {
+    if (!eventRowId || !currentEvent) {
       throw new Error('Nepodarilo se sparovat akci s databazovym zaznamem.');
     }
 
@@ -413,6 +415,7 @@ export const createTimelog = async (timelog: Omit<Timelog, 'id'>): Promise<Timel
 
     persistedTimelog = {
       ...normalizedTimelog,
+      eid: currentEvent.id,
       supabaseId: timelogRowId,
       eventSupabaseId: eventRowId,
     };
@@ -443,12 +446,28 @@ export const createTimelog = async (timelog: Omit<Timelog, 'id'>): Promise<Timel
 };
 
 export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
+  const snapshot = getLocalAppState();
+  const safeTimelogs = snapshot.timelogs ?? [];
+  const existingTimelog = updated.supabaseId
+    ? safeTimelogs.find((timelog) => timelog.supabaseId === updated.supabaseId)
+    : safeTimelogs.find((timelog) => timelog.id === updated.id);
+  const snapshotEvent = existingTimelog
+    ? (snapshot.events ?? []).find((event) => event.id === existingTimelog.eid)
+    : undefined;
+  const preferredEventSupabaseId = updated.eventSupabaseId
+    ?? snapshotEvent?.supabaseId
+    ?? existingTimelog?.eventSupabaseId;
+  const canonicalEvent = preferredEventSupabaseId
+    ? (snapshot.events ?? []).find((event) => event.supabaseId === preferredEventSupabaseId)
+    : snapshotEvent;
   const normalizedTimelog = {
     ...updated,
+    id: existingTimelog?.id ?? updated.id,
+    eid: canonicalEvent?.id ?? existingTimelog?.eid ?? updated.eid,
+    eventSupabaseId: preferredEventSupabaseId,
     days: sortTimelogDays(updated.days),
   };
   let persistedTimelog = normalizedTimelog;
-  const existingTimelog = (getLocalAppState().timelogs ?? []).some((timelog) => timelog.id === updated.id);
 
   if (!existingTimelog) {
     const { id: _unsavedId, ...timelogToCreate } = normalizedTimelog;
@@ -456,7 +475,7 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
   }
 
   if (normalizedTimelog.days.length === 0) {
-    await deleteTimelog(normalizedTimelog.id);
+    await deleteTimelog(existingTimelog.id);
     return normalizedTimelog;
   }
 
@@ -466,7 +485,10 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
     const [timelogRowId, eventRowId] = await Promise.all([
-      getSupabaseTimelogRowId(updated.id, updated.supabaseId),
+      getSupabaseTimelogRowId(
+        existingTimelog.id,
+        updated.supabaseId ?? existingTimelog.supabaseId,
+      ),
       getSupabaseEventRowId(normalizedTimelog),
     ]);
     const contractorRowId = normalizedTimelog.contractorProfileId;
@@ -518,6 +540,8 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
 
     persistedTimelog = {
       ...normalizedTimelog,
+      eid: (getLocalAppState().events ?? [])
+        .find((event) => event.supabaseId === eventRowId)?.id ?? normalizedTimelog.eid,
       supabaseId: timelogRowId,
       eventSupabaseId: eventRowId,
     };
@@ -526,7 +550,7 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     timelogs: snapshot.timelogs.map((timelog) => (
-      timelog.id === updated.id ? persistedTimelog : timelog
+      timelog.id === existingTimelog.id ? persistedTimelog : timelog
     )),
   }));
 

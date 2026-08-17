@@ -25,15 +25,17 @@ const createDeferred = <T,>() => {
 const setupStableUuidWriteHarness = async ({
   timelogs = [],
   snapshotEventSupabaseId,
+  events,
   insertedTimelogSupabaseId = 'created-timelog-uuid',
 }: {
   timelogs?: Timelog[];
   snapshotEventSupabaseId?: string;
+  events?: Array<{ id: number; supabaseId?: string }>;
   insertedTimelogSupabaseId?: string;
 }) => {
   let snapshot = {
     ...createSnapshot(timelogs),
-    events: [{ id: 1, supabaseId: snapshotEventSupabaseId }],
+    events: events ?? [{ id: 1, supabaseId: snapshotEventSupabaseId }],
   };
   const setQueryData = vi.fn();
   const invalidateQueries = vi.fn();
@@ -681,9 +683,12 @@ describe('timelogs.service write flow', () => {
     expect(updateLocalAppState).toHaveBeenCalledOnce();
   });
 
-  it('creates with an explicit event UUID and retains stable IDs for immediate later writes', async () => {
+  it('creates with an explicit event UUID, repairs its local event ID, and retains stable IDs', async () => {
     const harness = await setupStableUuidWriteHarness({
-      snapshotEventSupabaseId: 'snapshot-wrong-event-uuid',
+      events: [
+        { id: 1, supabaseId: 'event-b-uuid' },
+        { id: 2, supabaseId: 'explicit-event-uuid' },
+      ],
     });
 
     const created = await harness.service.createTimelog({
@@ -700,14 +705,17 @@ describe('timelogs.service write flow', () => {
       event_id: 'explicit-event-uuid',
     }));
     expect(created).toMatchObject({
+      eid: 2,
       supabaseId: 'created-timelog-uuid',
       eventSupabaseId: 'explicit-event-uuid',
     });
     expect(harness.getSnapshot().timelogs[0]).toMatchObject({
+      eid: 2,
       supabaseId: 'created-timelog-uuid',
       eventSupabaseId: 'explicit-event-uuid',
     });
     expect(harness.setQueryData).toHaveBeenNthCalledWith(1, ['timelogs'], [expect.objectContaining({
+      eid: 2,
       supabaseId: 'created-timelog-uuid',
       eventSupabaseId: 'explicit-event-uuid',
     })]);
@@ -730,27 +738,21 @@ describe('timelogs.service write flow', () => {
     expect(harness.timelogDeleteEq).toHaveBeenCalledWith('id', 'created-timelog-uuid');
   });
 
-  it('creates with the snapshot event UUID before considering the positional mapping', async () => {
+  it('rejects a Supabase create without an explicit canonical event UUID', async () => {
     const harness = await setupStableUuidWriteHarness({
       snapshotEventSupabaseId: 'snapshot-event-uuid',
     });
 
-    const created = await harness.service.createTimelog({
+    await expect(harness.service.createTimelog({
       eid: 1,
       contractorProfileId: 'profile-uuid-1',
       days: [{ d: '2026-04-10', f: '08:00', t: '16:00', type: 'instal' }],
       km: 0,
       note: '',
       status: 'draft',
-    });
+    })).rejects.toThrow('Nepodarilo se sparovat akci s databazovym zaznamem.');
 
-    expect(harness.timelogInsert).toHaveBeenCalledWith(expect.objectContaining({
-      event_id: 'snapshot-event-uuid',
-    }));
-    expect(created).toMatchObject({
-      supabaseId: 'created-timelog-uuid',
-      eventSupabaseId: 'snapshot-event-uuid',
-    });
+    expect(harness.timelogInsert).not.toHaveBeenCalled();
     expect(harness.eventsSelect).not.toHaveBeenCalled();
   });
 
@@ -803,6 +805,128 @@ describe('timelogs.service write flow', () => {
     expect(harness.timelogsSelect).not.toHaveBeenCalled();
     expect(harness.eventsSelect).not.toHaveBeenCalled();
     expect(harness.timelogDeleteEq).toHaveBeenCalledWith('id', 'stable-timelog-uuid');
+  });
+
+  it('reconciles a stale reindexed save by timelog UUID without overwriting the new numeric occupant', async () => {
+    const currentTimelogB: Timelog = {
+      id: 1,
+      eid: 1,
+      supabaseId: 'timelog-b-uuid',
+      eventSupabaseId: 'event-b-uuid',
+      contractorProfileId: 'profile-b',
+      days: [{ d: '2026-04-10', f: '08:00', t: '12:00', type: 'provoz' }],
+      km: 0,
+      note: 'Current B',
+      status: 'draft',
+    };
+    const currentTimelogA: Timelog = {
+      id: 2,
+      eid: 2,
+      supabaseId: 'timelog-a-uuid',
+      eventSupabaseId: 'event-a-uuid',
+      contractorProfileId: 'profile-a',
+      days: [{ d: '2026-04-10', f: '13:00', t: '17:00', type: 'instal' }],
+      km: 0,
+      note: 'Current A',
+      status: 'draft',
+    };
+    const harness = await setupStableUuidWriteHarness({
+      events: [
+        { id: 1, supabaseId: 'event-b-uuid' },
+        { id: 2, supabaseId: 'event-a-uuid' },
+      ],
+      timelogs: [currentTimelogB, currentTimelogA],
+    });
+
+    const saved = await harness.service.saveTimelog({
+      ...currentTimelogA,
+      id: 1,
+      eid: 1,
+      eventSupabaseId: 'event-a-uuid',
+      note: 'Saved stale A',
+    });
+
+    expect(harness.timelogUpdateEq).toHaveBeenCalledWith('id', 'timelog-a-uuid');
+    expect(saved).toMatchObject({
+      id: 2,
+      eid: 2,
+      supabaseId: 'timelog-a-uuid',
+      eventSupabaseId: 'event-a-uuid',
+      note: 'Saved stale A',
+    });
+    expect(harness.getSnapshot().timelogs).toEqual([
+      currentTimelogB,
+      expect.objectContaining({
+        id: 2,
+        eid: 2,
+        supabaseId: 'timelog-a-uuid',
+        eventSupabaseId: 'event-a-uuid',
+        note: 'Saved stale A',
+      }),
+    ]);
+    expect(harness.setQueryData).toHaveBeenLastCalledWith(['timelogs'], [
+      currentTimelogB,
+      expect.objectContaining({
+        id: 2,
+        eid: 2,
+        supabaseId: 'timelog-a-uuid',
+        eventSupabaseId: 'event-a-uuid',
+        note: 'Saved stale A',
+      }),
+    ]);
+    expect(harness.timelogsSelect).not.toHaveBeenCalled();
+  });
+
+  it('deletes a stale reindexed empty timelog by UUID and removes its current local row', async () => {
+    const currentTimelogB: Timelog = {
+      id: 1,
+      eid: 1,
+      supabaseId: 'timelog-b-uuid',
+      eventSupabaseId: 'event-b-uuid',
+      contractorProfileId: 'profile-b',
+      days: [{ d: '2026-04-10', f: '08:00', t: '12:00', type: 'provoz' }],
+      km: 0,
+      note: 'Current B',
+      status: 'draft',
+    };
+    const currentTimelogA: Timelog = {
+      id: 2,
+      eid: 2,
+      supabaseId: 'timelog-a-uuid',
+      eventSupabaseId: 'event-a-uuid',
+      contractorProfileId: 'profile-a',
+      days: [{ d: '2026-04-10', f: '13:00', t: '17:00', type: 'instal' }],
+      km: 0,
+      note: 'Current A',
+      status: 'draft',
+    };
+    const harness = await setupStableUuidWriteHarness({
+      events: [
+        { id: 1, supabaseId: 'event-b-uuid' },
+        { id: 2, supabaseId: 'event-a-uuid' },
+      ],
+      timelogs: [currentTimelogB, currentTimelogA],
+    });
+
+    const deleted = await harness.service.saveTimelog({
+      ...currentTimelogA,
+      id: 1,
+      eid: 1,
+      eventSupabaseId: 'event-a-uuid',
+      days: [],
+    });
+
+    expect(deleted).toMatchObject({
+      id: 2,
+      eid: 2,
+      supabaseId: 'timelog-a-uuid',
+      eventSupabaseId: 'event-a-uuid',
+      days: [],
+    });
+    expect(harness.timelogDeleteEq).toHaveBeenCalledWith('id', 'timelog-a-uuid');
+    expect(harness.getSnapshot().timelogs).toEqual([currentTimelogB]);
+    expect(harness.setQueryData).toHaveBeenLastCalledWith(['timelogs'], [currentTimelogB]);
+    expect(harness.timelogsSelect).not.toHaveBeenCalled();
   });
 
   it('persists timelog edits to Supabase and rewrites timelog days for the mapped row id', async () => {

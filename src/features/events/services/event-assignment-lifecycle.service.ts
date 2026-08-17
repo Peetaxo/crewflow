@@ -39,7 +39,7 @@ const toDomainError = (error: unknown): Error => {
     : '';
 
   const matchedToken = (Object.keys(ERROR_MESSAGES) as Array<keyof typeof ERROR_MESSAGES>)
-    .find((token) => rawMessage.includes(token));
+    .find((token) => new RegExp(`(^|[^A-Za-z0-9_])${token}($|[^A-Za-z0-9_])`).test(rawMessage));
 
   if (matchedToken) {
     return new Error(ERROR_MESSAGES[matchedToken]);
@@ -49,12 +49,52 @@ const toDomainError = (error: unknown): Error => {
   return new Error(GENERIC_ERROR_MESSAGE);
 };
 
-const assertRpcResponse = (data: unknown): Record<string, unknown> => {
-  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+);
+
+const isNonemptyString = (value: unknown): value is string => (
+  typeof value === 'string' && value.length > 0
+);
+
+const isApplicationId = (value: unknown): value is string | null => (
+  value === null || isNonemptyString(value)
+);
+
+const isCrewCount = (value: unknown): value is number => (
+  typeof value === 'number'
+  && Number.isFinite(value)
+  && Number.isInteger(value)
+  && value >= 0
+);
+
+const assertAssignEventCrewRpcResult = (data: unknown): asserts data is AssignEventCrewRpcResult => {
+  if (
+    !isRecord(data)
+    || !isNonemptyString(data.event_id)
+    || !isNonemptyString(data.profile_id)
+    || !isNonemptyString(data.assignment_id)
+    || !isNonemptyString(data.timelog_id)
+    || !isApplicationId(data.application_id)
+    || typeof data.timelog_created !== 'boolean'
+    || !isCrewCount(data.crew_filled)
+  ) {
     throw new Error(GENERIC_ERROR_MESSAGE);
   }
+};
 
-  return data as Record<string, unknown>;
+const assertRemoveEventCrewRpcResult = (data: unknown): asserts data is RemoveEventCrewRpcResult => {
+  if (
+    !isRecord(data)
+    || !isNonemptyString(data.event_id)
+    || !isNonemptyString(data.profile_id)
+    || !isApplicationId(data.application_id)
+    || typeof data.assignment_removed !== 'boolean'
+    || typeof data.timelog_removed !== 'boolean'
+    || !isCrewCount(data.crew_filled)
+  ) {
+    throw new Error(GENERIC_ERROR_MESSAGE);
+  }
 };
 
 export const isDisposableTimelogStatus = (status: TimelogStatus): boolean => (
@@ -93,7 +133,8 @@ export const assignEventCrewRpc = async ({
     throw toDomainError(result.error);
   }
 
-  return assertRpcResponse(result.data) as unknown as AssignEventCrewRpcResult;
+  assertAssignEventCrewRpcResult(result.data);
+  return result.data;
 };
 
 export const removeEventCrewRpc = async (
@@ -113,5 +154,6 @@ export const removeEventCrewRpc = async (
     throw toDomainError(result.error);
   }
 
-  return assertRpcResponse(result.data) as unknown as RemoveEventCrewRpcResult;
+  assertRemoveEventCrewRpcResult(result.data);
+  return result.data;
 };

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TimelogStatus } from '../../../types';
+import type { Timelog, TimelogStatus } from '../../../types';
 import {
   assignEventCrewRpc,
   isDisposableTimelogStatus,
@@ -113,6 +113,28 @@ describe('event assignment lifecycle RPC adapter', () => {
     });
   });
 
+  it('normalizes frozen input days without mutating them', async () => {
+    const days: Timelog['days'] = [
+      { d: '2026-08-15', f: '08:00', t: '17:00', type: 'provoz', note: '  frozen note  ' },
+    ];
+    days.forEach(Object.freeze);
+    Object.freeze(days);
+    const originalDays = structuredClone(days);
+    supabaseMock.rpc.mockResolvedValue({ data: assignmentResult, error: null });
+
+    await assignEventCrewRpc({
+      eventId: 'event-1',
+      profileId: 'profile-1',
+      applicationId: 'application-1',
+      days,
+    });
+
+    expect(days).toEqual(originalDays);
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('assign_event_crew', expect.objectContaining({
+      p_days: [expect.objectContaining({ note: 'frozen note' })],
+    }));
+  });
+
   it('calls remove_event_crew with exact arguments and returns its typed object', async () => {
     supabaseMock.rpc.mockResolvedValue({ data: removalResult, error: null });
 
@@ -143,6 +165,16 @@ describe('event assignment lifecycle RPC adapter', () => {
     expect(consoleError).not.toHaveBeenCalled();
   });
 
+  it('does not map a lifecycle token embedded in a longer identifier', async () => {
+    const rpcError = { message: 'RPC failed with crew_lifecycle_not_found_details' };
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    supabaseMock.rpc.mockResolvedValue({ data: null, error: rpcError });
+
+    await expect(removeEventCrewRpc('event-1', 'profile-1'))
+      .rejects.toThrow('Operaci s Crew se nepodařilo dokončit.');
+    expect(consoleError).toHaveBeenCalledWith('Unexpected Crew lifecycle RPC error', rpcError);
+  });
+
   it.each([
     ['draft', true],
     ['rejected', true],
@@ -167,6 +199,46 @@ describe('event assignment lifecycle RPC adapter', () => {
       days: [],
     })).rejects.toThrow('Operaci s Crew se nepodařilo dokončit.');
     expect(consoleError).toHaveBeenCalledWith('Unexpected Crew lifecycle RPC error', rpcError);
+  });
+
+  it.each([
+    ['empty object', {}],
+    ['missing required field', { ...assignmentResult, timelog_id: undefined }],
+    ['null event id', { ...assignmentResult, event_id: null }],
+    ['empty profile id', { ...assignmentResult, profile_id: '' }],
+    ['wrong timelog_created type', { ...assignmentResult, timelog_created: 'false' }],
+    ['string crew count', { ...assignmentResult, crew_filled: '2' }],
+    ['negative crew count', { ...assignmentResult, crew_filled: -1 }],
+    ['fractional crew count', { ...assignmentResult, crew_filled: 1.5 }],
+    ['wrong application id type', { ...assignmentResult, application_id: 42 }],
+    ['empty application id', { ...assignmentResult, application_id: '' }],
+  ])('rejects an invalid assignment response: %s', async (_label, data) => {
+    supabaseMock.rpc.mockResolvedValue({ data, error: null });
+
+    await expect(assignEventCrewRpc({
+      eventId: 'event-1',
+      profileId: 'profile-1',
+      days: [],
+    })).rejects.toThrow('Operaci s Crew se nepodařilo dokončit.');
+  });
+
+  it.each([
+    ['empty object', {}],
+    ['missing required field', { ...removalResult, timelog_removed: undefined }],
+    ['null event id', { ...removalResult, event_id: null }],
+    ['empty profile id', { ...removalResult, profile_id: '' }],
+    ['wrong assignment_removed type', { ...removalResult, assignment_removed: 'true' }],
+    ['wrong timelog_removed type', { ...removalResult, timelog_removed: 1 }],
+    ['string crew count', { ...removalResult, crew_filled: '1' }],
+    ['negative crew count', { ...removalResult, crew_filled: -1 }],
+    ['fractional crew count', { ...removalResult, crew_filled: 0.5 }],
+    ['wrong application id type', { ...removalResult, application_id: false }],
+    ['empty application id', { ...removalResult, application_id: '' }],
+  ])('rejects an invalid removal response: %s', async (_label, data) => {
+    supabaseMock.rpc.mockResolvedValue({ data, error: null });
+
+    await expect(removeEventCrewRpc('event-1', 'profile-1'))
+      .rejects.toThrow('Operaci s Crew se nepodařilo dokončit.');
   });
 
   it.each([null, undefined, false, 0, '', [], ['unexpected']])(

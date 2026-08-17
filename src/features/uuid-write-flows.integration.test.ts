@@ -96,7 +96,12 @@ describe('UUID write flows integration', () => {
     const receiptUpdateIn = vi.fn().mockResolvedValue({ error: null });
     const receiptRows: Array<Record<string, unknown> & { id: string; updated_at: string }> = [];
     const receiptInsert = vi.fn((payload: Record<string, unknown>) => {
-      const row = { id: `receipt-row-${receiptRows.length + 1}`, updated_at: '2026-08-17T14:00:00.000Z' };
+      const row = {
+        id: `receipt-row-${receiptRows.length + 1}`,
+        updated_at: '2026-08-17T14:00:00.000Z',
+        event_id: payload.event_id,
+        status: payload.status,
+      };
       receiptRows.push({ ...row, ...payload });
       return {
         select: vi.fn(() => ({
@@ -221,6 +226,20 @@ describe('UUID write flows integration', () => {
           error: null,
         };
       }
+      if (name === 'transition_receipt_statuses_atomic') {
+        const nextStatus = args.p_next_status as string;
+        const updatedAt = nextStatus === 'submitted'
+          ? '2026-08-17T14:10:00.000Z'
+          : '2026-08-17T14:20:00.000Z';
+        return {
+          data: (args.p_receipts as Array<{ id: string }>).map(({ id }) => ({
+            id,
+            updated_at: updatedAt,
+            status: nextStatus,
+          })),
+          error: null,
+        };
+      }
       if (name === 'create_invoice_atomic') {
         return {
           data: [{
@@ -294,7 +313,7 @@ describe('UUID write flows integration', () => {
     }));
 
     const { saveTimelog, updateTimelogStatus } = await import('./timelogs/services/timelogs.service');
-    const { createEmptyReceipt, saveReceipt } = await import('./receipts/services/receipts.service');
+    const { createEmptyReceipt, saveReceipt, updateReceiptStatus } = await import('./receipts/services/receipts.service');
     const { createInvoiceFromSelection, getInvoiceCreateCandidates } = await import('./invoices/services/invoices.service');
 
     const savedTimelog = await saveTimelog({
@@ -306,15 +325,16 @@ describe('UUID write flows integration', () => {
     await updateTimelogStatus(savedTimelog.id, 'coo');
 
     const receiptDraft = createEmptyReceipt('profile-uuid-1');
-    const savedReceipt = await saveReceipt({
+    let savedReceipt = await saveReceipt({
       ...receiptDraft,
       eid: 1,
       job: 'AK001',
       title: 'Parkovne',
       vendor: 'Parking',
       amount: 300,
-      status: 'approved',
     });
+    savedReceipt = await updateReceiptStatus(savedReceipt.id, 'submit');
+    savedReceipt = await updateReceiptStatus(savedReceipt.id, 'approve');
 
     expect(profileSelectCalls).toBe(0);
 
@@ -331,7 +351,7 @@ describe('UUID write flows integration', () => {
     expect(createdInvoice?.contractorProfileId).toBe('profile-uuid-1');
     expect(rpc).toHaveBeenCalledWith('create_invoice_atomic', expect.objectContaining({
       p_invoice: expect.objectContaining({ contractor_id: 'profile-uuid-1' }),
-      p_receipts: [{ id: 'receipt-row-1', expected_updated_at: '2026-08-17T14:00:00.000Z' }],
+      p_receipts: [{ id: 'receipt-row-1', expected_updated_at: '2026-08-17T14:20:00.000Z' }],
     }));
     expect(receiptInsert).toHaveBeenCalledWith(expect.objectContaining({
       contractor_id: 'profile-uuid-1',

@@ -5,6 +5,10 @@ import type { ReceiptItem, Role } from '../types';
 import ReceiptsView from './ReceiptsView';
 
 let role: Role = 'crewhead';
+const { updateReceiptStatusMock, toastErrorMock } = vi.hoisted(() => ({
+  updateReceiptStatusMock: vi.fn(),
+  toastErrorMock: vi.fn(),
+}));
 
 const receipts: ReceiptItem[] = [
   { id: 1, eid: 1, job: 'JOB-1', title: 'Draft receipt', vendor: '', amount: 100, paidAt: '2026-04-20', note: '', status: 'draft' },
@@ -19,6 +23,10 @@ vi.mock('framer-motion', () => ({
   motion: {
     div: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div>,
   },
+}));
+
+vi.mock('sonner', () => ({
+  toast: { error: toastErrorMock, success: vi.fn(), info: vi.fn() },
 }));
 
 vi.mock('../app/providers/useAuth', () => ({
@@ -55,7 +63,7 @@ vi.mock('../features/receipts/services/receipts.service', () => ({
     }],
     contractors: [],
   }),
-  updateReceiptStatus: vi.fn(),
+  updateReceiptStatus: updateReceiptStatusMock,
 }));
 
 vi.mock('../components/shared/StatusBadge', () => ({
@@ -66,6 +74,7 @@ describe('ReceiptsView receipt integrity actions', () => {
   beforeEach(() => {
     role = 'crewhead';
     vi.clearAllMocks();
+    updateReceiptStatusMock.mockResolvedValue(undefined);
   });
 
   it('offers delete only for draft and rejected receipts', () => {
@@ -95,5 +104,22 @@ describe('ReceiptsView receipt integrity actions', () => {
     rerender(<ReceiptsView />);
 
     expect(screen.getByRole('button', { name: 'Proplatit' })).toBeInTheDocument();
+  });
+
+  it('shows only the stable receipt domain error from a rejected status mutation', async () => {
+    role = 'crew';
+    updateReceiptStatusMock.mockRejectedValue(new Error(
+      'Účtenky se mezitím změnily. Obnovte data a zkuste to znovu.',
+    ));
+    render(<ReceiptsView />);
+    const draftRow = screen.getByText('Draft receipt').closest('tr');
+    expect(draftRow).not.toBeNull();
+
+    within(draftRow!).getByRole('button', { name: 'Odeslat' }).click();
+
+    await vi.waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith(
+      'Účtenky se mezitím změnily. Obnovte data a zkuste to znovu.',
+    ));
+    expect(toastErrorMock).not.toHaveBeenCalledWith(expect.stringContaining('sensitive database'));
   });
 });

@@ -1483,7 +1483,7 @@ Import `AssignEventCrewRpcResult` from the focused adapter using a type-only imp
 - [ ] **Step 8: Run event service and UUID identity tests**
 
 ```bash
-npm test -- src/features/events/services/events.service.test.ts src/features/events/services/event-assignment-lifecycle.service.test.ts src/components/modals/uuid-contractor-modal-identity.test.tsx src/features/uuid-write-flows.integration.test.ts src/features/timelogs/services/timelogs.service.test.ts src/features/timelogs/services/approval-timelog-sync.service.test.ts
+npm test -- src/features/events/services/events.service.test.ts src/features/events/services/event-assignment-lifecycle.service.test.ts src/components/modals/uuid-contractor-modal-identity.test.tsx src/features/uuid-write-flows.integration.test.ts src/features/timelogs/services/timelogs.service.test.ts src/features/invoices/services/approval-timelog-sync.service.test.ts
 ```
 
 Expected: PASS; no old table-write expectation remains.
@@ -1640,7 +1640,7 @@ Expected: no placeholders or raw RLS user message; required names appear.
 - [ ] **Step 2: Run focused tests, then the full test and build gates**
 
 ```bash
-npm test -- src/features/events/services/event-assignment-lifecycle-migration.test.ts src/features/events/services/event-assignment-lifecycle.service.test.ts src/features/events/services/events.service.test.ts src/features/timelogs/services/timelogs.service.test.ts src/features/timelogs/services/approval-timelog-sync.service.test.ts src/features/uuid-write-flows.integration.test.ts src/views/EventDetailView.lifecycle.test.tsx src/views/EventDetailView.test.tsx src/components/modals/uuid-contractor-modal-identity.test.tsx
+npm test -- src/features/events/services/event-assignment-lifecycle-migration.test.ts src/features/events/services/event-assignment-lifecycle.service.test.ts src/features/events/services/events.service.test.ts src/features/timelogs/services/timelogs.service.test.ts src/features/invoices/services/approval-timelog-sync.service.test.ts src/features/uuid-write-flows.integration.test.ts src/views/EventDetailView.lifecycle.test.tsx src/views/EventDetailView.test.tsx src/components/modals/uuid-contractor-modal-identity.test.tsx
 npx tsc --noEmit
 npm test
 npm run lint

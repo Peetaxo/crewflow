@@ -27,7 +27,7 @@ This extension brings the schema to seven public lifecycle/timelog RPCs: the exi
 
 `SECURITY INVOKER`, fixed empty search path, authenticated-only ACL. It accepts stable timelog/event/contractor UUIDs, the expected `updated_at` and status for updates, editable parent fields, a requested status, and a JSON day array.
 
-For create, the expected version/status are null and the requested status must be `draft`. The function takes the event/profile pair advisory lock before inserting the draft parent. For update, it takes the pair lock and then locks the exact parent row. It requires exact identity, version, and source status. Identity is immutable. Days must be non-empty, structurally valid, unique by date, and processed in deterministic date order.
+For create, the expected version/status are null and the requested status must be `draft`. The function takes the event/profile pair advisory lock before inserting the draft parent. For update, it takes the pair lock and then locks the exact parent row. It requires exact identity, version, and source status. Identity is immutable. Days must be non-empty, structurally valid, and processed in deterministic date/time/type order; multiple distinct shifts on one date remain valid.
 
 The update order is parent data while retaining the old status, replace all days, and only then perform any status transition. The returned object contains canonical `id`, `updated_at`, and effective `status`.
 
@@ -35,9 +35,11 @@ The update order is parent data while retaining the old status, replace all days
 
 `SECURITY INVOKER`, fixed empty search path, authenticated-only ACL. It receives a non-empty JSON target set of `{id, expected_updated_at}`, one exact expected source status, and one requested destination status. Duplicate or malformed targets are rejected. Rows are locked by sorted UUID, and the complete target set, versions, and statuses are validated before a single all-or-nothing update. The result is a deterministic array of `id`, `updated_at`, and effective `status`.
 
+Invoice creation, payment, and draft-invoice deletion use this same RPC for `approved -> invoiced`, `invoiced -> paid`, and `invoiced -> approved`; invoice services do not perform direct timelog REST status writes.
+
 ### `delete_timelog_atomic`
 
-`SECURITY INVOKER`, fixed empty search path, authenticated-only ACL. It locks the exact parent and requires exact `updated_at` and source status. Only states already permitted by the application delete call sites are accepted. It deletes the parent once; day deletion is exclusively the verified cascading foreign key's responsibility.
+`SECURITY INVOKER`, fixed empty search path, authenticated-only ACL. It locks the exact parent and requires exact `updated_at` and source status. Only `draft` and `rejected` are disposable; `pending_ch` and every later state fail closed even when an older RLS policy would otherwise permit deletion. It deletes the parent once; day deletion is exclusively the verified cascading foreign key's responsibility.
 
 ### `import_approved_timelog_atomic`
 
@@ -45,13 +47,15 @@ The update order is parent data while retaining the old status, replace all days
 
 Create inserts the parent as `draft`, inserts deterministic validated days, and changes to `approved` last. Existing eligible rows receive parent data and replacement days while retaining their source status, followed by the final `approved` update. This ordering ensures approval-side invoice logic observes the new day set.
 
+An already `approved` or `invoiced` row is never edited by import. After locking it, the RPC accepts only an exact retry whose expected status/version, identity, km, note, and normalized day set all match; it returns the existing row without enabling the marker or firing update/invoice effects. Any difference is an optimistic conflict. A `pending_coo` import first updates data and days while retaining `pending_coo`, then requests `approved`; the existing approval trigger can therefore create the invoice and return the actual canonical `invoiced` status.
+
 The existing timelog permission trigger recognizes a transaction-local import marker only while the caller is a verified COO. The import RPC saves and restores the prior marker on both success and exception paths. The marker helper and trigger are not directly executable, and direct COO REST data edits or `draft -> approved` updates remain blocked.
 
 ## Locking and Optimistic Concurrency
 
 Create is keyed by the event/contractor UUID pair; existing rows use the stable timelog UUID. Database functions take pair locks before row locks and sort multi-row locks by UUID. Updates and deletes compare the caller's expected `updated_at` after locking. A stale version or state produces a stable conflict token; it never silently overwrites newer data.
 
-The client maintains one shared mutation coordinator. Create uses `eventUUID + contractorUUID`; existing save/status/delete uses the timelog UUID; batch mutations reserve all sorted UUID keys together. Internal RPC primitives never enqueue themselves, avoiding nested queue deadlocks.
+The client maintains one shared mutation coordinator with a global timelog-write key. Every create/save/status/delete/import/batch mutation reserves that key synchronously before any identity hydration, so a legacy snapshot without UUID/version cannot be overtaken or reindexed mid-write. Pair, local-ID, and UUID keys are also recorded for stable identity and future partitioning, while the global key deliberately serializes all client-side timelog writes. Internal RPC primitives never enqueue themselves, avoiding nested queue deadlocks.
 
 Mutation generation advances when a queued operation starts. On a failed mutation, an authoritative reload is mandatory. That reload commits only after observing a stable generation and is not discarded merely because the failed mutation advanced its own generation.
 

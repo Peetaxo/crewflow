@@ -47,7 +47,7 @@
 1. Write RED tests for `Timelog.updatedAt`, canonical RPC result mapping, no parent/child split writes, parent-only delete, atomic batch behavior, and stable Czech failures.
 2. Add deferred overlap tests for autosave/save, status, delete, and batch; assert deterministic queue ordering and no nested queue deadlock.
 3. Add RED conflict tests proving failed writes perform an authoritative reload that survives the initiating mutation generation.
-4. Route create/save/status/delete/batch through internal RPC primitives and one shared keyed coordinator.
+4. Route create/save/status/delete/import/batch through internal RPC primitives and one shared coordinator whose global timelog-write key is reserved synchronously before identity hydration; retain local/pair/UUID keys for identity diagnostics and future partitioning.
 5. Rerun focused service/mapper tests to GREEN and commit the client mutation slice.
 
 ## Task 4: Route PowerApps Approval Through the Dedicated Import

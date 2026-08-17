@@ -22,7 +22,7 @@ The live database currently contains nine duplicate `(event_id, contractor_id)` 
 - Remove a Crew member only while their timelog is still disposable.
 - Delete the disposable timelog when Crew is removed so a later re-application starts with a clean draft.
 - Preserve submitted, approved, invoiced, and paid work records.
-- Use the same database operation for direct manager removal and approval of a withdrawal request.
+- Keep direct manager removal atomic and approve a Crew withdrawal only through an application-scoped database operation.
 - Repair existing duplicates without losing the more complete historical record.
 - Return clear Czech domain errors instead of leaking raw RLS messages to the user.
 
@@ -69,7 +69,7 @@ After a successful removal, the existing application can be upserted back to `pe
 
 ### Database as the consistency boundary
 
-Assignment approval and removal will be exposed as narrowly scoped Supabase RPC functions. Each call runs in a single short Postgres transaction. The frontend will no longer coordinate the invariant through several independent REST writes.
+Assignment approval, direct removal, and withdrawal approval are exposed as three narrowly scoped Supabase RPC functions. Each call runs in a single short Postgres transaction. The frontend no longer coordinates the invariant through several independent REST writes.
 
 The functions are intentionally privileged multi-table domain operations. They must:
 
@@ -97,11 +97,13 @@ Inside one transaction it:
 7. recalculates `events.crew_filled` from explicit assignments;
 8. returns the canonical assignment and timelog identifiers.
 
-If the request is repeated, it returns the already existing assignment/timelog without resetting its data or status. If an unexpected submitted timelog exists without a valid assignment, the operation returns a domain conflict rather than overwriting the record.
+When an application ID is supplied, the RPC locks that exact event/profile application before assignment and timelog rows. It accepts `pending`, conditionally changes it to `approved`, and returns `crew_application_conflict` if the status changed. An exact `approved` retry succeeds only when both assignment and timelog already exist; an inconsistent approved retry returns the same conflict without repairing or overwriting ambiguous state. Direct manager assignment may omit the application ID.
 
-### Removal RPC
+If a valid request is repeated, it returns the already existing assignment/timelog without resetting its data or status. If an unexpected submitted timelog exists without a valid assignment, the operation returns a domain conflict rather than overwriting the record.
 
-The removal operation receives an event ID and Crew profile ID. It is used by both direct manager removal and approval of a Crew withdrawal request.
+### Direct removal RPC
+
+`remove_event_crew(p_event_id uuid, p_profile_id uuid)` is reserved for intentional direct manager removal. It receives no application ID and therefore must not be used to approve a specific withdrawal request.
 
 Inside one transaction it:
 
@@ -117,6 +119,18 @@ Inside one transaction it:
 
 The operation remains idempotent when the assignment or draft has already been removed.
 
+### Withdrawal approval RPC
+
+`approve_event_withdrawal(p_event_id uuid, p_profile_id uuid, p_application_id uuid)` approves one exact withdrawal request. It takes the same event/profile advisory lock as assignment and direct removal, locks the exact application plus assignment and timelog rows, and accepts only `withdrawal_requested`. It conditionally changes that application to `withdrawn`, removes only a `draft` or `rejected` timelog and the matching assignment, and recalculates `events.crew_filled` in the same transaction.
+
+An exact retry is successful only when that same application is already `withdrawn` and both assignment and timelog are absent. Any other stale or internally inconsistent application state raises `crew_withdrawal_conflict`; a non-disposable timelog still raises `crew_removal_blocked` and leaves every row unchanged.
+
+### Crew application transition trigger
+
+RLS limits Crew users to their own application rows, while the `BEFORE UPDATE` trigger `enforce_event_application_lifecycle_update()` enforces the transition graph and immutable identity columns. A Crew user may keep the same status, withdraw `pending`, re-apply from `rejected` or `withdrawn`, or request withdrawal from `approved`. They cannot change `id`, `event_id`, `profile_id`, or `created_at`, and every other status change is rejected with `crew_lifecycle_unauthorized`. CrewHead and COO transitions are handled by the manager RPCs; internal migration/verifier work with `auth.uid() is null` is deliberately allowed.
+
+The trigger function is `SECURITY DEFINER` with an empty search path and fully qualified calls, but it is not an API endpoint: execution is revoked from `PUBLIC`, `anon`, and `authenticated`. The three manager RPCs are also `SECURITY DEFINER`, explicitly re-check `auth.uid()` plus CrewHead/COO role membership, revoke `PUBLIC` and `anon`, and grant only `authenticated` execution.
+
 ### Database uniqueness
 
 After existing data is repaired, `public.timelogs` receives a unique constraint named `timelogs_event_contractor_unique` over:
@@ -126,6 +140,10 @@ unique (event_id, contractor_id)
 ```
 
 The constraint is the final concurrency guard. Client-side checks remain useful for immediate feedback but are never treated as the integrity boundary.
+
+### Stable UUID identity
+
+Supabase-mode event and timelog writes use canonical UUIDs throughout. Hydration preserves `event.supabaseId`, `timelog.supabaseId`, and `timelog.eventSupabaseId`; creation requires the event UUID, and save/status/delete paths locate the canonical timelog by UUID before considering local numeric IDs. Lifecycle refreshes reconcile the numeric local projection without replacing the stable UUID identity. This prevents a same-number local fixture or refreshed row from redirecting a production mutation.
 
 ## Existing Data Repair
 
@@ -145,12 +163,13 @@ Any unexpected data change aborts the transaction, leaving the database untouche
 
 ## Frontend and Service Behavior
 
-- `approveEventApplication` and direct manager assignment call the assignment RPC and refresh event, application, assignment, and timelog query caches from the returned result.
-- `removeContractorFromEvent` and `approveEventWithdrawal` call the same removal RPC.
+- `approveEventApplication` and direct manager assignment call `assign_event_crew` and refresh event, application, assignment, and timelog state from authoritative reads.
+- `removeContractorFromEvent` calls `remove_event_crew`; `approveEventWithdrawal` requires the stable application UUID and calls `approve_event_withdrawal`.
 - The removal button is disabled or replaced with explanatory text when the locally loaded timelog is in a blocking state.
 - The database error is still mapped to the same Czech domain message because local state can be stale.
 - UI actions use an in-flight state to prevent accidental repeated clicks, while database idempotency handles retries and concurrency.
 - A uniqueness conflict that occurs during a race is resolved by reloading and returning the canonical existing timelog rather than showing a raw constraint or RLS error.
+- Crew re-application and withdrawal-request upserts translate a trigger `crew_lifecycle_unauthorized` caused by stale local status into the operation-specific application or withdrawal conflict. Other database details are logged diagnostically and the UI receives the generic Czech lifecycle error; both EventDetailView and EventsView consume this shared service behavior.
 
 ## Error Handling
 
@@ -161,6 +180,8 @@ Expected database outcomes are mapped as follows:
 | Timelog is already submitted or later | `Crew nelze odebrat, protože výkaz už byl odeslán ke kontrole.` |
 | Assignment approval is repeated | Success with the existing assignment and timelog |
 | Existing submitted timelog conflicts with a new assignment | `Výkaz pro tuto Crew a akci už existuje a nelze ho přepsat.` |
+| Exact application is no longer `pending`, or an `approved` retry is inconsistent | `Stav přihlášky se mezitím změnil. Obnovte detail akce a zkuste to znovu.` |
+| Exact withdrawal is no longer `withdrawal_requested`, or a `withdrawn` retry is inconsistent | `Stav žádosti o odhlášení se mezitím změnil. Obnovte detail akce a zkuste to znovu.` |
 | Event or profile does not exist | `Akce nebo člen Crew nebyl nalezen.` |
 | Unauthorized caller | `Tuto akci může provést pouze CrewHead nebo COO.` |
 | Unexpected database failure | Generic Czech failure toast plus the original error in diagnostic logging |
@@ -173,10 +194,11 @@ No local cache is updated until the database operation succeeds. A failed RPC le
 
 - approval calls the RPC once and hydrates the returned canonical timelog;
 - repeated approval returns the same timelog without adding another local row;
-- direct removal and withdrawal approval call the same removal service;
+- direct removal calls the two-argument removal RPC and withdrawal approval calls the dedicated application-scoped RPC;
 - successful removal deletes a local `draft` or `rejected` timelog and assignment;
 - blocked removal preserves all local state and shows the domain error;
-- raw RLS, unique-constraint, and RPC messages are mapped to stable Czech messages.
+- stale Crew re-application and withdrawal-request trigger errors are mapped to their operation-specific Czech conflicts;
+- raw RLS, unique-constraint, trigger, and RPC messages remain diagnostic-only.
 
 ### Database migration tests
 
@@ -188,12 +210,14 @@ No local cache is updated until the database operation succeeds. A failed RPC le
 
 ### Authorization and state-transition tests
 
-- Crew cannot call manager assignment/removal RPCs;
+- Crew cannot call any of the three manager RPCs;
 - CrewHead and COO can call them;
+- the trigger prevents Crew from changing application identity columns or performing any transition outside the allowed Crew graph;
 - `draft` and `rejected` rows are removable;
 - every blocking status rejects removal with no partial writes;
 - a removed Crew member can apply and be approved again, producing exactly one new draft;
-- two concurrent assignment calls produce one assignment and one timelog.
+- two concurrent assignment calls produce one assignment and one timelog;
+- stale approval and withdrawal requests return `crew_application_conflict` and `crew_withdrawal_conflict` without partial writes.
 
 ### Live verification
 
@@ -205,18 +229,19 @@ After deployment:
 4. execute a rolled-back Crew-authenticated `draft -> pending_ch` transition against the retained Red Bull row;
 5. exercise removal of a disposable test draft and verify assignment/application/event capacity consistency;
 6. exercise a blocked removal and verify no rows changed;
-7. verify application/API logs contain no raw RLS or uniqueness errors for these flows.
+7. verify neither UI exposes raw RLS, uniqueness, trigger, or RPC errors and that unexpected database details remain diagnostic-only.
 
 ## Deployment Order
 
 1. Add failing frontend/service and SQL structure tests.
 2. Add the assertion-driven duplicate repair and unique constraint migration.
-3. Add the hardened assignment/removal RPCs in the same migration or a following migration whose dependency is explicit.
+3. Add the hardened assignment, direct-removal, and withdrawal-approval RPCs plus the non-callable Crew transition trigger in the same migration or a following migration whose dependency is explicit.
 4. Update generated database types.
 5. Switch frontend services to the RPCs and add in-flight UI states/error mapping.
 6. Run focused tests, then the full test suite and production build.
-7. Apply the migration once to the linked Supabase project.
-8. Run the live verification checklist before considering the fix complete.
+7. Confirm this design, the implementation plan/runbook, generated types, migration, verifier, and frontend all describe the same three-RPC/trigger/token contract; any drift is a production blocker.
+8. Apply the migration once to the linked Supabase project.
+9. Run the live verification checklist before considering the fix complete.
 
 The frontend must not be deployed before the required RPC/schema migration is present, avoiding the schema drift already observed with newer client code requesting database objects that were not deployed.
 
@@ -227,6 +252,8 @@ The frontend must not be deployed before the required RPC/schema migration is pr
 - Removing Crew with `draft` or `rejected` work removes the disposable timelog and assignment atomically.
 - Removing Crew with any submitted or later timelog is blocked atomically.
 - Re-application after valid removal creates exactly one clean draft.
+- Application approval and withdrawal approval are scoped to the exact application UUID and reject stale state with stable Czech conflicts.
+- Crew application identity columns and disallowed status transitions remain immutable through the database trigger.
 - Existing duplicate data is repaired according to explicit verified mappings.
 - Red Bull submission works for the real Crew identity after cleanup.
-- The UI does not expose raw RLS or uniqueness errors for expected domain conflicts.
+- The UI does not expose raw RLS, uniqueness, trigger, or RPC errors for expected domain conflicts.

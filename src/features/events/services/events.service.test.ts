@@ -451,6 +451,18 @@ describe('events.service write flow', () => {
       requestedApplicationStatus = status;
       return { eq: eventApplicationsIdEq };
     });
+    const eventApplicationsUpsertSingle = vi.fn(async () => ({
+      data: {
+        ...applicationRows[0],
+        status: requestedApplicationStatus,
+      },
+      error: null,
+    }));
+    const eventApplicationsUpsertSelect = vi.fn(() => ({ single: eventApplicationsUpsertSingle }));
+    const eventApplicationsUpsert = vi.fn(({ status }: { status: EventApplication['status'] }) => {
+      requestedApplicationStatus = status;
+      return { select: eventApplicationsUpsertSelect };
+    });
 
     const toEventRow = (event: Event) => ({
       id: event.supabaseId,
@@ -633,6 +645,7 @@ describe('events.service write flow', () => {
             order: vi.fn().mockResolvedValue({ data: applicationRows, error: null }),
           })),
           update: eventApplicationsUpdate,
+          upsert: eventApplicationsUpsert,
         };
       }
       throw new Error(`Unexpected table ${table}`);
@@ -708,6 +721,7 @@ describe('events.service write flow', () => {
       eventApplicationsIdEq,
       eventApplicationsExpectedStatusEq,
       eventApplicationsSelect,
+      eventApplicationsUpsertSingle,
       directWrites: {
         timelogsInsert,
         timelogsDelete,
@@ -1354,6 +1368,87 @@ describe('events.service write flow', () => {
 
     expect(harness.eventApplicationsUpdate).toHaveBeenCalledWith({ status: 'withdrawn' });
     expect(harness.eventApplicationsExpectedStatusEq).toHaveBeenCalledWith('status', 'pending');
+  });
+
+  it('maps a stale Crew re-application trigger rejection to the stable application conflict', async () => {
+    const initialSnapshot = createSnapshot({
+      events: [lifecycleEvent],
+      eventApplications: [{ ...lifecycleApplication, status: 'withdrawn' }],
+    });
+    const harness = await setupLifecycleService({ initialSnapshot });
+    const before = harness.getSnapshot();
+    harness.eventApplicationsUpsertSingle.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'crew_lifecycle_unauthorized' },
+    });
+
+    const error = await harness.service.applyForEvent(1, 'profile-uuid-1').catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message)
+      .toBe('Stav přihlášky se mezitím změnil. Obnovte detail akce a zkuste to znovu.');
+    expect((error as Error).message).not.toContain('crew_lifecycle_unauthorized');
+    expect(harness.getSnapshot()).toEqual(before);
+  });
+
+  it('maps a stale Crew withdrawal-request trigger rejection to the stable withdrawal conflict', async () => {
+    const initialSnapshot = createSnapshot({
+      events: [lifecycleEvent],
+      timelogs: [canonicalTimelog],
+      eventApplications: [{ ...lifecycleApplication, status: 'approved' }],
+    });
+    const harness = await setupLifecycleService({ initialSnapshot });
+    const before = harness.getSnapshot();
+    harness.eventApplicationsUpsertSingle.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'crew_lifecycle_unauthorized' },
+    });
+
+    const error = await harness.service.requestEventWithdrawal(1, 'profile-uuid-1').catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message)
+      .toBe('Stav žádosti o odhlášení se mezitím změnil. Obnovte detail akce a zkuste to znovu.');
+    expect((error as Error).message).not.toContain('crew_lifecycle_unauthorized');
+    expect(harness.getSnapshot()).toEqual(before);
+  });
+
+  it.each([
+    {
+      label: 'application',
+      initialSnapshot: createSnapshot({
+        events: [lifecycleEvent],
+        eventApplications: [{ ...lifecycleApplication, status: 'withdrawn' }],
+      }),
+      run: (service: Awaited<ReturnType<typeof setupLifecycleService>>['service']) => (
+        service.applyForEvent(1, 'profile-uuid-1')
+      ),
+    },
+    {
+      label: 'withdrawal request',
+      initialSnapshot: createSnapshot({
+        events: [lifecycleEvent],
+        timelogs: [canonicalTimelog],
+        eventApplications: [{ ...lifecycleApplication, status: 'approved' }],
+      }),
+      run: (service: Awaited<ReturnType<typeof setupLifecycleService>>['service']) => (
+        service.requestEventWithdrawal(1, 'profile-uuid-1')
+      ),
+    },
+  ])('keeps an unexpected Crew $label database error diagnostic-only', async ({ initialSnapshot, run }) => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const harness = await setupLifecycleService({ initialSnapshot });
+      const databaseError = { message: 'new row violates row-level security policy' };
+      harness.eventApplicationsUpsertSingle.mockResolvedValueOnce({ data: null, error: databaseError });
+
+      await expect(run(harness.service))
+        .rejects.toThrow('Operaci s Crew se nepodařilo dokončit.');
+
+      expect(consoleError).toHaveBeenCalledWith('Unexpected Crew application lifecycle mutation error', databaseError);
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it('hydrates the canonical timelog returned by repeated assignment', async () => {

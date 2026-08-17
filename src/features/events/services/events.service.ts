@@ -14,6 +14,7 @@ const DEFAULT_TIME_FROM = '08:00';
 const DEFAULT_TIME_TO = '17:00';
 const CREW_LIFECYCLE_ERROR_MESSAGE = 'Operaci s Crew se nepodařilo dokončit.';
 const EVENT_APPLICATION_STATUS_CONFLICT_MESSAGE = 'Stav přihlášky se mezitím změnil. Obnovte detail akce a zkuste to znovu.';
+const EVENT_WITHDRAWAL_STATUS_CONFLICT_MESSAGE = 'Stav žádosti o odhlášení se mezitím změnil. Obnovte detail akce a zkuste to znovu.';
 const ASSIGNMENT_LIFECYCLE_VALIDATION_DIAGNOSTIC = 'Failed to validate refreshed Crew assignment lifecycle state';
 const EVENT_PHASE_TYPES: TimelogType[] = ['instal', 'provoz', 'deinstal'];
 type TimelogAssignmentRow = { event_id: string | null; contractor_id: string | null };
@@ -86,6 +87,22 @@ const isEventApplicationRow = (value: unknown): value is EventApplicationRow => 
     && (row.planned_from === null || typeof row.planned_from === 'string')
     && (row.planned_to === null || typeof row.planned_to === 'string')
     && typeof row.created_at === 'string';
+};
+
+const toCrewApplicationLifecycleMutationError = (error: unknown, conflictMessage: string): Error => {
+  const rawMessage = typeof error === 'object'
+    && error !== null
+    && 'message' in error
+    && typeof error.message === 'string'
+    ? error.message
+    : '';
+
+  if (/(^|[^A-Za-z0-9_])crew_lifecycle_unauthorized($|[^A-Za-z0-9_])/.test(rawMessage)) {
+    return new Error(conflictMessage);
+  }
+
+  console.error('Unexpected Crew application lifecycle mutation error', error);
+  return new Error(CREW_LIFECYCLE_ERROR_MESSAGE);
 };
 
 const throwAssignmentLifecycleValidationError = ({
@@ -888,7 +905,10 @@ export const applyForEvent = async (
       .single();
 
     if (applicationResult.error) {
-      throw new Error(applicationResult.error.message);
+      throw toCrewApplicationLifecycleMutationError(
+        applicationResult.error,
+        EVENT_APPLICATION_STATUS_CONFLICT_MESSAGE,
+      );
     }
 
     nextApplication = {
@@ -1051,7 +1071,10 @@ export const requestEventWithdrawal = async (
       .single();
 
     if (applicationResult.error) {
-      throw new Error(applicationResult.error.message);
+      throw toCrewApplicationLifecycleMutationError(
+        applicationResult.error,
+        EVENT_WITHDRAWAL_STATUS_CONFLICT_MESSAGE,
+      );
     }
 
     nextApplication = {

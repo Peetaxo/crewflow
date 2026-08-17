@@ -4,7 +4,7 @@
 
 **Goal:** Make Crew assignment and removal atomic, repair the nine existing duplicate timelog groups, and guarantee one timelog per event/profile without exposing raw database errors.
 
-**Architecture:** A single tracked Supabase migration repairs the known production duplicates, installs a unique constraint, and exposes two tightly authorized `SECURITY DEFINER` RPCs for assignment and removal. A focused TypeScript RPC adapter maps database outcomes into stable Czech domain errors; the existing event service keeps local-mode behavior but delegates Supabase mutations to the RPCs and then rehydrates authoritative state. UI controls add local status guards and in-flight protection, while the database remains the final concurrency and authorization boundary.
+**Architecture:** A single tracked Supabase migration repairs the known production duplicates, installs a unique constraint, exposes three tightly authorized `SECURITY DEFINER` manager RPCs for assignment, direct removal, and exact withdrawal approval, and installs a non-callable `SECURITY DEFINER` trigger that constrains Crew application transitions. A focused TypeScript RPC adapter maps database outcomes into stable Czech domain errors; the existing event service keeps local-mode behavior, delegates manager mutations to the appropriate RPC, preserves canonical UUID identity, and then rehydrates authoritative state. UI controls add local status guards and in-flight protection, while the database remains the final concurrency and authorization boundary.
 
 **Tech Stack:** PostgreSQL 17 / Supabase RLS and RPC, `@supabase/supabase-js`, React 18, TypeScript 5.8, Vitest 4, Testing Library, Supabase CLI 2.95.4.
 
@@ -12,16 +12,17 @@
 
 ## Scope and file map
 
-- Create `supabase/migrations/*_timelog_assignment_lifecycle.sql` (the single path printed by the CLI in Task 1): reconcile the tracked event-application prerequisite, assert and remove only the 13 verified duplicate rows, add `timelogs_event_contractor_unique`, and define the two lifecycle RPCs.
+- Create `supabase/migrations/*_timelog_assignment_lifecycle.sql` (the single path printed by the CLI in Task 1): reconcile and harden the tracked event-application prerequisite, assert and remove only the 13 verified duplicate rows, add `timelogs_event_contractor_unique`, define the three lifecycle RPCs, and install the Crew transition trigger.
 - Create `supabase/verify-timelog_assignment_lifecycle.sql`: rolled-back database behavior checks for authorization, idempotency, status blocking, cleanup, and re-application.
 - Create `src/features/events/services/event-assignment-lifecycle-migration.test.ts`: static migration contract checks, including every production UUID in the repair map.
 - Create `src/features/events/services/event-assignment-lifecycle.service.ts`: typed RPC adapter, status predicates, stable error mapping, and no local-state mutation.
 - Create `src/features/events/services/event-assignment-lifecycle.service.test.ts`: focused unit tests for RPC inputs, outputs, and error mapping.
-- Modify `src/features/events/services/events.service.ts`: use the RPC adapter in Supabase mode, rehydrate authoritative snapshots, and align the local fallback with the same removal rules.
-- Modify `src/features/events/services/events.service.test.ts`: replace multi-request expectations with RPC orchestration expectations and cover repeated approval/removal behavior.
+- Modify `src/features/events/services/events.service.ts`: use the appropriate manager RPC in Supabase mode, rehydrate authoritative snapshots, map direct Crew upsert conflicts centrally, and align the local fallback with the same removal rules.
+- Modify `src/features/events/services/events.service.test.ts`: replace multi-request expectations with RPC orchestration expectations; cover exact application/withdrawal conflicts, direct Crew trigger errors, and repeated approval/removal behavior.
 - Modify `src/features/events/types/events.types.ts`: carry canonical RPC metadata in the assignment result without exposing database rows to UI code.
 - Modify `src/types.ts`: add the deployed `pending_crew_confirmation` timelog state.
-- Modify `src/lib/database.types.ts`: add the deployed enum value and both RPC signatures.
+- Modify `src/lib/database.types.ts`: add the deployed enum value and all three RPC signatures.
+- Modify `src/features/timelogs/services/timelogs.service.ts`, its tests, and lifecycle timelog producers: preserve canonical event/timelog UUIDs across creation, refresh, save, status, and delete flows.
 - Modify `src/views/EventDetailView.tsx`: disable invalid removal, show explanatory text/title, and guard approve/remove actions while in flight.
 - Create `src/views/EventDetailView.lifecycle.test.tsx`: focused UI tests for blocked removal and double-click protection.
 - Modify `src/components/modals/AssignCrewModal.tsx`: guard direct assignment while the request is in flight.
@@ -36,12 +37,15 @@ Use these exact RPC names, parameters, and database error tokens throughout all 
 ```text
 assign_event_crew(p_event_id uuid, p_profile_id uuid, p_application_id uuid, p_days jsonb)
 remove_event_crew(p_event_id uuid, p_profile_id uuid)
+approve_event_withdrawal(p_event_id uuid, p_profile_id uuid, p_application_id uuid)
 
 crew_lifecycle_unauthorized
 crew_lifecycle_not_found
 crew_assignment_conflict
 crew_assignment_invalid_days
 crew_removal_blocked
+crew_application_conflict
+crew_withdrawal_conflict
 ```
 
 Map them to these exact Czech messages:
@@ -52,8 +56,14 @@ crew_lifecycle_not_found -> Akce nebo člen Crew nebyl nalezen.
 crew_assignment_conflict -> Výkaz pro tuto Crew a akci už existuje a nelze ho přepsat.
 crew_assignment_invalid_days -> Pro přiřazení Crew nejsou k dispozici platné směny.
 crew_removal_blocked -> Crew nelze odebrat, protože výkaz už byl odeslán ke kontrole.
+crew_application_conflict -> Stav přihlášky se mezitím změnil. Obnovte detail akce a zkuste to znovu.
+crew_withdrawal_conflict -> Stav žádosti o odhlášení se mezitím změnil. Obnovte detail akce a zkuste to znovu.
 unexpected -> Operaci s Crew se nepodařilo dokončit.
 ```
+
+The manager adapter maps `crew_lifecycle_unauthorized` to the manager authorization message above. Direct Crew re-application and withdrawal-request upserts can receive the same trigger token when their local application state is stale; `events.service.ts` must instead map it to the operation-specific application or withdrawal conflict. No UI caller may receive a raw database token or RLS/unique diagnostic.
+
+The three manager RPCs are callable only by `authenticated`, re-check `auth.uid()` plus CrewHead/COO inside the function, and revoke execution from `PUBLIC` and `anon`. `enforce_event_application_lifecycle_update()` is a trigger function, not a fourth endpoint: revoke execution from `PUBLIC`, `anon`, and `authenticated` while allowing PostgreSQL to invoke it through the trigger.
 
 ## Task 1: Lock the migration repair contract with a failing test
 
@@ -193,6 +203,7 @@ create index if not exists event_applications_status_idx
   on public.event_applications (status);
 
 alter table public.event_applications enable row level security;
+revoke all on public.event_applications from authenticated;
 grant select, insert, update on public.event_applications to authenticated;
 revoke all on public.event_applications from anon;
 
@@ -221,13 +232,14 @@ with check (
 );
 
 drop policy if exists "Crew can renew own event applications" on public.event_applications;
+drop policy if exists "Crew can update own event applications" on public.event_applications;
 create policy "Crew can renew own event applications"
 on public.event_applications for update to authenticated
 using (profile_id = public.current_profile_id())
 with check (
   profile_id = public.current_profile_id()
   and (
-    status in ('pending', 'withdrawn')
+    status in ('pending', 'approved', 'rejected', 'withdrawn')
     or (
       status = 'withdrawal_requested'
       and exists (
@@ -251,9 +263,56 @@ with check (
   public.has_role((select auth.uid()), 'crewhead'::public.app_role)
   or public.has_role((select auth.uid()), 'coo'::public.app_role)
 );
+
+create or replace function public.enforce_event_application_lifecycle_update()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  new.updated_at := pg_catalog.now();
+
+  if auth.uid() is null then
+    return new;
+  end if;
+
+  if public.has_role(auth.uid(), 'crewhead'::public.app_role)
+    or public.has_role(auth.uid(), 'coo'::public.app_role) then
+    return new;
+  end if;
+
+  if not public.has_role(auth.uid(), 'crew'::public.app_role)
+    or old.profile_id is distinct from public.current_profile_id()
+    or new.id is distinct from old.id
+    or new.event_id is distinct from old.event_id
+    or new.profile_id is distinct from old.profile_id
+    or new.created_at is distinct from old.created_at then
+    raise exception 'crew_lifecycle_unauthorized' using errcode = '42501';
+  end if;
+
+  if new.status is not distinct from old.status
+    or (old.status = 'pending' and new.status = 'withdrawn')
+    or (old.status in ('rejected', 'withdrawn') and new.status = 'pending')
+    or (old.status = 'approved' and new.status = 'withdrawal_requested') then
+    return new;
+  end if;
+
+  raise exception 'crew_lifecycle_unauthorized' using errcode = '42501';
+end;
+$$;
+
+revoke all on function public.enforce_event_application_lifecycle_update() from public;
+revoke all on function public.enforce_event_application_lifecycle_update() from anon;
+revoke all on function public.enforce_event_application_lifecycle_update() from authenticated;
+
+drop trigger if exists enforce_event_application_lifecycle_update on public.event_applications;
+create trigger enforce_event_application_lifecycle_update
+before update on public.event_applications
+for each row execute function public.enforce_event_application_lifecycle_update();
 ```
 
-The Crew insert/update policies intentionally retain the existing application workflow; the privileged lifecycle RPCs still perform their own manager authorization.
+The RLS policies constrain ownership and the set of values that can pass `WITH CHECK`; the trigger additionally freezes Crew identity columns and enforces the exact transition graph. It is deliberately non-callable by API roles. The three privileged lifecycle RPCs still perform their own manager authorization and do not rely on this UI/RLS layer as their security boundary.
 
 - [ ] **Step 2: Add the explicit duplicate map and normalized-day helper**
 
@@ -463,7 +522,7 @@ git add src/features/events/services/event-assignment-lifecycle-migration.test.t
 git commit -m "fix: repair duplicate event timelogs"
 ```
 
-## Task 3: Add atomic, authorized assignment and removal RPCs
+## Task 3: Add three atomic manager RPCs and the Crew transition trigger
 
 **Files:**
 - Modify: `src/features/events/services/event-assignment-lifecycle-migration.test.ts`
@@ -475,23 +534,29 @@ git commit -m "fix: repair duplicate event timelogs"
 Append these cases inside the existing `describe`:
 
 ```ts
-it('defines both atomic lifecycle RPCs with the same transaction lock', () => {
+it('defines all three atomic manager RPCs with the same transaction lock', () => {
   const sql = readMigration();
   expect(sql).toContain('function public.assign_event_crew');
   expect(sql).toContain('function public.remove_event_crew');
-  expect(sql.match(/pg_advisory_xact_lock/g)).toHaveLength(2);
+  expect(sql).toContain('function public.approve_event_withdrawal');
+  expect(sql.match(/pg_advisory_xact_lock/g)).toHaveLength(3);
   expect(sql).toContain('on conflict (event_id, profile_id) do nothing');
   expect(sql).toContain("status not in ('draft', 'rejected')");
+  expect(sql).toContain("raise exception 'crew_application_conflict'");
+  expect(sql).toContain("raise exception 'crew_withdrawal_conflict'");
 });
 
-it('hardens privileged functions and exposes them only to authenticated users', () => {
+it('hardens three RPCs while keeping the trigger function non-callable', () => {
   const sql = readMigration();
-  expect(sql.match(/security definer/g)).toHaveLength(2);
-  expect(sql.match(/set search_path = ''/g)?.length).toBeGreaterThanOrEqual(2);
+  expect(sql.match(/security definer/g)).toHaveLength(4);
+  expect(sql.match(/set search_path = ''/g)?.length).toBeGreaterThanOrEqual(4);
   expect(sql).toContain('revoke all on function public.assign_event_crew');
   expect(sql).toContain('revoke all on function public.remove_event_crew');
+  expect(sql).toContain('revoke all on function public.approve_event_withdrawal');
+  expect(sql).toContain('revoke all on function public.enforce_event_application_lifecycle_update() from authenticated');
   expect(sql).toContain('grant execute on function public.assign_event_crew');
   expect(sql).toContain('grant execute on function public.remove_event_crew');
+  expect(sql).toContain('grant execute on function public.approve_event_withdrawal');
   expect(sql).toContain('crew_lifecycle_unauthorized');
   expect(sql).toContain('crew_removal_blocked');
 });
@@ -505,7 +570,7 @@ Expected: FAIL because the functions and grants do not exist yet.
 
 - [ ] **Step 3: Implement `assign_event_crew`**
 
-Append the complete function after the unique constraint. It uses the same lock key as removal, checks manager roles inside the function, never resets an existing timelog, and inserts days only for a newly created draft:
+Append the complete function after the unique constraint. It uses the shared event/profile lock key, checks manager roles inside the function, locks the exact application before assignment/timelog rows, accepts only `pending` or a consistent exact `approved` retry, conditionally changes `pending -> approved`, never resets an existing timelog, and inserts days only for a newly created draft. Every stale or inconsistent application state returns `crew_application_conflict`:
 
 ```sql
 create or replace function public.assign_event_crew(
@@ -527,6 +592,8 @@ declare
   v_timelog_created boolean := false;
   v_crew_filled integer;
   v_application_id uuid;
+  v_application_status text;
+  v_application_already_approved boolean := false;
 begin
   if auth.uid() is null or not (
     public.has_role(auth.uid(), 'crewhead'::public.app_role)
@@ -539,9 +606,33 @@ begin
     pg_catalog.hashtextextended(p_event_id::text || ':' || p_profile_id::text, 0)
   );
 
-  if not exists (select 1 from public.events where id = p_event_id)
-    or not exists (select 1 from public.profiles where id = p_profile_id) then
+  perform id
+  from public.events
+  where id = p_event_id
+  for update;
+  if not found then
     raise exception 'crew_lifecycle_not_found' using errcode = 'P0002';
+  end if;
+
+  if not exists (select 1 from public.profiles where id = p_profile_id) then
+    raise exception 'crew_lifecycle_not_found' using errcode = 'P0002';
+  end if;
+
+  if p_application_id is not null then
+    select id, status into v_application_id, v_application_status
+    from public.event_applications
+    where id = p_application_id
+      and event_id = p_event_id
+      and profile_id = p_profile_id
+    for update;
+
+    if not found then
+      raise exception 'crew_lifecycle_not_found' using errcode = 'P0002';
+    end if;
+
+    if v_application_status not in ('pending', 'approved') then
+      raise exception 'crew_application_conflict' using errcode = 'P0001';
+    end if;
   end if;
 
   select id into v_existing_assignment_id
@@ -553,6 +644,13 @@ begin
   from public.timelogs
   where event_id = p_event_id and contractor_id = p_profile_id
   for update;
+
+  if v_application_status = 'approved' then
+    if v_existing_assignment_id is null or v_timelog_id is null then
+      raise exception 'crew_application_conflict' using errcode = 'P0001';
+    end if;
+    v_application_already_approved := true;
+  end if;
 
   if v_timelog_id is not null
     and v_existing_assignment_id is null
@@ -604,20 +702,22 @@ begin
     v_timelog_created := true;
   end if;
 
-  if p_application_id is not null then
+  if p_application_id is not null and not v_application_already_approved then
+    v_application_id := null;
     update public.event_applications
-    set status = 'approved', updated_at = now()
+    set status = 'approved', updated_at = pg_catalog.now()
     where id = p_application_id
       and event_id = p_event_id
       and profile_id = p_profile_id
+      and status = 'pending'
     returning id into v_application_id;
 
     if v_application_id is null then
-      raise exception 'crew_lifecycle_not_found' using errcode = 'P0002';
+      raise exception 'crew_application_conflict' using errcode = 'P0001';
     end if;
-  else
+  elsif p_application_id is null then
     update public.event_applications
-    set status = 'approved', updated_at = now()
+    set status = 'approved', updated_at = pg_catalog.now()
     where event_id = p_event_id and profile_id = p_profile_id
     returning id into v_application_id;
   end if;
@@ -734,7 +834,118 @@ $$;
 
 Because every value other than `draft` and `rejected` is blocked, this automatically protects `pending_ch`, `pending_crew_confirmation`, `pending_coo`, `approved`, `invoiced`, `paid`, and any future state unless explicitly made disposable.
 
-- [ ] **Step 5: Add exact function privileges and finish the migration**
+- [ ] **Step 5: Implement exact application-scoped withdrawal approval**
+
+Append `approve_event_withdrawal`. It shares the event/profile lock order, locks the exact application before assignment/timelog rows, accepts only `withdrawal_requested`, and treats `withdrawn` as an exact retry only when assignment and timelog are both already absent:
+
+```sql
+create or replace function public.approve_event_withdrawal(
+  p_event_id uuid,
+  p_profile_id uuid,
+  p_application_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_assignment_id uuid;
+  v_assignment_removed boolean := false;
+  v_timelog_id uuid;
+  v_timelog_status public.timelog_status;
+  v_timelog_removed boolean := false;
+  v_application_id uuid;
+  v_application_status text;
+  v_crew_filled integer;
+begin
+  if auth.uid() is null or not (
+    public.has_role(auth.uid(), 'crewhead'::public.app_role)
+    or public.has_role(auth.uid(), 'coo'::public.app_role)
+  ) then
+    raise exception 'crew_lifecycle_unauthorized' using errcode = '42501';
+  end if;
+
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(p_event_id::text || ':' || p_profile_id::text, 0)
+  );
+
+  perform id from public.events where id = p_event_id for update;
+  if not found then
+    raise exception 'crew_lifecycle_not_found' using errcode = 'P0002';
+  end if;
+  if not exists (select 1 from public.profiles where id = p_profile_id) then
+    raise exception 'crew_lifecycle_not_found' using errcode = 'P0002';
+  end if;
+
+  select id, status into v_application_id, v_application_status
+  from public.event_applications
+  where id = p_application_id
+    and event_id = p_event_id
+    and profile_id = p_profile_id
+  for update;
+  if not found then
+    raise exception 'crew_lifecycle_not_found' using errcode = 'P0002';
+  end if;
+
+  select id into v_assignment_id
+  from public.event_assignments
+  where event_id = p_event_id and profile_id = p_profile_id
+  for update;
+
+  select id, status into v_timelog_id, v_timelog_status
+  from public.timelogs
+  where event_id = p_event_id and contractor_id = p_profile_id
+  for update;
+
+  if v_application_status = 'withdrawn' then
+    if v_assignment_id is not null or v_timelog_id is not null then
+      raise exception 'crew_withdrawal_conflict' using errcode = 'P0001';
+    end if;
+  elsif v_application_status <> 'withdrawal_requested' then
+    raise exception 'crew_withdrawal_conflict' using errcode = 'P0001';
+  else
+    if v_timelog_id is not null and v_timelog_status not in ('draft', 'rejected') then
+      raise exception 'crew_removal_blocked' using errcode = 'P0001';
+    end if;
+
+    delete from public.timelogs
+    where id = v_timelog_id and status in ('draft', 'rejected');
+    v_timelog_removed := found;
+
+    delete from public.event_assignments where id = v_assignment_id;
+    v_assignment_removed := found;
+
+    update public.event_applications
+    set status = 'withdrawn', updated_at = pg_catalog.now()
+    where id = p_application_id
+      and event_id = p_event_id
+      and profile_id = p_profile_id
+      and status = 'withdrawal_requested';
+    if not found then
+      raise exception 'crew_withdrawal_conflict' using errcode = 'P0001';
+    end if;
+  end if;
+
+  select count(*)::integer into v_crew_filled
+  from public.event_assignments
+  where event_id = p_event_id;
+
+  update public.events set crew_filled = v_crew_filled where id = p_event_id;
+
+  return pg_catalog.jsonb_build_object(
+    'event_id', p_event_id,
+    'profile_id', p_profile_id,
+    'application_id', v_application_id,
+    'assignment_removed', v_assignment_removed,
+    'timelog_removed', v_timelog_removed,
+    'crew_filled', v_crew_filled
+  );
+end;
+$$;
+```
+
+- [ ] **Step 6: Add exact function privileges and finish the migration**
 
 Append:
 
@@ -747,14 +958,18 @@ revoke all on function public.remove_event_crew(uuid, uuid) from public;
 revoke all on function public.remove_event_crew(uuid, uuid) from anon;
 grant execute on function public.remove_event_crew(uuid, uuid) to authenticated;
 
+revoke all on function public.approve_event_withdrawal(uuid, uuid, uuid) from public;
+revoke all on function public.approve_event_withdrawal(uuid, uuid, uuid) from anon;
+grant execute on function public.approve_event_withdrawal(uuid, uuid, uuid) to authenticated;
+
 commit;
 ```
 
-This deliberate `SECURITY DEFINER` use is acceptable only with the explicit `auth.uid()`/role checks, empty search path, fully qualified relations, exact signatures, and restricted grants above. Record any Supabase advisor warning for authenticated definer functions and verify it points only to these reviewed endpoints.
+This deliberate `SECURITY DEFINER` use is acceptable only with the explicit `auth.uid()`/role checks, empty search path, fully qualified relations, exact signatures, and restricted grants above. Record any Supabase advisor warning for authenticated definer functions and verify it points only to these three reviewed endpoints. The trigger function is separately non-callable by every API role.
 
-- [ ] **Step 6: Add a rolled-back behavioral verification script**
+- [ ] **Step 7: Add a rolled-back behavioral verification script**
 
-Create `supabase/verify-timelog_assignment_lifecycle.sql` with a single transaction that:
+Create `supabase/verify-timelog_assignment_lifecycle.sql` as a single rolled-back transaction. The following is the initial assignment/direct-removal skeleton; extend it with the mandatory cases listed immediately after the block before this step is complete:
 
 ```sql
 begin;
@@ -862,7 +1077,17 @@ $$;
 rollback;
 ```
 
-- [ ] **Step 7: Run static migration tests and the remote baseline lint**
+The final verifier must be self-contained and must not depend on pre-existing pure CrewHead/COO fixtures. It temporarily assigns the selected manager user `crewhead`, exercises the CrewHead path, removes that role, assigns `coo`, exercises the COO path, removes it, and restores only the roles needed for later cases inside the transaction. In addition to the skeleton it must verify:
+
+- exact `proacl` contracts for all three manager RPCs and no callable ACL for `enforce_event_application_lifecycle_update()`;
+- the trigger exists, owns Crew `updated_at`, freezes `id`, `event_id`, `profile_id`, and `created_at`, permits only same-status, `pending -> withdrawn`, `rejected|withdrawn -> pending`, and `approved -> withdrawal_requested`, and rejects every other Crew transition without changing any row;
+- Crew cannot call `assign_event_crew`, `remove_event_crew`, or `approve_event_withdrawal`;
+- pending approval, exact approved retry, stale approval states, and inconsistent approved retries, with `crew_application_conflict` and unchanged row snapshots on every conflict;
+- withdrawal approval from `withdrawal_requested`, exact clean `withdrawn` retry, stale withdrawal states, inconsistent withdrawn retries, and non-disposable blocking, with `crew_withdrawal_conflict` or `crew_removal_blocked` and unchanged row snapshots as appropriate;
+- direct removal remains the intentional two-argument operation and re-application creates one new clean draft;
+- the whole script ends with `rollback` and leaves no fixtures, roles, assignments, applications, timelogs, or event counts behind.
+
+- [ ] **Step 8: Run static migration tests and the remote baseline lint**
 
 Run:
 
@@ -873,7 +1098,7 @@ supabase db lint --linked --level error --fail-on error
 
 Expected: migration test PASS and no new SQL errors. Do not apply the migration yet.
 
-- [ ] **Step 8: Commit the RPC migration and verification script**
+- [ ] **Step 9: Commit the RPC migration and verification script**
 
 ```bash
 LIFECYCLE_MIGRATION="$(find supabase/migrations -maxdepth 1 -type f -name '*_timelog_assignment_lifecycle.sql' -print)"
@@ -916,9 +1141,21 @@ it.each([
   ['crew_assignment_conflict', 'Výkaz pro tuto Crew a akci už existuje a nelze ho přepsat.'],
   ['crew_assignment_invalid_days', 'Pro přiřazení Crew nejsou k dispozici platné směny.'],
   ['crew_removal_blocked', 'Crew nelze odebrat, protože výkaz už byl odeslán ke kontrole.'],
+  ['crew_application_conflict', 'Stav přihlášky se mezitím změnil. Obnovte detail akce a zkuste to znovu.'],
+  ['crew_withdrawal_conflict', 'Stav žádosti o odhlášení se mezitím změnil. Obnovte detail akce a zkuste to znovu.'],
 ])('maps %s to a stable Czech domain error', async (token, expected) => {
   rpc.mockResolvedValue({ data: null, error: { message: token } });
   await expect(removeEventCrewRpc('event-1', 'profile-1')).rejects.toThrow(expected);
+});
+
+it('sends the exact application UUID to approve_event_withdrawal', async () => {
+  rpc.mockResolvedValue({ data: removalResult, error: null });
+  await approveEventWithdrawalRpc('event-1', 'profile-1', 'application-1');
+  expect(rpc).toHaveBeenCalledWith('approve_event_withdrawal', {
+    p_event_id: 'event-1',
+    p_profile_id: 'profile-1',
+    p_application_id: 'application-1',
+  });
 });
 
 it('treats only draft and rejected as disposable', () => {
@@ -960,6 +1197,14 @@ remove_event_crew: {
   };
   Returns: Json;
 };
+approve_event_withdrawal: {
+  Args: {
+    p_event_id: string;
+    p_profile_id: string;
+    p_application_id: string;
+  };
+  Returns: Json;
+};
 ```
 
 - [ ] **Step 4: Implement the focused RPC adapter**
@@ -995,6 +1240,8 @@ const ERROR_MESSAGES = {
   crew_assignment_conflict: 'Výkaz pro tuto Crew a akci už existuje a nelze ho přepsat.',
   crew_assignment_invalid_days: 'Pro přiřazení Crew nejsou k dispozici platné směny.',
   crew_removal_blocked: 'Crew nelze odebrat, protože výkaz už byl odeslán ke kontrole.',
+  crew_application_conflict: 'Stav přihlášky se mezitím změnil. Obnovte detail akce a zkuste to znovu.',
+  crew_withdrawal_conflict: 'Stav žádosti o odhlášení se mezitím změnil. Obnovte detail akce a zkuste to znovu.',
 } as const;
 
 const toDomainError = (error: { message?: string } | null): Error => {
@@ -1052,6 +1299,21 @@ export const removeEventCrewRpc = async (
   if (result.error) throw toDomainError(result.error);
   return assertObject<RemoveEventCrewRpcResult>(result.data);
 };
+
+export const approveEventWithdrawalRpc = async (
+  eventId: string,
+  profileId: string,
+  applicationId: string,
+): Promise<RemoveEventCrewRpcResult> => {
+  if (!supabase) throw new Error('Operaci s Crew se nepodařilo dokončit.');
+  const result = await supabase.rpc('approve_event_withdrawal', {
+    p_event_id: eventId,
+    p_profile_id: profileId,
+    p_application_id: applicationId,
+  });
+  if (result.error) throw toDomainError(result.error);
+  return assertObject<RemoveEventCrewRpcResult>(result.data);
+};
 ```
 
 - [ ] **Step 5: Run adapter and type tests**
@@ -1099,11 +1361,17 @@ it('hydrates the canonical timelog returned by repeated assignment', async () =>
   expect(snapshot.timelogs.filter((item) => item.contractorProfileId === 'profile-uuid-1')).toHaveLength(1);
 });
 
-it('uses the removal RPC for direct removal and withdrawal approval', async () => {
+it('keeps direct removal separate from exact withdrawal approval', async () => {
   await removeContractorFromEvent(1, 'profile-uuid-1');
   await approveEventWithdrawal(1);
-  expect(removeEventCrewRpc).toHaveBeenNthCalledWith(1, 'event-row-1', 'profile-uuid-1');
-  expect(removeEventCrewRpc).toHaveBeenNthCalledWith(2, 'event-row-1', 'profile-uuid-1');
+  expect(removeEventCrewRpc).toHaveBeenCalledOnce();
+  expect(removeEventCrewRpc).toHaveBeenCalledWith('event-row-1', 'profile-uuid-1');
+  expect(approveEventWithdrawalRpc).toHaveBeenCalledOnce();
+  expect(approveEventWithdrawalRpc).toHaveBeenCalledWith(
+    'event-row-1',
+    'profile-uuid-1',
+    'application-row-1',
+  );
   expect(eventApplicationsUpdate).not.toHaveBeenCalled();
 });
 
@@ -1152,9 +1420,7 @@ const rpcResult = await assignEventCrewRpc({
 await refreshEventLifecycleState();
 const refreshed = getLocalAppState();
 const refreshedEvent = refreshed.events.find((item) => item.supabaseId === rpcResult.event_id);
-const canonicalTimelog = refreshed.timelogs.find((item) => (
-  item.eid === refreshedEvent?.id && item.contractorProfileId === contractorProfileId
-));
+const canonicalTimelog = refreshed.timelogs.find((item) => item.supabaseId === rpcResult.timelog_id);
 if (!refreshedEvent || !canonicalTimelog) {
   throw new Error('Operaci s Crew se nepodařilo dokončit.');
 }
@@ -1182,9 +1448,25 @@ return {
 
 The local fallback must first reject when any matching timelog is not disposable, then remove `draft`/`rejected` timelogs and assignments, set the matching local application to `withdrawn`, and recalculate `filled`.
 
-`approveEventWithdrawal` must call only `removeContractorFromEvent`; remove its separate status update.
+`approveEventWithdrawal` must not call `removeContractorFromEvent`. In Supabase mode it requires `application.supabaseId` and the canonical event UUID, calls only `approveEventWithdrawalRpc(eventUuid, profileUuid, applicationUuid)`, performs the authoritative lifecycle refresh, then validates that the exact application is `withdrawn` and no event/profile timelog remains. Local mode keeps the equivalent in-memory transition.
 
-- [ ] **Step 6: Extend `EventAssignmentResult` consistently**
+- [ ] **Step 6: Map direct Crew trigger conflicts before they reach either UI**
+
+`applyForEvent` and `requestEventWithdrawal` share the Supabase `event_applications` upsert boundary used by EventDetailView and EventsView. Add RED tests that make the upsert return `{ message: 'crew_lifecycle_unauthorized' }` after the local snapshot passed validation. The service must map re-application to:
+
+```text
+Stav přihlášky se mezitím změnil. Obnovte detail akce a zkuste to znovu.
+```
+
+and withdrawal request to:
+
+```text
+Stav žádosti o odhlášení se mezitím změnil. Obnovte detail akce a zkuste to znovu.
+```
+
+For any other database error at this boundary, log `Unexpected Crew application lifecycle mutation error` with the original error and throw `Operaci s Crew se nepodařilo dokončit.`. Do not update local state on either failure. This central mapping is what guarantees that neither UI flow can toast a raw trigger, RLS, or unique-constraint diagnostic.
+
+- [ ] **Step 7: Extend `EventAssignmentResult` consistently**
 
 Add optional canonical RPC metadata without changing UI callers:
 
@@ -1198,15 +1480,15 @@ export interface EventAssignmentResult {
 
 Import `AssignEventCrewRpcResult` from the focused adapter using a type-only import.
 
-- [ ] **Step 7: Run event service and UUID identity tests**
+- [ ] **Step 8: Run event service and UUID identity tests**
 
 ```bash
-npm test -- src/features/events/services/events.service.test.ts src/components/modals/uuid-contractor-modal-identity.test.tsx src/features/uuid-write-flows.integration.test.ts
+npm test -- src/features/events/services/events.service.test.ts src/features/events/services/event-assignment-lifecycle.service.test.ts src/components/modals/uuid-contractor-modal-identity.test.tsx src/features/uuid-write-flows.integration.test.ts src/features/timelogs/services/timelogs.service.test.ts src/features/timelogs/services/approval-timelog-sync.service.test.ts
 ```
 
 Expected: PASS; no old table-write expectation remains.
 
-- [ ] **Step 8: Commit service orchestration**
+- [ ] **Step 9: Commit service orchestration**
 
 ```bash
 git add src/features/events/services/events.service.ts src/features/events/services/events.service.test.ts src/features/events/types/events.types.ts
@@ -1350,7 +1632,7 @@ git commit -m "fix: guard crew assignment lifecycle actions"
 git diff --check 1962eab..HEAD
 LIFECYCLE_MIGRATION="$(find supabase/migrations -maxdepth 1 -type f -name '*_timelog_assignment_lifecycle.sql' -print)"
 test -n "$LIFECYCLE_MIGRATION"
-rg -n "T[B]D|T[O]DO|implement[[:space:]]later|new row violates row-level security|timelogs_event_contractor_unique|assign_event_crew|remove_event_crew" "$LIFECYCLE_MIGRATION" src/features/events src/views/EventDetailView.tsx src/components/modals/AssignCrewModal.tsx
+rg -n "T[B]D|T[O]DO|implement[[:space:]]later|new row violates row-level security|timelogs_event_contractor_unique|assign_event_crew|remove_event_crew|approve_event_withdrawal|enforce_event_application_lifecycle_update|crew_application_conflict|crew_withdrawal_conflict" "$LIFECYCLE_MIGRATION" src/features/events src/features/timelogs src/views/EventDetailView.tsx src/components/modals/AssignCrewModal.tsx
 ```
 
 Expected: no placeholders or raw RLS user message; required names appear.
@@ -1358,7 +1640,8 @@ Expected: no placeholders or raw RLS user message; required names appear.
 - [ ] **Step 2: Run focused tests, then the full test and build gates**
 
 ```bash
-npm test -- src/features/events/services/event-assignment-lifecycle-migration.test.ts src/features/events/services/event-assignment-lifecycle.service.test.ts src/features/events/services/events.service.test.ts src/views/EventDetailView.lifecycle.test.tsx src/views/EventDetailView.test.tsx src/components/modals/uuid-contractor-modal-identity.test.tsx
+npm test -- src/features/events/services/event-assignment-lifecycle-migration.test.ts src/features/events/services/event-assignment-lifecycle.service.test.ts src/features/events/services/events.service.test.ts src/features/timelogs/services/timelogs.service.test.ts src/features/timelogs/services/approval-timelog-sync.service.test.ts src/features/uuid-write-flows.integration.test.ts src/views/EventDetailView.lifecycle.test.tsx src/views/EventDetailView.test.tsx src/components/modals/uuid-contractor-modal-identity.test.tsx
+npx tsc --noEmit
 npm test
 npm run lint
 npm run build
@@ -1396,7 +1679,7 @@ supabase db advisors --linked --type performance --level warn
 supabase db query --linked --file supabase/verify-timelog_assignment_lifecycle.sql
 ```
 
-Expected: behavior script completes and rolls back; no new unreviewed advisor error. A warning that the two authenticated `SECURITY DEFINER` endpoints are executable must be reviewed against their explicit role checks, empty search path, and restricted grants rather than silently ignored.
+Expected: behavior script completes and rolls back; no new unreviewed advisor error. Any warning for the three authenticated `SECURITY DEFINER` RPC endpoints must be reviewed against their explicit role checks, empty search path, exact signatures, and restricted grants rather than silently ignored. `enforce_event_application_lifecycle_update()` is a fourth `SECURITY DEFINER` function but not an endpoint: its ACL must remain non-callable by `PUBLIC`, `anon`, and `authenticated`, and only the installed trigger may invoke it.
 
 - [ ] **Step 6: Verify production invariants and the Red Bull record**
 
@@ -1416,7 +1699,10 @@ Using the application UI after the schema migration is present:
 2. Confirm the status changes to `pending_ch` and no raw RLS/unique error appears.
 3. On a disposable test draft, remove Crew as CrewHead/COO and confirm the assignment, timelog, days, application status, and `crew_filled` change together.
 4. Re-apply and approve the same Crew profile; confirm exactly one new clean draft exists.
-5. Attempt removal after submission; confirm the Czech blocking message and verify no rows changed.
+5. Request withdrawal as Crew, approve that exact request as CrewHead/COO, and confirm `approve_event_withdrawal` changes the exact application to `withdrawn` while removing assignment and disposable timelog atomically.
+6. Attempt approval or withdrawal approval from a stale application status; confirm the stable Czech application/withdrawal conflict and verify no rows changed.
+7. Attempt removal after submission; confirm the Czech blocking message and verify no rows changed.
+8. Confirm Crew re-application and withdrawal-request failures never expose `crew_lifecycle_unauthorized`, RLS text, or a unique-constraint diagnostic in either event UI.
 
 - [ ] **Step 8: Inspect final scope and commit any verification-only corrections**
 
@@ -1434,10 +1720,16 @@ Expected: only intentional lifecycle files are committed; the user's pre-existin
 - [ ] `timelogs_event_contractor_unique` exists with the exact two-column definition.
 - [ ] Repeated assignment approval returns the existing assignment/timelog and never resets days or status.
 - [ ] Concurrent callers are serialized by the shared advisory lock and protected by unique constraints.
+- [ ] Exactly three authenticated manager RPCs exist: `assign_event_crew`, `remove_event_crew`, and `approve_event_withdrawal`; each enforces CrewHead/COO internally and has the reviewed ACL.
+- [ ] `enforce_event_application_lifecycle_update()` is installed as a `BEFORE UPDATE` trigger and is not executable by any API role.
 - [ ] `draft` and `rejected` removal deletes the timelog/days/assignment and withdraws the application atomically.
 - [ ] Every other current or future timelog status blocks removal atomically.
 - [ ] Re-application after valid removal creates one new clean draft.
+- [ ] Assignment approval and withdrawal approval are scoped to the exact application UUID; stale or inconsistent state produces `crew_application_conflict` or `crew_withdrawal_conflict` with no partial writes.
+- [ ] Crew can change only its own application through the documented transition graph and cannot mutate application identity columns.
+- [ ] Canonical event and timelog UUIDs survive hydration and refresh and are used for every Supabase write.
 - [ ] Crew cannot execute manager lifecycle mutations successfully.
 - [ ] UI controls block repeated clicks but do not replace database idempotency.
-- [ ] Expected conflicts produce stable Czech domain messages; raw RLS/unique messages remain diagnostic only.
+- [ ] Expected conflicts produce stable Czech domain messages; raw RLS, unique, trigger, and RPC messages remain diagnostic only in EventDetailView and EventsView.
 - [ ] Schema migration is deployed before frontend code that calls the RPCs.
+- [ ] This design and implementation plan describe the deployed three-RPC/trigger contract before the production push; any schema or contract drift stops deployment.

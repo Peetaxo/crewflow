@@ -660,7 +660,10 @@ begin
       )
       or (
         old.status = 'invoiced'::public.timelog_status
-        and new.status = 'paid'::public.timelog_status
+        and new.status in (
+          'approved'::public.timelog_status,
+          'paid'::public.timelog_status
+        )
       )
     ) then
     return new;

@@ -1521,6 +1521,29 @@ begin
     raise exception 'verification failed: invoiced import exact retry mutated the row';
   end if;
 
+  v_result := public.transition_timelog_statuses_atomic(
+    pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
+      'id', v_atomic_fourth_timelog_id,
+      'expected_updated_at', v_atomic_fourth_updated_at
+    )),
+    'invoiced'::public.timelog_status,
+    'approved'::public.timelog_status
+  );
+  v_atomic_fourth_updated_at := (v_result->0->>'updated_at')::timestamptz;
+  if v_result->0->>'status' <> 'approved' then
+    raise exception 'verification failed: invoice deletion did not reopen timelog';
+  end if;
+
+  v_result := public.transition_timelog_statuses_atomic(
+    pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
+      'id', v_atomic_fourth_timelog_id,
+      'expected_updated_at', v_atomic_fourth_updated_at
+    )),
+    'approved'::public.timelog_status,
+    'invoiced'::public.timelog_status
+  );
+  v_atomic_fourth_updated_at := (v_result->0->>'updated_at')::timestamptz;
+
   insert into public.events (name, status)
   values (
     'atomic delete verification ' || pg_catalog.gen_random_uuid()::text,

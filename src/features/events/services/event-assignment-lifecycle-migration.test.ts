@@ -573,6 +573,9 @@ describe('timelog assignment lifecycle migration', () => {
     expect(permissionTrigger).toMatch(
       /current_setting\('crewflow\.approved_timelog_import', true\) = 'on'[\s\S]*old\.status in \([\s\S]*'draft'::public\.timelog_status,[\s\S]*'rejected'::public\.timelog_status,[\s\S]*'pending_coo'::public\.timelog_status[\s\S]*new\.status in/,
     );
+    expect(permissionTrigger).toMatch(
+      /old\.status = 'invoiced'::public\.timelog_status[\s\S]*new\.status in \([\s\S]*'approved'::public\.timelog_status,[\s\S]*'paid'::public\.timelog_status/,
+    );
   });
 
   it('exposes exactly seven authenticated lifecycle/timelog RPCs and keeps trigger helpers private', () => {
@@ -605,6 +608,7 @@ describe('timelog assignment lifecycle migration', () => {
     );
     expect(verifier).toContain('verification failed: direct coo timelog update bypassed import rpc');
     expect(verifier).toContain('verification failed: crew-only user imported approved timelog');
+    expect(verifier).toContain('verification failed: invoice deletion did not reopen timelog');
   });
 
   it('resets each blocked-status fixture before setting and checking the target status', () => {

@@ -21,6 +21,7 @@ describe('event mutation RPC adapter', () => {
 
   it.each([
     ['event_has_protected_timelogs', 'Akci nelze smazat, protože obsahuje chráněné výkazy.'],
+    ['event_has_protected_receipts', 'Akci nelze smazat, protože obsahuje chráněné účtenky.'],
     ['event_delete_conflict', 'Akce se mezitím změnila. Obnovte data a zkuste to znovu.'],
     ['event_not_found', 'Akce už neexistuje nebo k ní nemáte přístup.'],
   ])('maps %s without exposing raw database details', async (token, expectedMessage) => {

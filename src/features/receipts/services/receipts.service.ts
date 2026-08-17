@@ -7,8 +7,33 @@ import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { Contractor, Event, ReceiptItem, ReceiptStatus } from '../../../types';
 
 type ReceiptAction = 'submit' | 'approve' | 'reimburse' | 'reject';
+const DELETABLE_RECEIPT_STATUSES: ReceiptStatus[] = ['draft', 'rejected'];
+const RECEIPT_DELETE_GENERIC_ERROR = 'Účtenku se nepodařilo smazat.';
+const RECEIPT_DELETE_CONFLICT_ERROR = 'Účtenka se mezitím změnila. Obnovte data a zkuste to znovu.';
+const RECEIPT_DELETE_UNAUTHORIZED_ERROR = 'Účtenku nelze smazat, protože k ní nemáte oprávnění.';
+const RECEIPT_DELETE_PROTECTED_ERROR = 'Účtenku lze smazat pouze jako koncept nebo po zamítnutí.';
 let receiptsHydrationPromise: Promise<void> | null = null;
 let receiptsLoaded = false;
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+);
+
+const mapReceiptDeleteError = (error: unknown): Error => {
+  const code = isRecord(error) && typeof error.code === 'string' ? error.code : '';
+  const message = isRecord(error) && typeof error.message === 'string' ? error.message : '';
+
+  if (/(^|[^A-Za-z0-9_])receipt_delete_conflict($|[^A-Za-z0-9_])/.test(message) || code === 'PGRST116') {
+    return new Error(RECEIPT_DELETE_CONFLICT_ERROR);
+  }
+
+  if (code === '42501' || /row-level security|permission denied/i.test(message)) {
+    return new Error(RECEIPT_DELETE_UNAUTHORIZED_ERROR);
+  }
+
+  console.error('Unexpected receipt delete error', error);
+  return new Error(RECEIPT_DELETE_GENERIC_ERROR);
+};
 
 const normalizeReceipt = (receipt: ReceiptItem): ReceiptItem => ({
   ...receipt,
@@ -356,21 +381,51 @@ export const saveReceipt = async (updated: ReceiptItem): Promise<ReceiptItem> =>
 };
 
 export const deleteReceipt = async (id: number): Promise<{ id: number }> => {
-  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
-    const receiptRowId = await getSupabaseReceiptRowId(id);
+  const currentReceipt = (getLocalAppState().receipts ?? []).find((receipt) => receipt.id === id);
+  if (!currentReceipt) {
+    throw new Error(RECEIPT_DELETE_CONFLICT_ERROR);
+  }
+
+  if (!DELETABLE_RECEIPT_STATUSES.includes(currentReceipt.status)) {
+    throw new Error(RECEIPT_DELETE_PROTECTED_ERROR);
+  }
+
+  const stableReceiptId = currentReceipt.supabaseId;
+
+  if (appDataSource === 'supabase') {
+    if (!supabase || !isSupabaseConfigured) {
+      console.error('Receipt delete requires an available Supabase client');
+      throw new Error(RECEIPT_DELETE_GENERIC_ERROR);
+    }
+
+    if (!stableReceiptId || !currentReceipt.updatedAt) {
+      throw new Error(RECEIPT_DELETE_CONFLICT_ERROR);
+    }
+
     const receiptDelete = await supabase
       .from('receipts')
       .delete()
-      .eq('id', receiptRowId);
+      .eq('id', stableReceiptId)
+      .eq('updated_at', currentReceipt.updatedAt)
+      .in('status', DELETABLE_RECEIPT_STATUSES)
+      .select('id')
+      .single();
 
     if (receiptDelete.error) {
-      throw new Error(receiptDelete.error.message);
+      throw mapReceiptDeleteError(receiptDelete.error);
+    }
+
+    if (receiptDelete.data?.id !== stableReceiptId) {
+      console.error('Unexpected receipt delete response', receiptDelete.data);
+      throw new Error(RECEIPT_DELETE_GENERIC_ERROR);
     }
   }
 
   updateLocalAppState((snapshot) => ({
     ...snapshot,
-    receipts: snapshot.receipts.filter((receipt) => receipt.id !== id),
+    receipts: snapshot.receipts.filter((receipt) => (
+      stableReceiptId ? receipt.supabaseId !== stableReceiptId : receipt.id !== id
+    )),
   }));
 
   invalidateReceiptQueries();

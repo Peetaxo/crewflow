@@ -221,7 +221,11 @@ const EventEditModal = ({
             </button>
           </div>
 
-          <div className="flex-1 space-y-4 overflow-y-auto p-5">
+          <fieldset
+            disabled={isSaving}
+            aria-busy={isSaving}
+            className="min-w-0 flex-1 space-y-4 overflow-y-auto p-5"
+          >
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">Job Number</label>
@@ -616,7 +620,7 @@ const EventEditModal = ({
                 ))}
               </div>
             )}
-          </div>
+          </fieldset>
 
           <div className="flex gap-3 border-t border-[color:rgb(var(--nodu-text-rgb)/0.08)] bg-[color:var(--nodu-paper-strong)] p-4">
             <button

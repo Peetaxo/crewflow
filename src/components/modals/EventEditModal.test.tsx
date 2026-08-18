@@ -168,6 +168,65 @@ describe('EventEditModal', () => {
     expect(screen.getByRole('button', { name: 'Zrusit' })).toBeEnabled();
   });
 
+  it('locks every native draft control while saving the current UUID', async () => {
+    const pending = createDeferred<Event>();
+    const saveEvent = vi.fn(() => pending.promise);
+    const onChange = vi.fn();
+    const onClose = vi.fn();
+    const phaseSchedules = {
+      instal: [{ id: 'instal-slot', from: '20:00', to: '01:00', dates: ['2026-04-20'] }],
+      provoz: [{ id: 'provoz-slot', from: '20:00', to: '01:00', dates: [] }],
+      deinstal: [{ id: 'deinstal-slot', from: '20:00', to: '01:00', dates: [] }],
+    };
+    vi.doMock('../../features/events/services/events.service', () => ({
+      applyEventDraft: (nextEvent: Event) => nextEvent,
+      createDefaultPhaseTimes: (from: string, to: string) => ({
+        instal: { from, to },
+        provoz: { from, to },
+        deinstal: { from, to },
+      }),
+      getEventFormOptions: () => ({ projects: [], clients: [] }),
+      normalizeEventSchedules: () => phaseSchedules,
+      saveEvent,
+    }));
+    const { default: EventEditModal } = await import('./EventEditModal');
+    const rendered = render(
+      <EventEditModal
+        editingEvent={{
+          ...event,
+          supabaseId: 'event-client-uuid',
+          showDayTypes: true,
+          phaseSchedules,
+        }}
+        onClose={onClose}
+        onChange={onChange}
+      />,
+    );
+
+    act(() => {
+      screen.getByRole('button', { name: 'Ulozit akci' }).click();
+    });
+    await waitFor(() => expect(saveEvent).toHaveBeenCalledOnce());
+
+    act(() => {
+      (rendered.container.querySelector('#allowCrewTimeProposal') as HTMLInputElement).click();
+      screen.getAllByRole('button', { name: 'Pridat cas' })[0].click();
+    });
+    expect(onChange).not.toHaveBeenCalled();
+
+    const nativeControls = Array.from(rendered.container.querySelectorAll(
+      'button, input, select, textarea',
+    ));
+    nativeControls.forEach((control) => expect(control).toBeDisabled());
+
+    await act(async () => {
+      pending.resolve({ ...event, supabaseId: 'event-client-uuid' });
+      await Promise.resolve();
+    });
+
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   it('reuses materialized phase schedule IDs across unchanged retries and recomputes after schedule edits', async () => {
     const firstSave = createDeferred<Event>();
     const saveEvent = vi.fn()

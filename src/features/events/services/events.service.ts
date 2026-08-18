@@ -81,9 +81,14 @@ const mapEventSaveError = (error: unknown): Error => {
   return new Error(EVENT_SAVE_ERROR_MESSAGE);
 };
 
-const eventSaveErrorCouldHaveCommitted = (error: unknown): boolean => {
+const eventSaveErrorCouldHaveCommitted = (
+  error: unknown,
+  operation: 'insert' | 'update',
+): boolean => {
   const code = isRecord(error) && typeof error.code === 'string' ? error.code : '';
-  return code !== 'PGRST116' && code !== '42501' && !code.startsWith('23');
+  if (code === 'PGRST116' || code === '42501') return false;
+  if (code.startsWith('23')) return operation === 'insert' && code === '23505';
+  return true;
 };
 type SupabaseGrasonClient = {
   from: (table: 'grason_event_confirmations') => {
@@ -283,79 +288,9 @@ const shiftPhaseSchedules = (
 
 let eventsHydrationPromise: Promise<void> | null = null;
 let eventsLoaded = false;
+let eventsHydrationEpoch = 0;
 let eventLifecycleRefreshQueue: Promise<void> = Promise.resolve();
 const eventRowIdByLocalId = new Map<number, string>();
-type EventCreateIntent = {
-  localId: number;
-  supabaseId: string;
-  ambiguous: boolean;
-  activeReservations: number;
-};
-type EventSaveIdentity = {
-  supabaseId: string;
-  source: 'explicit' | 'canonical' | 'create';
-  createIntent?: EventCreateIntent;
-};
-const eventCreateIntentByLocalId = new Map<number, EventCreateIntent>();
-
-const reserveEventSaveIdentity = (event: Event): EventSaveIdentity => {
-  if (event.supabaseId) {
-    return { supabaseId: event.supabaseId, source: 'explicit' };
-  }
-
-  const mappedSupabaseId = eventRowIdByLocalId.get(event.id)
-    ?? (getLocalAppState().events ?? []).find((item) => item.id === event.id)?.supabaseId;
-  if (mappedSupabaseId) {
-    return { supabaseId: mappedSupabaseId, source: 'canonical' };
-  }
-
-  let intent = eventCreateIntentByLocalId.get(event.id);
-  if (!intent) {
-    const supabaseId = globalThis.crypto?.randomUUID();
-    if (!supabaseId) {
-      console.error('Event create requires a stable client UUID');
-      throw new Error(EVENT_SAVE_ERROR_MESSAGE);
-    }
-    intent = {
-      localId: event.id,
-      supabaseId,
-      ambiguous: false,
-      activeReservations: 0,
-    };
-    eventCreateIntentByLocalId.set(event.id, intent);
-  }
-  intent.activeReservations += 1;
-  return { supabaseId: intent.supabaseId, source: 'create', createIntent: intent };
-};
-
-const releaseEventSaveIdentity = (identity: EventSaveIdentity | null): void => {
-  if (identity?.createIntent) {
-    identity.createIntent.activeReservations = Math.max(0, identity.createIntent.activeReservations - 1);
-  }
-};
-
-const clearEventCreateIntent = (localId: number | null, supabaseId: string | null): void => {
-  if (localId != null) {
-    const intent = eventCreateIntentByLocalId.get(localId);
-    if (!supabaseId || intent?.supabaseId === supabaseId) {
-      eventCreateIntentByLocalId.delete(localId);
-    }
-  }
-  if (!supabaseId) return;
-  for (const [intentLocalId, intent] of eventCreateIntentByLocalId.entries()) {
-    if (intent.supabaseId === supabaseId) {
-      eventCreateIntentByLocalId.delete(intentLocalId);
-    }
-  }
-};
-
-const resetInactiveEventCreateIntents = (): void => {
-  for (const [localId, intent] of eventCreateIntentByLocalId.entries()) {
-    if (intent.activeReservations === 0) {
-      eventCreateIntentByLocalId.delete(localId);
-    }
-  }
-};
 
 const assignmentMatchesEvent = (assignment: EventCrewAssignment, event: Event): boolean => (
   assignment.eventId === event.id
@@ -683,26 +618,62 @@ const commitEventLifecycleSnapshot = (lifecycleSnapshot: EventLifecycleSnapshot)
     grasonEventConfirmations: lifecycleSnapshot.grasonEventConfirmations,
   }));
   applyEventRowIdMap(lifecycleSnapshot.eventRowIdByLocalId);
-  resetInactiveEventCreateIntents();
 };
 
-export const fetchEventsSnapshot = async (): Promise<Event[]> => {
+type EventHydrationAttempt = {
+  committed: boolean;
+  events: Event[];
+  retryForGeneration: boolean;
+};
+
+const loadAndCommitEventsSnapshot = async (): Promise<EventHydrationAttempt> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
-    return getLocalAppState().events ?? [];
+    return {
+      committed: true,
+      events: getLocalAppState().events ?? [],
+      retryForGeneration: false,
+    };
   }
 
   const generation = getLifecycleSnapshotGeneration();
+  const epoch = eventsHydrationEpoch;
   const lifecycleSnapshot = await loadEventsLifecycleSnapshot();
+  if (epoch !== eventsHydrationEpoch) {
+    return {
+      committed: false,
+      events: getLocalAppState().events ?? [],
+      retryForGeneration: false,
+    };
+  }
   if (generation !== getLifecycleSnapshotGeneration()) {
-    return getLocalAppState().events ?? [];
+    return {
+      committed: false,
+      events: getLocalAppState().events ?? [],
+      retryForGeneration: true,
+    };
   }
   commitEventLifecycleSnapshot(lifecycleSnapshot);
 
-  return lifecycleSnapshot.events;
+  return {
+    committed: true,
+    events: lifecycleSnapshot.events,
+    retryForGeneration: false,
+  };
 };
 
-const hydrateEventsFromSupabase = async (): Promise<void> => {
-  await fetchEventsSnapshot();
+export const fetchEventsSnapshot = async (): Promise<Event[]> => {
+  const result = await loadAndCommitEventsSnapshot();
+  return result.events;
+};
+
+const hydrateEventsFromSupabase = async (): Promise<boolean> => {
+  const firstAttempt = await loadAndCommitEventsSnapshot();
+  if (firstAttempt.committed || !firstAttempt.retryForGeneration) {
+    return firstAttempt.committed;
+  }
+
+  const retry = await loadAndCommitEventsSnapshot();
+  return retry.committed;
 };
 
 export const ensureSupabaseEventsLoaded = () => {
@@ -718,16 +689,24 @@ export const ensureSupabaseEventsLoaded = () => {
     return;
   }
 
-  eventsHydrationPromise = hydrateEventsFromSupabase()
-    .then(() => {
-      eventsLoaded = true;
+  const epoch = eventsHydrationEpoch;
+  const hydrationPromise = hydrateEventsFromSupabase()
+    .then((committed) => {
+      if (committed && epoch === eventsHydrationEpoch) {
+        eventsLoaded = true;
+      }
     })
     .catch((error) => {
-      console.warn('Nepodarilo se nacist akce ze Supabase, zustavam na lokalnich datech.', error);
+      if (epoch === eventsHydrationEpoch) {
+        console.warn('Nepodarilo se nacist akce ze Supabase, zustavam na lokalnich datech.', error);
+      }
     })
     .finally(() => {
-      eventsHydrationPromise = null;
+      if (eventsHydrationPromise === hydrationPromise) {
+        eventsHydrationPromise = null;
+      }
     });
+  eventsHydrationPromise = hydrationPromise;
 };
 
 const syncEventQueryCache = () => {
@@ -1776,7 +1755,6 @@ const commitSavedEvent = (canonical: Event, preferredLocalId: number): Event => 
     throw new Error(EVENT_SAVE_CONFLICT_MESSAGE);
   }
   eventRowIdByLocalId.set(committedEvent.id, committedEvent.supabaseId);
-  clearEventCreateIntent(preferredLocalId, committedEvent.supabaseId);
   return committedEvent;
 };
 
@@ -1794,188 +1772,140 @@ const recoverEventSave = async (expected: Event, preferredLocalId: number): Prom
   return committed;
 };
 
-export const saveEvent = async (event: Event): Promise<Event> => {
-  const saveIdentity = appDataSource === 'supabase'
-    ? reserveEventSaveIdentity(event)
-    : null;
-
-  try {
-    return await runLifecycleDataMutation(
-      [`event:save:${saveIdentity?.supabaseId ?? event.id}`],
-      async () => {
-        let normalized = normalizeEvent(event);
-        validateEvent(normalized);
-
-        if (appDataSource === 'supabase') {
-          advanceLifecycleSnapshotGeneration();
-          if (!supabase || !isSupabaseConfigured || !saveIdentity) {
-            console.error('Event save requires an available Supabase client and stable identity');
-            throw new Error(EVENT_SAVE_ERROR_MESSAGE);
-          }
-
-          normalized = {
-            ...normalized,
-            supabaseId: saveIdentity.supabaseId,
-          };
-          let currentEvents = getLocalAppState().events ?? [];
-          const currentMappedSupabaseId = eventRowIdByLocalId.get(event.id)
-            ?? currentEvents.find((item) => item.id === event.id)?.supabaseId;
-          if (
-            !event.supabaseId
-            && currentMappedSupabaseId
-            && currentMappedSupabaseId !== saveIdentity.supabaseId
-          ) {
-            throw new Error(EVENT_SAVE_CONFLICT_MESSAGE);
-          }
-          let existingMatches = currentEvents.filter((item) => item.supabaseId === saveIdentity.supabaseId);
-          if (existingMatches.length > 1) {
-            throw new Error(EVENT_SAVE_CONFLICT_MESSAGE);
-          }
-          let existing = existingMatches[0];
-
-          if (saveIdentity.source === 'explicit' && (
-            !existing
-            || !normalized.updatedAt
-            || normalized.updatedAt !== existing.updatedAt
-          )) {
-            throw new Error(EVENT_SAVE_CONFLICT_MESSAGE);
-          }
-          if (saveIdentity.source === 'canonical' && !existing) {
-            throw new Error(EVENT_SAVE_CONFLICT_MESSAGE);
-          }
-
-          if (saveIdentity.createIntent?.ambiguous && !existing) {
-            try {
-              const recovered = await recoverEventSave(normalized, event.id);
-              if (recovered) return recovered;
-            } catch (recoveryError) {
-              console.error('Authoritative event create preflight failed', recoveryError);
-              throw new Error(EVENT_SAVE_ERROR_MESSAGE);
-            }
-
-            currentEvents = getLocalAppState().events ?? [];
-            existingMatches = currentEvents.filter((item) => item.supabaseId === saveIdentity.supabaseId);
-            if (existingMatches.length > 0) {
-              throw new Error(EVENT_SAVE_CONFLICT_MESSAGE);
-            }
-            saveIdentity.createIntent.ambiguous = false;
-          }
-
-          existing = existingMatches[0];
-          if (existing) {
-            if (!existing.updatedAt) {
-              throw new Error(EVENT_SAVE_CONFLICT_MESSAGE);
-            }
-            normalized = {
-              ...normalized,
-              id: existing.id,
-              updatedAt: saveIdentity.source === 'explicit' ? normalized.updatedAt : existing.updatedAt,
-            };
-          } else {
-            normalized = { ...normalized, updatedAt: undefined };
-          }
-
-          let requestStarted = false;
-          try {
-            const payload = await toSupabaseEventPayload(normalized);
-            let result: { data: unknown; error: unknown };
-
-            if (existing) {
-              requestStarted = true;
-              result = await supabase
-                .from('events')
-                .update(payload)
-                .eq('id', existing.supabaseId!)
-                .eq('updated_at', normalized.updatedAt!)
-                .select('id,updated_at,crew_filled')
-                .single();
-            } else {
-              requestStarted = true;
-              result = await supabase
-                .from('events')
-                .insert({ id: saveIdentity.supabaseId, ...payload })
-                .select('id,updated_at,crew_filled')
-                .single();
-            }
-
-            if (result.error) {
-              throw result.error;
-            }
-            if (!isEventMutationResponse(result.data) || result.data.id !== normalized.supabaseId) {
-              console.error('Unexpected event save response', result.data);
-              throw new Error(EVENT_SAVE_ERROR_MESSAGE);
-            }
-
-            advanceLifecycleSnapshotGeneration();
-            normalized = {
-              ...normalized,
-              supabaseId: result.data.id,
-              updatedAt: result.data.updated_at,
-              filled: result.data.crew_filled,
-            };
-          } catch (error) {
-            const mappedError = error instanceof Error && [
-              EVENT_SAVE_ERROR_MESSAGE,
-              EVENT_SAVE_CONFLICT_MESSAGE,
-              EVENT_SAVE_UNAUTHORIZED_MESSAGE,
-            ].includes(error.message)
-              ? error
-              : mapEventSaveError(error);
-            if (requestStarted && eventSaveErrorCouldHaveCommitted(error) && normalized.supabaseId) {
-              if (saveIdentity.createIntent) {
-                saveIdentity.createIntent.ambiguous = true;
-              }
-              try {
-                const recovered = await recoverEventSave(normalized, event.id);
-                if (recovered) return recovered;
-              } catch (recoveryError) {
-                console.error('Authoritative event save recovery failed', recoveryError);
-              }
-            }
-            throw mappedError;
-          }
-        }
-
-        if (appDataSource !== 'supabase') {
-          updateLocalAppState((snapshot) => {
-            const exists = snapshot.events.some((item) => item.id === normalized.id);
-            return {
-              ...snapshot,
-              events: exists
-                ? snapshot.events.map((item) => item.id === normalized.id ? normalized : item)
-                : [...snapshot.events, normalized],
-              projects: ensureProjectForEvent(snapshot.projects, normalized),
-            };
-          });
-          invalidateEventQueries();
-          return normalized;
-        }
-
-        const committed = commitSavedEvent(normalized, event.id);
-        invalidateEventQueries();
-        return committed;
-      },
-    );
-  } finally {
-    releaseEventSaveIdentity(saveIdentity);
-  }
-};
-
 const removeEventRowIdMapping = (eventId: EventIdentifier) => {
   if (typeof eventId === 'number') {
-    clearEventCreateIntent(eventId, eventRowIdByLocalId.get(eventId) ?? null);
     eventRowIdByLocalId.delete(eventId);
     return;
   }
 
   for (const [localId, rowId] of eventRowIdByLocalId.entries()) {
     if (rowId === eventId) {
-      clearEventCreateIntent(localId, rowId);
       eventRowIdByLocalId.delete(localId);
       return;
     }
   }
-  clearEventCreateIntent(null, eventId);
+};
+
+export const saveEvent = async (event: Event): Promise<Event> => {
+  return runLifecycleDataMutation(
+    [`event:save:${event.supabaseId ?? `missing:${event.id}`}`],
+    async () => {
+      let normalized = normalizeEvent(event);
+      validateEvent(normalized);
+
+      if (appDataSource === 'supabase') {
+        if (!event.supabaseId) {
+          throw new Error(EVENT_SAVE_CONFLICT_MESSAGE);
+        }
+        if (!supabase || !isSupabaseConfigured) {
+          console.error('Event save requires an available Supabase client and stable identity');
+          throw new Error(EVENT_SAVE_ERROR_MESSAGE);
+        }
+
+        advanceLifecycleSnapshotGeneration();
+        normalized = { ...normalized, supabaseId: event.supabaseId };
+        const existingMatches = (getLocalAppState().events ?? []).filter((item) => (
+          item.supabaseId === event.supabaseId
+        ));
+        if (existingMatches.length > 1) {
+          throw new Error(EVENT_SAVE_CONFLICT_MESSAGE);
+        }
+
+        const existing = existingMatches[0];
+        if (existing) {
+          if (!existing.updatedAt || (event.updatedAt !== undefined && event.updatedAt !== existing.updatedAt)) {
+            throw new Error(EVENT_SAVE_CONFLICT_MESSAGE);
+          }
+          normalized = {
+            ...normalized,
+            id: existing.id,
+            updatedAt: existing.updatedAt,
+          };
+        } else {
+          if (event.updatedAt !== undefined) {
+            throw new Error(EVENT_SAVE_CONFLICT_MESSAGE);
+          }
+          normalized = { ...normalized, updatedAt: undefined };
+        }
+
+        const operation = existing ? 'update' : 'insert';
+        let requestStarted = false;
+        try {
+          const payload = await toSupabaseEventPayload(normalized);
+          let result: { data: unknown; error: unknown };
+
+          requestStarted = true;
+          if (operation === 'update') {
+            result = await supabase
+              .from('events')
+              .update(payload)
+              .eq('id', event.supabaseId)
+              .eq('updated_at', normalized.updatedAt!)
+              .select('id,updated_at,crew_filled')
+              .single();
+          } else {
+            result = await supabase
+              .from('events')
+              .insert({ id: event.supabaseId, ...payload })
+              .select('id,updated_at,crew_filled')
+              .single();
+          }
+
+          if (result.error) {
+            throw result.error;
+          }
+          if (!isEventMutationResponse(result.data) || result.data.id !== event.supabaseId) {
+            console.error('Unexpected event save response', result.data);
+            throw new Error(EVENT_SAVE_ERROR_MESSAGE);
+          }
+
+          advanceLifecycleSnapshotGeneration();
+          normalized = {
+            ...normalized,
+            supabaseId: result.data.id,
+            updatedAt: result.data.updated_at,
+            filled: result.data.crew_filled,
+          };
+        } catch (error) {
+          const mappedError = error instanceof Error && [
+            EVENT_SAVE_ERROR_MESSAGE,
+            EVENT_SAVE_CONFLICT_MESSAGE,
+            EVENT_SAVE_UNAUTHORIZED_MESSAGE,
+          ].includes(error.message)
+            ? error
+            : mapEventSaveError(error);
+          if (requestStarted && eventSaveErrorCouldHaveCommitted(error, operation)) {
+            try {
+              const recovered = await recoverEventSave(normalized, event.id);
+              if (recovered) return recovered;
+            } catch (recoveryError) {
+              console.error('Authoritative event save recovery failed', recoveryError);
+            }
+          }
+          throw mappedError;
+        }
+      }
+
+      if (appDataSource !== 'supabase') {
+        updateLocalAppState((snapshot) => {
+          const exists = snapshot.events.some((item) => item.id === normalized.id);
+          return {
+            ...snapshot,
+            events: exists
+              ? snapshot.events.map((item) => item.id === normalized.id ? normalized : item)
+              : [...snapshot.events, normalized],
+            projects: ensureProjectForEvent(snapshot.projects, normalized),
+          };
+        });
+        invalidateEventQueries();
+        return normalized;
+      }
+
+      const committed = commitSavedEvent(normalized, event.id);
+      invalidateEventQueries();
+      return committed;
+    },
+  );
 };
 
 const deleteEventUncoordinated = async (eventId: EventIdentifier): Promise<{ id: EventIdentifier }> => {
@@ -2408,6 +2338,9 @@ export const subscribeToEventChanges = (listener: () => void): (() => void) => (
 );
 
 export const resetSupabaseEventsHydration = () => {
+  eventsHydrationEpoch += 1;
   eventsHydrationPromise = null;
   eventsLoaded = false;
+  eventRowIdByLocalId.clear();
+  void queryClient.cancelQueries({ queryKey: queryKeys.events.all });
 };

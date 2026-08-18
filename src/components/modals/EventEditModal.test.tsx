@@ -1,7 +1,17 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Event } from '../../types';
+
+const createDeferred = <T,>() => {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+};
 
 const event: Event = {
   id: 1,
@@ -103,5 +113,58 @@ describe('EventEditModal', () => {
       locationLat: null,
       locationLng: null,
     }));
+  });
+
+  it('rejects a native same-render double click and keeps the draft UUID after failure', async () => {
+    const pending = createDeferred<Event>();
+    const saveEvent = vi.fn(() => pending.promise);
+    const toastError = vi.fn();
+    const onClose = vi.fn();
+    vi.doMock('sonner', () => ({ toast: { error: toastError } }));
+    vi.doMock('../../features/events/services/events.service', () => ({
+      applyEventDraft: (nextEvent: Event) => nextEvent,
+      createDefaultPhaseTimes: (from: string, to: string) => ({
+        instal: { from, to },
+        provoz: { from, to },
+        deinstal: { from, to },
+      }),
+      getEventFormOptions: () => ({ projects: [], clients: [] }),
+      normalizeEventSchedules: () => ({}),
+      saveEvent,
+    }));
+    const { default: EventEditModal } = await import('./EventEditModal');
+
+    render(
+      <EventEditModal
+        editingEvent={{ ...event, supabaseId: 'event-client-uuid' }}
+        onClose={onClose}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const saveButton = screen.getByRole('button', { name: 'Ulozit akci' });
+    const closeButton = screen.getByRole('button', { name: 'Zrusit' });
+    act(() => {
+      saveButton.click();
+      saveButton.click();
+    });
+
+    expect(saveEvent).toHaveBeenCalledOnce();
+    expect(saveEvent).toHaveBeenCalledWith(expect.objectContaining({
+      supabaseId: 'event-client-uuid',
+    }));
+    expect(saveButton).toBeDisabled();
+    expect(closeButton).toBeDisabled();
+    expect(onClose).not.toHaveBeenCalled();
+
+    await act(async () => {
+      pending.reject(new Error('Akci se nepodařilo uložit.'));
+      await Promise.resolve();
+    });
+
+    expect(toastError).toHaveBeenCalledWith('Akci se nepodařilo uložit.');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Ulozit akci' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Zrusit' })).toBeEnabled();
   });
 });

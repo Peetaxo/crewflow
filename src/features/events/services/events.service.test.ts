@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Event, EventApplication, EventCrewAssignment, GrasonEventConfirmation, ReceiptItem, Timelog } from '../../../types';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 describe('events.service fetch snapshot', () => {
   beforeEach(() => {
@@ -415,6 +417,7 @@ describe('events.service write flow', () => {
     const deleteEventAtomicRpc = vi.fn().mockResolvedValue({ event_id: 'event-row-1' });
     const setQueryData = vi.fn();
     const invalidateQueries = vi.fn();
+    const cancelQueries = vi.fn();
     const isDisposableTimelogStatus = vi.fn((status: Timelog['status']) => (
       status === 'draft' || status === 'rejected'
     ));
@@ -551,6 +554,7 @@ describe('events.service write flow', () => {
       queryClient: {
         setQueryData,
         invalidateQueries,
+        cancelQueries,
       },
     }));
 
@@ -737,6 +741,7 @@ describe('events.service write flow', () => {
       updateLocalAppState,
       setQueryData,
       invalidateQueries,
+      cancelQueries,
       eventsOrder: eventsQuery.order,
       eventsSelect,
       resolveDeferredPublicEvents: () => {
@@ -784,17 +789,22 @@ describe('events.service write flow', () => {
       crew_filled: authoritativeEventRow?.crew_filled,
     });
     const insert = vi.fn((payload: Record<string, unknown>) => {
-      version += 1;
-      inserted = true;
-      authoritativeEventRow = {
-        ...payload,
-        updated_at: `2026-05-12T1${version}:00:00Z`,
-        crew_filled: 0,
-      };
+      const duplicatesAuthoritativeRow = authoritativeEventRow?.id === payload.id;
+      if (!duplicatesAuthoritativeRow) {
+        version += 1;
+        inserted = true;
+        authoritativeEventRow = {
+          ...payload,
+          updated_at: `2026-05-12T1${version}:00:00Z`,
+          crew_filled: 0,
+        };
+      }
       return {
         select: vi.fn(() => ({
           single: vi.fn().mockResolvedValue(
-            loseFirstInsertResponse && insert.mock.calls.length === 1
+            duplicatesAuthoritativeRow
+              ? { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint' } }
+              : loseFirstInsertResponse && insert.mock.calls.length === 1
               ? { data: null, error: { code: 'XX000', message: 'connection lost after committed insert' } }
               : { data: mutationResponse(), error: null },
           ),
@@ -927,9 +937,15 @@ describe('events.service write flow', () => {
       service: await import('./events.service'),
       insert,
       update,
+      updateIdEq,
+      updateVersionEq,
       uuid,
       deleteEventAtomicRpc,
       getSnapshot: () => structuredClone(snapshot),
+      setSnapshot: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+      },
+      eventsSelect,
       wasInserted: () => inserted,
     };
   };
@@ -957,6 +973,90 @@ describe('events.service write flow', () => {
       provoz: [{ id: 'slot-p', from: '12:00', to: '18:00', dates: ['2026-05-13'] }],
       deinstal: [],
     },
+  });
+
+  it('keeps event write identity independent from numeric local-id registries', () => {
+    const serviceSource = readFileSync(resolve(
+      process.cwd(),
+      'src/features/events/services/events.service.ts',
+    ), 'utf8');
+    const saveSource = serviceSource.slice(
+      serviceSource.indexOf('export const saveEvent'),
+      serviceSource.indexOf('export const deleteEvent'),
+    );
+
+    expect(serviceSource).not.toContain('type EventCreateIntent');
+    expect(serviceSource).not.toContain('eventCreateIntentByLocalId');
+    expect(saveSource).not.toContain('eventRowIdByLocalId');
+  });
+
+  it('fails closed before DML or recovery when a Supabase event lacks a stable UUID', async () => {
+    const harness = await setupEventCreateIntentHarness();
+
+    await expect(harness.service.saveEvent(newEventDraft())).rejects.toThrow(
+      'Akce se mezitím změnila. Obnovte data a zkuste to znovu.',
+    );
+
+    expect(harness.insert).not.toHaveBeenCalled();
+    expect(harness.update).not.toHaveBeenCalled();
+    expect(harness.eventsSelect).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      label: 'duplicate stable matches',
+      currentEvents: [
+        { ...newEventDraft(), id: 1, supabaseId: 'event-client-uuid-1', updatedAt: 'v1' },
+        { ...newEventDraft(), id: 2, supabaseId: 'event-client-uuid-1', updatedAt: 'v1' },
+      ],
+      draft: { ...newEventDraft(), supabaseId: 'event-client-uuid-1', updatedAt: 'v1' },
+    },
+    {
+      label: 'missing canonical version',
+      currentEvents: [
+        { ...newEventDraft(), supabaseId: 'event-client-uuid-1', updatedAt: undefined },
+      ],
+      draft: { ...newEventDraft(), supabaseId: 'event-client-uuid-1' },
+    },
+    {
+      label: 'stale caller version',
+      currentEvents: [
+        { ...newEventDraft(), supabaseId: 'event-client-uuid-1', updatedAt: 'v2' },
+      ],
+      draft: { ...newEventDraft(), supabaseId: 'event-client-uuid-1', updatedAt: 'v1' },
+    },
+  ])('fails closed before DML or recovery for $label', async ({ currentEvents, draft }) => {
+    const harness = await setupEventCreateIntentHarness();
+    harness.setSnapshot((snapshot) => ({ ...snapshot, events: currentEvents }));
+
+    await expect(harness.service.saveEvent(draft)).rejects.toThrow(
+      'Akce se mezitím změnila. Obnovte data a zkuste to znovu.',
+    );
+
+    expect(harness.insert).not.toHaveBeenCalled();
+    expect(harness.update).not.toHaveBeenCalled();
+    expect(harness.eventsSelect).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      databaseError: { code: '42501', message: 'new row violates row-level security policy: raw detail' },
+      expectedMessage: 'Akci nelze uložit, protože k ní nemáte oprávnění.',
+    },
+    {
+      databaseError: { code: 'XX000', message: 'sensitive internal event failure detail' },
+      expectedMessage: 'Akci se nepodařilo uložit.',
+    },
+  ])('keeps raw event save errors out of the UI message', async ({ databaseError, expectedMessage }) => {
+    const harness = await setupLifecycleService({ eventSaveError: databaseError });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      await expect(harness.service.saveEvent({ ...lifecycleEvent, name: 'Změněná akce' }))
+        .rejects.toThrow(expectedMessage);
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it('creates Supabase event drafts and copies with different stable UUIDs', async () => {
@@ -1275,7 +1375,6 @@ describe('events.service write flow', () => {
 
   it('persists a new event to Supabase with the mapped project row id', async () => {
     let snapshot = createSnapshot();
-    vi.stubGlobal('crypto', { randomUUID: vi.fn(() => 'event-row-1') });
 
     const projectsSelect = vi.fn(() => ({
       order: vi.fn().mockResolvedValue({
@@ -1330,6 +1429,7 @@ describe('events.service write flow', () => {
 
     const saved = await saveEvent({
       id: 1,
+      supabaseId: 'event-row-1',
       name: ' Akce 1 ',
       job: ' ak001 ',
       startDate: '2026-04-20',
@@ -1812,6 +1912,7 @@ describe('events.service write flow', () => {
       const { saveEvent } = await import('./events.service');
       const created = await saveEvent({
         id: 1,
+        supabaseId: 'event-client-uuid',
         name: 'Nová akce',
         job: 'AK001',
         startDate: '2026-05-12',
@@ -1835,56 +1936,76 @@ describe('events.service write flow', () => {
     }
   });
 
-  it('reserves one create intent before queueing two immediate saves of the same draft', async () => {
+  it('serializes two immediate saves of one UUID draft into one insert and one CAS update', async () => {
     const harness = await setupEventCreateIntentHarness();
-    const draft = newEventDraft();
+    const draft = { ...newEventDraft(), supabaseId: 'event-client-uuid-1' };
 
     const firstSave = harness.service.saveEvent(draft);
     const secondSave = harness.service.saveEvent(draft);
     const [first, second] = await Promise.all([firstSave, secondSave]);
 
-    expect(harness.uuid).toHaveBeenCalledTimes(1);
     expect(harness.insert).toHaveBeenCalledTimes(1);
     expect(harness.update).toHaveBeenCalledTimes(1);
+    expect(harness.updateIdEq).toHaveBeenCalledWith('id', 'event-client-uuid-1');
+    expect(harness.updateVersionEq).toHaveBeenCalledWith('updated_at', first.updatedAt);
     expect(first.supabaseId).toBe('event-client-uuid-1');
     expect(second.supabaseId).toBe('event-client-uuid-1');
     expect(harness.getSnapshot().events).toHaveLength(1);
     expect(harness.getSnapshot().events[0].supabaseId).toBe('event-client-uuid-1');
   });
 
-  it('retains an ambiguous create intent after failed recovery so a user retry cannot duplicate the row', async () => {
+  it('reuses the draft UUID after a committed insert, failed recovery, and local-id reuse', async () => {
     const harness = await setupEventCreateIntentHarness({
       loseFirstInsertResponse: true,
       failFirstRecovery: true,
     });
-    const draft = newEventDraft();
+    const draft = { ...newEventDraft(), supabaseId: 'event-client-uuid-1' };
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     try {
       await expect(harness.service.saveEvent(draft)).rejects.toThrow('Akci se nepodařilo uložit.');
       expect(harness.wasInserted()).toBe(true);
+      harness.setSnapshot((snapshot) => ({
+        ...snapshot,
+        events: [{
+          ...newEventDraft(),
+          id: draft.id,
+          supabaseId: 'event-row-other',
+          updatedAt: 'v-other',
+        }],
+      }));
 
       const recovered = await harness.service.saveEvent(draft);
 
-      expect(harness.uuid).toHaveBeenCalledTimes(1);
-      expect(harness.insert).toHaveBeenCalledTimes(1);
+      expect(harness.insert).toHaveBeenCalledTimes(2);
+      expect(harness.insert.mock.calls.map(([payload]) => payload.id)).toEqual([
+        draft.supabaseId,
+        draft.supabaseId,
+      ]);
       expect(harness.update).not.toHaveBeenCalled();
-      expect(recovered.supabaseId).toBe('event-client-uuid-1');
+      expect(harness.eventsSelect).toHaveBeenCalledTimes(2);
+      expect(recovered.supabaseId).toBe(draft.supabaseId);
       expect(harness.getSnapshot().events).toHaveLength(1);
+      expect(harness.getSnapshot().events[0].supabaseId).toBe(draft.supabaseId);
     } finally {
       consoleError.mockRestore();
     }
   });
 
-  it('does not reuse a create intent when the canonical event was deliberately deleted', async () => {
+  it('uses a fresh draft UUID after the canonical event was deliberately deleted', async () => {
     const harness = await setupEventCreateIntentHarness();
-    const first = await harness.service.saveEvent(newEventDraft());
+    const first = await harness.service.saveEvent({
+      ...newEventDraft(),
+      supabaseId: 'event-client-uuid-1',
+    });
 
     await harness.service.deleteEvent(first.id);
-    const second = await harness.service.saveEvent(newEventDraft());
+    const second = await harness.service.saveEvent({
+      ...newEventDraft(),
+      supabaseId: 'event-client-uuid-2',
+    });
 
     expect(harness.deleteEventAtomicRpc).toHaveBeenCalledWith('event-client-uuid-1');
-    expect(harness.uuid).toHaveBeenCalledTimes(2);
     expect(harness.insert).toHaveBeenCalledTimes(2);
     expect(second.supabaseId).toBe('event-client-uuid-2');
     expect(harness.getSnapshot().events).toHaveLength(1);
@@ -1895,7 +2016,7 @@ describe('events.service write flow', () => {
       loseFirstInsertResponse: true,
       reorderRecoveryJson: true,
     });
-    const draft = newEventDraft();
+    const draft = { ...newEventDraft(), supabaseId: 'event-client-uuid-1' };
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     try {
@@ -3036,6 +3157,51 @@ describe('events.service write flow', () => {
     );
     expect(harness.setQueryData).toHaveBeenCalledWith(['events'], harness.getSnapshot().events);
     expect(harness.invalidateQueries).not.toHaveBeenCalled();
+  });
+
+  it('retries one current-generation hydration after discarding a same-session load', async () => {
+    const staleEvent = { ...lifecycleEvent, name: 'Stale event' };
+    const freshEvent = { ...lifecycleEvent, name: 'Fresh event' };
+    const harness = await setupLifecycleService({
+      initialSnapshot: createSnapshot({ events: [], eventApplications: [] }),
+      refreshedEvents: [freshEvent],
+      deferredPublicEvents: [staleEvent],
+    });
+    const { advanceLifecycleSnapshotGeneration } = await import('../../event-lifecycle-generation');
+
+    harness.service.ensureSupabaseEventsLoaded();
+    await vi.waitFor(() => expect(harness.eventsSelect).toHaveBeenCalledOnce());
+    advanceLifecycleSnapshotGeneration();
+    harness.resolveDeferredPublicEvents();
+
+    await vi.waitFor(() => expect(harness.eventsSelect).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(harness.getSnapshot().events).toEqual([
+      expect.objectContaining({ supabaseId: 'event-row-1', name: 'Fresh event' }),
+    ]));
+    expect(harness.updateLocalAppState).toHaveBeenCalledOnce();
+  });
+
+  it('drops an event hydration that finishes after auth reset', async () => {
+    const oldUserEvent = { ...lifecycleEvent, name: 'Old user event' };
+    const harness = await setupLifecycleService({
+      initialSnapshot: createSnapshot({ events: [], eventApplications: [] }),
+      deferredPublicEvents: [oldUserEvent],
+    });
+
+    const oldLoad = harness.service.fetchEventsSnapshot();
+    await vi.waitFor(() => expect(harness.eventsSelect).toHaveBeenCalledOnce());
+
+    harness.service.resetSupabaseEventsHydration();
+    harness.setSnapshot((snapshot) => ({ ...snapshot, events: [] }));
+    harness.resolveDeferredPublicEvents();
+
+    await expect(oldLoad).resolves.toEqual([]);
+    await Promise.resolve();
+    expect(harness.getSnapshot().events).toEqual([]);
+    expect(harness.updateLocalAppState).not.toHaveBeenCalled();
+    expect(harness.setQueryData).not.toHaveBeenCalledWith(['events'], expect.anything());
+    expect(harness.cancelQueries).toHaveBeenCalledWith({ queryKey: ['events'] });
+    expect(harness.eventsSelect).toHaveBeenCalledOnce();
   });
 
   it('does not advance lifecycle generation on refresh failure and leaves ordinary fetches usable', async () => {

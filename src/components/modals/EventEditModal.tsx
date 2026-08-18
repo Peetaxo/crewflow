@@ -41,7 +41,9 @@ const EventEditModal = ({
   onChange,
 }: EventEditModalProps) => {
   const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const projectMenuRef = useRef<HTMLDivElement | null>(null);
+  const saveInFlightRef = useRef(false);
   const { projects, clients } = useMemo(() => getEventFormOptions(), []);
   const clientOptions = useMemo(() => {
     if (!editingEvent?.client || clients.some((client) => client.name === editingEvent.client)) {
@@ -126,11 +128,17 @@ const EventEditModal = ({
   };
 
   const handleSave = async () => {
+    if (saveInFlightRef.current) return;
+    saveInFlightRef.current = true;
+    setIsSaving(true);
     try {
       await saveEvent({ ...editingEvent, phaseSchedules });
       onClose();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Nepodarilo se ulozit akci.');
+    } finally {
+      saveInFlightRef.current = false;
+      setIsSaving(false);
     }
   };
 
@@ -145,7 +153,7 @@ const EventEditModal = ({
         >
           <div className="flex items-center justify-between border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] p-5">
             <h3 className="text-xl font-semibold tracking-[-0.03em] text-[color:var(--nodu-text)]">Upravit akci</h3>
-            <button onClick={onClose} className="rounded-xl border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-2 text-[color:var(--nodu-text-soft)] transition-all hover:border-[color:rgb(var(--nodu-accent-rgb)/0.24)] hover:text-[color:var(--nodu-accent)]">
+            <button disabled={isSaving} onClick={onClose} className="rounded-xl border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-2 text-[color:var(--nodu-text-soft)] transition-all hover:border-[color:rgb(var(--nodu-accent-rgb)/0.24)] hover:text-[color:var(--nodu-accent)] disabled:cursor-not-allowed disabled:opacity-60">
               <X size={20} />
             </button>
           </div>
@@ -549,14 +557,16 @@ const EventEditModal = ({
 
           <div className="flex gap-3 border-t border-[color:rgb(var(--nodu-text-rgb)/0.08)] bg-[color:var(--nodu-paper-strong)] p-4">
             <button
+              disabled={isSaving}
               onClick={onClose}
-              className="flex-1 rounded-xl border border-[color:var(--nodu-border)] bg-white py-2.5 text-sm font-medium text-[color:var(--nodu-text)] transition-all hover:bg-[color:var(--nodu-accent-soft)] hover:text-[color:var(--nodu-accent)]"
+              className="flex-1 rounded-xl border border-[color:var(--nodu-border)] bg-white py-2.5 text-sm font-medium text-[color:var(--nodu-text)] transition-all hover:bg-[color:var(--nodu-accent-soft)] hover:text-[color:var(--nodu-accent)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               Zrusit
             </button>
             <button
+              disabled={isSaving}
               onClick={handleSave}
-              className="flex-1 rounded-xl border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] py-2.5 text-sm font-medium text-[color:var(--nodu-success-text)] shadow-[0_12px_30px_rgba(45,108,78,0.12)] transition-all hover:bg-[color:var(--nodu-success-bg-hover)]"
+              className="flex-1 rounded-xl border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] py-2.5 text-sm font-medium text-[color:var(--nodu-success-text)] shadow-[0_12px_30px_rgba(45,108,78,0.12)] transition-all hover:bg-[color:var(--nodu-success-bg-hover)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               Ulozit akci
             </button>

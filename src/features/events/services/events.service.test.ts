@@ -399,6 +399,7 @@ describe('events.service write flow', () => {
     }),
     refreshedEvents = [lifecycleEvent],
     refreshedTimelogs = [canonicalTimelog],
+    refreshedReceipts = initialSnapshot.receipts ?? [],
     refreshedApplicationStatus = 'approved' as EventApplication['status'],
     failEventsRefresh = false,
     failTimelogsRefresh = false,
@@ -408,6 +409,7 @@ describe('events.service write flow', () => {
     const assignEventCrewRpc = vi.fn().mockResolvedValue(rpcAssignment);
     const removeEventCrewRpc = vi.fn().mockResolvedValue(rpcRemoval);
     const approveEventWithdrawalRpc = vi.fn().mockResolvedValue(rpcWithdrawalApproval);
+    const deleteEventAtomicRpc = vi.fn().mockResolvedValue({ event_id: 'event-row-1' });
     const setQueryData = vi.fn();
     const invalidateQueries = vi.fn();
     const isDisposableTimelogStatus = vi.fn((status: Timelog['status']) => (
@@ -516,11 +518,16 @@ describe('events.service write flow', () => {
       isDisposableTimelogStatus,
     }));
 
+    vi.doMock('./event-mutation-rpc.service', () => ({ deleteEventAtomicRpc }));
+
     vi.doMock('../../timelogs/services/timelogs.service', () => ({
       ensureSupabaseTimelogsLoaded: vi.fn(),
       loadTimelogsSnapshot,
       fetchTimelogsSnapshot: loadTimelogsSnapshot,
     }));
+
+    const fetchReceiptsSnapshot = vi.fn(async () => structuredClone(refreshedReceipts));
+    vi.doMock('../../receipts/services/receipts.service', () => ({ fetchReceiptsSnapshot }));
 
     vi.doMock('../../../lib/query-client', () => ({
       queryClient: {
@@ -705,6 +712,8 @@ describe('events.service write flow', () => {
       assignEventCrewRpc,
       removeEventCrewRpc,
       approveEventWithdrawalRpc,
+      deleteEventAtomicRpc,
+      fetchReceiptsSnapshot,
       loadTimelogsSnapshot,
       updateLocalAppState,
       setQueryData,
@@ -2067,6 +2076,181 @@ describe('events.service write flow', () => {
     expect(harness.getSnapshot()).toEqual(before);
   });
 
+  it('authoritatively recovers lifecycle state when an assignment RPC commits but its response is lost', async () => {
+    const staleEvent = { ...lifecycleEvent, name: 'Stale event before assignment' };
+    const freshEvent = { ...lifecycleEvent, name: 'Authoritative assigned event', filled: 1 };
+    const harness = await setupLifecycleService({
+      initialSnapshot: createSnapshot({ events: [staleEvent], timelogs: [] }),
+      refreshedEvents: [freshEvent],
+      refreshedTimelogs: [canonicalTimelog],
+    });
+    harness.assignEventCrewRpc.mockRejectedValueOnce(new Error('connection lost after commit'));
+
+    await expect(harness.service.assignCrewToEvent(1, 'profile-uuid-1')).rejects.toThrow();
+
+    expect(harness.getSnapshot().events).toEqual([freshEvent]);
+    expect(harness.getSnapshot().timelogs).toEqual([canonicalTimelog]);
+    expect(harness.setQueryData).toHaveBeenCalledWith(['events'], [freshEvent]);
+    expect(harness.setQueryData).toHaveBeenCalledWith(['timelogs'], [canonicalTimelog]);
+
+    await expect(harness.service.assignCrewToEvent(1, 'profile-uuid-1')).resolves.toEqual(
+      expect.objectContaining({ timelog: expect.objectContaining({ supabaseId: 'timelog-row-1' }) }),
+    );
+    expect(harness.assignEventCrewRpc).toHaveBeenCalledTimes(2);
+  });
+
+  it('authoritatively recovers removal state when the Crew removal response is lost', async () => {
+    const removedEvent = { ...lifecycleEvent, filled: 0 };
+    const harness = await setupLifecycleService({
+      initialSnapshot: createSnapshot({
+        events: [{ ...lifecycleEvent, filled: 1 }],
+        timelogs: [canonicalTimelog],
+        eventApplications: [lifecycleApplication],
+      }),
+      refreshedEvents: [removedEvent],
+      refreshedTimelogs: [],
+      refreshedApplicationStatus: 'withdrawn',
+    });
+    harness.removeEventCrewRpc.mockRejectedValueOnce(new Error('connection lost after removal commit'));
+
+    await expect(harness.service.removeContractorFromEvent(1, 'profile-uuid-1')).rejects.toThrow();
+
+    expect(harness.getSnapshot().events).toEqual([removedEvent]);
+    expect(harness.getSnapshot().timelogs).toEqual([]);
+    expect(harness.getSnapshot().eventApplications[0].status).toBe('withdrawn');
+  });
+
+  it('authoritatively recovers withdrawal approval when its RPC response is lost', async () => {
+    const harness = await setupLifecycleService({
+      initialSnapshot: createSnapshot({
+        events: [{ ...lifecycleEvent, filled: 1 }],
+        timelogs: [canonicalTimelog],
+        eventApplications: [{ ...lifecycleApplication, status: 'withdrawal_requested' }],
+      }),
+      refreshedEvents: [{ ...lifecycleEvent, filled: 0 }],
+      refreshedTimelogs: [],
+      refreshedApplicationStatus: 'withdrawn',
+    });
+    harness.approveEventWithdrawalRpc.mockRejectedValueOnce(
+      new Error('connection lost after withdrawal approval commit'),
+    );
+
+    await expect(harness.service.approveEventWithdrawal(1)).rejects.toThrow();
+
+    expect(harness.getSnapshot().timelogs).toEqual([]);
+    expect(harness.getSnapshot().eventApplications[0]).toMatchObject({
+      supabaseId: 'application-row-1',
+      status: 'withdrawn',
+    });
+  });
+
+  it('preserves a stable removal domain error when authoritative recovery also fails', async () => {
+    const stableError = new Error('Crew nelze odebrat, protože výkaz už byl odeslán ke kontrole.');
+    const harness = await setupLifecycleService({
+      initialSnapshot: createSnapshot({
+        events: [{ ...lifecycleEvent, filled: 1 }],
+        timelogs: [canonicalTimelog],
+      }),
+    });
+    harness.removeEventCrewRpc.mockRejectedValueOnce(stableError);
+    harness.loadTimelogsSnapshot.mockRejectedValueOnce(new Error('authoritative recovery unavailable'));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      await expect(harness.service.removeContractorFromEvent(1, 'profile-uuid-1'))
+        .rejects.toBe(stableError);
+      expect(harness.updateLocalAppState).not.toHaveBeenCalled();
+      expect(consoleError).toHaveBeenCalledWith(
+        'Authoritative Crew lifecycle recovery failed after mutation error',
+        expect.any(Error),
+      );
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('retries an authoritative lifecycle recovery after the first post-RPC refresh fails', async () => {
+    const freshEvent = { ...lifecycleEvent, name: 'Recovered assigned event', filled: 1 };
+    const harness = await setupLifecycleService({
+      initialSnapshot: createSnapshot({ events: [lifecycleEvent], timelogs: [] }),
+      refreshedEvents: [freshEvent],
+      refreshedTimelogs: [canonicalTimelog],
+    });
+    harness.loadTimelogsSnapshot.mockReset();
+    harness.loadTimelogsSnapshot
+      .mockRejectedValueOnce(new Error('first post-RPC refresh failed'))
+      .mockResolvedValueOnce([canonicalTimelog]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      await expect(harness.service.assignCrewToEvent(1, 'profile-uuid-1'))
+        .rejects.toThrow('Operaci s Crew se nepodařilo dokončit.');
+
+      expect(harness.loadTimelogsSnapshot).toHaveBeenCalledTimes(2);
+      expect(harness.getSnapshot().events).toEqual([freshEvent]);
+      expect(harness.getSnapshot().timelogs).toEqual([canonicalTimelog]);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('authoritatively removes event, timelog, and receipt slices when a delete response is lost', async () => {
+    const receipt: ReceiptItem = {
+      id: 1,
+      supabaseId: 'receipt-row-1',
+      eventSupabaseId: 'event-row-1',
+      updatedAt: '2026-04-20T10:00:00Z',
+      contractorProfileId: 'profile-uuid-1',
+      eid: 1,
+      job: 'AK001',
+      title: 'Receipt',
+      vendor: 'Vendor',
+      amount: 100,
+      paidAt: '2026-04-20',
+      note: '',
+      status: 'draft',
+    };
+    const harness = await setupLifecycleService({
+      initialSnapshot: createSnapshot({
+        events: [lifecycleEvent],
+        timelogs: [canonicalTimelog],
+        receipts: [receipt],
+        eventApplications: [],
+      }),
+      refreshedEvents: [],
+      refreshedTimelogs: [],
+      refreshedReceipts: [],
+    });
+    harness.deleteEventAtomicRpc.mockRejectedValueOnce(new Error('connection lost after event delete commit'));
+
+    await expect(harness.service.deleteEvent('event-row-1')).rejects.toThrow();
+
+    expect(harness.getSnapshot()).toMatchObject({ events: [], timelogs: [], receipts: [] });
+    expect(harness.fetchReceiptsSnapshot).toHaveBeenCalledOnce();
+    expect(harness.setQueryData).toHaveBeenCalledWith(['events'], []);
+    expect(harness.setQueryData).toHaveBeenCalledWith(['timelogs'], []);
+    expect(harness.setQueryData).toHaveBeenCalledWith(['receipts'], []);
+  });
+
+  it('prevents an older event fetch from restoring a successfully deleted event', async () => {
+    const staleEvent = { ...lifecycleEvent, name: 'Stale event fetch' };
+    const harness = await setupLifecycleService({
+      initialSnapshot: createSnapshot({ events: [lifecycleEvent], eventApplications: [] }),
+      deferredPublicEvents: [staleEvent],
+    });
+
+    const staleFetch = harness.service.fetchEventsSnapshot();
+    await vi.waitFor(() => expect(harness.eventsSelect).toHaveBeenCalledOnce());
+
+    await expect(harness.service.deleteEvent('event-row-1')).resolves.toEqual({ id: 'event-row-1' });
+    expect(harness.loadTimelogsSnapshot).not.toHaveBeenCalled();
+    expect(harness.fetchReceiptsSnapshot).not.toHaveBeenCalled();
+
+    harness.resolveDeferredPublicEvents();
+    await expect(staleFetch).resolves.toEqual([]);
+    expect(harness.getSnapshot().events).toEqual([]);
+  });
+
   it('leaves state and query cache untouched when the event lifecycle load fails', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const harness = await setupLifecycleService({ failEventsRefresh: true });
@@ -2259,8 +2443,8 @@ describe('events.service write flow', () => {
         timelog: expect.objectContaining({ supabaseId: 'timelog-row-1' }),
       }));
 
-      expect(harness.loadTimelogsSnapshot).toHaveBeenCalledTimes(2);
-      expect(harness.updateLocalAppState).toHaveBeenCalledOnce();
+      expect(harness.loadTimelogsSnapshot).toHaveBeenCalledTimes(3);
+      expect(harness.updateLocalAppState).toHaveBeenCalledTimes(2);
       expect(harness.getSnapshot().timelogs).toEqual([canonicalTimelog]);
     } finally {
       consoleError.mockRestore();
@@ -2380,17 +2564,34 @@ describe('events.service write flow', () => {
           showDayTypes: false,
         },
       ],
-      timelogs: [],
-      receipts: [],
+      timelogs: [
+        { ...canonicalTimelog, id: 1, eid: 1, eventSupabaseId: 'event-uuid-1' },
+        { ...canonicalTimelog, id: 2, eid: 1, eventSupabaseId: 'event-uuid-2', supabaseId: 'timelog-row-2' },
+      ],
+      receipts: [
+        {
+          id: 1, supabaseId: 'receipt-row-1', eventSupabaseId: 'event-uuid-1',
+          updatedAt: '2026-04-20T10:00:00Z', contractorProfileId: 'profile-uuid-1',
+          eid: 1, job: 'AK001', title: 'Receipt 1', vendor: 'Vendor', amount: 100,
+          paidAt: '2026-04-20', note: '', status: 'draft',
+        },
+        {
+          id: 2, supabaseId: 'receipt-row-2', eventSupabaseId: 'event-uuid-2',
+          updatedAt: '2026-04-20T10:00:00Z', contractorProfileId: 'profile-uuid-1',
+          eid: 1, job: 'AK001', title: 'Receipt 2', vendor: 'Vendor', amount: 200,
+          paidAt: '2026-04-20', note: '', status: 'draft',
+        },
+      ],
     });
 
     const from = vi.fn(() => {
       throw new Error('Atomic event deletion must not issue direct table mutations');
     });
-    const rpc = vi.fn().mockResolvedValue({
-      data: [{ event_id: 'event-uuid-1' }],
-      error: null,
-    });
+    const deferredDelete = createDeferred<{
+      data: Array<{ event_id: string }>;
+      error: null;
+    }>();
+    const rpc = vi.fn(() => deferredDelete.promise);
 
     vi.doMock('../../../lib/app-config', () => ({
       appDataSource: 'supabase',
@@ -2417,15 +2618,29 @@ describe('events.service write flow', () => {
       mapClient: vi.fn(),
       mapEvent: vi.fn(),
     }));
+    vi.doUnmock('./event-mutation-rpc.service');
 
     const { deleteEvent } = await import('./events.service');
+    const { runLifecycleDataMutation } = await import('../../event-lifecycle-generation');
 
-    await deleteEvent('event-uuid-1');
+    const deletion = deleteEvent('event-uuid-1');
+    await vi.waitFor(() => expect(rpc).toHaveBeenCalledOnce());
+    const competingMutation = vi.fn().mockResolvedValue(undefined);
+    const competing = runLifecycleDataMutation(['timelog:while-event-delete'], competingMutation);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(competingMutation).not.toHaveBeenCalled();
+
+    deferredDelete.resolve({ data: [{ event_id: 'event-uuid-1' }], error: null });
+    await deletion;
+    await competing;
 
     expect(rpc).toHaveBeenCalledWith('delete_event_atomic', { p_event_id: 'event-uuid-1' });
+    expect(competingMutation).toHaveBeenCalledOnce();
     expect(from).not.toHaveBeenCalled();
     expect(snapshot.events).toHaveLength(1);
     expect(snapshot.events[0].supabaseId).toBe('event-uuid-2');
+    expect(snapshot.timelogs.map((row) => row.eventSupabaseId)).toEqual(['event-uuid-2']);
+    expect(snapshot.receipts.map((row) => row.eventSupabaseId)).toEqual(['event-uuid-2']);
   });
 
   it('does not expose raw database details when deleting a Supabase event fails', async () => {
@@ -2474,6 +2689,7 @@ describe('events.service write flow', () => {
       mapClient: vi.fn(),
       mapEvent: vi.fn(),
     }));
+    vi.doUnmock('./event-mutation-rpc.service');
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     try {
@@ -2481,7 +2697,7 @@ describe('events.service write flow', () => {
 
       await expect(deleteEvent('event-uuid-1')).rejects.toThrow('Akci se nepodařilo smazat.');
       expect(consoleError).toHaveBeenCalledWith('Unexpected atomic event delete RPC error', databaseError);
-      expect(from).not.toHaveBeenCalled();
+      expect(from).toHaveBeenCalled();
       expect(snapshot.events).toHaveLength(1);
     } finally {
       consoleError.mockRestore();

@@ -9,13 +9,20 @@ import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import type { Contractor, Event, Invoice, ReceiptItem, Timelog } from '../../../types';
 import { calculateTotalHours } from '../../../utils';
 import {
+  advanceLifecycleSnapshotGeneration,
+  getLifecycleSnapshotGeneration,
+  runLifecycleDataMutation,
+} from '../../event-lifecycle-generation';
+import {
   getTimelogs,
   markTimelogsAsApproved,
   markTimelogsAsInvoiced,
   markTimelogsAsPaid,
   markTimelogsAsPaidForInvoice,
+  loadTimelogsSnapshot,
 } from '../../timelogs/services/timelogs.service';
 import {
+  fetchReceiptsSnapshot,
   getReceipts,
   markReceiptsAsAttached,
   markReceiptsAsReimbursed,
@@ -66,6 +73,15 @@ const syncInvoiceQueryData = () => {
   queryClient.setQueryData(queryKeys.timelogs.all, snapshot.timelogs ?? []);
   queryClient.setQueryData(queryKeys.receipts.all, snapshot.receipts ?? []);
 };
+
+const runInvoiceLifecycleMutation = <T>(
+  keys: string[],
+  mutation: () => Promise<T>,
+): Promise<T> => (
+  appDataSource === 'supabase' && supabase && isSupabaseConfigured
+    ? runLifecycleDataMutation(keys.map((key) => `invoice:${key}`), mutation)
+    : mutation()
+);
 
 export type InvoiceCreateCandidate = {
   contractorProfileId?: string;
@@ -683,14 +699,56 @@ const fetchInvoicesSnapshotUnsafe = async (): Promise<Invoice[]> => {
 };
 
 export const fetchInvoicesSnapshot = async (): Promise<Invoice[]> => {
+  const lifecycleGeneration = getLifecycleSnapshotGeneration();
   try {
-    return await fetchInvoicesSnapshotUnsafe();
+    const invoices = await fetchInvoicesSnapshotUnsafe();
+    if (
+      appDataSource === 'supabase'
+      && supabase
+      && isSupabaseConfigured
+      && lifecycleGeneration !== getLifecycleSnapshotGeneration()
+    ) {
+      return getLocalAppState().invoices ?? [];
+    }
+    return invoices;
   } catch (error) {
     if (error instanceof Error && error.message === 'Faktury se nepodařilo načíst.') {
       throw error;
     }
     console.error('Unexpected invoice snapshot load failure', error);
     throw new Error('Faktury se nepodařilo načíst.');
+  }
+};
+
+const reloadAuthoritativeInvoiceSlices = async (): Promise<void> => {
+  const [invoices, timelogs, receipts] = await Promise.all([
+    fetchInvoicesSnapshot(),
+    loadTimelogsSnapshot(),
+    fetchReceiptsSnapshot(),
+  ]);
+
+  advanceLifecycleSnapshotGeneration();
+  updateLocalAppState((snapshot) => ({
+    ...snapshot,
+    invoices,
+    timelogs,
+    receipts,
+  }));
+  syncInvoiceQueryData();
+};
+
+const runAtomicInvoiceMutationWithRecovery = async <T>(
+  mutation: () => Promise<T>,
+): Promise<T> => {
+  try {
+    return await mutation();
+  } catch (error) {
+    try {
+      await reloadAuthoritativeInvoiceSlices();
+    } catch (reloadError) {
+      console.error('Authoritative invoice lifecycle reload failed after mutation error', reloadError);
+    }
+    throw error;
   }
 };
 
@@ -865,7 +923,7 @@ const persistSupabaseGeneratedInvoice = async (
     };
   });
 
-  return createInvoiceAtomicRpc({
+  return runAtomicInvoiceMutationWithRecovery(() => createInvoiceAtomicRpc({
     invoice: {
       contractor_id: contractorId,
       event_id: eventRows[0]?.supabaseId ?? null,
@@ -886,7 +944,7 @@ const persistSupabaseGeneratedInvoice = async (
     items,
     timelogs: timelogTargets,
     receipts: receiptTargets,
-  });
+  }));
 };
 
 export const getInvoices = (search = ''): Invoice[] => {
@@ -983,7 +1041,7 @@ export const generateInvoices = async (): Promise<Invoice[]> => {
   return newInvoices;
 };
 
-export const createInvoiceFromSelection = async (
+const createInvoiceFromSelectionUncoordinated = async (
   contractorProfileId: string,
   selectedTimelogIds: number[],
   selectedReceiptIds: number[],
@@ -1068,6 +1126,9 @@ export const createInvoiceFromSelection = async (
     receiptSupabaseIds: persisted.receipts.map((row) => row.id),
   } : draftInvoice;
 
+  if (persisted) {
+    advanceLifecycleSnapshotGeneration();
+  }
   updateLocalAppState((currentSnapshot) => ({
     ...currentSnapshot,
     invoices: [...(currentSnapshot.invoices ?? []), invoice],
@@ -1088,7 +1149,20 @@ export const createInvoiceFromSelection = async (
   return invoice;
 };
 
-export const approveInvoice = async (id: string): Promise<Invoice | null> => {
+export const createInvoiceFromSelection = (
+  contractorProfileId: string,
+  selectedTimelogIds: number[],
+  selectedReceiptIds: number[],
+): Promise<Invoice | null> => runInvoiceLifecycleMutation(
+  ['create'],
+  () => createInvoiceFromSelectionUncoordinated(
+    contractorProfileId,
+    selectedTimelogIds,
+    selectedReceiptIds,
+  ),
+);
+
+const approveInvoiceUncoordinated = async (id: string): Promise<Invoice | null> => {
   const snapshot = getLocalAppState();
   const invoice = (snapshot.invoices ?? []).find((item) => item.id === id);
 
@@ -1097,17 +1171,25 @@ export const approveInvoice = async (id: string): Promise<Invoice | null> => {
   }
 
   const paidAt = new Date().toISOString();
-  const persisted = appDataSource === 'supabase' && supabase && isSupabaseConfigured
-    ? await markInvoicePaidAtomicRpc({
+  let persisted: InvoiceMutationRpcResult | null = null;
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    const expectedUpdatedAt = invoice.updatedAt
+      ?? (() => { throw new Error(INVALID_INVOICE_SELECTION_MESSAGE); })();
+    const expectedTimelogIds = requireInvoiceLinkedIds(invoice.timelogSupabaseIds, invoice.timelogIds);
+    const expectedReceiptIds = requireInvoiceLinkedIds(invoice.receiptSupabaseIds, invoice.receiptIds);
+    persisted = await runAtomicInvoiceMutationWithRecovery(() => markInvoicePaidAtomicRpc({
       id,
       expectedStatus: invoice.status,
-      expectedUpdatedAt: invoice.updatedAt ?? (() => { throw new Error(INVALID_INVOICE_SELECTION_MESSAGE); })(),
-      expectedTimelogIds: requireInvoiceLinkedIds(invoice.timelogSupabaseIds, invoice.timelogIds),
-      expectedReceiptIds: requireInvoiceLinkedIds(invoice.receiptSupabaseIds, invoice.receiptIds),
+      expectedUpdatedAt,
+      expectedTimelogIds,
+      expectedReceiptIds,
       paidAt,
-    })
-    : null;
+    }));
+  }
 
+  if (persisted) {
+    advanceLifecycleSnapshotGeneration();
+  }
   updateLocalAppState((currentSnapshot) => ({
     ...currentSnapshot,
     invoices: (currentSnapshot.invoices ?? []).map((item) => item.id === id ? {
@@ -1145,7 +1227,11 @@ export const approveInvoice = async (id: string): Promise<Invoice | null> => {
   };
 };
 
-export const sendInvoice = async (id: string): Promise<Invoice | null> => {
+export const approveInvoice = (id: string): Promise<Invoice | null> => (
+  runInvoiceLifecycleMutation([`paid:${id}`], () => approveInvoiceUncoordinated(id))
+);
+
+const sendInvoiceUncoordinated = async (id: string): Promise<Invoice | null> => {
   const snapshot = getLocalAppState();
   const invoice = (snapshot.invoices ?? []).find((item) => item.id === id);
 
@@ -1154,16 +1240,24 @@ export const sendInvoice = async (id: string): Promise<Invoice | null> => {
   }
 
   const sentAt = new Date().toISOString();
-  const persisted = appDataSource === 'supabase'
-    ? await markInvoiceSentAtomicRpc({
+  let persisted: InvoiceMutationRpcResult | null = null;
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    const expectedUpdatedAt = invoice.updatedAt
+      ?? (() => { throw new Error(INVALID_INVOICE_SELECTION_MESSAGE); })();
+    const expectedTimelogIds = requireInvoiceLinkedIds(invoice.timelogSupabaseIds, invoice.timelogIds);
+    const expectedReceiptIds = requireInvoiceLinkedIds(invoice.receiptSupabaseIds, invoice.receiptIds);
+    persisted = await runAtomicInvoiceMutationWithRecovery(() => markInvoiceSentAtomicRpc({
       id,
-      expectedUpdatedAt: invoice.updatedAt ?? (() => { throw new Error(INVALID_INVOICE_SELECTION_MESSAGE); })(),
-      expectedTimelogIds: requireInvoiceLinkedIds(invoice.timelogSupabaseIds, invoice.timelogIds),
-      expectedReceiptIds: requireInvoiceLinkedIds(invoice.receiptSupabaseIds, invoice.receiptIds),
+      expectedUpdatedAt,
+      expectedTimelogIds,
+      expectedReceiptIds,
       sentAt,
-    })
-    : null;
+    }));
+  }
 
+  if (persisted) {
+    advanceLifecycleSnapshotGeneration();
+  }
   updateLocalAppState((currentSnapshot) => ({
     ...currentSnapshot,
     invoices: (currentSnapshot.invoices ?? []).map((item) => (
@@ -1188,7 +1282,11 @@ export const sendInvoice = async (id: string): Promise<Invoice | null> => {
   };
 };
 
-export const deleteInvoice = async (id: string): Promise<boolean> => {
+export const sendInvoice = (id: string): Promise<Invoice | null> => (
+  runInvoiceLifecycleMutation([`sent:${id}`], () => sendInvoiceUncoordinated(id))
+);
+
+const deleteInvoiceUncoordinated = async (id: string): Promise<boolean> => {
   const snapshot = getLocalAppState();
   const invoice = (snapshot.invoices ?? []).find((item) => item.id === id);
 
@@ -1200,16 +1298,24 @@ export const deleteInvoice = async (id: string): Promise<boolean> => {
     await markTimelogsAsApproved(invoice.timelogIds ?? []);
   }
 
-  const persisted = appDataSource === 'supabase' && supabase && isSupabaseConfigured
-    ? await deleteInvoiceAtomicRpc({
+  let persisted: InvoiceMutationRpcResult | null = null;
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    const expectedUpdatedAt = invoice.updatedAt
+      ?? (() => { throw new Error(INVALID_INVOICE_SELECTION_MESSAGE); })();
+    const expectedTimelogIds = requireInvoiceLinkedIds(invoice.timelogSupabaseIds, invoice.timelogIds);
+    const expectedReceiptIds = requireInvoiceLinkedIds(invoice.receiptSupabaseIds, invoice.receiptIds);
+    persisted = await runAtomicInvoiceMutationWithRecovery(() => deleteInvoiceAtomicRpc({
       id,
       expectedStatus: invoice.status,
-      expectedUpdatedAt: invoice.updatedAt ?? (() => { throw new Error(INVALID_INVOICE_SELECTION_MESSAGE); })(),
-      expectedTimelogIds: requireInvoiceLinkedIds(invoice.timelogSupabaseIds, invoice.timelogIds),
-      expectedReceiptIds: requireInvoiceLinkedIds(invoice.receiptSupabaseIds, invoice.receiptIds),
-    })
-    : null;
+      expectedUpdatedAt,
+      expectedTimelogIds,
+      expectedReceiptIds,
+    }));
+  }
 
+  if (persisted) {
+    advanceLifecycleSnapshotGeneration();
+  }
   updateLocalAppState((currentSnapshot) => ({
     ...currentSnapshot,
     invoices: (currentSnapshot.invoices ?? []).filter((item) => item.id !== id),
@@ -1233,6 +1339,10 @@ export const deleteInvoice = async (id: string): Promise<boolean> => {
 
   return true;
 };
+
+export const deleteInvoice = (id: string): Promise<boolean> => (
+  runInvoiceLifecycleMutation([`delete:${id}`], () => deleteInvoiceUncoordinated(id))
+);
 
 export const subscribeToInvoiceChanges = (listener: () => void): (() => void) => {
   ensureSupabaseInvoicesLoaded();

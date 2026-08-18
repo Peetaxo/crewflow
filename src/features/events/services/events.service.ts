@@ -676,9 +676,66 @@ const refreshEventLifecycleStateUncoordinated = (): Promise<void> => {
   return queuedRefresh;
 };
 
+const refreshEventDeletionStateUncoordinated = (): Promise<void> => {
+  const queuedRefresh = eventLifecycleRefreshQueue.then(async () => {
+    let eventLifecycleSnapshot: EventLifecycleSnapshot;
+    let timelogs: Timelog[];
+    let receipts: ReceiptItem[];
+
+    try {
+      const [timelogService, receiptService] = await Promise.all([
+        import('../../timelogs/services/timelogs.service'),
+        import('../../receipts/services/receipts.service'),
+      ]);
+      [eventLifecycleSnapshot, timelogs, receipts] = await Promise.all([
+        loadEventsLifecycleSnapshot(),
+        timelogService.loadTimelogsSnapshot(),
+        receiptService.fetchReceiptsSnapshot(),
+      ]);
+    } catch (error) {
+      console.error('Failed to recover event deletion lifecycle state', error);
+      throw new Error(EVENT_DELETE_ERROR_MESSAGE);
+    }
+
+    advanceLifecycleSnapshotGeneration();
+    updateLocalAppState((snapshot) => ({
+      ...snapshot,
+      events: eventLifecycleSnapshot.events,
+      eventApplications: eventLifecycleSnapshot.eventApplications,
+      eventCrewAssignments: eventLifecycleSnapshot.eventCrewAssignments,
+      grasonEventConfirmations: eventLifecycleSnapshot.grasonEventConfirmations,
+      timelogs,
+      receipts,
+    }));
+    applyEventRowIdMap(eventLifecycleSnapshot.eventRowIdByLocalId);
+    syncEventQueryCache();
+  });
+
+  eventLifecycleRefreshQueue = queuedRefresh.catch(() => undefined);
+  return queuedRefresh;
+};
+
 const runCrewLifecycleMutation = <T>(mutation: () => Promise<T>): Promise<T> => (
   runLifecycleDataMutation(['event:lifecycle-mutation'], mutation)
 );
+
+const runRecoverableCrewLifecycleMutation = <T>(
+  mutation: (markMutationStarted: () => void) => Promise<T>,
+): Promise<T> => runCrewLifecycleMutation(async () => {
+  let mutationStarted = false;
+  try {
+    return await mutation(() => { mutationStarted = true; });
+  } catch (error) {
+    if (mutationStarted) {
+      try {
+        await refreshEventLifecycleStateUncoordinated();
+      } catch (recoveryError) {
+        console.error('Authoritative Crew lifecycle recovery failed after mutation error', recoveryError);
+      }
+    }
+    throw error;
+  }
+});
 const getSupabaseClientRows = async (): Promise<Array<{ id: string; name: string }>> => {
   if (!supabase) {
     throw new Error('Supabase klient neni dostupny.');
@@ -1274,7 +1331,7 @@ export const approveEventWithdrawal = async (applicationId: number): Promise<voi
   }
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
-    return runCrewLifecycleMutation(async () => {
+    return runRecoverableCrewLifecycleMutation(async (markMutationStarted) => {
     const event = (snapshot.events ?? []).find((item) => item.id === application.eventId);
     if (
       !application.supabaseId
@@ -1285,6 +1342,7 @@ export const approveEventWithdrawal = async (applicationId: number): Promise<voi
       throw new Error(CREW_LIFECYCLE_ERROR_MESSAGE);
     }
 
+    markMutationStarted();
     const rpc = await approveEventWithdrawalRpc(
       application.eventSupabaseId,
       application.contractorProfileId,
@@ -1603,7 +1661,7 @@ const removeEventRowIdMapping = (eventId: EventIdentifier) => {
   }
 };
 
-export const deleteEvent = async (eventId: EventIdentifier): Promise<{ id: EventIdentifier }> => {
+const deleteEventUncoordinated = async (eventId: EventIdentifier): Promise<{ id: EventIdentifier }> => {
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
     let eventRowId: string;
     try {
@@ -1613,14 +1671,25 @@ export const deleteEvent = async (eventId: EventIdentifier): Promise<{ id: Event
       throw new Error(EVENT_DELETE_ERROR_MESSAGE);
     }
 
-    await deleteEventAtomicRpc(eventRowId);
+    try {
+      await deleteEventAtomicRpc(eventRowId);
+    } catch (error) {
+      try {
+        await refreshEventDeletionStateUncoordinated();
+      } catch (recoveryError) {
+        console.error('Authoritative event deletion recovery failed after mutation error', recoveryError);
+      }
+      throw error;
+    }
     removeEventRowIdMapping(eventId);
+    advanceLifecycleSnapshotGeneration();
   }
 
   updateLocalAppState((snapshot) => {
     const deletedEvent = typeof eventId === 'string'
       ? snapshot.events.find((event) => event.supabaseId === eventId)
       : snapshot.events.find((event) => event.id === eventId);
+    const deletedStableId = deletedEvent?.supabaseId ?? (typeof eventId === 'string' ? eventId : null);
     const deletedLocalId = deletedEvent?.id ?? (typeof eventId === 'number' ? eventId : null);
     const nextEvents = typeof eventId === 'string'
       ? snapshot.events.filter((event) => event.supabaseId !== eventId)
@@ -1631,18 +1700,33 @@ export const deleteEvent = async (eventId: EventIdentifier): Promise<{ id: Event
     return {
       ...snapshot,
       events: nextEvents,
-      timelogs: deletedLocalId != null && !hasRemainingWithSameLocalId
-        ? snapshot.timelogs.filter((timelog) => timelog.eid !== deletedLocalId)
-        : snapshot.timelogs,
-      receipts: deletedLocalId != null && !hasRemainingWithSameLocalId
-        ? snapshot.receipts.filter((receipt) => receipt.eid !== deletedLocalId)
-        : snapshot.receipts,
+      timelogs: snapshot.timelogs.filter((timelog) => {
+        if (deletedStableId && timelog.eventSupabaseId) {
+          return timelog.eventSupabaseId !== deletedStableId;
+        }
+        return deletedLocalId == null || hasRemainingWithSameLocalId || timelog.eid !== deletedLocalId;
+      }),
+      receipts: snapshot.receipts.filter((receipt) => {
+        if (deletedStableId && receipt.eventSupabaseId) {
+          return receipt.eventSupabaseId !== deletedStableId;
+        }
+        return deletedLocalId == null || hasRemainingWithSameLocalId || receipt.eid !== deletedLocalId;
+      }),
     };
   });
 
   invalidateEventQueries();
   return { id: eventId };
 };
+
+export const deleteEvent = (eventId: EventIdentifier): Promise<{ id: EventIdentifier }> => (
+  appDataSource === 'supabase' && supabase && isSupabaseConfigured
+    ? runLifecycleDataMutation(
+      [`event:delete:${String(eventId)}`],
+      () => deleteEventUncoordinated(eventId),
+    )
+    : deleteEventUncoordinated(eventId)
+);
 
 export const getEventCrew = (eventId: number): Contractor[] => {
   ensureSupabaseEventsLoaded();
@@ -1707,8 +1791,9 @@ export const removeContractorFromEvent = async (eventId: number, contractorProfi
   }
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
-    return runCrewLifecycleMutation(async () => {
+    return runRecoverableCrewLifecycleMutation(async (markMutationStarted) => {
     const eventRowId = await getSupabaseEventRowId(eventId);
+    markMutationStarted();
     const rpc = await removeEventCrewRpc(eventRowId, contractorProfileId);
     if (rpc.event_id !== eventRowId || rpc.profile_id !== contractorProfileId) {
       console.error('Failed to validate refreshed Crew removal lifecycle state', {
@@ -1914,8 +1999,9 @@ export const assignCrewToEvent = async (
   }
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
-    return runCrewLifecycleMutation(async () => {
+    return runRecoverableCrewLifecycleMutation(async (markMutationStarted) => {
     const eventRowId = await getSupabaseEventRowId(event.id);
+    markMutationStarted();
     const rpc = await assignEventCrewRpc({
       eventId: eventRowId,
       profileId: contractorProfileId,

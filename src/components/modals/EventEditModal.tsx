@@ -42,6 +42,7 @@ const EventEditModal = ({
 }: EventEditModalProps) => {
   const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isAddressResolving, setIsAddressResolving] = useState(false);
   const draftIdentity = editingEvent
     ? editingEvent.supabaseId ?? `local:${editingEvent.id}`
     : null;
@@ -126,6 +127,7 @@ const EventEditModal = ({
     activeSaveRequestRef.current = null;
     saveInFlightRef.current = false;
     setIsSaving(false);
+    setIsAddressResolving(false);
   }, [draftIdentity]);
 
   useLayoutEffect(() => {
@@ -176,7 +178,7 @@ const EventEditModal = ({
   };
 
   const handleSave = async () => {
-    if (saveInFlightRef.current) return;
+    if (saveInFlightRef.current || isAddressResolving) return;
     const requestIdentity = draftIdentity;
     const requestToken = Symbol('event-save-request');
     saveInFlightRef.current = true;
@@ -306,7 +308,9 @@ const EventEditModal = ({
               </div>
               <div>
                 <EventAddressField
+                  key={draftIdentity}
                   value={editingEvent}
+                  onResolvingChange={setIsAddressResolving}
                   onChange={(selection) => updateEventDraft({
                     ...editingEvent,
                     address: selection.address,
@@ -631,7 +635,7 @@ const EventEditModal = ({
               Zrusit
             </button>
             <button
-              disabled={isSaving}
+              disabled={isSaving || isAddressResolving}
               onClick={handleSave}
               className="flex-1 rounded-xl border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] py-2.5 text-sm font-medium text-[color:var(--nodu-success-text)] shadow-[0_12px_30px_rgba(45,108,78,0.12)] transition-all hover:bg-[color:var(--nodu-success-bg-hover)] disabled:cursor-not-allowed disabled:opacity-60"
             >

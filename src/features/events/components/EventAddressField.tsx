@@ -19,6 +19,7 @@ interface EventAddressFieldValue {
 interface EventAddressFieldProps {
   value: EventAddressFieldValue;
   onChange: (selection: EventAddressSelection) => void;
+  onResolvingChange?: (isResolving: boolean) => void;
   autocompleteEnabled?: boolean;
   fetchSuggestions?: (input: string) => Promise<EventAddressSuggestion[]>;
   resolveSuggestion?: (suggestion: EventAddressSuggestion) => Promise<EventAddressSelection>;
@@ -35,6 +36,7 @@ const getInitialAddress = (value: EventAddressFieldValue) => clean(value.address
 const EventAddressField = ({
   value,
   onChange,
+  onResolvingChange,
   autocompleteEnabled = isGooglePlacesConfigured(),
   fetchSuggestions = fetchGoogleAddressSuggestions,
   resolveSuggestion = resolveGoogleAddressSuggestion,
@@ -45,6 +47,16 @@ const EventAddressField = ({
   const [hasTyped, setHasTyped] = React.useState(false);
   const [status, setStatus] = React.useState('');
   const [isResolving, setIsResolving] = React.useState(false);
+  const mountedRef = React.useRef(false);
+  const resolutionGenerationRef = React.useRef(0);
+
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      resolutionGenerationRef.current += 1;
+    };
+  }, []);
 
   React.useEffect(() => {
     setInputValue(addressFromProps);
@@ -92,18 +104,25 @@ const EventAddressField = ({
   };
 
   const handleSelectSuggestion = async (suggestion: EventAddressSuggestion) => {
+    const resolutionGeneration = ++resolutionGenerationRef.current;
     setIsResolving(true);
+    onResolvingChange?.(true);
     try {
       const selection = await resolveSuggestion(suggestion);
+      if (!mountedRef.current || resolutionGeneration !== resolutionGenerationRef.current) return;
       setInputValue(selection.address);
       setSuggestions([]);
       setHasTyped(false);
       setStatus('Adresa je vybraná z mapových podkladů.');
       onChange(selection);
     } catch {
+      if (!mountedRef.current || resolutionGeneration !== resolutionGenerationRef.current) return;
       setStatus('Adresu se nepodařilo načíst. Adresu lze zadat ručně.');
     } finally {
-      setIsResolving(false);
+      if (mountedRef.current && resolutionGeneration === resolutionGenerationRef.current) {
+        setIsResolving(false);
+        onResolvingChange?.(false);
+      }
     }
   };
 

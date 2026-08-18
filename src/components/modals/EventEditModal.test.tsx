@@ -227,6 +227,82 @@ describe('EventEditModal', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it('waits for address resolution and saves the resolved draft', async () => {
+    const saveEvent = vi.fn(async (nextEvent: Event) => nextEvent);
+    const onClose = vi.fn();
+    vi.doMock('../../features/events/components/EventAddressField', () => ({
+      default: ({ onChange, onResolvingChange }: {
+        onChange: (selection: {
+          address: string;
+          placeId: string;
+          locationLat: number;
+          locationLng: number;
+        }) => void;
+        onResolvingChange?: (isResolving: boolean) => void;
+      }) => (
+        <div>
+          <button type="button" onClick={() => onResolvingChange?.(true)}>
+            Start address resolution
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onChange({
+                address: 'Rohanské nábřeží 678/23, 186 00 Praha 8',
+                placeId: 'place-1',
+                locationLat: 50.0929,
+                locationLng: 14.4502,
+              });
+              onResolvingChange?.(false);
+            }}
+          >
+            Finish address resolution
+          </button>
+        </div>
+      ),
+    }));
+    vi.doMock('../../features/events/services/events.service', () => ({
+      applyEventDraft: (nextEvent: Event) => nextEvent,
+      createDefaultPhaseTimes: (from: string, to: string) => ({
+        instal: { from, to },
+        provoz: { from, to },
+        deinstal: { from, to },
+      }),
+      getEventFormOptions: () => ({ projects: [], clients: [] }),
+      normalizeEventSchedules: () => ({}),
+      saveEvent,
+    }));
+    const { default: EventEditModal } = await import('./EventEditModal');
+    const DraftHost = () => {
+      const [draft, setDraft] = React.useState<Event>({
+        ...event,
+        supabaseId: 'event-client-uuid',
+        address: 'Roh',
+      });
+      return <EventEditModal editingEvent={draft} onClose={onClose} onChange={setDraft} />;
+    };
+    render(<DraftHost />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start address resolution' }));
+    const saveButton = screen.getByRole('button', { name: 'Ulozit akci' });
+    expect(saveButton).toBeDisabled();
+    saveButton.click();
+    expect(saveEvent).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Finish address resolution' }));
+    await waitFor(() => expect(saveButton).toBeEnabled());
+    fireEvent.click(saveButton);
+
+    await waitFor(() => expect(saveEvent).toHaveBeenCalledOnce());
+    expect(saveEvent).toHaveBeenCalledWith(expect.objectContaining({
+      address: 'Rohanské nábřeží 678/23, 186 00 Praha 8',
+      city: 'Rohanské nábřeží 678/23, 186 00 Praha 8',
+      placeId: 'place-1',
+      locationLat: 50.0929,
+      locationLng: 14.4502,
+    }));
+  });
+
   it('reuses materialized phase schedule IDs across unchanged retries and recomputes after schedule edits', async () => {
     const firstSave = createDeferred<Event>();
     const saveEvent = vi.fn()

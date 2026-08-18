@@ -3,6 +3,16 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Event, ReceiptItem, Timelog } from '../../types';
 
+const createDeferred = <T,>() => {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+};
+
 type ModalContractor = {
   id: number;
   profileId?: string;
@@ -61,6 +71,7 @@ const toastMocks = vi.hoisted(() => ({
   success: vi.fn(),
   error: vi.fn(),
 }));
+const saveReceiptMock = vi.hoisted(() => vi.fn());
 
 vi.mock('framer-motion', () => ({
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -89,7 +100,7 @@ vi.mock('../../features/timelogs/services/timelogs.service', () => ({
 
 vi.mock('../../features/receipts/services/receipts.service', () => ({
   getReceiptDependencies: () => mockReceiptDependencies,
-  saveReceipt: vi.fn(),
+  saveReceipt: saveReceiptMock,
 }));
 
 vi.mock('../../features/crew/services/crew.service', () => ({
@@ -109,6 +120,7 @@ import AssignCrewModal from './AssignCrewModal';
 describe('modal contractor identity handling', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    saveReceiptMock.mockReset();
     assignCrewToEvent.mockReset();
     assignCrewToEvent.mockResolvedValue(undefined);
     mockAppContext = {
@@ -222,6 +234,104 @@ describe('modal contractor identity handling', () => {
     expect(setEditingReceipt).toHaveBeenCalledWith(expect.objectContaining({
       contractorProfileId: 'profile-uuid-2',
     }));
+  });
+
+  it('stores the selected stable event UUID before saving', () => {
+    mockAppContext.editingReceipt = {
+      id: 1,
+      supabaseId: 'receipt-client-uuid',
+      contractorProfileId: 'profile-uuid-1',
+      eid: 1,
+      eventSupabaseId: 'event-a',
+      job: 'A',
+      title: 'Taxi',
+      vendor: 'Bolt',
+      amount: 300,
+      paidAt: '2026-04-21',
+      note: '',
+      status: 'draft',
+    };
+    mockReceiptDependencies.events = [
+      { id: 1, supabaseId: 'event-a', job: 'A', name: 'Event A', startDate: '2026-04-20', endDate: '2026-04-20' },
+      { id: 2, supabaseId: 'event-b', job: 'B', name: 'Event B', startDate: '2026-04-21', endDate: '2026-04-21' },
+    ];
+
+    render(<ReceiptEditModal />);
+    fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: '2' } });
+
+    expect(setEditingReceipt).toHaveBeenCalledWith(expect.objectContaining({
+      eid: 2,
+      eventSupabaseId: 'event-b',
+      job: 'B',
+    }));
+  });
+
+  it('rejects a native same-render double save, disables every editable control, and keeps the UUID draft after failure', async () => {
+    const pending = createDeferred<ReceiptItem>();
+    saveReceiptMock.mockReturnValue(pending.promise);
+    mockAppContext.editingReceipt = {
+      id: 1,
+      supabaseId: 'receipt-client-uuid',
+      contractorProfileId: 'profile-uuid-1',
+      eid: 1,
+      eventSupabaseId: 'event-a',
+      job: 'A',
+      title: 'Taxi',
+      vendor: 'Bolt',
+      amount: 300,
+      paidAt: '2026-04-21',
+      note: '',
+      status: 'draft',
+    };
+    mockReceiptDependencies = {
+      contractors: [{ id: 1, profileId: 'profile-uuid-1', name: 'Contractor One' }],
+      events: [{ id: 1, supabaseId: 'event-a', job: 'A', name: 'Event A', startDate: '2026-04-20', endDate: '2026-04-20' }],
+    };
+
+    render(<ReceiptEditModal />);
+    const saveButton = screen.getByRole('button', { name: 'Uložit účtenku' });
+    act(() => {
+      saveButton.click();
+      saveButton.click();
+    });
+
+    expect(saveReceiptMock).toHaveBeenCalledOnce();
+    expect(saveReceiptMock).toHaveBeenCalledWith(expect.objectContaining({
+      supabaseId: 'receipt-client-uuid',
+      eventSupabaseId: 'event-a',
+    }));
+    screen.getAllByRole('combobox').forEach((control) => expect(control).toBeDisabled());
+    screen.getAllByRole('textbox').forEach((control) => expect(control).toBeDisabled());
+    expect(screen.getByRole('spinbutton')).toBeDisabled();
+    screen.getAllByRole('button').forEach((control) => expect(control).toBeDisabled());
+
+    await act(async () => pending.reject(new Error('Účtenku se nepodařilo uložit.')));
+
+    expect(setEditingReceipt).not.toHaveBeenCalledWith(null);
+    expect(saveButton).toBeEnabled();
+  });
+
+  it('does not let an older successful save close a newer receipt draft', async () => {
+    const pending = createDeferred<ReceiptItem>();
+    saveReceiptMock.mockReturnValue(pending.promise);
+    const firstDraft: ReceiptItem = {
+      id: 1, supabaseId: 'receipt-client-uuid-1', contractorProfileId: 'profile-uuid-1',
+      eid: 1, eventSupabaseId: 'event-a', job: 'A', title: 'Taxi', vendor: 'Bolt', amount: 300,
+      paidAt: '2026-04-21', note: '', status: 'draft',
+    };
+    mockAppContext.editingReceipt = firstDraft;
+    mockReceiptDependencies = {
+      contractors: [{ id: 1, profileId: 'profile-uuid-1', name: 'Contractor One' }],
+      events: [{ id: 1, supabaseId: 'event-a', job: 'A', name: 'Event A', startDate: '2026-04-20', endDate: '2026-04-20' }],
+    };
+    const view = render(<ReceiptEditModal />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Uložit účtenku' }));
+    mockAppContext.editingReceipt = { ...firstDraft, supabaseId: 'receipt-client-uuid-2', title: 'New draft' };
+    view.rerender(<ReceiptEditModal />);
+    await act(async () => pending.resolve({ ...firstDraft, updatedAt: 'v1' }));
+
+    expect(setEditingReceipt).not.toHaveBeenCalledWith(null);
   });
 
   it('treats assigned crew as assigned based on contractorProfileId', () => {

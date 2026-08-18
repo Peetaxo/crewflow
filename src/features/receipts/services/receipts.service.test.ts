@@ -129,14 +129,47 @@ describe('receipts.service write flow', () => {
     expect(uuid).not.toHaveBeenCalled();
   });
 
+  it('continues replacing local receipts by local id', async () => {
+    let snapshot = createSnapshot({
+      receipts: [{ ...createSnapshot().receipts[0], supabaseId: undefined, updatedAt: undefined }],
+    });
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'local' }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+    vi.doMock('../../../lib/supabase', () => ({ isSupabaseConfigured: false, supabase: null }));
+    vi.doMock('../../../lib/supabase-mappers', () => ({ mapReceipt: vi.fn() }));
+
+    const { saveReceipt } = await import('./receipts.service');
+    const saved = await saveReceipt({ ...snapshot.receipts[0], title: 'Edited locally' });
+
+    expect(saved).toMatchObject({ id: 1, title: 'Edited locally' });
+    expect(snapshot.receipts).toEqual([expect.objectContaining({ id: 1, title: 'Edited locally' })]);
+  });
+
   const setupReceiptCreateIntentHarness = async ({
     loseFirstInsertResponse = false,
     failFirstRecovery = false,
+    deferFirstUpdateResponse = false,
+    deferFirstRecovery = false,
   } = {}) => {
     let snapshot = createSnapshot({ receipts: [] });
     let authoritativeReceiptRow: Record<string, unknown> | null = null;
     let recoveryFailuresRemaining = failFirstRecovery ? 1 : 0;
     let version = 0;
+    const firstRecovery = createDeferred<{
+      data: Array<Record<string, unknown>>;
+      error: null;
+    }>();
+    const firstUpdateResponse = createDeferred<{
+      data: Record<string, unknown> | null;
+      error: Record<string, unknown> | null;
+    }>();
     const uuid = vi.fn()
       .mockReturnValueOnce('receipt-client-uuid-1')
       .mockReturnValueOnce('receipt-client-uuid-2')
@@ -150,6 +183,16 @@ describe('receipts.service write flow', () => {
       status: authoritativeReceiptRow?.status,
     });
     const insert = vi.fn((payload: Record<string, unknown>) => {
+      if (authoritativeReceiptRow?.id === payload.id) {
+        return {
+          select: vi.fn(() => ({
+            single: vi.fn().mockResolvedValue({
+              data: null,
+              error: { code: '23505', message: 'duplicate key value violates unique constraint' },
+            }),
+          })),
+        };
+      }
       version += 1;
       authoritativeReceiptRow = {
         ...payload,
@@ -171,6 +214,9 @@ describe('receipts.service write flow', () => {
         ...authoritativeReceiptRow,
         updated_at: `2026-04-12T1${version}:00:00Z`,
       };
+      if (deferFirstUpdateResponse && updateSingle.mock.calls.length === 1) {
+        return firstUpdateResponse.promise;
+      }
       return { data: mutationResponse(), error: null };
     });
     const updateSelect = vi.fn(() => ({ single: updateSingle }));
@@ -191,8 +237,12 @@ describe('receipts.service write flow', () => {
     const deleteVersionEq = vi.fn(() => ({ in: deleteStatusIn }));
     const deleteIdEq = vi.fn(() => ({ eq: deleteVersionEq }));
     const deleteReceiptRow = vi.fn(() => ({ eq: deleteIdEq }));
+    const rpc = vi.fn();
 
     const receiptsOrder = vi.fn(async () => {
+      if (deferFirstRecovery && receiptsOrder.mock.calls.length === 1) {
+        return firstRecovery.promise;
+      }
       if (recoveryFailuresRemaining > 0) {
         recoveryFailuresRemaining -= 1;
         return { data: [], error: { message: 'temporary receipt refresh failure' } };
@@ -202,11 +252,18 @@ describe('receipts.service write flow', () => {
         error: null,
       };
     });
+    const setQueryData = vi.fn();
+    const invalidateQueries = vi.fn();
+    const cancelQueries = vi.fn().mockResolvedValue(undefined);
 
     vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/query-client', () => ({
+      queryClient: { setQueryData, invalidateQueries, cancelQueries },
+    }));
     vi.doMock('../../../lib/supabase', () => ({
       isSupabaseConfigured: true,
       supabase: {
+        rpc,
         from: vi.fn((table: string) => {
           if (table === 'receipts') {
             return {
@@ -257,13 +314,30 @@ describe('receipts.service write flow', () => {
       service: await import('./receipts.service'),
       insert,
       update,
+      updateIdEq,
+      updateVersionEq,
+      updateStatusEq,
+      deleteReceiptRow,
+      receiptsOrder,
+      rpc,
       uuid,
+      firstRecovery,
+      firstUpdateResponse,
+      setQueryData,
+      cancelQueries,
+      setAuthoritativeReceiptRow: (row: Record<string, unknown> | null) => {
+        authoritativeReceiptRow = row ? structuredClone(row) : null;
+      },
+      setSnapshot: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+      },
       getSnapshot: () => structuredClone(snapshot),
     };
   };
 
   const newReceiptDraft = (): ReceiptItem => ({
     id: 1,
+    supabaseId: 'receipt-client-uuid-1',
     contractorProfileId: 'profile-uuid-1',
     eid: 1,
     eventSupabaseId: 'event-row-1',
@@ -276,6 +350,84 @@ describe('receipts.service write flow', () => {
     status: 'draft',
   });
 
+  const setupDeferredReceiptHydration = async () => {
+    let snapshot = createSnapshot({ receipts: [] });
+    const firstReceipts = createDeferred<{
+      data: Array<Record<string, unknown>>;
+      error: null;
+    }>();
+    const canonicalRow = {
+      id: 'receipt-row-1',
+      updated_at: '2026-04-10T12:00:00Z',
+      event_id: 'event-row-1',
+      contractor_id: 'profile-uuid-1',
+      job_number: 'AK001',
+      name: 'Taxi',
+      supplier: 'Bolt',
+      amount: 300,
+      paid_at: '2026-04-10',
+      note: '',
+      status: 'attached',
+    };
+    const receiptsOrder = vi.fn()
+      .mockImplementationOnce(() => firstReceipts.promise)
+      .mockResolvedValue({ data: [canonicalRow], error: null });
+    const setQueryData = vi.fn();
+    const invalidateQueries = vi.fn();
+    const cancelQueries = vi.fn().mockResolvedValue(undefined);
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/query-client', () => ({
+      queryClient: { setQueryData, invalidateQueries, cancelQueries },
+    }));
+    vi.doMock('../../../lib/query-keys', () => ({
+      queryKeys: { receipts: { all: ['receipts'] } },
+    }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: vi.fn((table: string) => {
+          if (table === 'receipts') return { select: vi.fn(() => ({ order: receiptsOrder })) };
+          const data = table === 'profiles'
+            ? [{ id: 'profile-uuid-1' }]
+            : [{ id: 'event-row-1' }];
+          return {
+            select: vi.fn(() => ({
+              order: vi.fn(() => ({ order: vi.fn().mockResolvedValue({ data, error: null }) })),
+            })),
+          };
+        }),
+      },
+    }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapReceipt: vi.fn((row: Record<string, unknown>) => ({
+        ...newReceiptDraft(),
+        supabaseId: row.id,
+        updatedAt: row.updated_at,
+        eventSupabaseId: row.event_id,
+        status: row.status,
+      })),
+    }));
+
+    return {
+      service: await import('./receipts.service'),
+      firstReceipts,
+      canonicalRow,
+      receiptsOrder,
+      setQueryData,
+      cancelQueries,
+      getSnapshot: () => structuredClone(snapshot),
+    };
+  };
+
   it('routes receipt writes without positional receipt or event identity helpers', () => {
     const serviceSource = readFileSync(resolve(
       process.cwd(),
@@ -285,7 +437,68 @@ describe('receipts.service write flow', () => {
     expect(serviceSource).not.toContain('getSupabaseReceiptRowIds');
     expect(serviceSource).not.toContain('getSupabaseReceiptRowId');
     expect(serviceSource).not.toContain('getSupabaseEventIdMap');
+    expect(serviceSource).not.toContain('type ReceiptCreateIntent');
+    expect(serviceSource).not.toContain('receiptCreateIntentByLocalId');
+    const saveSource = serviceSource.slice(
+      serviceSource.indexOf('export const saveReceipt'),
+      serviceSource.indexOf('export const deleteReceipt'),
+    );
+    expect(saveSource).not.toContain('.find((receipt) => receipt.id === updated.id)');
     expect(serviceSource).toContain('transitionReceiptStatusesAtomicRpc({');
+  });
+
+  it.each([
+    ['receipt UUID', { supabaseId: undefined }],
+    ['event UUID', { eventSupabaseId: undefined }],
+  ])('fails closed before every Supabase request when a create is missing its %s', async (_label, overrides) => {
+    const harness = await setupReceiptCreateIntentHarness();
+
+    await expect(harness.service.saveReceipt({
+      ...newReceiptDraft(),
+      ...overrides,
+    })).rejects.toThrow('Účtenka obsahuje neplatné nebo neúplné údaje.');
+
+    expect(harness.insert).not.toHaveBeenCalled();
+    expect(harness.update).not.toHaveBeenCalled();
+    expect(harness.rpc).not.toHaveBeenCalled();
+    expect(harness.deleteReceiptRow).not.toHaveBeenCalled();
+    expect(harness.receiptsOrder).not.toHaveBeenCalled();
+  });
+
+  it('fails closed before every Supabase request when an existing receipt lacks its canonical version', async () => {
+    const harness = await setupReceiptCreateIntentHarness();
+    harness.setSnapshot((snapshot) => ({
+      ...snapshot,
+      receipts: [{ ...newReceiptDraft(), updatedAt: undefined }],
+    }));
+
+    await expect(harness.service.saveReceipt({
+      ...newReceiptDraft(),
+      title: 'Edited taxi',
+    })).rejects.toThrow('Účtenka se mezitím změnila. Obnovte data a zkuste to znovu.');
+
+    expect(harness.insert).not.toHaveBeenCalled();
+    expect(harness.update).not.toHaveBeenCalled();
+    expect(harness.rpc).not.toHaveBeenCalled();
+    expect(harness.deleteReceiptRow).not.toHaveBeenCalled();
+    expect(harness.receiptsOrder).not.toHaveBeenCalled();
+  });
+
+  it('requires the draft event UUID to match exactly one current event before inserting', async () => {
+    const harness = await setupReceiptCreateIntentHarness();
+    harness.setSnapshot((snapshot) => ({
+      ...snapshot,
+      events: [
+        { ...snapshot.events[0], id: 1, supabaseId: 'event-row-other' },
+        { ...snapshot.events[0], id: 2, supabaseId: 'event-row-other' },
+      ],
+    }));
+
+    await expect(harness.service.saveReceipt(newReceiptDraft()))
+      .rejects.toThrow('Účtenka obsahuje neplatné nebo neúplné údaje.');
+
+    expect(harness.insert).not.toHaveBeenCalled();
+    expect(harness.receiptsOrder).not.toHaveBeenCalled();
   });
 
   it('updates receipt status in Supabase using its stable UUID and version', async () => {
@@ -541,8 +754,10 @@ describe('receipts.service write flow', () => {
 
     const created = await saveReceipt({
       id: 2,
+      supabaseId: 'receipt-row-2',
       contractorProfileId: 'profile-uuid-1',
       eid: 1,
+      eventSupabaseId: 'event-row-1',
       job: ' ak001 ',
       title: ' Parkovne ',
       vendor: ' Garage ',
@@ -627,8 +842,10 @@ describe('receipts.service write flow', () => {
 
     const created = await saveReceipt({
       id: 1,
+      supabaseId: 'receipt-row-2',
       contractorProfileId: 'profile-uuid-1',
       eid: 1,
+      eventSupabaseId: 'event-row-1',
       job: ' AK001 ',
       title: ' Taxi ',
       vendor: ' Bolt ',
@@ -675,7 +892,8 @@ describe('receipts.service write flow', () => {
       const { saveReceipt } = await import('./receipts.service');
 
       await expect(saveReceipt({
-        id: 2, contractorProfileId: 'profile-uuid-1', eid: 1, eventSupabaseId: 'event-row-1',
+        id: 2, supabaseId: 'receipt-row-2', contractorProfileId: 'profile-uuid-1',
+        eid: 1, eventSupabaseId: 'event-row-1',
         job: 'AK001', title: 'Taxi', vendor: 'Bolt', amount: 300, paidAt: '2026-04-12',
         note: '', status: 'draft',
       })).rejects.toThrow(expectedMessage);
@@ -979,7 +1197,18 @@ describe('receipts.service write flow', () => {
       data: Array<Record<string, unknown>>;
       error: null;
     }>();
-    const receiptsOrder = vi.fn(() => deferredReceipts.promise);
+    const receiptsOrder = vi.fn()
+      .mockImplementationOnce(() => deferredReceipts.promise)
+      .mockImplementation(async () => ({
+        data: [{
+          id: 'receipt-row-1',
+          updated_at: snapshot.receipts[0].updatedAt,
+          event_id: 'event-row-1',
+          contractor_id: 'profile-uuid-1',
+          status: snapshot.receipts[0].status,
+        }],
+        error: null,
+      }));
     const rpc = vi.fn().mockResolvedValue({
       data: [{ id: 'receipt-row-1', status: 'submitted', updated_at: '2026-04-10T11:00:00Z' }],
       error: null,
@@ -1051,6 +1280,7 @@ describe('receipts.service write flow', () => {
     });
 
     await expect(staleFetch).resolves.toEqual(snapshot.receipts);
+    expect(receiptsOrder).toHaveBeenCalledTimes(2);
     expect(snapshot.receipts[0]).toMatchObject({
       status: 'submitted',
       updatedAt: '2026-04-10T11:00:00Z',
@@ -1065,7 +1295,18 @@ describe('receipts.service write flow', () => {
       data: Array<Record<string, unknown>>;
       error: null;
     }>();
-    const receiptsOrder = vi.fn(() => deferredReceipts.promise);
+    const receiptsOrder = vi.fn()
+      .mockImplementationOnce(() => deferredReceipts.promise)
+      .mockImplementation(async () => ({
+        data: [{
+          id: 'receipt-row-1',
+          updated_at: snapshot.receipts[0].updatedAt,
+          event_id: 'event-row-1',
+          contractor_id: 'profile-uuid-1',
+          status: snapshot.receipts[0].status,
+        }],
+        error: null,
+      }));
 
     vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
     vi.doMock('../../../lib/supabase', () => ({
@@ -1117,6 +1358,7 @@ describe('receipts.service write flow', () => {
     });
 
     await expect(staleFetch).resolves.toEqual(snapshot.receipts);
+    expect(receiptsOrder).toHaveBeenCalledTimes(2);
   });
 
   it('authoritatively reloads after a lost status response and does not poison the next mutation', async () => {
@@ -1207,7 +1449,7 @@ describe('receipts.service write flow', () => {
     }
   });
 
-  it('reserves one create intent before queueing two immediate saves of the same receipt draft', async () => {
+  it('inserts once and version-updates the same draft UUID across two immediate saves', async () => {
     const harness = await setupReceiptCreateIntentHarness();
     const draft = newReceiptDraft();
 
@@ -1215,15 +1457,19 @@ describe('receipts.service write flow', () => {
     const secondSave = harness.service.saveReceipt(draft);
     const [first, second] = await Promise.all([firstSave, secondSave]);
 
-    expect(harness.uuid).toHaveBeenCalledTimes(1);
+    expect(harness.uuid).not.toHaveBeenCalled();
     expect(harness.insert).toHaveBeenCalledTimes(1);
     expect(harness.update).toHaveBeenCalledTimes(1);
+    expect(harness.insert).toHaveBeenCalledWith(expect.objectContaining({ id: draft.supabaseId }));
+    expect(harness.updateIdEq).toHaveBeenCalledWith('id', draft.supabaseId);
+    expect(harness.updateVersionEq).toHaveBeenCalledWith('updated_at', '2026-04-12T11:00:00Z');
+    expect(harness.updateStatusEq).toHaveBeenCalledWith('status', 'draft');
     expect(first.supabaseId).toBe('receipt-client-uuid-1');
     expect(second.supabaseId).toBe('receipt-client-uuid-1');
     expect(harness.getSnapshot().receipts).toHaveLength(1);
   });
 
-  it('retains an ambiguous receipt create intent until a user retry finds the committed UUID', async () => {
+  it('never redirects a receipt retry after local ids are reindexed', async () => {
     const harness = await setupReceiptCreateIntentHarness({
       loseFirstInsertResponse: true,
       failFirstRecovery: true,
@@ -1233,11 +1479,27 @@ describe('receipts.service write flow', () => {
 
     try {
       await expect(harness.service.saveReceipt(draft)).rejects.toThrow('Účtenku se nepodařilo uložit.');
+      harness.setSnapshot((snapshot) => ({
+        ...snapshot,
+        receipts: [{
+          ...newReceiptDraft(),
+          id: draft.id,
+          supabaseId: 'receipt-row-other',
+          updatedAt: 'v-other',
+        }],
+      }));
 
       const recovered = await harness.service.saveReceipt(draft);
 
-      expect(harness.uuid).toHaveBeenCalledTimes(1);
-      expect(harness.insert).toHaveBeenCalledTimes(1);
+      expect(harness.uuid).not.toHaveBeenCalled();
+      expect(harness.insert).toHaveBeenCalledTimes(2);
+      expect(harness.insert.mock.calls.map(([payload]) => ({
+        id: payload.id,
+        eventId: payload.event_id,
+      }))).toEqual([
+        { id: draft.supabaseId, eventId: draft.eventSupabaseId },
+        { id: draft.supabaseId, eventId: draft.eventSupabaseId },
+      ]);
       expect(harness.update).not.toHaveBeenCalled();
       expect(recovered.supabaseId).toBe('receipt-client-uuid-1');
       expect(harness.getSnapshot().receipts).toHaveLength(1);
@@ -1246,15 +1508,144 @@ describe('receipts.service write flow', () => {
     }
   });
 
-  it('does not reuse a receipt create intent after the canonical receipt is deliberately deleted', async () => {
+  it('recovers a duplicate UUID only when the exact authoritative row matches the requested create', async () => {
+    const harness = await setupReceiptCreateIntentHarness({
+      loseFirstInsertResponse: true,
+      failFirstRecovery: true,
+    });
+    const draft = newReceiptDraft();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      await expect(harness.service.saveReceipt(draft))
+        .rejects.toThrow('Účtenku se nepodařilo uložit.');
+      harness.setAuthoritativeReceiptRow({
+        id: draft.supabaseId,
+        updated_at: '2026-04-12T11:00:00Z',
+        event_id: draft.eventSupabaseId,
+        contractor_id: draft.contractorProfileId,
+        job_number: draft.job,
+        name: 'Different receipt',
+        supplier: draft.vendor,
+        amount: draft.amount,
+        paid_at: draft.paidAt,
+        note: draft.note,
+        status: 'draft',
+      });
+
+      await expect(harness.service.saveReceipt(draft))
+        .rejects.toThrow('Účtenku se nepodařilo uložit.');
+
+      expect(harness.insert).toHaveBeenCalledTimes(2);
+      expect(harness.receiptsOrder).toHaveBeenCalledTimes(2);
+      expect(harness.getSnapshot().receipts).toEqual([]);
+      expect(harness.setQueryData).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('drops queued and in-flight receipt saves when their initiating auth epoch resets', async () => {
+    const harness = await setupReceiptCreateIntentHarness({ deferFirstUpdateResponse: true });
+    const draft = { ...newReceiptDraft(), updatedAt: '2026-04-12T10:00:00Z' };
+    harness.setSnapshot((snapshot) => ({ ...snapshot, receipts: [draft] }));
+
+    const firstSave = harness.service.saveReceipt({ ...draft, title: 'Edited taxi' });
+    const firstExpectation = expect(firstSave).rejects.toThrow('Účtenku se nepodařilo uložit.');
+    await vi.waitFor(() => expect(harness.update).toHaveBeenCalledOnce());
+    const secondSave = harness.service.saveReceipt({ ...draft, title: 'Edited taxi' });
+    const secondExpectation = expect(secondSave).rejects.toThrow('Účtenku se nepodařilo uložit.');
+    harness.service.resetSupabaseReceiptsHydration();
+    harness.firstUpdateResponse.resolve({
+      data: {
+        id: draft.supabaseId,
+        updated_at: '2026-04-12T11:00:00Z',
+        event_id: draft.eventSupabaseId,
+        status: 'draft',
+      },
+      error: null,
+    });
+
+    await firstExpectation;
+    await secondExpectation;
+    expect(harness.insert).not.toHaveBeenCalled();
+    expect(harness.update).toHaveBeenCalledOnce();
+    expect(harness.getSnapshot().receipts).toEqual([draft]);
+    expect(harness.setQueryData).not.toHaveBeenCalled();
+  });
+
+  it('does not commit receipt recovery rows after the initiating auth epoch resets', async () => {
+    const harness = await setupReceiptCreateIntentHarness({
+      loseFirstInsertResponse: true,
+      deferFirstRecovery: true,
+    });
+    const draft = newReceiptDraft();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const pendingSave = harness.service.saveReceipt(draft);
+      const capturedSave = pendingSave.then(
+        (value) => ({ value, error: null }),
+        (error: unknown) => ({ value: null, error }),
+      );
+      await vi.waitFor(() => expect(harness.receiptsOrder).toHaveBeenCalledOnce());
+      harness.service.resetSupabaseReceiptsHydration();
+      harness.firstRecovery.resolve({
+        data: [{
+          id: draft.supabaseId,
+          updated_at: '2026-04-12T11:00:00Z',
+          event_id: draft.eventSupabaseId,
+          contractor_id: draft.contractorProfileId,
+          job_number: draft.job,
+          name: draft.title,
+          supplier: draft.vendor,
+          amount: draft.amount,
+          paid_at: draft.paidAt,
+          note: draft.note,
+          status: 'draft',
+        }],
+        error: null,
+      });
+
+      const outcome = await capturedSave;
+      expect(outcome.value).toBeNull();
+      expect(outcome.error).toEqual(expect.objectContaining({ message: 'Účtenku se nepodařilo uložit.' }));
+      expect(harness.getSnapshot().receipts).toEqual([]);
+      expect(harness.setQueryData).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('uses a fresh factory UUID after the canonical receipt is deliberately deleted', async () => {
     const harness = await setupReceiptCreateIntentHarness();
-    const first = await harness.service.saveReceipt(newReceiptDraft());
+    const firstDraft = harness.service.createEmptyReceipt('profile-uuid-1');
+    const first = await harness.service.saveReceipt({
+      ...firstDraft,
+      eid: 1,
+      eventSupabaseId: 'event-row-1',
+      job: 'AK001',
+      title: 'Taxi',
+      vendor: 'Bolt',
+      amount: 300,
+    });
 
     await harness.service.deleteReceipt(first.id);
-    const second = await harness.service.saveReceipt(newReceiptDraft());
+    const secondDraft = harness.service.createEmptyReceipt('profile-uuid-1');
+    const second = await harness.service.saveReceipt({
+      ...secondDraft,
+      eid: 1,
+      eventSupabaseId: 'event-row-1',
+      job: 'AK001',
+      title: 'Taxi',
+      vendor: 'Bolt',
+      amount: 300,
+    });
 
     expect(harness.uuid).toHaveBeenCalledTimes(2);
     expect(harness.insert).toHaveBeenCalledTimes(2);
+    expect(firstDraft.supabaseId).toBe('receipt-client-uuid-1');
+    expect(secondDraft.supabaseId).toBe('receipt-client-uuid-2');
     expect(second.supabaseId).toBe('receipt-client-uuid-2');
     expect(harness.getSnapshot().receipts).toHaveLength(1);
   });
@@ -1341,6 +1732,59 @@ describe('receipts.service write flow', () => {
     });
   });
 
+  it('retries one direct receipt hydration after a same-session generation discard and commits only the retry', async () => {
+    const harness = await setupDeferredReceiptHydration();
+    const { advanceLifecycleSnapshotGeneration } = await import('../../event-lifecycle-generation');
+
+    const pendingFetch = harness.service.fetchReceiptsSnapshot();
+    await vi.waitFor(() => expect(harness.receiptsOrder).toHaveBeenCalledOnce());
+    advanceLifecycleSnapshotGeneration();
+    harness.firstReceipts.resolve({
+      data: [{ ...harness.canonicalRow, status: 'approved' }],
+      error: null,
+    });
+
+    await expect(pendingFetch).resolves.toEqual([
+      expect.objectContaining({ supabaseId: 'receipt-row-1', status: 'attached' }),
+    ]);
+    expect(harness.receiptsOrder).toHaveBeenCalledTimes(2);
+    expect(harness.getSnapshot().receipts).toEqual([
+      expect.objectContaining({ supabaseId: 'receipt-row-1', status: 'attached' }),
+    ]);
+    expect(harness.setQueryData).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not commit or retry a direct receipt hydration started before reset', async () => {
+    const harness = await setupDeferredReceiptHydration();
+
+    const pendingFetch = harness.service.fetchReceiptsSnapshot();
+    await vi.waitFor(() => expect(harness.receiptsOrder).toHaveBeenCalledOnce());
+    harness.service.resetSupabaseReceiptsHydration();
+    harness.firstReceipts.resolve({ data: [harness.canonicalRow], error: null });
+
+    await expect(pendingFetch).resolves.toEqual([]);
+    expect(harness.getSnapshot().receipts).toEqual([]);
+    expect(harness.setQueryData).not.toHaveBeenCalled();
+    expect(harness.receiptsOrder).toHaveBeenCalledOnce();
+    expect(harness.cancelQueries).toHaveBeenCalledWith({ queryKey: ['receipts'] });
+  });
+
+  it('does not commit or retry lazy receipt hydration started before reset', async () => {
+    const harness = await setupDeferredReceiptHydration();
+
+    expect(harness.service.getReceipts()).toEqual([]);
+    await vi.waitFor(() => expect(harness.receiptsOrder).toHaveBeenCalledOnce());
+    harness.service.resetSupabaseReceiptsHydration();
+    harness.firstReceipts.resolve({ data: [harness.canonicalRow], error: null });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(harness.getSnapshot().receipts).toEqual([]);
+    expect(harness.setQueryData).not.toHaveBeenCalled();
+    expect(harness.receiptsOrder).toHaveBeenCalledOnce();
+    expect(harness.cancelQueries).toHaveBeenCalledWith({ queryKey: ['receipts'] });
+  });
+
   it('recovers a lost create response by its one stable client UUID without inserting twice', async () => {
     let snapshot = createSnapshot({ receipts: [] });
     let insertedRow: Record<string, unknown> | null = null;
@@ -1414,7 +1858,8 @@ describe('receipts.service write flow', () => {
     try {
       const { saveReceipt } = await import('./receipts.service');
       const created = await saveReceipt({
-        id: 1, contractorProfileId: 'profile-uuid-1', eid: 1, eventSupabaseId: 'event-row-1',
+        id: 1, supabaseId: 'receipt-client-uuid', contractorProfileId: 'profile-uuid-1',
+        eid: 1, eventSupabaseId: 'event-row-1',
         job: 'AK001', title: 'Taxi', vendor: 'Bolt', amount: 300, paidAt: '2026-04-12',
         note: '', status: 'draft',
       });

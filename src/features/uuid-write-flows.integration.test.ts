@@ -360,6 +360,7 @@ describe('UUID write flows integration', () => {
     let savedReceipt = await saveReceipt({
       ...receiptDraft,
       eid: 1,
+      eventSupabaseId: 'event-row-1',
       job: 'AK001',
       title: 'Parkovne',
       vendor: 'Parking',
@@ -393,7 +394,9 @@ describe('UUID write flows integration', () => {
       p_receipts: [{ id: 'receipt-row-1', expected_updated_at: '2026-08-17T14:20:00.000Z' }],
     }));
     expect(receiptInsert).toHaveBeenCalledWith(expect.objectContaining({
+      id: receiptDraft.supabaseId,
       contractor_id: 'profile-uuid-1',
+      event_id: 'event-row-1',
     }));
     expect(rpc).toHaveBeenCalledWith('save_timelog_atomic', expect.objectContaining({
       p_timelog_id: 'timelog-row-1',

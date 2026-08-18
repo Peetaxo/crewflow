@@ -630,10 +630,10 @@ describe('timelog assignment lifecycle migration', () => {
 
     const verifier = readVerificationScript();
     publicSignatures.forEach((signature) => {
-      expect(verifier).toContain(`'${signature}'::pg_catalog.regprocedure`);
+      expect(verifier).toContain(`('${signature}', true,`);
     });
     expect(verifier).toContain(
-      "'public.enforce_timelog_update_permissions()'::pg_catalog.regprocedure",
+      "('public.enforce_timelog_update_permissions()', false, true, 'owner')",
     );
     expect(verifier).toContain('verification failed: direct coo timelog update bypassed import rpc');
     expect(verifier).toContain('verification failed: crew-only user imported approved timelog');
@@ -665,36 +665,20 @@ describe('timelog assignment lifecycle migration', () => {
 
   it('verifies exact lifecycle RPC execute ACLs before creating fixtures', () => {
     const sql = readVerificationScript();
-    const aclStart = sql.indexOf("select oid into v_authenticated_role_oid\n  from pg_catalog.pg_roles");
+    const aclStart = sql.indexOf('create temporary table expected_lifecycle_function_contract');
     const fixtureStart = sql.indexOf('select p.id, p.user_id\n  into v_profile_id, v_crew_user_id');
     const aclSql = sql.slice(aclStart, fixtureStart);
 
     expect(aclStart).toBeGreaterThanOrEqual(0);
     expect(fixtureStart).toBeGreaterThan(aclStart);
-    expect(aclSql).toContain(
-      "'public.assign_event_crew(uuid, uuid, uuid, jsonb)'::pg_catalog.regprocedure",
-    );
-    expect(aclSql).toContain(
-      "'public.remove_event_crew(uuid, uuid)'::pg_catalog.regprocedure",
-    );
-    expect(aclSql).toContain(
-      "'public.approve_event_withdrawal(uuid, uuid, uuid)'::pg_catalog.regprocedure",
-    );
-    expect(aclSql).toContain(
-      "'public.delete_event_atomic(uuid)'::pg_catalog.regprocedure",
-    );
-    expect(aclSql).toContain(
-      "'public.create_invoice_atomic(jsonb, jsonb, jsonb, jsonb)'::pg_catalog.regprocedure",
-    );
-    expect(aclSql).toContain(
-      "'public.mark_invoice_paid_atomic(uuid, public.invoice_status, timestamptz, timestamptz)'::pg_catalog.regprocedure",
-    );
-    expect(aclSql).toContain(
-      "'public.delete_invoice_atomic(uuid, public.invoice_status, timestamptz)'::pg_catalog.regprocedure",
-    );
-    expect(aclSql).toContain(
-      "'public.enforce_event_application_lifecycle_update()'::pg_catalog.regprocedure",
-    );
+    expect(aclSql).toContain("('public.assign_event_crew(uuid, uuid, uuid, jsonb)', true, true, 'authenticated')");
+    expect(aclSql).toContain("('public.remove_event_crew(uuid, uuid)', true, true, 'authenticated')");
+    expect(aclSql).toContain("('public.approve_event_withdrawal(uuid, uuid, uuid)', true, true, 'authenticated')");
+    expect(aclSql).toContain("('public.delete_event_atomic(uuid)', true, true, 'authenticated')");
+    expect(aclSql).toContain("('public.create_invoice_atomic(jsonb, jsonb, jsonb, jsonb)', true, true, 'authenticated')");
+    expect(aclSql).toContain("('public.mark_invoice_paid_atomic(uuid, public.invoice_status, timestamptz, timestamptz)', true, true, 'authenticated')");
+    expect(aclSql).toContain("('public.delete_invoice_atomic(uuid, public.invoice_status, timestamptz)', true, true, 'authenticated')");
+    expect(aclSql).toContain("('public.enforce_event_application_lifecycle_update()', false, true, 'owner')");
     expect(aclSql).toContain('from pg_catalog.pg_proc p');
     expect(aclSql).toContain('pg_catalog.aclexplode(');
     expect(aclSql).toContain("coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))");
@@ -706,7 +690,106 @@ describe('timelog assignment lifecycle migration', () => {
       "raise exception 'verification failed: unexpected execute grantee on %'",
     );
     expect(aclSql).toContain(
-      "raise exception 'verification failed: event application lifecycle trigger function is directly executable'",
+      "raise exception 'verification failed: non-callable lifecycle helper is directly executable: %'",
+    );
+  });
+
+  it('verifies the exact mode, empty search path, and ACL contract for every installed function', () => {
+    const migration = readMigration();
+    const sql = readVerificationScript();
+    const contractStart = sql.indexOf(
+      'insert into expected_lifecycle_function_contract',
+    );
+    const contractEnd = sql.indexOf('\n\ndo $$', contractStart);
+    const contractSql = sql.slice(contractStart, contractEnd);
+    const endpointContracts = [
+      ['public.assign_event_crew(uuid, uuid, uuid, jsonb)', true],
+      ['public.remove_event_crew(uuid, uuid)', true],
+      ['public.approve_event_withdrawal(uuid, uuid, uuid)', true],
+      [
+        'public.save_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, public.timelog_status, jsonb)',
+        false,
+      ],
+      [
+        'public.transition_timelog_statuses_atomic(jsonb, public.timelog_status, public.timelog_status)',
+        false,
+      ],
+      [
+        'public.transition_receipt_statuses_atomic(jsonb, public.receipt_status, public.receipt_status)',
+        false,
+      ],
+      ['public.delete_timelog_atomic(uuid, timestamptz, public.timelog_status)', false],
+      [
+        'public.import_approved_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, jsonb)',
+        true,
+      ],
+      ['public.delete_event_atomic(uuid)', true],
+      ['public.create_invoice_atomic(jsonb, jsonb, jsonb, jsonb)', true],
+      ['public.mark_invoice_sent_atomic(uuid, timestamptz, timestamptz)', true],
+      [
+        'public.mark_invoice_paid_atomic(uuid, public.invoice_status, timestamptz, timestamptz)',
+        true,
+      ],
+      [
+        'public.delete_invoice_atomic(uuid, public.invoice_status, timestamptz)',
+        true,
+      ],
+    ] as const;
+    const helperContracts = [
+      [
+        'public.can_edit_timelog_data(uuid, public.timelog_status)',
+        false,
+        'authenticated',
+      ],
+      ['public.enforce_event_application_lifecycle_update()', true, 'owner'],
+      ['public.enforce_timelog_update_permissions()', true, 'owner'],
+      ['public.enforce_receipt_lifecycle_update()', true, 'owner'],
+      ['public.handle_timelog_approved()', true, 'owner'],
+    ] as const;
+    const expectedInstalledFunctionNames = [
+      ...endpointContracts.map(([signature]) => signature.slice(7, signature.indexOf('('))),
+      ...helperContracts.map(([signature]) => signature.slice(7, signature.indexOf('('))),
+    ].sort();
+    const installedFunctionNames = [
+      ...migration.matchAll(/create or replace function public\.([a-z0-9_]+)\s*\(/g),
+    ]
+      .map((match) => match[1])
+      .sort();
+
+    expect(contractStart).toBeGreaterThanOrEqual(0);
+    expect(contractEnd).toBeGreaterThan(contractStart);
+    expect(endpointContracts).toHaveLength(13);
+    expect(helperContracts).toHaveLength(5);
+    expect(contractSql.match(/\(\s*'public\./g)).toHaveLength(18);
+    expect(installedFunctionNames).toEqual(expectedInstalledFunctionNames);
+    endpointContracts.forEach(([signature, isDefiner]) => {
+      expect(contractSql).toContain(
+        `('${signature}', true, ${isDefiner}, 'authenticated')`,
+      );
+    });
+    helperContracts.forEach(([signature, isDefiner, executeScope]) => {
+      expect(contractSql).toContain(
+        `('${signature}', false, ${isDefiner}, '${executeScope}')`,
+      );
+    });
+    expect(sql).toContain(
+      'pg_catalog.to_regprocedure(v_function_contract.signature)',
+    );
+    expect(sql).toContain(
+      "raise exception 'verification failed: public lifecycle endpoint catalog is incompatible'",
+    );
+    expect(sql).toContain(
+      "raise exception 'verification failed: installed lifecycle helper catalog is incompatible'",
+    );
+    expect(sql).toMatch(
+      /'search_path=""'\s*=\s*any\(\s*pg_catalog\.coalesce\(\s*function_row\.proconfig,\s*array\[\]::text\[\]\s*\)\s*\)/,
+    );
+    expect(sql).toContain("where config_value like 'search_path=%'");
+    expect(sql).toContain(
+      "raise exception 'verification failed: lifecycle function mode or search path is incompatible: %'",
+    );
+    expect(sql).toContain(
+      "raise exception 'verification failed: non-callable lifecycle helper is directly executable: %'",
     );
   });
 
@@ -880,7 +963,7 @@ describe('timelog assignment lifecycle migration', () => {
       'revoke all on function public.enforce_receipt_lifecycle_update() from authenticated;',
     );
     expect(verifier).toContain('verification failed: receipt workflow policy catalog is incompatible');
-    expect(verifier).toContain('verification failed: receipt lifecycle trigger function is directly executable');
+    expect(verifier).toContain('verification failed: non-callable lifecycle helper is directly executable');
     expect(verifier).toContain('verification failed: protected receipt allowed event deletion');
     expect(verifier).toContain('verification failed: protected receipt was mutated directly');
     expect(verifier).toContain('verification failed: coo moved protected receipt identity');
@@ -939,7 +1022,7 @@ describe('timelog assignment lifecycle migration', () => {
     ]);
     expect(approvalFunction).toContain("raise exception 'invoice_create_conflict'");
     expect(sql).toContain('revoke all on function public.handle_timelog_approved() from authenticated;');
-    expect(verifier).toContain('verification failed: timelog approval invoice trigger function is directly executable');
+    expect(verifier).toContain('verification failed: non-callable lifecycle helper is directly executable');
     expect(verifier).toContain('verification failed: timelog approval did not link and attach exact receipts');
     expect(verifier).toContain('verification failed: timelog approval receipt was refactured');
   });

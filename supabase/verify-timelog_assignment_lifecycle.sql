@@ -1,5 +1,37 @@
 begin;
 
+create temporary table expected_lifecycle_function_contract (
+  signature text primary key,
+  is_endpoint boolean not null,
+  is_security_definer boolean not null,
+  execute_scope text not null check (execute_scope in ('authenticated', 'owner'))
+) on commit drop;
+
+insert into expected_lifecycle_function_contract (
+  signature,
+  is_endpoint,
+  is_security_definer,
+  execute_scope
+) values
+  ('public.assign_event_crew(uuid, uuid, uuid, jsonb)', true, true, 'authenticated'),
+  ('public.remove_event_crew(uuid, uuid)', true, true, 'authenticated'),
+  ('public.approve_event_withdrawal(uuid, uuid, uuid)', true, true, 'authenticated'),
+  ('public.save_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, public.timelog_status, jsonb)', true, false, 'authenticated'),
+  ('public.transition_timelog_statuses_atomic(jsonb, public.timelog_status, public.timelog_status)', true, false, 'authenticated'),
+  ('public.transition_receipt_statuses_atomic(jsonb, public.receipt_status, public.receipt_status)', true, false, 'authenticated'),
+  ('public.delete_timelog_atomic(uuid, timestamptz, public.timelog_status)', true, false, 'authenticated'),
+  ('public.import_approved_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, jsonb)', true, true, 'authenticated'),
+  ('public.delete_event_atomic(uuid)', true, true, 'authenticated'),
+  ('public.create_invoice_atomic(jsonb, jsonb, jsonb, jsonb)', true, true, 'authenticated'),
+  ('public.mark_invoice_sent_atomic(uuid, timestamptz, timestamptz)', true, true, 'authenticated'),
+  ('public.mark_invoice_paid_atomic(uuid, public.invoice_status, timestamptz, timestamptz)', true, true, 'authenticated'),
+  ('public.delete_invoice_atomic(uuid, public.invoice_status, timestamptz)', true, true, 'authenticated'),
+  ('public.can_edit_timelog_data(uuid, public.timelog_status)', false, false, 'authenticated'),
+  ('public.enforce_event_application_lifecycle_update()', false, true, 'owner'),
+  ('public.enforce_timelog_update_permissions()', false, true, 'owner'),
+  ('public.enforce_receipt_lifecycle_update()', false, true, 'owner'),
+  ('public.handle_timelog_approved()', false, true, 'owner');
+
 do $$
 declare
   v_authenticated_role_oid oid;
@@ -7,6 +39,8 @@ declare
   v_function_owner_oid oid;
   v_authenticated_can_execute boolean;
   v_has_unexpected_execute_grantee boolean;
+  v_non_owner_can_execute boolean;
+  v_function_contract record;
   v_manager_user_id uuid;
   v_crew_user_id uuid;
   v_profile_id uuid;
@@ -573,101 +607,136 @@ begin
     raise exception 'verification failed: invoice link policy catalog is incompatible';
   end if;
 
-  foreach v_function_signature in array array[
-    'public.assign_event_crew(uuid, uuid, uuid, jsonb)'::pg_catalog.regprocedure,
-    'public.remove_event_crew(uuid, uuid)'::pg_catalog.regprocedure,
-    'public.approve_event_withdrawal(uuid, uuid, uuid)'::pg_catalog.regprocedure,
-    'public.save_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, public.timelog_status, jsonb)'::pg_catalog.regprocedure,
-    'public.transition_timelog_statuses_atomic(jsonb, public.timelog_status, public.timelog_status)'::pg_catalog.regprocedure,
-    'public.transition_receipt_statuses_atomic(jsonb, public.receipt_status, public.receipt_status)'::pg_catalog.regprocedure,
-    'public.delete_timelog_atomic(uuid, timestamptz, public.timelog_status)'::pg_catalog.regprocedure,
-    'public.import_approved_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, jsonb)'::pg_catalog.regprocedure,
-    'public.delete_event_atomic(uuid)'::pg_catalog.regprocedure,
-    'public.create_invoice_atomic(jsonb, jsonb, jsonb, jsonb)'::pg_catalog.regprocedure,
-    'public.mark_invoice_sent_atomic(uuid, timestamptz, timestamptz)'::pg_catalog.regprocedure,
-    'public.mark_invoice_paid_atomic(uuid, public.invoice_status, timestamptz, timestamptz)'::pg_catalog.regprocedure,
-    'public.delete_invoice_atomic(uuid, public.invoice_status, timestamptz)'::pg_catalog.regprocedure
-  ] loop
+  if (
+    select pg_catalog.count(*)
+    from pg_catalog.pg_proc function_row
+    join pg_catalog.pg_namespace function_schema
+      on function_schema.oid = function_row.pronamespace
+    where function_schema.nspname = 'public'
+      and function_row.prokind = 'f'::"char"
+      and function_row.proname in (
+        select pg_catalog.split_part(
+          pg_catalog.split_part(contract.signature, '.', 2),
+          '(',
+          1
+        )
+        from expected_lifecycle_function_contract contract
+        where contract.is_endpoint
+      )
+  ) <> 13 then
+    raise exception 'verification failed: public lifecycle endpoint catalog is incompatible';
+  end if;
+
+  if (
+    select pg_catalog.count(*)
+    from pg_catalog.pg_proc function_row
+    join pg_catalog.pg_namespace function_schema
+      on function_schema.oid = function_row.pronamespace
+    where function_schema.nspname = 'public'
+      and function_row.prokind = 'f'::"char"
+      and function_row.proname in (
+        select pg_catalog.split_part(
+          pg_catalog.split_part(contract.signature, '.', 2),
+          '(',
+          1
+        )
+        from expected_lifecycle_function_contract contract
+      )
+  ) <> 18 then
+    raise exception 'verification failed: installed lifecycle helper catalog is incompatible';
+  end if;
+
+  for v_function_contract in
+    select contract.*
+    from expected_lifecycle_function_contract contract
+    order by contract.signature
+  loop
+    v_function_signature := pg_catalog.to_regprocedure(v_function_contract.signature);
+
+    if v_function_signature is null then
+      raise exception 'verification failed: lifecycle function signature is missing or incompatible: %',
+        v_function_contract.signature;
+    end if;
+
+    if exists (
+      select 1
+      from pg_catalog.pg_proc function_row
+      where function_row.oid = v_function_signature::oid
+        and (
+          function_row.prosecdef is distinct from v_function_contract.is_security_definer
+          or not (
+            'search_path=""' = any(
+              pg_catalog.coalesce(function_row.proconfig, array[]::text[])
+            )
+          )
+          or (
+            select pg_catalog.count(*)
+            from pg_catalog.unnest(
+              pg_catalog.coalesce(function_row.proconfig, array[]::text[])
+            ) config_value
+            where config_value like 'search_path=%'
+          ) <> 1
+        )
+    ) then
+      raise exception 'verification failed: lifecycle function mode or search path is incompatible: %',
+        v_function_contract.signature;
+    end if;
+
     select
       p.proowner,
-      coalesce(
+      pg_catalog.coalesce(
         pg_catalog.bool_or(
           acl.privilege_type = 'EXECUTE'
           and acl.grantee = v_authenticated_role_oid
         ),
         false
       ),
-      coalesce(
+      pg_catalog.coalesce(
         pg_catalog.bool_or(
           acl.privilege_type = 'EXECUTE'
           and acl.grantee <> p.proowner
           and acl.grantee <> v_authenticated_role_oid
         ),
         false
+      ),
+      pg_catalog.coalesce(
+        pg_catalog.bool_or(
+          acl.privilege_type = 'EXECUTE'
+          and acl.grantee <> p.proowner
+        ),
+        false
       )
     into
       v_function_owner_oid,
       v_authenticated_can_execute,
-      v_has_unexpected_execute_grantee
+      v_has_unexpected_execute_grantee,
+      v_non_owner_can_execute
     from pg_catalog.pg_proc p
     cross join lateral pg_catalog.aclexplode(
-      coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))
+      pg_catalog.coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))
     ) acl
     where p.oid = v_function_signature::oid
     group by p.proowner;
 
     if v_function_owner_oid is null then
       raise exception 'verification failed: lifecycle function does not exist: %',
-        v_function_signature;
+        v_function_contract.signature;
     end if;
-    if not v_authenticated_can_execute then
-      raise exception 'verification failed: authenticated lacks EXECUTE on %',
-        v_function_signature;
-    end if;
-    if v_has_unexpected_execute_grantee then
-      raise exception 'verification failed: unexpected EXECUTE grantee on %',
-        v_function_signature;
+
+    if v_function_contract.execute_scope = 'authenticated' then
+      if not v_authenticated_can_execute then
+        raise exception 'verification failed: authenticated lacks EXECUTE on %',
+          v_function_contract.signature;
+      end if;
+      if v_has_unexpected_execute_grantee then
+        raise exception 'verification failed: unexpected EXECUTE grantee on %',
+          v_function_contract.signature;
+      end if;
+    elsif v_non_owner_can_execute then
+      raise exception 'verification failed: non-callable lifecycle helper is directly executable: %',
+        v_function_contract.signature;
     end if;
   end loop;
-
-  if exists (
-    select 1
-    from (
-      values
-        ('public.delete_event_atomic(uuid)'::pg_catalog.regprocedure, true),
-        ('public.create_invoice_atomic(jsonb, jsonb, jsonb, jsonb)'::pg_catalog.regprocedure, true),
-        ('public.mark_invoice_sent_atomic(uuid, timestamptz, timestamptz)'::pg_catalog.regprocedure, true),
-        ('public.mark_invoice_paid_atomic(uuid, public.invoice_status, timestamptz, timestamptz)'::pg_catalog.regprocedure, true),
-        ('public.delete_invoice_atomic(uuid, public.invoice_status, timestamptz)'::pg_catalog.regprocedure, true),
-        ('public.transition_receipt_statuses_atomic(jsonb, public.receipt_status, public.receipt_status)'::pg_catalog.regprocedure, false)
-    ) expected_function (signature, is_security_definer)
-    join pg_catalog.pg_proc function_row on function_row.oid = expected_function.signature::oid
-    where function_row.prosecdef is distinct from expected_function.is_security_definer
-      or not ('search_path=""' = any(pg_catalog.coalesce(function_row.proconfig, array[]::text[])))
-  ) then
-    raise exception 'verification failed: atomic function security mode is incompatible';
-  end if;
-
-  select
-    p.proowner,
-    coalesce(
-      pg_catalog.bool_or(acl.grantee <> p.proowner),
-      false
-    )
-  into v_function_owner_oid, v_has_unexpected_execute_grantee
-  from pg_catalog.pg_proc p
-  cross join lateral pg_catalog.aclexplode(
-    coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))
-  ) acl
-  where p.oid = 'public.enforce_event_application_lifecycle_update()'::pg_catalog.regprocedure
-  group by p.proowner;
-
-  if v_function_owner_oid is null then
-    raise exception 'verification failed: event application lifecycle trigger function does not exist';
-  end if;
-  if v_has_unexpected_execute_grantee then
-    raise exception 'verification failed: event application lifecycle trigger function is directly executable';
-  end if;
 
   if not exists (
     select 1
@@ -680,27 +749,6 @@ begin
     raise exception 'verification failed: event application lifecycle trigger is missing or disabled';
   end if;
 
-  select
-    p.proowner,
-    coalesce(
-      pg_catalog.bool_or(acl.grantee <> p.proowner),
-      false
-    )
-  into v_function_owner_oid, v_has_unexpected_execute_grantee
-  from pg_catalog.pg_proc p
-  cross join lateral pg_catalog.aclexplode(
-    coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))
-  ) acl
-  where p.oid = 'public.enforce_timelog_update_permissions()'::pg_catalog.regprocedure
-  group by p.proowner;
-
-  if v_function_owner_oid is null then
-    raise exception 'verification failed: timelog permission trigger function does not exist';
-  end if;
-  if v_has_unexpected_execute_grantee then
-    raise exception 'verification failed: timelog permission trigger function is directly executable';
-  end if;
-
   if not exists (
     select 1
     from pg_catalog.pg_trigger trigger_row
@@ -711,33 +759,6 @@ begin
   ) then
     raise exception 'verification failed: timelog permission trigger is missing or disabled';
   end if;
-
-  foreach v_function_signature in array array[
-    'public.enforce_receipt_lifecycle_update()'::pg_catalog.regprocedure,
-    'public.handle_timelog_approved()'::pg_catalog.regprocedure
-  ] loop
-    select
-      p.proowner,
-      coalesce(pg_catalog.bool_or(acl.grantee <> p.proowner), false)
-    into v_function_owner_oid, v_has_unexpected_execute_grantee
-    from pg_catalog.pg_proc p
-    cross join lateral pg_catalog.aclexplode(
-      coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))
-    ) acl
-    where p.oid = v_function_signature::oid
-    group by p.proowner;
-
-    if v_function_owner_oid is null then
-      raise exception 'verification failed: receipt trigger function does not exist: %',
-        v_function_signature;
-    end if;
-    if v_has_unexpected_execute_grantee then
-      if v_function_signature = 'public.enforce_receipt_lifecycle_update()'::pg_catalog.regprocedure then
-        raise exception 'verification failed: receipt lifecycle trigger function is directly executable';
-      end if;
-      raise exception 'verification failed: timelog approval invoice trigger function is directly executable';
-    end if;
-  end loop;
 
   if not exists (
     select 1

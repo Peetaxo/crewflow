@@ -762,6 +762,203 @@ describe('events.service write flow', () => {
     };
   };
 
+  const setupEventCreateIntentHarness = async ({
+    loseFirstInsertResponse = false,
+    failFirstRecovery = false,
+    reorderRecoveryJson = false,
+  } = {}) => {
+    let snapshot = createSnapshot();
+    let authoritativeEventRow: Record<string, unknown> | null = null;
+    let recoveryFailuresRemaining = failFirstRecovery ? 1 : 0;
+    let inserted = false;
+    let version = 0;
+    const uuid = vi.fn()
+      .mockReturnValueOnce('event-client-uuid-1')
+      .mockReturnValueOnce('event-client-uuid-2')
+      .mockReturnValue('event-client-uuid-3');
+    vi.stubGlobal('crypto', { randomUUID: uuid });
+
+    const mutationResponse = () => ({
+      id: authoritativeEventRow?.id,
+      updated_at: authoritativeEventRow?.updated_at,
+      crew_filled: authoritativeEventRow?.crew_filled,
+    });
+    const insert = vi.fn((payload: Record<string, unknown>) => {
+      version += 1;
+      inserted = true;
+      authoritativeEventRow = {
+        ...payload,
+        updated_at: `2026-05-12T1${version}:00:00Z`,
+        crew_filled: 0,
+      };
+      return {
+        select: vi.fn(() => ({
+          single: vi.fn().mockResolvedValue(
+            loseFirstInsertResponse && insert.mock.calls.length === 1
+              ? { data: null, error: { code: 'XX000', message: 'connection lost after committed insert' } }
+              : { data: mutationResponse(), error: null },
+          ),
+        })),
+      };
+    });
+    const updateSingle = vi.fn(async () => {
+      version += 1;
+      authoritativeEventRow = {
+        ...authoritativeEventRow,
+        updated_at: `2026-05-12T1${version}:00:00Z`,
+      };
+      return { data: mutationResponse(), error: null };
+    });
+    const updateSelect = vi.fn(() => ({ single: updateSingle }));
+    const updateVersionEq = vi.fn(() => ({ select: updateSelect }));
+    const updateIdEq = vi.fn(() => ({ eq: updateVersionEq }));
+    const update = vi.fn((payload: Record<string, unknown>) => {
+      authoritativeEventRow = { ...authoritativeEventRow, ...payload };
+      return { eq: updateIdEq };
+    });
+
+    const orderedQuery = <T,>(result: Promise<{ data: T[]; error: { message: string } | null }>) => {
+      const order = vi.fn();
+      const query = { order, then: result.then.bind(result) };
+      order.mockReturnValue(query);
+      return query;
+    };
+    const reorderObject = (value: unknown): unknown => {
+      if (Array.isArray(value)) return value.map(reorderObject);
+      if (!value || typeof value !== 'object') return value;
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>)
+          .reverse()
+          .map(([key, nested]) => [key, reorderObject(nested)]),
+      );
+    };
+    const eventsSelect = vi.fn(() => {
+      if (recoveryFailuresRemaining > 0) {
+        recoveryFailuresRemaining -= 1;
+        return orderedQuery(Promise.resolve({ data: [], error: { message: 'temporary refresh failure' } }));
+      }
+      const row = authoritativeEventRow && reorderRecoveryJson
+        ? reorderObject(authoritativeEventRow) as Record<string, unknown>
+        : authoritativeEventRow;
+      return orderedQuery(Promise.resolve({ data: row ? [structuredClone(row)] : [], error: null }));
+    });
+    const emptyOrderedQuery = () => orderedQuery(Promise.resolve({ data: [], error: null }));
+    const deleteEventAtomicRpc = vi.fn(async (eventId: string) => {
+      if (authoritativeEventRow?.id === eventId) authoritativeEventRow = null;
+      return { event_id: eventId };
+    });
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('./event-mutation-rpc.service', () => ({ deleteEventAtomicRpc }));
+    vi.doMock('../../timelogs/services/timelogs.service', () => ({
+      ensureSupabaseTimelogsLoaded: vi.fn(),
+      loadTimelogsSnapshot: vi.fn().mockResolvedValue([]),
+      fetchTimelogsSnapshot: vi.fn().mockResolvedValue([]),
+    }));
+    vi.doMock('../../receipts/services/receipts.service', () => ({
+      fetchReceiptsSnapshot: vi.fn().mockResolvedValue([]),
+    }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        rpc: vi.fn().mockResolvedValue({ data: [], error: null }),
+        from: vi.fn((table: string) => {
+          if (table === 'events') return { insert, update, select: eventsSelect };
+          if (table === 'projects') {
+            return { select: vi.fn(() => ({ order: vi.fn().mockResolvedValue({
+              data: [{ id: 'project-row-1', job_number: 'AK001', client_id: 'client-row-1' }], error: null,
+            }) })) };
+          }
+          if (table === 'clients') {
+            return { select: vi.fn(() => ({ order: vi.fn().mockResolvedValue({
+              data: [{ id: 'client-row-1', name: 'Klient A', city: 'Praha' }], error: null,
+            }) })) };
+          }
+          if (table === 'timelogs') return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
+          if (table === 'event_assignments' || table === 'event_applications' || table === 'grason_event_confirmations') {
+            return { select: vi.fn(() => emptyOrderedQuery()) };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapClient: vi.fn((row: Record<string, unknown>) => ({ id: Number.NaN, name: row.name, city: row.city })),
+      mapEvent: vi.fn((row: Record<string, unknown>) => ({
+        id: Number.NaN,
+        supabaseId: row.id,
+        updatedAt: row.updated_at,
+        name: row.name,
+        job: row.job_number,
+        startDate: row.date_from,
+        endDate: row.date_to,
+        startTime: row.time_from ?? undefined,
+        endTime: row.time_to ?? undefined,
+        city: row.city,
+        address: row.address ?? undefined,
+        placeId: row.place_id ?? undefined,
+        locationLat: row.location_lat,
+        locationLng: row.location_lng,
+        needed: row.crew_needed,
+        filled: row.crew_filled,
+        status: row.status,
+        client: row.client_name,
+        description: row.description ?? undefined,
+        contactPerson: row.contact_person ?? undefined,
+        dresscode: row.dresscode ?? undefined,
+        meetingLocation: row.meeting_point ?? undefined,
+        showDayTypes: row.show_day_types,
+        allowCrewTimeProposal: row.allow_crew_time_proposal,
+        dayTypes: row.day_types ?? undefined,
+        phaseTimes: row.phase_times ?? undefined,
+        phaseSchedules: row.phase_schedules ?? undefined,
+      })),
+    }));
+
+    return {
+      service: await import('./events.service'),
+      insert,
+      update,
+      uuid,
+      deleteEventAtomicRpc,
+      getSnapshot: () => structuredClone(snapshot),
+      wasInserted: () => inserted,
+    };
+  };
+
+  const newEventDraft = (): Event => ({
+    id: 1,
+    name: 'Nová akce',
+    job: 'AK001',
+    startDate: '2026-05-12',
+    endDate: '2026-05-13',
+    city: 'Praha',
+    needed: 2,
+    filled: 0,
+    status: 'upcoming',
+    client: 'Klient A',
+    showDayTypes: true,
+    dayTypes: { '2026-05-12': 'instal', '2026-05-13': 'provoz' },
+    phaseTimes: {
+      instal: { from: '08:00', to: '12:00' },
+      provoz: { from: '12:00', to: '18:00' },
+      deinstal: { from: '18:00', to: '20:00' },
+    },
+    phaseSchedules: {
+      instal: [{ id: 'slot-i', from: '08:00', to: '12:00', dates: ['2026-05-12'] }],
+      provoz: [{ id: 'slot-p', from: '12:00', to: '18:00', dates: ['2026-05-13'] }],
+      deinstal: [],
+    },
+  });
+
   it('requests timelog hydration when reading event detail data', async () => {
     const ensureSupabaseTimelogsLoaded = vi.fn();
     const snapshot = createSnapshot({
@@ -1569,6 +1766,84 @@ describe('events.service write flow', () => {
         supabaseId: 'event-client-uuid', updatedAt: '2026-05-12T11:00:00Z', name: 'Nová akce', filled: 0,
       });
       expect(snapshot.events).toHaveLength(1);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('reserves one create intent before queueing two immediate saves of the same draft', async () => {
+    const harness = await setupEventCreateIntentHarness();
+    const draft = newEventDraft();
+
+    const firstSave = harness.service.saveEvent(draft);
+    const secondSave = harness.service.saveEvent(draft);
+    const [first, second] = await Promise.all([firstSave, secondSave]);
+
+    expect(harness.uuid).toHaveBeenCalledTimes(1);
+    expect(harness.insert).toHaveBeenCalledTimes(1);
+    expect(harness.update).toHaveBeenCalledTimes(1);
+    expect(first.supabaseId).toBe('event-client-uuid-1');
+    expect(second.supabaseId).toBe('event-client-uuid-1');
+    expect(harness.getSnapshot().events).toHaveLength(1);
+    expect(harness.getSnapshot().events[0].supabaseId).toBe('event-client-uuid-1');
+  });
+
+  it('retains an ambiguous create intent after failed recovery so a user retry cannot duplicate the row', async () => {
+    const harness = await setupEventCreateIntentHarness({
+      loseFirstInsertResponse: true,
+      failFirstRecovery: true,
+    });
+    const draft = newEventDraft();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      await expect(harness.service.saveEvent(draft)).rejects.toThrow('Akci se nepodařilo uložit.');
+      expect(harness.wasInserted()).toBe(true);
+
+      const recovered = await harness.service.saveEvent(draft);
+
+      expect(harness.uuid).toHaveBeenCalledTimes(1);
+      expect(harness.insert).toHaveBeenCalledTimes(1);
+      expect(harness.update).not.toHaveBeenCalled();
+      expect(recovered.supabaseId).toBe('event-client-uuid-1');
+      expect(harness.getSnapshot().events).toHaveLength(1);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('does not reuse a create intent when the canonical event was deliberately deleted', async () => {
+    const harness = await setupEventCreateIntentHarness();
+    const first = await harness.service.saveEvent(newEventDraft());
+
+    await harness.service.deleteEvent(first.id);
+    const second = await harness.service.saveEvent(newEventDraft());
+
+    expect(harness.deleteEventAtomicRpc).toHaveBeenCalledWith('event-client-uuid-1');
+    expect(harness.uuid).toHaveBeenCalledTimes(2);
+    expect(harness.insert).toHaveBeenCalledTimes(2);
+    expect(second.supabaseId).toBe('event-client-uuid-2');
+    expect(harness.getSnapshot().events).toHaveLength(1);
+  });
+
+  it('recovers an exact lost create when jsonb object keys are returned in another order', async () => {
+    const harness = await setupEventCreateIntentHarness({
+      loseFirstInsertResponse: true,
+      reorderRecoveryJson: true,
+    });
+    const draft = newEventDraft();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const recovered = await harness.service.saveEvent(draft);
+
+      expect(harness.insert).toHaveBeenCalledTimes(1);
+      expect(recovered).toMatchObject({
+        supabaseId: 'event-client-uuid-1',
+        dayTypes: draft.dayTypes,
+        phaseTimes: draft.phaseTimes,
+        phaseSchedules: draft.phaseSchedules,
+      });
     } finally {
       consoleError.mockRestore();
     }

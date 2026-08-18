@@ -331,6 +331,7 @@ describe('events.service write flow', () => {
     id: 1,
     supabaseId: 'event-row-1',
     updatedAt: '2026-04-10T09:00:00Z',
+    projectId: 'project-row-1',
     name: 'Akce 1',
     job: 'AK001',
     startDate: '2026-04-20',
@@ -417,7 +418,11 @@ describe('events.service write flow', () => {
     const assignEventCrewRpc = vi.fn().mockResolvedValue(rpcAssignment);
     const removeEventCrewRpc = vi.fn().mockResolvedValue(rpcRemoval);
     const approveEventWithdrawalRpc = vi.fn().mockResolvedValue(rpcWithdrawalApproval);
-    const deleteEventAtomicRpc = vi.fn().mockResolvedValue({ event_id: 'event-row-1' });
+    const deleteEventAtomicRpc = vi.fn(async (eventId: string) => {
+      const rowIndex = eventRows.findIndex((row) => row.id === eventId);
+      if (rowIndex >= 0) eventRows.splice(rowIndex, 1);
+      return { event_id: eventId };
+    });
     const setQueryData = vi.fn();
     const invalidateQueries = vi.fn();
     const cancelQueries = vi.fn();
@@ -469,6 +474,7 @@ describe('events.service write flow', () => {
     }));
     const eventApplicationsUpdate = vi.fn(({ status }: { status: EventApplication['status'] }) => {
       requestedApplicationStatus = status;
+      if (applicationRows[0]) applicationRows[0] = { ...applicationRows[0], status };
       return { eq: eventApplicationsIdEq };
     });
     const eventApplicationsUpsertSingle = vi.fn(async () => ({
@@ -481,6 +487,7 @@ describe('events.service write flow', () => {
     const eventApplicationsUpsertSelect = vi.fn(() => ({ single: eventApplicationsUpsertSingle }));
     const eventApplicationsUpsert = vi.fn(({ status }: { status: EventApplication['status'] }) => {
       requestedApplicationStatus = status;
+      if (applicationRows[0]) applicationRows[0] = { ...applicationRows[0], status };
       return { select: eventApplicationsUpsertSelect };
     });
 
@@ -726,6 +733,7 @@ describe('events.service write flow', () => {
         id: Number.NaN,
         supabaseId: row.id,
         updatedAt: row.updated_at,
+        projectId: row.project_id,
         name: row.name,
         job: row.job_number,
         startDate: row.date_from,
@@ -793,12 +801,23 @@ describe('events.service write flow', () => {
     loseFirstInsertResponse = false,
     failFirstRecovery = false,
     reorderRecoveryJson = false,
+    deferFirstInsertResponse = false,
+    deferRecoveryEvents = false,
+    recoveryRowTransform = (row: Record<string, unknown>) => row as Record<string, unknown> | null,
   } = {}) => {
     let snapshot = createSnapshot();
     let authoritativeEventRow: Record<string, unknown> | null = null;
     let recoveryFailuresRemaining = failFirstRecovery ? 1 : 0;
     let inserted = false;
     let version = 0;
+    const firstInsertResponse = createDeferred<{
+      data: Record<string, unknown> | null;
+      error: { code: string; message: string } | null;
+    }>();
+    const deferredRecoveryResult = createDeferred<{
+      data: Record<string, unknown>[];
+      error: { message: string } | null;
+    }>();
     const uuid = vi.fn()
       .mockReturnValueOnce('event-client-uuid-1')
       .mockReturnValueOnce('event-client-uuid-2')
@@ -823,13 +842,16 @@ describe('events.service write flow', () => {
       }
       return {
         select: vi.fn(() => ({
-          single: vi.fn().mockResolvedValue(
-            duplicatesAuthoritativeRow
+          single: vi.fn(() => {
+            const response = duplicatesAuthoritativeRow
               ? { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint' } }
               : loseFirstInsertResponse && insert.mock.calls.length === 1
               ? { data: null, error: { code: 'XX000', message: 'connection lost after committed insert' } }
-              : { data: mutationResponse(), error: null },
-          ),
+              : { data: mutationResponse(), error: null };
+            return deferFirstInsertResponse && insert.mock.calls.length === 1
+              ? firstInsertResponse.promise
+              : Promise.resolve(response);
+          }),
         })),
       };
     });
@@ -869,16 +891,57 @@ describe('events.service write flow', () => {
         recoveryFailuresRemaining -= 1;
         return orderedQuery(Promise.resolve({ data: [], error: { message: 'temporary refresh failure' } }));
       }
-      const row = authoritativeEventRow && reorderRecoveryJson
+      const reorderedRow = authoritativeEventRow && reorderRecoveryJson
         ? reorderObject(authoritativeEventRow) as Record<string, unknown>
         : authoritativeEventRow;
-      return orderedQuery(Promise.resolve({ data: row ? [structuredClone(row)] : [], error: null }));
+      const row = reorderedRow ? recoveryRowTransform(reorderedRow) : null;
+      return orderedQuery(deferRecoveryEvents && eventsSelect.mock.calls.length === 1
+        ? deferredRecoveryResult.promise
+        : Promise.resolve({ data: row ? [structuredClone(row)] : [], error: null }));
     });
     const emptyOrderedQuery = () => orderedQuery(Promise.resolve({ data: [], error: null }));
     const deleteEventAtomicRpc = vi.fn(async (eventId: string) => {
       if (authoritativeEventRow?.id === eventId) authoritativeEventRow = null;
       return { event_id: eventId };
     });
+    const projectsSelect = vi.fn(() => ({
+      order: vi.fn().mockResolvedValue({
+        data: [{
+          id: 'project-row-1',
+          job_number: 'AK001',
+          client_id: 'client-row-1',
+          name: 'Projekt 1',
+          note: null,
+          created_at: '2026-04-10',
+          updated_at: '2026-04-10',
+        }],
+        error: null,
+      }),
+    }));
+    const projectInsertSingle = vi.fn().mockResolvedValue({ data: { id: 'project-row-new' }, error: null });
+    const projectInsertSelect = vi.fn(() => ({ single: projectInsertSingle }));
+    const projectInsert = vi.fn(() => ({ select: projectInsertSelect }));
+    const clientsSelect = vi.fn(() => ({
+      order: vi.fn().mockResolvedValue({
+        data: [{
+          id: 'client-row-1',
+          name: 'Klient A',
+          ico: null,
+          dic: null,
+          street: null,
+          zip: null,
+          city: 'Praha',
+          country: null,
+          note: null,
+          created_at: '2026-04-10',
+          updated_at: '2026-04-10',
+        }],
+        error: null,
+      }),
+    }));
+    const setQueryData = vi.fn();
+    const invalidateQueries = vi.fn();
+    const cancelQueries = vi.fn();
 
     vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
     vi.doMock('./event-mutation-rpc.service', () => ({ deleteEventAtomicRpc }));
@@ -890,6 +953,16 @@ describe('events.service write flow', () => {
     vi.doMock('../../receipts/services/receipts.service', () => ({
       fetchReceiptsSnapshot: vi.fn().mockResolvedValue([]),
     }));
+    vi.doMock('../../../lib/query-client', () => ({
+      queryClient: { setQueryData, invalidateQueries, cancelQueries },
+    }));
+    vi.doMock('../../../lib/query-keys', () => ({
+      queryKeys: {
+        events: { all: ['events'] },
+        timelogs: { all: ['timelogs'] },
+        receipts: { all: ['receipts'] },
+      },
+    }));
     vi.doMock('../../../lib/supabase', () => ({
       isSupabaseConfigured: true,
       supabase: {
@@ -897,14 +970,10 @@ describe('events.service write flow', () => {
         from: vi.fn((table: string) => {
           if (table === 'events') return { insert, update, select: eventsSelect };
           if (table === 'projects') {
-            return { select: vi.fn(() => ({ order: vi.fn().mockResolvedValue({
-              data: [{ id: 'project-row-1', job_number: 'AK001', client_id: 'client-row-1' }], error: null,
-            }) })) };
+            return { select: projectsSelect, insert: projectInsert };
           }
           if (table === 'clients') {
-            return { select: vi.fn(() => ({ order: vi.fn().mockResolvedValue({
-              data: [{ id: 'client-row-1', name: 'Klient A', city: 'Praha' }], error: null,
-            }) })) };
+            return { select: clientsSelect };
           }
           if (table === 'timelogs') return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
           if (table === 'event_assignments' || table === 'event_applications' || table === 'grason_event_confirmations') {
@@ -914,12 +983,13 @@ describe('events.service write flow', () => {
         }),
       },
     }));
+    const updateLocalAppState = vi.fn((updater: (state: typeof snapshot) => typeof snapshot) => {
+      snapshot = structuredClone(updater(structuredClone(snapshot)));
+      return structuredClone(snapshot);
+    });
     vi.doMock('../../../lib/app-data', () => ({
       getLocalAppState: () => structuredClone(snapshot),
-      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
-        snapshot = structuredClone(updater(structuredClone(snapshot)));
-        return structuredClone(snapshot);
-      },
+      updateLocalAppState,
       subscribeToLocalAppState: vi.fn(() => () => undefined),
     }));
     vi.doMock('../../../lib/supabase-mappers', () => ({
@@ -928,6 +998,7 @@ describe('events.service write flow', () => {
         id: Number.NaN,
         supabaseId: row.id,
         updatedAt: row.updated_at,
+        projectId: row.project_id,
         name: row.name,
         job: row.job_number,
         startDate: row.date_from,
@@ -968,7 +1039,25 @@ describe('events.service write flow', () => {
         snapshot = structuredClone(updater(structuredClone(snapshot)));
       },
       eventsSelect,
+      projectsSelect,
+      clientsSelect,
+      projectInsert,
+      updateLocalAppState,
+      setQueryData,
+      invalidateQueries,
+      cancelQueries,
       wasInserted: () => inserted,
+      resolveFirstInsertResponse: () => firstInsertResponse.resolve({
+        data: mutationResponse(),
+        error: null,
+      }),
+      resolveDeferredRecovery: () => {
+        const row = authoritativeEventRow ? recoveryRowTransform(authoritativeEventRow) : null;
+        deferredRecoveryResult.resolve({
+          data: row ? [structuredClone(row)] : [],
+          error: null,
+        });
+      },
     };
   };
 
@@ -1022,6 +1111,107 @@ describe('events.service write flow', () => {
     expect(harness.insert).not.toHaveBeenCalled();
     expect(harness.update).not.toHaveBeenCalled();
     expect(harness.eventsSelect).not.toHaveBeenCalled();
+  });
+
+  it('rejects a queued event save when its initiating session resets before the callback starts', async () => {
+    const harness = await setupEventCreateIntentHarness();
+    const { runLifecycleDataMutation } = await import('../../event-lifecycle-generation');
+    const blockerEntered = createDeferred<void>();
+    const releaseBlocker = createDeferred<void>();
+    const blocker = runLifecycleDataMutation(['test:event-save-blocker'], async () => {
+      blockerEntered.resolve();
+      await releaseBlocker.promise;
+    });
+    await blockerEntered.promise;
+
+    const pendingSave = harness.service.saveEvent({
+      ...newEventDraft(),
+      supabaseId: 'event-client-uuid-1',
+      job: 'NEW001',
+    });
+    const rejectedSave = expect(pendingSave).rejects.toThrow('Akci se nepodařilo uložit.');
+    await Promise.resolve();
+    harness.service.resetSupabaseEventsHydration();
+    harness.setSnapshot((snapshot) => ({
+      ...snapshot,
+      events: [{
+        ...newEventDraft(),
+        id: 20,
+        supabaseId: 'event-session-b',
+        updatedAt: 'session-b-version',
+      }],
+    }));
+    releaseBlocker.resolve();
+    await blocker;
+
+    await rejectedSave;
+    expect(harness.projectsSelect).not.toHaveBeenCalled();
+    expect(harness.projectInsert).not.toHaveBeenCalled();
+    expect(harness.insert).not.toHaveBeenCalled();
+    expect(harness.update).not.toHaveBeenCalled();
+    expect(harness.eventsSelect).not.toHaveBeenCalled();
+    expect(harness.updateLocalAppState).not.toHaveBeenCalled();
+    expect(harness.setQueryData).not.toHaveBeenCalled();
+    expect(harness.getSnapshot().events).toEqual([
+      expect.objectContaining({ supabaseId: 'event-session-b', updatedAt: 'session-b-version' }),
+    ]);
+  });
+
+  it('prioritizes a queued save session reset over stale draft validation', async () => {
+    const harness = await setupEventCreateIntentHarness();
+    const { runLifecycleDataMutation } = await import('../../event-lifecycle-generation');
+    const blockerEntered = createDeferred<void>();
+    const releaseBlocker = createDeferred<void>();
+    const blocker = runLifecycleDataMutation(['test:event-save-validation-blocker'], async () => {
+      blockerEntered.resolve();
+      await releaseBlocker.promise;
+    });
+    await blockerEntered.promise;
+
+    const pendingSave = harness.service.saveEvent({
+      ...newEventDraft(),
+      supabaseId: 'event-client-uuid-1',
+      job: '   ',
+    });
+    const rejectedSave = expect(pendingSave).rejects.toThrow('Akci se nepodařilo uložit.');
+    harness.service.resetSupabaseEventsHydration();
+    releaseBlocker.resolve();
+    await blocker;
+
+    await rejectedSave;
+    expect(harness.projectsSelect).not.toHaveBeenCalled();
+    expect(harness.insert).not.toHaveBeenCalled();
+    expect(harness.eventsSelect).not.toHaveBeenCalled();
+  });
+
+  it('does not commit an event response that arrives after the initiating session resets', async () => {
+    const harness = await setupEventCreateIntentHarness({ deferFirstInsertResponse: true });
+    const pendingSave = harness.service.saveEvent({
+      ...newEventDraft(),
+      supabaseId: 'event-client-uuid-1',
+    });
+    const rejectedSave = expect(pendingSave).rejects.toThrow('Akci se nepodařilo uložit.');
+    await vi.waitFor(() => expect(harness.insert).toHaveBeenCalledOnce());
+
+    harness.service.resetSupabaseEventsHydration();
+    harness.setSnapshot((snapshot) => ({
+      ...snapshot,
+      events: [{
+        ...newEventDraft(),
+        id: 20,
+        supabaseId: 'event-session-b',
+        updatedAt: 'session-b-version',
+      }],
+    }));
+    harness.resolveFirstInsertResponse();
+
+    await rejectedSave;
+    expect(harness.eventsSelect).not.toHaveBeenCalled();
+    expect(harness.updateLocalAppState).not.toHaveBeenCalled();
+    expect(harness.setQueryData).not.toHaveBeenCalled();
+    expect(harness.getSnapshot().events).toEqual([
+      expect.objectContaining({ supabaseId: 'event-session-b', updatedAt: 'session-b-version' }),
+    ]);
   });
 
   it.each([
@@ -2051,6 +2241,120 @@ describe('events.service write flow', () => {
         phaseTimes: draft.phaseTimes,
         phaseSchedules: draft.phaseSchedules,
       });
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it.each([
+    {
+      label: 'no exact UUID row',
+      recoveryRowTransform: () => null,
+    },
+    {
+      label: 'a mismatched persisted field',
+      recoveryRowTransform: (row: Record<string, unknown>) => ({ ...row, name: 'Jiná akce' }),
+    },
+  ])('does not commit an unsuccessful recovery with $label', async ({ recoveryRowTransform }) => {
+    const harness = await setupEventCreateIntentHarness({
+      loseFirstInsertResponse: true,
+      recoveryRowTransform,
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      await expect(harness.service.saveEvent({
+        ...newEventDraft(),
+        supabaseId: 'event-client-uuid-1',
+      })).rejects.toThrow('Akci se nepodařilo uložit.');
+
+      expect(harness.eventsSelect).toHaveBeenCalledOnce();
+      expect(harness.updateLocalAppState).not.toHaveBeenCalled();
+      expect(harness.setQueryData).not.toHaveBeenCalled();
+      expect(harness.getSnapshot().events).toEqual([]);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('rejects recovery when the authoritative row has a different resolved project UUID', async () => {
+    const harness = await setupEventCreateIntentHarness({
+      loseFirstInsertResponse: true,
+      recoveryRowTransform: (row) => ({ ...row, project_id: 'project-row-other' }),
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      await expect(harness.service.saveEvent({
+        ...newEventDraft(),
+        supabaseId: 'event-client-uuid-1',
+      })).rejects.toThrow('Akci se nepodařilo uložit.');
+
+      expect(harness.eventsSelect).toHaveBeenCalledOnce();
+      expect(harness.updateLocalAppState).not.toHaveBeenCalled();
+      expect(harness.setQueryData).not.toHaveBeenCalled();
+      expect(harness.getSnapshot().events).toEqual([]);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('does not install a numeric row map from a semantically mismatched recovery', async () => {
+    const harness = await setupEventCreateIntentHarness({
+      loseFirstInsertResponse: true,
+      recoveryRowTransform: (row) => ({ ...row, name: 'Jiná akce' }),
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      await expect(harness.service.saveEvent({
+        ...newEventDraft(),
+        supabaseId: 'event-client-uuid-1',
+      })).rejects.toThrow('Akci se nepodařilo uložit.');
+      harness.setSnapshot((snapshot) => ({ ...snapshot, events: [] }));
+
+      await expect(harness.service.deleteEvent(1)).resolves.toEqual({ id: 1 });
+      expect(harness.eventsSelect).toHaveBeenCalledTimes(2);
+      expect(harness.deleteEventAtomicRpc).toHaveBeenCalledWith('event-client-uuid-1');
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('does not commit or retry a recovery that completes after an auth reset', async () => {
+    const harness = await setupEventCreateIntentHarness({
+      loseFirstInsertResponse: true,
+      deferRecoveryEvents: true,
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const pendingSave = harness.service.saveEvent({
+        ...newEventDraft(),
+        supabaseId: 'event-client-uuid-1',
+      });
+      const rejectedSave = expect(pendingSave).rejects.toThrow('Akci se nepodařilo uložit.');
+      await vi.waitFor(() => expect(harness.eventsSelect).toHaveBeenCalledOnce());
+
+      harness.service.resetSupabaseEventsHydration();
+      harness.setSnapshot((snapshot) => ({
+        ...snapshot,
+        events: [{
+          ...newEventDraft(),
+          id: 20,
+          supabaseId: 'event-session-b',
+          updatedAt: 'session-b-version',
+        }],
+      }));
+      harness.resolveDeferredRecovery();
+
+      await rejectedSave;
+      expect(harness.eventsSelect).toHaveBeenCalledOnce();
+      expect(harness.updateLocalAppState).not.toHaveBeenCalled();
+      expect(harness.setQueryData).not.toHaveBeenCalled();
+      expect(harness.getSnapshot().events).toEqual([
+        expect.objectContaining({ supabaseId: 'event-session-b', updatedAt: 'session-b-version' }),
+      ]);
     } finally {
       consoleError.mockRestore();
     }
@@ -3172,7 +3476,7 @@ describe('events.service write flow', () => {
     expect(harness.getSnapshot().events).toEqual([
       expect.objectContaining({ name: 'Fresh event', supabaseId: 'event-row-1' }),
     ]);
-    expect(harness.updateLocalAppState).toHaveBeenCalledOnce();
+    expect(harness.updateLocalAppState).toHaveBeenCalledTimes(2);
     expect(harness.setQueryData).toHaveBeenLastCalledWith(
       ['receipts'],
       harness.getSnapshot().receipts,
@@ -3201,6 +3505,52 @@ describe('events.service write flow', () => {
       expect.objectContaining({ supabaseId: 'event-row-1', name: 'Fresh event' }),
     ]));
     expect(harness.updateLocalAppState).toHaveBeenCalledOnce();
+  });
+
+  it('retries a direct event fetch once after a same-session generation discard', async () => {
+    const staleEvent = { ...lifecycleEvent, name: 'Stale direct fetch' };
+    const freshEvent = { ...lifecycleEvent, name: 'Fresh direct fetch' };
+    const harness = await setupLifecycleService({
+      initialSnapshot: createSnapshot({ events: [], eventApplications: [] }),
+      refreshedEvents: [freshEvent],
+      deferredPublicEvents: [staleEvent],
+    });
+    const { advanceLifecycleSnapshotGeneration } = await import('../../event-lifecycle-generation');
+
+    const fetch = harness.service.fetchEventsSnapshot();
+    await vi.waitFor(() => expect(harness.eventsSelect).toHaveBeenCalledOnce());
+    advanceLifecycleSnapshotGeneration();
+    harness.resolveDeferredPublicEvents();
+
+    await expect(fetch).resolves.toEqual([
+      expect.objectContaining({ supabaseId: 'event-row-1', name: 'Fresh direct fetch' }),
+    ]);
+    expect(harness.eventsSelect).toHaveBeenCalledTimes(2);
+    expect(harness.getSnapshot().events).toEqual([
+      expect.objectContaining({ supabaseId: 'event-row-1', name: 'Fresh direct fetch' }),
+    ]);
+    expect(harness.updateLocalAppState).toHaveBeenCalledOnce();
+  });
+
+  it('does not retry a generation-discarded direct fetch after its session resets', async () => {
+    const staleEvent = { ...lifecycleEvent, name: 'Old session direct fetch' };
+    const harness = await setupLifecycleService({
+      initialSnapshot: createSnapshot({ events: [], eventApplications: [] }),
+      deferredPublicEvents: [staleEvent],
+    });
+    const { advanceLifecycleSnapshotGeneration } = await import('../../event-lifecycle-generation');
+
+    const fetch = harness.service.fetchEventsSnapshot();
+    await vi.waitFor(() => expect(harness.eventsSelect).toHaveBeenCalledOnce());
+    advanceLifecycleSnapshotGeneration();
+    harness.service.resetSupabaseEventsHydration();
+    harness.setSnapshot((snapshot) => ({ ...snapshot, events: [] }));
+    harness.resolveDeferredPublicEvents();
+
+    await expect(fetch).resolves.toEqual([]);
+    expect(harness.eventsSelect).toHaveBeenCalledOnce();
+    expect(harness.updateLocalAppState).not.toHaveBeenCalled();
+    expect(harness.setQueryData).not.toHaveBeenCalledWith(['events'], expect.anything());
   });
 
   it('does not let a generation retry cross an auth reset into the next session', async () => {

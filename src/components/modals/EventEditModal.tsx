@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Plus, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -42,8 +42,33 @@ const EventEditModal = ({
 }: EventEditModalProps) => {
   const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const draftIdentity = editingEvent
+    ? editingEvent.supabaseId ?? `local:${editingEvent.id}`
+    : null;
   const projectMenuRef = useRef<HTMLDivElement | null>(null);
   const saveInFlightRef = useRef(false);
+  const activeSaveRequestRef = useRef<symbol | null>(null);
+  const mountedRef = useRef(false);
+  const currentDraftIdentityRef = useRef<string | null>(draftIdentity);
+  const [phaseSchedulesCache, setPhaseSchedulesCache] = useState<{
+    key: string;
+    schedules: ReturnType<typeof normalizeEventSchedules>;
+  } | null>(null);
+  const phaseSchedulesKey = editingEvent ? JSON.stringify({
+    draftIdentity,
+    phaseSchedules: editingEvent.phaseSchedules ?? null,
+    startDate: editingEvent.startDate,
+    endDate: editingEvent.endDate,
+    startTime: editingEvent.startTime ?? null,
+    endTime: editingEvent.endTime ?? null,
+    phaseTimes: editingEvent.phaseTimes ?? null,
+    dayTypes: editingEvent.dayTypes ?? null,
+  }) : null;
+  const phaseSchedules = editingEvent
+    ? phaseSchedulesCache?.key === phaseSchedulesKey
+      ? phaseSchedulesCache.schedules
+      : normalizeEventSchedules(editingEvent)
+    : null;
   const { projects, clients } = useMemo(() => getEventFormOptions(), []);
   const clientOptions = useMemo(() => {
     if (!editingEvent?.client || clients.some((client) => client.name === editingEvent.client)) {
@@ -90,6 +115,30 @@ const EventEditModal = ({
   };
 
   useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    currentDraftIdentityRef.current = draftIdentity;
+    activeSaveRequestRef.current = null;
+    saveInFlightRef.current = false;
+    setIsSaving(false);
+  }, [draftIdentity]);
+
+  useLayoutEffect(() => {
+    if (!phaseSchedulesKey || !phaseSchedules) {
+      setPhaseSchedulesCache((current) => current === null ? current : null);
+      return;
+    }
+    setPhaseSchedulesCache((current) => current?.key === phaseSchedulesKey
+      ? current
+      : { key: phaseSchedulesKey, schedules: phaseSchedules });
+  }, [phaseSchedules, phaseSchedulesKey]);
+
+  useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
       if (!projectMenuRef.current?.contains(event.target as Node)) {
         setIsProjectMenuOpen(false);
@@ -100,12 +149,11 @@ const EventEditModal = ({
     return () => document.removeEventListener('mousedown', handlePointerDown);
   }, []);
 
-  if (!editingEvent) return null;
+  if (!editingEvent || !phaseSchedules) return null;
 
   const allEventDates = editingEvent.startDate && editingEvent.endDate
     ? getDatesBetween(editingEvent.startDate, editingEvent.endDate)
     : [];
-  const phaseSchedules = normalizeEventSchedules(editingEvent);
   const globalFrom = editingEvent.startTime || '08:00';
   const globalTo = editingEvent.endTime || '17:00';
 
@@ -129,16 +177,31 @@ const EventEditModal = ({
 
   const handleSave = async () => {
     if (saveInFlightRef.current) return;
+    const requestIdentity = draftIdentity;
+    const requestToken = Symbol('event-save-request');
     saveInFlightRef.current = true;
+    activeSaveRequestRef.current = requestToken;
     setIsSaving(true);
+    const isCurrentRequest = () => (
+      mountedRef.current
+      && currentDraftIdentityRef.current === requestIdentity
+      && activeSaveRequestRef.current === requestToken
+    );
     try {
       await saveEvent({ ...editingEvent, phaseSchedules });
-      onClose();
+      if (isCurrentRequest()) {
+        onClose();
+      }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Nepodarilo se ulozit akci.');
+      if (isCurrentRequest()) {
+        toast.error(error instanceof Error ? error.message : 'Nepodarilo se ulozit akci.');
+      }
     } finally {
-      saveInFlightRef.current = false;
-      setIsSaving(false);
+      if (isCurrentRequest()) {
+        activeSaveRequestRef.current = null;
+        saveInFlightRef.current = false;
+        setIsSaving(false);
+      }
     }
   };
 

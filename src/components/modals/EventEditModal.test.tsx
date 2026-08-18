@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Event } from '../../types';
 
@@ -166,5 +166,279 @@ describe('EventEditModal', () => {
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Ulozit akci' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Zrusit' })).toBeEnabled();
+  });
+
+  it('reuses materialized phase schedule IDs across unchanged retries and recomputes after schedule edits', async () => {
+    const firstSave = createDeferred<Event>();
+    const saveEvent = vi.fn()
+      .mockImplementationOnce(() => firstSave.promise)
+      .mockRejectedValue(new Error('Akci se nepodařilo uložit.'));
+    const toastError = vi.fn();
+    vi.doMock('sonner', () => ({ toast: { error: toastError } }));
+    vi.doMock('../../lib/app-config', () => ({ appDataSource: 'local' }));
+    vi.doMock('../../lib/supabase', () => ({ isSupabaseConfigured: false, supabase: null }));
+    vi.doMock('../../features/events/services/events.service', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../features/events/services/events.service')>();
+      return {
+        ...actual,
+        getEventFormOptions: () => ({ projects: [], clients: [] }),
+        saveEvent,
+      };
+    });
+    const { default: EventEditModal } = await import('./EventEditModal');
+
+    const DraftHost = () => {
+      const [draft, setDraft] = React.useState<Event>({
+        ...event,
+        supabaseId: 'event-client-uuid',
+        phaseSchedules: undefined,
+      });
+      return <EventEditModal editingEvent={draft} onClose={vi.fn()} onChange={setDraft} />;
+    };
+    render(<DraftHost />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ulozit akci' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Ulozit akci' })).toBeDisabled());
+    await act(async () => {
+      firstSave.reject(new Error('Akci se nepodařilo uložit.'));
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Ulozit akci' })).toBeEnabled());
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Ulozit akci' }));
+      await Promise.resolve();
+    });
+
+    const firstSchedules = saveEvent.mock.calls[0][0].phaseSchedules;
+    const secondSchedules = saveEvent.mock.calls[1][0].phaseSchedules;
+    expect(secondSchedules).toEqual(firstSchedules);
+
+    fireEvent.change(screen.getByDisplayValue('20:00'), { target: { value: '21:00' } });
+    await waitFor(() => expect(screen.getByDisplayValue('21:00')).toBeInTheDocument());
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Ulozit akci' }));
+      await Promise.resolve();
+    });
+
+    const editedSchedules = saveEvent.mock.calls[2][0].phaseSchedules;
+    expect(editedSchedules).not.toEqual(secondSchedules);
+    expect(editedSchedules?.instal?.[0]).toMatchObject({ from: '21:00' });
+  });
+
+  it('does not finish UI work after a pending event save is unmounted', async () => {
+    const pending = createDeferred<Event>();
+    const saveEvent = vi.fn(() => pending.promise);
+    const toastError = vi.fn();
+    const onClose = vi.fn();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.doMock('sonner', () => ({ toast: { error: toastError } }));
+    vi.doMock('../../features/events/services/events.service', () => ({
+      applyEventDraft: (nextEvent: Event) => nextEvent,
+      createDefaultPhaseTimes: (from: string, to: string) => ({
+        instal: { from, to },
+        provoz: { from, to },
+        deinstal: { from, to },
+      }),
+      getEventFormOptions: () => ({ projects: [], clients: [] }),
+      normalizeEventSchedules: () => ({}),
+      saveEvent,
+    }));
+    const { default: EventEditModal } = await import('./EventEditModal');
+    const rendered = render(
+      <EventEditModal
+        editingEvent={{ ...event, supabaseId: 'event-client-uuid' }}
+        onClose={onClose}
+        onChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ulozit akci' }));
+    rendered.unmount();
+    await act(async () => {
+      pending.reject(new Error('Akci se nepodařilo uložit.'));
+      await Promise.resolve();
+    });
+
+    expect(toastError).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(consoleError.mock.calls.flat().join(' ')).not.toMatch(/unmounted/i);
+    consoleError.mockRestore();
+  });
+
+  it('does not let an old save completion close or lock a newer draft UUID', async () => {
+    const pending = createDeferred<Event>();
+    const saveEvent = vi.fn(() => pending.promise);
+    const toastError = vi.fn();
+    const onClose = vi.fn();
+    vi.doMock('sonner', () => ({ toast: { error: toastError } }));
+    vi.doMock('../../features/events/services/events.service', () => ({
+      applyEventDraft: (nextEvent: Event) => nextEvent,
+      createDefaultPhaseTimes: (from: string, to: string) => ({
+        instal: { from, to },
+        provoz: { from, to },
+        deinstal: { from, to },
+      }),
+      getEventFormOptions: () => ({ projects: [], clients: [] }),
+      normalizeEventSchedules: () => ({}),
+      saveEvent,
+    }));
+    const { default: EventEditModal } = await import('./EventEditModal');
+    const rendered = render(
+      <EventEditModal
+        editingEvent={{ ...event, supabaseId: 'event-client-uuid-a' }}
+        onClose={onClose}
+        onChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ulozit akci' }));
+    rendered.rerender(
+      <EventEditModal
+        editingEvent={{ ...event, id: 2, supabaseId: 'event-client-uuid-b' }}
+        onClose={onClose}
+        onChange={vi.fn()}
+      />,
+    );
+    await act(async () => {
+      pending.resolve({ ...event, supabaseId: 'event-client-uuid-a' });
+      await Promise.resolve();
+    });
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(toastError).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Ulozit akci' })).toBeEnabled();
+  });
+
+  it('keeps the committed draft request active when a different UUID render is suspended', async () => {
+    const pending = createDeferred<Event>();
+    const saveEvent = vi.fn(() => pending.promise);
+    const onClose = vi.fn();
+    const suspendedRender = new Promise<never>(() => undefined);
+    vi.doMock('../../features/events/components/EventAddressField', () => ({
+      default: ({ value }: { value: Pick<Event, 'address' | 'city'> }) => {
+        if (value.address === 'suspend-render') throw suspendedRender;
+        return <input aria-label="Adresa" value={value.address ?? value.city} readOnly />;
+      },
+    }));
+    vi.doMock('../../features/events/services/events.service', () => ({
+      applyEventDraft: (nextEvent: Event) => nextEvent,
+      createDefaultPhaseTimes: (from: string, to: string) => ({
+        instal: { from, to },
+        provoz: { from, to },
+        deinstal: { from, to },
+      }),
+      getEventFormOptions: () => ({ projects: [], clients: [] }),
+      normalizeEventSchedules: () => ({}),
+      saveEvent,
+    }));
+    const { default: EventEditModal } = await import('./EventEditModal');
+    const draftA = { ...event, supabaseId: 'event-client-uuid-a', address: 'draft-a' };
+    const rendered = render(
+      <React.Suspense fallback={<div>Suspended draft</div>}>
+        <EventEditModal editingEvent={draftA} onClose={onClose} onChange={vi.fn()} />
+      </React.Suspense>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ulozit akci' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Ulozit akci' })).toBeDisabled());
+    await act(async () => {
+      rendered.rerender(
+        <React.Suspense fallback={<div>Suspended draft</div>}>
+          <EventEditModal
+            editingEvent={{ ...event, id: 2, supabaseId: 'event-client-uuid-b', address: 'suspend-render' }}
+            onClose={onClose}
+            onChange={vi.fn()}
+          />
+        </React.Suspense>,
+      );
+      await Promise.resolve();
+    });
+    expect(screen.getByText('Suspended draft')).toBeInTheDocument();
+
+    await act(async () => {
+      pending.resolve(draftA);
+      await Promise.resolve();
+    });
+    rendered.rerender(
+      <React.Suspense fallback={<div>Suspended draft</div>}>
+        <EventEditModal editingEvent={draftA} onClose={onClose} onChange={vi.fn()} />
+      </React.Suspense>,
+    );
+
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(screen.getByRole('button', { name: 'Ulozit akci' })).toBeEnabled();
+  });
+
+  it('preserves committed schedule IDs when a different UUID render is suspended', async () => {
+    const pending = createDeferred<Event>();
+    const saveEvent = vi.fn()
+      .mockImplementationOnce(() => pending.promise)
+      .mockRejectedValue(new Error('Akci se nepodařilo uložit.'));
+    const toastError = vi.fn();
+    const suspendedRender = new Promise<never>(() => undefined);
+    vi.doMock('sonner', () => ({ toast: { error: toastError } }));
+    vi.doMock('../../lib/app-config', () => ({ appDataSource: 'local' }));
+    vi.doMock('../../lib/supabase', () => ({ isSupabaseConfigured: false, supabase: null }));
+    vi.doMock('../../features/events/components/EventAddressField', () => ({
+      default: ({ value }: { value: Pick<Event, 'address' | 'city'> }) => {
+        if (value.address === 'suspend-render') throw suspendedRender;
+        return <input aria-label="Adresa" value={value.address ?? value.city} readOnly />;
+      },
+    }));
+    vi.doMock('../../features/events/services/events.service', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../features/events/services/events.service')>();
+      return {
+        ...actual,
+        getEventFormOptions: () => ({ projects: [], clients: [] }),
+        saveEvent,
+      };
+    });
+    const { default: EventEditModal } = await import('./EventEditModal');
+    const draftA = {
+      ...event,
+      supabaseId: 'event-client-uuid-a',
+      address: 'draft-a',
+      phaseSchedules: undefined,
+    };
+    const rendered = render(
+      <React.Suspense fallback={<div>Suspended draft</div>}>
+        <EventEditModal editingEvent={draftA} onClose={vi.fn()} onChange={vi.fn()} />
+      </React.Suspense>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ulozit akci' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Ulozit akci' })).toBeDisabled());
+    const firstSchedules = saveEvent.mock.calls[0][0].phaseSchedules;
+    await act(async () => {
+      rendered.rerender(
+        <React.Suspense fallback={<div>Suspended draft</div>}>
+          <EventEditModal
+            editingEvent={{ ...draftA, id: 2, supabaseId: 'event-client-uuid-b', address: 'suspend-render' }}
+            onClose={vi.fn()}
+            onChange={vi.fn()}
+          />
+        </React.Suspense>,
+      );
+      await Promise.resolve();
+    });
+    expect(screen.getByText('Suspended draft')).toBeInTheDocument();
+
+    await act(async () => {
+      pending.reject(new Error('Akci se nepodařilo uložit.'));
+      await Promise.resolve();
+    });
+    rendered.rerender(
+      <React.Suspense fallback={<div>Suspended draft</div>}>
+        <EventEditModal editingEvent={draftA} onClose={vi.fn()} onChange={vi.fn()} />
+      </React.Suspense>,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Ulozit akci' })).toBeEnabled());
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Ulozit akci' }));
+      await Promise.resolve();
+    });
+
+    expect(toastError).toHaveBeenCalled();
+    expect(saveEvent.mock.calls[1][0].phaseSchedules).toEqual(firstSchedules);
   });
 });

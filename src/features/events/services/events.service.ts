@@ -292,6 +292,12 @@ let eventsHydrationEpoch = 0;
 let eventLifecycleRefreshQueue: Promise<void> = Promise.resolve();
 const eventRowIdByLocalId = new Map<number, string>();
 
+const requireCurrentEventMutationEpoch = (expectedEpoch: number): void => {
+  if (expectedEpoch !== eventsHydrationEpoch) {
+    throw new Error(EVENT_SAVE_ERROR_MESSAGE);
+  }
+};
+
 const assignmentMatchesEvent = (assignment: EventCrewAssignment, event: Event): boolean => (
   assignment.eventId === event.id
   || Boolean(event.supabaseId && assignment.eventSupabaseId === event.supabaseId)
@@ -609,7 +615,13 @@ const applyEventRowIdMap = (nextMap: Map<number, string>): void => {
   });
 };
 
-const commitEventLifecycleSnapshot = (lifecycleSnapshot: EventLifecycleSnapshot): void => {
+const commitEventLifecycleSnapshot = (
+  lifecycleSnapshot: EventLifecycleSnapshot,
+  expectedMutationEpoch?: number,
+): void => {
+  if (expectedMutationEpoch !== undefined) {
+    requireCurrentEventMutationEpoch(expectedMutationEpoch);
+  }
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     events: lifecycleSnapshot.events,
@@ -617,6 +629,9 @@ const commitEventLifecycleSnapshot = (lifecycleSnapshot: EventLifecycleSnapshot)
     eventCrewAssignments: lifecycleSnapshot.eventCrewAssignments,
     grasonEventConfirmations: lifecycleSnapshot.grasonEventConfirmations,
   }));
+  if (expectedMutationEpoch !== undefined) {
+    requireCurrentEventMutationEpoch(expectedMutationEpoch);
+  }
   applyEventRowIdMap(lifecycleSnapshot.eventRowIdByLocalId);
 };
 
@@ -677,23 +692,28 @@ const loadAndCommitEventsSnapshot = async (
   };
 };
 
-export const fetchEventsSnapshot = async (): Promise<Event[]> => {
-  const hydrationEpoch = eventsHydrationEpoch;
-  const result = await loadAndCommitEventsSnapshot(hydrationEpoch);
-  return result.events;
-};
-
-const hydrateEventsFromSupabase = async (hydrationEpoch: number): Promise<boolean> => {
+const loadAndCommitEventsSnapshotWithRetry = async (
+  hydrationEpoch: number,
+): Promise<EventHydrationAttempt> => {
   const firstAttempt = await loadAndCommitEventsSnapshot(hydrationEpoch);
   if (firstAttempt.committed || !firstAttempt.retryForGeneration) {
-    return firstAttempt.committed;
+    return firstAttempt;
   }
   if (hydrationEpoch !== eventsHydrationEpoch) {
-    return false;
+    return {
+      committed: false,
+      events: getLocalAppState().events ?? [],
+      retryForGeneration: false,
+    };
   }
 
-  const retry = await loadAndCommitEventsSnapshot(hydrationEpoch);
-  return retry.committed;
+  return loadAndCommitEventsSnapshot(hydrationEpoch);
+};
+
+export const fetchEventsSnapshot = async (): Promise<Event[]> => {
+  const hydrationEpoch = eventsHydrationEpoch;
+  const result = await loadAndCommitEventsSnapshotWithRetry(hydrationEpoch);
+  return result.events;
 };
 
 export const ensureSupabaseEventsLoaded = () => {
@@ -710,9 +730,9 @@ export const ensureSupabaseEventsLoaded = () => {
   }
 
   const hydrationEpoch = eventsHydrationEpoch;
-  const hydrationPromise = hydrateEventsFromSupabase(hydrationEpoch)
-    .then((committed) => {
-      if (committed && hydrationEpoch === eventsHydrationEpoch) {
+  const hydrationPromise = loadAndCommitEventsSnapshotWithRetry(hydrationEpoch)
+    .then((result) => {
+      if (result.committed && hydrationEpoch === eventsHydrationEpoch) {
         eventsLoaded = true;
       }
     })
@@ -923,21 +943,27 @@ const getContractorByProfileId = (profileId: string): Contractor | null => (
   (getLocalAppState().contractors ?? []).find((contractor) => contractor.profileId === profileId) ?? null
 );
 
-const ensureSupabaseProjectRowId = async (event: Event): Promise<string | null> => {
+const ensureSupabaseProjectRowId = async (
+  event: Event,
+  expectedEpoch: number,
+): Promise<string | null> => {
   if (!supabase) {
     throw new Error('Supabase klient neni dostupny.');
   }
 
+  requireCurrentEventMutationEpoch(expectedEpoch);
   const [projectRows, clientRows] = await Promise.all([
     getSupabaseProjectRows(),
     getSupabaseClientRows(),
   ]);
+  requireCurrentEventMutationEpoch(expectedEpoch);
   const existingProject = projectRows.find((project) => project.job_number === event.job);
   if (existingProject) {
     return existingProject.id;
   }
 
   const matchingClient = clientRows.find((client) => client.name === event.client);
+  requireCurrentEventMutationEpoch(expectedEpoch);
   const projectInsert = await supabase
     .from('projects')
     .insert({
@@ -948,6 +974,7 @@ const ensureSupabaseProjectRowId = async (event: Event): Promise<string | null> 
     })
     .select('id')
     .single();
+  requireCurrentEventMutationEpoch(expectedEpoch);
 
   if (projectInsert.error) {
     throw new Error(projectInsert.error.message);
@@ -956,32 +983,36 @@ const ensureSupabaseProjectRowId = async (event: Event): Promise<string | null> 
   return projectInsert.data?.id ?? null;
 };
 
-const toSupabaseEventPayload = async (event: Event) => ({
-  name: event.name,
-  project_id: await ensureSupabaseProjectRowId(event),
-  job_number: event.job,
-  client_name: event.client,
-  date_from: event.startDate,
-  date_to: event.endDate,
-  time_from: event.startTime ?? null,
-  time_to: event.endTime ?? null,
-  city: event.city,
-  address: event.address ?? null,
-  place_id: event.placeId ?? null,
-  location_lat: event.locationLat ?? null,
-  location_lng: event.locationLng ?? null,
-  crew_needed: event.needed,
-  status: event.status,
-  description: event.description ?? null,
-  contact_person: event.contactPerson ?? null,
-  dresscode: event.dresscode ?? null,
-  meeting_point: event.meetingLocation ?? null,
-  show_day_types: event.showDayTypes ?? false,
-  allow_crew_time_proposal: event.allowCrewTimeProposal ?? false,
-  day_types: event.dayTypes ?? null,
-  phase_times: event.phaseTimes ?? null,
-  phase_schedules: event.phaseSchedules ?? null,
-});
+const toSupabaseEventPayload = async (event: Event, expectedEpoch: number) => {
+  const projectId = await ensureSupabaseProjectRowId(event, expectedEpoch);
+  requireCurrentEventMutationEpoch(expectedEpoch);
+  return {
+    name: event.name,
+    project_id: projectId,
+    job_number: event.job,
+    client_name: event.client,
+    date_from: event.startDate,
+    date_to: event.endDate,
+    time_from: event.startTime ?? null,
+    time_to: event.endTime ?? null,
+    city: event.city,
+    address: event.address ?? null,
+    place_id: event.placeId ?? null,
+    location_lat: event.locationLat ?? null,
+    location_lng: event.locationLng ?? null,
+    crew_needed: event.needed,
+    status: event.status,
+    description: event.description ?? null,
+    contact_person: event.contactPerson ?? null,
+    dresscode: event.dresscode ?? null,
+    meeting_point: event.meetingLocation ?? null,
+    show_day_types: event.showDayTypes ?? false,
+    allow_crew_time_proposal: event.allowCrewTimeProposal ?? false,
+    day_types: event.dayTypes ?? null,
+    phase_times: event.phaseTimes ?? null,
+    phase_schedules: event.phaseSchedules ?? null,
+  };
+};
 
 export const getEvents = (search = ''): Event[] => {
   ensureSupabaseEventsLoaded();
@@ -1722,6 +1753,7 @@ const sameJsonValue = (left: unknown, right: unknown): boolean => (
 
 const matchesSavedEvent = (actual: Event, expected: Event): boolean => (
   actual.supabaseId === expected.supabaseId
+  && (actual.projectId ?? null) === (expected.projectId ?? null)
   && actual.name === expected.name
   && actual.job === expected.job
   && actual.client === expected.client
@@ -1747,8 +1779,13 @@ const matchesSavedEvent = (actual: Event, expected: Event): boolean => (
   && sameJsonValue(actual.phaseSchedules, expected.phaseSchedules)
 );
 
-const commitSavedEvent = (canonical: Event, preferredLocalId: number): Event => {
+const commitSavedEvent = (
+  canonical: Event,
+  preferredLocalId: number,
+  expectedEpoch: number,
+): Event => {
   let committedEvent: Event | null = null;
+  requireCurrentEventMutationEpoch(expectedEpoch);
   updateLocalAppState((snapshot) => {
     const stableMatches = canonical.supabaseId
       ? snapshot.events.filter((item) => item.supabaseId === canonical.supabaseId)
@@ -1774,20 +1811,29 @@ const commitSavedEvent = (canonical: Event, preferredLocalId: number): Event => 
   if (!committedEvent?.supabaseId) {
     throw new Error(EVENT_SAVE_CONFLICT_MESSAGE);
   }
+  requireCurrentEventMutationEpoch(expectedEpoch);
   eventRowIdByLocalId.set(committedEvent.id, committedEvent.supabaseId);
   return committedEvent;
 };
 
-const recoverEventSave = async (expected: Event, preferredLocalId: number): Promise<Event | undefined> => {
+const recoverEventSave = async (
+  expected: Event,
+  preferredLocalId: number,
+  expectedEpoch: number,
+): Promise<Event | undefined> => {
+  requireCurrentEventMutationEpoch(expectedEpoch);
   const lifecycleSnapshot = await loadEventsLifecycleSnapshot();
-  advanceLifecycleSnapshotGeneration();
-  commitEventLifecycleSnapshot(lifecycleSnapshot);
+  requireCurrentEventMutationEpoch(expectedEpoch);
   const matchingRows = lifecycleSnapshot.events.filter((item) => item.supabaseId === expected.supabaseId);
   if (matchingRows.length !== 1 || !matchesSavedEvent(matchingRows[0], expected)) {
-    syncEventQueryCache();
     return undefined;
   }
-  const committed = commitSavedEvent(matchingRows[0], preferredLocalId);
+  requireCurrentEventMutationEpoch(expectedEpoch);
+  advanceLifecycleSnapshotGeneration();
+  requireCurrentEventMutationEpoch(expectedEpoch);
+  commitEventLifecycleSnapshot(lifecycleSnapshot, expectedEpoch);
+  const committed = commitSavedEvent(matchingRows[0], preferredLocalId, expectedEpoch);
+  requireCurrentEventMutationEpoch(expectedEpoch);
   syncEventQueryCache();
   return committed;
 };
@@ -1807,9 +1853,13 @@ const removeEventRowIdMapping = (eventId: EventIdentifier) => {
 };
 
 export const saveEvent = async (event: Event): Promise<Event> => {
+  const mutationEpoch = eventsHydrationEpoch;
   return runLifecycleDataMutation(
     [`event:save:${event.supabaseId ?? `missing:${event.id}`}`],
     async () => {
+      if (appDataSource === 'supabase') {
+        requireCurrentEventMutationEpoch(mutationEpoch);
+      }
       let normalized = normalizeEvent(event);
       validateEvent(normalized);
 
@@ -1851,9 +1901,12 @@ export const saveEvent = async (event: Event): Promise<Event> => {
         const operation = existing ? 'update' : 'insert';
         let requestStarted = false;
         try {
-          const payload = await toSupabaseEventPayload(normalized);
+          const payload = await toSupabaseEventPayload(normalized, mutationEpoch);
+          requireCurrentEventMutationEpoch(mutationEpoch);
+          normalized = { ...normalized, projectId: payload.project_id };
           let result: { data: unknown; error: unknown };
 
+          requireCurrentEventMutationEpoch(mutationEpoch);
           requestStarted = true;
           if (operation === 'update') {
             result = await supabase
@@ -1870,6 +1923,7 @@ export const saveEvent = async (event: Event): Promise<Event> => {
               .select('id,updated_at,crew_filled')
               .single();
           }
+          requireCurrentEventMutationEpoch(mutationEpoch);
 
           if (result.error) {
             throw result.error;
@@ -1887,6 +1941,9 @@ export const saveEvent = async (event: Event): Promise<Event> => {
             filled: result.data.crew_filled,
           };
         } catch (error) {
+          if (mutationEpoch !== eventsHydrationEpoch) {
+            throw new Error(EVENT_SAVE_ERROR_MESSAGE);
+          }
           const mappedError = error instanceof Error && [
             EVENT_SAVE_ERROR_MESSAGE,
             EVENT_SAVE_CONFLICT_MESSAGE,
@@ -1896,7 +1953,7 @@ export const saveEvent = async (event: Event): Promise<Event> => {
             : mapEventSaveError(error);
           if (requestStarted && eventSaveErrorCouldHaveCommitted(error, operation)) {
             try {
-              const recovered = await recoverEventSave(normalized, event.id);
+              const recovered = await recoverEventSave(normalized, event.id, mutationEpoch);
               if (recovered) return recovered;
             } catch (recoveryError) {
               console.error('Authoritative event save recovery failed', recoveryError);
@@ -1921,7 +1978,9 @@ export const saveEvent = async (event: Event): Promise<Event> => {
         return normalized;
       }
 
-      const committed = commitSavedEvent(normalized, event.id);
+      requireCurrentEventMutationEpoch(mutationEpoch);
+      const committed = commitSavedEvent(normalized, event.id, mutationEpoch);
+      requireCurrentEventMutationEpoch(mutationEpoch);
       invalidateEventQueries();
       return committed;
     },

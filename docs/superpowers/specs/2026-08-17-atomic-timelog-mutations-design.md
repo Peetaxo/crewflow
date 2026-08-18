@@ -1,7 +1,7 @@
 # Atomic Timelog Mutations — Design
 
-**Date:** 2026-08-17  
-**Status:** Approved for implementation  
+**Date:** 2026-08-17
+**Status:** Implemented locally; production deployment blocked on schema-first verification
 **Scope:** Supabase timelog writes, PowerApps approval import, client mutation ordering, generated database types, verifier, and deployment runbook. No production deployment.
 
 ## Problem
@@ -21,7 +21,9 @@ The existing Supabase write path splits one logical timelog mutation across seve
 
 ## Public RPC Contract
 
-This extension brings the schema to seven public lifecycle/timelog RPCs: the existing three manager lifecycle RPCs plus four timelog RPCs.
+The tracked lifecycle schema now exposes exactly 13 authenticated endpoints. Nine are `SECURITY DEFINER`: `assign_event_crew`, `remove_event_crew`, `approve_event_withdrawal`, `import_approved_timelog_atomic`, `delete_event_atomic`, `create_invoice_atomic`, `mark_invoice_sent_atomic`, `mark_invoice_paid_atomic`, and `delete_invoice_atomic`. Four are `SECURITY INVOKER`: `save_timelog_atomic`, `transition_timelog_statuses_atomic`, `transition_receipt_statuses_atomic`, and `delete_timelog_atomic`.
+
+The catalog verifier also checks exactly five helpers: authenticated `SECURITY INVOKER` authorization helper `can_edit_timelog_data`, plus owner-only, non-API-callable `SECURITY DEFINER` helpers `enforce_event_application_lifecycle_update`, `enforce_timelog_update_permissions`, `enforce_receipt_lifecycle_update`, and `handle_timelog_approved`.
 
 ### `save_timelog_atomic`
 
@@ -65,16 +67,16 @@ Expected SQL failures use stable tokens, including invalid payload, not found/ac
 
 ## Security and Verification
 
-- Generic save/status/delete functions remain `SECURITY INVOKER`; no direct COO RLS rights are added.
-- The import function is the only new `SECURITY DEFINER` endpoint and rechecks authenticated COO membership internally.
-- All four functions revoke `PUBLIC` and `anon`, granting exact execution only to `authenticated`.
-- Trigger/private helper execution is revoked from `PUBLIC`, `anon`, and `authenticated`.
+- Generic timelog save/status/delete and receipt status functions remain `SECURITY INVOKER`; no direct COO RLS rights are added.
+- Each of the nine `SECURITY DEFINER` endpoints rechecks its exact authenticated role contract internally and uses an empty search path.
+- All 13 endpoints revoke `PUBLIC` and `anon`, granting exact execution only to `authenticated`.
+- The four trigger/private `SECURITY DEFINER` helpers revoke execution from `PUBLIC`, `anon`, and `authenticated`; `can_edit_timelog_data` has only its reviewed authenticated ACL.
 - Catalog checks require the exact day cascade FK and exact `UNIQUE(event_id, profile_id)` assignment conflict target before function installation.
 - The rollback verifier creates no permanent fixtures and remains runnable with the single existing Crew-only auth user by adding/removing temporary CrewHead and COO roles inside `BEGIN ... ROLLBACK`.
 
 ## Deployment and Rollback
 
-Schema is deployed and verified before application code that calls the new RPCs. Application deployment is blocked until all seven RPC signatures, ACLs, trigger ACL, constraints, and adversarial verifier assertions pass. Rollback is code-first because the released client depends on the RPC schema; database function removal is only considered after the old client is restored.
+Schema is deployed and verified before application code that calls the RPCs. Application deployment is blocked until all 13 endpoint signatures, all five helper mode/search-path/ACL contracts, constraints, RLS policies, and adversarial verifier assertions pass. The versioned event-delete signature is `delete_event_atomic(uuid,timestamptz)`; the obsolete UUID-only overload must not exist. Rollback is code-first because the released client depends on the RPC schema; database function removal is only considered after the old client is restored.
 
 ## Test Strategy
 

@@ -1,8 +1,8 @@
 # Stable Draft Identities and Reset-Safe Hydration — Design
 
 **Date:** 2026-08-18
-**Status:** Approved design option; awaiting written-spec review
-**Scope:** Supabase event and receipt draft identity, optimistic writes, ambiguous-response recovery, hydration generation/session guards, modal save state, and focused regressions. No database schema change and no production deployment.
+**Status:** Implemented locally; independent spec and quality reviews approved; production deployment blocked on schema-first verification
+**Scope:** Supabase event and receipt draft identity, optimistic writes, ambiguous-response recovery, hydration generation/session guards, modal save state, and focused regressions. The pending tracked migration hardens the existing event-delete RPC with an expected-version argument; no new table, column, endpoint, or production deployment is introduced by this slice.
 
 ## Problem
 
@@ -52,6 +52,8 @@ For update:
 2. Require the current canonical `updatedAt` and target the database row by exact `id + updated_at`.
 3. Do not persist derived event fields such as `crew_filled`.
 4. Require a single canonical response and commit its new version by UUID.
+
+Status changes and deletes synchronously capture the initiating UUID, canonical version/status, and service epoch before entering the shared queue. Reindexing while queued cannot redirect the operation. Event deletion passes the exact UUID and expected `updated_at` into `delete_event_atomic`, which compares the version while holding the row lock.
 
 No write path may consult the positional event/receipt maps to choose its database target.
 
@@ -106,6 +108,8 @@ RED tests precede production changes and cover:
 - a generation-discarded hydration retries and eventually commits current data;
 - an auth reset during hydration prevents the old session's rows from reaching state or query cache;
 - missing stable row/event UUIDs fail before any request;
-- UI save guards reject same-render double clicks and preserve the UUID-bearing draft on failure.
+- UI save guards reject same-render double clicks and preserve the UUID-bearing draft on failure;
+- queued event/receipt status and delete operations remain pinned to the initiating UUID across reindexing and reject an auth-reset epoch without issuing a request;
+- EventDetail receipt creation uses the shared UUID factory and persists the selected event's stable UUID.
 
-Focused event, receipt, modal, UUID integration, lifecycle, invoice, TypeScript, lint, build, and diff checks remain release gates. Production migration and frontend deployment stay blocked until an independent spec review and code-quality review approve the implementation.
+Focused event, receipt, modal, UUID integration, lifecycle, invoice, TypeScript, lint, build, and diff checks remain release gates. Independent spec review returned `SPEC APPROVED` and code-quality review returned `READY`; production migration and frontend deployment remain blocked until the schema-first dry run, authenticated rollback verifier, advisors, invariants, and smoke checks pass.

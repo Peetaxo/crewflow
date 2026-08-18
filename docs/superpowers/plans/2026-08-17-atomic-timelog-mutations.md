@@ -2,7 +2,7 @@
 
 **Goal:** Replace split Supabase timelog writes with versioned atomic RPCs and a shared client mutation coordinator while preserving existing RLS and the constrained COO PowerApps import.
 
-**Architecture:** Three ordinary timelog RPCs run as `SECURITY INVOKER`; one narrowly authorized PowerApps import runs as `SECURITY DEFINER`. Stable UUIDs plus `updated_at` provide optimistic concurrency. One client coordinator serializes create/save/status/delete/batch operations and reloads authoritative data after failures.
+**Architecture:** Three ordinary timelog RPCs and the receipt transition RPC run as `SECURITY INVOKER`; nine narrowly authorized lifecycle/event/invoice/import endpoints run as `SECURITY DEFINER`. The complete tracked contract is 13 endpoints plus five catalog-verified helpers. Stable UUIDs plus `updated_at` provide optimistic concurrency. One client coordinator serializes create/save/status/delete/batch operations and reloads authoritative data after failures.
 
 **Rule:** Each task starts with a focused failing test, records the expected RED reason, implements only the required behavior, and reruns the focused test before proceeding.
 
@@ -71,7 +71,7 @@
 - Modify `docs/superpowers/plans/2026-08-17-timelog-assignment-lifecycle.md`
 - Modify this plan if the implemented signature differs for a verified reason
 
-1. Document the total of seven public lifecycle/timelog RPCs and schema-first deployment gate.
+1. Document the exact total of 13 public endpoints (nine definer, four invoker), five catalog-verified helpers, client-assigned event/receipt UUIDs, reset epochs, exact CAS, and the schema-first deployment gate.
 2. Correct approval sync test paths to `src/features/invoices/services/approval-timelog-sync.service.test.ts`.
 3. Run migration/static, adapter, mapper, timelog service, invoice sync, and relevant lifecycle suites.
 4. Run TypeScript, focused lint, build, `git diff --check`, and inspect the final diff for raw-error leaks and unrelated files.

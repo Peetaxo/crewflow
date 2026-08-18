@@ -4,7 +4,7 @@
 
 **Goal:** Make Crew assignment and removal atomic, repair the nine existing duplicate timelog groups, and guarantee one timelog per event/profile without exposing raw database errors.
 
-**Architecture:** A single tracked Supabase migration repairs the known production duplicates, installs a unique constraint, exposes three tightly authorized `SECURITY DEFINER` manager RPCs for assignment, direct removal, and exact withdrawal approval, and installs a non-callable `SECURITY DEFINER` trigger that constrains Crew application transitions. A focused TypeScript RPC adapter maps database outcomes into stable Czech domain errors; the existing event service keeps local-mode behavior, delegates manager mutations to the appropriate RPC, preserves canonical UUID identity, and then rehydrates authoritative state. UI controls add local status guards and in-flight protection, while the database remains the final concurrency and authorization boundary.
+**Architecture:** A single tracked Supabase migration repairs the known production duplicates, installs a unique constraint, exposes three tightly authorized `SECURITY DEFINER` manager RPCs for assignment, direct removal, and exact withdrawal approval, and installs a non-callable `SECURITY DEFINER` trigger that constrains Crew application transitions. The completed tracked schema contains exactly 13 authenticated endpoints (nine definer, four invoker) and five catalog-verified helpers. Event and receipt drafts receive client UUIDs before their first request; all Supabase updates/deletes use exact UUID plus `updated_at`, and guarded loaders compare lifecycle generation plus a reset/session epoch before commit. A focused TypeScript boundary maps database outcomes into stable Czech domain errors; UI controls add local status guards and synchronous in-flight protection, while the database remains the final concurrency and authorization boundary.
 
 **Tech Stack:** PostgreSQL 17 / Supabase RLS and RPC, `@supabase/supabase-js`, React 18, TypeScript 5.8, Vitest 4, Testing Library, Supabase CLI 2.95.4.
 
@@ -1727,9 +1727,9 @@ Expected: only intentional lifecycle files are committed; the user's pre-existin
 - [ ] Re-application after valid removal creates one new clean draft.
 - [ ] Assignment approval and withdrawal approval are scoped to the exact application UUID; stale or inconsistent state produces `crew_application_conflict` or `crew_withdrawal_conflict` with no partial writes.
 - [ ] Crew can change only its own application through the documented transition graph and cannot mutate application identity columns.
-- [ ] Canonical event and timelog UUIDs survive hydration and refresh and are used for every Supabase write.
+- [ ] Canonical event, receipt, and timelog UUIDs survive hydration and refresh and are used for every Supabase write; updates/deletes require their canonical `updated_at` and never infer a target from a local numeric ID.
 - [ ] Crew cannot execute manager lifecycle mutations successfully.
 - [ ] UI controls block repeated clicks but do not replace database idempotency.
 - [ ] Expected conflicts produce stable Czech domain messages; raw RLS, unique, trigger, and RPC messages remain diagnostic only in EventDetailView and EventsView.
-- [ ] Schema migration is deployed before frontend code that calls the RPCs.
-- [ ] This design and implementation plan describe the deployed three-RPC/trigger contract before the production push; any schema or contract drift stops deployment.
+- [ ] Schema migration is dry-run, deployed, and verified before frontend code that calls the RPCs.
+- [ ] The catalog contains exactly 13 reviewed endpoint signatures (including `delete_event_atomic(uuid,timestamptz)`) and five reviewed helpers with exact mode/search-path/ACL contracts; any schema or contract drift stops deployment.

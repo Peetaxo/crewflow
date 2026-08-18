@@ -85,10 +85,19 @@ describe('UUID write flows integration', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('completes timelog, receipt and invoice write flows without profiles lookup when contractor profileId exists locally', async () => {
+    vi.stubGlobal('crypto', { randomUUID: vi.fn(() => 'receipt-row-1') });
     let snapshot = createSnapshot();
+    const timelogRows: Array<Record<string, unknown> & { id: string; updated_at: string }> = [{
+      id: 'timelog-row-1',
+      event_id: 'event-row-1',
+      contractor_id: 'profile-uuid-1',
+      updated_at: '2026-08-17T10:00:00.000Z',
+      status: 'draft',
+    }];
     let profileSelectCalls = 0;
     const invalidateQueries = vi.fn().mockResolvedValue(undefined);
     const setQueryData = vi.fn();
@@ -97,7 +106,7 @@ describe('UUID write flows integration', () => {
     const receiptRows: Array<Record<string, unknown> & { id: string; updated_at: string }> = [];
     const receiptInsert = vi.fn((payload: Record<string, unknown>) => {
       const row = {
-        id: `receipt-row-${receiptRows.length + 1}`,
+        id: typeof payload.id === 'string' ? payload.id : `receipt-row-${receiptRows.length + 1}`,
         updated_at: '2026-08-17T14:00:00.000Z',
         event_id: payload.event_id,
         status: payload.status,
@@ -131,14 +140,16 @@ describe('UUID write flows integration', () => {
       }
 
       if (table === 'events') {
+        const eventResult = Promise.resolve({
+          data: [{ id: 'event-row-1' }],
+          error: null,
+        });
+        const eventOrderQuery = Object.assign(eventResult, {
+          order: vi.fn(() => eventOrderQuery),
+        });
         return {
           select: vi.fn(() => ({
-            order: vi.fn(() => ({
-              order: vi.fn().mockResolvedValue({
-                data: [{ id: 'event-row-1' }],
-                error: null,
-              }),
-            })),
+            order: vi.fn(() => eventOrderQuery),
           })),
         };
       }
@@ -155,12 +166,16 @@ describe('UUID write flows integration', () => {
       }
 
       if (table === 'timelogs') {
+        const timelogResult = Promise.resolve({
+          data: timelogRows,
+          error: null,
+        });
+        const timelogOrderQuery = Object.assign(timelogResult, {
+          order: vi.fn(() => timelogOrderQuery),
+        });
         return {
           select: vi.fn(() => ({
-            order: vi.fn().mockResolvedValue({
-              data: [{ id: 'timelog-row-1' }],
-              error: null,
-            }),
+            order: vi.fn(() => timelogOrderQuery),
           })),
         };
       }
@@ -206,23 +221,31 @@ describe('UUID write flows integration', () => {
     const rpc = vi.fn(async (name: string, args: Record<string, unknown>) => {
       if (name === 'save_timelog_atomic') {
         timelogRpcVersion += 1;
+        const canonical = {
+          id: args.p_timelog_id as string,
+          updated_at: `2026-08-17T${timelogRpcVersion}:00:00.000Z`,
+          status: args.p_status,
+        };
+        const row = timelogRows.find((item) => item.id === canonical.id);
+        if (row) Object.assign(row, canonical);
         return {
-          data: {
-            id: args.p_timelog_id,
-            updated_at: `2026-08-17T${timelogRpcVersion}:00:00.000Z`,
-            status: args.p_status,
-          },
+          data: canonical,
           error: null,
         };
       }
       if (name === 'transition_timelog_statuses_atomic') {
         timelogRpcVersion += 1;
+        const data = (args.p_targets as Array<{ id: string }>).map(({ id }) => ({
+          id,
+          updated_at: `2026-08-17T${timelogRpcVersion}:00:00.000Z`,
+          status: args.p_next_status,
+        }));
+        data.forEach((canonical) => {
+          const row = timelogRows.find((item) => item.id === canonical.id);
+          if (row) Object.assign(row, canonical);
+        });
         return {
-          data: (args.p_targets as Array<{ id: string }>).map(({ id }) => ({
-            id,
-            updated_at: `2026-08-17T${timelogRpcVersion}:00:00.000Z`,
-            status: args.p_next_status,
-          })),
+          data,
           error: null,
         };
       }
@@ -231,12 +254,17 @@ describe('UUID write flows integration', () => {
         const updatedAt = nextStatus === 'submitted'
           ? '2026-08-17T14:10:00.000Z'
           : '2026-08-17T14:20:00.000Z';
+        const data = (args.p_receipts as Array<{ id: string }>).map(({ id }) => ({
+          id,
+          updated_at: updatedAt,
+          status: nextStatus,
+        }));
+        data.forEach((canonical) => {
+          const row = receiptRows.find((receipt) => receipt.id === canonical.id);
+          if (row) Object.assign(row, canonical);
+        });
         return {
-          data: (args.p_receipts as Array<{ id: string }>).map(({ id }) => ({
-            id,
-            updated_at: updatedAt,
-            status: nextStatus,
-          })),
+          data,
           error: null,
         };
       }
@@ -278,7 +306,11 @@ describe('UUID write flows integration', () => {
       },
     }));
     vi.doMock('../lib/supabase-mappers', () => ({
-      mapTimelog: vi.fn(),
+      mapTimelog: vi.fn((row: Record<string, unknown>) => ({
+        ...snapshot.timelogs.find((timelog) => timelog.supabaseId === row.id),
+        updatedAt: row.updated_at,
+        status: row.status,
+      })),
       mapReceipt: vi.fn((row: Record<string, unknown>) => ({
         id: Number.NaN,
         supabaseId: row.id,
@@ -337,6 +369,13 @@ describe('UUID write flows integration', () => {
     savedReceipt = await updateReceiptStatus(savedReceipt.id, 'approve');
 
     expect(profileSelectCalls).toBe(0);
+
+    expect(snapshot.timelogs).toEqual([
+      expect.objectContaining({ id: savedTimelog.id, supabaseId: 'timelog-row-1', updatedAt: expect.any(String) }),
+    ]);
+    expect(snapshot.receipts).toEqual([
+      expect.objectContaining({ id: savedReceipt.id, supabaseId: 'receipt-row-1', updatedAt: '2026-08-17T14:20:00.000Z' }),
+    ]);
 
     const candidates = getInvoiceCreateCandidates();
     const createdInvoice = await createInvoiceFromSelection('profile-uuid-1', [savedTimelog.id], [savedReceipt.id]);

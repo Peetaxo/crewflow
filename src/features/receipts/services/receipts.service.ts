@@ -5,7 +5,11 @@ import { queryKeys } from '../../../lib/query-keys';
 import { mapReceipt } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { Contractor, Event, ReceiptItem, ReceiptStatus } from '../../../types';
-import { runLifecycleDataMutation } from '../../event-lifecycle-generation';
+import {
+  advanceLifecycleSnapshotGeneration,
+  getLifecycleSnapshotGeneration,
+  runLifecycleDataMutation,
+} from '../../event-lifecycle-generation';
 import {
   transitionReceiptStatusesAtomicRpc,
   type ReceiptMutationResult,
@@ -59,9 +63,14 @@ const mapReceiptWriteError = (context: 'create' | 'update', error: unknown): Err
   return new Error(RECEIPT_WRITE_GENERIC_ERROR);
 };
 
-const runReceiptMutation = <T>(key: string, mutation: () => Promise<T>): Promise<T> => (
-  runLifecycleDataMutation([`receipt:${key}`], mutation)
-);
+interface ReceiptMutationControl {
+  markRequestStarted: () => void;
+  markCanonicalCommit: () => void;
+}
+
+interface ReceiptMutationOptions<T> {
+  recover?: (receipts: ReceiptItem[]) => T | undefined;
+}
 
 const normalizeReceipt = (receipt: ReceiptItem): ReceiptItem => ({
   ...receipt,
@@ -113,7 +122,7 @@ const mapSupabaseReceipts = (
   }));
 };
 
-export const fetchReceiptsSnapshot = async (): Promise<ReceiptItem[]> => {
+const loadReceiptsSnapshot = async (): Promise<ReceiptItem[]> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
     return getLocalAppState().receipts ?? [];
   }
@@ -137,12 +146,70 @@ export const fetchReceiptsSnapshot = async (): Promise<ReceiptItem[]> => {
   );
 };
 
-const hydrateReceiptsFromSupabase = async (): Promise<void> => {
-  const supabaseReceipts = await fetchReceiptsSnapshot();
+export const fetchReceiptsSnapshot = async (): Promise<ReceiptItem[]> => {
+  const generation = getLifecycleSnapshotGeneration();
+  const receipts = await loadReceiptsSnapshot();
+  if (generation !== getLifecycleSnapshotGeneration()) {
+    return getLocalAppState().receipts ?? [];
+  }
+  return receipts;
+};
+
+const commitReceiptsSnapshot = (receipts: ReceiptItem[]): void => {
   updateLocalAppState((snapshot) => ({
     ...snapshot,
-    receipts: supabaseReceipts,
+    receipts,
   }));
+  queryClient.setQueryData(queryKeys.receipts.all, receipts);
+};
+
+const runReceiptMutation = <T>(
+  key: string,
+  mutation: (control: ReceiptMutationControl) => Promise<T>,
+  options: ReceiptMutationOptions<T> = {},
+): Promise<T> => runLifecycleDataMutation([`receipt:${key}`], async () => {
+  const usesSupabase = appDataSource === 'supabase';
+  let requestStarted = false;
+  let canonicalGenerationAdvanced = false;
+  if (usesSupabase) {
+    advanceLifecycleSnapshotGeneration();
+  }
+
+  const markCanonicalCommit = () => {
+    if (usesSupabase && !canonicalGenerationAdvanced) {
+      advanceLifecycleSnapshotGeneration();
+      canonicalGenerationAdvanced = true;
+    }
+  };
+
+  try {
+    return await mutation({
+      markRequestStarted: () => { requestStarted = true; },
+      markCanonicalCommit,
+    });
+  } catch (error) {
+    if (usesSupabase && requestStarted && supabase && isSupabaseConfigured) {
+      try {
+        const receipts = await loadReceiptsSnapshot();
+        markCanonicalCommit();
+        commitReceiptsSnapshot(receipts);
+        const recovered = options.recover?.(receipts);
+        if (recovered !== undefined) {
+          return recovered;
+        }
+      } catch (recoveryError) {
+        console.error('Unexpected receipt mutation recovery error', recoveryError);
+      }
+    }
+    throw error;
+  }
+});
+
+const hydrateReceiptsFromSupabase = async (): Promise<void> => {
+  const generation = getLifecycleSnapshotGeneration();
+  const supabaseReceipts = await loadReceiptsSnapshot();
+  if (generation !== getLifecycleSnapshotGeneration()) return;
+  commitReceiptsSnapshot(supabaseReceipts);
 };
 
 const ensureSupabaseReceiptsLoaded = () => {
@@ -262,7 +329,7 @@ export const createEmptyReceipt = (
 
 export const updateReceiptStatus = async (id: number, action: ReceiptAction): Promise<ReceiptItem> => runReceiptMutation(
   String(id),
-  async () => {
+  async ({ markRequestStarted, markCanonicalCommit }) => {
   const statusMap: Record<ReceiptAction, ReceiptStatus> = {
     submit: 'submitted',
     approve: 'approved',
@@ -280,11 +347,13 @@ export const updateReceiptStatus = async (id: number, action: ReceiptAction): Pr
     if (!currentReceipt.supabaseId || !currentReceipt.updatedAt) {
       throw new Error(RECEIPT_INVALID_ERROR);
     }
+    markRequestStarted();
     const [canonical] = await transitionReceiptStatusesAtomicRpc({
       receipts: [{ id: currentReceipt.supabaseId, expected_updated_at: currentReceipt.updatedAt }],
       expectedStatus: currentReceipt.status,
       nextStatus,
     });
+    markCanonicalCommit();
     updatedReceipt = reconcileReceiptStatus(canonical);
   } else {
     updatedReceipt = null;
@@ -305,158 +374,193 @@ export const updateReceiptStatus = async (id: number, action: ReceiptAction): Pr
   },
 );
 
-export const saveReceipt = async (updated: ReceiptItem): Promise<ReceiptItem> => runReceiptMutation(
-  updated.supabaseId ?? String(updated.id),
-  async () => {
-  let normalizedReceipt = normalizeReceipt({
-    ...updated,
-  });
-
-  if (!normalizedReceipt.eid || !normalizedReceipt.contractorProfileId || !normalizedReceipt.title || normalizedReceipt.amount <= 0) {
-    throw new Error('Vyplnte akci, nazev uctenky a castku.');
-  }
-
-  if (appDataSource === 'supabase') {
-    if (!supabase || !isSupabaseConfigured) {
-      console.error('Receipt save requires an available Supabase client');
-      throw new Error(RECEIPT_WRITE_GENERIC_ERROR);
-    }
-    const currentSnapshot = getLocalAppState();
-    const existing = normalizedReceipt.supabaseId
-      ? (currentSnapshot.receipts ?? []).find((receipt) => receipt.supabaseId === normalizedReceipt.supabaseId)
-      : (currentSnapshot.receipts ?? []).find((receipt) => receipt.id === normalizedReceipt.id);
-    if (normalizedReceipt.supabaseId && !existing) {
-      throw new Error(RECEIPT_WRITE_CONFLICT_ERROR);
-    }
-    const contractorRowId = normalizedReceipt.contractorProfileId;
-    const eventRowId = resolveReceiptEventSupabaseId(
-      normalizedReceipt,
-      existing,
-      currentSnapshot.events ?? [],
-    );
-
-    if (!contractorRowId || !eventRowId) {
-      throw new Error(RECEIPT_INVALID_ERROR);
-    }
-
-    const payload = {
-      contractor_id: contractorRowId,
-      event_id: eventRowId,
-      job_number: normalizedReceipt.job,
-      name: normalizedReceipt.title,
-      supplier: normalizedReceipt.vendor,
-      amount: normalizedReceipt.amount,
-      paid_at: normalizedReceipt.paidAt,
-      note: normalizedReceipt.note,
-    };
-
-    if (existing) {
-      if (
-        !existing.supabaseId
-        || !existing.updatedAt
-        || !DELETABLE_RECEIPT_STATUSES.includes(existing.status)
-        || normalizedReceipt.status !== existing.status
-      ) {
-        throw new Error(RECEIPT_INVALID_ERROR);
-      }
-      const receiptUpdate = await supabase
-        .from('receipts')
-        .update(payload)
-        .eq('id', existing.supabaseId)
-        .eq('updated_at', existing.updatedAt)
-        .eq('status', existing.status)
-        .select('id,updated_at,event_id,status')
-        .single();
-
-      if (receiptUpdate.error) {
-        throw mapReceiptWriteError('update', receiptUpdate.error);
-      }
-      if (
-        receiptUpdate.data?.id !== existing.supabaseId
-        || typeof receiptUpdate.data.updated_at !== 'string'
-        || receiptUpdate.data.event_id !== eventRowId
-        || receiptUpdate.data.status !== existing.status
-      ) {
-        console.error('Unexpected receipt update response', receiptUpdate.data);
-        throw new Error(RECEIPT_WRITE_GENERIC_ERROR);
-      }
-      normalizedReceipt = {
-        ...normalizedReceipt,
-        supabaseId: receiptUpdate.data.id,
-        updatedAt: receiptUpdate.data.updated_at,
-        eventSupabaseId: receiptUpdate.data.event_id,
-        status: receiptUpdate.data.status,
-      };
-    } else {
-      if (normalizedReceipt.status !== 'draft') {
-        throw new Error(RECEIPT_INVALID_ERROR);
-      }
-      const receiptInsert = await supabase
-        .from('receipts')
-        .insert({ ...payload, status: 'draft' })
-        .select('id,updated_at,event_id,status')
-        .single();
-
-      if (receiptInsert.error) {
-        throw mapReceiptWriteError('create', receiptInsert.error);
-      }
-      if (
-        !receiptInsert.data?.id
-        || typeof receiptInsert.data.updated_at !== 'string'
-        || receiptInsert.data.event_id !== eventRowId
-        || receiptInsert.data.status !== 'draft'
-      ) {
-        console.error('Unexpected receipt create response', receiptInsert.data);
-        throw new Error(RECEIPT_WRITE_GENERIC_ERROR);
-      }
-      normalizedReceipt = {
-        ...normalizedReceipt,
-        supabaseId: receiptInsert.data.id,
-        updatedAt: receiptInsert.data.updated_at,
-        eventSupabaseId: receiptInsert.data.event_id,
-        status: receiptInsert.data.status,
-      };
-    }
-  }
-
-  let committedReceipt: ReceiptItem | null = null;
-  updateLocalAppState((snapshot) => {
-    const stableMatch = normalizedReceipt.supabaseId
-      ? snapshot.receipts.find((receipt) => receipt.supabaseId === normalizedReceipt.supabaseId)
-      : undefined;
-    const localMatch = stableMatch ?? snapshot.receipts.find((receipt) => receipt.id === normalizedReceipt.id);
-    const eventMatch = normalizedReceipt.eventSupabaseId
-      ? snapshot.events.find((event) => event.supabaseId === normalizedReceipt.eventSupabaseId)
-      : undefined;
-    committedReceipt = {
-      ...normalizedReceipt,
-      id: localMatch?.id ?? (
-        snapshot.receipts.some((receipt) => receipt.id === normalizedReceipt.id)
-          ? Math.max(0, ...snapshot.receipts.map((receipt) => receipt.id)) + 1
-          : normalizedReceipt.id
-      ),
-      eid: eventMatch?.id ?? normalizedReceipt.eid,
-    };
-
-    return {
-      ...snapshot,
-      receipts: localMatch
-        ? snapshot.receipts.map((receipt) => (
-            receipt === localMatch ? committedReceipt! : receipt
-          ))
-        : [...snapshot.receipts, committedReceipt],
-    };
-  });
-
-  if (!committedReceipt) throw new Error(RECEIPT_WRITE_CONFLICT_ERROR);
-  invalidateReceiptQueries();
-  return committedReceipt;
-  },
+const matchesCreatedReceipt = (actual: ReceiptItem, expected: ReceiptItem): boolean => (
+  actual.supabaseId === expected.supabaseId
+  && actual.eventSupabaseId === expected.eventSupabaseId
+  && actual.contractorProfileId === expected.contractorProfileId
+  && actual.job === expected.job
+  && actual.title === expected.title
+  && actual.vendor === expected.vendor
+  && actual.amount === expected.amount
+  && actual.paidAt === expected.paidAt
+  && actual.note === expected.note
+  && actual.status === 'draft'
 );
+
+export const saveReceipt = async (updated: ReceiptItem): Promise<ReceiptItem> => {
+  let recoverCreatedReceipt: ((receipts: ReceiptItem[]) => ReceiptItem | undefined) | undefined;
+  return runReceiptMutation(
+    updated.supabaseId ?? String(updated.id),
+    async ({ markRequestStarted, markCanonicalCommit }) => {
+      let normalizedReceipt = normalizeReceipt({ ...updated });
+
+      if (!normalizedReceipt.eid || !normalizedReceipt.contractorProfileId || !normalizedReceipt.title || normalizedReceipt.amount <= 0) {
+        throw new Error('Vyplnte akci, nazev uctenky a castku.');
+      }
+
+      if (appDataSource === 'supabase') {
+        if (!supabase || !isSupabaseConfigured) {
+          console.error('Receipt save requires an available Supabase client');
+          throw new Error(RECEIPT_WRITE_GENERIC_ERROR);
+        }
+        const currentSnapshot = getLocalAppState();
+        const existing = normalizedReceipt.supabaseId
+          ? (currentSnapshot.receipts ?? []).find((receipt) => receipt.supabaseId === normalizedReceipt.supabaseId)
+          : (currentSnapshot.receipts ?? []).find((receipt) => receipt.id === normalizedReceipt.id);
+        if (normalizedReceipt.supabaseId && !existing) {
+          throw new Error(RECEIPT_WRITE_CONFLICT_ERROR);
+        }
+        const contractorRowId = normalizedReceipt.contractorProfileId;
+        const eventRowId = resolveReceiptEventSupabaseId(
+          normalizedReceipt,
+          existing,
+          currentSnapshot.events ?? [],
+        );
+
+        if (!contractorRowId || !eventRowId) {
+          throw new Error(RECEIPT_INVALID_ERROR);
+        }
+
+        const payload = {
+          contractor_id: contractorRowId,
+          event_id: eventRowId,
+          job_number: normalizedReceipt.job,
+          name: normalizedReceipt.title,
+          supplier: normalizedReceipt.vendor,
+          amount: normalizedReceipt.amount,
+          paid_at: normalizedReceipt.paidAt,
+          note: normalizedReceipt.note,
+        };
+
+        if (existing) {
+          if (
+            !existing.supabaseId
+            || !existing.updatedAt
+            || !DELETABLE_RECEIPT_STATUSES.includes(existing.status)
+            || normalizedReceipt.status !== existing.status
+          ) {
+            throw new Error(RECEIPT_INVALID_ERROR);
+          }
+          markRequestStarted();
+          const receiptUpdate = await supabase
+            .from('receipts')
+            .update(payload)
+            .eq('id', existing.supabaseId)
+            .eq('updated_at', existing.updatedAt)
+            .eq('status', existing.status)
+            .select('id,updated_at,event_id,status')
+            .single();
+
+          if (receiptUpdate.error) {
+            throw mapReceiptWriteError('update', receiptUpdate.error);
+          }
+          if (
+            receiptUpdate.data?.id !== existing.supabaseId
+            || typeof receiptUpdate.data.updated_at !== 'string'
+            || receiptUpdate.data.event_id !== eventRowId
+            || receiptUpdate.data.status !== existing.status
+          ) {
+            console.error('Unexpected receipt update response', receiptUpdate.data);
+            throw new Error(RECEIPT_WRITE_GENERIC_ERROR);
+          }
+          normalizedReceipt = {
+            ...normalizedReceipt,
+            supabaseId: receiptUpdate.data.id,
+            updatedAt: receiptUpdate.data.updated_at,
+            eventSupabaseId: receiptUpdate.data.event_id,
+            status: receiptUpdate.data.status,
+          };
+        } else {
+          if (normalizedReceipt.status !== 'draft') {
+            throw new Error(RECEIPT_INVALID_ERROR);
+          }
+          const clientId = globalThis.crypto?.randomUUID();
+          if (!clientId) {
+            console.error('Receipt create requires a stable client UUID');
+            throw new Error(RECEIPT_WRITE_GENERIC_ERROR);
+          }
+          normalizedReceipt = {
+            ...normalizedReceipt,
+            supabaseId: clientId,
+            eventSupabaseId: eventRowId,
+            status: 'draft',
+          };
+          const expectedReceipt = normalizedReceipt;
+          recoverCreatedReceipt = (receipts) => {
+            const matches = receipts.filter((receipt) => receipt.supabaseId === clientId);
+            if (matches.length !== 1 || !matchesCreatedReceipt(matches[0], expectedReceipt)) {
+              return undefined;
+            }
+            return matches[0];
+          };
+
+          markRequestStarted();
+          const receiptInsert = await supabase
+            .from('receipts')
+            .insert({ id: clientId, ...payload, status: 'draft' })
+            .select('id,updated_at,event_id,status')
+            .single();
+
+          if (receiptInsert.error) {
+            throw mapReceiptWriteError('create', receiptInsert.error);
+          }
+          if (
+            receiptInsert.data?.id !== clientId
+            || typeof receiptInsert.data.updated_at !== 'string'
+            || receiptInsert.data.event_id !== eventRowId
+            || receiptInsert.data.status !== 'draft'
+          ) {
+            console.error('Unexpected receipt create response', receiptInsert.data);
+            throw new Error(RECEIPT_WRITE_GENERIC_ERROR);
+          }
+          normalizedReceipt = {
+            ...normalizedReceipt,
+            updatedAt: receiptInsert.data.updated_at,
+          };
+        }
+        markCanonicalCommit();
+      }
+
+      let committedReceipt: ReceiptItem | null = null;
+      updateLocalAppState((snapshot) => {
+        const stableMatch = normalizedReceipt.supabaseId
+          ? snapshot.receipts.find((receipt) => receipt.supabaseId === normalizedReceipt.supabaseId)
+          : undefined;
+        const localMatch = stableMatch ?? snapshot.receipts.find((receipt) => receipt.id === normalizedReceipt.id);
+        const eventMatch = normalizedReceipt.eventSupabaseId
+          ? snapshot.events.find((event) => event.supabaseId === normalizedReceipt.eventSupabaseId)
+          : undefined;
+        committedReceipt = {
+          ...normalizedReceipt,
+          id: localMatch?.id ?? (
+            snapshot.receipts.some((receipt) => receipt.id === normalizedReceipt.id)
+              ? Math.max(0, ...snapshot.receipts.map((receipt) => receipt.id)) + 1
+              : normalizedReceipt.id
+          ),
+          eid: eventMatch?.id ?? normalizedReceipt.eid,
+        };
+
+        return {
+          ...snapshot,
+          receipts: localMatch
+            ? snapshot.receipts.map((receipt) => (
+                receipt === localMatch ? committedReceipt! : receipt
+              ))
+            : [...snapshot.receipts, committedReceipt],
+        };
+      });
+
+      if (!committedReceipt) throw new Error(RECEIPT_WRITE_CONFLICT_ERROR);
+      invalidateReceiptQueries();
+      return committedReceipt;
+    },
+    { recover: (receipts) => recoverCreatedReceipt?.(receipts) },
+  );
+};
 
 export const deleteReceipt = async (id: number): Promise<{ id: number }> => runReceiptMutation(
   String(id),
-  async () => {
+  async ({ markRequestStarted, markCanonicalCommit }) => {
   const currentReceipt = (getLocalAppState().receipts ?? []).find((receipt) => receipt.id === id);
   if (!currentReceipt) {
     throw new Error(RECEIPT_DELETE_CONFLICT_ERROR);
@@ -478,6 +582,7 @@ export const deleteReceipt = async (id: number): Promise<{ id: number }> => runR
       throw new Error(RECEIPT_DELETE_CONFLICT_ERROR);
     }
 
+    markRequestStarted();
     const receiptDelete = await supabase
       .from('receipts')
       .delete()
@@ -495,6 +600,7 @@ export const deleteReceipt = async (id: number): Promise<{ id: number }> => runR
       console.error('Unexpected receipt delete response', receiptDelete.data);
       throw new Error(RECEIPT_DELETE_GENERIC_ERROR);
     }
+    markCanonicalCommit();
   }
 
   updateLocalAppState((snapshot) => ({

@@ -3,6 +3,14 @@ import type { Contractor, Event, ReceiptItem } from '../../../types';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+const createDeferred = <T>() => {
+  let resolvePromise!: (value: T) => void;
+  const promise = new Promise<T>((resolve) => {
+    resolvePromise = resolve;
+  });
+  return { promise, resolve: resolvePromise };
+};
+
 const createSnapshot = (overrides?: Partial<{
   receipts: ReceiptItem[];
   contractors: Contractor[];
@@ -74,6 +82,7 @@ describe('receipts.service write flow', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('routes receipt writes without positional receipt or event identity helpers', () => {
@@ -279,6 +288,7 @@ describe('receipts.service write flow', () => {
     let snapshot = createSnapshot({
       receipts: [],
     });
+    vi.stubGlobal('crypto', { randomUUID: vi.fn(() => 'receipt-row-2') });
 
     const receiptInsertSingle = vi.fn().mockResolvedValue({
       data: {
@@ -352,6 +362,7 @@ describe('receipts.service write flow', () => {
     });
 
     expect(receiptsInsert).toHaveBeenCalledWith({
+      id: 'receipt-row-2',
       contractor_id: 'profile-uuid-1',
       event_id: 'event-row-1',
       job_number: 'AK001',
@@ -376,6 +387,7 @@ describe('receipts.service write flow', () => {
     let snapshot = createSnapshot({
       receipts: [],
     });
+    vi.stubGlobal('crypto', { randomUUID: vi.fn(() => 'receipt-row-2') });
 
     const receiptsInsert = vi.fn(() => ({
       select: vi.fn(() => ({
@@ -762,6 +774,329 @@ describe('receipts.service write flow', () => {
 
       await expect(deleteReceipt(1)).rejects.toThrow('Účtenku se nepodařilo smazat.');
       expect(consoleError).toHaveBeenCalledWith('Unexpected receipt delete error', databaseError);
+      expect(snapshot.receipts).toHaveLength(1);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('discards a receipt fetch that started before a canonical status mutation', async () => {
+    let snapshot = createSnapshot();
+    const deferredReceipts = createDeferred<{
+      data: Array<Record<string, unknown>>;
+      error: null;
+    }>();
+    const receiptsOrder = vi.fn(() => deferredReceipts.promise);
+    const rpc = vi.fn().mockResolvedValue({
+      data: [{ id: 'receipt-row-1', status: 'submitted', updated_at: '2026-04-10T11:00:00Z' }],
+      error: null,
+    });
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        rpc,
+        from: vi.fn((table: string) => {
+          if (table === 'receipts') {
+            return { select: vi.fn(() => ({ order: receiptsOrder })) };
+          }
+          if (table === 'profiles') {
+            return {
+              select: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  order: vi.fn().mockResolvedValue({ data: [{ id: 'profile-uuid-1' }], error: null }),
+                })),
+              })),
+            };
+          }
+          if (table === 'events') {
+            return {
+              select: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  order: vi.fn().mockResolvedValue({ data: [{ id: 'event-row-1' }], error: null }),
+                })),
+              })),
+            };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapReceipt: vi.fn((row: Record<string, unknown>) => ({
+        ...snapshot.receipts[0],
+        supabaseId: row.id,
+        updatedAt: row.updated_at,
+        status: row.status,
+      })),
+    }));
+
+    const { fetchReceiptsSnapshot, updateReceiptStatus } = await import('./receipts.service');
+    const staleFetch = fetchReceiptsSnapshot();
+    await vi.waitFor(() => expect(receiptsOrder).toHaveBeenCalledTimes(1));
+
+    await expect(updateReceiptStatus(1, 'submit')).resolves.toMatchObject({
+      supabaseId: 'receipt-row-1',
+      status: 'submitted',
+      updatedAt: '2026-04-10T11:00:00Z',
+    });
+    deferredReceipts.resolve({
+      data: [{
+        id: 'receipt-row-1', updated_at: '2026-04-10T10:00:00Z', event_id: 'event-row-1',
+        contractor_id: 'profile-uuid-1', status: 'draft',
+      }],
+      error: null,
+    });
+
+    await expect(staleFetch).resolves.toEqual(snapshot.receipts);
+    expect(snapshot.receipts[0]).toMatchObject({
+      status: 'submitted',
+      updatedAt: '2026-04-10T11:00:00Z',
+    });
+  });
+
+  it('discards a receipt fetch when another lifecycle mutation attaches the receipt', async () => {
+    let snapshot = createSnapshot({
+      receipts: [{ ...createSnapshot().receipts[0], status: 'approved' }],
+    });
+    const deferredReceipts = createDeferred<{
+      data: Array<Record<string, unknown>>;
+      error: null;
+    }>();
+    const receiptsOrder = vi.fn(() => deferredReceipts.promise);
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: vi.fn((table: string) => {
+          if (table === 'receipts') return { select: vi.fn(() => ({ order: receiptsOrder })) };
+          const data = table === 'profiles'
+            ? [{ id: 'profile-uuid-1' }]
+            : [{ id: 'event-row-1' }];
+          return {
+            select: vi.fn(() => ({
+              order: vi.fn(() => ({ order: vi.fn().mockResolvedValue({ data, error: null }) })),
+            })),
+          };
+        }),
+      },
+    }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapReceipt: vi.fn((row: Record<string, unknown>) => ({
+        ...snapshot.receipts[0], supabaseId: row.id, updatedAt: row.updated_at, status: row.status,
+      })),
+    }));
+
+    const { fetchReceiptsSnapshot } = await import('./receipts.service');
+    const { advanceLifecycleSnapshotGeneration } = await import('../../event-lifecycle-generation');
+    const staleFetch = fetchReceiptsSnapshot();
+    await vi.waitFor(() => expect(receiptsOrder).toHaveBeenCalledTimes(1));
+
+    advanceLifecycleSnapshotGeneration();
+    snapshot = {
+      ...snapshot,
+      receipts: [{ ...snapshot.receipts[0], status: 'attached', updatedAt: '2026-04-10T12:00:00Z' }],
+    };
+    deferredReceipts.resolve({
+      data: [{
+        id: 'receipt-row-1', updated_at: '2026-04-10T10:00:00Z', event_id: 'event-row-1',
+        contractor_id: 'profile-uuid-1', status: 'approved',
+      }],
+      error: null,
+    });
+
+    await expect(staleFetch).resolves.toEqual(snapshot.receipts);
+  });
+
+  it('authoritatively reloads after a lost status response and does not poison the next mutation', async () => {
+    let snapshot = createSnapshot();
+    let authoritativeStatus: ReceiptItem['status'] = 'submitted';
+    let authoritativeUpdatedAt = '2026-04-10T11:00:00Z';
+    let rpcCalls = 0;
+    const rpc = vi.fn(async () => {
+      rpcCalls += 1;
+      if (rpcCalls === 1) {
+        return {
+          data: null,
+          error: { code: 'XX000', message: 'connection lost after committed receipt transition' },
+        };
+      }
+      authoritativeStatus = 'approved';
+      authoritativeUpdatedAt = '2026-04-10T12:00:00Z';
+      return {
+        data: [{ id: 'receipt-row-1', status: authoritativeStatus, updated_at: authoritativeUpdatedAt }],
+        error: null,
+      };
+    });
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        rpc,
+        from: vi.fn((table: string) => {
+          if (table === 'receipts') {
+            return {
+              select: vi.fn(() => ({
+                order: vi.fn().mockResolvedValue({
+                  data: [{
+                    id: 'receipt-row-1', updated_at: authoritativeUpdatedAt, event_id: 'event-row-1',
+                    contractor_id: 'profile-uuid-1', status: authoritativeStatus,
+                  }],
+                  error: null,
+                }),
+              })),
+            };
+          }
+          const data = table === 'profiles'
+            ? [{ id: 'profile-uuid-1' }]
+            : [{ id: 'event-row-1' }];
+          return {
+            select: vi.fn(() => ({
+              order: vi.fn(() => ({ order: vi.fn().mockResolvedValue({ data, error: null }) })),
+            })),
+          };
+        }),
+      },
+    }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapReceipt: vi.fn((row: Record<string, unknown>) => ({
+        ...createSnapshot().receipts[0],
+        supabaseId: row.id,
+        updatedAt: row.updated_at,
+        status: row.status,
+      })),
+    }));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const { updateReceiptStatus } = await import('./receipts.service');
+
+      await expect(updateReceiptStatus(1, 'submit')).rejects.toThrow(
+        'Operaci s účtenkami se nepodařilo dokončit.',
+      );
+      expect(snapshot.receipts[0]).toMatchObject({
+        status: 'submitted', updatedAt: '2026-04-10T11:00:00Z',
+      });
+
+      await expect(updateReceiptStatus(1, 'approve')).resolves.toMatchObject({
+        status: 'approved', updatedAt: '2026-04-10T12:00:00Z',
+      });
+      expect(rpc).toHaveBeenCalledTimes(2);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('recovers a lost create response by its one stable client UUID without inserting twice', async () => {
+    let snapshot = createSnapshot({ receipts: [] });
+    let insertedRow: Record<string, unknown> | null = null;
+    const insert = vi.fn((payload: Record<string, unknown>) => {
+      insertedRow = {
+        ...payload,
+        updated_at: '2026-04-12T10:00:00Z',
+      };
+      return {
+        select: vi.fn(() => ({
+          single: vi.fn().mockResolvedValue({
+            data: null,
+            error: { code: 'XX000', message: 'connection lost after receipt insert commit' },
+          }),
+        })),
+      };
+    });
+    vi.stubGlobal('crypto', { randomUUID: vi.fn(() => 'receipt-client-uuid') });
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: vi.fn((table: string) => {
+          if (table === 'receipts') {
+            return {
+              insert,
+              select: vi.fn(() => ({
+                order: vi.fn(async () => ({ data: insertedRow ? [insertedRow] : [], error: null })),
+              })),
+            };
+          }
+          const data = table === 'profiles'
+            ? [{ id: 'profile-uuid-1' }]
+            : [{ id: 'event-row-1' }];
+          return {
+            select: vi.fn(() => ({
+              order: vi.fn(() => ({ order: vi.fn().mockResolvedValue({ data, error: null }) })),
+            })),
+          };
+        }),
+      },
+    }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapReceipt: vi.fn((row: Record<string, unknown>) => ({
+        id: Number.NaN,
+        supabaseId: row.id,
+        updatedAt: row.updated_at,
+        eventSupabaseId: row.event_id,
+        contractorProfileId: row.contractor_id,
+        eid: Number.NaN,
+        job: row.job_number,
+        title: row.name,
+        vendor: row.supplier,
+        amount: row.amount,
+        paidAt: row.paid_at,
+        note: row.note,
+        status: row.status,
+      })),
+    }));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const { saveReceipt } = await import('./receipts.service');
+      const created = await saveReceipt({
+        id: 1, contractorProfileId: 'profile-uuid-1', eid: 1, eventSupabaseId: 'event-row-1',
+        job: 'AK001', title: 'Taxi', vendor: 'Bolt', amount: 300, paidAt: '2026-04-12',
+        note: '', status: 'draft',
+      });
+
+      expect(insert).toHaveBeenCalledTimes(1);
+      expect(insert).toHaveBeenCalledWith(expect.objectContaining({ id: 'receipt-client-uuid' }));
+      expect(created).toMatchObject({
+        supabaseId: 'receipt-client-uuid', updatedAt: '2026-04-12T10:00:00Z', title: 'Taxi',
+      });
       expect(snapshot.receipts).toHaveLength(1);
     } finally {
       consoleError.mockRestore();

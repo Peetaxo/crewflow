@@ -415,9 +415,37 @@ export const createEmptyReceipt = (
   });
 };
 
-export const updateReceiptStatus = async (id: number, action: ReceiptAction): Promise<ReceiptItem> => runReceiptMutation(
-  String(id),
-  async ({ markRequestStarted, markCanonicalCommit }) => {
+export const updateReceiptStatus = async (id: number, action: ReceiptAction): Promise<ReceiptItem> => {
+  const mutationEpoch = receiptsHydrationEpoch;
+  const initiatingSnapshot = getLocalAppState();
+  const initiatingMatches = appDataSource === 'supabase'
+    ? (initiatingSnapshot.receipts ?? []).filter((receipt) => receipt.id === id)
+    : [];
+  const initiatingReceipt = initiatingMatches.length === 1
+    ? { ...initiatingMatches[0] }
+    : null;
+
+  if (
+    appDataSource === 'supabase'
+    && (
+      !initiatingReceipt?.supabaseId
+      || !initiatingReceipt.updatedAt
+      || initiatingMatches.length !== 1
+      || initiatingSnapshot.receipts.filter(
+        (receipt) => receipt.supabaseId === initiatingReceipt.supabaseId,
+      ).length !== 1
+    )
+  ) {
+    throw new Error(RECEIPT_INVALID_ERROR);
+  }
+
+  return runReceiptMutation(
+    initiatingReceipt?.supabaseId ?? String(id),
+    async ({ markRequestStarted, markCanonicalCommit }) => {
+  requireCurrentReceiptMutationEpoch(
+    appDataSource === 'supabase' ? mutationEpoch : undefined,
+    RECEIPT_WRITE_GENERIC_ERROR,
+  );
   const statusMap: Record<ReceiptAction, ReceiptStatus> = {
     submit: 'submitted',
     approve: 'approved',
@@ -425,7 +453,8 @@ export const updateReceiptStatus = async (id: number, action: ReceiptAction): Pr
     reject: 'rejected',
   };
   const nextStatus = statusMap[action];
-  const currentReceipt = (getLocalAppState().receipts ?? []).find((receipt) => receipt.id === id);
+  const currentReceipt = initiatingReceipt
+    ?? (getLocalAppState().receipts ?? []).find((receipt) => receipt.id === id);
   if (!currentReceipt || !isAllowedReceiptTransition(currentReceipt.status, nextStatus)) {
     throw new Error(RECEIPT_INVALID_ERROR);
   }
@@ -441,7 +470,13 @@ export const updateReceiptStatus = async (id: number, action: ReceiptAction): Pr
       expectedStatus: currentReceipt.status,
       nextStatus,
     });
+    requireCurrentReceiptMutationEpoch(mutationEpoch, RECEIPT_WRITE_GENERIC_ERROR);
     markCanonicalCommit();
+    const currentStableMatches = (getLocalAppState().receipts ?? [])
+      .filter((receipt) => receipt.supabaseId === currentReceipt.supabaseId);
+    if (currentStableMatches.length !== 1) {
+      throw new Error(RECEIPT_WRITE_CONFLICT_ERROR);
+    }
     updatedReceipt = reconcileReceiptStatus(canonical);
   } else {
     updatedReceipt = null;
@@ -459,8 +494,13 @@ export const updateReceiptStatus = async (id: number, action: ReceiptAction): Pr
 
   invalidateReceiptQueries();
   return updatedReceipt;
-  },
-);
+    },
+    {
+      expectedEpoch: appDataSource === 'supabase' ? mutationEpoch : undefined,
+      epochErrorMessage: RECEIPT_WRITE_GENERIC_ERROR,
+    },
+  );
+};
 
 const matchesSavedReceipt = (actual: ReceiptItem, expected: ReceiptItem): boolean => (
   actual.supabaseId === expected.supabaseId
@@ -692,10 +732,39 @@ export const saveReceipt = async (updated: ReceiptItem): Promise<ReceiptItem> =>
   }
 };
 
-export const deleteReceipt = async (id: number): Promise<{ id: number }> => runReceiptMutation(
-  String(id),
-  async ({ markRequestStarted, markCanonicalCommit }) => {
-  const currentReceipt = (getLocalAppState().receipts ?? []).find((receipt) => receipt.id === id);
+export const deleteReceipt = async (id: number): Promise<{ id: number }> => {
+  const mutationEpoch = receiptsHydrationEpoch;
+  const initiatingSnapshot = getLocalAppState();
+  const initiatingMatches = appDataSource === 'supabase'
+    ? (initiatingSnapshot.receipts ?? []).filter((receipt) => receipt.id === id)
+    : [];
+  const initiatingReceipt = initiatingMatches.length === 1
+    ? { ...initiatingMatches[0] }
+    : null;
+
+  if (
+    appDataSource === 'supabase'
+    && (
+      !initiatingReceipt?.supabaseId
+      || !initiatingReceipt.updatedAt
+      || initiatingMatches.length !== 1
+      || initiatingSnapshot.receipts.filter(
+        (receipt) => receipt.supabaseId === initiatingReceipt.supabaseId,
+      ).length !== 1
+    )
+  ) {
+    throw new Error(RECEIPT_DELETE_CONFLICT_ERROR);
+  }
+
+  return runReceiptMutation(
+    initiatingReceipt?.supabaseId ?? String(id),
+    async ({ markRequestStarted, markCanonicalCommit }) => {
+  requireCurrentReceiptMutationEpoch(
+    appDataSource === 'supabase' ? mutationEpoch : undefined,
+    RECEIPT_DELETE_GENERIC_ERROR,
+  );
+  const currentReceipt = initiatingReceipt
+    ?? (getLocalAppState().receipts ?? []).find((receipt) => receipt.id === id);
   if (!currentReceipt) {
     throw new Error(RECEIPT_DELETE_CONFLICT_ERROR);
   }
@@ -734,9 +803,22 @@ export const deleteReceipt = async (id: number): Promise<{ id: number }> => runR
       console.error('Unexpected receipt delete response', receiptDelete.data);
       throw new Error(RECEIPT_DELETE_GENERIC_ERROR);
     }
+    requireCurrentReceiptMutationEpoch(mutationEpoch, RECEIPT_DELETE_GENERIC_ERROR);
     markCanonicalCommit();
   }
 
+  const currentStableMatches = stableReceiptId
+    ? (getLocalAppState().receipts ?? [])
+      .filter((receipt) => receipt.supabaseId === stableReceiptId)
+    : [];
+  if (stableReceiptId && currentStableMatches.length > 1) {
+    throw new Error(RECEIPT_DELETE_CONFLICT_ERROR);
+  }
+  const deletedLocalId = currentStableMatches[0]?.id ?? id;
+  requireCurrentReceiptMutationEpoch(
+    appDataSource === 'supabase' ? mutationEpoch : undefined,
+    RECEIPT_DELETE_GENERIC_ERROR,
+  );
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     receipts: snapshot.receipts.filter((receipt) => (
@@ -745,9 +827,14 @@ export const deleteReceipt = async (id: number): Promise<{ id: number }> => runR
   }));
 
   invalidateReceiptQueries();
-  return { id };
-  },
-);
+  return { id: deletedLocalId };
+    },
+    {
+      expectedEpoch: appDataSource === 'supabase' ? mutationEpoch : undefined,
+      epochErrorMessage: RECEIPT_DELETE_GENERIC_ERROR,
+    },
+  );
+};
 
 export const markApprovedReceiptsAsAttached = async (): Promise<ReceiptItem[]> => {
   if (appDataSource === 'supabase') {

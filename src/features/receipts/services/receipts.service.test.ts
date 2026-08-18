@@ -428,6 +428,89 @@ describe('receipts.service write flow', () => {
     };
   };
 
+  const setupQueuedReceiptMutationHarness = async () => {
+    let snapshot = createSnapshot({
+      receipts: [
+        {
+          ...createSnapshot().receipts[0],
+          id: 1,
+          title: 'Receipt A',
+          supabaseId: 'receipt-uuid-a',
+          updatedAt: '2026-04-10T10:00:00Z',
+        },
+        {
+          ...createSnapshot().receipts[0],
+          id: 2,
+          title: 'Receipt B',
+          supabaseId: 'receipt-uuid-b',
+          updatedAt: '2026-04-10T10:00:01Z',
+        },
+      ],
+    });
+    const rpc = vi.fn().mockImplementation(async (
+      _name: string,
+      args: { p_receipts: Array<{ id: string }> },
+    ) => ({
+      data: [{
+        id: args.p_receipts[0].id,
+        status: 'submitted',
+        updated_at: '2026-04-10T11:00:00Z',
+      }],
+      error: null,
+    }));
+    let deletedId = '';
+    const deleteSingle = vi.fn(async () => ({ data: { id: deletedId }, error: null }));
+    const deleteSelect = vi.fn(() => ({ single: deleteSingle }));
+    const deleteStatusIn = vi.fn(() => ({ select: deleteSelect }));
+    const deleteVersionEq = vi.fn(() => ({ in: deleteStatusIn }));
+    const deleteIdEq = vi.fn((_column: string, value: string) => {
+      deletedId = value;
+      return { eq: deleteVersionEq };
+    });
+    const deleteReceiptRow = vi.fn(() => ({ eq: deleteIdEq }));
+    const from = vi.fn(() => ({ delete: deleteReceiptRow }));
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: { from, rpc },
+    }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+    vi.doMock('../../../lib/supabase-mappers', () => ({ mapReceipt: vi.fn() }));
+
+    const service = await import('./receipts.service');
+    const { runLifecycleDataMutation } = await import('../../event-lifecycle-generation');
+    return {
+      service,
+      rpc,
+      from,
+      deleteIdEq,
+      deleteVersionEq,
+      deleteStatusIn,
+      getSnapshot: () => structuredClone(snapshot),
+      setSnapshot: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+      },
+      holdQueue: () => {
+        const blocker = createDeferred<void>();
+        const pending = runLifecycleDataMutation(['receipt:test-blocker'], () => blocker.promise);
+        return {
+          release: async () => {
+            blocker.resolve(undefined);
+            await pending;
+          },
+        };
+      },
+    };
+  };
+
   it('routes receipt writes without positional receipt or event identity helpers', () => {
     const serviceSource = readFileSync(resolve(
       process.cwd(),
@@ -549,6 +632,103 @@ describe('receipts.service write flow', () => {
     expect(updated.updatedAt).toBe('2026-04-10T11:00:00Z');
     expect(snapshot.receipts[0].status).toBe('submitted');
     expect(snapshot.receipts[0].updatedAt).toBe('2026-04-10T11:00:00Z');
+  });
+
+  it('pins a queued status transition to the initiating receipt UUID and version across local-id reindex', async () => {
+    const harness = await setupQueuedReceiptMutationHarness();
+    const queue = harness.holdQueue();
+    const pending = harness.service.updateReceiptStatus(1, 'submit');
+    harness.setSnapshot((snapshot) => ({
+      ...snapshot,
+      receipts: snapshot.receipts.map((receipt) => ({
+        ...receipt,
+        id: receipt.supabaseId === 'receipt-uuid-a' ? 2 : 1,
+      })),
+    }));
+
+    await queue.release();
+    await expect(pending).resolves.toMatchObject({
+      id: 2,
+      supabaseId: 'receipt-uuid-a',
+      status: 'submitted',
+      updatedAt: '2026-04-10T11:00:00Z',
+    });
+
+    expect(harness.rpc).toHaveBeenCalledWith('transition_receipt_statuses_atomic', {
+      p_receipts: [{ id: 'receipt-uuid-a', expected_updated_at: '2026-04-10T10:00:00Z' }],
+      p_expected_status: 'draft',
+      p_next_status: 'submitted',
+    });
+    expect(harness.getSnapshot().receipts.find((receipt) => receipt.supabaseId === 'receipt-uuid-a'))
+      .toMatchObject({ id: 2, status: 'submitted', updatedAt: '2026-04-10T11:00:00Z' });
+    expect(harness.getSnapshot().receipts.find((receipt) => receipt.supabaseId === 'receipt-uuid-b'))
+      .toMatchObject({ id: 1, status: 'draft', updatedAt: '2026-04-10T10:00:01Z' });
+  });
+
+  it('pins a queued delete to the initiating receipt UUID, version and status across local-id reindex', async () => {
+    const harness = await setupQueuedReceiptMutationHarness();
+    const queue = harness.holdQueue();
+    const pending = harness.service.deleteReceipt(1);
+    harness.setSnapshot((snapshot) => ({
+      ...snapshot,
+      receipts: snapshot.receipts.map((receipt) => ({
+        ...receipt,
+        id: receipt.supabaseId === 'receipt-uuid-a' ? 2 : 1,
+      })),
+    }));
+
+    await queue.release();
+    await expect(pending).resolves.toEqual({ id: 2 });
+
+    expect(harness.deleteIdEq).toHaveBeenCalledWith('id', 'receipt-uuid-a');
+    expect(harness.deleteVersionEq).toHaveBeenCalledWith('updated_at', '2026-04-10T10:00:00Z');
+    expect(harness.deleteStatusIn).toHaveBeenCalledWith('status', ['draft', 'rejected']);
+    expect(harness.getSnapshot().receipts).toEqual([
+      expect.objectContaining({ id: 1, supabaseId: 'receipt-uuid-b', title: 'Receipt B' }),
+    ]);
+  });
+
+  it.each([
+    ['status', 'Účtenku se nepodařilo uložit.'],
+    ['delete', 'Účtenku se nepodařilo smazat.'],
+  ] as const)('rejects a queued %s after auth reset without making a request', async (operation, message) => {
+    const harness = await setupQueuedReceiptMutationHarness();
+    const queue = harness.holdQueue();
+    const pending = operation === 'status'
+      ? harness.service.updateReceiptStatus(1, 'submit')
+      : harness.service.deleteReceipt(1);
+    const captured = pending.then(
+      (value) => ({ value, error: null }),
+      (error: unknown) => ({ value: null, error }),
+    );
+
+    harness.service.resetSupabaseReceiptsHydration();
+    await queue.release();
+    const outcome = await captured;
+
+    expect(outcome.value).toBeNull();
+    expect(outcome.error).toEqual(expect.objectContaining({ message }));
+    expect(harness.rpc).not.toHaveBeenCalled();
+    expect(harness.from).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['status', 'Účtenka obsahuje neplatné nebo neúplné údaje.'],
+    ['delete', 'Účtenka se mezitím změnila. Obnovte data a zkuste to znovu.'],
+  ] as const)('fails closed before queueing an ambiguous local-id %s', async (operation, message) => {
+    const harness = await setupQueuedReceiptMutationHarness();
+    harness.setSnapshot((snapshot) => ({
+      ...snapshot,
+      receipts: snapshot.receipts.map((receipt) => ({ ...receipt, id: 1 })),
+    }));
+
+    const pending = operation === 'status'
+      ? harness.service.updateReceiptStatus(1, 'submit')
+      : harness.service.deleteReceipt(1);
+
+    await expect(pending).rejects.toThrow(message);
+    expect(harness.rpc).not.toHaveBeenCalled();
+    expect(harness.from).not.toHaveBeenCalled();
   });
 
   it('reconciles a deferred status response to receipt B by UUID after A deletion and B/C reindex', async () => {
@@ -1091,7 +1271,7 @@ describe('receipts.service write flow', () => {
     };
     resolveDelete?.({ data: { id: 'receipt-uuid-delete' }, error: null });
 
-    await expect(pendingDelete).resolves.toEqual({ id: 1 });
+    await expect(pendingDelete).resolves.toEqual({ id: 2 });
     expect(snapshot.receipts).toHaveLength(1);
     expect(snapshot.receipts[0]).toMatchObject({ id: 1, supabaseId: 'receipt-uuid-keep', title: 'Keep me' });
   });

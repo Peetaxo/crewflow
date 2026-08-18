@@ -27,6 +27,83 @@ const RECEIPT_WRITE_UNAUTHORIZED_ERROR = 'Účtenku nelze uložit, protože k n�
 const RECEIPT_INVALID_ERROR = 'Účtenka obsahuje neplatné nebo neúplné údaje.';
 let receiptsHydrationPromise: Promise<void> | null = null;
 let receiptsLoaded = false;
+let receiptsHydrationEpoch = 0;
+type ReceiptCreateIntent = {
+  localId: number;
+  supabaseId: string;
+  ambiguous: boolean;
+  activeReservations: number;
+};
+type ReceiptSaveIdentity = {
+  supabaseId: string;
+  source: 'explicit' | 'canonical' | 'create';
+  createIntent?: ReceiptCreateIntent;
+};
+const receiptCreateIntentByLocalId = new Map<number, ReceiptCreateIntent>();
+
+const reserveReceiptSaveIdentity = (receipt: ReceiptItem): ReceiptSaveIdentity => {
+  if (receipt.supabaseId) {
+    return { supabaseId: receipt.supabaseId, source: 'explicit' };
+  }
+
+  const localMatches = (getLocalAppState().receipts ?? []).filter((item) => item.id === receipt.id);
+  const canonicalIds = [...new Set(
+    localMatches.map((item) => item.supabaseId).filter((id): id is string => Boolean(id)),
+  )];
+  if (canonicalIds.length > 1) {
+    throw new Error(RECEIPT_WRITE_CONFLICT_ERROR);
+  }
+  if (canonicalIds[0]) {
+    return { supabaseId: canonicalIds[0], source: 'canonical' };
+  }
+
+  let intent = receiptCreateIntentByLocalId.get(receipt.id);
+  if (!intent) {
+    const supabaseId = globalThis.crypto?.randomUUID();
+    if (!supabaseId) {
+      console.error('Receipt create requires a stable client UUID');
+      throw new Error(RECEIPT_WRITE_GENERIC_ERROR);
+    }
+    intent = {
+      localId: receipt.id,
+      supabaseId,
+      ambiguous: false,
+      activeReservations: 0,
+    };
+    receiptCreateIntentByLocalId.set(receipt.id, intent);
+  }
+  intent.activeReservations += 1;
+  return { supabaseId: intent.supabaseId, source: 'create', createIntent: intent };
+};
+
+const releaseReceiptSaveIdentity = (identity: ReceiptSaveIdentity | null): void => {
+  if (identity?.createIntent) {
+    identity.createIntent.activeReservations = Math.max(0, identity.createIntent.activeReservations - 1);
+  }
+};
+
+const clearReceiptCreateIntent = (localId: number | null, supabaseId: string | null): void => {
+  if (localId != null) {
+    const intent = receiptCreateIntentByLocalId.get(localId);
+    if (!supabaseId || intent?.supabaseId === supabaseId) {
+      receiptCreateIntentByLocalId.delete(localId);
+    }
+  }
+  if (!supabaseId) return;
+  for (const [intentLocalId, intent] of receiptCreateIntentByLocalId.entries()) {
+    if (intent.supabaseId === supabaseId) {
+      receiptCreateIntentByLocalId.delete(intentLocalId);
+    }
+  }
+};
+
+const resetInactiveReceiptCreateIntents = (): void => {
+  for (const [localId, intent] of receiptCreateIntentByLocalId.entries()) {
+    if (intent.activeReservations === 0) {
+      receiptCreateIntentByLocalId.delete(localId);
+    }
+  }
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> => (
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -146,14 +223,23 @@ const loadReceiptsSnapshot = async (): Promise<ReceiptItem[]> => {
   );
 };
 
-export const fetchReceiptsSnapshot = async (): Promise<ReceiptItem[]> => {
+type ReceiptSnapshotGenerationResult = {
+  receipts: ReceiptItem[];
+  committed: boolean;
+};
+
+const loadReceiptSnapshotForGeneration = async (): Promise<ReceiptSnapshotGenerationResult> => {
   const generation = getLifecycleSnapshotGeneration();
   const receipts = await loadReceiptsSnapshot();
   if (generation !== getLifecycleSnapshotGeneration()) {
-    return getLocalAppState().receipts ?? [];
+    return { receipts: getLocalAppState().receipts ?? [], committed: false };
   }
-  return receipts;
+  return { receipts, committed: true };
 };
+
+export const fetchReceiptsSnapshot = async (): Promise<ReceiptItem[]> => (
+  (await loadReceiptSnapshotForGeneration()).receipts
+);
 
 const commitReceiptsSnapshot = (receipts: ReceiptItem[]): void => {
   updateLocalAppState((snapshot) => ({
@@ -161,6 +247,7 @@ const commitReceiptsSnapshot = (receipts: ReceiptItem[]): void => {
     receipts,
   }));
   queryClient.setQueryData(queryKeys.receipts.all, receipts);
+  resetInactiveReceiptCreateIntents();
 };
 
 const runReceiptMutation = <T>(
@@ -205,11 +292,11 @@ const runReceiptMutation = <T>(
   }
 });
 
-const hydrateReceiptsFromSupabase = async (): Promise<void> => {
-  const generation = getLifecycleSnapshotGeneration();
-  const supabaseReceipts = await loadReceiptsSnapshot();
-  if (generation !== getLifecycleSnapshotGeneration()) return;
-  commitReceiptsSnapshot(supabaseReceipts);
+const hydrateReceiptsFromSupabase = async (): Promise<boolean> => {
+  const result = await loadReceiptSnapshotForGeneration();
+  if (!result.committed) return false;
+  commitReceiptsSnapshot(result.receipts);
+  return true;
 };
 
 const ensureSupabaseReceiptsLoaded = () => {
@@ -225,15 +312,23 @@ const ensureSupabaseReceiptsLoaded = () => {
     return;
   }
 
+  const hydrationEpoch = receiptsHydrationEpoch;
+  let retryAfterStaleHydration = false;
   receiptsHydrationPromise = hydrateReceiptsFromSupabase()
-    .then(() => {
-      receiptsLoaded = true;
+    .then((committed) => {
+      if (hydrationEpoch !== receiptsHydrationEpoch) return;
+      receiptsLoaded = committed;
+      retryAfterStaleHydration = !committed;
     })
     .catch((error) => {
       console.warn('Nepodarilo se nacist uctenky ze Supabase, zustavam na lokalnich datech.', error);
     })
     .finally(() => {
+      if (hydrationEpoch !== receiptsHydrationEpoch) return;
       receiptsHydrationPromise = null;
+      if (retryAfterStaleHydration) {
+        ensureSupabaseReceiptsLoaded();
+      }
     });
 };
 
@@ -388,10 +483,14 @@ const matchesCreatedReceipt = (actual: ReceiptItem, expected: ReceiptItem): bool
 );
 
 export const saveReceipt = async (updated: ReceiptItem): Promise<ReceiptItem> => {
+  const saveIdentity = appDataSource === 'supabase'
+    ? reserveReceiptSaveIdentity(updated)
+    : null;
   let recoverCreatedReceipt: ((receipts: ReceiptItem[]) => ReceiptItem | undefined) | undefined;
-  return runReceiptMutation(
-    updated.supabaseId ?? String(updated.id),
-    async ({ markRequestStarted, markCanonicalCommit }) => {
+  try {
+    return await runReceiptMutation(
+      saveIdentity?.supabaseId ?? String(updated.id),
+      async ({ markRequestStarted, markCanonicalCommit }) => {
       let normalizedReceipt = normalizeReceipt({ ...updated });
 
       if (!normalizedReceipt.eid || !normalizedReceipt.contractorProfileId || !normalizedReceipt.title || normalizedReceipt.amount <= 0) {
@@ -403,11 +502,38 @@ export const saveReceipt = async (updated: ReceiptItem): Promise<ReceiptItem> =>
           console.error('Receipt save requires an available Supabase client');
           throw new Error(RECEIPT_WRITE_GENERIC_ERROR);
         }
+        if (!saveIdentity) {
+          console.error('Receipt save requires a stable identity');
+          throw new Error(RECEIPT_WRITE_GENERIC_ERROR);
+        }
+        normalizedReceipt = {
+          ...normalizedReceipt,
+          supabaseId: saveIdentity.supabaseId,
+        };
         const currentSnapshot = getLocalAppState();
-        const existing = normalizedReceipt.supabaseId
-          ? (currentSnapshot.receipts ?? []).find((receipt) => receipt.supabaseId === normalizedReceipt.supabaseId)
-          : (currentSnapshot.receipts ?? []).find((receipt) => receipt.id === normalizedReceipt.id);
-        if (normalizedReceipt.supabaseId && !existing) {
+        const currentLocalStableIds = [...new Set(
+          (currentSnapshot.receipts ?? [])
+            .filter((receipt) => receipt.id === updated.id)
+            .map((receipt) => receipt.supabaseId)
+            .filter((id): id is string => Boolean(id)),
+        )];
+        if (
+          !updated.supabaseId
+          && currentLocalStableIds.length > 0
+          && !currentLocalStableIds.includes(saveIdentity.supabaseId)
+        ) {
+          throw new Error(RECEIPT_WRITE_CONFLICT_ERROR);
+        }
+        const existingMatches = (currentSnapshot.receipts ?? [])
+          .filter((receipt) => receipt.supabaseId === saveIdentity.supabaseId);
+        if (existingMatches.length > 1) {
+          throw new Error(RECEIPT_WRITE_CONFLICT_ERROR);
+        }
+        let existing = existingMatches[0];
+        if (saveIdentity.source === 'explicit' && !existing) {
+          throw new Error(RECEIPT_WRITE_CONFLICT_ERROR);
+        }
+        if (saveIdentity.source === 'canonical' && !existing) {
           throw new Error(RECEIPT_WRITE_CONFLICT_ERROR);
         }
         const contractorRowId = normalizedReceipt.contractorProfileId;
@@ -431,6 +557,45 @@ export const saveReceipt = async (updated: ReceiptItem): Promise<ReceiptItem> =>
           paid_at: normalizedReceipt.paidAt,
           note: normalizedReceipt.note,
         };
+
+        if (!existing) {
+          if (normalizedReceipt.status !== 'draft') {
+            throw new Error(RECEIPT_INVALID_ERROR);
+          }
+          normalizedReceipt = {
+            ...normalizedReceipt,
+            eventSupabaseId: eventRowId,
+            status: 'draft',
+          };
+          const expectedReceipt = normalizedReceipt;
+          recoverCreatedReceipt = (receipts) => {
+            const matches = receipts.filter((receipt) => receipt.supabaseId === saveIdentity.supabaseId);
+            if (matches.length !== 1 || !matchesCreatedReceipt(matches[0], expectedReceipt)) {
+              return undefined;
+            }
+            clearReceiptCreateIntent(updated.id, saveIdentity.supabaseId);
+            return matches[0];
+          };
+
+          if (saveIdentity.createIntent?.ambiguous) {
+            let receipts: ReceiptItem[];
+            try {
+              receipts = await loadReceiptsSnapshot();
+            } catch (recoveryError) {
+              console.error('Authoritative receipt create preflight failed', recoveryError);
+              throw new Error(RECEIPT_WRITE_GENERIC_ERROR);
+            }
+            advanceLifecycleSnapshotGeneration();
+            commitReceiptsSnapshot(receipts);
+            const recovered = recoverCreatedReceipt(receipts);
+            if (recovered) return recovered;
+            if (receipts.some((receipt) => receipt.supabaseId === saveIdentity.supabaseId)) {
+              throw new Error(RECEIPT_WRITE_CONFLICT_ERROR);
+            }
+            saveIdentity.createIntent.ambiguous = false;
+            existing = undefined;
+          }
+        }
 
         if (existing) {
           if (
@@ -471,33 +636,13 @@ export const saveReceipt = async (updated: ReceiptItem): Promise<ReceiptItem> =>
             status: receiptUpdate.data.status,
           };
         } else {
-          if (normalizedReceipt.status !== 'draft') {
-            throw new Error(RECEIPT_INVALID_ERROR);
+          if (saveIdentity.createIntent) {
+            saveIdentity.createIntent.ambiguous = true;
           }
-          const clientId = globalThis.crypto?.randomUUID();
-          if (!clientId) {
-            console.error('Receipt create requires a stable client UUID');
-            throw new Error(RECEIPT_WRITE_GENERIC_ERROR);
-          }
-          normalizedReceipt = {
-            ...normalizedReceipt,
-            supabaseId: clientId,
-            eventSupabaseId: eventRowId,
-            status: 'draft',
-          };
-          const expectedReceipt = normalizedReceipt;
-          recoverCreatedReceipt = (receipts) => {
-            const matches = receipts.filter((receipt) => receipt.supabaseId === clientId);
-            if (matches.length !== 1 || !matchesCreatedReceipt(matches[0], expectedReceipt)) {
-              return undefined;
-            }
-            return matches[0];
-          };
-
           markRequestStarted();
           const receiptInsert = await supabase
             .from('receipts')
-            .insert({ id: clientId, ...payload, status: 'draft' })
+            .insert({ id: saveIdentity.supabaseId, ...payload, status: 'draft' })
             .select('id,updated_at,event_id,status')
             .single();
 
@@ -505,7 +650,7 @@ export const saveReceipt = async (updated: ReceiptItem): Promise<ReceiptItem> =>
             throw mapReceiptWriteError('create', receiptInsert.error);
           }
           if (
-            receiptInsert.data?.id !== clientId
+            receiptInsert.data?.id !== saveIdentity.supabaseId
             || typeof receiptInsert.data.updated_at !== 'string'
             || receiptInsert.data.event_id !== eventRowId
             || receiptInsert.data.status !== 'draft'
@@ -551,11 +696,15 @@ export const saveReceipt = async (updated: ReceiptItem): Promise<ReceiptItem> =>
       });
 
       if (!committedReceipt) throw new Error(RECEIPT_WRITE_CONFLICT_ERROR);
+      clearReceiptCreateIntent(updated.id, committedReceipt.supabaseId ?? null);
       invalidateReceiptQueries();
       return committedReceipt;
-    },
-    { recover: (receipts) => recoverCreatedReceipt?.(receipts) },
-  );
+      },
+      { recover: (receipts) => recoverCreatedReceipt?.(receipts) },
+    );
+  } finally {
+    releaseReceiptSaveIdentity(saveIdentity);
+  }
 };
 
 export const deleteReceipt = async (id: number): Promise<{ id: number }> => runReceiptMutation(
@@ -602,6 +751,8 @@ export const deleteReceipt = async (id: number): Promise<{ id: number }> => runR
     }
     markCanonicalCommit();
   }
+
+  clearReceiptCreateIntent(id, stableReceiptId ?? null);
 
   updateLocalAppState((snapshot) => ({
     ...snapshot,
@@ -726,6 +877,8 @@ export const subscribeToReceiptChanges = (listener: () => void): (() => void) =>
 };
 
 export const resetSupabaseReceiptsHydration = () => {
+  receiptsHydrationEpoch += 1;
   receiptsHydrationPromise = null;
   receiptsLoaded = false;
+  receiptCreateIntentByLocalId.clear();
 };

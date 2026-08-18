@@ -85,6 +85,153 @@ describe('receipts.service write flow', () => {
     vi.unstubAllGlobals();
   });
 
+  const setupReceiptCreateIntentHarness = async ({
+    loseFirstInsertResponse = false,
+    failFirstRecovery = false,
+  } = {}) => {
+    let snapshot = createSnapshot({ receipts: [] });
+    let authoritativeReceiptRow: Record<string, unknown> | null = null;
+    let recoveryFailuresRemaining = failFirstRecovery ? 1 : 0;
+    let version = 0;
+    const uuid = vi.fn()
+      .mockReturnValueOnce('receipt-client-uuid-1')
+      .mockReturnValueOnce('receipt-client-uuid-2')
+      .mockReturnValue('receipt-client-uuid-3');
+    vi.stubGlobal('crypto', { randomUUID: uuid });
+
+    const mutationResponse = () => ({
+      id: authoritativeReceiptRow?.id,
+      updated_at: authoritativeReceiptRow?.updated_at,
+      event_id: authoritativeReceiptRow?.event_id,
+      status: authoritativeReceiptRow?.status,
+    });
+    const insert = vi.fn((payload: Record<string, unknown>) => {
+      version += 1;
+      authoritativeReceiptRow = {
+        ...payload,
+        updated_at: `2026-04-12T1${version}:00:00Z`,
+      };
+      return {
+        select: vi.fn(() => ({
+          single: vi.fn().mockResolvedValue(
+            loseFirstInsertResponse && insert.mock.calls.length === 1
+              ? { data: null, error: { code: 'XX000', message: 'connection lost after committed insert' } }
+              : { data: mutationResponse(), error: null },
+          ),
+        })),
+      };
+    });
+    const updateSingle = vi.fn(async () => {
+      version += 1;
+      authoritativeReceiptRow = {
+        ...authoritativeReceiptRow,
+        updated_at: `2026-04-12T1${version}:00:00Z`,
+      };
+      return { data: mutationResponse(), error: null };
+    });
+    const updateSelect = vi.fn(() => ({ single: updateSingle }));
+    const updateStatusEq = vi.fn(() => ({ select: updateSelect }));
+    const updateVersionEq = vi.fn(() => ({ eq: updateStatusEq }));
+    const updateIdEq = vi.fn(() => ({ eq: updateVersionEq }));
+    const update = vi.fn((payload: Record<string, unknown>) => {
+      authoritativeReceiptRow = { ...authoritativeReceiptRow, ...payload };
+      return { eq: updateIdEq };
+    });
+    const deleteSingle = vi.fn(async () => {
+      const id = authoritativeReceiptRow?.id;
+      authoritativeReceiptRow = null;
+      return { data: { id }, error: null };
+    });
+    const deleteSelect = vi.fn(() => ({ single: deleteSingle }));
+    const deleteStatusIn = vi.fn(() => ({ select: deleteSelect }));
+    const deleteVersionEq = vi.fn(() => ({ in: deleteStatusIn }));
+    const deleteIdEq = vi.fn(() => ({ eq: deleteVersionEq }));
+    const deleteReceiptRow = vi.fn(() => ({ eq: deleteIdEq }));
+
+    const receiptsOrder = vi.fn(async () => {
+      if (recoveryFailuresRemaining > 0) {
+        recoveryFailuresRemaining -= 1;
+        return { data: [], error: { message: 'temporary receipt refresh failure' } };
+      }
+      return {
+        data: authoritativeReceiptRow ? [structuredClone(authoritativeReceiptRow)] : [],
+        error: null,
+      };
+    });
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: vi.fn((table: string) => {
+          if (table === 'receipts') {
+            return {
+              insert,
+              update,
+              delete: deleteReceiptRow,
+              select: vi.fn(() => ({ order: receiptsOrder })),
+            };
+          }
+          const data = table === 'profiles'
+            ? [{ id: 'profile-uuid-1' }]
+            : [{ id: 'event-row-1' }];
+          return {
+            select: vi.fn(() => ({
+              order: vi.fn(() => ({ order: vi.fn().mockResolvedValue({ data, error: null }) })),
+            })),
+          };
+        }),
+      },
+    }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapReceipt: vi.fn((row: Record<string, unknown>) => ({
+        id: Number.NaN,
+        supabaseId: row.id,
+        updatedAt: row.updated_at,
+        eventSupabaseId: row.event_id,
+        contractorProfileId: row.contractor_id,
+        eid: Number.NaN,
+        job: row.job_number,
+        title: row.name,
+        vendor: row.supplier,
+        amount: row.amount,
+        paidAt: row.paid_at,
+        note: row.note,
+        status: row.status,
+      })),
+    }));
+
+    return {
+      service: await import('./receipts.service'),
+      insert,
+      update,
+      uuid,
+      getSnapshot: () => structuredClone(snapshot),
+    };
+  };
+
+  const newReceiptDraft = (): ReceiptItem => ({
+    id: 1,
+    contractorProfileId: 'profile-uuid-1',
+    eid: 1,
+    eventSupabaseId: 'event-row-1',
+    job: 'AK001',
+    title: 'Taxi',
+    vendor: 'Bolt',
+    amount: 300,
+    paidAt: '2026-04-12',
+    note: '',
+    status: 'draft',
+  });
+
   it('routes receipt writes without positional receipt or event identity helpers', () => {
     const serviceSource = readFileSync(resolve(
       process.cwd(),
@@ -1012,6 +1159,140 @@ describe('receipts.service write flow', () => {
     } finally {
       consoleError.mockRestore();
     }
+  });
+
+  it('reserves one create intent before queueing two immediate saves of the same receipt draft', async () => {
+    const harness = await setupReceiptCreateIntentHarness();
+    const draft = newReceiptDraft();
+
+    const firstSave = harness.service.saveReceipt(draft);
+    const secondSave = harness.service.saveReceipt(draft);
+    const [first, second] = await Promise.all([firstSave, secondSave]);
+
+    expect(harness.uuid).toHaveBeenCalledTimes(1);
+    expect(harness.insert).toHaveBeenCalledTimes(1);
+    expect(harness.update).toHaveBeenCalledTimes(1);
+    expect(first.supabaseId).toBe('receipt-client-uuid-1');
+    expect(second.supabaseId).toBe('receipt-client-uuid-1');
+    expect(harness.getSnapshot().receipts).toHaveLength(1);
+  });
+
+  it('retains an ambiguous receipt create intent until a user retry finds the committed UUID', async () => {
+    const harness = await setupReceiptCreateIntentHarness({
+      loseFirstInsertResponse: true,
+      failFirstRecovery: true,
+    });
+    const draft = newReceiptDraft();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      await expect(harness.service.saveReceipt(draft)).rejects.toThrow('Účtenku se nepodařilo uložit.');
+
+      const recovered = await harness.service.saveReceipt(draft);
+
+      expect(harness.uuid).toHaveBeenCalledTimes(1);
+      expect(harness.insert).toHaveBeenCalledTimes(1);
+      expect(harness.update).not.toHaveBeenCalled();
+      expect(recovered.supabaseId).toBe('receipt-client-uuid-1');
+      expect(harness.getSnapshot().receipts).toHaveLength(1);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('does not reuse a receipt create intent after the canonical receipt is deliberately deleted', async () => {
+    const harness = await setupReceiptCreateIntentHarness();
+    const first = await harness.service.saveReceipt(newReceiptDraft());
+
+    await harness.service.deleteReceipt(first.id);
+    const second = await harness.service.saveReceipt(newReceiptDraft());
+
+    expect(harness.uuid).toHaveBeenCalledTimes(2);
+    expect(harness.insert).toHaveBeenCalledTimes(2);
+    expect(second.supabaseId).toBe('receipt-client-uuid-2');
+    expect(harness.getSnapshot().receipts).toHaveLength(1);
+  });
+
+  it('keeps lazy hydration retryable when its first snapshot is discarded by a lifecycle generation change', async () => {
+    let snapshot = createSnapshot({ receipts: [] });
+    const firstReceipts = createDeferred<{
+      data: Array<Record<string, unknown>>;
+      error: null;
+    }>();
+    const canonicalRow = {
+      id: 'receipt-row-1',
+      updated_at: '2026-04-10T12:00:00Z',
+      event_id: 'event-row-1',
+      contractor_id: 'profile-uuid-1',
+      job_number: 'AK001',
+      name: 'Taxi',
+      supplier: 'Bolt',
+      amount: 300,
+      paid_at: '2026-04-10',
+      note: '',
+      status: 'attached',
+    };
+    const receiptsOrder = vi.fn()
+      .mockImplementationOnce(() => firstReceipts.promise)
+      .mockResolvedValue({ data: [canonicalRow], error: null });
+    const setQueryData = vi.fn();
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/query-client', () => ({
+      queryClient: { setQueryData, invalidateQueries: vi.fn() },
+    }));
+    vi.doMock('../../../lib/query-keys', () => ({
+      queryKeys: { receipts: { all: ['receipts'] } },
+    }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: vi.fn((table: string) => {
+          if (table === 'receipts') return { select: vi.fn(() => ({ order: receiptsOrder })) };
+          const data = table === 'profiles'
+            ? [{ id: 'profile-uuid-1' }]
+            : [{ id: 'event-row-1' }];
+          return {
+            select: vi.fn(() => ({
+              order: vi.fn(() => ({ order: vi.fn().mockResolvedValue({ data, error: null }) })),
+            })),
+          };
+        }),
+      },
+    }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapReceipt: vi.fn((row: Record<string, unknown>) => ({
+        ...newReceiptDraft(),
+        supabaseId: row.id,
+        updatedAt: row.updated_at,
+        status: row.status,
+      })),
+    }));
+
+    const { getReceipts } = await import('./receipts.service');
+    const { advanceLifecycleSnapshotGeneration } = await import('../../event-lifecycle-generation');
+
+    expect(getReceipts()).toEqual([]);
+    await vi.waitFor(() => expect(receiptsOrder).toHaveBeenCalledTimes(1));
+    advanceLifecycleSnapshotGeneration();
+    firstReceipts.resolve({ data: [{ ...canonicalRow, status: 'approved' }], error: null });
+    await vi.waitFor(() => expect(setQueryData).not.toHaveBeenCalled());
+    await Promise.resolve();
+
+    expect(getReceipts()).toEqual([]);
+    await vi.waitFor(() => expect(receiptsOrder).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(snapshot.receipts).toHaveLength(1));
+    expect(snapshot.receipts[0]).toMatchObject({
+      supabaseId: 'receipt-row-1', status: 'attached', updatedAt: '2026-04-10T12:00:00Z',
+    });
   });
 
   it('recovers a lost create response by its one stable client UUID without inserting twice', async () => {

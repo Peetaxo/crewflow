@@ -411,6 +411,9 @@ describe('events.service write flow', () => {
     eventSaveError = null as { code: string; message: string } | null,
   } = {}) => {
     let snapshot = structuredClone(initialSnapshot);
+    let resetOnSnapshotReadCountdown: number | null = null;
+    let resetHydration: (() => void) | null = null;
+    const hydrationResetTriggered = createDeferred<void>();
     const assignEventCrewRpc = vi.fn().mockResolvedValue(rpcAssignment);
     const removeEventCrewRpc = vi.fn().mockResolvedValue(rpcRemoval);
     const approveEventWithdrawalRpc = vi.fn().mockResolvedValue(rpcWithdrawalApproval);
@@ -695,8 +698,20 @@ describe('events.service write flow', () => {
       return structuredClone(snapshot);
     });
 
+    const getLocalAppState = vi.fn(() => {
+      if (resetOnSnapshotReadCountdown !== null) {
+        resetOnSnapshotReadCountdown -= 1;
+        if (resetOnSnapshotReadCountdown === 0) {
+          resetOnSnapshotReadCountdown = null;
+          resetHydration?.();
+          hydrationResetTriggered.resolve();
+        }
+      }
+      return structuredClone(snapshot);
+    });
+
     vi.doMock('../../../lib/app-data', () => ({
-      getLocalAppState: () => structuredClone(snapshot),
+      getLocalAppState,
       updateLocalAppState,
       subscribeToLocalAppState: vi.fn(() => () => undefined),
     }));
@@ -726,8 +741,11 @@ describe('events.service write flow', () => {
       }),
     }));
 
+    const service = await import('./events.service');
+    resetHydration = service.resetSupabaseEventsHydration;
+
     return {
-      service: await import('./events.service'),
+      service,
       getSnapshot: () => structuredClone(snapshot),
       setSnapshot: (updater: (state: typeof snapshot) => typeof snapshot) => {
         snapshot = structuredClone(updater(structuredClone(snapshot)));
@@ -742,6 +760,10 @@ describe('events.service write flow', () => {
       setQueryData,
       invalidateQueries,
       cancelQueries,
+      resetHydrationOnSnapshotRead: (readNumber: number) => {
+        resetOnSnapshotReadCountdown = readNumber;
+        return hydrationResetTriggered.promise;
+      },
       eventsOrder: eventsQuery.order,
       eventsSelect,
       resolveDeferredPublicEvents: () => {
@@ -3177,6 +3199,42 @@ describe('events.service write flow', () => {
     await vi.waitFor(() => expect(harness.eventsSelect).toHaveBeenCalledTimes(2));
     await vi.waitFor(() => expect(harness.getSnapshot().events).toEqual([
       expect.objectContaining({ supabaseId: 'event-row-1', name: 'Fresh event' }),
+    ]));
+    expect(harness.updateLocalAppState).toHaveBeenCalledOnce();
+  });
+
+  it('does not let a generation retry cross an auth reset into the next session', async () => {
+    const oldUserEvent = { ...lifecycleEvent, name: 'Old user event' };
+    const newUserEvent = { ...lifecycleEvent, name: 'New user event' };
+    const harness = await setupLifecycleService({
+      initialSnapshot: createSnapshot({ events: [], eventApplications: [] }),
+      refreshedEvents: [newUserEvent],
+      deferredPublicEvents: [oldUserEvent],
+    });
+    const { advanceLifecycleSnapshotGeneration } = await import('../../event-lifecycle-generation');
+
+    harness.service.ensureSupabaseEventsLoaded();
+    await vi.waitFor(() => expect(harness.eventsSelect).toHaveBeenCalledOnce());
+    advanceLifecycleSnapshotGeneration();
+    const resetTriggered = harness.resetHydrationOnSnapshotRead(2);
+    harness.resolveDeferredPublicEvents();
+
+    await resetTriggered;
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(harness.cancelQueries).toHaveBeenCalledWith({ queryKey: ['events'] });
+    expect(harness.eventsSelect).toHaveBeenCalledOnce();
+    expect(harness.getSnapshot().events).toEqual([]);
+    expect(harness.updateLocalAppState).not.toHaveBeenCalled();
+    expect(harness.setQueryData).not.toHaveBeenCalledWith(['events'], expect.anything());
+
+    harness.service.ensureSupabaseEventsLoaded();
+    await vi.waitFor(() => expect(harness.eventsSelect).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(harness.getSnapshot().events).toEqual([
+      expect.objectContaining({ supabaseId: 'event-row-1', name: 'New user event' }),
     ]));
     expect(harness.updateLocalAppState).toHaveBeenCalledOnce();
   });

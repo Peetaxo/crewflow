@@ -626,7 +626,9 @@ type EventHydrationAttempt = {
   retryForGeneration: boolean;
 };
 
-const loadAndCommitEventsSnapshot = async (): Promise<EventHydrationAttempt> => {
+const loadAndCommitEventsSnapshot = async (
+  expectedEpoch: number,
+): Promise<EventHydrationAttempt> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
     return {
       committed: true,
@@ -635,10 +637,17 @@ const loadAndCommitEventsSnapshot = async (): Promise<EventHydrationAttempt> => 
     };
   }
 
+  if (expectedEpoch !== eventsHydrationEpoch) {
+    return {
+      committed: false,
+      events: getLocalAppState().events ?? [],
+      retryForGeneration: false,
+    };
+  }
+
   const generation = getLifecycleSnapshotGeneration();
-  const epoch = eventsHydrationEpoch;
   const lifecycleSnapshot = await loadEventsLifecycleSnapshot();
-  if (epoch !== eventsHydrationEpoch) {
+  if (expectedEpoch !== eventsHydrationEpoch) {
     return {
       committed: false,
       events: getLocalAppState().events ?? [],
@@ -652,6 +661,13 @@ const loadAndCommitEventsSnapshot = async (): Promise<EventHydrationAttempt> => 
       retryForGeneration: true,
     };
   }
+  if (expectedEpoch !== eventsHydrationEpoch) {
+    return {
+      committed: false,
+      events: getLocalAppState().events ?? [],
+      retryForGeneration: false,
+    };
+  }
   commitEventLifecycleSnapshot(lifecycleSnapshot);
 
   return {
@@ -662,17 +678,21 @@ const loadAndCommitEventsSnapshot = async (): Promise<EventHydrationAttempt> => 
 };
 
 export const fetchEventsSnapshot = async (): Promise<Event[]> => {
-  const result = await loadAndCommitEventsSnapshot();
+  const hydrationEpoch = eventsHydrationEpoch;
+  const result = await loadAndCommitEventsSnapshot(hydrationEpoch);
   return result.events;
 };
 
-const hydrateEventsFromSupabase = async (): Promise<boolean> => {
-  const firstAttempt = await loadAndCommitEventsSnapshot();
+const hydrateEventsFromSupabase = async (hydrationEpoch: number): Promise<boolean> => {
+  const firstAttempt = await loadAndCommitEventsSnapshot(hydrationEpoch);
   if (firstAttempt.committed || !firstAttempt.retryForGeneration) {
     return firstAttempt.committed;
   }
+  if (hydrationEpoch !== eventsHydrationEpoch) {
+    return false;
+  }
 
-  const retry = await loadAndCommitEventsSnapshot();
+  const retry = await loadAndCommitEventsSnapshot(hydrationEpoch);
   return retry.committed;
 };
 
@@ -689,15 +709,15 @@ export const ensureSupabaseEventsLoaded = () => {
     return;
   }
 
-  const epoch = eventsHydrationEpoch;
-  const hydrationPromise = hydrateEventsFromSupabase()
+  const hydrationEpoch = eventsHydrationEpoch;
+  const hydrationPromise = hydrateEventsFromSupabase(hydrationEpoch)
     .then((committed) => {
-      if (committed && epoch === eventsHydrationEpoch) {
+      if (committed && hydrationEpoch === eventsHydrationEpoch) {
         eventsLoaded = true;
       }
     })
     .catch((error) => {
-      if (epoch === eventsHydrationEpoch) {
+      if (hydrationEpoch === eventsHydrationEpoch) {
         console.warn('Nepodarilo se nacist akce ze Supabase, zustavam na lokalnich datech.', error);
       }
     })

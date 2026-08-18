@@ -117,6 +117,7 @@ export function mapEvent(row: EventRow): Event {
   return {
     id: Number.NaN,
     supabaseId: row.id,
+    updatedAt: row.updated_at,
     projectId: row.project_id,
     name: row.name,
     job: row.job_number ?? '',

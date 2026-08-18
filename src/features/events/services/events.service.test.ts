@@ -322,11 +322,13 @@ describe('events.service write flow', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
   });
 
   const lifecycleEvent: Event = {
     id: 1,
     supabaseId: 'event-row-1',
+    updatedAt: '2026-04-10T09:00:00Z',
     name: 'Akce 1',
     job: 'AK001',
     startDate: '2026-04-20',
@@ -404,6 +406,7 @@ describe('events.service write flow', () => {
     failEventsRefresh = false,
     failTimelogsRefresh = false,
     deferredPublicEvents = null as Event[] | null,
+    eventSaveError = null as { code: string; message: string } | null,
   } = {}) => {
     let snapshot = structuredClone(initialSnapshot);
     const assignEventCrewRpc = vi.fn().mockResolvedValue(rpcAssignment);
@@ -433,9 +436,18 @@ describe('events.service write flow', () => {
         eq: vi.fn().mockResolvedValue({ error: null }),
       })),
     }));
-    const eventsUpdate = vi.fn(() => ({
-      eq: vi.fn().mockResolvedValue({ error: null }),
+    const eventsUpdateSingle = vi.fn(async () => ({
+      data: eventSaveError ? null : {
+        id: eventRows[0]?.id,
+        updated_at: eventRows[0]?.updated_at,
+        crew_filled: eventRows[0]?.crew_filled,
+      },
+      error: eventSaveError,
     }));
+    const eventsUpdateSelect = vi.fn(() => ({ single: eventsUpdateSingle }));
+    const eventsUpdateVersionEq = vi.fn(() => ({ select: eventsUpdateSelect }));
+    const eventsUpdateIdEq = vi.fn(() => ({ eq: eventsUpdateVersionEq }));
+    const eventsUpdate = vi.fn(() => ({ eq: eventsUpdateIdEq }));
     let requestedApplicationStatus: EventApplication['status'] = 'pending';
     const eventApplicationsSelect = vi.fn(async () => ({
       data: [{
@@ -468,6 +480,7 @@ describe('events.service write flow', () => {
 
     const toEventRow = (event: Event) => ({
       id: event.supabaseId,
+      updated_at: event.updatedAt ?? '2026-04-10T09:00:00Z',
       project_id: 'project-row-1',
       job_number: event.job,
       client_name: event.client,
@@ -477,6 +490,10 @@ describe('events.service write flow', () => {
       time_from: event.startTime ?? null,
       time_to: event.endTime ?? null,
       city: event.city,
+      address: event.address ?? event.city,
+      place_id: event.placeId ?? null,
+      location_lat: event.locationLat ?? null,
+      location_lng: event.locationLng ?? null,
       crew_needed: event.needed,
       crew_filled: event.filled,
       status: event.status,
@@ -485,9 +502,10 @@ describe('events.service write flow', () => {
       dresscode: null,
       meeting_point: null,
       show_day_types: event.showDayTypes ?? false,
-      day_types: null,
-      phase_times: null,
-      phase_schedules: null,
+      allow_crew_time_proposal: event.allowCrewTimeProposal ?? false,
+      day_types: event.dayTypes ?? null,
+      phase_times: event.phaseTimes ?? null,
+      phase_schedules: event.phaseSchedules ?? null,
     });
     const eventRows = refreshedEvents.map(toEventRow);
     const applicationRows = (initialSnapshot.eventApplications ?? []).map((application) => ({
@@ -688,6 +706,7 @@ describe('events.service write flow', () => {
       mapEvent: (row: typeof eventRows[number]) => ({
         id: Number.NaN,
         supabaseId: row.id,
+        updatedAt: row.updated_at,
         name: row.name,
         job: row.job_number,
         startDate: row.date_from,
@@ -995,6 +1014,7 @@ describe('events.service write flow', () => {
 
   it('persists a new event to Supabase with the mapped project row id', async () => {
     let snapshot = createSnapshot();
+    vi.stubGlobal('crypto', { randomUUID: vi.fn(() => 'event-row-1') });
 
     const projectsSelect = vi.fn(() => ({
       order: vi.fn().mockResolvedValue({
@@ -1008,7 +1028,10 @@ describe('events.service write flow', () => {
         error: null,
       }),
     }));
-    const eventsInsertSingle = vi.fn().mockResolvedValue({ data: { id: 'event-row-1' }, error: null });
+    const eventsInsertSingle = vi.fn().mockResolvedValue({
+      data: { id: 'event-row-1', updated_at: '2026-04-19T10:00:00Z', crew_filled: 0 },
+      error: null,
+    });
     const eventsInsertSelect = vi.fn(() => ({ single: eventsInsertSingle }));
     const eventsInsert = vi.fn(() => ({ select: eventsInsertSelect }));
 
@@ -1065,6 +1088,7 @@ describe('events.service write flow', () => {
     });
 
     expect(eventsInsert).toHaveBeenCalledWith({
+      id: 'event-row-1',
       name: 'Akce 1',
       project_id: 'project-row-1',
       job_number: 'AK001',
@@ -1079,7 +1103,6 @@ describe('events.service write flow', () => {
       location_lat: 50.0929,
       location_lng: 14.4502,
       crew_needed: 2,
-      crew_filled: 0,
       status: 'upcoming',
       description: null,
       contact_person: null,
@@ -1095,6 +1118,8 @@ describe('events.service write flow', () => {
     expect(saved.client).toBe('Klient A');
     expect(saved.city).toBe('Rohanske nabrezi 678/23, Praha');
     expect(saved.address).toBe('Rohanske nabrezi 678/23, Praha');
+    expect(saved.supabaseId).toBe('event-row-1');
+    expect(saved.updatedAt).toBe('2026-04-19T10:00:00Z');
     expect(snapshot.events).toHaveLength(1);
   });
 
@@ -1104,6 +1129,7 @@ describe('events.service write flow', () => {
         {
           id: 1,
           supabaseId: 'event-row-1',
+          updatedAt: '2026-05-12T09:00:00Z',
           name: 'Akce 1',
           job: 'AK001',
           startDate: '2026-05-12',
@@ -1130,8 +1156,14 @@ describe('events.service write flow', () => {
         },
       ],
     });
-    const eventsUpdateEq = vi.fn().mockResolvedValue({ error: null });
-    const eventsUpdate = vi.fn(() => ({ eq: eventsUpdateEq }));
+    const eventsUpdateSingle = vi.fn().mockResolvedValue({
+      data: { id: 'event-row-1', updated_at: '2026-05-12T10:00:00Z', crew_filled: 1 },
+      error: null,
+    });
+    const eventsUpdateSelect = vi.fn(() => ({ single: eventsUpdateSingle }));
+    const eventsUpdateVersionEq = vi.fn(() => ({ select: eventsUpdateSelect }));
+    const eventsUpdateIdEq = vi.fn(() => ({ eq: eventsUpdateVersionEq }));
+    const eventsUpdate = vi.fn(() => ({ eq: eventsUpdateIdEq }));
     const timelogsEq = vi.fn().mockResolvedValue({
       data: [{ id: 'timelog-row-1', contractor_id: 'profile-uuid-1' }],
       error: null,
@@ -1211,6 +1243,7 @@ describe('events.service write flow', () => {
       events: [{
         id: 1,
         supabaseId: 'event-row-1',
+        updatedAt: '2026-05-12T09:00:00Z',
         name: 'Akce 1',
         job: 'AK001',
         startDate: '2026-05-12',
@@ -1228,8 +1261,11 @@ describe('events.service write flow', () => {
       message: 'new row for relation "events" violates check constraint internal_event_rule',
       details: 'Sensitive internal constraint detail',
     };
-    const eventsUpdateEq = vi.fn().mockResolvedValue({ error: databaseError });
-    const eventsUpdate = vi.fn(() => ({ eq: eventsUpdateEq }));
+    const eventsUpdateSingle = vi.fn().mockResolvedValue({ data: null, error: databaseError });
+    const eventsUpdateSelect = vi.fn(() => ({ single: eventsUpdateSingle }));
+    const eventsUpdateVersionEq = vi.fn(() => ({ select: eventsUpdateSelect }));
+    const eventsUpdateIdEq = vi.fn(() => ({ eq: eventsUpdateVersionEq }));
+    const eventsUpdate = vi.fn(() => ({ eq: eventsUpdateIdEq }));
     const projectsSelect = vi.fn(() => ({
       order: vi.fn().mockResolvedValue({
         data: [{ id: 'project-row-1', job_number: 'AK001', client_id: 'client-row-1' }],
@@ -1274,8 +1310,313 @@ describe('events.service write flow', () => {
 
       await expect(saveEvent({ ...snapshot.events[0], name: 'Změněná akce' }))
         .rejects.toThrow('Akci se nepodařilo uložit.');
-      expect(consoleError).toHaveBeenCalledWith('Failed to save event to Supabase', databaseError);
+      expect(consoleError).toHaveBeenCalledWith('Unexpected event save error', databaseError);
       expect(snapshot.events[0].name).toBe('Akce 1');
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('updates an event by stable UUID/version without persisting stale derived crew_filled', async () => {
+    const currentEvent = {
+      id: 1,
+      supabaseId: 'event-row-1',
+      updatedAt: '2026-05-12T10:00:00Z',
+      name: 'Akce 1',
+      job: 'AK001',
+      startDate: '2026-05-12',
+      endDate: '2026-05-12',
+      city: 'Praha',
+      needed: 2,
+      filled: 2,
+      status: 'upcoming' as const,
+      client: 'Klient A',
+      showDayTypes: false,
+    } as Event & { updatedAt: string };
+    let snapshot = createSnapshot({ events: [currentEvent] });
+    const single = vi.fn().mockResolvedValue({
+      data: { id: 'event-row-1', updated_at: '2026-05-12T11:00:00Z', crew_filled: 2 },
+      error: null,
+    });
+    const select = vi.fn(() => ({ single }));
+    const versionEq = vi.fn(() => ({ select }));
+    const idEq = vi.fn(() => ({ eq: versionEq }));
+    const update = vi.fn(() => ({ eq: idEq }));
+    const projectsSelect = vi.fn(() => ({
+      order: vi.fn().mockResolvedValue({
+        data: [{ id: 'project-row-1', job_number: 'AK001', client_id: 'client-row-1' }], error: null,
+      }),
+    }));
+    const clientsSelect = vi.fn(() => ({
+      order: vi.fn().mockResolvedValue({ data: [{ id: 'client-row-1', name: 'Klient A' }], error: null }),
+    }));
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: vi.fn((table: string) => {
+          if (table === 'events') return { update };
+          if (table === 'projects') return { select: projectsSelect };
+          if (table === 'clients') return { select: clientsSelect };
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+    vi.doMock('../../../lib/supabase-mappers', () => ({ mapClient: vi.fn(), mapEvent: vi.fn() }));
+
+    const { saveEvent } = await import('./events.service');
+    const saved = await saveEvent({ ...currentEvent, name: 'Změněná akce', filled: 0 });
+
+    expect(update).toHaveBeenCalledWith(expect.not.objectContaining({ crew_filled: expect.anything() }));
+    expect(idEq).toHaveBeenCalledWith('id', 'event-row-1');
+    expect(versionEq).toHaveBeenCalledWith('updated_at', '2026-05-12T10:00:00Z');
+    expect(select).toHaveBeenCalledWith('id,updated_at,crew_filled');
+    expect(saved).toMatchObject({
+      supabaseId: 'event-row-1', updatedAt: '2026-05-12T11:00:00Z', filled: 2, name: 'Změněná akce',
+    });
+    expect(snapshot.events[0]).toMatchObject({ updatedAt: '2026-05-12T11:00:00Z', filled: 2 });
+  });
+
+  it('waits behind assignment lifecycle work and rejects a stale editor version before event DML', async () => {
+    const staleEvent = {
+      id: 1,
+      supabaseId: 'event-row-1',
+      updatedAt: '2026-05-12T10:00:00Z',
+      name: 'Akce 1',
+      job: 'AK001',
+      startDate: '2026-05-12',
+      endDate: '2026-05-12',
+      city: 'Praha',
+      needed: 2,
+      filled: 0,
+      status: 'upcoming' as const,
+      client: 'Klient A',
+      showDayTypes: false,
+    } as Event & { updatedAt: string };
+    let snapshot = createSnapshot({ events: [staleEvent] });
+    const update = vi.fn();
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: { from: vi.fn((table: string) => (table === 'events' ? { update } : { select: vi.fn() })) },
+    }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+    vi.doMock('../../../lib/supabase-mappers', () => ({ mapClient: vi.fn(), mapEvent: vi.fn() }));
+
+    const { saveEvent } = await import('./events.service');
+    const { runLifecycleDataMutation } = await import('../../event-lifecycle-generation');
+    const assignmentEntered = createDeferred<void>();
+    const releaseAssignment = createDeferred<void>();
+    const assignment = runLifecycleDataMutation(['test:assignment'], async () => {
+      assignmentEntered.resolve();
+      await releaseAssignment.promise;
+    });
+    await assignmentEntered.promise;
+
+    const pendingSave = saveEvent({ ...staleEvent, name: 'Stará editace' });
+    await Promise.resolve();
+    expect(update).not.toHaveBeenCalled();
+
+    snapshot = {
+      ...snapshot,
+      events: [{ ...staleEvent, filled: 1, updatedAt: '2026-05-12T10:30:00Z' }],
+    };
+    releaseAssignment.resolve();
+    await assignment;
+
+    await expect(pendingSave).rejects.toThrow(
+      'Akce se mezitím změnila. Obnovte data a zkuste to znovu.',
+    );
+    expect(update).not.toHaveBeenCalled();
+    expect(snapshot.events[0]).toMatchObject({ filled: 1, updatedAt: '2026-05-12T10:30:00Z' });
+  });
+
+  it('recovers a lost event create response by one stable client UUID without inserting twice', async () => {
+    let snapshot = createSnapshot();
+    let authoritativeEventRow: Record<string, unknown> | null = null;
+    vi.stubGlobal('crypto', { randomUUID: vi.fn(() => 'event-client-uuid') });
+    const insert = vi.fn((payload: Record<string, unknown>) => {
+      authoritativeEventRow = {
+        ...payload,
+        updated_at: '2026-05-12T11:00:00Z',
+        crew_filled: 0,
+      };
+      return {
+        select: vi.fn(() => ({
+          single: vi.fn().mockResolvedValue({
+            data: null,
+            error: { code: 'XX000', message: 'connection lost after committed event insert' },
+          }),
+        })),
+      };
+    });
+    const eventOrderResult = () => {
+      const result = Promise.resolve({
+        data: authoritativeEventRow ? [authoritativeEventRow] : [], error: null,
+      });
+      const query = Object.assign(result, { order: vi.fn(() => query) });
+      return query;
+    };
+    const emptyOrderResult = { order: vi.fn().mockResolvedValue({ data: [], error: null }) };
+    const projectRows = [{
+      id: 'project-row-1', job_number: 'AK001', client_id: 'client-row-1', name: 'Projekt 1',
+      note: null, created_at: '2026-04-10', updated_at: '2026-04-10',
+    }];
+    const clientRows = [{ id: 'client-row-1', name: 'Klient A', city: 'Praha' }];
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        rpc: vi.fn().mockResolvedValue({ data: [], error: null }),
+        from: vi.fn((table: string) => {
+          if (table === 'events') {
+            return { insert, select: vi.fn(() => eventOrderResult()) };
+          }
+          if (table === 'projects') {
+            return { select: vi.fn(() => ({ order: vi.fn().mockResolvedValue({ data: projectRows, error: null }) })) };
+          }
+          if (table === 'clients') {
+            return { select: vi.fn(() => ({ order: vi.fn().mockResolvedValue({ data: clientRows, error: null }) })) };
+          }
+          if (table === 'timelogs') return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
+          if (table === 'event_assignments' || table === 'event_applications' || table === 'grason_event_confirmations') {
+            return { select: vi.fn(() => emptyOrderResult) };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+        snapshot = structuredClone(updater(structuredClone(snapshot)));
+        return structuredClone(snapshot);
+      },
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+    vi.doMock('../../../lib/supabase-mappers', () => ({
+      mapClient: vi.fn((row: Record<string, unknown>) => ({ id: Number.NaN, name: row.name, city: row.city })),
+      mapEvent: vi.fn((row: Record<string, unknown>) => ({
+        id: Number.NaN,
+        supabaseId: row.id,
+        updatedAt: row.updated_at,
+        projectId: row.project_id,
+        name: row.name,
+        job: row.job_number,
+        startDate: row.date_from,
+        endDate: row.date_to,
+        startTime: row.time_from ?? undefined,
+        endTime: row.time_to ?? undefined,
+        city: row.city,
+        address: row.address ?? undefined,
+        placeId: row.place_id ?? undefined,
+        locationLat: row.location_lat,
+        locationLng: row.location_lng,
+        needed: row.crew_needed,
+        filled: row.crew_filled,
+        status: row.status,
+        client: row.client_name,
+        description: row.description ?? undefined,
+        contactPerson: row.contact_person ?? undefined,
+        dresscode: row.dresscode ?? undefined,
+        meetingLocation: row.meeting_point ?? undefined,
+        showDayTypes: row.show_day_types,
+        allowCrewTimeProposal: row.allow_crew_time_proposal,
+        dayTypes: row.day_types ?? undefined,
+        phaseTimes: row.phase_times ?? undefined,
+        phaseSchedules: row.phase_schedules ?? undefined,
+      })),
+    }));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const { saveEvent } = await import('./events.service');
+      const created = await saveEvent({
+        id: 1,
+        name: 'Nová akce',
+        job: 'AK001',
+        startDate: '2026-05-12',
+        endDate: '2026-05-12',
+        city: 'Praha',
+        needed: 2,
+        filled: 0,
+        status: 'upcoming',
+        client: 'Klient A',
+        showDayTypes: false,
+      });
+
+      expect(insert).toHaveBeenCalledTimes(1);
+      expect(insert).toHaveBeenCalledWith(expect.objectContaining({ id: 'event-client-uuid' }));
+      expect(created).toMatchObject({
+        supabaseId: 'event-client-uuid', updatedAt: '2026-05-12T11:00:00Z', name: 'Nová akce', filled: 0,
+      });
+      expect(snapshot.events).toHaveLength(1);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('maps an optimistic event update miss to a stable conflict without redundant recovery', async () => {
+    const harness = await setupLifecycleService({
+      eventSaveError: { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' },
+    });
+
+    await expect(harness.service.saveEvent({ ...lifecycleEvent, name: 'Změněná akce' }))
+      .rejects.toThrow('Akce se mezitím změnila. Obnovte data a zkuste to znovu.');
+
+    expect(harness.directWrites.eventsUpdate).toHaveBeenCalledTimes(1);
+    expect(harness.eventsSelect).not.toHaveBeenCalled();
+    expect(harness.getSnapshot().events[0]).toMatchObject({
+      name: 'Akce 1', updatedAt: '2026-04-10T09:00:00Z',
+    });
+  });
+
+  it('returns canonical event state when an update commits but its response is lost', async () => {
+    const canonicalEvent = {
+      ...lifecycleEvent,
+      name: 'Změněná akce',
+      address: 'Praha',
+      locationLat: null,
+      locationLng: null,
+      updatedAt: '2026-04-10T10:00:00Z',
+      filled: 1,
+    };
+    const harness = await setupLifecycleService({
+      initialSnapshot: createSnapshot({ events: [lifecycleEvent], eventApplications: [] }),
+      refreshedEvents: [canonicalEvent],
+      eventSaveError: { code: 'XX000', message: 'connection lost after committed event update' },
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const saved = await harness.service.saveEvent({ ...lifecycleEvent, name: 'Změněná akce' });
+
+      expect(harness.directWrites.eventsUpdate).toHaveBeenCalledTimes(1);
+      expect(harness.eventsSelect).toHaveBeenCalledTimes(1);
+      expect(saved).toMatchObject({
+        supabaseId: 'event-row-1', name: 'Změněná akce', updatedAt: '2026-04-10T10:00:00Z', filled: 1,
+      });
+      expect(harness.getSnapshot().events[0]).toMatchObject({
+        supabaseId: 'event-row-1', name: 'Změněná akce', updatedAt: '2026-04-10T10:00:00Z', filled: 1,
+      });
     } finally {
       consoleError.mockRestore();
     }

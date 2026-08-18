@@ -108,6 +108,7 @@ describe('supabase mappers', () => {
 
     expect(mapEvent(row).projectId).toBe('project-uuid-1');
     expect(mapEvent(row)).toMatchObject({
+      updatedAt: '2026-04-27T00:00:00Z',
       address: 'Rohanske nabrezi 678/23, Praha',
       placeId: 'ChIJ-event-place',
       locationLat: 50.0929,

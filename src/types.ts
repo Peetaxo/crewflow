@@ -21,6 +21,7 @@ export interface EventPhaseSlot extends EventPhaseTime {
 export interface Event {
   id: number;
   supabaseId?: string;
+  updatedAt?: string;
   projectId?: string | null;
   name: string;
   /** Job Number - propojeni s projektem */

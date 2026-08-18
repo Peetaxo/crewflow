@@ -15,8 +15,14 @@ describe('event mutation RPC adapter', () => {
 
     const { deleteEventAtomicRpc } = await import('./event-mutation-rpc.service');
 
-    await expect(deleteEventAtomicRpc('event-uuid-1')).resolves.toEqual({ eventId: 'event-uuid-1' });
-    expect(rpc).toHaveBeenCalledWith('delete_event_atomic', { p_event_id: 'event-uuid-1' });
+    await expect(deleteEventAtomicRpc(
+      'event-uuid-1',
+      '2026-08-18T09:15:00.000Z',
+    )).resolves.toEqual({ eventId: 'event-uuid-1' });
+    expect(rpc).toHaveBeenCalledWith('delete_event_atomic', {
+      p_event_id: 'event-uuid-1',
+      p_expected_updated_at: '2026-08-18T09:15:00.000Z',
+    });
   });
 
   it.each([
@@ -33,7 +39,10 @@ describe('event mutation RPC adapter', () => {
 
     const { deleteEventAtomicRpc } = await import('./event-mutation-rpc.service');
 
-    await expect(deleteEventAtomicRpc('event-uuid-1')).rejects.toThrow(expectedMessage);
+    await expect(deleteEventAtomicRpc(
+      'event-uuid-1',
+      '2026-08-18T09:15:00.000Z',
+    )).rejects.toThrow(expectedMessage);
   });
 
   it.each([
@@ -49,7 +58,10 @@ describe('event mutation RPC adapter', () => {
     try {
       const { deleteEventAtomicRpc } = await import('./event-mutation-rpc.service');
 
-      await expect(deleteEventAtomicRpc('event-uuid-1')).rejects.toThrow('Akci se nepodařilo smazat.');
+      await expect(deleteEventAtomicRpc(
+        'event-uuid-1',
+        '2026-08-18T09:15:00.000Z',
+      )).rejects.toThrow('Akci se nepodařilo smazat.');
       expect(consoleError).toHaveBeenCalledWith('Unexpected atomic event delete response', data);
     } finally {
       consoleError.mockRestore();
@@ -65,7 +77,10 @@ describe('event mutation RPC adapter', () => {
     try {
       const { deleteEventAtomicRpc } = await import('./event-mutation-rpc.service');
 
-      await expect(deleteEventAtomicRpc('event-uuid-1')).rejects.toThrow('Akci se nepodařilo smazat.');
+      await expect(deleteEventAtomicRpc(
+        'event-uuid-1',
+        '2026-08-18T09:15:00.000Z',
+      )).rejects.toThrow('Akci se nepodařilo smazat.');
       expect(consoleError).toHaveBeenCalledWith('Unexpected atomic event delete RPC error', databaseError);
     } finally {
       consoleError.mockRestore();

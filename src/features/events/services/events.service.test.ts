@@ -418,7 +418,7 @@ describe('events.service write flow', () => {
     const assignEventCrewRpc = vi.fn().mockResolvedValue(rpcAssignment);
     const removeEventCrewRpc = vi.fn().mockResolvedValue(rpcRemoval);
     const approveEventWithdrawalRpc = vi.fn().mockResolvedValue(rpcWithdrawalApproval);
-    const deleteEventAtomicRpc = vi.fn(async (eventId: string) => {
+    const deleteEventAtomicRpc = vi.fn(async (eventId: string, _expectedUpdatedAt: string) => {
       const rowIndex = eventRows.findIndex((row) => row.id === eventId);
       if (rowIndex >= 0) eventRows.splice(rowIndex, 1);
       return { event_id: eventId };
@@ -900,7 +900,7 @@ describe('events.service write flow', () => {
         : Promise.resolve({ data: row ? [structuredClone(row)] : [], error: null }));
     });
     const emptyOrderedQuery = () => orderedQuery(Promise.resolve({ data: [], error: null }));
-    const deleteEventAtomicRpc = vi.fn(async (eventId: string) => {
+    const deleteEventAtomicRpc = vi.fn(async (eventId: string, _expectedUpdatedAt: string) => {
       if (authoritativeEventRow?.id === eventId) authoritativeEventRow = null;
       return { event_id: eventId };
     });
@@ -1099,6 +1099,21 @@ describe('events.service write flow', () => {
     expect(serviceSource).not.toContain('type EventCreateIntent');
     expect(serviceSource).not.toContain('eventCreateIntentByLocalId');
     expect(saveSource).not.toContain('eventRowIdByLocalId');
+  });
+
+  it('keeps queued Supabase event deletion independent from positional row lookup', () => {
+    const serviceSource = readFileSync(resolve(
+      process.cwd(),
+      'src/features/events/services/events.service.ts',
+    ), 'utf8');
+    const deleteSource = serviceSource.slice(
+      serviceSource.indexOf('const deleteEventUncoordinated'),
+      serviceSource.indexOf('export const getEventCrew'),
+    );
+
+    expect(deleteSource).not.toContain('getSupabaseEventRowId');
+    expect(deleteSource).toContain('event.supabaseId === stableEventId');
+    expect(deleteSource).toContain('event:delete:${stableEventId}');
   });
 
   it('fails closed before DML or recovery when a Supabase event lacks a stable UUID', async () => {
@@ -2217,7 +2232,10 @@ describe('events.service write flow', () => {
       supabaseId: 'event-client-uuid-2',
     });
 
-    expect(harness.deleteEventAtomicRpc).toHaveBeenCalledWith('event-client-uuid-1');
+    expect(harness.deleteEventAtomicRpc).toHaveBeenCalledWith(
+      'event-client-uuid-1',
+      first.updatedAt,
+    );
     expect(harness.insert).toHaveBeenCalledTimes(2);
     expect(second.supabaseId).toBe('event-client-uuid-2');
     expect(harness.getSnapshot().events).toHaveLength(1);
@@ -2313,9 +2331,9 @@ describe('events.service write flow', () => {
       })).rejects.toThrow('Akci se nepodařilo uložit.');
       harness.setSnapshot((snapshot) => ({ ...snapshot, events: [] }));
 
-      await expect(harness.service.deleteEvent(1)).resolves.toEqual({ id: 1 });
-      expect(harness.eventsSelect).toHaveBeenCalledTimes(2);
-      expect(harness.deleteEventAtomicRpc).toHaveBeenCalledWith('event-client-uuid-1');
+      await expect(harness.service.deleteEvent(1)).rejects.toThrow('Akci se nepodařilo smazat.');
+      expect(harness.eventsSelect).toHaveBeenCalledTimes(1);
+      expect(harness.deleteEventAtomicRpc).not.toHaveBeenCalled();
     } finally {
       consoleError.mockRestore();
     }
@@ -3359,6 +3377,100 @@ describe('events.service write flow', () => {
     expect(harness.setQueryData).toHaveBeenCalledWith(['receipts'], []);
   });
 
+  it('deletes the initiating stable UUID after a queued numeric id is reindexed', async () => {
+    const eventA = { ...lifecycleEvent, id: 1, supabaseId: 'event-row-a', updatedAt: 'version-a' };
+    const eventB = {
+      ...lifecycleEvent,
+      id: 2,
+      supabaseId: 'event-row-b',
+      updatedAt: 'version-b',
+      name: 'Akce B',
+      job: 'AK002',
+    };
+    const harness = await setupLifecycleService({
+      initialSnapshot: createSnapshot({
+        events: [eventA, eventB],
+        timelogs: [
+          { ...canonicalTimelog, id: 1, eid: 1, eventSupabaseId: 'event-row-a' },
+          { ...canonicalTimelog, id: 2, eid: 2, supabaseId: 'timelog-row-2', eventSupabaseId: 'event-row-b' },
+        ],
+        eventApplications: [],
+      }),
+      refreshedEvents: [eventA, eventB],
+    });
+    const { runLifecycleDataMutation } = await import('../../event-lifecycle-generation');
+    const blockerEntered = createDeferred<void>();
+    const releaseBlocker = createDeferred<void>();
+    const blocker = runLifecycleDataMutation(['test:event-delete-reindex-blocker'], async () => {
+      blockerEntered.resolve();
+      await releaseBlocker.promise;
+    });
+    await blockerEntered.promise;
+
+    const deletion = harness.service.deleteEvent(1);
+    harness.setSnapshot((snapshot) => ({
+      ...snapshot,
+      events: snapshot.events.map((event) => ({
+        ...event,
+        id: event.supabaseId === 'event-row-a' ? 2 : 1,
+      })),
+      timelogs: snapshot.timelogs.map((timelog) => ({
+        ...timelog,
+        eid: timelog.eventSupabaseId === 'event-row-a' ? 2 : 1,
+      })),
+    }));
+    releaseBlocker.resolve();
+    await blocker;
+
+    await expect(deletion).resolves.toEqual({ id: 1 });
+    expect(harness.deleteEventAtomicRpc).toHaveBeenCalledWith('event-row-a', 'version-a');
+    expect(harness.getSnapshot().events).toEqual([
+      expect.objectContaining({ id: 1, supabaseId: 'event-row-b' }),
+    ]);
+    expect(harness.getSnapshot().timelogs).toEqual([
+      expect.objectContaining({ eid: 1, eventSupabaseId: 'event-row-b' }),
+    ]);
+  });
+
+  it('rejects a queued event delete after auth reset without issuing the RPC', async () => {
+    const harness = await setupLifecycleService({
+      initialSnapshot: createSnapshot({ events: [lifecycleEvent], eventApplications: [] }),
+    });
+    const { runLifecycleDataMutation } = await import('../../event-lifecycle-generation');
+    const blockerEntered = createDeferred<void>();
+    const releaseBlocker = createDeferred<void>();
+    const blocker = runLifecycleDataMutation(['test:event-delete-reset-blocker'], async () => {
+      blockerEntered.resolve();
+      await releaseBlocker.promise;
+    });
+    await blockerEntered.promise;
+
+    const deletion = harness.service.deleteEvent(1);
+    harness.service.resetSupabaseEventsHydration();
+    releaseBlocker.resolve();
+    await blocker;
+
+    await expect(deletion).rejects.toThrow('Akci se nepodařilo smazat.');
+    expect(harness.deleteEventAtomicRpc).not.toHaveBeenCalled();
+    expect(harness.getSnapshot().events).toEqual([lifecycleEvent]);
+  });
+
+  it.each([
+    ['stable UUID', { ...lifecycleEvent, supabaseId: undefined }],
+    ['updated version', { ...lifecycleEvent, updatedAt: undefined }],
+  ])('fails closed before RPC when a Supabase event lacks its %s', async (_label, event) => {
+    const harness = await setupLifecycleService({
+      initialSnapshot: createSnapshot({ events: [event], eventApplications: [] }),
+      refreshedEvents: [event],
+    });
+
+    await expect(harness.service.deleteEvent(1)).rejects.toThrow('Akci se nepodařilo smazat.');
+
+    expect(harness.deleteEventAtomicRpc).not.toHaveBeenCalled();
+    expect(harness.eventsSelect).not.toHaveBeenCalled();
+    expect(harness.getSnapshot().events).toEqual([event]);
+  });
+
   it('prevents an older event fetch from restoring a successfully deleted event', async () => {
     const staleEvent = { ...lifecycleEvent, name: 'Stale event fetch' };
     const harness = await setupLifecycleService({
@@ -3792,6 +3904,7 @@ describe('events.service write flow', () => {
         {
           id: 1,
           supabaseId: 'event-uuid-1',
+          updatedAt: '2026-04-30T09:00:00Z',
           name: 'Mladi ladi jazz',
           job: 'AK001',
           startDate: '2026-04-30',
@@ -3806,6 +3919,7 @@ describe('events.service write flow', () => {
         {
           id: 1,
           supabaseId: 'event-uuid-2',
+          updatedAt: '2026-04-30T10:00:00Z',
           name: 'Mladi ladi jazz',
           job: 'AK001',
           startDate: '2026-04-30',
@@ -3888,7 +4002,10 @@ describe('events.service write flow', () => {
     await deletion;
     await competing;
 
-    expect(rpc).toHaveBeenCalledWith('delete_event_atomic', { p_event_id: 'event-uuid-1' });
+    expect(rpc).toHaveBeenCalledWith('delete_event_atomic', {
+      p_event_id: 'event-uuid-1',
+      p_expected_updated_at: '2026-04-30T09:00:00Z',
+    });
     expect(competingMutation).toHaveBeenCalledOnce();
     expect(from).not.toHaveBeenCalled();
     expect(snapshot.events).toHaveLength(1);
@@ -3902,6 +4019,7 @@ describe('events.service write flow', () => {
       events: [{
         id: 1,
         supabaseId: 'event-uuid-1',
+        updatedAt: '2026-04-30T09:00:00Z',
         name: 'Mladi ladi jazz',
         job: 'AK001',
         startDate: '2026-04-30',

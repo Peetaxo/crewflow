@@ -2691,8 +2691,11 @@ begin
 end;
 $$;
 
+drop function if exists public.delete_event_atomic(uuid);
+
 create or replace function public.delete_event_atomic(
-  p_event_id uuid
+  p_event_id uuid,
+  p_expected_updated_at timestamptz
 )
 returns table (
   event_id uuid
@@ -2703,6 +2706,7 @@ set search_path = ''
 as $$
 declare
   v_event_id uuid;
+  v_event_updated_at timestamptz;
   v_receipt_count integer;
   v_deleted_receipt_count integer;
 begin
@@ -2713,13 +2717,18 @@ begin
     raise exception 'event_delete_conflict' using errcode = '42501';
   end if;
 
-  select e.id into v_event_id
+  select e.id, e.updated_at into v_event_id, v_event_updated_at
   from public.events e
   where e.id = p_event_id
   for update;
 
   if not found then
     raise exception 'event_not_found' using errcode = 'P0002';
+  end if;
+
+  if p_expected_updated_at is null
+    or v_event_updated_at is distinct from p_expected_updated_at then
+    raise exception 'event_delete_conflict' using errcode = '40001';
   end if;
 
   perform t.id
@@ -2767,6 +2776,7 @@ begin
 
     delete from public.events e
     where e.id = p_event_id
+      and e.updated_at = p_expected_updated_at
     returning e.id into v_event_id;
 
     if not found then
@@ -4256,9 +4266,9 @@ revoke all on function public.import_approved_timelog_atomic(uuid, uuid, uuid, t
 revoke all on function public.import_approved_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, jsonb) from anon;
 grant execute on function public.import_approved_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, jsonb) to authenticated;
 
-revoke all on function public.delete_event_atomic(uuid) from public;
-revoke all on function public.delete_event_atomic(uuid) from anon;
-grant execute on function public.delete_event_atomic(uuid) to authenticated;
+revoke all on function public.delete_event_atomic(uuid, timestamptz) from public;
+revoke all on function public.delete_event_atomic(uuid, timestamptz) from anon;
+grant execute on function public.delete_event_atomic(uuid, timestamptz) to authenticated;
 
 revoke all on function public.create_invoice_atomic(jsonb, jsonb, jsonb, jsonb) from public;
 revoke all on function public.create_invoice_atomic(jsonb, jsonb, jsonb, jsonb) from anon;

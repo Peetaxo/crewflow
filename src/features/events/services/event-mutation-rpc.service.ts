@@ -48,12 +48,18 @@ const parseDeleteResult = (data: unknown, expectedEventId: string): EventDeleteR
   return { eventId: expectedEventId };
 };
 
-export const deleteEventAtomicRpc = async (eventId: string): Promise<EventDeleteRpcResult> => {
+export const deleteEventAtomicRpc = async (
+  eventId: string,
+  expectedUpdatedAt: string,
+): Promise<EventDeleteRpcResult> => {
   if (!supabase) {
     throw new Error(GENERIC_ERROR_MESSAGE);
   }
 
-  const result = await supabase.rpc('delete_event_atomic', { p_event_id: eventId });
+  const result = await supabase.rpc('delete_event_atomic', {
+    p_event_id: eventId,
+    p_expected_updated_at: expectedUpdatedAt,
+  });
   if (result.error) {
     throw toDomainError(result.error);
   }

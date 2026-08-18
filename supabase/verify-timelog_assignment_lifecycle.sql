@@ -21,7 +21,7 @@ insert into expected_lifecycle_function_contract (
   ('public.transition_receipt_statuses_atomic(jsonb, public.receipt_status, public.receipt_status)', true, false, 'authenticated'),
   ('public.delete_timelog_atomic(uuid, timestamptz, public.timelog_status)', true, false, 'authenticated'),
   ('public.import_approved_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, jsonb)', true, true, 'authenticated'),
-  ('public.delete_event_atomic(uuid)', true, true, 'authenticated'),
+  ('public.delete_event_atomic(uuid, timestamptz)', true, true, 'authenticated'),
   ('public.create_invoice_atomic(jsonb, jsonb, jsonb, jsonb)', true, true, 'authenticated'),
   ('public.mark_invoice_sent_atomic(uuid, timestamptz, timestamptz)', true, true, 'authenticated'),
   ('public.mark_invoice_paid_atomic(uuid, public.invoice_status, timestamptz, timestamptz)', true, true, 'authenticated'),
@@ -91,6 +91,8 @@ declare
   v_atomic_fourth_timelog_id uuid;
   v_atomic_delete_timelog_id uuid;
   v_delete_event_id uuid;
+  v_delete_event_updated_at timestamptz;
+  v_current_delete_event_updated_at timestamptz;
   v_protected_event_id uuid;
   v_event_receipt_id uuid;
   v_second_receipt_id uuid;
@@ -2346,7 +2348,7 @@ begin
     'CrewHead direct event delete verification ' || pg_catalog.gen_random_uuid()::text,
     'planning'::public.event_status
   )
-  returning id into v_delete_event_id;
+  returning id, updated_at into v_delete_event_id, v_delete_event_updated_at;
 
   v_expected_error := false;
   execute 'set local role authenticated';
@@ -2361,7 +2363,10 @@ begin
   end if;
 
   select pg_catalog.to_jsonb(deleted) into v_result
-  from public.delete_event_atomic(v_delete_event_id) deleted;
+  from public.delete_event_atomic(
+    v_delete_event_id,
+    v_delete_event_updated_at
+  ) deleted;
   execute 'reset role';
   if (v_result->>'event_id')::uuid is distinct from v_delete_event_id then
     raise exception 'verification failed: CrewHead event delete RPC failed';
@@ -2376,12 +2381,15 @@ begin
     'Crew unauthorized event delete verification ' || pg_catalog.gen_random_uuid()::text,
     'planning'::public.event_status
   )
-  returning id into v_delete_event_id;
+  returning id, updated_at into v_delete_event_id, v_delete_event_updated_at;
 
   v_expected_error := false;
   execute 'set local role authenticated';
   begin
-    perform public.delete_event_atomic(v_delete_event_id);
+    perform public.delete_event_atomic(
+      v_delete_event_id,
+      v_delete_event_updated_at
+    );
   exception
     when sqlstate '42501' then
       get stacked diagnostics v_error_message = message_text;
@@ -2402,7 +2410,10 @@ begin
   v_expected_error := false;
   execute 'set local role authenticated';
   begin
-    perform public.delete_event_atomic(v_delete_event_id);
+    perform public.delete_event_atomic(
+      v_delete_event_id,
+      v_delete_event_updated_at
+    );
   exception
     when sqlstate '42501' then
       get stacked diagnostics v_error_message = message_text;
@@ -2436,7 +2447,7 @@ begin
     'atomic event delete verification ' || pg_catalog.gen_random_uuid()::text,
     'planning'::public.event_status
   )
-  returning id into v_delete_event_id;
+  returning id, updated_at into v_delete_event_id, v_delete_event_updated_at;
 
   v_result := public.save_timelog_atomic(
     null,
@@ -2476,8 +2487,69 @@ begin
     raise exception 'verification failed: COO directly deleted an event';
   end if;
 
+  update public.events
+  set updated_at = v_delete_event_updated_at + interval '1 second'
+  where id = v_delete_event_id
+  returning updated_at into v_current_delete_event_updated_at;
+  select pg_catalog.to_jsonb(e) into v_event_before
+  from public.events e
+  where e.id = v_delete_event_id;
+  select pg_catalog.to_jsonb(t) into v_timelog_before
+  from public.timelogs t
+  where t.id = v_atomic_delete_timelog_id;
+  select pg_catalog.coalesce(
+    pg_catalog.jsonb_agg(pg_catalog.to_jsonb(d) order by d.id),
+    '[]'::jsonb
+  ) into v_days_before
+  from public.timelog_days d
+  where d.timelog_id = v_atomic_delete_timelog_id;
+  select pg_catalog.to_jsonb(r) into v_receipt_before
+  from public.receipts r
+  where r.id = v_event_receipt_id;
+
+  v_expected_error := false;
+  begin
+    perform public.delete_event_atomic(
+      v_delete_event_id,
+      v_delete_event_updated_at
+    );
+  exception
+    when sqlstate '40001' then
+      get stacked diagnostics v_error_message = message_text;
+      if v_error_message <> 'event_delete_conflict' then
+        raise;
+      end if;
+      v_expected_error := true;
+  end;
+  select pg_catalog.to_jsonb(e) into v_event_after
+  from public.events e
+  where e.id = v_delete_event_id;
+  select pg_catalog.to_jsonb(t) into v_timelog_after
+  from public.timelogs t
+  where t.id = v_atomic_delete_timelog_id;
+  select pg_catalog.coalesce(
+    pg_catalog.jsonb_agg(pg_catalog.to_jsonb(d) order by d.id),
+    '[]'::jsonb
+  ) into v_days_after
+  from public.timelog_days d
+  where d.timelog_id = v_atomic_delete_timelog_id;
+  select pg_catalog.to_jsonb(r) into v_receipt_after
+  from public.receipts r
+  where r.id = v_event_receipt_id;
+  if not v_expected_error
+    or v_event_after is distinct from v_event_before
+    or v_timelog_after is distinct from v_timelog_before
+    or v_days_after is distinct from v_days_before
+    or v_receipt_after is distinct from v_receipt_before then
+    raise exception 'verification failed: stale event delete changed event lifecycle rows';
+  end if;
+
+  v_delete_event_updated_at := v_current_delete_event_updated_at;
   select pg_catalog.to_jsonb(deleted) into v_result
-  from public.delete_event_atomic(v_delete_event_id) deleted;
+  from public.delete_event_atomic(
+    v_delete_event_id,
+    v_delete_event_updated_at
+  ) deleted;
 
   if (v_result->>'event_id')::uuid is distinct from v_delete_event_id
     or exists (select 1 from public.events where id = v_delete_event_id)
@@ -2489,7 +2561,10 @@ begin
 
   v_expected_error := false;
   begin
-    perform public.delete_event_atomic(v_delete_event_id);
+    perform public.delete_event_atomic(
+      v_delete_event_id,
+      v_delete_event_updated_at
+    );
   exception
     when sqlstate 'P0002' then
       get stacked diagnostics v_error_message = message_text;
@@ -2507,7 +2582,7 @@ begin
     'protected event delete verification ' || pg_catalog.gen_random_uuid()::text,
     'planning'::public.event_status
   )
-  returning id into v_protected_event_id;
+  returning id, updated_at into v_protected_event_id, v_delete_event_updated_at;
 
   v_result := public.save_timelog_atomic(
     null,
@@ -2534,7 +2609,13 @@ begin
 
   v_expected_error := false;
   begin
-    perform public.delete_event_atomic(v_protected_event_id);
+    select e.updated_at into v_delete_event_updated_at
+    from public.events e
+    where e.id = v_protected_event_id;
+    perform public.delete_event_atomic(
+      v_protected_event_id,
+      v_delete_event_updated_at
+    );
   exception
     when sqlstate 'P0001' then
       get stacked diagnostics v_error_message = message_text;
@@ -2559,7 +2640,7 @@ begin
     'protected receipt event delete verification ' || pg_catalog.gen_random_uuid()::text,
     'planning'::public.event_status
   )
-  returning id into v_protected_event_id;
+  returning id, updated_at into v_protected_event_id, v_delete_event_updated_at;
 
   execute 'reset role';
   insert into public.receipts (contractor_id, event_id, name, amount, status)
@@ -2672,7 +2753,13 @@ begin
   execute 'set local role authenticated';
   v_expected_error := false;
   begin
-    perform public.delete_event_atomic(v_protected_event_id);
+    select e.updated_at into v_delete_event_updated_at
+    from public.events e
+    where e.id = v_protected_event_id;
+    perform public.delete_event_atomic(
+      v_protected_event_id,
+      v_delete_event_updated_at
+    );
   exception
     when sqlstate 'P0001' then
       get stacked diagnostics v_error_message = message_text;

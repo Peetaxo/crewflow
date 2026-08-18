@@ -606,7 +606,7 @@ describe('timelog assignment lifecycle migration', () => {
       'public.transition_receipt_statuses_atomic(jsonb, public.receipt_status, public.receipt_status)',
       'public.delete_timelog_atomic(uuid, timestamptz, public.timelog_status)',
       'public.import_approved_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, jsonb)',
-      'public.delete_event_atomic(uuid)',
+      'public.delete_event_atomic(uuid, timestamptz)',
       'public.create_invoice_atomic(jsonb, jsonb, jsonb, jsonb)',
       'public.mark_invoice_sent_atomic(uuid, timestamptz, timestamptz)',
       'public.mark_invoice_paid_atomic(uuid, public.invoice_status, timestamptz, timestamptz)',
@@ -674,7 +674,7 @@ describe('timelog assignment lifecycle migration', () => {
     expect(aclSql).toContain("('public.assign_event_crew(uuid, uuid, uuid, jsonb)', true, true, 'authenticated')");
     expect(aclSql).toContain("('public.remove_event_crew(uuid, uuid)', true, true, 'authenticated')");
     expect(aclSql).toContain("('public.approve_event_withdrawal(uuid, uuid, uuid)', true, true, 'authenticated')");
-    expect(aclSql).toContain("('public.delete_event_atomic(uuid)', true, true, 'authenticated')");
+    expect(aclSql).toContain("('public.delete_event_atomic(uuid, timestamptz)', true, true, 'authenticated')");
     expect(aclSql).toContain("('public.create_invoice_atomic(jsonb, jsonb, jsonb, jsonb)', true, true, 'authenticated')");
     expect(aclSql).toContain("('public.mark_invoice_paid_atomic(uuid, public.invoice_status, timestamptz, timestamptz)', true, true, 'authenticated')");
     expect(aclSql).toContain("('public.delete_invoice_atomic(uuid, public.invoice_status, timestamptz)', true, true, 'authenticated')");
@@ -723,7 +723,7 @@ describe('timelog assignment lifecycle migration', () => {
         'public.import_approved_timelog_atomic(uuid, uuid, uuid, timestamptz, public.timelog_status, numeric, text, jsonb)',
         true,
       ],
-      ['public.delete_event_atomic(uuid)', true],
+      ['public.delete_event_atomic(uuid, timestamptz)', true],
       ['public.create_invoice_atomic(jsonb, jsonb, jsonb, jsonb)', true],
       ['public.mark_invoice_sent_atomic(uuid, timestamptz, timestamptz)', true],
       [
@@ -1033,7 +1033,7 @@ describe('timelog assignment lifecycle migration', () => {
     const verifier = readVerificationScript();
 
     expect(deleteEventFunction).toMatch(
-      /function\s+public\.delete_event_atomic\s*\(\s*p_event_id uuid\s*\)/,
+      /function\s+public\.delete_event_atomic\s*\(\s*p_event_id uuid,\s*p_expected_updated_at timestamptz\s*\)/,
     );
     expect(deleteEventFunction).toMatch(
       /returns\s+table\s*\(\s*event_id uuid\s*\)\s+language\s+plpgsql\s+security definer/,
@@ -1045,6 +1045,8 @@ describe('timelog assignment lifecycle migration', () => {
     expectMarkersInOrder(deleteEventFunction, [
       'from public.events',
       'for update;',
+      'p_expected_updated_at is null',
+      'updated_at is distinct from p_expected_updated_at',
       'from public.timelogs',
       'order by t.id\n  for update;',
       "status not in ('draft', 'rejected')",
@@ -1054,6 +1056,11 @@ describe('timelog assignment lifecycle migration', () => {
       'delete from public.receipts',
       'delete from public.events',
     ]);
+    expect(deleteEventFunction).toMatch(
+      /delete from public\.events e\s+where e\.id = p_event_id\s+and e\.updated_at = p_expected_updated_at\s+returning e\.id into v_event_id/,
+    );
+    expect(sql).toContain('drop function if exists public.delete_event_atomic(uuid);');
+    expect(sql).not.toContain('grant execute on function public.delete_event_atomic(uuid) to authenticated;');
     expect(deleteEventFunction).toContain("raise exception 'event_has_protected_timelogs'");
     expect(deleteEventFunction).toContain("raise exception 'event_has_protected_receipts'");
     expect(deleteEventFunction).toContain("raise exception 'event_delete_conflict'");
@@ -1067,6 +1074,11 @@ describe('timelog assignment lifecycle migration', () => {
     expect(verifier).toContain('verification failed: coo directly deleted an event');
     expect(verifier).toContain('verification failed: crew-only user deleted an event through rpc');
     expect(verifier).toContain('verification failed: unauthenticated caller deleted an event through rpc');
+    expect(verifier).toContain('verification failed: stale event delete changed event lifecycle rows');
+    expect(verifier).toMatch(
+      /perform public\.delete_event_atomic\(\s*v_delete_event_id,\s*v_delete_event_updated_at\s*\)/,
+    );
+    expect(verifier).not.toMatch(/delete_event_atomic\(v_(?:delete|protected)_event_id\s*\)/);
   });
 
   it('defines authenticated COO-only atomic invoice create, sent, payment, and deletion contracts', () => {

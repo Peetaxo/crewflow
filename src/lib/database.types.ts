@@ -532,6 +532,7 @@ export interface Database {
       delete_event_atomic: {
         Args: {
           p_event_id: string;
+          p_expected_updated_at: string;
         };
         Returns: Array<{
           event_id: string;

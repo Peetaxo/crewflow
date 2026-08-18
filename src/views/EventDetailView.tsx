@@ -6,6 +6,7 @@ import { useAppContext } from '../context/useAppContext';
 import { useAuth } from '../app/providers/useAuth';
 import { useIsMobile } from '../hooks/use-mobile';
 import { KM_RATE } from '../data';
+import { appDataSource } from '../lib/app-config';
 import { PHASE_CONFIG } from '../constants';
 import { calculateDayHours, calculateTotalHours, formatCurrency, formatDateRange, formatShortDate, getDatesBetween, getEventStatus } from '../utils';
 import { Button } from '../components/ui/button';
@@ -34,6 +35,7 @@ import { getEventApprovalDocuments } from '../features/invoices/services/invoice
 import { updateTimelogStatus } from '../features/timelogs/services/timelogs.service';
 import { canCreateTimelog, canEditTimelog } from '../features/timelogs/services/timelog-permissions';
 import { isDisposableTimelogStatus } from '../features/events/services/event-assignment-lifecycle.service';
+import { createEmptyReceipt } from '../features/receipts/services/receipts.service';
 
 const EMPTY_APPROVAL_DOCUMENTS: InvoiceApprovalDocument[] = [];
 const CREW_ACTION_NAVIGATION_GUARD_MESSAGE = 'Probíhá změna v obsazení Crew. Počkejte prosím na její dokončení.';
@@ -705,18 +707,19 @@ const EventDetailView = () => {
 
           <div className="flex gap-2">
             <Button
-              onClick={() => setEditingReceipt({
-                id: Math.max(0, ...eventReceipts.map((receipt) => receipt.id)) + 1,
-                contractorProfileId: isCrewRole ? currentProfileId : undefined,
-                eid: event.id,
-                job: event.job,
-                title: '',
-                vendor: '',
-                amount: 0,
-                paidAt: event.startDate,
-                note: '',
-                status: 'draft',
-              })}
+              onClick={() => {
+                if (appDataSource === 'supabase' && !event.supabaseId) return;
+
+                const contractorProfileId = isCrewRole ? currentProfileId ?? undefined : undefined;
+                setEditingReceipt({
+                  ...createEmptyReceipt(contractorProfileId),
+                  contractorProfileId,
+                  eid: event.id,
+                  eventSupabaseId: event.supabaseId,
+                  job: event.job,
+                  paidAt: event.startDate,
+                });
+              }}
               variant="outline"
             >
               Pridat uctenku

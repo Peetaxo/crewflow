@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -14,20 +14,28 @@ const ReceiptEditModal = () => {
     editingReceipt,
     setEditingReceipt,
   } = useAppContext();
+  const draftIdentity = editingReceipt
+    ? editingReceipt.supabaseId ?? `local:${editingReceipt.id}`
+    : null;
   const saveInFlightRef = useRef(false);
-  const mountedRef = useRef(true);
-  const currentDraftRef = useRef(editingReceipt);
-  const saveRequestRef = useRef(0);
+  const activeSaveRequestRef = useRef<symbol | null>(null);
+  const mountedRef = useRef(false);
+  const currentDraftIdentityRef = useRef<string | null>(draftIdentity);
   const [isSaving, setIsSaving] = useState(false);
-  currentDraftRef.current = editingReceipt;
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      saveRequestRef.current += 1;
     };
   }, []);
+
+  useLayoutEffect(() => {
+    currentDraftIdentityRef.current = draftIdentity;
+    activeSaveRequestRef.current = null;
+    saveInFlightRef.current = false;
+    setIsSaving(false);
+  }, [draftIdentity]);
 
   if (!editingReceipt) return null;
 
@@ -196,30 +204,29 @@ const ReceiptEditModal = () => {
               onClick={async () => {
                 if (saveInFlightRef.current) return;
                 const draft = editingReceipt;
-                const requestId = saveRequestRef.current + 1;
-                saveRequestRef.current = requestId;
+                const requestIdentity = draftIdentity;
+                const requestToken = Symbol('receipt-save-request');
                 saveInFlightRef.current = true;
+                activeSaveRequestRef.current = requestToken;
                 setIsSaving(true);
+                const isCurrentRequest = () => (
+                  mountedRef.current
+                  && currentDraftIdentityRef.current === requestIdentity
+                  && activeSaveRequestRef.current === requestToken
+                );
                 try {
                   await saveReceipt(draft);
-                  if (
-                    mountedRef.current
-                    && requestId === saveRequestRef.current
-                    && currentDraftRef.current === draft
-                  ) {
+                  if (isCurrentRequest()) {
                     setEditingReceipt(null);
                   }
                 } catch (error) {
-                  if (
-                    mountedRef.current
-                    && requestId === saveRequestRef.current
-                    && currentDraftRef.current === draft
-                  ) {
+                  if (isCurrentRequest()) {
                     toast.error(error instanceof Error ? error.message : 'Nepodařilo se uložit účtenku.');
                   }
                 } finally {
-                  saveInFlightRef.current = false;
-                  if (mountedRef.current && requestId === saveRequestRef.current) {
+                  if (isCurrentRequest()) {
+                    activeSaveRequestRef.current = null;
+                    saveInFlightRef.current = false;
                     setIsSaving(false);
                   }
                 }

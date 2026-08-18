@@ -7,6 +7,7 @@ import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { getDatesBetween, getEventStatus } from '../../../utils';
 import { Client, Contractor, Event, EventApplication, EventApplicationStatus, EventCrewAssignment, EventPhaseSlot, GrasonEventConfirmation, Project, ReceiptItem, Timelog, TimelogType } from '../../../types';
 import { advanceLifecycleSnapshotGeneration, getLifecycleSnapshotGeneration, runLifecycleDataMutation } from '../../event-lifecycle-generation';
+import { createStableDraftUuid } from '../../stable-draft-identity';
 import { EventAssignmentResult, EventConflictDetail, EventFilter, EventWithDerivedStatus } from '../types/events.types';
 import { approveEventWithdrawalRpc, assignEventCrewRpc, isDisposableTimelogStatus, removeEventCrewRpc } from './event-assignment-lifecycle.service';
 import { deleteEventAtomicRpc } from './event-mutation-rpc.service';
@@ -1492,6 +1493,7 @@ export const createEmptyEvent = (): Event => {
 
   return {
     id: Math.max(0, ...events.map((event) => event.id)) + 1,
+    supabaseId: appDataSource === 'supabase' ? createStableDraftUuid() : undefined,
     name: '',
     job: '',
     startDate: '',
@@ -1522,7 +1524,7 @@ export const createEventCopy = (event: Event): Event => {
   return {
     ...event,
     id: Math.max(0, ...events.map((item) => item.id)) + 1,
-    supabaseId: undefined,
+    supabaseId: appDataSource === 'supabase' ? createStableDraftUuid() : undefined,
     updatedAt: undefined,
     startDate: newStartDate,
     endDate: newEndDate,

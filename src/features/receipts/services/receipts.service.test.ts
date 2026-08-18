@@ -85,6 +85,50 @@ describe('receipts.service write flow', () => {
     vi.unstubAllGlobals();
   });
 
+  it('creates a Supabase receipt draft with a stable UUID', async () => {
+    const uuid = vi.fn(() => 'client-uuid-1');
+    vi.stubGlobal('crypto', { randomUUID: uuid });
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => createSnapshot({ receipts: [] }),
+      updateLocalAppState: vi.fn(),
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {},
+    }));
+    vi.doMock('../../../lib/supabase-mappers', () => ({ mapReceipt: vi.fn() }));
+
+    const { createEmptyReceipt } = await import('./receipts.service');
+
+    expect(createEmptyReceipt('profile-1').supabaseId).toBe('client-uuid-1');
+    expect(uuid).toHaveBeenCalledOnce();
+  });
+
+  it('keeps local receipt drafts without a stable UUID', async () => {
+    const uuid = vi.fn(() => 'unexpected-uuid');
+    vi.stubGlobal('crypto', { randomUUID: uuid });
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'local' }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => createSnapshot({ receipts: [] }),
+      updateLocalAppState: vi.fn(),
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: false,
+      supabase: null,
+    }));
+    vi.doMock('../../../lib/supabase-mappers', () => ({ mapReceipt: vi.fn() }));
+
+    const { createEmptyReceipt } = await import('./receipts.service');
+
+    expect(createEmptyReceipt('profile-1').supabaseId).toBeUndefined();
+    expect(uuid).not.toHaveBeenCalled();
+  });
+
   const setupReceiptCreateIntentHarness = async ({
     loseFirstInsertResponse = false,
     failFirstRecovery = false,
@@ -579,17 +623,19 @@ describe('receipts.service write flow', () => {
       mapReceipt: vi.fn(),
     }));
 
-    const { createEmptyReceipt, saveReceipt } = await import('./receipts.service');
+    const { saveReceipt } = await import('./receipts.service');
 
-    const createdDraft = createEmptyReceipt('profile-uuid-1');
     const created = await saveReceipt({
-      ...createdDraft,
+      id: 1,
+      contractorProfileId: 'profile-uuid-1',
       eid: 1,
       job: ' AK001 ',
       title: ' Taxi ',
       vendor: ' Bolt ',
       amount: 300,
+      paidAt: '2026-04-12',
       note: ' Poznamka ',
+      status: 'draft',
     });
 
     expect(receiptsInsert).toHaveBeenCalledWith(expect.objectContaining({

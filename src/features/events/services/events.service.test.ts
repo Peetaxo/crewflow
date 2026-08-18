@@ -959,6 +959,70 @@ describe('events.service write flow', () => {
     },
   });
 
+  it('creates Supabase event drafts and copies with different stable UUIDs', async () => {
+    const uuid = vi.fn()
+      .mockReturnValueOnce('client-uuid-1')
+      .mockReturnValueOnce('client-uuid-2');
+    vi.stubGlobal('crypto', { randomUUID: uuid });
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => createSnapshot({ events: [] }),
+      updateLocalAppState: vi.fn(),
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {},
+    }));
+    vi.doMock('../../../lib/supabase-mappers', () => ({ mapClient: vi.fn(), mapEvent: vi.fn() }));
+
+    const { createEmptyEvent, createEventCopy } = await import('./events.service');
+
+    const draft = createEmptyEvent();
+    const copy = createEventCopy({
+      ...newEventDraft(),
+      supabaseId: 'server-event',
+      updatedAt: 'v1',
+    });
+
+    expect(draft.supabaseId).toBe('client-uuid-1');
+    expect(copy.supabaseId).toBe('client-uuid-2');
+    expect(copy.updatedAt).toBeUndefined();
+    expect(uuid).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps local event drafts and copies without a stable UUID', async () => {
+    const uuid = vi.fn(() => 'unexpected-uuid');
+    vi.stubGlobal('crypto', { randomUUID: uuid });
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'local' }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => createSnapshot({ events: [] }),
+      updateLocalAppState: vi.fn(),
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: false,
+      supabase: null,
+    }));
+    vi.doMock('../../../lib/supabase-mappers', () => ({ mapClient: vi.fn(), mapEvent: vi.fn() }));
+
+    const { createEmptyEvent, createEventCopy } = await import('./events.service');
+
+    const draft = createEmptyEvent();
+    const copy = createEventCopy({
+      ...newEventDraft(),
+      supabaseId: 'server-event',
+      updatedAt: 'v1',
+    });
+
+    expect(draft.supabaseId).toBeUndefined();
+    expect(copy.supabaseId).toBeUndefined();
+    expect(copy.updatedAt).toBeUndefined();
+    expect(uuid).not.toHaveBeenCalled();
+  });
+
   it('requests timelog hydration when reading event detail data', async () => {
     const ensureSupabaseTimelogsLoaded = vi.fn();
     const snapshot = createSnapshot({

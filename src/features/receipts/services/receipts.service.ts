@@ -10,6 +10,7 @@ import {
   getLifecycleSnapshotGeneration,
   runLifecycleDataMutation,
 } from '../../event-lifecycle-generation';
+import { createStableDraftUuid } from '../../stable-draft-identity';
 import {
   transitionReceiptStatusesAtomicRpc,
   type ReceiptMutationResult,
@@ -410,6 +411,7 @@ export const createEmptyReceipt = (
 ): ReceiptItem => {
   return ({
     id: Math.max(0, ...getLocalAppState().receipts.map((receipt) => receipt.id)) + 1,
+    supabaseId: appDataSource === 'supabase' ? createStableDraftUuid() : undefined,
     contractorProfileId,
     eid: 0,
     job: '',

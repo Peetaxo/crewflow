@@ -2,15 +2,16 @@
 
 **Date:** 2026-08-19  
 **Status:** Approved  
-**Scope:** Crew mobile Přehled, Akce history, role-scoped hydration, and rejected timelog resubmission
+**Scope:** Crew mobile Přehled, public event feed and history, role-scoped hydration, and rejected timelog resubmission
 
 ## Problem
 
-The Crew mobile experience currently combines three regressions:
+The Crew mobile experience currently combines four regressions:
 
 1. The `Crew can view assigned events` RLS policy only exposes events with a current `event_assignments` row. A Crew member can still own a draft or rejected timelog after an assignment lifecycle change, but the related event becomes invisible.
 2. Event and timelog snapshots use temporary numeric IDs derived from independently filtered result sets. After a role change or RLS visibility change, those IDs can be re-indexed differently. Event detail then misses an existing rejected timelog, constructs a new draft without a stable event UUID, and saving fails with `Nepodarilo se sparovat akci s databazovym zaznamem.`
 3. The integrated `MyShiftsView` markup uses the `nodu-my-shifts-*` class family, but its stylesheet was not included in the integration branch.
+4. The same RLS policy hides every public event that has no current assignment or owned timelog. The mobile UI already supports event applications, but Crew cannot see the event rows needed to use that workflow.
 
 The mobile Crew events feed also defaults to a start date of today, which hides all earlier visible events even when Crew is entitled to see them.
 
@@ -18,12 +19,14 @@ The mobile Crew events feed also defaults to a start date of today, which hides 
 
 ### Database visibility
 
-Add a new forward-only migration that replaces the Crew event SELECT policy. A Crew member may view an event when either:
+The pending, not-yet-deployed migration replaces the Crew event SELECT policy. A Crew member may view an event when any of these conditions is true:
 
+- the event is published for Crew with status `upcoming` or `full`,
 - they have a current row in `event_assignments`, or
-- they own a timelog for that event in any lifecycle status.
+- they own a timelog for that event in any lifecycle status, or
+- they own an application for that event in any lifecycle status.
 
-The policy retains the explicit Crew role check and does not expand write privileges. This makes draft, rejected, submitted, approved, invoiced, and paid history readable only to the owning Crew profile.
+The policy retains the explicit Crew role check and does not expand event write privileges. Unrelated `planning` and `past` rows remain hidden, while draft, rejected, submitted, approved, invoiced, and paid history stays readable to the owning Crew profile.
 
 ### Stable identity and resubmission
 
@@ -39,6 +42,8 @@ Role switching changes database visibility. The app therefore changes the local 
 
 The mobile Crew event feed defaults to all visible events. The date picker remains an optional “show from this date” filter and gains a clear “Všechny akce” action. Past events remain subject to RLS and the existing Crew filters.
 
+The application action is available only for a published `upcoming` event with free capacity. A `full` event remains visible but shows `Obsazeno`; an owned historical event remains visible without a new-application action.
+
 ### Přehled styling
 
 Move the existing mobile My Shifts stylesheet from the source mobile branch into `src/styles/mobile-my-shifts.css` and import it from `src/main.tsx`. No visual redesign is introduced.
@@ -52,7 +57,8 @@ Move the existing mobile My Shifts stylesheet from the source mobile branch into
 
 ## Verification
 
-- Static migration test for the exact Crew SELECT predicate and unchanged event write ACL.
+- Static migration test for the exact Crew SELECT predicate: published `upcoming/full` events or an owned assignment, timelog, or application, with unchanged event write ACL.
+- Mobile events regressions proving a public unassigned event is visible and actionable, a full event is visible but not actionable, and unrelated planning/past events remain hidden by the database contract.
 - Timelog service regression proving a stale/missing local row updates the existing rejected UUID rather than inserting.
 - Event detail regression proving UUID-first matching and UUID-bearing drafts.
 - Auth/bootstrap regression proving successful role switching reloads the role-scoped queries only after the RPC.

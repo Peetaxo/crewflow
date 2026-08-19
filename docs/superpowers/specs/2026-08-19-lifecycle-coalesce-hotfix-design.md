@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-19
 
-**Status:** Approved design; implementation pending
+**Status:** Implemented and verified in the linked production database
 
 **Scope:** Correct the invalid schema-qualified `COALESCE` expressions discovered by the linked production database lint after migration `20260817074631_timelog_assignment_lifecycle.sql` was applied. No application or data-model behavior changes.
 
@@ -56,3 +56,26 @@ The rollback verifier will receive the same mechanical replacement for every `pg
 6. Verify zero duplicate `(event_id, contractor_id)` groups, the exact unique constraint, and the retained Red Bull canonical timelog.
 
 Frontend deployment remains blocked until every database gate above passes.
+
+## Rollout outcome and follow-up hardening
+
+The `COALESCE` repair shipped as migration `20260819073300_fix_lifecycle_coalesce.sql`. Linked database lint then passed with no schema errors.
+
+Two additional fail-closed follow-ups were required before the rollback verifier could be accepted:
+
+1. `20260819082202_remove_legacy_timelog_policies.sql` removed two obsolete policies whose effective permissions were already provided by the newer authenticated workflow policies.
+2. `20260819083616_restrict_lifecycle_function_execute.sql` removed Supabase's automatic `service_role` execute grant from the exact 18 lifecycle endpoints and helpers. Authenticated endpoint access and owner-only trigger-helper access remain unchanged.
+
+The verifier itself was aligned with the installed RLS contracts: protected Crew deletion expects the row-hiding `timelog_mutation_not_found` result, event-delete table results are converted to explicit JSON objects, stale event versions are constructed without fighting the transaction-stable `updated_at` trigger, and invoice receipt fixtures now move through `draft -> submitted -> approved` using the authenticated receipt RPC.
+
+Final evidence:
+
+- linked database lint: no schema errors;
+- authenticated rollback verifier: passed and rolled back all fixtures;
+- duplicate `(event_id, contractor_id)` groups: `0`;
+- exact unique constraint: `timelogs_event_contractor_unique` with `UNIQUE (event_id, contractor_id)`;
+- Red Bull 400 canonical timelog `1489bcb7-b4fa-4c93-a92d-5433e725ba03`: present as the only row for its event/profile pair;
+- focused local regression matrix: 391/391 tests passed;
+- TypeScript, focused ESLint, and production build: passed.
+
+No frontend deployment was performed as part of this database rollout.

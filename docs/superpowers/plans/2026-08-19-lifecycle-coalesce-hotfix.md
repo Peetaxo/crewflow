@@ -1,5 +1,7 @@
 # Lifecycle `COALESCE` Hotfix Implementation Plan
 
+**Status:** Completed and production-verified on 2026-08-19. The rollout also includes the documented legacy-policy cleanup, lifecycle-function ACL restriction, and verifier fixture corrections discovered by the schema-first gates.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Repair the six production lifecycle functions containing invalid `pg_catalog.coalesce(...)` expressions, make the rollback verifier executable, and rerun every schema-first production gate before frontend deployment.
@@ -15,7 +17,7 @@
 **Files:**
 - Modify/Test: `src/features/events/services/event-assignment-lifecycle-migration.test.ts`
 
-- [ ] **Step 1: Add a corrective-migration reader**
+- [x] **Step 1: Add a corrective-migration reader**
 
 ```ts
 const coalesceHotfixMigrationFiles = readdirSync(migrationDirectory)
@@ -30,7 +32,7 @@ const readCoalesceHotfixMigration = () => {
 };
 ```
 
-- [ ] **Step 2: Require the exact repair map and valid verifier syntax**
+- [x] **Step 2: Require the exact repair map and valid verifier syntax**
 
 Add one test containing this exact signature/count map:
 
@@ -47,7 +49,7 @@ const expectedFixes = [
 
 Assert every tuple occurs in the new migration, it uses `pg_catalog.pg_get_functiondef`, it replaces only `pg_catalog.coalesce(` with `coalesce(`, it has a post-repair exception, and `readVerificationScript()` no longer contains `pg_catalog.coalesce(`.
 
-- [ ] **Step 3: Run RED**
+- [x] **Step 3: Run RED**
 
 ```bash
 npm test -- src/features/events/services/event-assignment-lifecycle-migration.test.ts
@@ -62,7 +64,7 @@ Expected: FAIL because the corrective migration is absent and the verifier still
 - Modify: `supabase/verify-timelog_assignment_lifecycle.sql`
 - Test: `src/features/events/services/event-assignment-lifecycle-migration.test.ts`
 
-- [ ] **Step 1: Create one fail-closed migration**
+- [x] **Step 1: Create one fail-closed migration**
 
 Use one transaction and one `DO` block with the exact six signature/count tuples. The body must resolve with `pg_catalog.to_regprocedure`, read with `pg_catalog.pg_get_functiondef`, compute the exact token count, abort on drift, execute only the replacement, and reject any remaining invalid token:
 
@@ -109,11 +111,11 @@ $$;
 commit;
 ```
 
-- [ ] **Step 2: Correct the verifier mechanically**
+- [x] **Step 2: Correct the verifier mechanically**
 
 Replace every exact `pg_catalog.coalesce(` in `supabase/verify-timelog_assignment_lifecycle.sql` with `coalesce(`. Do not change its fixtures, assertions, transaction, or final `ROLLBACK`.
 
-- [ ] **Step 3: Run GREEN and commit**
+- [x] **Step 3: Run GREEN and commit**
 
 ```bash
 npm test -- src/features/events/services/event-assignment-lifecycle-migration.test.ts
@@ -127,7 +129,7 @@ Expected: focused tests PASS and the commit contains only these three files.
 
 **Files:** Verify only.
 
-- [ ] **Step 1: Run focused lifecycle coverage**
+- [x] **Step 1: Run focused lifecycle coverage**
 
 ```bash
 npm test -- src/features/events/services/event-assignment-lifecycle-migration.test.ts src/features/events/services/event-assignment-lifecycle.service.test.ts src/features/events/services/events.service.test.ts src/features/timelogs/services/timelogs.service.test.ts src/features/invoices/services/invoices.service.test.ts src/features/receipts/services/receipts.service.test.ts src/features/uuid-write-flows.integration.test.ts
@@ -135,7 +137,7 @@ npm test -- src/features/events/services/event-assignment-lifecycle-migration.te
 
 Expected: zero focused failures.
 
-- [ ] **Step 2: Run static/build gates**
+- [x] **Step 2: Run static/build gates**
 
 ```bash
 npx tsc --noEmit
@@ -152,7 +154,7 @@ Expected: every command exits zero and the worktree is clean.
 **Files:**
 - Deploy: `supabase/migrations/20260819073300_fix_lifecycle_coalesce.sql`
 
-- [ ] **Step 1: Confirm exact scope**
+- [x] **Step 1: Confirm exact scope**
 
 ```bash
 supabase migration list --linked
@@ -161,7 +163,7 @@ supabase db push --linked --dry-run
 
 Expected: remote history ends at `20260817074631`; dry-run lists only `20260819073300_fix_lifecycle_coalesce.sql`.
 
-- [ ] **Step 2: Apply the correction**
+- [x] **Step 2: Apply the correction**
 
 ```bash
 supabase db push --linked
@@ -174,7 +176,7 @@ Expected: exactly one migration applies. Never use `--include-all`; do not deplo
 **Files:**
 - Verify: `supabase/verify-timelog_assignment_lifecycle.sql`
 
-- [ ] **Step 1: Run lint, advisors, and rollback verifier**
+- [x] **Step 1: Run lint, advisors, and rollback verifier**
 
 ```bash
 supabase db lint --linked --level error --fail-on error
@@ -185,12 +187,12 @@ supabase db query --linked --file supabase/verify-timelog_assignment_lifecycle.s
 
 Expected: lint passes; advisor warnings are reviewed; verifier reaches its final `ROLLBACK` with no persistent fixtures.
 
-- [ ] **Step 2: Verify production invariants**
+- [x] **Step 2: Verify production invariants**
 
 Run exact read-only queries for duplicate `(event_id, contractor_id)` groups, `timelogs_event_contractor_unique`, and the Red Bull event/profile pair.
 
 Expected: zero duplicate groups; exact `UNIQUE (event_id, contractor_id)`; exactly canonical Red Bull timelog `1489bcb7-b4fa-4c93-a92d-5433e725ba03`.
 
-- [ ] **Step 3: Report the boundary**
+- [x] **Step 3: Report the boundary**
 
 Report actual outputs. Frontend deployment remains a separate explicit action.

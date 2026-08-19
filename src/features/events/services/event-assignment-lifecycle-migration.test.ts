@@ -7,6 +7,8 @@ const migrationFiles = readdirSync(migrationDirectory)
   .filter((name) => name.endsWith('_timelog_assignment_lifecycle.sql'));
 const coalesceHotfixMigrationFiles = readdirSync(migrationDirectory)
   .filter((name) => name.endsWith('_fix_lifecycle_coalesce.sql'));
+const legacyPolicyCleanupMigrationFiles = readdirSync(migrationDirectory)
+  .filter((name) => name.endsWith('_remove_legacy_timelog_policies.sql'));
 const verificationScriptPath = join(
   process.cwd(),
   'supabase',
@@ -24,6 +26,13 @@ const readDatabaseTypes = () => readFileSync(databaseTypesPath, 'utf8');
 const readCoalesceHotfixMigration = () => {
   expect.soft(coalesceHotfixMigrationFiles).toHaveLength(1);
   const migrationFile = coalesceHotfixMigrationFiles[0];
+  return migrationFile
+    ? readFileSync(join(migrationDirectory, migrationFile), 'utf8').toLowerCase()
+    : '';
+};
+const readLegacyPolicyCleanupMigration = () => {
+  expect.soft(legacyPolicyCleanupMigrationFiles).toHaveLength(1);
+  const migrationFile = legacyPolicyCleanupMigrationFiles[0];
   return migrationFile
     ? readFileSync(join(migrationDirectory, migrationFile), 'utf8').toLowerCase()
     : '';
@@ -1224,5 +1233,27 @@ describe('timelog assignment lifecycle migration', () => {
       "raise exception 'lifecycle coalesce repair did not remove every invalid expression'",
     );
     expect.soft(verifier).not.toContain('pg_catalog.coalesce(');
+  });
+
+  it('removes only the two obsolete public timelog workflow policies', () => {
+    const cleanup = readLegacyPolicyCleanupMigration();
+
+    [
+      'Crew can update own draft, rejected, and correction timelogs',
+      'CrewHead can create timelog proposals for Crew confirmation',
+    ].forEach((policyName) => {
+      expect.soft(cleanup).toMatch(
+        new RegExp(
+          `drop\\s+policy\\s+if\\s+exists\\s+"${policyName.toLowerCase()}"\\s+on\\s+public\\.timelogs`,
+        ),
+      );
+    });
+    expect.soft(cleanup).toContain('select pg_catalog.count(*)::integer');
+    expect.soft(cleanup).toContain('from pg_catalog.pg_policy policy');
+    expect.soft(cleanup).toContain("policy.polrelid = 'public.timelogs'::pg_catalog.regclass");
+    expect.soft(cleanup).toContain('if v_policy_count <> 11');
+    expect.soft(cleanup).toContain(
+      "raise exception 'timelog workflow policy cleanup left an unexpected catalog'",
+    );
   });
 });

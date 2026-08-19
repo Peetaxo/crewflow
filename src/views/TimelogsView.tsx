@@ -20,6 +20,7 @@ import {
 import {
   getTimelogDependencies,
   updateTimelogStatus,
+  updateTimelogStatuses,
 } from '../features/timelogs/services/timelogs.service';
 import { useTimelogsQuery } from '../features/timelogs/queries/useTimelogsQuery';
 import { canEditTimelog, canSeeTimelogNote, canSubmitTimelog } from '../features/timelogs/services/timelog-permissions';
@@ -212,7 +213,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
   }, [readyApprovalRows, timelogsQuery]);
 
   const runBulkAction = (ids: number[], action: 'ch' | 'coo') => {
-    void Promise.all(ids.map((id) => updateTimelogStatus(id, action))).catch((error) => {
+    void updateTimelogStatuses(ids, action).catch((error) => {
       toast.error(error instanceof Error ? error.message : 'Nepodařilo se aktualizovat výkazy.');
     });
   };

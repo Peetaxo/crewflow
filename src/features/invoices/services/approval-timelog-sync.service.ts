@@ -9,7 +9,7 @@ import type {
   TimelogType,
 } from '../../../types';
 import { getDatesBetween } from '../../../utils';
-import { createTimelog, saveTimelog } from '../../timelogs/services/timelogs.service';
+import { importApprovedTimelog } from '../../timelogs/services/timelogs.service';
 
 export type ApprovalTimelogPreviewStatus = 'ready' | 'needs_review' | 'blocked' | 'applied';
 
@@ -1080,16 +1080,18 @@ export const applyApprovalTimelogPreview = async (
   const nextDays = sortDays(row.proposedDays);
 
   if (existingTimelog) {
-    return saveTimelog({
+    return importApprovedTimelog({
       ...existingTimelog,
+      eventSupabaseId: row.matchedEvent.supabaseId ?? existingTimelog.eventSupabaseId,
       days: nextDays,
       note: withApprovalNote(existingTimelog.note, row),
       status: 'approved',
     });
   }
 
-  return createTimelog({
+  return importApprovedTimelog({
     eid: row.matchedEvent.id,
+    eventSupabaseId: row.matchedEvent.supabaseId,
     contractorProfileId: row.matchedContractor.profileId,
     days: nextDays,
     km: 0,

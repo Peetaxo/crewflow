@@ -366,6 +366,8 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     eventAssignmentsResult,
     timelogDaysResult,
     invoicesResult,
+    invoiceTimelogsResult,
+    invoiceReceiptsResult,
     receiptsResult,
     candidatesResult,
     budgetPackagesResult,
@@ -389,6 +391,8 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     supabase.from('event_assignments').select('*').order('assigned_at'),
     supabase.from('timelog_days').select('*').order('date'),
     supabase.from('invoices').select('*').order('created_at'),
+    supabase.from('invoice_timelogs').select('*').order('created_at'),
+    supabase.from('invoice_receipts').select('*').order('created_at'),
     supabase.from('receipts').select('*').order('created_at'),
     supabase.from('candidates').select('*').order('created_at'),
     supabase.from('budget_packages').select('*').order('created_at'),
@@ -414,6 +418,8 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     eventAssignmentsResult,
     timelogDaysResult,
     invoicesResult,
+    invoiceTimelogsResult,
+    invoiceReceiptsResult,
     receiptsResult,
     candidatesResult,
     budgetPackagesResult,
@@ -447,6 +453,8 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
   const eventAssignmentRows = (eventAssignmentsResult.data ?? []) as EventAssignmentRow[];
   const timelogDayRows = timelogDaysResult.data ?? [];
   const invoiceRows = invoicesResult.data ?? [];
+  const invoiceTimelogRows = invoiceTimelogsResult.data ?? [];
+  const invoiceReceiptRows = invoiceReceiptsResult.data ?? [];
   const receiptRows = receiptsResult.data ?? [];
   const candidateRows = candidatesResult.data ?? [];
   const budgetPackageRows = budgetPackagesResult.data ?? [];
@@ -587,13 +595,36 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     updatedAt: row.updated_at,
   } satisfies CrewRating));
 
-  const invoices = invoiceRows.map((row) => ({
-    ...mapInvoice(row),
-    contractorProfileId: row.contractor_id,
-    eid: row.event_id ? (eventIdMap.get(row.event_id) ?? Number.NaN) : Number.NaN,
-  }));
-
   const receiptIdMap = indexById(receiptRows);
+  const invoices = invoiceRows.map((row) => {
+    const timelogSupabaseIds = Array.from(new Set([
+      row.timelog_id,
+      ...invoiceTimelogRows
+        .filter((link) => link.invoice_id === row.id)
+        .map((link) => link.timelog_id),
+    ].filter((id): id is string => Boolean(id)))).sort((left, right) => left.localeCompare(right));
+    const receiptSupabaseIds = Array.from(new Set(
+      invoiceReceiptRows
+        .filter((link) => link.invoice_id === row.id)
+        .map((link) => link.receipt_id),
+    )).sort((left, right) => left.localeCompare(right));
+    return {
+      ...mapInvoice(row),
+      contractorProfileId: row.contractor_id,
+      eid: row.event_id ? (eventIdMap.get(row.event_id) ?? Number.NaN) : Number.NaN,
+      timelogSupabaseIds,
+      timelogIds: timelogSupabaseIds
+        .map((id) => timelogIdMap.get(id) ?? Number.NaN)
+        .filter((id) => !Number.isNaN(id))
+        .sort((left, right) => left - right),
+      receiptSupabaseIds,
+      receiptIds: receiptSupabaseIds
+        .map((id) => receiptIdMap.get(id) ?? Number.NaN)
+        .filter((id) => !Number.isNaN(id))
+        .sort((left, right) => left - right),
+    };
+  });
+
   const receipts = receiptRows.map((row) => ({
     ...mapReceipt(row),
     id: receiptIdMap.get(row.id) ?? Number.NaN,

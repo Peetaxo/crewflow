@@ -21,6 +21,7 @@ export interface EventPhaseSlot extends EventPhaseTime {
 export interface Event {
   id: number;
   supabaseId?: string;
+  updatedAt?: string;
   projectId?: string | null;
   name: string;
   /** Job Number - propojeni s projektem */
@@ -128,7 +129,7 @@ export interface CrewRating {
 }
 
 /** Status vykazu prace */
-export type TimelogStatus = 'draft' | 'pending_ch' | 'pending_coo' | 'approved' | 'invoiced' | 'paid' | 'rejected';
+export type TimelogStatus = 'draft' | 'pending_crew_confirmation' | 'pending_ch' | 'pending_coo' | 'approved' | 'invoiced' | 'paid' | 'rejected';
 
 /** Jeden den ve vykazu prace */
 export interface TimelogDay {
@@ -147,9 +148,15 @@ export interface TimelogDay {
 /** Vykaz prace (timelog) */
 export interface Timelog {
   id: number;
+  /** Stabilni UUID radku vykazu v Supabase */
+  supabaseId?: string;
   /** ID akce */
   eid: number;
+  /** Stabilni UUID akce v Supabase */
+  eventSupabaseId?: string;
   contractorProfileId?: string;
+  /** Optimisticka verze radku ze Supabase */
+  updatedAt?: string;
   days: TimelogDay[];
   /** Cestovne v km */
   km: number;
@@ -249,6 +256,7 @@ export interface InvoiceCustomerSnapshot {
 /** Faktura */
 export interface Invoice {
   id: string;
+  updatedAt?: string;
   contractorProfileId?: string;
   /** ID akce */
   eid: number;
@@ -267,8 +275,12 @@ export interface Invoice {
   jobNumbers?: string[];
   /** Navazane timelogy zahrnute do faktury */
   timelogIds?: number[];
+  /** Stabilni Supabase UUID navazanych timelogu */
+  timelogSupabaseIds?: string[];
   /** Navazane uctenky zahrnute do faktury */
   receiptIds?: number[];
+  /** Stabilni Supabase UUID navazanych uctenek */
+  receiptSupabaseIds?: string[];
   /** Vsechny navazane akce zahrnute do faktury */
   eventIds?: number[];
   invoiceNumber?: string;
@@ -282,6 +294,7 @@ export interface Invoice {
   pdfGeneratedAt?: string | null;
   status: InvoiceStatus;
   sentAt: string | null;
+  paidAt?: string | null;
 }
 
 /** Status účtenky */
@@ -290,6 +303,8 @@ export type ReceiptStatus = 'draft' | 'submitted' | 'approved' | 'attached' | 'r
 /** Účtenka / výdaj crew k akci */
 export interface ReceiptItem {
   id: number;
+  supabaseId?: string;
+  updatedAt?: string;
   eventSupabaseId?: string;
   contractorProfileId?: string;
   eid: number;

@@ -1,4 +1,5 @@
 import { Event, Timelog } from '../../../types';
+import type { AssignEventCrewRpcResult } from '../services/event-assignment-lifecycle.service';
 
 export type EventFilter = 'upcoming' | 'past' | 'all';
 
@@ -16,4 +17,5 @@ export interface EventConflictDetail {
 export interface EventAssignmentResult {
   event: Event;
   timelog: Timelog;
+  rpc?: AssignEventCrewRpcResult;
 }

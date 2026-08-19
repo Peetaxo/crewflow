@@ -10,12 +10,11 @@ import {
   applyApprovalTimelogPreview,
   buildApprovalTimelogPreview,
 } from './approval-timelog-sync.service';
-import { createTimelog, saveTimelog } from '../../timelogs/services/timelogs.service';
+import { importApprovedTimelog } from '../../timelogs/services/timelogs.service';
 import { assignCrewToEvent } from '../../events/services/events.service';
 
 vi.mock('../../timelogs/services/timelogs.service', () => ({
-  createTimelog: vi.fn(),
-  saveTimelog: vi.fn(),
+  importApprovedTimelog: vi.fn(),
 }));
 
 vi.mock('../../events/services/events.service', () => ({
@@ -1411,13 +1410,14 @@ describe('approval timelog sync service', () => {
       eventCrewAssignments,
       grasonConfirmations: [],
     });
-    vi.mocked(saveTimelog).mockResolvedValue({ ...timelogs[0], status: 'approved' });
+    vi.mocked(importApprovedTimelog).mockResolvedValue({ ...timelogs[0], status: 'approved' });
 
     await applyApprovalTimelogPreview(preview[0], { timelogs });
 
     expect(assignCrewToEvent).not.toHaveBeenCalled();
-    expect(saveTimelog).toHaveBeenCalledWith(expect.objectContaining({
+    expect(importApprovedTimelog).toHaveBeenCalledWith(expect.objectContaining({
       id: 1,
+      eventSupabaseId: 'event-uuid-1',
       status: 'approved',
       days: [{ d: '2026-05-16', f: '05:00', t: '13:00', type: 'instal' }],
       note: expect.stringContaining('PowerApps: Safarik - 20260015.pdf'),
@@ -1433,7 +1433,7 @@ describe('approval timelog sync service', () => {
       eventCrewAssignments,
       grasonConfirmations: [],
     });
-    vi.mocked(createTimelog).mockResolvedValue({
+    vi.mocked(importApprovedTimelog).mockResolvedValue({
       id: 12,
       eid: 1,
       contractorProfileId: 'profile-ondrej',
@@ -1446,8 +1446,9 @@ describe('approval timelog sync service', () => {
     await applyApprovalTimelogPreview(preview[0], { timelogs: [] });
 
     expect(assignCrewToEvent).not.toHaveBeenCalled();
-    expect(createTimelog).toHaveBeenCalledWith(expect.objectContaining({
+    expect(importApprovedTimelog).toHaveBeenCalledWith(expect.objectContaining({
       eid: 1,
+      eventSupabaseId: 'event-uuid-1',
       contractorProfileId: 'profile-ondrej',
       status: 'approved',
       days: [{ d: '2026-05-16', f: '05:00', t: '13:00', type: 'instal' }],

@@ -1,7 +1,17 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Event, ReceiptItem, Timelog } from '../../types';
+
+const createDeferred = <T,>() => {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+};
 
 type ModalContractor = {
   id: number;
@@ -52,23 +62,31 @@ let mockReceiptDependencies = {
   contractors: [] as ModalContractor[],
   events: [] as ModalEvent[],
 };
+let receiptDependenciesSuspension: Promise<never> | null = null;
 
 let mockCrew = [] as ModalContractor[];
 const assignCrewToEvent = vi.fn();
 const getContractorConflictsForEvent = vi.fn(() => new Map());
 const getEventDetailData = vi.fn(() => ({ timelogs: [] }));
+const toastMocks = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+}));
+const saveReceiptMock = vi.hoisted(() => vi.fn());
 
 vi.mock('framer-motion', () => ({
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   motion: {
-    div: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div>,
+    div: React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+      ({ children, ...props }, ref) => <div ref={ref} {...props}>{children}</div>,
+    ),
   },
 }));
 
 vi.mock('sonner', () => ({
   toast: {
-    success: vi.fn(),
-    error: vi.fn(),
+    success: toastMocks.success,
+    error: toastMocks.error,
   },
 }));
 
@@ -82,8 +100,11 @@ vi.mock('../../features/timelogs/services/timelogs.service', () => ({
 }));
 
 vi.mock('../../features/receipts/services/receipts.service', () => ({
-  getReceiptDependencies: () => mockReceiptDependencies,
-  saveReceipt: vi.fn(),
+  getReceiptDependencies: () => {
+    if (receiptDependenciesSuspension) throw receiptDependenciesSuspension;
+    return mockReceiptDependencies;
+  },
+  saveReceipt: saveReceiptMock,
 }));
 
 vi.mock('../../features/crew/services/crew.service', () => ({
@@ -103,6 +124,9 @@ import AssignCrewModal from './AssignCrewModal';
 describe('modal contractor identity handling', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    saveReceiptMock.mockReset();
+    assignCrewToEvent.mockReset();
+    assignCrewToEvent.mockResolvedValue(undefined);
     mockAppContext = {
       role: 'crewhead',
       editingTimelog: null,
@@ -114,6 +138,7 @@ describe('modal contractor identity handling', () => {
     };
     mockTimelogDependencies = { contractors: [], events: [] };
     mockReceiptDependencies = { contractors: [], events: [] };
+    receiptDependenciesSuspension = null;
     mockCrew = [];
     getContractorConflictsForEvent.mockReturnValue(new Map());
     getEventDetailData.mockReturnValue({ timelogs: [] });
@@ -216,6 +241,180 @@ describe('modal contractor identity handling', () => {
     }));
   });
 
+  it('stores the selected stable event UUID before saving', () => {
+    mockAppContext.editingReceipt = {
+      id: 1,
+      supabaseId: 'receipt-client-uuid',
+      contractorProfileId: 'profile-uuid-1',
+      eid: 1,
+      eventSupabaseId: 'event-a',
+      job: 'A',
+      title: 'Taxi',
+      vendor: 'Bolt',
+      amount: 300,
+      paidAt: '2026-04-21',
+      note: '',
+      status: 'draft',
+    };
+    mockReceiptDependencies.events = [
+      { id: 1, supabaseId: 'event-a', job: 'A', name: 'Event A', startDate: '2026-04-20', endDate: '2026-04-20' },
+      { id: 2, supabaseId: 'event-b', job: 'B', name: 'Event B', startDate: '2026-04-21', endDate: '2026-04-21' },
+    ];
+
+    render(<ReceiptEditModal />);
+    fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: '2' } });
+
+    expect(setEditingReceipt).toHaveBeenCalledWith(expect.objectContaining({
+      eid: 2,
+      eventSupabaseId: 'event-b',
+      job: 'B',
+    }));
+  });
+
+  it('rejects a native same-render double save, disables every editable control, and keeps the UUID draft after failure', async () => {
+    const pending = createDeferred<ReceiptItem>();
+    saveReceiptMock.mockReturnValue(pending.promise);
+    mockAppContext.editingReceipt = {
+      id: 1,
+      supabaseId: 'receipt-client-uuid',
+      contractorProfileId: 'profile-uuid-1',
+      eid: 1,
+      eventSupabaseId: 'event-a',
+      job: 'A',
+      title: 'Taxi',
+      vendor: 'Bolt',
+      amount: 300,
+      paidAt: '2026-04-21',
+      note: '',
+      status: 'draft',
+    };
+    mockReceiptDependencies = {
+      contractors: [{ id: 1, profileId: 'profile-uuid-1', name: 'Contractor One' }],
+      events: [{ id: 1, supabaseId: 'event-a', job: 'A', name: 'Event A', startDate: '2026-04-20', endDate: '2026-04-20' }],
+    };
+
+    render(<ReceiptEditModal />);
+    const saveButton = screen.getByRole('button', { name: 'Uložit účtenku' });
+    act(() => {
+      saveButton.click();
+      saveButton.click();
+    });
+
+    expect(saveReceiptMock).toHaveBeenCalledOnce();
+    expect(saveReceiptMock).toHaveBeenCalledWith(expect.objectContaining({
+      supabaseId: 'receipt-client-uuid',
+      eventSupabaseId: 'event-a',
+    }));
+    screen.getAllByRole('combobox').forEach((control) => expect(control).toBeDisabled());
+    screen.getAllByRole('textbox').forEach((control) => expect(control).toBeDisabled());
+    expect(screen.getByRole('spinbutton')).toBeDisabled();
+    screen.getAllByRole('button').forEach((control) => expect(control).toBeDisabled());
+
+    await act(async () => pending.reject(new Error('Účtenku se nepodařilo uložit.')));
+
+    expect(setEditingReceipt).not.toHaveBeenCalledWith(null);
+    expect(saveButton).toBeEnabled();
+  });
+
+  it('does not let an older save completion close or lock a newer receipt draft', async () => {
+    const firstPending = createDeferred<ReceiptItem>();
+    const secondPending = createDeferred<ReceiptItem>();
+    saveReceiptMock
+      .mockReturnValueOnce(firstPending.promise)
+      .mockReturnValueOnce(secondPending.promise);
+    const firstDraft: ReceiptItem = {
+      id: 1, supabaseId: 'receipt-client-uuid-1', contractorProfileId: 'profile-uuid-1',
+      eid: 1, eventSupabaseId: 'event-a', job: 'A', title: 'Taxi', vendor: 'Bolt', amount: 300,
+      paidAt: '2026-04-21', note: '', status: 'draft',
+    };
+    mockAppContext.editingReceipt = firstDraft;
+    mockReceiptDependencies = {
+      contractors: [{ id: 1, profileId: 'profile-uuid-1', name: 'Contractor One' }],
+      events: [{ id: 1, supabaseId: 'event-a', job: 'A', name: 'Event A', startDate: '2026-04-20', endDate: '2026-04-20' }],
+    };
+    const view = render(<ReceiptEditModal />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Uložit účtenku' }));
+    mockAppContext.editingReceipt = { ...firstDraft, supabaseId: 'receipt-client-uuid-2', title: 'New draft' };
+    view.rerender(<ReceiptEditModal />);
+
+    expect(screen.getByRole('button', { name: 'Uložit účtenku' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Uložit účtenku' }));
+    expect(saveReceiptMock).toHaveBeenCalledTimes(2);
+
+    await act(async () => firstPending.reject(new Error('Old draft failed')));
+
+    expect(toastMocks.error).not.toHaveBeenCalled();
+    expect(setEditingReceipt).not.toHaveBeenCalledWith(null);
+
+    await act(async () => secondPending.resolve({
+      ...firstDraft,
+      supabaseId: 'receipt-client-uuid-2',
+      updatedAt: 'v2',
+    }));
+
+    expect(setEditingReceipt).toHaveBeenCalledWith(null);
+  });
+
+  it('lets a successful save close once after a same-UUID draft clone is committed', async () => {
+    const pending = createDeferred<ReceiptItem>();
+    saveReceiptMock.mockReturnValue(pending.promise);
+    const firstDraft: ReceiptItem = {
+      id: 1, supabaseId: 'receipt-client-uuid-1', contractorProfileId: 'profile-uuid-1',
+      eid: 1, eventSupabaseId: 'event-a', job: 'A', title: 'Taxi', vendor: 'Bolt', amount: 300,
+      paidAt: '2026-04-21', note: '', status: 'draft',
+    };
+    mockAppContext.editingReceipt = firstDraft;
+    mockReceiptDependencies = {
+      contractors: [{ id: 1, profileId: 'profile-uuid-1', name: 'Contractor One' }],
+      events: [{ id: 1, supabaseId: 'event-a', job: 'A', name: 'Event A', startDate: '2026-04-20', endDate: '2026-04-20' }],
+    };
+    const view = render(<ReceiptEditModal />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Uložit účtenku' }));
+    mockAppContext.editingReceipt = { ...firstDraft, title: 'Edited clone' };
+    view.rerender(<ReceiptEditModal />);
+    await act(async () => pending.resolve({ ...firstDraft, updatedAt: 'v1' }));
+
+    expect(setEditingReceipt).toHaveBeenCalledTimes(1);
+    expect(setEditingReceipt).toHaveBeenCalledWith(null);
+  });
+
+  it('keeps the committed draft request active when a different UUID render is suspended', async () => {
+    const pending = createDeferred<ReceiptItem>();
+    saveReceiptMock.mockReturnValue(pending.promise);
+    const firstDraft: ReceiptItem = {
+      id: 1, supabaseId: 'receipt-client-uuid-1', contractorProfileId: 'profile-uuid-1',
+      eid: 1, eventSupabaseId: 'event-a', job: 'A', title: 'Taxi', vendor: 'Bolt', amount: 300,
+      paidAt: '2026-04-21', note: '', status: 'draft',
+    };
+    mockAppContext.editingReceipt = firstDraft;
+    mockReceiptDependencies = {
+      contractors: [{ id: 1, profileId: 'profile-uuid-1', name: 'Contractor One' }],
+      events: [{ id: 1, supabaseId: 'event-a', job: 'A', name: 'Event A', startDate: '2026-04-20', endDate: '2026-04-20' }],
+    };
+    const view = render(
+      <React.Suspense fallback={<div>Suspended receipt</div>}>
+        <ReceiptEditModal />
+      </React.Suspense>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Uložit účtenku' }));
+    receiptDependenciesSuspension = new Promise<never>(() => undefined);
+    mockAppContext.editingReceipt = { ...firstDraft, supabaseId: 'receipt-client-uuid-2' };
+    view.rerender(
+      <React.Suspense fallback={<div>Suspended receipt</div>}>
+        <ReceiptEditModal />
+      </React.Suspense>,
+    );
+    expect(screen.getByText('Suspended receipt')).toBeInTheDocument();
+
+    await act(async () => pending.resolve({ ...firstDraft, updatedAt: 'v1' }));
+
+    expect(setEditingReceipt).toHaveBeenCalledOnce();
+    expect(setEditingReceipt).toHaveBeenCalledWith(null);
+  });
+
   it('treats assigned crew as assigned based on contractorProfileId', () => {
     mockCrew = [
       {
@@ -267,7 +466,99 @@ describe('modal contractor identity handling', () => {
     expect(screen.getByRole('button', { name: /Assigned Contractor/i })).toBeDisabled();
   });
 
-  it('assigns crew through contractorProfileId', () => {
+  it('exposes accessible dialog semantics, initial focus, Escape close, and focus return', () => {
+    const opener = render(<button type="button">Open assignment</button>);
+    const returnTarget = screen.getByRole('button', { name: 'Open assignment' });
+    returnTarget.focus();
+    const onClose = vi.fn();
+
+    const view = render(
+      <AssignCrewModal
+        event={{
+          id: 1,
+          name: 'Test Event',
+          job: 'JOB-1',
+          startDate: '2026-04-24',
+          endDate: '2026-04-24',
+          city: 'Praha',
+          needed: 1,
+          filled: 0,
+          status: 'upcoming',
+          client: 'Client',
+        }}
+        onClose={onClose}
+      />,
+    );
+
+    const dialog = screen.getByRole('dialog', { name: 'Obsadit crew' });
+    const close = screen.getByRole('button', { name: 'Zavřít obsazení crew' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(close).toHaveAttribute('type', 'button');
+    expect(screen.getByPlaceholderText('Hledat v crew...')).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(returnTarget).toHaveFocus();
+
+    view.unmount();
+    opener.unmount();
+  });
+
+  it('captures and restores the current opener across persistent modal reopen cycles', () => {
+    const event: Event = {
+      id: 1,
+      name: 'Test Event',
+      job: 'JOB-1',
+      startDate: '2026-04-24',
+      endDate: '2026-04-24',
+      city: 'Praha',
+      needed: 1,
+      filled: 0,
+      status: 'upcoming',
+      client: 'Client',
+    };
+    const Harness = () => {
+      const [assigningEvent, setAssigningEvent] = React.useState<Event | null>(null);
+      return (
+        <>
+          <button type="button" onClick={() => setAssigningEvent(event)}>Opener A</button>
+          <button type="button" onClick={() => setAssigningEvent(event)}>Opener B</button>
+          <AssignCrewModal event={assigningEvent} onClose={() => setAssigningEvent(null)} />
+        </>
+      );
+    };
+
+    render(<Harness />);
+    const openerA = screen.getByRole('button', { name: 'Opener A' });
+    const openerB = screen.getByRole('button', { name: 'Opener B' });
+
+    openerA.focus();
+    act(() => openerA.click());
+    expect(screen.getByPlaceholderText('Hledat v crew...')).toHaveFocus();
+    act(() => screen.getByRole('button', { name: 'Zavřít obsazení crew' }).click());
+    expect(openerA).toHaveFocus();
+
+    openerB.focus();
+    act(() => openerB.click());
+    expect(screen.getByPlaceholderText('Hledat v crew...')).toHaveFocus();
+    act(() => screen.getByRole('button', { name: 'Zavřít obsazení crew' }).click());
+    expect(openerB).toHaveFocus();
+  });
+
+  it('ignores Escape when the assignment dialog is not open', () => {
+    const onClose = vi.fn();
+    render(<AssignCrewModal event={null} onClose={onClose} />);
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('assigns crew through contractorProfileId only once while the request is pending', async () => {
+    let resolveAssignment!: () => void;
+    assignCrewToEvent.mockReturnValue(new Promise<void>((resolve) => { resolveAssignment = resolve; }));
+    const onClose = vi.fn();
     mockCrew = [
       {
         id: 2,
@@ -280,7 +571,165 @@ describe('modal contractor identity handling', () => {
         reliable: true,
         city: 'Brno',
       },
+      {
+        id: 3,
+        profileId: 'profile-uuid-3',
+        name: 'Other Contractor',
+        ii: 'OC',
+        bg: '#222',
+        fg: '#fff',
+        tags: [],
+        reliable: true,
+        city: 'Praha',
+      },
     ];
+
+    render(
+      <AssignCrewModal
+        event={{
+          id: 1,
+          name: 'Test Event',
+          job: 'JOB-1',
+          startDate: '2026-04-24',
+          endDate: '2026-04-24',
+          city: 'Praha',
+          needed: 1,
+          filled: 0,
+          status: 'upcoming',
+          client: 'Client',
+        }}
+        onClose={onClose}
+      />,
+    );
+
+    const contractorRow = screen.getByRole('button', { name: /Free Contractor/i });
+
+    act(() => {
+      contractorRow.click();
+      contractorRow.click();
+    });
+
+    expect(assignCrewToEvent).toHaveBeenCalledWith(1, 'profile-uuid-2', undefined);
+    expect(assignCrewToEvent).toHaveBeenCalledTimes(1);
+    expect(contractorRow).toBeDisabled();
+    expect(contractorRow).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('button', { name: /Other Contractor/i })).toBeDisabled();
+    expect(screen.getByRole('dialog', { name: 'Obsadit crew' })).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('status')).toHaveTextContent('Přiřazuji…');
+    const close = screen.getByRole('button', { name: 'Zavřít obsazení crew' });
+    const done = screen.getByRole('button', { name: 'Hotovo' });
+    expect(close).toBeDisabled();
+    expect(done).toBeDisabled();
+
+    fireEvent.click(close);
+    fireEvent.click(done);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+
+    resolveAssignment();
+
+    await waitFor(() => expect(contractorRow).toBeEnabled());
+  });
+
+  it('does not notify after a pending assignment succeeds after unmount', async () => {
+    let resolveAssignment!: () => void;
+    assignCrewToEvent.mockReturnValue(new Promise<void>((resolve) => { resolveAssignment = resolve; }));
+    mockCrew = [{
+      id: 2,
+      profileId: 'profile-uuid-2',
+      name: 'Free Contractor',
+      ii: 'FC',
+      bg: '#111',
+      fg: '#fff',
+      tags: [],
+      reliable: true,
+      city: 'Brno',
+    }];
+    const view = render(
+      <AssignCrewModal
+        event={{
+          id: 1,
+          name: 'Test Event',
+          job: 'JOB-1',
+          startDate: '2026-04-24',
+          endDate: '2026-04-24',
+          city: 'Praha',
+          needed: 1,
+          filled: 0,
+          status: 'upcoming',
+          client: 'Client',
+        }}
+        onClose={vi.fn()}
+      />,
+    );
+
+    act(() => screen.getByRole('button', { name: /Free Contractor/i }).click());
+    view.unmount();
+    await act(async () => {
+      resolveAssignment();
+      await Promise.resolve();
+    });
+
+    expect(toastMocks.success).not.toHaveBeenCalled();
+    expect(toastMocks.error).not.toHaveBeenCalled();
+  });
+
+  it('does not notify after a pending assignment fails after unmount', async () => {
+    let rejectAssignment!: (reason?: unknown) => void;
+    assignCrewToEvent.mockReturnValue(new Promise<void>((_resolve, reject) => { rejectAssignment = reject; }));
+    mockCrew = [{
+      id: 2,
+      profileId: 'profile-uuid-2',
+      name: 'Free Contractor',
+      ii: 'FC',
+      bg: '#111',
+      fg: '#fff',
+      tags: [],
+      reliable: true,
+      city: 'Brno',
+    }];
+    const view = render(
+      <AssignCrewModal
+        event={{
+          id: 1,
+          name: 'Test Event',
+          job: 'JOB-1',
+          startDate: '2026-04-24',
+          endDate: '2026-04-24',
+          city: 'Praha',
+          needed: 1,
+          filled: 0,
+          status: 'upcoming',
+          client: 'Client',
+        }}
+        onClose={vi.fn()}
+      />,
+    );
+
+    act(() => screen.getByRole('button', { name: /Free Contractor/i }).click());
+    view.unmount();
+    await act(async () => {
+      rejectAssignment(new Error('Assignment failed'));
+      await Promise.resolve();
+    });
+
+    expect(toastMocks.success).not.toHaveBeenCalled();
+    expect(toastMocks.error).not.toHaveBeenCalled();
+  });
+
+  it('clears the assignment lock after an error and permits retry', async () => {
+    assignCrewToEvent.mockRejectedValueOnce(new Error('Assignment failed')).mockResolvedValueOnce(undefined);
+    mockCrew = [{
+      id: 2,
+      profileId: 'profile-uuid-2',
+      name: 'Free Contractor',
+      ii: 'FC',
+      bg: '#111',
+      fg: '#fff',
+      tags: [],
+      reliable: true,
+      city: 'Brno',
+    }];
 
     render(
       <AssignCrewModal
@@ -300,9 +749,122 @@ describe('modal contractor identity handling', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /Free Contractor/i }));
+    const contractorRow = screen.getByRole('button', { name: /Free Contractor/i });
+    fireEvent.click(contractorRow);
 
-    expect(assignCrewToEvent).toHaveBeenCalledWith(1, 'profile-uuid-2', undefined);
+    await waitFor(() => expect(contractorRow).toBeEnabled());
+
+    fireEvent.click(contractorRow);
+    await waitFor(() => expect(assignCrewToEvent).toHaveBeenCalledTimes(2));
+  });
+
+  it('submits a multi-phase assignment only once while confirmation is pending', async () => {
+    let resolveAssignment!: () => void;
+    assignCrewToEvent.mockReturnValue(new Promise<void>((resolve) => { resolveAssignment = resolve; }));
+    mockCrew = [{
+      id: 2,
+      profileId: 'profile-uuid-2',
+      name: 'Free Contractor',
+      ii: 'FC',
+      bg: '#111',
+      fg: '#fff',
+      tags: [],
+      reliable: true,
+      city: 'Brno',
+    }];
+
+    render(
+      <AssignCrewModal
+        event={{
+          id: 1,
+          name: 'Test Event',
+          job: 'JOB-1',
+          startDate: '2026-04-24',
+          endDate: '2026-04-25',
+          city: 'Praha',
+          needed: 1,
+          filled: 0,
+          status: 'upcoming',
+          client: 'Client',
+          showDayTypes: true,
+          dayTypes: {
+            '2026-04-24': 'instal',
+            '2026-04-25': 'provoz',
+          },
+        }}
+        onClose={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Free Contractor/i }));
+    const installPhase = screen.getByRole('button', { name: /^I Instal$/i });
+    expect(installPhase).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(installPhase);
+    expect(installPhase).toHaveAttribute('aria-pressed', 'true');
+    const confirm = screen.getByRole('button', { name: 'Potvrdit prirazeni' });
+
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+
+    expect(assignCrewToEvent).toHaveBeenCalledWith(1, 'profile-uuid-2', ['instal']);
+    expect(assignCrewToEvent).toHaveBeenCalledTimes(1);
+    expect(confirm).toBeDisabled();
+    expect(confirm).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('button', { name: /Free Contractor/i })).toBeDisabled();
+    expect(installPhase).toBeDisabled();
+    expect(installPhase).toHaveClass('disabled:cursor-not-allowed', 'disabled:opacity-50');
+    const cancelPhase = screen.getByRole('button', { name: 'Zrusit vyber faze' });
+    expect(cancelPhase).toBeDisabled();
+    fireEvent.click(cancelPhase);
+    expect(confirm).toBeInTheDocument();
+
+    resolveAssignment();
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Potvrdit prirazeni' })).not.toBeInTheDocument());
+  });
+
+  it('traps Tab focus within the assignment dialog', () => {
+    mockCrew = [{
+      id: 2,
+      profileId: 'profile-uuid-2',
+      name: 'Free Contractor',
+      ii: 'FC',
+      bg: '#111',
+      fg: '#fff',
+      tags: [],
+      reliable: true,
+      city: 'Brno',
+    }];
+
+    render(
+      <AssignCrewModal
+        event={{
+          id: 1,
+          name: 'Test Event',
+          job: 'JOB-1',
+          startDate: '2026-04-24',
+          endDate: '2026-04-24',
+          city: 'Praha',
+          needed: 1,
+          filled: 0,
+          status: 'upcoming',
+          client: 'Client',
+        }}
+        onClose={vi.fn()}
+      />,
+    );
+
+    const dialog = screen.getByRole('dialog', { name: 'Obsadit crew' });
+    const close = screen.getByRole('button', { name: 'Zavřít obsazení crew' });
+    const done = screen.getByRole('button', { name: 'Hotovo' });
+
+    done.focus();
+    fireEvent.keyDown(dialog, { key: 'Tab' });
+    expect(close).toHaveFocus();
+
+    close.focus();
+    fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
+    expect(done).toHaveFocus();
   });
 
   it('assigns the only available day type immediately on typed single-phase events', async () => {

@@ -208,7 +208,7 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
                         </>
                       )}
 
-                      {!isCrew && scope === 'all' && receipt.status === 'approved' && (
+                      {role === 'coo' && scope === 'all' && receipt.status === 'approved' && (
                         <Button
                           onClick={() => handleReceiptAction(receipt.id, 'reimburse')}
                           size="sm"
@@ -218,13 +218,17 @@ const ReceiptsView = ({ scope = 'all' }: ReceiptsViewProps) => {
                         </Button>
                       )}
 
-                      <button
-                        onClick={() => setDeleteConfirm({ type: 'receipt', id: receipt.id, name: receipt.title })}
-                        className="rounded-lg p-1.5 text-[color:var(--nodu-text-soft)] transition-all hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]"
-                        title="Smazat účtenku"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      {(receipt.status === 'draft' || receipt.status === 'rejected') && (
+                        <button
+                          type="button"
+                          onClick={() => setDeleteConfirm({ type: 'receipt', id: receipt.id, name: receipt.title })}
+                          className="rounded-lg p-1.5 text-[color:var(--nodu-text-soft)] transition-all hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]"
+                          aria-label={`Smazat účtenku ${receipt.title}`}
+                          title="Smazat účtenku"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

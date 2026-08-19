@@ -117,6 +117,7 @@ export function mapEvent(row: EventRow): Event {
   return {
     id: Number.NaN,
     supabaseId: row.id,
+    updatedAt: row.updated_at,
     projectId: row.project_id,
     name: row.name,
     job: row.job_number ?? '',
@@ -245,6 +246,7 @@ export function mapTimelog(row: TimelogRow, days: TimelogDayRow[] = []): Timelog
     id: Number.NaN,
     eid: Number.NaN,
     contractorProfileId: row.contractor_id,
+    updatedAt: row.updated_at,
     days: days.map(mapTimelogDay),
     km: Number(row.km ?? 0),
     note: row.note ?? '',
@@ -255,6 +257,7 @@ export function mapTimelog(row: TimelogRow, days: TimelogDayRow[] = []): Timelog
 export function mapInvoice(row: InvoiceRow): Invoice {
   return {
     id: row.id,
+    updatedAt: row.updated_at,
     contractorProfileId: row.contractor_id,
     eid: Number.NaN,
     hours: Number(row.total_hours ?? 0),
@@ -275,12 +278,15 @@ export function mapInvoice(row: InvoiceRow): Invoice {
     pdfGeneratedAt: row.pdf_generated_at ?? null,
     status: row.status,
     sentAt: row.sent_at,
+    paidAt: row.paid_at,
   };
 }
 
 export function mapReceipt(row: ReceiptRow): ReceiptItem {
   return {
     id: Number.NaN,
+    supabaseId: row.id,
+    updatedAt: row.updated_at,
     eventSupabaseId: row.event_id ?? undefined,
     contractorProfileId: row.contractor_id,
     eid: Number.NaN,

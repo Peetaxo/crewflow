@@ -9,7 +9,7 @@ export type Json =
 export type AppRole = 'crew' | 'crewhead' | 'coo';
 export type EventStatus = 'planning' | 'upcoming' | 'full' | 'past';
 export type TimelogType = 'instal' | 'provoz' | 'deinstal';
-export type TimelogStatus = 'draft' | 'pending_ch' | 'pending_coo' | 'approved' | 'invoiced' | 'paid' | 'rejected';
+export type TimelogStatus = 'draft' | 'pending_crew_confirmation' | 'pending_ch' | 'pending_coo' | 'approved' | 'invoiced' | 'paid' | 'rejected';
 export type InvoiceStatus = 'draft' | 'sent' | 'paid';
 export type InvoiceApprovalDocumentSource = 'powerapps_document_approval';
 export type PowerAppsApprovalStatus = 'pending' | 'approved' | 'rejected' | 'unknown';
@@ -394,6 +394,7 @@ export interface Database {
           km: number;
           amount_km: number;
           amount_receipts: number;
+          amount_meals: number;
           total_amount: number;
           created_at: string;
         };
@@ -504,6 +505,115 @@ export interface Database {
       };
     };
     Functions: {
+      approve_event_withdrawal: {
+        Args: {
+          p_event_id: string;
+          p_profile_id: string;
+          p_application_id: string;
+        };
+        Returns: Json;
+      };
+      create_invoice_atomic: {
+        Args: {
+          p_invoice: Json;
+          p_items: Json;
+          p_timelogs: Json;
+          p_receipts: Json;
+        };
+        Returns: Array<{
+          invoice_id: string;
+          invoice_status: InvoiceStatus;
+          invoice_updated_at: string;
+          paid_at: string | null;
+          timelogs: Json;
+          receipts: Json;
+        }>;
+      };
+      delete_event_atomic: {
+        Args: {
+          p_event_id: string;
+          p_expected_updated_at: string;
+        };
+        Returns: Array<{
+          event_id: string;
+        }>;
+      };
+      delete_invoice_atomic: {
+        Args: {
+          p_invoice_id: string;
+          p_expected_status: InvoiceStatus;
+          p_expected_updated_at: string;
+        };
+        Returns: Array<{
+          invoice_id: string;
+          invoice_status: InvoiceStatus;
+          invoice_updated_at: string;
+          paid_at: string | null;
+          timelogs: Json;
+          receipts: Json;
+        }>;
+      };
+      delete_timelog_atomic: {
+        Args: {
+          p_timelog_id: string;
+          p_expected_updated_at: string;
+          p_expected_status: TimelogStatus;
+        };
+        Returns: Json;
+      };
+      mark_invoice_paid_atomic: {
+        Args: {
+          p_invoice_id: string;
+          p_expected_status: InvoiceStatus;
+          p_expected_updated_at: string;
+          p_paid_at: string;
+        };
+        Returns: Array<{
+          invoice_id: string;
+          invoice_status: InvoiceStatus;
+          invoice_updated_at: string;
+          paid_at: string | null;
+          timelogs: Json;
+          receipts: Json;
+        }>;
+      };
+      mark_invoice_sent_atomic: {
+        Args: {
+          p_invoice_id: string;
+          p_expected_updated_at: string;
+          p_sent_at: string;
+        };
+        Returns: Array<{
+          invoice_id: string;
+          invoice_status: InvoiceStatus;
+          invoice_updated_at: string;
+          paid_at: string | null;
+          timelogs: Json;
+          receipts: Json;
+        }>;
+      };
+      import_approved_timelog_atomic: {
+        Args: {
+          p_timelog_id: string | null;
+          p_event_id: string;
+          p_contractor_id: string;
+          p_expected_updated_at: string | null;
+          p_expected_status: TimelogStatus | null;
+          p_km: number;
+          p_note: string;
+          p_days: Json;
+        };
+        Returns: Json;
+      };
+      assign_event_crew: {
+        Args: {
+          p_event_id: string;
+          p_profile_id: string;
+          p_application_id?: string | null;
+          p_days?: Json;
+        };
+        Returns: Json;
+      };
       list_event_crew_assignments: {
         Args: Record<string, never>;
         Returns: Array<{
@@ -520,11 +630,48 @@ export interface Database {
         };
         Returns: number;
       };
+      remove_event_crew: {
+        Args: {
+          p_event_id: string;
+          p_profile_id: string;
+        };
+        Returns: Json;
+      };
+      save_timelog_atomic: {
+        Args: {
+          p_timelog_id: string | null;
+          p_event_id: string;
+          p_contractor_id: string;
+          p_expected_updated_at: string | null;
+          p_expected_status: TimelogStatus | null;
+          p_km: number;
+          p_note: string;
+          p_status: TimelogStatus;
+          p_days: Json;
+        };
+        Returns: Json;
+      };
       set_current_user_role: {
         Args: {
           p_role: AppRole;
         };
         Returns: void;
+      };
+      transition_timelog_statuses_atomic: {
+        Args: {
+          p_targets: Json;
+          p_expected_status: TimelogStatus;
+          p_next_status: TimelogStatus;
+        };
+        Returns: Json;
+      };
+      transition_receipt_statuses_atomic: {
+        Args: {
+          p_receipts: Json;
+          p_expected_status: ReceiptStatus;
+          p_next_status: ReceiptStatus;
+        };
+        Returns: Json;
       };
       save_budget_package_events: {
         Args: {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Contractor, Event, Invoice, InvoiceApprovalDocument } from '../types';
 import InvoicesView from './InvoicesView';
@@ -8,6 +8,15 @@ const setNavigationGuardMessage = vi.fn();
 const refetchInvoices = vi.fn();
 let mockInvoices: Invoice[] = [];
 let mockInvoiceApprovals: InvoiceApprovalDocument[] = [];
+const { approveInvoiceMock, deleteInvoiceMock, toastErrorMock } = vi.hoisted(() => ({
+  approveInvoiceMock: vi.fn(),
+  deleteInvoiceMock: vi.fn(),
+  toastErrorMock: vi.fn(),
+}));
+
+vi.mock('sonner', () => ({
+  toast: { error: toastErrorMock, success: vi.fn(), info: vi.fn() },
+}));
 
 const contractors: Contractor[] = [
   {
@@ -104,8 +113,8 @@ vi.mock('../components/ui/alert-dialog', () => ({
 }));
 
 vi.mock('../features/invoices/services/invoices.service', () => ({
-  approveInvoice: vi.fn(),
-  deleteInvoice: vi.fn(),
+  approveInvoice: approveInvoiceMock,
+  deleteInvoice: deleteInvoiceMock,
   getInvoiceDependencies: () => ({ contractors, events, timelogs: [] }),
   getPendingInvoiceBatchCount: () => 1,
   sendInvoice: vi.fn(),
@@ -129,6 +138,9 @@ describe('InvoicesView', () => {
     mockInvoices = [];
     mockInvoiceApprovals = [];
     refetchInvoices.mockReset();
+    approveInvoiceMock.mockReset();
+    deleteInvoiceMock.mockReset();
+    toastErrorMock.mockReset();
   });
 
   it('closes invoice creation after submit success without showing discard warning', () => {
@@ -221,6 +233,33 @@ describe('InvoicesView', () => {
     expect(screen.getByText('Ve schvalování')).toBeInTheDocument();
     expect(screen.getByText('Milan Tyl')).toBeInTheDocument();
     expect(screen.getByText('Zatim zadne faktury')).toBeInTheDocument();
+  });
+
+  it('shows the stable domain message when atomic draft deletion is rejected', async () => {
+    mockInvoices = [createInvoiceForPdfTest(null)];
+    deleteInvoiceMock.mockRejectedValue(new Error(
+      'Faktura nebo její položky se mezitím změnily. Obnovte data a zkuste to znovu.',
+    ));
+    render(<InvoicesView />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Smazat draft' }));
+    await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith(
+      'Faktura nebo její položky se mezitím změnily. Obnovte data a zkuste to znovu.',
+    ));
+    expect(toastErrorMock).not.toHaveBeenCalledWith(expect.stringContaining('sensitive database'));
+  });
+
+  it('shows the stable domain message when atomic paid transition is rejected', async () => {
+    mockInvoices = [{ ...createInvoiceForPdfTest(null), status: 'sent', sentAt: '2026-04-28T09:00:00Z' }];
+    approveInvoiceMock.mockRejectedValue(new Error(
+      'Faktura nebo její položky se mezitím změnily. Obnovte data a zkuste to znovu.',
+    ));
+    render(<InvoicesView />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Oznacit jako zaplacene/i }));
+    await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith(
+      'Faktura nebo její položky se mezitím změnily. Obnovte data a zkuste to znovu.',
+    ));
   });
 
 });

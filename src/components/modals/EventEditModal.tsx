@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Plus, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -41,7 +41,35 @@ const EventEditModal = ({
   onChange,
 }: EventEditModalProps) => {
   const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isAddressResolving, setIsAddressResolving] = useState(false);
+  const draftIdentity = editingEvent
+    ? editingEvent.supabaseId ?? `local:${editingEvent.id}`
+    : null;
   const projectMenuRef = useRef<HTMLDivElement | null>(null);
+  const saveInFlightRef = useRef(false);
+  const activeSaveRequestRef = useRef<symbol | null>(null);
+  const mountedRef = useRef(false);
+  const currentDraftIdentityRef = useRef<string | null>(draftIdentity);
+  const [phaseSchedulesCache, setPhaseSchedulesCache] = useState<{
+    key: string;
+    schedules: ReturnType<typeof normalizeEventSchedules>;
+  } | null>(null);
+  const phaseSchedulesKey = editingEvent ? JSON.stringify({
+    draftIdentity,
+    phaseSchedules: editingEvent.phaseSchedules ?? null,
+    startDate: editingEvent.startDate,
+    endDate: editingEvent.endDate,
+    startTime: editingEvent.startTime ?? null,
+    endTime: editingEvent.endTime ?? null,
+    phaseTimes: editingEvent.phaseTimes ?? null,
+    dayTypes: editingEvent.dayTypes ?? null,
+  }) : null;
+  const phaseSchedules = editingEvent
+    ? phaseSchedulesCache?.key === phaseSchedulesKey
+      ? phaseSchedulesCache.schedules
+      : normalizeEventSchedules(editingEvent)
+    : null;
   const { projects, clients } = useMemo(() => getEventFormOptions(), []);
   const clientOptions = useMemo(() => {
     if (!editingEvent?.client || clients.some((client) => client.name === editingEvent.client)) {
@@ -88,6 +116,31 @@ const EventEditModal = ({
   };
 
   useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    currentDraftIdentityRef.current = draftIdentity;
+    activeSaveRequestRef.current = null;
+    saveInFlightRef.current = false;
+    setIsSaving(false);
+    setIsAddressResolving(false);
+  }, [draftIdentity]);
+
+  useLayoutEffect(() => {
+    if (!phaseSchedulesKey || !phaseSchedules) {
+      setPhaseSchedulesCache((current) => current === null ? current : null);
+      return;
+    }
+    setPhaseSchedulesCache((current) => current?.key === phaseSchedulesKey
+      ? current
+      : { key: phaseSchedulesKey, schedules: phaseSchedules });
+  }, [phaseSchedules, phaseSchedulesKey]);
+
+  useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
       if (!projectMenuRef.current?.contains(event.target as Node)) {
         setIsProjectMenuOpen(false);
@@ -98,12 +151,11 @@ const EventEditModal = ({
     return () => document.removeEventListener('mousedown', handlePointerDown);
   }, []);
 
-  if (!editingEvent) return null;
+  if (!editingEvent || !phaseSchedules) return null;
 
   const allEventDates = editingEvent.startDate && editingEvent.endDate
     ? getDatesBetween(editingEvent.startDate, editingEvent.endDate)
     : [];
-  const phaseSchedules = normalizeEventSchedules(editingEvent);
   const globalFrom = editingEvent.startTime || '08:00';
   const globalTo = editingEvent.endTime || '17:00';
 
@@ -126,11 +178,32 @@ const EventEditModal = ({
   };
 
   const handleSave = async () => {
+    if (saveInFlightRef.current || isAddressResolving) return;
+    const requestIdentity = draftIdentity;
+    const requestToken = Symbol('event-save-request');
+    saveInFlightRef.current = true;
+    activeSaveRequestRef.current = requestToken;
+    setIsSaving(true);
+    const isCurrentRequest = () => (
+      mountedRef.current
+      && currentDraftIdentityRef.current === requestIdentity
+      && activeSaveRequestRef.current === requestToken
+    );
     try {
       await saveEvent({ ...editingEvent, phaseSchedules });
-      onClose();
+      if (isCurrentRequest()) {
+        onClose();
+      }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Nepodarilo se ulozit akci.');
+      if (isCurrentRequest()) {
+        toast.error(error instanceof Error ? error.message : 'Nepodarilo se ulozit akci.');
+      }
+    } finally {
+      if (isCurrentRequest()) {
+        activeSaveRequestRef.current = null;
+        saveInFlightRef.current = false;
+        setIsSaving(false);
+      }
     }
   };
 
@@ -145,12 +218,16 @@ const EventEditModal = ({
         >
           <div className="flex items-center justify-between border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] p-5">
             <h3 className="text-xl font-semibold tracking-[-0.03em] text-[color:var(--nodu-text)]">Upravit akci</h3>
-            <button onClick={onClose} className="rounded-xl border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-2 text-[color:var(--nodu-text-soft)] transition-all hover:border-[color:rgb(var(--nodu-accent-rgb)/0.24)] hover:text-[color:var(--nodu-accent)]">
+            <button disabled={isSaving} onClick={onClose} className="rounded-xl border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-2 text-[color:var(--nodu-text-soft)] transition-all hover:border-[color:rgb(var(--nodu-accent-rgb)/0.24)] hover:text-[color:var(--nodu-accent)] disabled:cursor-not-allowed disabled:opacity-60">
               <X size={20} />
             </button>
           </div>
 
-          <div className="flex-1 space-y-4 overflow-y-auto p-5">
+          <fieldset
+            disabled={isSaving}
+            aria-busy={isSaving}
+            className="min-w-0 flex-1 space-y-4 overflow-y-auto p-5"
+          >
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">Job Number</label>
@@ -231,7 +308,9 @@ const EventEditModal = ({
               </div>
               <div>
                 <EventAddressField
+                  key={draftIdentity}
                   value={editingEvent}
+                  onResolvingChange={setIsAddressResolving}
                   onChange={(selection) => updateEventDraft({
                     ...editingEvent,
                     address: selection.address,
@@ -545,18 +624,20 @@ const EventEditModal = ({
                 ))}
               </div>
             )}
-          </div>
+          </fieldset>
 
           <div className="flex gap-3 border-t border-[color:rgb(var(--nodu-text-rgb)/0.08)] bg-[color:var(--nodu-paper-strong)] p-4">
             <button
+              disabled={isSaving}
               onClick={onClose}
-              className="flex-1 rounded-xl border border-[color:var(--nodu-border)] bg-white py-2.5 text-sm font-medium text-[color:var(--nodu-text)] transition-all hover:bg-[color:var(--nodu-accent-soft)] hover:text-[color:var(--nodu-accent)]"
+              className="flex-1 rounded-xl border border-[color:var(--nodu-border)] bg-white py-2.5 text-sm font-medium text-[color:var(--nodu-text)] transition-all hover:bg-[color:var(--nodu-accent-soft)] hover:text-[color:var(--nodu-accent)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               Zrusit
             </button>
             <button
+              disabled={isSaving || isAddressResolving}
               onClick={handleSave}
-              className="flex-1 rounded-xl border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] py-2.5 text-sm font-medium text-[color:var(--nodu-success-text)] shadow-[0_12px_30px_rgba(45,108,78,0.12)] transition-all hover:bg-[color:var(--nodu-success-bg-hover)]"
+              className="flex-1 rounded-xl border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] py-2.5 text-sm font-medium text-[color:var(--nodu-success-text)] shadow-[0_12px_30px_rgba(45,108,78,0.12)] transition-all hover:bg-[color:var(--nodu-success-bg-hover)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               Ulozit akci
             </button>

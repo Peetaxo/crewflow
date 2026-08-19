@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Plus, Search, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -40,12 +40,66 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
   const [pendingContractorSelection, setPendingContractorSelection] = useState<string | null>(null);
   const [selectedPhaseOptions, setSelectedPhaseOptions] = useState<Array<TimelogType | 'all'>>([]);
   const [search, setSearch] = useState('');
+  const [assigningProfileId, setAssigningProfileId] = useState<string | null>(null);
+  const assigningProfileIdRef = useRef<string | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  const isMountedRef = useRef(false);
+  const wasDialogOpenRef = useRef(false);
+  const dialogTitleId = useId();
 
   const contractors = useMemo(() => getCrew({ search }), [search]);
   const pendingContractor = useMemo(
     () => contractors.find((contractor) => getContractorSelectionValue(contractor) === pendingContractorSelection) ?? null,
     [contractors, pendingContractorSelection],
   );
+
+  const restoreFocus = useCallback(() => {
+    returnFocusRef.current?.focus();
+  }, []);
+
+  const handleClose = useCallback(() => {
+    if (assigningProfileIdRef.current !== null) return;
+    setPendingContractorSelection(null);
+    setSelectedPhaseOptions([]);
+    setSearch('');
+    onClose();
+    restoreFocus();
+  }, [onClose, restoreFocus]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current = false;
+      restoreFocus();
+      returnFocusRef.current = null;
+    };
+  }, [restoreFocus]);
+
+  useEffect(() => {
+    const isDialogOpen = event !== null;
+    if (isDialogOpen && !wasDialogOpenRef.current) {
+      returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      searchInputRef.current?.focus();
+    } else if (!isDialogOpen && wasDialogOpenRef.current) {
+      restoreFocus();
+      returnFocusRef.current = null;
+    }
+    wasDialogOpenRef.current = isDialogOpen;
+  }, [event, restoreFocus]);
+
+  useEffect(() => {
+    const handleEscape = (keyEvent: KeyboardEvent) => {
+      if (!event || keyEvent.key !== 'Escape' || assigningProfileIdRef.current !== null) return;
+      keyEvent.preventDefault();
+      handleClose();
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [event, handleClose]);
 
   if (!event) return null;
 
@@ -58,13 +112,26 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
   );
 
   const assignContractor = async (contractorProfileId: string, phaseChoices?: Array<TimelogType | 'all'>) => {
+    if (assigningProfileIdRef.current !== null) return;
+    assigningProfileIdRef.current = contractorProfileId;
+    setAssigningProfileId(contractorProfileId);
+
     try {
       await assignCrewToEvent(event.id, contractorProfileId, phaseChoices);
-      setPendingContractorSelection(null);
-      setSelectedPhaseOptions([]);
-      toast.success('Clen crew byl prirazen bez kolize.');
+      if (isMountedRef.current) {
+        setPendingContractorSelection(null);
+        setSelectedPhaseOptions([]);
+        toast.success('Clen crew byl prirazen bez kolize.');
+      }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Nepodarilo se priradit clena crew.');
+      if (isMountedRef.current) {
+        toast.error(error instanceof Error ? error.message : 'Nepodarilo se priradit clena crew.');
+      }
+    } finally {
+      if (assigningProfileIdRef.current === contractorProfileId) {
+        assigningProfileIdRef.current = null;
+        if (isMountedRef.current) setAssigningProfileId(null);
+      }
     }
   };
 
@@ -83,17 +150,34 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
     return selectedPhaseOptions.includes(optionId) || selectedPhaseOptions.includes('all');
   };
 
-  const handleClose = () => {
-    setPendingContractorSelection(null);
-    setSelectedPhaseOptions([]);
-    setSearch('');
-    onClose();
+  const handleDialogKeyDown = (keyEvent: React.KeyboardEvent<HTMLDivElement>) => {
+    if (keyEvent.key !== 'Tab') return;
+    const focusableElements = [...(dialogRef.current?.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+    ) ?? [])].filter((element) => element.tabIndex >= 0);
+    if (focusableElements.length === 0) return;
+
+    const first = focusableElements[0];
+    const last = focusableElements[focusableElements.length - 1];
+    if (keyEvent.shiftKey && document.activeElement === first) {
+      keyEvent.preventDefault();
+      last.focus();
+    } else if (!keyEvent.shiftKey && document.activeElement === last) {
+      keyEvent.preventDefault();
+      first.focus();
+    }
   };
 
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
         <motion.div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={dialogTitleId}
+          aria-busy={assigningProfileId !== null || undefined}
+          onKeyDown={handleDialogKeyDown}
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
@@ -101,12 +185,18 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
         >
           <div className="flex items-center justify-between border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] p-5">
             <div>
-              <h3 className="text-xl font-semibold tracking-[-0.03em] text-[color:var(--nodu-text)]">Obsadit crew</h3>
+              <h3 id={dialogTitleId} className="text-xl font-semibold tracking-[-0.03em] text-[color:var(--nodu-text)]">Obsadit crew</h3>
               <p className="mt-1 text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">
                 {event.name} - {event.job}
               </p>
             </div>
-            <button onClick={handleClose} className="rounded-xl border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-2 text-[color:var(--nodu-text-soft)] transition-all hover:border-[color:rgb(var(--nodu-accent-rgb)/0.24)] hover:text-[color:var(--nodu-accent)]">
+            <button
+              type="button"
+              aria-label="Zavřít obsazení crew"
+              onClick={handleClose}
+              disabled={assigningProfileId !== null}
+              className="rounded-xl border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-2 text-[color:var(--nodu-text-soft)] transition-all hover:border-[color:rgb(var(--nodu-accent-rgb)/0.24)] hover:text-[color:var(--nodu-accent)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
               <X size={20} />
             </button>
           </div>
@@ -115,6 +205,7 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--nodu-text-soft)]" size={14} />
               <Input
+                ref={searchInputRef}
                 type="text"
                 placeholder="Hledat v crew..."
                 className="py-2 pl-9 pr-3"
@@ -134,6 +225,8 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
                   <button
                     key={option.id}
                     type="button"
+                    aria-pressed={isOptionSelected(option.id)}
+                    disabled={assigningProfileId !== null}
                     onClick={() => {
                       setSelectedPhaseOptions((prev) => {
                         if (option.id === 'all') {
@@ -155,7 +248,7 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
                           : nextSelection;
                       });
                     }}
-                    className={`rounded-xl border px-3 py-2 text-center transition-colors ${
+                    className={`rounded-xl border px-3 py-2 text-center transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                       isOptionSelected(option.id)
                         ? `${option.activeClass} text-white shadow-sm`
                         : 'border-[color:var(--nodu-success-border)] bg-white hover:bg-[color:var(--nodu-success-bg-hover)]'
@@ -169,23 +262,31 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
               <div className="mt-3 flex items-center justify-between gap-3">
                 <button
                   type="button"
+                  disabled={assigningProfileId !== null}
                   onClick={() => {
                     setPendingContractorSelection(null);
                     setSelectedPhaseOptions([]);
                   }}
-                  className="text-[11px] font-medium text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]"
+                  className="text-[11px] font-medium text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Zrusit vyber faze
                 </button>
                 <button
                   type="button"
                   onClick={() => pendingContractor?.profileId ? void assignContractor(pendingContractor.profileId, selectedPhaseOptions) : undefined}
-                  disabled={selectedPhaseOptions.length === 0}
+                  disabled={selectedPhaseOptions.length === 0 || assigningProfileId !== null}
+                  aria-busy={assigningProfileId === pendingContractor.profileId || undefined}
                   className="rounded-xl border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] px-4 py-2 text-xs font-semibold text-[color:var(--nodu-success-text)] transition-colors hover:bg-[color:var(--nodu-success-bg-hover)] disabled:cursor-not-allowed disabled:border-[color:var(--nodu-border)] disabled:bg-[color:rgb(var(--nodu-text-rgb)/0.06)] disabled:text-[color:var(--nodu-text-soft)]"
                 >
                   Potvrdit prirazeni
                 </button>
               </div>
+            </div>
+          )}
+
+          {assigningProfileId && (
+            <div role="status" aria-live="polite" className="border-b border-[color:var(--nodu-border)] bg-[color:var(--nodu-accent-soft)] px-4 py-2 text-xs font-semibold text-[color:var(--nodu-accent)]">
+              Přiřazuji…
             </div>
           )}
 
@@ -198,11 +299,14 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
               const conflicts = contractorConflicts.get(contractor.id) || [];
               const hasConflict = conflicts.length > 0;
               const isMissingProfileId = !contractor.profileId;
+              const assignmentPending = assigningProfileId === contractor.profileId;
+              const anyAssignmentPending = assigningProfileId !== null;
 
               return (
                 <button
                   key={contractor.id}
-                  disabled={isAlreadyAssigned || hasConflict || isMissingProfileId}
+                  disabled={isAlreadyAssigned || hasConflict || isMissingProfileId || anyAssignmentPending}
+                  aria-busy={assignmentPending || undefined}
                   onClick={() => {
                     if (hasConflict) {
                       toast.error('Tento clen crew ma ve stejnem terminu jinou akci.');
@@ -228,7 +332,7 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
                     void assignContractor(contractor.profileId);
                   }}
                   className={`w-full rounded-xl p-3 text-left transition-all ${
-                    isAlreadyAssigned || hasConflict || isMissingProfileId
+                    isAlreadyAssigned || hasConflict || isMissingProfileId || anyAssignmentPending
                       ? 'cursor-not-allowed bg-[color:rgb(var(--nodu-text-rgb)/0.04)]'
                       : 'group hover:bg-[color:var(--nodu-accent-soft)]'
                   }`}
@@ -289,8 +393,10 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
 
           <div className="border-t border-[color:rgb(var(--nodu-text-rgb)/0.08)] bg-[color:var(--nodu-paper-strong)] p-4">
             <button
+              type="button"
               onClick={handleClose}
-              className="w-full rounded-xl bg-[color:var(--nodu-text)] py-2.5 text-sm font-medium text-white shadow-[0_12px_28px_rgba(47,38,31,0.18)] transition-all hover:bg-[color:rgb(var(--nodu-text-rgb)/0.86)]"
+              disabled={assigningProfileId !== null}
+              className="w-full rounded-xl bg-[color:var(--nodu-text)] py-2.5 text-sm font-medium text-white shadow-[0_12px_28px_rgba(47,38,31,0.18)] transition-all hover:bg-[color:rgb(var(--nodu-text-rgb)/0.86)] disabled:cursor-not-allowed disabled:bg-[color:rgb(var(--nodu-text-rgb)/0.48)] disabled:shadow-none"
             >
               Hotovo
             </button>

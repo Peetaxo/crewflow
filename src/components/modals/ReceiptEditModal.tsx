@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -14,6 +14,28 @@ const ReceiptEditModal = () => {
     editingReceipt,
     setEditingReceipt,
   } = useAppContext();
+  const draftIdentity = editingReceipt
+    ? editingReceipt.supabaseId ?? `local:${editingReceipt.id}`
+    : null;
+  const saveInFlightRef = useRef(false);
+  const activeSaveRequestRef = useRef<symbol | null>(null);
+  const mountedRef = useRef(false);
+  const currentDraftIdentityRef = useRef<string | null>(draftIdentity);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    currentDraftIdentityRef.current = draftIdentity;
+    activeSaveRequestRef.current = null;
+    saveInFlightRef.current = false;
+    setIsSaving(false);
+  }, [draftIdentity]);
 
   if (!editingReceipt) return null;
 
@@ -34,7 +56,13 @@ const ReceiptEditModal = () => {
         >
           <div className="flex items-center justify-between border-b border-[var(--nodu-border)] p-4">
             <h3 className="font-semibold text-[var(--nodu-text)]">{editingReceipt.title ? 'Upravit účtenku' : 'Nová účtenka'}</h3>
-            <button onClick={() => setEditingReceipt(null)} className="rounded-full p-1.5 text-[var(--nodu-text-soft)] transition hover:bg-[var(--nodu-accent-soft)] hover:text-[var(--nodu-text)]">
+            <button
+              type="button"
+              aria-label="Zavřít účtenku"
+              disabled={isSaving}
+              onClick={() => setEditingReceipt(null)}
+              className="rounded-full p-1.5 text-[var(--nodu-text-soft)] transition hover:bg-[var(--nodu-accent-soft)] hover:text-[var(--nodu-text)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
               <X size={20} />
             </button>
           </div>
@@ -45,6 +73,7 @@ const ReceiptEditModal = () => {
                 <label className={labelClass}>Crew</label>
                 <select
                   aria-label="Crew"
+                  disabled={isSaving}
                   value={selectedContractorValue}
                   onChange={(e) => {
                     const contractor = contractors.find((item) => item.profileId === e.target.value);
@@ -74,12 +103,14 @@ const ReceiptEditModal = () => {
               <label className={labelClass}>Akce</label>
               <select
                 value={editingReceipt.eid}
+                disabled={isSaving}
                 onChange={(e) => {
                   const eid = Number(e.target.value);
                   const event = events.find((item) => item.id === eid);
                   setEditingReceipt({
                     ...editingReceipt,
                     eid,
+                    eventSupabaseId: event?.supabaseId,
                     job: event?.job || '',
                   });
                 }}
@@ -104,6 +135,7 @@ const ReceiptEditModal = () => {
                 <label className={labelClass}>Název</label>
                 <Input
                   type="text"
+                  disabled={isSaving}
                   value={editingReceipt.title}
                   onChange={(e) => setEditingReceipt({ ...editingReceipt, title: e.target.value })}
                   placeholder="Například parkovné"
@@ -113,6 +145,7 @@ const ReceiptEditModal = () => {
                 <label className={labelClass}>Dodavatel</label>
                 <Input
                   type="text"
+                  disabled={isSaving}
                   value={editingReceipt.vendor}
                   onChange={(e) => setEditingReceipt({ ...editingReceipt, vendor: e.target.value })}
                   placeholder="Bolt, Shell, Hornbach..."
@@ -125,6 +158,7 @@ const ReceiptEditModal = () => {
                 <label className={labelClass}>Částka</label>
                 <Input
                   type="number"
+                  disabled={isSaving}
                   min="0"
                   step="1"
                   value={editingReceipt.amount || ''}
@@ -135,6 +169,7 @@ const ReceiptEditModal = () => {
                 <label className={labelClass}>Datum platby</label>
                 <Input
                   type="date"
+                  disabled={isSaving}
                   value={editingReceipt.paidAt}
                   onChange={(e) => setEditingReceipt({ ...editingReceipt, paidAt: e.target.value })}
                 />
@@ -144,6 +179,7 @@ const ReceiptEditModal = () => {
             <div>
               <label className={labelClass}>Poznámka</label>
               <Textarea
+                disabled={isSaving}
                 value={editingReceipt.note}
                 onChange={(e) => setEditingReceipt({ ...editingReceipt, note: e.target.value })}
                 className="h-20 resize-none"
@@ -156,6 +192,7 @@ const ReceiptEditModal = () => {
             <Button
               type="button"
               variant="outline"
+              disabled={isSaving}
               onClick={() => setEditingReceipt(null)}
               className="flex-1"
             >
@@ -163,12 +200,35 @@ const ReceiptEditModal = () => {
             </Button>
             <Button
               type="button"
+              disabled={isSaving}
               onClick={async () => {
+                if (saveInFlightRef.current) return;
+                const draft = editingReceipt;
+                const requestIdentity = draftIdentity;
+                const requestToken = Symbol('receipt-save-request');
+                saveInFlightRef.current = true;
+                activeSaveRequestRef.current = requestToken;
+                setIsSaving(true);
+                const isCurrentRequest = () => (
+                  mountedRef.current
+                  && currentDraftIdentityRef.current === requestIdentity
+                  && activeSaveRequestRef.current === requestToken
+                );
                 try {
-                  await saveReceipt(editingReceipt);
-                  setEditingReceipt(null);
+                  await saveReceipt(draft);
+                  if (isCurrentRequest()) {
+                    setEditingReceipt(null);
+                  }
                 } catch (error) {
-                  toast.error(error instanceof Error ? error.message : 'Nepodařilo se uložit účtenku.');
+                  if (isCurrentRequest()) {
+                    toast.error(error instanceof Error ? error.message : 'Nepodařilo se uložit účtenku.');
+                  }
+                } finally {
+                  if (isCurrentRequest()) {
+                    activeSaveRequestRef.current = null;
+                    saveInFlightRef.current = false;
+                    setIsSaving(false);
+                  }
                 }
               }}
               className="flex-1"

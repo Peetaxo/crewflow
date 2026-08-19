@@ -1,12 +1,21 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const setRole = vi.fn();
 const defaultAppContext = {
   darkMode: false,
   currentTab: 'dashboard',
   role: 'crewhead',
+  setRole,
   selectedEventId: null as string | null,
+};
+
+const authMockState = {
+  isAuthRequired: false,
+  isRoleSwitching: false,
+  role: null as 'crew' | 'crewhead' | 'coo' | null,
+  switchRole: vi.fn(async () => undefined),
 };
 
 let mockAppContext = { ...defaultAppContext };
@@ -18,6 +27,10 @@ vi.mock('framer-motion', () => ({
 
 vi.mock('../../context/useAppContext', () => ({
   useAppContext: () => mockAppContext,
+}));
+
+vi.mock('../../app/providers/useAuth', () => ({
+  useAuth: () => authMockState,
 }));
 
 vi.mock('../../hooks/use-mobile', () => ({
@@ -33,8 +46,8 @@ vi.mock('./Sidebar', () => ({
 }));
 
 vi.mock('./MobileCrewNav', () => ({
-  default: ({ badgeCounts }: { badgeCounts: Record<string, number> }) => (
-    <nav data-testid="mobile-crew-nav">{badgeCounts['my-timelogs']}</nav>
+  default: ({ badgeCounts, role }: { badgeCounts: Record<string, number>; role: string }) => (
+    <nav data-testid="mobile-crew-nav" data-role={role}>{badgeCounts['my-timelogs']}</nav>
   ),
 }));
 
@@ -116,6 +129,11 @@ describe('AppLayout shell', () => {
   beforeEach(() => {
     mockAppContext = { ...defaultAppContext };
     mockIsMobile = false;
+    setRole.mockClear();
+    authMockState.isAuthRequired = false;
+    authMockState.isRoleSwitching = false;
+    authMockState.role = null;
+    authMockState.switchRole.mockReset();
   });
 
   it('applies nodu shell classes to the dashboard layout wrapper', () => {
@@ -160,7 +178,7 @@ describe('AppLayout shell', () => {
     expect(screen.getByTestId('warehouse-view')).toBeInTheDocument();
   });
 
-  it('uses the mobile Crew shell only for Crew on mobile', () => {
+  it('uses the mobile app shell for Crew and keeps the role switcher visible', () => {
     mockAppContext = {
       ...mockAppContext,
       role: 'crew',
@@ -173,6 +191,10 @@ describe('AppLayout shell', () => {
     expect(screen.getByRole('main')).toHaveClass('nodu-page-frame--mobile-crew');
     expect(screen.queryByTestId('sidebar')).not.toBeInTheDocument();
     expect(screen.getByTestId('mobile-crew-nav')).toHaveTextContent('2');
+    expect(screen.getByTestId('mobile-crew-nav')).toHaveAttribute('data-role', 'crew');
+    expect(screen.getByRole('button', { name: 'Crew' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'CrewHead' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'COO' })).toBeInTheDocument();
   });
 
   it('hides the mobile Crew nav while a Crew event detail is open', () => {
@@ -190,7 +212,7 @@ describe('AppLayout shell', () => {
     expect(screen.getByTestId('events-view')).toBeInTheDocument();
   });
 
-  it('keeps the desktop sidebar for management roles on mobile', () => {
+  it('uses the mobile app shell for management roles on mobile', () => {
     mockAppContext = {
       ...mockAppContext,
       role: 'crewhead',
@@ -199,7 +221,32 @@ describe('AppLayout shell', () => {
 
     render(<AppLayout />);
 
-    expect(screen.getByTestId('sidebar')).toBeInTheDocument();
-    expect(screen.queryByTestId('mobile-crew-nav')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('sidebar')).not.toBeInTheDocument();
+    expect(screen.getByRole('main')).toHaveClass('nodu-page-frame--mobile-crew');
+    expect(screen.getByTestId('mobile-crew-nav')).toHaveAttribute('data-role', 'crewhead');
+    expect(screen.getByRole('button', { name: 'CrewHead' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('switches roles locally in preview mode', () => {
+    mockAppContext = { ...mockAppContext, role: 'crew' };
+    mockIsMobile = true;
+
+    render(<AppLayout />);
+    fireEvent.click(screen.getByRole('button', { name: 'CrewHead' }));
+
+    expect(setRole).toHaveBeenCalledWith('crewhead');
+  });
+
+  it('switches roles through auth without mutating local role directly', () => {
+    mockAppContext = { ...mockAppContext, role: 'crew' };
+    authMockState.isAuthRequired = true;
+    authMockState.role = 'crew';
+    mockIsMobile = true;
+
+    render(<AppLayout />);
+    fireEvent.click(screen.getByRole('button', { name: 'CrewHead' }));
+
+    expect(authMockState.switchRole).toHaveBeenCalledWith('crewhead');
+    expect(setRole).not.toHaveBeenCalled();
   });
 });

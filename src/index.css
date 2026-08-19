@@ -444,7 +444,46 @@ tbody tr:hover td {
 .nodu-page-frame--mobile-crew {
   height: 100dvh;
   padding: 1rem;
+  padding-top: calc(1rem + env(safe-area-inset-top));
   padding-bottom: calc(5.75rem + env(safe-area-inset-bottom));
+}
+
+.nodu-mobile-role-switcher {
+  position: fixed;
+  z-index: 90;
+  top: max(0.75rem, env(safe-area-inset-top));
+  left: 50%;
+  display: inline-grid;
+  grid-template-columns: repeat(3, minmax(0, auto));
+  gap: 0.2rem;
+  padding: 0.25rem;
+  border: 1px solid rgb(var(--nodu-text-rgb) / 0.08);
+  border-radius: 999px;
+  background: rgb(var(--nodu-paper-rgb) / 0.88);
+  box-shadow: 0 12px 30px rgb(var(--nodu-text-rgb) / 0.14);
+  transform: translateX(-50%);
+  backdrop-filter: blur(18px);
+}
+
+.nodu-mobile-role-switcher__button {
+  min-width: 2.6rem;
+  min-height: 2rem;
+  border-radius: 999px;
+  color: var(--nodu-text-soft);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1;
+}
+
+.nodu-mobile-role-switcher__button--active {
+  background: var(--nodu-accent);
+  color: white;
+  box-shadow: 0 8px 20px rgb(var(--nodu-accent-rgb) / 0.24);
+}
+
+.nodu-mobile-role-switcher__button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
 }
 
 .nodu-app-shell--mobile-crew * {
@@ -474,6 +513,10 @@ tbody tr:hover td {
   background: rgb(var(--nodu-paper-rgb) / 0.94);
   box-shadow: 0 18px 44px rgb(var(--nodu-text-rgb) / 0.16);
   backdrop-filter: blur(18px);
+}
+
+.nodu-mobile-crew-nav--4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .nodu-mobile-crew-nav-item {

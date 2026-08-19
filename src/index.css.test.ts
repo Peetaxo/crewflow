@@ -45,6 +45,8 @@ describe('nodu CSS helpers', () => {
       '.nodu-sidebar-shell',
       '.nodu-app-shell--mobile-crew',
       '.nodu-page-frame--mobile-crew',
+      '.nodu-mobile-role-switcher',
+      '.nodu-mobile-role-switcher__button--active',
       '.nodu-mobile-crew-nav',
       '.nodu-mobile-crew-nav-item',
       '.nodu-mobile-timelog-modal',

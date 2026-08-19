@@ -186,3 +186,6 @@ export const INITIAL_CANDIDATES: Candidate[] = [
 
 /** Sazba za km (Kc) - presunout do nastaveni/DB pri migraci na Supabase */
 export const KM_RATE = 5.60;
+
+/** Sazba za vybrané jídlo (Kč) - přesunout do nastavení/DB při migraci na Supabase. */
+export const MEAL_RATE = 250;

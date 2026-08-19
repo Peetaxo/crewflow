@@ -2,23 +2,33 @@ import type { Role, Timelog } from '../../../types';
 
 type TimelogPermissionTarget = Pick<Timelog, 'status'>;
 
-export const canCreateTimelog = (role: Role) => role !== 'coo';
+export const canCreateTimelog = (role: Role) => role === 'crew' || role === 'crewhead';
 
 export const canEditTimelog = (timelog: TimelogPermissionTarget, role: Role) => {
   if (role === 'crew') {
-    return timelog.status === 'draft' || timelog.status === 'rejected';
+    return timelog.status === 'draft'
+      || timelog.status === 'rejected'
+      || timelog.status === 'pending_crew_confirmation';
   }
 
   if (role === 'crewhead') {
-    return timelog.status === 'draft' || timelog.status === 'pending_ch';
+    return timelog.status === 'pending_ch';
   }
 
   return false;
 };
 
+export const canOpenTimelogDetail = (timelog: TimelogPermissionTarget, role: Role) => (
+  role === 'crew' || canEditTimelog(timelog, role)
+);
+
 export const canSubmitTimelog = (timelog: TimelogPermissionTarget, role: Role) => (
-  (role === 'crew' && (timelog.status === 'draft' || timelog.status === 'rejected'))
-  || (role === 'crewhead' && timelog.status === 'draft')
+  role === 'crew'
+  && (
+    timelog.status === 'draft'
+    || timelog.status === 'rejected'
+    || timelog.status === 'pending_crew_confirmation'
+  )
 );
 
 export const canSeeTimelogNote = (role: Role) => role !== 'coo';

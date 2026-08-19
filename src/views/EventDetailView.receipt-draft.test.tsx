@@ -83,6 +83,7 @@ vi.mock('../features/events/services/events.service', () => ({
 }));
 
 vi.mock('../features/timelogs/services/timelogs.service', () => ({
+  subscribeToTimelogChanges: vi.fn(() => () => undefined),
   updateTimelogStatus: vi.fn(),
 }));
 

@@ -1,0 +1,1248 @@
+/* Mobile event list and detail styles carried forward from the mobile application branch. */
+.nodu-event-mobile-create-fab {
+  position: fixed;
+  z-index: 55;
+  right: max(1.4rem, calc(env(safe-area-inset-right) + 1.15rem));
+  bottom: calc(env(safe-area-inset-bottom) + 7.25rem);
+}
+
+.nodu-mobile-events-toolbar {
+  margin-bottom: 0.25rem;
+}
+
+.nodu-mobile-events-header {
+  position: relative;
+  display: flex;
+  min-height: 3rem;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0;
+  padding: 0 3.25rem;
+}
+
+.nodu-mobile-events-header__title {
+  color: var(--nodu-text);
+  font-size: 1.65rem;
+  font-weight: 760;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.nodu-mobile-events-header__action {
+  position: absolute;
+  top: 50%;
+  display: inline-flex;
+  width: 2.75rem;
+  height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--nodu-border);
+  border-radius: 999px;
+  background: rgb(var(--nodu-surface-rgb) / 0.96);
+  color: var(--nodu-text-soft);
+  box-shadow: 0 12px 28px rgb(var(--nodu-text-rgb) / 0.08);
+  transform: translateY(-50%);
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.nodu-mobile-events-header__action--left {
+  left: 0;
+}
+
+.nodu-mobile-events-header__action--right {
+  right: 0;
+}
+
+.nodu-mobile-events-header__action--active {
+  border-color: rgb(var(--nodu-accent-rgb) / 0.18);
+  background: rgb(var(--nodu-accent-rgb) / 0.12);
+  color: var(--nodu-accent);
+}
+
+.nodu-mobile-events-date-panel {
+  margin-bottom: 1.25rem;
+  padding: 0.85rem;
+  border: 1px solid rgb(var(--nodu-accent-rgb) / 0.22);
+  border-radius: 1.25rem;
+  background: rgb(var(--nodu-surface-rgb) / 0.98);
+  box-shadow: 0 18px 40px rgb(var(--nodu-text-rgb) / 0.08);
+}
+
+.nodu-mobile-events-date-panel__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  padding: 0.25rem;
+  border-radius: 999px;
+  background: rgb(var(--nodu-text-rgb) / 0.035);
+}
+
+.nodu-mobile-events-date-panel__nav {
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--nodu-border);
+  border-radius: 999px;
+  background: rgb(var(--nodu-surface-rgb) / 0.98);
+  color: var(--nodu-text-soft);
+}
+
+.nodu-mobile-events-date-panel__month {
+  color: var(--nodu-text);
+  font-size: 0.85rem;
+  font-weight: 760;
+  letter-spacing: 0;
+}
+
+.nodu-mobile-events-date-panel__weekdays,
+.nodu-mobile-events-date-panel__grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.nodu-mobile-events-date-panel__weekdays {
+  margin-bottom: 0.35rem;
+  color: var(--nodu-text-soft);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-align: center;
+}
+
+.nodu-mobile-events-date-panel__day {
+  min-height: 2.25rem;
+  border: 1px solid transparent;
+  border-radius: 0.85rem;
+  background: rgb(var(--nodu-text-rgb) / 0.035);
+  color: var(--nodu-text);
+  font-size: 0.82rem;
+  font-weight: 720;
+}
+
+.nodu-mobile-events-date-panel__day--outside {
+  color: rgb(var(--nodu-text-rgb) / 0.35);
+}
+
+.nodu-mobile-events-date-panel__day--today {
+  border-color: rgb(var(--nodu-accent-rgb) / 0.28);
+}
+
+.nodu-mobile-events-date-panel__day--selected {
+  border-color: var(--nodu-accent);
+  background: var(--nodu-accent);
+  color: white;
+  box-shadow: 0 10px 24px rgb(var(--nodu-accent-rgb) / 0.22);
+}
+
+.nodu-mobile-events-filter-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+  padding: 0.75rem;
+  border: 1px solid var(--nodu-border);
+  border-radius: 1.25rem;
+  background: rgb(var(--nodu-surface-rgb) / 0.96);
+  box-shadow: 0 14px 34px rgb(var(--nodu-text-rgb) / 0.08);
+}
+
+.nodu-mobile-event-detail {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: transparent;
+  color: var(--nodu-text);
+  overscroll-behavior-x: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+.nodu-mobile-event-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.nodu-mobile-event-swipe-surface {
+  min-height: 100dvh;
+  padding: calc(1rem + env(safe-area-inset-top)) 1rem calc(6.5rem + env(safe-area-inset-bottom));
+  background:
+    radial-gradient(circle at top left, rgb(var(--nodu-surface-rgb) / 0.32), transparent 34%),
+    linear-gradient(180deg, var(--nodu-paper) 0%, var(--nodu-paper-strong) 100%);
+  box-shadow: -18px 0 44px rgb(var(--nodu-text-rgb) / 0.12);
+  opacity: var(--nodu-mobile-event-swipe-opacity, 1);
+  transform: translateX(var(--nodu-mobile-event-swipe-x, 0));
+  transition: var(--nodu-mobile-event-swipe-transition, none);
+  will-change: transform;
+}
+
+.nodu-mobile-event-swipe-surface--dragging {
+  pointer-events: none;
+}
+
+.nodu-mobile-event-swipe-edge {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 45;
+  width: max(1.75rem, env(safe-area-inset-left));
+  pointer-events: none;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.nodu-mobile-event-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.nodu-mobile-event-back {
+  display: inline-flex;
+  height: 2.75rem;
+  width: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border: 1px solid rgb(var(--nodu-text-rgb) / 0.08);
+  border-radius: 999px;
+  background: rgb(var(--nodu-surface-rgb) / 0.94);
+  color: var(--nodu-text);
+  box-shadow: 0 10px 24px rgb(var(--nodu-text-rgb) / 0.08);
+  touch-action: manipulation;
+}
+
+.nodu-mobile-event-participation-chip {
+  display: inline-flex;
+  min-height: 2.4rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--nodu-success-border);
+  border-radius: 999px;
+  background: rgb(47 125 79 / 0.12);
+  color: var(--nodu-success-text);
+  padding: 0 0.9rem;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.nodu-mobile-event-hero-action {
+  border-color: rgb(var(--nodu-accent-rgb) / 0.28);
+  background: rgb(var(--nodu-accent-rgb) / 0.1);
+  color: var(--nodu-accent);
+}
+
+.nodu-mobile-event-hero,
+.nodu-mobile-event-card {
+  border: 1px solid rgb(var(--nodu-accent-rgb) / 0.16);
+  border-radius: 20px;
+  padding: 1rem;
+}
+
+.nodu-mobile-event-hero {
+  background:
+    linear-gradient(135deg, rgb(var(--nodu-accent-rgb) / 0.1), rgb(var(--nodu-surface-rgb) / 0.94) 52%),
+    rgb(var(--nodu-surface-rgb) / 0.96);
+  box-shadow: 0 16px 36px rgb(var(--nodu-text-rgb) / 0.08);
+}
+
+.nodu-mobile-event-card {
+  background: rgb(var(--nodu-surface-rgb) / 0.92);
+}
+
+.nodu-mobile-event-map {
+  position: relative;
+  display: block;
+  min-height: 8.5rem;
+  overflow: hidden;
+  border-radius: 20px;
+  text-decoration: none;
+  background:
+    linear-gradient(135deg, rgb(106 177 100 / 0.52), transparent 44%),
+    linear-gradient(45deg, transparent 45%, rgb(77 138 200 / 0.32) 45%, rgb(77 138 200 / 0.32) 52%, transparent 52%),
+    linear-gradient(90deg, rgb(var(--nodu-surface-rgb) / 0.62), transparent 18%, rgb(var(--nodu-surface-rgb) / 0.54) 42%, transparent 63%),
+    #d8efd1;
+  box-shadow: inset 0 0 0 1px rgb(var(--nodu-text-rgb) / 0.08);
+}
+
+.nodu-mobile-event-map span {
+  position: absolute;
+  left: 0.75rem;
+  bottom: 0.75rem;
+  border-radius: 999px;
+  background: rgb(var(--nodu-surface-rgb) / 0.9);
+  color: var(--nodu-text);
+  padding: 0.45rem 0.7rem;
+  font-size: 0.7rem;
+  font-weight: 850;
+}
+
+.nodu-mobile-event-map-pin {
+  position: absolute;
+  left: 52%;
+  top: 43%;
+  height: 1.75rem;
+  width: 1.75rem;
+  transform: translate(-50%, -50%) rotate(-45deg);
+  border-radius: 999px 999px 999px 0;
+  background: var(--nodu-text);
+  box-shadow: 0 0 0 6px rgb(var(--nodu-surface-rgb) / 0.84);
+}
+
+.nodu-mobile-event-map-pin::after {
+  content: "";
+  position: absolute;
+  inset: 0.5rem;
+  border-radius: 999px;
+  background: var(--nodu-accent);
+}
+
+.nodu-mobile-event-info-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.nodu-mobile-event-info-row {
+  display: grid;
+  grid-template-columns: 2.1rem minmax(0, 1fr);
+  gap: 0.7rem;
+  align-items: center;
+  border-top: 1px solid rgb(var(--nodu-text-rgb) / 0.08);
+  padding: 0.85rem;
+}
+
+button.nodu-mobile-event-info-row {
+  width: 100%;
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+button.nodu-mobile-event-info-row:focus-visible {
+  outline: 2px solid rgb(var(--nodu-accent-rgb) / 0.3);
+  outline-offset: -2px;
+}
+
+.nodu-mobile-event-info-row:first-child {
+  border-top: 0;
+}
+
+.nodu-mobile-event-info-row > svg {
+  justify-self: center;
+  color: rgb(var(--nodu-text-rgb) / 0.36);
+}
+
+.nodu-mobile-event-info-row p {
+  color: var(--nodu-text);
+  font-size: 0.9rem;
+  font-weight: 780;
+  line-height: 1.3;
+}
+
+.nodu-mobile-event-info-row--button {
+  cursor: pointer;
+}
+
+.nodu-mobile-event-info-row--button:active {
+  background: rgb(var(--nodu-accent-rgb) / 0.05);
+}
+
+.nodu-mobile-event-info-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.nodu-mobile-event-info-action > svg {
+  flex: 0 0 auto;
+  color: var(--nodu-accent);
+}
+
+.nodu-mobile-event-date-range {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.nodu-mobile-event-date-range div {
+  display: grid;
+  grid-template-columns: 1.7rem minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: baseline;
+}
+
+.nodu-mobile-event-date-range span {
+  color: var(--nodu-text-soft);
+  font-size: 0.66rem;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.nodu-mobile-event-date-range p {
+  margin: 0;
+}
+
+.nodu-mobile-event-time-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.3rem;
+  border: 1px solid var(--nodu-border);
+  border-radius: 14px;
+  background: rgb(var(--nodu-paper-rgb) / 0.94);
+  padding: 0.55rem 0.7rem;
+}
+
+.nodu-mobile-event-time-field span {
+  color: var(--nodu-text-soft);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.nodu-mobile-event-time-field input {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--nodu-text);
+  font-size: 1rem;
+  font-weight: 800;
+  outline: none;
+}
+
+.nodu-mobile-event-empty-state {
+  border: 1px dashed rgb(var(--nodu-text-rgb) / 0.16);
+  border-radius: 14px;
+  background: rgb(var(--nodu-text-rgb) / 0.04);
+  color: var(--nodu-text-soft);
+  padding: 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.nodu-mobile-event-info-label {
+  display: block;
+  color: var(--nodu-text-soft);
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.nodu-mobile-event-section {
+  border-radius: 20px;
+  background: rgb(var(--nodu-text-rgb) / 0.04);
+  padding: 1rem;
+}
+
+.nodu-mobile-event-section h2 {
+  margin-bottom: 0.65rem;
+  color: var(--nodu-text);
+  font-size: 1.08rem;
+  font-weight: 900;
+}
+
+.nodu-mobile-event-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+
+.nodu-mobile-event-section-heading h2 {
+  margin-bottom: 0;
+}
+
+.nodu-mobile-event-capacity-chip {
+  display: inline-flex;
+  min-height: 1.9rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(var(--nodu-accent-rgb) / 0.18);
+  border-radius: 999px;
+  background: rgb(var(--nodu-accent-rgb) / 0.1);
+  color: var(--nodu-accent);
+  padding: 0 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 900;
+}
+
+.nodu-mobile-event-section p {
+  color: var(--nodu-text-soft);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.nodu-mobile-event-crew-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.nodu-mobile-event-crew-row {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+  gap: 0.7rem;
+  align-items: center;
+  border: 1px solid rgb(var(--nodu-text-rgb) / 0.08);
+  border-radius: 17px;
+  background: rgb(var(--nodu-surface-rgb) / 0.94);
+  padding: 0.7rem;
+}
+
+.nodu-mobile-event-crew-row--button {
+  width: 100%;
+  color: inherit;
+  text-align: left;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.nodu-mobile-event-crew-row--button:active {
+  transform: scale(0.99);
+}
+
+.nodu-mobile-event-crew-row--button:focus-visible {
+  outline: 2px solid var(--nodu-accent);
+  outline-offset: 2px;
+}
+
+.nodu-mobile-event-crew-name {
+  min-width: 0;
+  color: var(--nodu-text);
+  font-size: 0.88rem;
+  font-weight: 850;
+}
+
+.nodu-mobile-event-crew-meta {
+  margin-top: 0.1rem;
+  color: var(--nodu-text-soft);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.nodu-mobile-event-crew-chip,
+.nodu-mobile-event-withdraw-pending {
+  display: inline-flex;
+  min-height: 1.85rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgb(var(--nodu-accent-rgb) / 0.1);
+  color: var(--nodu-accent);
+  padding: 0 0.65rem;
+  font-size: 0.68rem;
+  font-weight: 850;
+}
+
+.nodu-mobile-event-info-label {
+  margin-bottom: 0.25rem;
+  color: var(--nodu-accent);
+}
+
+.nodu-mobile-event-floating-panel {
+  position: fixed;
+  z-index: 80;
+  right: max(1.1rem, env(safe-area-inset-right));
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
+  left: max(1.1rem, env(safe-area-inset-left));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 3.25rem;
+  grid-template-areas:
+    "summary summary"
+    "primary secondary";
+  gap: 0.45rem 0.6rem;
+  border: 1px solid rgb(var(--nodu-text-rgb) / 0.08);
+  border-radius: 24px;
+  background: rgb(var(--nodu-paper-rgb) / 0.94);
+  box-shadow: 0 18px 42px rgb(var(--nodu-text-rgb) / 0.18);
+  backdrop-filter: blur(18px);
+  padding: 0.45rem;
+  opacity: var(--nodu-mobile-event-swipe-opacity, 1);
+  transform: translateX(var(--nodu-mobile-event-swipe-x, 0));
+  transition: var(--nodu-mobile-event-swipe-transition, none);
+  will-change: transform;
+  pointer-events: auto;
+}
+
+.nodu-mobile-event-floating-panel--compact {
+  grid-template-columns: 1fr;
+  grid-template-areas: "primary";
+  gap: 0;
+  padding: 0.35rem;
+}
+
+.nodu-mobile-event-floating-panel--actions-only {
+  grid-template-areas: "primary secondary";
+  gap: 0.6rem;
+}
+
+.nodu-mobile-event-floating-panel--manager {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas: "primary secondary";
+  gap: 0.6rem;
+}
+
+.nodu-mobile-event-floating-panel--manager .nodu-mobile-event-evidence-button--secondary {
+  grid-area: secondary;
+  grid-column: auto;
+}
+
+.nodu-mobile-event-floating-summary {
+  grid-area: summary;
+  display: flex;
+  min-height: 1.35rem;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--nodu-text-soft);
+  font-size: 0.72rem;
+  font-weight: 750;
+  padding: 0 0.35rem;
+}
+
+.nodu-mobile-event-floating-summary strong {
+  color: var(--nodu-text);
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
+.nodu-mobile-event-evidence-button,
+.nodu-mobile-event-withdraw-button {
+  min-height: 3.35rem;
+  border-radius: 18px;
+  font-weight: 900;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.nodu-mobile-event-evidence-button {
+  grid-area: primary;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border: 0;
+  background: var(--nodu-accent);
+  color: white;
+  font-size: 0.92rem;
+  box-shadow: 0 12px 28px rgb(var(--nodu-accent-rgb) / 0.24);
+}
+
+.nodu-mobile-event-evidence-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+
+.nodu-mobile-event-evidence-button--secondary {
+  grid-column: 1 / -1;
+}
+
+.nodu-mobile-event-floating-panel--compact .nodu-mobile-event-evidence-button--secondary {
+  grid-area: primary;
+  min-height: 3.45rem;
+}
+
+.nodu-mobile-event-withdraw-button {
+  grid-area: secondary;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(220 38 38 / 0.22);
+  background: rgb(254 242 242 / 0.94);
+  color: rgb(185 28 28);
+}
+
+.nodu-mobile-event-withdraw-pending {
+  grid-area: secondary;
+  min-height: 3.35rem;
+  border-radius: 18px;
+  padding: 0 0.5rem;
+  text-align: center;
+}
+
+.nodu-mobile-event-management-block {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+}
+
+.nodu-mobile-event-management-title {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--nodu-text);
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
+.nodu-mobile-event-management-title svg {
+  color: var(--nodu-accent);
+}
+
+.nodu-mobile-event-management-title strong {
+  margin-left: auto;
+  border-radius: 999px;
+  background: rgb(var(--nodu-text-rgb) / 0.08);
+  color: var(--nodu-text-soft);
+  padding: 0.2rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.nodu-mobile-event-management-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.nodu-mobile-event-management-row {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  gap: 0.7rem;
+  align-items: center;
+  border: 1px solid rgb(var(--nodu-text-rgb) / 0.08);
+  border-radius: 17px;
+  background: rgb(var(--nodu-surface-rgb) / 0.94);
+  padding: 0.7rem;
+}
+
+.nodu-mobile-event-management-row--timelog {
+  align-items: start;
+}
+
+.nodu-mobile-event-management-report-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.nodu-mobile-event-management-report-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.1rem;
+  color: var(--nodu-text-soft);
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.nodu-mobile-event-management-hours {
+  grid-column: 2;
+  width: fit-content;
+  border-radius: 999px;
+  background: rgb(var(--nodu-accent-rgb) / 0.1);
+  color: var(--nodu-accent);
+  padding: 0.25rem 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.nodu-mobile-event-management-row--timelog .nodu-mobile-event-management-hours {
+  flex: 0 0 auto;
+  margin-top: 0.05rem;
+  white-space: nowrap;
+}
+
+.nodu-mobile-event-management-note {
+  grid-column: 1 / -1;
+  margin: -0.1rem 0 0;
+  color: var(--nodu-text-soft);
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.nodu-mobile-event-management-day-list {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.nodu-mobile-event-management-day-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.25rem 0.55rem;
+  align-items: center;
+  border: 1px solid rgb(var(--nodu-text-rgb) / 0.08);
+  border-radius: 13px;
+  background: rgb(var(--nodu-bg-rgb) / 0.64);
+  padding: 0.5rem 0.6rem;
+}
+
+.nodu-mobile-event-management-day-main {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.nodu-mobile-event-management-day-date,
+.nodu-mobile-event-management-day-time {
+  color: var(--nodu-text);
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.nodu-mobile-event-management-day-time {
+  color: var(--nodu-text-soft);
+}
+
+.nodu-mobile-event-management-day-hours {
+  color: var(--nodu-accent);
+  font-size: 0.78rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.nodu-mobile-event-management-day-phase {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.nodu-mobile-event-management-day-meal {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: rgb(34 139 112 / 0.1);
+  color: rgb(31 112 92);
+  padding: 0.2rem 0.5rem;
+  font-size: 0.68rem;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.nodu-mobile-event-management-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.nodu-mobile-event-icon-action {
+  min-height: 2.35rem;
+  border: 1px solid var(--nodu-border);
+  border-radius: 999px;
+  background: rgb(var(--nodu-surface-rgb) / 0.94);
+  color: var(--nodu-text);
+  padding: 0 0.75rem;
+  font-size: 0.74rem;
+  font-weight: 850;
+}
+
+.nodu-mobile-event-icon-action--success {
+  border-color: var(--nodu-success-border);
+  background: var(--nodu-success-bg);
+  color: var(--nodu-success-text);
+}
+
+.nodu-mobile-event-icon-action--danger {
+  border-color: var(--nodu-error-border);
+  background: var(--nodu-error-bg);
+  color: var(--nodu-error-text);
+}
+
+.nodu-mobile-event-approval-dialog {
+  position: fixed;
+  z-index: 74;
+  inset: 0;
+  display: flex;
+  align-items: stretch;
+  background: rgb(var(--nodu-paper-rgb) / 0.98);
+  padding: 0;
+}
+
+.nodu-mobile-event-approval-panel {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
+  flex-direction: column;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: rgb(var(--nodu-paper-rgb) / 1);
+  color: var(--nodu-text);
+  box-shadow: none;
+}
+
+.nodu-mobile-event-approval-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid rgb(var(--nodu-text-rgb) / 0.08);
+  padding: 1rem;
+  padding-top: calc(1rem + env(safe-area-inset-top));
+  background: rgb(var(--nodu-paper-rgb) / 1);
+  backdrop-filter: blur(16px);
+}
+
+.nodu-mobile-event-approval-header span {
+  display: block;
+  color: var(--nodu-text-soft);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.28em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.nodu-mobile-event-approval-header h2 {
+  margin-top: 0.35rem;
+  color: var(--nodu-text);
+  font-size: 1.55rem;
+  font-weight: 900;
+  line-height: 1.05;
+}
+
+.nodu-mobile-event-approval-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1rem;
+  padding-bottom: calc(2rem + env(safe-area-inset-bottom));
+  scrollbar-width: none;
+}
+
+.nodu-mobile-event-approval-body::-webkit-scrollbar {
+  display: none;
+}
+
+.nodu-mobile-event-approval-panel .nodu-mobile-event-section {
+  border-radius: 20px;
+  background: transparent;
+  padding: 0;
+}
+
+.nodu-mobile-event-approval-close {
+  display: grid;
+  width: 2.7rem;
+  height: 2.7rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgb(var(--nodu-text-rgb) / 0.1);
+  border-radius: 16px;
+  background: rgb(var(--nodu-surface-rgb) / 0.95);
+  color: var(--nodu-text-soft);
+}
+
+.nodu-mobile-event-workflow-dialog {
+  z-index: 98;
+}
+
+.nodu-mobile-event-withdrawal-dialog {
+  position: fixed;
+  z-index: 95;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  background: rgb(var(--nodu-text-rgb) / 0.34);
+  padding: 1rem;
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+}
+
+.nodu-mobile-event-withdrawal-dialog--top {
+  z-index: 96;
+}
+
+.nodu-mobile-event-withdrawal-panel {
+  width: 100%;
+  border: 1px solid rgb(var(--nodu-text-rgb) / 0.08);
+  border-radius: 26px;
+  background: rgb(var(--nodu-paper-rgb) / 1);
+  box-shadow: 0 -18px 46px rgb(var(--nodu-text-rgb) / 0.2);
+  padding: 1.1rem;
+}
+
+.nodu-mobile-event-withdrawal-panel h2 {
+  color: var(--nodu-text);
+  font-size: 1.25rem;
+  font-weight: 900;
+  line-height: 1.15;
+}
+
+.nodu-mobile-event-withdrawal-panel p {
+  margin-top: 0.5rem;
+  color: var(--nodu-text-soft);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.nodu-mobile-event-withdrawal-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.nodu-mobile-event-withdrawal-cancel,
+.nodu-mobile-event-withdrawal-confirm {
+  min-height: 3rem;
+  border-radius: 16px;
+  font-size: 0.86rem;
+  font-weight: 850;
+}
+
+.nodu-mobile-event-withdrawal-cancel {
+  background: rgb(var(--nodu-text-rgb) / 0.06);
+  color: var(--nodu-text);
+}
+
+.nodu-mobile-event-withdrawal-confirm {
+  background: var(--nodu-accent);
+  color: white;
+}
+
+.nodu-mobile-event-withdrawal-confirm--danger {
+  background: #dc2626;
+}
+
+.nodu-mobile-event-crew-dialog {
+  position: fixed;
+  z-index: 72;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  background: rgb(var(--nodu-text-rgb) / 0.34);
+  padding: 1rem;
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+}
+
+.nodu-mobile-event-crew-panel {
+  width: 100%;
+  border: 1px solid rgb(var(--nodu-text-rgb) / 0.08);
+  border-radius: 26px;
+  background: rgb(var(--nodu-paper-rgb) / 0.98);
+  box-shadow: 0 -18px 46px rgb(var(--nodu-text-rgb) / 0.2);
+  padding: 1rem;
+}
+
+.nodu-mobile-event-crew-detail-header {
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr) 2.7rem;
+  gap: 0.8rem;
+  align-items: center;
+}
+
+.nodu-mobile-event-crew-detail-header span {
+  display: block;
+  color: var(--nodu-accent);
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.nodu-mobile-event-crew-detail-header h2 {
+  margin-top: 0.25rem;
+  color: var(--nodu-text);
+  font-size: 1.25rem;
+  font-weight: 900;
+  line-height: 1.08;
+}
+
+.nodu-mobile-event-crew-detail-header button {
+  display: grid;
+  width: 2.7rem;
+  height: 2.7rem;
+  place-items: center;
+  border: 1px solid rgb(var(--nodu-text-rgb) / 0.1);
+  border-radius: 16px;
+  background: rgb(var(--nodu-surface-rgb) / 0.95);
+  color: var(--nodu-text-soft);
+}
+
+.nodu-mobile-event-crew-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.nodu-mobile-event-crew-detail-grid div {
+  display: grid;
+  gap: 0.18rem;
+  border-radius: 17px;
+  background: rgb(var(--nodu-text-rgb) / 0.04);
+  padding: 0.85rem;
+}
+
+.nodu-mobile-event-crew-detail-grid span {
+  color: var(--nodu-text-soft);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.nodu-mobile-event-crew-detail-grid strong {
+  color: var(--nodu-text);
+  font-size: 1.05rem;
+  font-weight: 900;
+}
+
+.nodu-mobile-event-crew-call,
+.nodu-mobile-event-crew-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 3.2rem;
+  margin-top: 0.85rem;
+  border-radius: 18px;
+  font-size: 0.92rem;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.nodu-mobile-event-crew-call {
+  background: var(--nodu-accent);
+  color: white;
+}
+
+.nodu-mobile-event-crew-remove {
+  width: 100%;
+  border: 1px solid rgb(220 38 38 / 0.22);
+  background: rgb(254 242 242 / 0.96);
+  color: #b91c1c;
+}
+
+.nodu-mobile-event-crew-warning {
+  margin-top: 0.85rem;
+  border: 1px solid rgb(245 158 11 / 0.2);
+  border-radius: 17px;
+  background: rgb(255 251 235 / 0.96);
+  color: #92400e;
+  padding: 0.85rem;
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.nodu-mobile-event-contact-dialog {
+  position: fixed;
+  z-index: 72;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  background: rgb(var(--nodu-text-rgb) / 0.34);
+  padding: 1rem;
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+}
+
+.nodu-mobile-event-contact-panel {
+  width: 100%;
+  border: 1px solid rgb(var(--nodu-text-rgb) / 0.08);
+  border-radius: 26px;
+  background: rgb(var(--nodu-paper-rgb) / 0.98);
+  box-shadow: 0 -18px 46px rgb(var(--nodu-text-rgb) / 0.2);
+  padding: 1rem;
+}
+
+.nodu-mobile-event-contact-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.nodu-mobile-event-contact-header span {
+  display: block;
+  color: var(--nodu-accent);
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.nodu-mobile-event-contact-header h2 {
+  margin-top: 0.25rem;
+  color: var(--nodu-text);
+  font-size: 1.35rem;
+  font-weight: 900;
+  line-height: 1.05;
+}
+
+.nodu-mobile-event-contact-header button {
+  display: grid;
+  width: 2.7rem;
+  height: 2.7rem;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid rgb(var(--nodu-text-rgb) / 0.1);
+  border-radius: 16px;
+  background: rgb(var(--nodu-surface-rgb) / 0.95);
+  color: var(--nodu-text-soft);
+}
+
+.nodu-mobile-event-contact-person {
+  display: grid;
+  gap: 0.2rem;
+  margin-top: 1rem;
+  border-radius: 18px;
+  background: rgb(var(--nodu-text-rgb) / 0.04);
+  padding: 0.9rem;
+}
+
+.nodu-mobile-event-contact-person strong {
+  color: var(--nodu-text);
+  font-size: 1rem;
+  font-weight: 850;
+}
+
+.nodu-mobile-event-contact-person span,
+.nodu-mobile-event-contact-empty {
+  color: var(--nodu-text-soft);
+  font-size: 0.86rem;
+}
+
+.nodu-mobile-event-contact-call {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 3.35rem;
+  margin-top: 0.85rem;
+  border-radius: 18px;
+  background: var(--nodu-accent);
+  color: white;
+  font-size: 0.95rem;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.nodu-mobile-event-contact-empty {
+  margin-top: 0.85rem;
+  border-radius: 16px;
+  background: rgb(var(--nodu-text-rgb) / 0.05);
+  padding: 0.85rem;
+  line-height: 1.4;
+}

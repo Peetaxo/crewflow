@@ -5,7 +5,8 @@ export type Role = 'crew' | 'crewhead' | 'coo';
 export type EventStatus = 'upcoming' | 'full' | 'past' | 'planning';
 
 /** Typ prace (faze akce) */
-export type TimelogType = 'instal' | 'provoz' | 'deinstal';
+export type TimelogType = 'pripravy' | 'instal' | 'provoz' | 'deinstal';
+export type TimelogMeal = 'obed' | 'vecere';
 
 export interface EventPhaseTime {
   from: string;
@@ -42,7 +43,9 @@ export interface Event {
   status: EventStatus;
   client: string;
   description?: string;
+  contactProfileId?: string | null;
   contactPerson?: string;
+  contactPhone?: string;
   dresscode?: string;
   meetingLocation?: string;
   /** Zobrazovat typy dnů (Instal/Provoz/Deinstal) */
@@ -55,6 +58,8 @@ export interface Event {
   phaseSchedules?: Partial<Record<TimelogType, EventPhaseSlot[]>>;
   /** Povoli clenovi crew doplnit planovany prichod/odchod pri prihlasce */
   allowCrewTimeProposal?: boolean;
+  /** Povoli ve vykazu prace nahradu za nezajistene jidlo. */
+  mealAllowanceEnabled?: boolean;
 }
 
 export type EventApplicationStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn' | 'withdrawal_requested';
@@ -131,6 +136,21 @@ export interface CrewRating {
 /** Status vykazu prace */
 export type TimelogStatus = 'draft' | 'pending_crew_confirmation' | 'pending_ch' | 'pending_coo' | 'approved' | 'invoiced' | 'paid' | 'rejected';
 
+export type TimelogApprovalStatus = 'pending' | 'approved' | 'returned';
+
+export interface TimelogApproval {
+  id: string;
+  approvalRoundId: string;
+  timelogId: string;
+  approverProfileId: string;
+  status: TimelogApprovalStatus;
+  requestedByProfileId: string | null;
+  requestedAt: string;
+  resolvedAt: string | null;
+  supersededAt: string | null;
+  note: string;
+}
+
 /** Jeden den ve vykazu prace */
 export interface TimelogDay {
   /** ID radku v databazi nebo docasny klientsky klic */
@@ -142,7 +162,18 @@ export interface TimelogDay {
   /** Cas do (HH:MM) */
   t: string;
   type: TimelogType;
+  meals?: TimelogMeal[] | null;
+  meal?: TimelogMeal | null;
   note?: string;
+}
+
+export interface TimelogChangeSnapshot {
+  changedAt: string;
+  before: {
+    days: TimelogDay[];
+    km: number;
+    note: string;
+  };
 }
 
 /** Vykaz prace (timelog) */
@@ -161,7 +192,10 @@ export interface Timelog {
   /** Cestovne v km */
   km: number;
   note: string;
+  reviewNote?: string;
   status: TimelogStatus;
+  crewConfirmationSnapshot?: TimelogChangeSnapshot | null;
+  approvals?: TimelogApproval[];
 }
 
 /** Prirazeni crew k akci bez detailnich vykazanych dni */
@@ -266,6 +300,8 @@ export interface Invoice {
   km: number;
   /** Částka za km */
   kAmt: number;
+  /** Částka za jídlo. */
+  mealAmt?: number;
   /** Částka za účtenky */
   receiptAmt?: number;
   total: number;

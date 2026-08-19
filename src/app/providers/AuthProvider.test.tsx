@@ -11,6 +11,8 @@ const onAuthStateChangeMock = vi.fn(() => ({
   data: { subscription: { unsubscribe: vi.fn() } },
 }));
 const clearPersistedUiSessionMock = vi.fn();
+const getContractorsMock = vi.fn(() => []);
+const resetSupabaseCrewHydrationMock = vi.fn();
 let rolesData: Array<{ role: string }> = [];
 const fromMock = vi.fn((table: string) => ({
   select: () => ({
@@ -31,7 +33,8 @@ vi.mock('../../lib/app-config', () => ({
 }));
 
 vi.mock('../../features/crew/services/crew.service', () => ({
-  getContractors: () => [],
+  getContractors: () => getContractorsMock(),
+  resetSupabaseCrewHydration: () => resetSupabaseCrewHydrationMock(),
   subscribeToCrewChanges: () => () => {},
 }));
 
@@ -117,6 +120,8 @@ describe('AuthProvider', () => {
     await waitFor(() => {
       expect(rpcMock).toHaveBeenCalledWith('set_current_user_role', { p_role: 'crewhead' });
       expect(screen.getByTestId('role')).toHaveTextContent('crewhead');
+      expect(resetSupabaseCrewHydrationMock).toHaveBeenCalledTimes(1);
+      expect(getContractorsMock).toHaveBeenCalled();
     });
   });
 });

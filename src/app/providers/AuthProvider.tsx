@@ -1,7 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { appDataSource } from '../../lib/app-config';
-import { getContractors, subscribeToCrewChanges } from '../../features/crew/services/crew.service';
+import {
+  getContractors,
+  resetSupabaseCrewHydration,
+  subscribeToCrewChanges,
+} from '../../features/crew/services/crew.service';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import type { Contractor, Role } from '../../types';
 import { clearPersistedUiSession } from '../../context/ui-session-storage';
@@ -251,6 +255,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setRole(previousRole);
         throw new Error(error.message);
       }
+
+      resetSupabaseCrewHydration();
+      getContractors();
     } finally {
       setIsRoleSwitching(false);
     }

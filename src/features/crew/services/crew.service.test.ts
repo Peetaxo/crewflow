@@ -6,6 +6,114 @@ describe('crew.service', () => {
     vi.clearAllMocks();
   });
 
+  it('does not query protected crew data until an authenticated session exists', async () => {
+    const getSession = vi.fn().mockResolvedValue({ data: { session: null }, error: null });
+    const from = vi.fn(() => {
+      throw new Error('Protected tables must not be queried before authentication.');
+    });
+    const updateLocalAppState = vi.fn();
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: { auth: { getSession }, from },
+    }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => ({ contractors: [] }),
+      updateLocalAppState,
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    const { ensureSupabaseCrewLoaded } = await import('./crew.service');
+
+    ensureSupabaseCrewLoaded();
+
+    await vi.waitFor(() => expect(getSession).toHaveBeenCalledTimes(1));
+    expect(from).not.toHaveBeenCalled();
+    expect(updateLocalAppState).not.toHaveBeenCalled();
+  });
+
+  it('retries crew hydration after an authenticated session becomes ready', async () => {
+    const authenticatedSession = { user: { id: 'user-1' } };
+    const getSession = vi.fn()
+      .mockResolvedValueOnce({ data: { session: null }, error: null })
+      .mockResolvedValueOnce({ data: { session: authenticatedSession }, error: null });
+    const profilesOrder = vi.fn().mockResolvedValue({ data: [], error: null });
+    const profilesFirstOrder = vi.fn(() => ({ order: profilesOrder }));
+    const timelogsSelect = vi.fn().mockResolvedValue({ data: [], error: null });
+    const from = vi.fn((table: string) => {
+      if (table === 'profiles') return { select: vi.fn(() => ({ order: profilesFirstOrder })) };
+      if (table === 'timelogs') return { select: timelogsSelect };
+      throw new Error(`Unexpected table ${table}`);
+    });
+    const updateLocalAppState = vi.fn();
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: { auth: { getSession }, from },
+    }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => ({ contractors: [] }),
+      updateLocalAppState,
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    const { ensureSupabaseCrewLoaded, resetSupabaseCrewHydration } = await import('./crew.service');
+
+    ensureSupabaseCrewLoaded();
+    await vi.waitFor(() => expect(getSession).toHaveBeenCalledTimes(1));
+    resetSupabaseCrewHydration();
+    ensureSupabaseCrewLoaded();
+
+    await vi.waitFor(() => expect(updateLocalAppState).toHaveBeenCalledTimes(1));
+    expect(getSession).toHaveBeenCalledTimes(2);
+    expect(from).toHaveBeenCalledWith('profiles');
+    expect(from).toHaveBeenCalledWith('timelogs');
+  });
+
+  it('discards an in-flight crew snapshot after hydration reset', async () => {
+    let resolveProfiles: ((value: { data: []; error: null }) => void) | null = null;
+    const profilesResult = new Promise<{ data: []; error: null }>((resolve) => {
+      resolveProfiles = resolve;
+    });
+    const getSession = vi.fn().mockResolvedValue({
+      data: { session: { user: { id: 'user-1' } } },
+      error: null,
+    });
+    const profilesOrder = vi.fn(() => profilesResult);
+    const profilesFirstOrder = vi.fn(() => ({ order: profilesOrder }));
+    const timelogsSelect = vi.fn().mockResolvedValue({ data: [], error: null });
+    const from = vi.fn((table: string) => {
+      if (table === 'profiles') return { select: vi.fn(() => ({ order: profilesFirstOrder })) };
+      if (table === 'timelogs') return { select: timelogsSelect };
+      throw new Error(`Unexpected table ${table}`);
+    });
+    const updateLocalAppState = vi.fn();
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: { auth: { getSession }, from },
+    }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => ({ contractors: [] }),
+      updateLocalAppState,
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    const { ensureSupabaseCrewLoaded, resetSupabaseCrewHydration } = await import('./crew.service');
+
+    ensureSupabaseCrewLoaded();
+    await vi.waitFor(() => expect(from).toHaveBeenCalledWith('profiles'));
+    resetSupabaseCrewHydration();
+    resolveProfiles?.({ data: [], error: null });
+
+    await vi.waitFor(() => expect(profilesOrder).toHaveBeenCalledTimes(1));
+    await Promise.resolve();
+    expect(updateLocalAppState).not.toHaveBeenCalled();
+  });
+
   it('builds crew detail and receipts by contractorProfileId', async () => {
     const snapshot = {
       contractors: [

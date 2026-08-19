@@ -9,6 +9,8 @@ const coalesceHotfixMigrationFiles = readdirSync(migrationDirectory)
   .filter((name) => name.endsWith('_fix_lifecycle_coalesce.sql'));
 const legacyPolicyCleanupMigrationFiles = readdirSync(migrationDirectory)
   .filter((name) => name.endsWith('_remove_legacy_timelog_policies.sql'));
+const lifecycleAclCleanupMigrationFiles = readdirSync(migrationDirectory)
+  .filter((name) => name.endsWith('_restrict_lifecycle_function_execute.sql'));
 const verificationScriptPath = join(
   process.cwd(),
   'supabase',
@@ -33,6 +35,13 @@ const readCoalesceHotfixMigration = () => {
 const readLegacyPolicyCleanupMigration = () => {
   expect.soft(legacyPolicyCleanupMigrationFiles).toHaveLength(1);
   const migrationFile = legacyPolicyCleanupMigrationFiles[0];
+  return migrationFile
+    ? readFileSync(join(migrationDirectory, migrationFile), 'utf8').toLowerCase()
+    : '';
+};
+const readLifecycleAclCleanupMigration = () => {
+  expect.soft(lifecycleAclCleanupMigrationFiles).toHaveLength(1);
+  const migrationFile = lifecycleAclCleanupMigrationFiles[0];
   return migrationFile
     ? readFileSync(join(migrationDirectory, migrationFile), 'utf8').toLowerCase()
     : '';
@@ -1254,6 +1263,43 @@ describe('timelog assignment lifecycle migration', () => {
     expect.soft(cleanup).toContain('if v_policy_count <> 11');
     expect.soft(cleanup).toContain(
       "raise exception 'timelog workflow policy cleanup left an unexpected catalog'",
+    );
+  });
+
+  it('revokes the automatic service-role execute grant from every lifecycle function', () => {
+    const cleanup = readLifecycleAclCleanupMigration();
+    const signatures = [
+      'public.assign_event_crew(uuid,uuid,uuid,jsonb)',
+      'public.remove_event_crew(uuid,uuid)',
+      'public.approve_event_withdrawal(uuid,uuid,uuid)',
+      'public.save_timelog_atomic(uuid,uuid,uuid,timestamptz,public.timelog_status,numeric,text,public.timelog_status,jsonb)',
+      'public.transition_timelog_statuses_atomic(jsonb,public.timelog_status,public.timelog_status)',
+      'public.transition_receipt_statuses_atomic(jsonb,public.receipt_status,public.receipt_status)',
+      'public.delete_timelog_atomic(uuid,timestamptz,public.timelog_status)',
+      'public.import_approved_timelog_atomic(uuid,uuid,uuid,timestamptz,public.timelog_status,numeric,text,jsonb)',
+      'public.delete_event_atomic(uuid,timestamptz)',
+      'public.create_invoice_atomic(jsonb,jsonb,jsonb,jsonb)',
+      'public.mark_invoice_sent_atomic(uuid,timestamptz,timestamptz)',
+      'public.mark_invoice_paid_atomic(uuid,public.invoice_status,timestamptz,timestamptz)',
+      'public.delete_invoice_atomic(uuid,public.invoice_status,timestamptz)',
+      'public.can_edit_timelog_data(uuid,public.timelog_status)',
+      'public.enforce_event_application_lifecycle_update()',
+      'public.enforce_timelog_update_permissions()',
+      'public.enforce_receipt_lifecycle_update()',
+      'public.handle_timelog_approved()',
+    ] as const;
+
+    expect.soft(signatures).toHaveLength(18);
+    signatures.forEach((signature) => {
+      expect.soft(cleanup).toContain(`'${signature}'`);
+    });
+    expect.soft(cleanup).toContain(
+      "execute 'revoke all on function ' || function_signature || ' from service_role'",
+    );
+    expect.soft(cleanup).toContain("where role_row.rolname = 'service_role'");
+    expect.soft(cleanup).toContain('from pg_catalog.aclexplode(');
+    expect.soft(cleanup).toContain(
+      "raise exception 'lifecycle function still grants execute to service_role: %'",
     );
   });
 });

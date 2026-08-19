@@ -40,7 +40,7 @@ describe('crew shift display helpers', () => {
     expect(resolveShiftProject({ ...event, projectId: 'project-uuid-1', job: '' }, [project])).toBe(project);
   });
 
-  it('keeps only future draft shifts in upcoming and moves past drafts to processing', () => {
+  it('keeps draft shifts together while exposing future drafts for the next-shift card', () => {
     const futureEvent: Event = {
       ...event,
       id: 2,
@@ -74,8 +74,9 @@ describe('crew shift display helpers', () => {
     };
 
     expect(categorizeCrewTimelogs([pastDraft, futureDraft, pending, approved], [event, futureEvent])).toEqual({
+      drafts: [pastDraft, futureDraft],
       upcoming: [futureDraft],
-      processing: [pastDraft, pending],
+      processing: [pending],
       invoiced: [approved],
     });
   });

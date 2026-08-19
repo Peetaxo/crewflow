@@ -1904,9 +1904,9 @@ begin
       'pending_ch'::public.timelog_status
     );
   exception
-    when sqlstate 'P0001' then
+    when sqlstate 'P0002' then
       get stacked diagnostics v_error_message = message_text;
-      if v_error_message <> 'timelog_mutation_blocked' then
+      if v_error_message <> 'timelog_mutation_not_found' then
         raise;
       end if;
       v_expected_error := true;
@@ -2362,14 +2362,16 @@ begin
     raise exception 'verification failed: CrewHead directly deleted an event';
   end if;
 
-  select pg_catalog.to_jsonb(deleted) into v_result
+  select pg_catalog.jsonb_build_object('event_id', deleted.event_id) into v_result
   from public.delete_event_atomic(
     v_delete_event_id,
     v_delete_event_updated_at
   ) deleted;
   execute 'reset role';
   if (v_result->>'event_id')::uuid is distinct from v_delete_event_id then
-    raise exception 'verification failed: CrewHead event delete RPC failed';
+    raise exception 'verification failed: CrewHead event delete RPC failed (expected %, got %)',
+      v_delete_event_id,
+      v_result;
   end if;
 
   delete from public.user_roles
@@ -2487,10 +2489,8 @@ begin
     raise exception 'verification failed: COO directly deleted an event';
   end if;
 
-  update public.events
-  set updated_at = v_delete_event_updated_at + interval '1 second'
-  where id = v_delete_event_id
-  returning updated_at into v_current_delete_event_updated_at;
+  v_current_delete_event_updated_at := v_delete_event_updated_at;
+  v_delete_event_updated_at := v_delete_event_updated_at - interval '1 second';
   select pg_catalog.to_jsonb(e) into v_event_before
   from public.events e
   where e.id = v_delete_event_id;
@@ -2545,7 +2545,7 @@ begin
   end if;
 
   v_delete_event_updated_at := v_current_delete_event_updated_at;
-  select pg_catalog.to_jsonb(deleted) into v_result
+  select pg_catalog.jsonb_build_object('event_id', deleted.event_id) into v_result
   from public.delete_event_atomic(
     v_delete_event_id,
     v_delete_event_updated_at
@@ -2818,8 +2818,28 @@ begin
     'VERIFY-INVOICE',
     'invoice create receipt',
     25,
-    'approved'::public.receipt_status
+    'draft'::public.receipt_status
   ) returning id, updated_at into v_invoice_receipt_id, v_invoice_receipt_updated_at;
+
+  v_result := public.transition_receipt_statuses_atomic(
+    pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
+      'id', v_invoice_receipt_id,
+      'expected_updated_at', v_invoice_receipt_updated_at
+    )),
+    'draft'::public.receipt_status,
+    'submitted'::public.receipt_status
+  );
+  v_invoice_receipt_updated_at := (v_result->0->>'updated_at')::timestamptz;
+
+  v_result := public.transition_receipt_statuses_atomic(
+    pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
+      'id', v_invoice_receipt_id,
+      'expected_updated_at', v_invoice_receipt_updated_at
+    )),
+    'submitted'::public.receipt_status,
+    'approved'::public.receipt_status
+  );
+  v_invoice_receipt_updated_at := (v_result->0->>'updated_at')::timestamptz;
 
   select pg_catalog.count(*) into v_count from public.invoices;
   v_expected_error := false;
@@ -3295,9 +3315,29 @@ begin
     'VERIFY-DELETE',
     'invoice delete receipt',
     15,
-    'approved'::public.receipt_status
+    'draft'::public.receipt_status
   ) returning id, updated_at
   into v_delete_invoice_receipt_id, v_delete_invoice_receipt_updated_at;
+
+  v_result := public.transition_receipt_statuses_atomic(
+    pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
+      'id', v_delete_invoice_receipt_id,
+      'expected_updated_at', v_delete_invoice_receipt_updated_at
+    )),
+    'draft'::public.receipt_status,
+    'submitted'::public.receipt_status
+  );
+  v_delete_invoice_receipt_updated_at := (v_result->0->>'updated_at')::timestamptz;
+
+  v_result := public.transition_receipt_statuses_atomic(
+    pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
+      'id', v_delete_invoice_receipt_id,
+      'expected_updated_at', v_delete_invoice_receipt_updated_at
+    )),
+    'submitted'::public.receipt_status,
+    'approved'::public.receipt_status
+  );
+  v_delete_invoice_receipt_updated_at := (v_result->0->>'updated_at')::timestamptz;
 
   select pg_catalog.to_jsonb(created) into v_result
   from public.create_invoice_atomic(

@@ -1102,6 +1102,19 @@ describe('timelog assignment lifecycle migration', () => {
     expect(verifier).toContain('verification failed: crew-only user deleted an event through rpc');
     expect(verifier).toContain('verification failed: unauthenticated caller deleted an event through rpc');
     expect(verifier).toContain('verification failed: stale event delete changed event lifecycle rows');
+    expect(verifier).toContain(
+      'v_current_delete_event_updated_at := v_delete_event_updated_at;\n' +
+        "  v_delete_event_updated_at := v_delete_event_updated_at - interval '1 second';",
+    );
+    expect(verifier).not.toMatch(
+      /update public\.events\s+set updated_at = v_delete_event_updated_at \+ interval '1 second'/,
+    );
+    expect(
+      verifier.match(
+        /pg_catalog\.jsonb_build_object\('event_id', deleted\.event_id\)/g,
+      ),
+    ).toHaveLength(2);
+    expect(verifier).not.toContain('pg_catalog.to_jsonb(deleted)');
     expect(verifier).toMatch(
       /perform public\.delete_event_atomic\(\s*v_delete_event_id,\s*v_delete_event_updated_at\s*\)/,
     );
@@ -1301,5 +1314,55 @@ describe('timelog assignment lifecycle migration', () => {
     expect.soft(cleanup).toContain(
       "raise exception 'lifecycle function still grants execute to service_role: %'",
     );
+  });
+
+  it('expects Crew RLS to hide a protected timelog from the delete RPC', () => {
+    const verifier = readVerificationScript();
+    const deleteAttemptStart = verifier.indexOf(
+      'perform public.delete_timelog_atomic(\n      v_atomic_first_timelog_id',
+    );
+    const deleteAttemptEnd = verifier.indexOf("execute 'reset role';", deleteAttemptStart);
+    const deleteAttempt = verifier.slice(deleteAttemptStart, deleteAttemptEnd);
+
+    expect(deleteAttemptStart).toBeGreaterThanOrEqual(0);
+    expect(deleteAttemptEnd).toBeGreaterThan(deleteAttemptStart);
+    expect(deleteAttempt).toContain("when sqlstate 'p0002'");
+    expect(deleteAttempt).toContain("v_error_message <> 'timelog_mutation_not_found'");
+    expect(deleteAttempt).toContain(
+      'not exists (select 1 from public.timelogs where id = v_atomic_first_timelog_id)',
+    );
+    expect(deleteAttempt).toContain(
+      'not exists (select 1 from public.timelog_days where timelog_id = v_atomic_first_timelog_id)',
+    );
+  });
+
+  it('creates invoice receipt fixtures through the authenticated lifecycle', () => {
+    const verifier = readVerificationScript();
+
+    expect(verifier).not.toMatch(
+      /'invoice create receipt',\s*25,\s*'approved'::public\.receipt_status/,
+    );
+    expect(verifier).not.toMatch(
+      /'invoice delete receipt',\s*15,\s*'approved'::public\.receipt_status/,
+    );
+    expect(verifier).toContain(
+      "'id', v_invoice_receipt_id,\n      'expected_updated_at', v_invoice_receipt_updated_at",
+    );
+    expect(verifier).toContain(
+      "'id', v_delete_invoice_receipt_id,\n      'expected_updated_at', v_delete_invoice_receipt_updated_at",
+    );
+    const createFixture = verifier.slice(
+      verifier.indexOf("'invoice create receipt'"),
+      verifier.indexOf('select pg_catalog.count(*) into v_count from public.invoices'),
+    );
+    const deleteFixture = verifier.slice(
+      verifier.indexOf("'invoice delete receipt'"),
+      verifier.indexOf('select pg_catalog.to_jsonb(created) into v_result', verifier.indexOf("'invoice delete receipt'")),
+    );
+    [createFixture, deleteFixture].forEach((fixture) => {
+      expect(fixture).toMatch(
+        /'draft'::public\.receipt_status[\s\S]*?'submitted'::public\.receipt_status[\s\S]*?'submitted'::public\.receipt_status[\s\S]*?'approved'::public\.receipt_status/,
+      );
+    });
   });
 });

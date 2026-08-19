@@ -3,13 +3,13 @@ import type { Session, User } from '@supabase/supabase-js';
 import { appDataSource } from '../../lib/app-config';
 import {
   getContractors,
-  resetSupabaseCrewHydration,
   subscribeToCrewChanges,
 } from '../../features/crew/services/crew.service';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import type { Contractor, Role } from '../../types';
 import { clearPersistedUiSession } from '../../context/ui-session-storage';
 import { AuthContext, type AuthProfile, type AuthContextType, type DevLoginOption } from './auth-context';
+import { resetSupabaseDataScope } from './reset-supabase-data-scope';
 
 const DEV_SESSION_STORAGE_KEY = 'event-helper-dev-session';
 
@@ -245,18 +245,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       throw new Error('Roli nelze zmenit bez prihlaseneho uzivatele.');
     }
 
-    const previousRole = role;
     setIsRoleSwitching(true);
-    setRole(nextRole);
 
     try {
       const { error } = await supabase.rpc('set_current_user_role', { p_role: nextRole });
       if (error) {
-        setRole(previousRole);
         throw new Error(error.message);
       }
 
-      resetSupabaseCrewHydration();
+      await resetSupabaseDataScope();
+      setRole(nextRole);
       getContractors();
     } finally {
       setIsRoleSwitching(false);

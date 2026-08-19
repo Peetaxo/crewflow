@@ -1,7 +1,9 @@
 # Lifecycle `COALESCE` Hotfix Design
 
-**Date:** 2026-08-19  
-**Status:** Approved design; implementation pending  
+**Date:** 2026-08-19
+
+**Status:** Approved design; implementation pending
+
 **Scope:** Correct the invalid schema-qualified `COALESCE` expressions discovered by the linked production database lint after migration `20260817074631_timelog_assignment_lifecycle.sql` was applied. No application or data-model behavior changes.
 
 ## Context and root cause

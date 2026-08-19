@@ -754,11 +754,37 @@ export const importApprovedTimelog = async (
 };
 
 export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
-  const snapshot = getLocalAppState();
-  const safeTimelogs = snapshot.timelogs ?? [];
-  const existingTimelog = updated.supabaseId
-    ? safeTimelogs.find((timelog) => timelog.supabaseId === updated.supabaseId)
-    : safeTimelogs.find((timelog) => timelog.id === updated.id);
+  const persistsToSupabase = appDataSource === 'supabase' && Boolean(supabase) && isSupabaseConfigured;
+  const findExistingTimelog = (timelogs: Timelog[]) => {
+    if (updated.supabaseId) {
+      return timelogs.find((timelog) => timelog.supabaseId === updated.supabaseId);
+    }
+    if (updated.eventSupabaseId && updated.contractorProfileId) {
+      return timelogs.find((timelog) => (
+        timelog.eventSupabaseId === updated.eventSupabaseId
+        && timelog.contractorProfileId === updated.contractorProfileId
+      ));
+    }
+    return timelogs.find((timelog) => timelog.id === updated.id);
+  };
+
+  let snapshot = getLocalAppState();
+  let existingTimelog = findExistingTimelog(snapshot.timelogs ?? []);
+  if (
+    !existingTimelog
+    && persistsToSupabase
+    && updated.eventSupabaseId
+    && updated.contractorProfileId
+  ) {
+    try {
+      commitAuthoritativeTimelogSnapshot(await loadTimelogsSnapshot());
+    } catch (error) {
+      console.error('Unable to refresh timelog identity before save', error);
+      throw new Error('Výkaz se nepodařilo načíst. Obnovte data a zkuste to znovu.');
+    }
+    snapshot = getLocalAppState();
+    existingTimelog = findExistingTimelog(snapshot.timelogs ?? []);
+  }
   const snapshotEvent = existingTimelog
     ? (snapshot.events ?? []).find((event) => event.id === existingTimelog.eid)
     : undefined;
@@ -789,7 +815,6 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
     throw new Error('Nepodarilo se dohledat UUID identitu clena crew.');
   }
 
-  const persistsToSupabase = appDataSource === 'supabase' && Boolean(supabase) && isSupabaseConfigured;
   const mutationKeys = getTimelogMutationKeys(existingTimelog.id, existingTimelog.supabaseId);
 
   return runTimelogMutation(mutationKeys, async () => {

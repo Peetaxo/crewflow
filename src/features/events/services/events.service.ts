@@ -1064,7 +1064,11 @@ export const getEventDetailData = (eventId: EventIdentifier | null): {
     };
   }
 
-  const eventTimelogs = (snapshot.timelogs ?? []).filter((timelog) => timelog.eid === event.id);
+  const eventTimelogs = (snapshot.timelogs ?? []).filter((timelog) => (
+    event.supabaseId && timelog.eventSupabaseId
+      ? timelog.eventSupabaseId === event.supabaseId
+      : timelog.eid === event.id
+  ));
   const grasonConfirmations = getGrasonConfirmationsForEvent(event, snapshot.grasonEventConfirmations ?? []);
   const assignedCrewCount = getAssignedProfileIdsForEvent(
     event,

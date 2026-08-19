@@ -31,6 +31,7 @@ const setupStableUuidWriteHarness = async ({
   timelogUpdateResult,
   timelogDaysDeleteResult,
   rpcImplementation,
+  authoritativeTimelogs,
 }: {
   timelogs?: Timelog[];
   snapshotEventSupabaseId?: string;
@@ -43,6 +44,7 @@ const setupStableUuidWriteHarness = async ({
     name: string,
     args: Record<string, unknown>,
   ) => Promise<{ data: unknown; error: unknown }>;
+  authoritativeTimelogs?: Timelog[];
 }) => {
   const versionedTimelogs = timelogs.map((timelog) => (
     timelog.supabaseId && !timelog.updatedAt
@@ -79,8 +81,17 @@ const setupStableUuidWriteHarness = async ({
   const timelogDaysDeleteEq = vi.fn(() => timelogDaysDeleteResult ?? Promise.resolve({ error: null }));
   const timelogDaysDelete = vi.fn(() => ({ eq: timelogDaysDeleteEq }));
 
+  const authoritativeTimelogRows = authoritativeTimelogs?.map((timelog) => ({
+    id: timelog.supabaseId,
+    event_id: timelog.eventSupabaseId,
+    contractor_id: timelog.contractorProfileId,
+    km: timelog.km,
+    note: timelog.note,
+    status: timelog.status,
+    updated_at: timelog.updatedAt,
+  }));
   const legacyTimelogResult = Promise.resolve({
-    data: [{ id: 'positionally-wrong-timelog-uuid' }],
+    data: authoritativeTimelogRows ?? [{ id: 'positionally-wrong-timelog-uuid' }],
     error: null,
   });
   const legacyTimelogOrder = vi.fn();
@@ -102,6 +113,21 @@ const setupStableUuidWriteHarness = async ({
   };
   legacyEventOrder.mockReturnValue(legacyEventQuery);
   const eventsSelect = vi.fn(() => legacyEventQuery);
+  const createOrderedQuery = <T,>(data: T[]) => {
+    const result = Promise.resolve({ data, error: null });
+    const order = vi.fn();
+    const query = { order, then: result.then.bind(result) };
+    order.mockReturnValue(query);
+    return query;
+  };
+  const timelogDaysSelect = vi.fn(() => createOrderedQuery([]));
+  const profilesSelect = vi.fn(() => createOrderedQuery(
+    [...new Set(
+      authoritativeTimelogs
+        ?.map((timelog) => timelog.contractorProfileId)
+        .filter((profileId): profileId is string => Boolean(profileId)) ?? [],
+    )].map((id) => ({ id })),
+  ));
   const defaultRpcImplementation = async (name: string, args: Record<string, unknown>) => {
     if (name === 'save_timelog_atomic') {
       if (args.p_timelog_id == null) {
@@ -180,11 +206,24 @@ const setupStableUuidWriteHarness = async ({
           return {
             insert: timelogDaysInsert,
             delete: timelogDaysDelete,
+            select: timelogDaysSelect,
           };
         }
 
         if (table === 'events') {
-          return { select: eventsSelect };
+          return {
+            select: authoritativeTimelogs
+              ? vi.fn(() => createOrderedQuery(
+                snapshot.events
+                  .filter((event) => event.supabaseId)
+                  .map((event) => ({ id: event.supabaseId })),
+              ))
+              : eventsSelect,
+          };
+        }
+
+        if (table === 'profiles') {
+          return { select: profilesSelect };
         }
 
         throw new Error(`Unexpected table ${table}`);
@@ -193,7 +232,13 @@ const setupStableUuidWriteHarness = async ({
   }));
 
   vi.doMock('../../../lib/supabase-mappers', () => ({
-    mapTimelog: vi.fn(),
+    mapTimelog: vi.fn((row: Record<string, unknown>) => ({
+      days: [],
+      km: row.km ?? 0,
+      note: row.note ?? '',
+      status: row.status ?? 'draft',
+      updatedAt: row.updated_at,
+    })),
   }));
 
   vi.doMock('../../../lib/app-data', () => ({
@@ -809,6 +854,54 @@ describe('timelogs.service write flow', () => {
 
     expect(harness.rpc).not.toHaveBeenCalled();
     expect(harness.eventsSelect).not.toHaveBeenCalled();
+  });
+
+  it('reloads and updates an existing rejected pair instead of inserting a duplicate', async () => {
+    const eventSupabaseId = 'event-uuid-rejected';
+    const contractorProfileId = 'profile-uuid-1';
+    const harness = await setupStableUuidWriteHarness({
+      timelogs: [],
+      events: [{ id: 4, supabaseId: eventSupabaseId }],
+      authoritativeTimelogs: [{
+        id: 8,
+        eid: 4,
+        supabaseId: 'rejected-timelog-uuid',
+        eventSupabaseId,
+        contractorProfileId,
+        days: [{ d: '2026-06-10', f: '08:00', t: '17:00', type: 'provoz' }],
+        km: 0,
+        note: 'Vráceno CH',
+        status: 'rejected',
+        updatedAt: '2026-08-19T11:20:57.284Z',
+      }],
+    });
+
+    const saved = await harness.service.saveTimelog({
+      id: -1,
+      eid: 99,
+      eventSupabaseId,
+      contractorProfileId,
+      days: [{ d: '2026-06-10', f: '08:00', t: '18:00', type: 'provoz' }],
+      km: 0,
+      note: 'Opraveno Crew',
+      status: 'pending_ch',
+    });
+
+    expect(harness.rpc).toHaveBeenCalledWith('save_timelog_atomic', expect.objectContaining({
+      p_timelog_id: 'rejected-timelog-uuid',
+      p_event_id: eventSupabaseId,
+      p_contractor_id: contractorProfileId,
+      p_expected_updated_at: '2026-08-19T11:20:57.284Z',
+      p_expected_status: 'rejected',
+      p_status: 'pending_ch',
+    }));
+    expect(saved).toMatchObject({
+      id: 1,
+      supabaseId: 'rejected-timelog-uuid',
+      eventSupabaseId,
+      contractorProfileId,
+      status: 'pending_ch',
+    });
   });
 
   it('repairs missing save identities from the snapshot before later status and delete writes', async () => {

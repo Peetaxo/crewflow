@@ -529,6 +529,7 @@ const EventDetailView = () => {
     return {
       id: Math.min(0, ...eventTimelogs.map((item) => item.id)) - 1,
       eid: event.id,
+      eventSupabaseId: event.supabaseId,
       contractorProfileId: contractor.profileId,
       days: eventDates.map((date) => ({
         d: date,

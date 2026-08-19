@@ -1,12 +1,13 @@
 import React from 'react';
+import { MapPinned } from 'lucide-react';
+import {
+  searchFreeEventLocations,
+} from '../services/event-geocoding.service';
+import type { EventGeocodingCandidate } from '../services/event-geocoding.service';
 import {
   EventAddressSelection,
-  EventAddressSuggestion,
-  fetchGoogleAddressSuggestions,
   getManualAddressSelection,
-  isGooglePlacesConfigured,
-  resolveGoogleAddressSuggestion,
-} from '../services/event-location-google.service';
+} from '../services/event-location.service';
 
 interface EventAddressFieldValue {
   address?: string | null;
@@ -19,15 +20,16 @@ interface EventAddressFieldValue {
 interface EventAddressFieldProps {
   value: EventAddressFieldValue;
   onChange: (selection: EventAddressSelection) => void;
+  geocodeAddress?: (input: string) => Promise<EventGeocodingCandidate[]>;
+  onPickMap?: () => void;
   onResolvingChange?: (isResolving: boolean) => void;
-  autocompleteEnabled?: boolean;
-  fetchSuggestions?: (input: string) => Promise<EventAddressSuggestion[]>;
-  resolveSuggestion?: (suggestion: EventAddressSuggestion) => Promise<EventAddressSelection>;
 }
 
 const fieldLabelClass = 'mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]';
 const nativeFieldClass = 'w-full rounded-xl border border-[color:var(--nodu-border)] bg-white px-3 py-2 text-sm text-[color:var(--nodu-text)] outline-none transition-all focus:border-[color:var(--nodu-accent)] focus:ring-2 focus:ring-[color:rgb(var(--nodu-accent-rgb)/0.14)]';
-const disabledStatus = 'Našeptávání adres není nakonfigurované. Adresu lze zadat ručně.';
+const actionClass = 'inline-flex items-center justify-center gap-2 rounded-xl border border-[color:var(--nodu-border)] bg-white px-3 py-2 text-xs font-bold text-[color:var(--nodu-text)] transition-all hover:border-[color:rgb(var(--nodu-accent-rgb)/0.32)] hover:text-[color:var(--nodu-accent)] disabled:cursor-not-allowed disabled:opacity-60';
+const geocodingFailureStatus = 'Vyhledávání polohy se nepodařilo. Zkuste to prosím znovu.';
+const autocompleteDelayMs = 650;
 
 const clean = (value: string | null | undefined) => value?.trim() ?? '';
 
@@ -36,119 +38,144 @@ const getInitialAddress = (value: EventAddressFieldValue) => clean(value.address
 const EventAddressField = ({
   value,
   onChange,
-  onResolvingChange,
-  autocompleteEnabled = isGooglePlacesConfigured(),
-  fetchSuggestions = fetchGoogleAddressSuggestions,
-  resolveSuggestion = resolveGoogleAddressSuggestion,
+  geocodeAddress = searchFreeEventLocations,
+  onPickMap,
 }: EventAddressFieldProps) => {
   const addressFromProps = getInitialAddress(value);
   const [inputValue, setInputValue] = React.useState(addressFromProps);
-  const [suggestions, setSuggestions] = React.useState<EventAddressSuggestion[]>([]);
-  const [hasTyped, setHasTyped] = React.useState(false);
+  const [candidates, setCandidates] = React.useState<EventGeocodingCandidate[]>([]);
   const [status, setStatus] = React.useState('');
-  const [isResolving, setIsResolving] = React.useState(false);
+  const inputValueRef = React.useRef(addressFromProps);
+  const searchRequestId = React.useRef(0);
+  const hasManualInputRef = React.useRef(false);
   const mountedRef = React.useRef(false);
-  const resolutionGenerationRef = React.useRef(0);
 
   React.useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      resolutionGenerationRef.current += 1;
+      searchRequestId.current += 1;
     };
   }, []);
 
   React.useEffect(() => {
+    if (addressFromProps === inputValueRef.current) {
+      return;
+    }
+
+    searchRequestId.current += 1;
+    inputValueRef.current = addressFromProps;
+    hasManualInputRef.current = false;
     setInputValue(addressFromProps);
+    setCandidates([]);
+    setStatus('');
   }, [addressFromProps]);
 
   React.useEffect(() => {
-    if (!autocompleteEnabled) {
-      setSuggestions([]);
-      setStatus(disabledStatus);
-      return;
+    if (!hasManualInputRef.current) {
+      return undefined;
     }
 
     const query = inputValue.trim();
-    if (!hasTyped || query.length < 3) {
-      setSuggestions([]);
-      setStatus(query ? 'Pro návrhy zadejte alespoň 3 znaky.' : '');
-      return;
+    if (query.length < 3) {
+      setCandidates([]);
+      setStatus(query ? 'Zadejte alespoň 3 znaky pro našeptání adresy.' : '');
+      return undefined;
     }
 
-    let isActive = true;
-    setStatus('Hledám adresy...');
+    const requestId = searchRequestId.current + 1;
+    searchRequestId.current = requestId;
+    const timeout = window.setTimeout(() => {
+      setCandidates([]);
+      setStatus('Hledám adresy...');
 
-    void fetchSuggestions(query)
-      .then((nextSuggestions) => {
-        if (!isActive) return;
-        setSuggestions(nextSuggestions);
-        setStatus(nextSuggestions.length > 0 ? 'Vyberte adresu z návrhů.' : 'Žádný návrh adresy nenalezen. Adresu lze zadat ručně.');
-      })
-      .catch(() => {
-        if (!isActive) return;
-        setSuggestions([]);
-        setStatus('Našeptávání adres se nepodařilo načíst. Adresu lze zadat ručně.');
-      });
+      void geocodeAddress(query)
+        .then((nextCandidates) => {
+          if (!mountedRef.current || searchRequestId.current !== requestId) {
+            return;
+          }
+
+          setCandidates(nextCandidates);
+          setStatus(nextCandidates.length > 0
+            ? 'Vyberte správnou adresu z výsledků.'
+            : 'Poloha nebyla nalezena. Adresu lze uložit ručně.');
+        })
+        .catch(() => {
+          if (!mountedRef.current || searchRequestId.current !== requestId) {
+            return;
+          }
+
+          setCandidates([]);
+          setStatus(geocodingFailureStatus);
+        })
+    }, autocompleteDelayMs);
 
     return () => {
-      isActive = false;
+      window.clearTimeout(timeout);
     };
-  }, [autocompleteEnabled, fetchSuggestions, hasTyped, inputValue]);
+  }, [geocodeAddress, inputValue]);
 
   const handleManualChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const nextAddress = event.target.value;
+    const nextQuery = nextAddress.trim();
+    searchRequestId.current += 1;
+    inputValueRef.current = nextAddress;
+    hasManualInputRef.current = true;
     setInputValue(nextAddress);
-    setHasTyped(true);
+    setCandidates([]);
+    setStatus(nextQuery && nextQuery.length < 3 ? 'Zadejte alespoň 3 znaky pro našeptání adresy.' : '');
     onChange(getManualAddressSelection(nextAddress));
   };
 
-  const handleSelectSuggestion = async (suggestion: EventAddressSuggestion) => {
-    const resolutionGeneration = ++resolutionGenerationRef.current;
-    setIsResolving(true);
-    onResolvingChange?.(true);
-    try {
-      const selection = await resolveSuggestion(suggestion);
-      if (!mountedRef.current || resolutionGeneration !== resolutionGenerationRef.current) return;
-      setInputValue(selection.address);
-      setSuggestions([]);
-      setHasTyped(false);
-      setStatus('Adresa je vybraná z mapových podkladů.');
-      onChange(selection);
-    } catch {
-      if (!mountedRef.current || resolutionGeneration !== resolutionGenerationRef.current) return;
-      setStatus('Adresu se nepodařilo načíst. Adresu lze zadat ručně.');
-    } finally {
-      if (mountedRef.current && resolutionGeneration === resolutionGenerationRef.current) {
-        setIsResolving(false);
-        onResolvingChange?.(false);
-      }
-    }
+  const handleSelectCandidate = (candidate: EventGeocodingCandidate) => {
+    searchRequestId.current += 1;
+    inputValueRef.current = candidate.label;
+    hasManualInputRef.current = false;
+    setInputValue(candidate.label);
+    setCandidates([]);
+    setStatus('Poloha je vybraná z mapových podkladů.');
+    onChange({
+      address: candidate.label,
+      placeId: undefined,
+      locationLat: candidate.locationLat,
+      locationLng: candidate.locationLng,
+    });
   };
 
   return (
     <div className="relative">
       <label htmlFor="event-address" className={fieldLabelClass}>Adresa</label>
-      <input
-        id="event-address"
-        type="text"
-        value={inputValue}
-        onChange={handleManualChange}
-        className={nativeFieldClass}
-        autoComplete="off"
-      />
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <input
+          id="event-address"
+          type="text"
+          value={inputValue}
+          onChange={handleManualChange}
+          className={nativeFieldClass}
+          autoComplete="off"
+        />
+        {onPickMap && (
+          <button
+            type="button"
+            onClick={onPickMap}
+            className={actionClass}
+          >
+            <MapPinned size={14} aria-hidden="true" />
+            Vybrat na mapě
+          </button>
+        )}
+      </div>
 
-      {suggestions.length > 0 && (
-        <div className="absolute z-30 mt-2 max-h-52 w-full overflow-y-auto rounded-[18px] border border-[color:var(--nodu-border)] bg-white p-1 shadow-[0_18px_42px_rgba(47,38,31,0.14)]">
-          {suggestions.map((suggestion) => (
+      {candidates.length > 0 && (
+        <div className="mt-2 max-h-52 w-full overflow-y-auto rounded-[18px] border border-[color:var(--nodu-border)] bg-white p-1 shadow-[0_18px_42px_rgba(47,38,31,0.14)]">
+          {candidates.map((candidate) => (
             <button
-              key={suggestion.id}
+              key={candidate.id}
               type="button"
-              onClick={() => void handleSelectSuggestion(suggestion)}
+              onClick={() => handleSelectCandidate(candidate)}
               className="block w-full rounded-[14px] px-3 py-2 text-left text-sm font-semibold text-[color:var(--nodu-text)] transition-colors hover:bg-[color:rgb(var(--nodu-accent-rgb)/0.08)]"
-              disabled={isResolving}
             >
-              {suggestion.label}
+              {candidate.label}
             </button>
           ))}
         </div>

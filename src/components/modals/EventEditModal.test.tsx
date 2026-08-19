@@ -67,6 +67,9 @@ describe('EventEditModal', () => {
   });
 
   it('uses Adresa as the event location field and keeps legacy city in sync', async () => {
+    vi.doMock('../../features/events/components/EventMapPreview', () => ({
+      default: () => <div data-testid="event-map-preview" />,
+    }));
     vi.doMock('../../features/events/services/events.service', () => ({
       applyEventDraft: (nextEvent: Event) => nextEvent,
       createDefaultPhaseTimes: (from: string, to: string) => ({
@@ -112,6 +115,61 @@ describe('EventEditModal', () => {
       placeId: undefined,
       locationLat: null,
       locationLng: null,
+    }));
+  });
+
+  it('shows the current coordinates in the free map preview and opens the map picker', async () => {
+    vi.doMock('../../features/events/components/EventAddressField', () => ({
+      default: ({ onPickMap }: { onPickMap?: () => void }) => (
+        <button type="button" onClick={onPickMap}>Vybrat na mapě</button>
+      ),
+    }));
+    vi.doMock('../../features/events/components/EventMapPreview', () => ({
+      default: ({ locationLat, locationLng }: { locationLat?: number | null; locationLng?: number | null }) => (
+        <div data-testid="event-map-preview" data-lat={locationLat} data-lng={locationLng} />
+      ),
+    }));
+    vi.doMock('../../features/events/components/EventLocationPickerModal', () => ({
+      default: ({ onConfirm }: {
+        onConfirm: (coords: { locationLat: number; locationLng: number }) => void;
+      }) => (
+        <div role="dialog" aria-label="Vybrat polohu">
+          <button type="button" onClick={() => onConfirm({ locationLat: 49.1951, locationLng: 16.6068 })}>
+            Potvrdit polohu
+          </button>
+        </div>
+      ),
+    }));
+    vi.doMock('../../features/events/services/events.service', () => ({
+      applyEventDraft: (nextEvent: Event) => nextEvent,
+      createDefaultPhaseTimes: (from: string, to: string) => ({
+        instal: { from, to },
+        provoz: { from, to },
+        deinstal: { from, to },
+      }),
+      getEventFormOptions: () => ({ projects: [], clients: [] }),
+      normalizeEventSchedules: () => ({}),
+      saveEvent: vi.fn(),
+    }));
+    const onChange = vi.fn();
+    const { default: EventEditModal } = await import('./EventEditModal');
+
+    render(
+      <EventEditModal
+        editingEvent={{ ...event, locationLat: 50.0929, locationLng: 14.4502 }}
+        onClose={vi.fn()}
+        onChange={onChange}
+      />,
+    );
+
+    expect(screen.getByTestId('event-map-preview')).toHaveAttribute('data-lat', '50.0929');
+    expect(screen.getByTestId('event-map-preview')).toHaveAttribute('data-lng', '14.4502');
+    fireEvent.click(screen.getByRole('button', { name: 'Vybrat na mapě' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Potvrdit polohu' }));
+
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      locationLat: 49.1951,
+      locationLng: 16.6068,
     }));
   });
 

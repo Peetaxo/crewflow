@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Restore the Crew Přehled layout, show all Crew-visible event history, and let an existing rejected timelog be resubmitted without creating a duplicate.
+**Goal:** Restore the Crew Přehled layout, show the public event offer plus Crew-owned history, and let an existing rejected timelog be resubmitted without creating a duplicate.
 
-**Architecture:** Add one forward-only RLS migration for read visibility, keep all writes on stable UUIDs, and refresh query/hydration state only after a role switch succeeds. Preserve the restored mobile UI and add the missing My Shifts stylesheet plus an optional date cutoff instead of a today-only feed.
+**Architecture:** Add one forward-only RLS migration that exposes published `upcoming/full` events or Crew-owned lifecycle rows, keep all writes on stable UUIDs, and refresh query/hydration state only after a role switch succeeds. Preserve the restored mobile UI and add the missing My Shifts stylesheet plus an optional date cutoff instead of a today-only feed.
 
 **Tech Stack:** React 18, TypeScript, TanStack Query, Vitest/Testing Library, Supabase/Postgres RLS, CSS
 
@@ -22,6 +22,8 @@
 - Modify `src/features/timelogs/services/timelogs.service.ts` and tests: authoritative pair recovery before choosing update versus create.
 - Modify `src/views/EventsView.tsx` and tests: show all visible history by default and make the date cutoff clearable.
 - Create `src/styles/mobile-my-shifts.css`; modify `src/main.tsx` and `src/index.css.test.ts`: restore the approved My Shifts presentation.
+- Modify the pending event-visibility migration and its contract test: expose published events plus owned assignments, timelogs, and applications.
+- Modify `src/views/EventsView.tsx` and `src/views/EventsView.test.tsx`: restrict the application CTA to a published, non-full `upcoming` event.
 
 ### Task 1: Restore Crew Event Read Visibility
 
@@ -247,3 +249,93 @@ Do not push the migration and do not deploy the frontend.
 - [ ] **Step 5: Record final evidence**
 
 Report commits, focused/full gate results, localhost observations, and the explicit remaining production step: schema dry-run/verifier before any deployment.
+
+### Task 6: Expose the Public Crew Event Offer Safely
+
+**Files:**
+- Modify: `supabase/migrations/20260819144500_restore_crew_event_history_visibility.sql`
+- Modify: `src/features/events/services/event-visibility-policy-migration.test.ts`
+- Modify: `src/views/EventsView.tsx`
+- Modify: `src/views/EventsView.test.tsx`
+
+- [ ] **Step 1: Write failing policy and CTA tests**
+
+Extend the migration contract to require the public status branch and the owned-application branch:
+
+```ts
+expect(sql).toContain("events.status in ('upcoming'::public.event_status, 'full'::public.event_status)");
+expect(sql).toContain('application.event_id = events.id');
+expect(sql).toContain('application.profile_id = public.current_profile_id()');
+```
+
+In the existing mobile Crew feed regression, assert that the unassigned `upcoming` card contains `Prihlasit na akci`, the `full` card contains disabled `Obsazeno`, and the owned `past` card contains neither application action.
+
+- [ ] **Step 2: Run focused tests and confirm RED**
+
+Run:
+
+```bash
+npm test -- src/features/events/services/event-visibility-policy-migration.test.ts src/views/EventsView.test.tsx
+```
+
+Expected: FAIL because the policy lacks published/application branches and the past card currently offers a new application.
+
+- [ ] **Step 3: Expand only the pending SELECT policy**
+
+Use this exact visibility predicate under the existing Crew role guard:
+
+```sql
+events.status in ('upcoming'::public.event_status, 'full'::public.event_status)
+or exists (
+  select 1 from public.event_assignments assignment
+  where assignment.event_id = events.id
+    and assignment.profile_id = public.current_profile_id()
+)
+or exists (
+  select 1 from public.timelogs timelog
+  where timelog.event_id = events.id
+    and timelog.contractor_id = public.current_profile_id()
+)
+or exists (
+  select 1 from public.event_applications application
+  where application.event_id = events.id
+    and application.profile_id = public.current_profile_id()
+)
+```
+
+Do not add event INSERT, UPDATE, or DELETE privileges.
+
+- [ ] **Step 4: Restrict the application action to published availability**
+
+Derive one card-level guard and reuse it for both optional time inputs and the application button:
+
+```ts
+const canApplyToEvent = event.status === 'upcoming' && !isFullyStaffed;
+```
+
+Owned `past` rows stay readable but cannot create a new application. `full` rows remain visible and render disabled `Obsazeno`.
+
+- [ ] **Step 5: Run tests and confirm GREEN**
+
+Run the same focused command from Step 2.
+Expected: both files PASS.
+
+- [ ] **Step 6: Verify without deployment**
+
+```bash
+npx tsc --noEmit
+npx eslint src/views/EventsView.tsx src/views/EventsView.test.tsx src/features/events/services/event-visibility-policy-migration.test.ts
+npm run build
+supabase db push --linked --dry-run
+supabase db lint --linked --level error --fail-on error
+git diff --check
+```
+
+Expected: all static gates pass; dry-run lists only `20260819144500_restore_crew_event_history_visibility.sql`; no database write occurs.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add supabase/migrations/20260819144500_restore_crew_event_history_visibility.sql src/features/events/services/event-visibility-policy-migration.test.ts src/views/EventsView.tsx src/views/EventsView.test.tsx
+git commit -m "fix: expose published events to crew"
+```

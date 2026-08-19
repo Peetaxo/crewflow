@@ -1,13 +1,16 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Timelog } from '../../types';
+import type { Role, Timelog } from '../../types';
 import TimelogEditModal from './TimelogEditModal';
 
 let mockIsMobile = false;
-let role = 'crew' as const;
+let role: Role = 'crew';
 let editingTimelog: Timelog | null = null;
 let setEditingTimelogMock = vi.fn();
+const testMocks = vi.hoisted(() => ({
+  saveTimelog: vi.fn(),
+}));
 
 vi.mock('../../hooks/use-mobile', () => ({
   useIsMobile: () => mockIsMobile,
@@ -67,15 +70,18 @@ vi.mock('../../features/timelogs/services/timelogs.service', () => ({
         filled: 1,
         status: 'upcoming',
         client: 'NEXTLEVEL',
+        mealAllowanceEnabled: true,
       },
     ],
   }),
-  saveTimelog: vi.fn(),
+  saveTimelog: testMocks.saveTimelog,
 }));
 
 describe('TimelogEditModal responsive switch', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     setEditingTimelogMock = vi.fn();
+    testMocks.saveTimelog.mockResolvedValue(undefined);
     mockIsMobile = false;
     role = 'crew';
     editingTimelog = {
@@ -91,6 +97,15 @@ describe('TimelogEditModal responsive switch', () => {
 
   it('uses the mobile timelog editor for Crew on mobile', () => {
     mockIsMobile = true;
+
+    render(<TimelogEditModal />);
+
+    expect(screen.getByTestId('mobile-timelog-modal')).toBeInTheDocument();
+  });
+
+  it.each(['crewhead', 'coo'] as const)('uses the mobile timelog editor for %s on mobile', (mobileRole) => {
+    mockIsMobile = true;
+    role = mobileRole;
 
     render(<TimelogEditModal />);
 
@@ -119,5 +134,75 @@ describe('TimelogEditModal responsive switch', () => {
         }),
       ],
     }));
+  });
+
+  it('updates optional meal selection for individual days in the desktop editor', () => {
+    render(<TimelogEditModal />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Oběd' }));
+
+    expect(setEditingTimelogMock).toHaveBeenCalledWith(expect.objectContaining({
+      days: [
+        expect.objectContaining({
+          d: '2026-07-13',
+          meals: ['obed'],
+          meal: 'obed',
+        }),
+      ],
+    }));
+  });
+
+  it('shows a returned review note without treating the Crew note as the return reason', () => {
+    editingTimelog = {
+      ...editingTimelog!,
+      status: 'rejected',
+      note: 'Crew původní poznámka.',
+      reviewNote: 'Chybí pauza po obědě.',
+    };
+
+    render(<TimelogEditModal />);
+
+    expect(screen.getByText('Vráceno k opravě')).toBeInTheDocument();
+    expect(screen.getByText('Chybí pauza po obědě.')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Crew původní poznámka.')).toBeInTheDocument();
+    const returnedNotice = screen.getByText('Vráceno k opravě').parentElement?.parentElement;
+    expect(returnedNotice).not.toBeNull();
+    expect(within(returnedNotice as HTMLElement).queryByText('Crew původní poznámka.')).not.toBeInTheDocument();
+  });
+
+  it('does not show a return reason in the desktop editor when review note is empty', () => {
+    editingTimelog = {
+      ...editingTimelog!,
+      status: 'rejected',
+      note: 'Crew původní poznámka.',
+      reviewNote: '',
+    };
+
+    render(<TimelogEditModal />);
+
+    expect(screen.getByText('Vráceno k opravě')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Crew původní poznámka.')).toBeInTheDocument();
+    const returnedNotice = screen.getByText('Vráceno k opravě').parentElement?.parentElement;
+    expect(returnedNotice).not.toBeNull();
+    expect(within(returnedNotice as HTMLElement).queryByText('Crew původní poznámka.')).not.toBeInTheDocument();
+  });
+
+  it('labels CrewHead corrections as sending the report to Crew confirmation', async () => {
+    role = 'crewhead';
+    editingTimelog = {
+      ...editingTimelog!,
+      status: 'pending_ch',
+    };
+
+    render(<TimelogEditModal />);
+
+    expect(screen.getByRole('button', { name: 'Odeslat k potvrzení Crew' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Uložit změny' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Odeslat k potvrzení Crew' }));
+
+    await waitFor(() => expect(testMocks.saveTimelog).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'pending_crew_confirmation',
+    })));
   });
 });

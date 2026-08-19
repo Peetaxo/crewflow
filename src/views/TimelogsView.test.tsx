@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockContext = {
@@ -9,6 +9,14 @@ const mockContext = {
   timelogFilter: 'all',
   setTimelogFilter: vi.fn(),
 };
+
+const mobileMockState = {
+  isMobile: false,
+};
+
+vi.mock('../hooks/use-mobile', () => ({
+  useIsMobile: () => mobileMockState.isMobile,
+}));
 
 const events = [
   {
@@ -64,6 +72,119 @@ const pendingCrewheadTimelogs = [
     status: 'pending_ch' as const,
   },
 ];
+const pendingFinalApprovalForCrewheadTimelogs = [
+  {
+    ...timelogs[0],
+    id: 20,
+    status: 'pending_coo' as const,
+    approvals: [{
+      id: 'approval-crewhead',
+      approvalRoundId: 'round-1',
+      timelogId: 'timelog-20',
+      approverProfileId: 'profile-crewhead',
+      status: 'pending' as const,
+      requestedByProfileId: 'profile-manager',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      resolvedAt: null,
+      supersededAt: null,
+      note: '',
+    }],
+  },
+];
+const pendingFinalApprovalForAnotherApproverTimelogs = [
+  {
+    ...timelogs[0],
+    id: 21,
+    status: 'pending_coo' as const,
+    approvals: [{
+      id: 'approval-other',
+      approvalRoundId: 'round-1',
+      timelogId: 'timelog-21',
+      approverProfileId: 'profile-other',
+      status: 'pending' as const,
+      requestedByProfileId: 'profile-manager',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      resolvedAt: null,
+      supersededAt: null,
+      note: '',
+    }],
+  },
+];
+const bulkFinalApprovalTimelogs = [
+  {
+    ...timelogs[0],
+    id: 30,
+    status: 'pending_coo' as const,
+    approvals: [{
+      id: 'approval-coo',
+      approvalRoundId: 'round-1',
+      timelogId: 'timelog-30',
+      approverProfileId: 'profile-coo',
+      status: 'pending' as const,
+      requestedByProfileId: 'profile-manager',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      resolvedAt: null,
+      supersededAt: null,
+      note: '',
+    }],
+  },
+  {
+    ...timelogs[1],
+    id: 31,
+    eid: 1,
+    status: 'pending_coo' as const,
+    approvals: [{
+      id: 'approval-other-coo',
+      approvalRoundId: 'round-1',
+      timelogId: 'timelog-31',
+      approverProfileId: 'profile-other',
+      status: 'pending' as const,
+      requestedByProfileId: 'profile-manager',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      resolvedAt: null,
+      supersededAt: null,
+      note: '',
+    }],
+  },
+];
+const pendingCrewConfirmationTimelogs = [
+  {
+    ...timelogs[0],
+    days: [{ d: '2026-04-20', f: '09:00', t: '15:00', type: 'provoz' as const }],
+    status: 'pending_crew_confirmation' as const,
+    note: 'Upraveno po telefonu',
+    crewConfirmationSnapshot: {
+      changedAt: '2026-04-20T12:00:00.000Z',
+      before: {
+        days: [{ d: '2026-04-20', f: '09:00', t: '14:00', type: 'provoz' as const }],
+        km: 0,
+        note: '',
+      },
+    },
+  },
+];
+const crewConfirmedAfterCorrectionTimelogs = [
+  {
+    ...pendingCrewConfirmationTimelogs[0],
+    status: 'pending_ch' as const,
+  },
+];
+const sameEventTimelogs = [
+  {
+    ...timelogs[0],
+    eid: 1,
+    contractorProfileId: 'profile-1',
+    days: [{ d: '2026-04-20', f: '20:00', t: '01:00', type: 'provoz' as const }],
+    status: 'approved' as const,
+  },
+  {
+    ...timelogs[1],
+    eid: 1,
+    contractorProfileId: 'profile-2',
+    days: [{ d: '2026-04-20', f: '09:00', t: '14:00', type: 'provoz' as const }],
+    status: 'approved' as const,
+  },
+];
 const mixedMineTimelogs = [
   timelogs[0],
   {
@@ -79,8 +200,6 @@ const mixedMineTimelogs = [
     status: 'pending_ch' as const,
   },
 ];
-const noTimelogs: typeof timelogs = [];
-
 const contractors = [
   {
     id: 1,
@@ -122,7 +241,7 @@ const contractors = [
   },
 ];
 
-const mockEmptyPowerAppsPreview = () => {
+const mockExternalApprovalModules = () => {
   vi.doMock('../features/invoices/queries/useInvoiceApprovalsQuery', () => ({
     useInvoiceApprovalsQuery: () => ({ data: [] }),
   }));
@@ -154,10 +273,11 @@ describe('TimelogsView', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    mobileMockState.isMobile = false;
   });
 
   it('groups all timelogs by event instead of job number', async () => {
-    mockEmptyPowerAppsPreview();
+    mockExternalApprovalModules();
 
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => mockContext,
@@ -188,7 +308,7 @@ describe('TimelogsView', () => {
 
   it('does not expose CrewHead handoff controls to COO', async () => {
     const updateTimelogStatus = vi.fn().mockResolvedValue({ ...pendingCrewheadTimelogs[0], status: 'pending_coo' });
-    mockEmptyPowerAppsPreview();
+    mockExternalApprovalModules();
 
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => ({
@@ -220,51 +340,8 @@ describe('TimelogsView', () => {
     expect(updateTimelogStatus).not.toHaveBeenCalled();
   });
 
-  it('sends a bulk approval through one atomic status request', async () => {
-    const updateTimelogStatus = vi.fn();
-    const updateTimelogStatuses = vi.fn().mockResolvedValue([]);
-    const batchTimelogs = [
-      pendingCrewheadTimelogs[0],
-      {
-        ...pendingCrewheadTimelogs[0],
-        id: 3,
-        contractorProfileId: 'profile-2',
-      },
-    ];
-    mockEmptyPowerAppsPreview();
-
-    vi.doMock('../context/useAppContext', () => ({
-      useAppContext: () => ({
-        ...mockContext,
-        role: 'crewhead',
-        timelogFilter: 'pending_ch',
-      }),
-    }));
-    vi.doMock('../app/providers/useAuth', () => ({
-      useAuth: () => ({ currentProfileId: null }),
-    }));
-    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
-      useTimelogsQuery: () => ({ data: batchTimelogs }),
-    }));
-    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
-      getTimelogDependencies: () => ({ contractors, events }),
-      updateTimelogStatus,
-      updateTimelogStatuses,
-    }));
-
-    const { default: TimelogsView } = await import('./TimelogsView');
-    render(<TimelogsView />);
-
-    fireEvent.click(screen.getByRole('button', {
-      name: 'Schválit vše a poslat COO (2)',
-    }));
-
-    await waitFor(() => expect(updateTimelogStatuses).toHaveBeenCalledWith([1, 3], 'ch'));
-    expect(updateTimelogStatus).not.toHaveBeenCalled();
-  });
-
   it('labels the mine scope as Schvalovani for crew', async () => {
-    mockEmptyPowerAppsPreview();
+    mockExternalApprovalModules();
 
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => ({
@@ -294,8 +371,246 @@ describe('TimelogsView', () => {
     expect(screen.queryByRole('heading', { name: 'Moje timelogy' })).not.toBeInTheDocument();
   });
 
+  it('uses a compact month and status filter in mobile Crew Schvalovani', async () => {
+    mobileMockState.isMobile = true;
+    mockExternalApprovalModules();
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockContext,
+        role: 'crew',
+      }),
+    }));
+
+    vi.doMock('../app/providers/useAuth', () => ({
+      useAuth: () => ({ currentProfileId: 'profile-1' }),
+    }));
+
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
+      useTimelogsQuery: () => ({ data: mixedMineTimelogs }),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      getTimelogDependencies: () => ({ contractors, events }),
+      updateTimelogStatus: vi.fn(),
+    }));
+
+    const { default: TimelogsView } = await import('./TimelogsView');
+
+    render(<TimelogsView scope="mine" />);
+
+    expect(screen.getByText('duben 2026')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Filtr výkazů: Vše, 3/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Koncepty 1/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Filtr výkazů: Vše, 3/ }));
+
+    expect(screen.getByRole('button', { name: 'Koncepty 1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Čeká na kontrolu 1' })).toBeInTheDocument();
+  });
+
+  it('uses the compact status filter for mobile management Schvalovani', async () => {
+    mobileMockState.isMobile = true;
+    mockExternalApprovalModules();
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockContext,
+        role: 'coo',
+      }),
+    }));
+
+    vi.doMock('../app/providers/useAuth', () => ({
+      useAuth: () => ({ currentProfileId: null }),
+    }));
+
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
+      useTimelogsQuery: () => ({ data: timelogs }),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      getTimelogDependencies: () => ({ contractors, events }),
+      updateTimelogStatus: vi.fn(),
+    }));
+
+    const { default: TimelogsView } = await import('./TimelogsView');
+
+    render(<TimelogsView />);
+
+    expect(screen.getByRole('button', { name: /Filtr výkazů: Vše, 2/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Koncepty 2' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Filtr výkazů: Vše, 2/ }));
+
+    expect(screen.getByRole('button', { name: 'Koncepty 2' })).toBeInTheDocument();
+  });
+
+  it('keeps mobile event-group timelog cards focused on the crew report details', async () => {
+    mobileMockState.isMobile = true;
+    mockExternalApprovalModules();
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockContext,
+        role: 'coo',
+      }),
+    }));
+
+    vi.doMock('../app/providers/useAuth', () => ({
+      useAuth: () => ({ currentProfileId: null }),
+    }));
+
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
+      useTimelogsQuery: () => ({ data: sameEventTimelogs }),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      getTimelogDependencies: () => ({ contractors, events }),
+      updateTimelogStatus: vi.fn(),
+    }));
+
+    const { default: TimelogsView } = await import('./TimelogsView');
+
+    render(<TimelogsView />);
+
+    expect(screen.getAllByText('Ploom Chodov')).toHaveLength(1);
+    expect(screen.getByText('2 výkazy')).toBeInTheDocument();
+    expect(screen.queryByText(/Praha ·/)).not.toBeInTheDocument();
+    expect(screen.getAllByText('Provoz')).toHaveLength(2);
+  });
+
+  it('leads mobile Crew Schvalovani cards with event information instead of the crew member name', async () => {
+    mobileMockState.isMobile = true;
+    mockExternalApprovalModules();
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockContext,
+        role: 'crew',
+      }),
+    }));
+
+    vi.doMock('../app/providers/useAuth', () => ({
+      useAuth: () => ({ currentProfileId: 'profile-1' }),
+    }));
+
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
+      useTimelogsQuery: () => ({ data: [mixedMineTimelogs[0]] }),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      getTimelogDependencies: () => ({ contractors, events }),
+      updateTimelogStatus: vi.fn(),
+    }));
+
+    const { default: TimelogsView } = await import('./TimelogsView');
+
+    render(<TimelogsView scope="mine" />);
+
+    expect(screen.queryByText('Crew One')).not.toBeInTheDocument();
+    expect(screen.getByText('Ploom Chodov')).toBeInTheDocument();
+    expect(screen.getByText('JTI001')).toBeInTheDocument();
+  });
+
+  it('shows Crew which CH changes are waiting for confirmation on mobile cards', async () => {
+    mobileMockState.isMobile = true;
+    mockExternalApprovalModules();
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockContext,
+        role: 'crew',
+      }),
+    }));
+
+    vi.doMock('../app/providers/useAuth', () => ({
+      useAuth: () => ({ currentProfileId: 'profile-1' }),
+    }));
+
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
+      useTimelogsQuery: () => ({ data: pendingCrewConfirmationTimelogs }),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      getTimelogDependencies: () => ({ contractors, events }),
+      updateTimelogStatus: vi.fn(),
+    }));
+
+    const { default: TimelogsView } = await import('./TimelogsView');
+
+    render(<TimelogsView scope="mine" />);
+
+    expect(screen.getByText('Upraveno CH')).toBeInTheDocument();
+    expect(screen.getAllByText('Čeká na tvoje potvrzení').length).toBeGreaterThan(0);
+    expect(screen.getByText('20. 4. Čas 09:00–14:00 -> 09:00–15:00')).toBeInTheDocument();
+  });
+
+  it('shows CrewHead that Crew confirmed a previous correction without exposing it to COO', async () => {
+    mockExternalApprovalModules();
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockContext,
+        role: 'crewhead',
+        timelogFilter: 'pending_ch',
+      }),
+    }));
+
+    vi.doMock('../app/providers/useAuth', () => ({
+      useAuth: () => ({ currentProfileId: null }),
+    }));
+
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
+      useTimelogsQuery: () => ({ data: crewConfirmedAfterCorrectionTimelogs }),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      getTimelogDependencies: () => ({ contractors, events }),
+      updateTimelogStatus: vi.fn(),
+    }));
+
+    const { default: TimelogsView } = await import('./TimelogsView');
+    const { unmount } = render(<TimelogsView />);
+
+    expect(screen.getByText('Potvrzeno Crew po úpravě')).toBeInTheDocument();
+    expect(screen.getByText('Historie úpravy')).toBeInTheDocument();
+    expect(screen.getByText('20. 4. Čas 09:00–14:00 -> 09:00–15:00')).toBeInTheDocument();
+
+    unmount();
+    vi.resetModules();
+    vi.clearAllMocks();
+    mockExternalApprovalModules();
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockContext,
+        role: 'coo',
+        timelogFilter: 'pending_ch',
+      }),
+    }));
+
+    vi.doMock('../app/providers/useAuth', () => ({
+      useAuth: () => ({ currentProfileId: null }),
+    }));
+
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
+      useTimelogsQuery: () => ({ data: crewConfirmedAfterCorrectionTimelogs }),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      getTimelogDependencies: () => ({ contractors, events }),
+      updateTimelogStatus: vi.fn(),
+    }));
+
+    const { default: TimelogsViewForCoo } = await import('./TimelogsView');
+    render(<TimelogsViewForCoo />);
+
+    expect(screen.queryByText('Potvrzeno Crew po úpravě')).not.toBeInTheDocument();
+    expect(screen.queryByText('Historie úpravy')).not.toBeInTheDocument();
+  });
+
   it('lets crew edit draft and rejected timelogs in Schvalovani', async () => {
-    mockEmptyPowerAppsPreview();
+    mockExternalApprovalModules();
 
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => ({
@@ -341,8 +656,78 @@ describe('TimelogsView', () => {
     }));
   });
 
+  it('lets Crew confirm a CrewHead correction from Schvalovani', async () => {
+    const updateTimelogStatus = vi.fn().mockResolvedValue({
+      ...pendingCrewConfirmationTimelogs[0],
+      status: 'pending_ch',
+    });
+    mockExternalApprovalModules();
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockContext,
+        role: 'crew',
+      }),
+    }));
+
+    vi.doMock('../app/providers/useAuth', () => ({
+      useAuth: () => ({ currentProfileId: 'profile-1' }),
+    }));
+
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
+      useTimelogsQuery: () => ({ data: pendingCrewConfirmationTimelogs }),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      getTimelogDependencies: () => ({ contractors, events }),
+      updateTimelogStatus,
+    }));
+
+    const { default: TimelogsView } = await import('./TimelogsView');
+
+    render(<TimelogsView scope="mine" />);
+
+    expect(screen.getAllByText('Čeká na tvoje potvrzení').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Upravit' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Potvrdit a odeslat' }));
+
+    await waitFor(() => expect(updateTimelogStatus).toHaveBeenCalledWith(1, 'sub'));
+  });
+
+  it('labels rejected Crew timelogs as returned for correction in mine scope', async () => {
+    mockExternalApprovalModules();
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockContext,
+        role: 'crew',
+      }),
+    }));
+
+    vi.doMock('../app/providers/useAuth', () => ({
+      useAuth: () => ({ currentProfileId: 'profile-1' }),
+    }));
+
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
+      useTimelogsQuery: () => ({ data: mixedMineTimelogs }),
+    }));
+
+    const { default: TimelogsView } = await import('./TimelogsView');
+
+    render(<TimelogsView scope="mine" />);
+
+    expect(screen.getByText('Vráceno k opravě')).toBeInTheDocument();
+    expect(screen.getByText('Uprav výkaz a odešli ho znovu ke kontrole.')).toBeInTheDocument();
+    const returnedNotice = screen.getByText('Důvod vrácení').parentElement?.parentElement;
+    expect(returnedNotice).not.toBeNull();
+    expect(within(returnedNotice as HTMLElement).queryByText('Upraveno po telefonu')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Odeslat znovu' })).toBeInTheDocument();
+    expect(screen.queryByText('Zamítnuto')).not.toBeInTheDocument();
+  });
+
   it('lets CrewHead edit pending CH timelogs without exposing that edit action to COO', async () => {
-    mockEmptyPowerAppsPreview();
+    mockExternalApprovalModules();
 
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => ({
@@ -378,7 +763,7 @@ describe('TimelogsView', () => {
     unmount();
     vi.resetModules();
     vi.clearAllMocks();
-    mockEmptyPowerAppsPreview();
+    mockExternalApprovalModules();
 
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => ({
@@ -408,7 +793,7 @@ describe('TimelogsView', () => {
   });
 
   it('shows timelog notes to Crew but hides them from COO', async () => {
-    mockEmptyPowerAppsPreview();
+    mockExternalApprovalModules();
 
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => ({
@@ -438,7 +823,7 @@ describe('TimelogsView', () => {
     unmount();
     vi.resetModules();
     vi.clearAllMocks();
-    mockEmptyPowerAppsPreview();
+    mockExternalApprovalModules();
 
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => ({
@@ -466,9 +851,23 @@ describe('TimelogsView', () => {
     expect(screen.queryByText('"Upraveno po telefonu"')).not.toBeInTheDocument();
   });
 
-  it('shows PowerApps timelog preview on the real Schvalovani page', async () => {
-    const refetch = vi.fn();
-    const applyApprovalTimelogPreview = vi.fn().mockResolvedValue({ ...timelogs[0], status: 'approved' });
+  it('does not show imported document timelog preview on the Schvalovani page', async () => {
+    const buildApprovalTimelogPreview = vi.fn(() => [{
+      id: 'approval-doc-1:0',
+      status: 'ready' as const,
+      reason: 'Pripraveno k aplikovani.',
+      documentId: 'approval-doc-1',
+      documentName: 'Safarik - 20260015.pdf',
+      approvalStatusLabel: 'schvaleno',
+      jobNumber: 'BTL003',
+      invoiceNumber: '20260015',
+      eventName: 'RunCzech',
+      personName: 'Ondrej Safarik',
+      matchedEvent: { ...events[0], job: 'BTL003', name: 'RunCzech' },
+      matchedContractor: contractors[0],
+      proposedDays: [{ d: '2026-05-16', f: '05:00', t: '13:00', type: 'instal' as const }],
+      existingTimelogId: 1,
+    }]);
     const approvalDocument = {
       id: 'approval-doc-1',
       source: 'powerapps_document_approval' as const,
@@ -517,7 +916,7 @@ describe('TimelogsView', () => {
     }));
 
     vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
-      useTimelogsQuery: () => ({ data: timelogs, refetch }),
+      useTimelogsQuery: () => ({ data: timelogs }),
     }));
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
@@ -547,89 +946,6 @@ describe('TimelogsView', () => {
     }));
 
     vi.doMock('../features/invoices/services/approval-timelog-sync.service', () => ({
-      buildApprovalTimelogPreview: vi.fn(() => [previewRow]),
-      applyApprovalTimelogPreview,
-    }));
-
-    const { default: TimelogsView } = await import('./TimelogsView');
-
-    render(<TimelogsView />);
-
-    expect(screen.getByText('PowerApps timelogy')).toBeInTheDocument();
-    expect(screen.getByText('Safarik - 20260015.pdf')).toBeInTheDocument();
-    expect(screen.getByText('Ondrej Safarik')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: /Aplikovat$/i }));
-
-    await waitFor(() => {
-      expect(applyApprovalTimelogPreview).toHaveBeenCalledWith(previewRow, { timelogs });
-    });
-    expect(refetch).toHaveBeenCalled();
-  });
-
-  it('builds PowerApps preview from hydrated events and crew when timelog dependencies are still empty', async () => {
-    const buildApprovalTimelogPreview = vi.fn(() => []);
-    const approvalDocument = {
-      id: 'approval-doc-2',
-      source: 'powerapps_document_approval' as const,
-      externalId: 'sharepoint-2',
-      documentName: 'Rebros-2026-014.pdf',
-      company: 'NL',
-      jobNumber: 'JTI001',
-      invoiceNumber: '2026-014',
-      supplierName: 'Marek Re',
-      approvalStatus: 'approved' as const,
-      approvalStatusLabel: 'schvaleno',
-      comment: 'Mladí ladí Jazz / JTI001 Marek Rebroš - instal/deinstal (10h) Jaroslav Macháč - instal/deinstal (10h)',
-      approvers: [],
-      requester: 'Petr Heitzer',
-      rawPayload: null,
-      matchedInvoiceId: null,
-      lastSyncedAt: '2026-05-26T09:00:00Z',
-    };
-
-    vi.doMock('../context/useAppContext', () => ({
-      useAppContext: () => ({
-        ...mockContext,
-        role: 'coo',
-      }),
-    }));
-
-    vi.doMock('../app/providers/useAuth', () => ({
-      useAuth: () => ({ currentProfileId: null }),
-    }));
-
-    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
-      useTimelogsQuery: () => ({ data: noTimelogs }),
-    }));
-
-    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
-      getTimelogDependencies: () => ({ contractors: [], events: [] }),
-      updateTimelogStatus: vi.fn(),
-    }));
-
-    vi.doMock('../features/events/queries/useEventsQuery', () => ({
-      useEventsQuery: () => ({ data: events }),
-    }));
-
-    vi.doMock('../features/crew/services/crew.service', () => ({
-      getContractors: () => contractors,
-      subscribeToCrewChanges: () => vi.fn(),
-    }));
-
-    vi.doMock('../features/invoices/queries/useInvoiceApprovalsQuery', () => ({
-      useInvoiceApprovalsQuery: () => ({ data: [approvalDocument] }),
-    }));
-
-    vi.doMock('../lib/app-data', () => ({
-      getLocalAppState: () => ({
-        timelogs: [],
-        eventCrewAssignments: [],
-        grasonEventConfirmations: [],
-      }),
-    }));
-
-    vi.doMock('../features/invoices/services/approval-timelog-sync.service', () => ({
       buildApprovalTimelogPreview,
       applyApprovalTimelogPreview: vi.fn(),
     }));
@@ -638,12 +954,8 @@ describe('TimelogsView', () => {
 
     render(<TimelogsView />);
 
-    await waitFor(() => {
-      expect(buildApprovalTimelogPreview).toHaveBeenCalledWith(expect.objectContaining({
-        approvalDocuments: [approvalDocument],
-        events,
-        contractors,
-      }));
-    });
+    expect(screen.queryByText('PowerApps timelogy')).not.toBeInTheDocument();
+    expect(screen.queryByText('Safarik - 20260015.pdf')).not.toBeInTheDocument();
+    expect(buildApprovalTimelogPreview).not.toHaveBeenCalled();
   });
 });

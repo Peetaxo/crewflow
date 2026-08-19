@@ -1,0 +1,984 @@
+.nodu-mobile-timelog-layer {
+  overflow: hidden;
+  background: transparent;
+  color: var(--nodu-text);
+}
+
+.nodu-mobile-timelog-swipe-edge {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 3;
+  width: max(1.75rem, env(safe-area-inset-left));
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.nodu-mobile-timelog-modal {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
+  flex-direction: column;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: rgb(var(--nodu-paper-rgb) / 1);
+  color: var(--nodu-text);
+  box-shadow: -18px 0 44px rgb(var(--nodu-text-rgb) / 0.12);
+  opacity: var(--nodu-mobile-timelog-swipe-opacity, 1);
+  transform: translateX(var(--nodu-mobile-timelog-swipe-x, 0));
+  transition: var(--nodu-mobile-timelog-swipe-transition, none);
+  will-change: transform;
+  overscroll-behavior-x: contain;
+  touch-action: pan-y;
+}
+
+.nodu-mobile-timelog-modal--dragging {
+  pointer-events: none;
+}
+
+.nodu-mobile-timelog-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid rgb(var(--nodu-text-rgb) / 0.08);
+  padding: 1rem;
+  padding-top: calc(1rem + env(safe-area-inset-top));
+  background: rgb(var(--nodu-paper-rgb) / 1);
+  backdrop-filter: blur(16px);
+}
+
+.nodu-mobile-timelog-icon-button {
+  display: inline-flex;
+  height: 2.75rem;
+  width: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--nodu-border);
+  border-radius: 14px;
+  background: rgb(var(--nodu-surface-rgb) / 0.92);
+  color: var(--nodu-text-soft);
+}
+
+.nodu-mobile-timelog-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  background: rgb(var(--nodu-paper-rgb) / 1);
+  padding: 1rem;
+  padding-bottom: 1.25rem;
+}
+
+.nodu-mobile-timelog-summary,
+.nodu-mobile-timelog-day-editor,
+.nodu-mobile-timelog-report-editor {
+  border: 1px solid rgb(var(--nodu-accent-rgb) / 0.16);
+  border-radius: 18px;
+  background: rgb(var(--nodu-accent-rgb) / 0.07);
+  padding: 1rem;
+}
+
+.nodu-mobile-timelog-day-editor {
+  margin-bottom: 0.85rem;
+}
+
+.nodu-mobile-timelog-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  background:
+    linear-gradient(135deg, rgb(var(--nodu-accent-rgb) / 0.09), rgb(var(--nodu-paper-rgb) / 1) 54%, rgb(var(--nodu-accent-rgb) / 0.05)),
+    rgb(var(--nodu-paper-rgb) / 1);
+}
+
+.nodu-mobile-timelog-change-summary {
+  border: 1px solid rgb(var(--nodu-accent-rgb) / 0.24);
+  border-radius: 24px;
+  background: rgb(var(--nodu-accent-rgb) / 0.07);
+  margin-bottom: 1rem;
+  padding: 0.9rem;
+}
+
+.nodu-mobile-timelog-change-summary--returned {
+  border-color: var(--nodu-error-border);
+  background: var(--nodu-error-bg);
+}
+
+.nodu-mobile-timelog-change-summary--returned .nodu-mobile-timelog-change-summary-header {
+  color: var(--nodu-error-text);
+}
+
+.nodu-mobile-timelog-note-panel {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+  border: 1px solid rgb(var(--nodu-text-rgb) / 0.08);
+  border-radius: 14px;
+  background: rgb(var(--nodu-surface-rgb) / 0.72);
+  padding: 0.75rem;
+}
+
+.nodu-mobile-timelog-note-panel span {
+  color: var(--nodu-text-soft);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.nodu-mobile-timelog-note-panel p {
+  margin: 0;
+  color: var(--nodu-text);
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.nodu-mobile-timelog-change-summary-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: var(--nodu-accent);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.nodu-mobile-timelog-change-summary-header span:last-child {
+  color: var(--nodu-text-soft);
+  font-size: 0.66rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.nodu-mobile-timelog-change-summary-list {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.65rem;
+}
+
+.nodu-mobile-timelog-change-summary-row {
+  border-radius: 14px;
+  background: rgb(var(--nodu-surface-rgb) / 0.72);
+  color: var(--nodu-text);
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.55rem 0.65rem;
+}
+
+.nodu-mobile-timelog-change-summary-row--note {
+  background: rgb(var(--nodu-accent-rgb) / 0.11);
+  color: var(--nodu-accent);
+}
+
+.nodu-mobile-timelog-readonly-summary {
+  border: 1px solid rgb(var(--nodu-accent-rgb) / 0.16);
+  border-radius: 20px;
+  background: rgb(var(--nodu-surface-rgb) / 0.78);
+  padding: 1rem;
+}
+
+.nodu-mobile-timelog-readonly-summary-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.85rem;
+  margin-bottom: 0.85rem;
+}
+
+.nodu-mobile-timelog-readonly-summary-header h4 {
+  margin: 0.15rem 0 0;
+  color: var(--nodu-text);
+  font-size: 1rem;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.nodu-mobile-timelog-readonly-summary-header > span {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: rgb(var(--nodu-accent-rgb) / 0.1);
+  color: var(--nodu-accent);
+  padding: 0.35rem 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.nodu-mobile-timelog-summary-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.nodu-mobile-timelog-summary-empty {
+  border: 1px dashed var(--nodu-border);
+  border-radius: 16px;
+  color: var(--nodu-text-soft);
+  padding: 0.9rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.nodu-mobile-timelog-summary-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  border: 1px solid var(--nodu-border);
+  border-radius: 16px;
+  background: rgb(var(--nodu-paper-rgb) / 0.9);
+  padding: 0.75rem 0.85rem;
+}
+
+.nodu-mobile-timelog-summary-row-main {
+  min-width: 0;
+}
+
+.nodu-mobile-timelog-summary-row-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.24rem 0.32rem;
+  min-width: 0;
+}
+
+.nodu-mobile-timelog-summary-row-date {
+  color: var(--nodu-text);
+  font-size: 0.88rem;
+  font-weight: 900;
+}
+
+.nodu-mobile-timelog-summary-row-time {
+  color: var(--nodu-text-soft);
+  font-size: 0.82rem;
+  font-weight: 750;
+  min-width: 0;
+}
+
+.nodu-mobile-timelog-summary-row-separator {
+  color: var(--nodu-text-soft);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.nodu-mobile-timelog-summary-row-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.38rem;
+}
+
+.nodu-mobile-timelog-summary-row-phase,
+.nodu-mobile-timelog-summary-row-meal {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.18rem 0.42rem;
+  font-size: 0.64rem;
+  font-weight: 800;
+}
+
+.nodu-mobile-timelog-summary-row-phase {
+  background: rgb(49 147 176 / 0.13);
+  color: rgb(37 112 135);
+}
+
+.nodu-mobile-timelog-summary-row-meal {
+  background: rgb(34 139 112 / 0.1);
+  color: rgb(31 112 92);
+}
+
+.nodu-mobile-timelog-summary-row-hours {
+  color: var(--nodu-accent);
+  font-size: 0.92rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.nodu-mobile-timelog-readonly-summary-totals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid rgb(var(--nodu-text-rgb) / 0.08);
+}
+
+.nodu-mobile-timelog-readonly-summary-totals div {
+  border-radius: 14px;
+  background: rgb(var(--nodu-accent-rgb) / 0.07);
+  padding: 0.65rem;
+}
+
+.nodu-mobile-timelog-readonly-summary-totals span,
+.nodu-mobile-timelog-readonly-summary-note span {
+  display: block;
+  color: var(--nodu-text-soft);
+  font-size: 0.66rem;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.nodu-mobile-timelog-readonly-summary-totals strong {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--nodu-text);
+  font-size: 0.88rem;
+  font-weight: 900;
+}
+
+.nodu-mobile-timelog-readonly-summary-note {
+  margin-top: 0.85rem;
+  border-radius: 14px;
+  background: rgb(var(--nodu-paper-rgb) / 0.82);
+  padding: 0.75rem;
+}
+
+.nodu-mobile-timelog-readonly-summary-note p {
+  margin: 0.25rem 0 0;
+  color: var(--nodu-text);
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.nodu-mobile-timelog-calendar {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin-bottom: 1rem;
+}
+
+.nodu-mobile-timelog-add-day-picker {
+  margin-bottom: 1rem;
+  border: 1px solid rgb(var(--nodu-accent-rgb) / 0.16);
+  border-radius: 18px;
+  background: rgb(var(--nodu-accent-rgb) / 0.07);
+  padding: 0.85rem;
+}
+
+.nodu-mobile-timelog-add-day-picker-header,
+.nodu-mobile-timelog-add-day-month {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.nodu-mobile-timelog-add-day-month {
+  margin-top: 0.8rem;
+  border-radius: 14px;
+  background: rgb(var(--nodu-surface-rgb) / 0.76);
+  padding: 0.35rem;
+}
+
+.nodu-mobile-timelog-add-day-icon,
+.nodu-mobile-timelog-add-day-confirm {
+  display: inline-flex;
+  height: 2.1rem;
+  width: 2.1rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--nodu-border);
+  border-radius: 999px;
+  background: rgb(var(--nodu-surface-rgb) / 0.9);
+  color: var(--nodu-text-soft);
+}
+
+.nodu-mobile-timelog-add-day-confirm {
+  border-color: rgb(var(--nodu-accent-rgb) / 0.34);
+  border-radius: 999px;
+  background: var(--nodu-accent);
+  color: white;
+  box-shadow: 0 10px 22px rgb(var(--nodu-accent-rgb) / 0.22);
+}
+
+.nodu-mobile-timelog-add-day-weekdays,
+.nodu-mobile-timelog-add-day-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.3rem;
+}
+
+.nodu-mobile-timelog-add-day-weekdays {
+  margin-top: 0.8rem;
+  color: var(--nodu-text-soft);
+  font-size: 9px;
+  font-weight: 800;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.nodu-mobile-timelog-add-day-picker-grid {
+  margin-top: 0.35rem;
+}
+
+.nodu-mobile-timelog-add-day-cell {
+  position: relative;
+  display: flex;
+  aspect-ratio: 1;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: rgb(var(--nodu-surface-rgb) / 0.82);
+  color: var(--nodu-text);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.nodu-mobile-timelog-add-day-cell--muted {
+  color: rgb(var(--nodu-text-rgb) / 0.34);
+}
+
+.nodu-mobile-timelog-add-day-cell--event {
+  background: rgb(var(--nodu-accent-rgb) / 0.1);
+  color: var(--nodu-accent);
+}
+
+.nodu-mobile-timelog-add-day-cell--reported {
+  color: var(--nodu-accent);
+}
+
+.nodu-mobile-timelog-add-day-cell--selected {
+  border-color: rgb(var(--nodu-accent-rgb) / 0.54);
+  background: var(--nodu-accent);
+  color: white;
+  box-shadow: 0 10px 22px rgb(var(--nodu-accent-rgb) / 0.22);
+}
+
+.nodu-mobile-timelog-add-day-cell-dot,
+.nodu-mobile-timelog-add-day-cell-count {
+  position: absolute;
+  right: 0.28rem;
+  bottom: 0.24rem;
+  border-radius: 999px;
+}
+
+.nodu-mobile-timelog-add-day-cell-dot {
+  height: 0.34rem;
+  width: 0.34rem;
+  background: currentColor;
+}
+
+.nodu-mobile-timelog-add-day-cell-count {
+  min-width: 0.9rem;
+  height: 0.9rem;
+  background: currentColor;
+  color: var(--nodu-paper);
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 0.9rem;
+  text-align: center;
+}
+
+.nodu-mobile-timelog-day {
+  position: relative;
+  display: flex;
+  min-height: 3.35rem;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  border: 1px solid var(--nodu-border);
+  border-radius: 14px;
+  background: rgb(var(--nodu-surface-rgb) / 0.92);
+  color: var(--nodu-text);
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1;
+}
+
+.nodu-mobile-timelog-day-month {
+  color: var(--nodu-text-soft);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.nodu-mobile-timelog-day-dot {
+  position: absolute;
+  right: 0.48rem;
+  bottom: 0.42rem;
+  height: 0.42rem;
+  width: 0.42rem;
+  border-radius: 999px;
+  background: var(--nodu-accent);
+  box-shadow: 0 0 0 2px rgb(var(--nodu-paper-rgb) / 0.95);
+}
+
+.nodu-mobile-timelog-day-count {
+  position: absolute;
+  right: 0.34rem;
+  bottom: 0.3rem;
+  display: inline-flex;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--nodu-accent);
+  color: white;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 0 0 2px rgb(var(--nodu-paper-rgb) / 0.95);
+}
+
+.nodu-mobile-timelog-day--event {
+  border-color: rgb(var(--nodu-accent-rgb) / 0.24);
+  background: rgb(var(--nodu-accent-rgb) / 0.1);
+}
+
+.nodu-mobile-timelog-day--outside {
+  background: rgb(var(--nodu-surface-muted-rgb) / 0.72);
+  color: rgb(var(--nodu-text-rgb) / 0.58);
+}
+
+.nodu-mobile-timelog-day--selected {
+  box-shadow:
+    inset 0 0 0 1px rgb(var(--nodu-accent-rgb) / 0.36),
+    0 10px 24px rgb(var(--nodu-accent-rgb) / 0.14);
+}
+
+.nodu-mobile-timelog-day--reported {
+  color: var(--nodu-accent);
+}
+
+.nodu-mobile-timelog-chip {
+  display: inline-flex;
+  min-height: 1.85rem;
+  align-items: center;
+  border: 1px solid rgb(var(--nodu-accent-rgb) / 0.2);
+  border-radius: 999px;
+  background: rgb(var(--nodu-accent-rgb) / 0.1);
+  color: var(--nodu-accent);
+  padding: 0 0.7rem;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.nodu-mobile-timelog-chip--muted {
+  border-color: var(--nodu-border);
+  background: rgb(var(--nodu-surface-rgb) / 0.86);
+  color: var(--nodu-text-soft);
+}
+
+.nodu-mobile-timelog-entry-list {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.9rem;
+}
+
+.nodu-mobile-timelog-entry-card {
+  display: flex;
+  min-height: 3.15rem;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid var(--nodu-border);
+  border-radius: 14px;
+  background: rgb(var(--nodu-surface-rgb) / 0.9);
+  padding: 0.65rem 0.75rem;
+  color: var(--nodu-text);
+  text-align: left;
+}
+
+.nodu-mobile-timelog-entry-card--active {
+  border-color: rgb(var(--nodu-accent-rgb) / 0.4);
+  background: rgb(var(--nodu-accent-rgb) / 0.1);
+  box-shadow: inset 0 0 0 1px rgb(var(--nodu-accent-rgb) / 0.22);
+}
+
+.nodu-mobile-timelog-entry-content {
+  display: block;
+  min-width: 0;
+}
+
+.nodu-mobile-timelog-entry-heading,
+.nodu-mobile-timelog-entry-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 0.45rem;
+  row-gap: 0.25rem;
+}
+
+.nodu-mobile-timelog-entry-title {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.nodu-mobile-timelog-entry-meta {
+  margin-top: 0.15rem;
+  color: var(--nodu-text-soft);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.nodu-mobile-timelog-entry-hours {
+  color: var(--nodu-text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.nodu-mobile-timelog-entry-phase {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: rgb(var(--nodu-text-rgb) / 0.06);
+  color: var(--nodu-text-soft);
+  padding: 0.28rem 0.55rem;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.nodu-mobile-timelog-entry-badges {
+  display: inline-flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.nodu-mobile-timelog-entry-meal {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: rgb(34 139 112 / 0.1);
+  color: rgb(31 112 92);
+  padding: 0.28rem 0.55rem;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.nodu-mobile-timelog-overnight-chip {
+  display: inline-flex;
+  min-height: 1.35rem;
+  align-items: center;
+  border: 1px solid rgb(var(--nodu-accent-rgb) / 0.22);
+  border-radius: 999px;
+  background: rgb(var(--nodu-accent-rgb) / 0.12);
+  color: var(--nodu-accent);
+  padding: 0 0.5rem;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.nodu-mobile-timelog-select {
+  width: 100%;
+  min-height: 2.75rem;
+  border: 1px solid var(--nodu-border);
+  border-radius: 14px;
+  background: rgb(var(--nodu-surface-rgb) / 0.92);
+  color: var(--nodu-text);
+  padding: 0 0.7rem;
+  font-size: 14px;
+  font-weight: 650;
+  outline: none;
+}
+
+.nodu-mobile-timelog-phase-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.nodu-mobile-timelog-meal-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.nodu-mobile-timelog-phase-option,
+.nodu-mobile-timelog-meal-option {
+  min-height: 2.5rem;
+  border: 1px solid var(--nodu-border);
+  border-radius: 14px;
+  background: rgb(var(--nodu-surface-rgb) / 0.92);
+  color: var(--nodu-text);
+  padding: 0 0.75rem;
+  font-size: 14px;
+  font-weight: 750;
+  line-height: 1;
+  text-align: center;
+  transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+.nodu-mobile-timelog-phase-option--active,
+.nodu-mobile-timelog-meal-option--active {
+  border-color: rgb(var(--nodu-accent-rgb) / 0.42);
+  background: rgb(var(--nodu-accent-rgb) / 0.12);
+  color: var(--nodu-accent);
+  box-shadow: inset 0 0 0 1px rgb(var(--nodu-accent-rgb) / 0.16);
+}
+
+.nodu-mobile-timelog-time-picker {
+  min-width: 0;
+}
+
+.nodu-mobile-timelog-time-picker--active {
+  color: var(--nodu-accent);
+}
+
+.nodu-mobile-timelog-time-label {
+  text-align: center;
+}
+
+.nodu-mobile-timelog-time-trigger {
+  display: flex;
+  min-height: 3.25rem;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--nodu-border);
+  border-radius: 999px;
+  background: rgb(var(--nodu-surface-rgb) / 0.92);
+  color: var(--nodu-text);
+  padding: 0 1rem;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1;
+  outline: none;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    color 160ms ease;
+}
+
+.nodu-mobile-timelog-time-picker--active .nodu-mobile-timelog-time-trigger {
+  border-color: rgb(var(--nodu-accent-rgb) / 0.38);
+  color: var(--nodu-accent);
+  box-shadow: inset 0 0 0 1px rgb(var(--nodu-accent-rgb) / 0.16);
+}
+
+.nodu-mobile-timelog-time-wheel {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  height: 9.25rem;
+  margin-top: 0.85rem;
+  overflow: hidden;
+  border: 1px solid var(--nodu-border);
+  border-radius: 18px;
+  background: rgb(var(--nodu-surface-rgb) / 0.7);
+  padding: 0.55rem 0.75rem;
+}
+
+.nodu-mobile-timelog-time-wheel-selection {
+  position: absolute;
+  top: 50%;
+  right: 0.75rem;
+  left: 0.75rem;
+  height: 2.5rem;
+  transform: translateY(-50%);
+  border-radius: 14px;
+  background: rgb(var(--nodu-text-rgb) / 0.055);
+  pointer-events: none;
+}
+
+.nodu-mobile-timelog-time-confirm {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.55rem;
+  z-index: 2;
+  display: inline-flex;
+  height: 2rem;
+  width: 2rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(var(--nodu-accent-rgb) / 0.24);
+  border-radius: 999px;
+  background: var(--nodu-accent);
+  color: white;
+  box-shadow: 0 10px 22px rgb(var(--nodu-accent-rgb) / 0.24);
+}
+
+.nodu-mobile-timelog-time-column {
+  position: relative;
+  z-index: 1;
+  height: 8.15rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-snap-type: y mandatory;
+  padding: calc((8.15rem - 2.5rem) / 2) 0;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 22%, black 78%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, black 22%, black 78%, transparent 100%);
+}
+
+.nodu-mobile-timelog-time-column::-webkit-scrollbar {
+  display: none;
+}
+
+.nodu-mobile-timelog-time-option {
+  display: flex;
+  width: 100%;
+  height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  scroll-snap-align: center;
+  border-radius: 12px;
+  color: rgb(var(--nodu-text-rgb) / 0.42);
+  font-size: 18px;
+  font-weight: 650;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    font-size 160ms ease;
+}
+
+.nodu-mobile-timelog-time-option--selected {
+  background: transparent;
+  color: var(--nodu-text);
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.nodu-mobile-timelog-time-picker--disabled {
+  opacity: 0.78;
+}
+
+.nodu-mobile-timelog-day-feedback {
+  min-height: 1.2rem;
+  padding-top: 0.55rem;
+  color: var(--nodu-text-soft);
+  font-size: 11px;
+  font-weight: 650;
+  text-align: right;
+}
+
+.nodu-mobile-timelog-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+  border-top: 1px solid rgb(var(--nodu-text-rgb) / 0.08);
+  background: rgb(var(--nodu-paper-rgb) / 0.96);
+  padding: 0.85rem 1rem;
+  padding-bottom: calc(0.85rem + env(safe-area-inset-bottom));
+}
+
+.nodu-mobile-timelog-footer--split {
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+}
+
+.nodu-mobile-timelog-readonly-footer {
+  display: grid;
+  gap: 0.15rem;
+  border: 1px solid var(--nodu-info-border);
+  border-radius: 16px;
+  background: var(--nodu-info-bg);
+  color: var(--nodu-info-text);
+  padding: 0.75rem 0.85rem;
+  text-align: center;
+}
+
+.nodu-mobile-timelog-readonly-footer span {
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
+.nodu-mobile-timelog-readonly-footer small {
+  color: var(--nodu-text-soft);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.nodu-mobile-timelog-submit-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  align-items: flex-end;
+  background: rgb(var(--nodu-text-rgb) / 0.36);
+  padding: 1rem;
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+}
+
+.nodu-mobile-timelog-submit-dialog {
+  width: 100%;
+  max-height: min(82dvh, 42rem);
+  overflow-y: auto;
+  border: 1px solid rgb(var(--nodu-text-rgb) / 0.08);
+  border-radius: 24px;
+  background: rgb(var(--nodu-paper-rgb) / 0.98);
+  color: var(--nodu-text);
+  padding: 1rem;
+  box-shadow: 0 -18px 44px rgb(var(--nodu-text-rgb) / 0.18);
+}
+
+.nodu-mobile-timelog-submit-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.85rem;
+}
+
+.nodu-mobile-timelog-submit-header h4 {
+  margin: 0;
+  color: var(--nodu-text);
+  font-size: 1.18rem;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.nodu-mobile-timelog-submit-header p {
+  margin: 0.35rem 0 0;
+  color: var(--nodu-text-soft);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.nodu-mobile-timelog-submit-close {
+  display: inline-flex;
+  height: 2.3rem;
+  width: 2.3rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--nodu-border);
+  border-radius: 999px;
+  background: rgb(var(--nodu-surface-rgb) / 0.9);
+  color: var(--nodu-text-soft);
+}
+
+.nodu-mobile-timelog-submit-summary {
+  margin-top: 0.95rem;
+}
+
+.nodu-mobile-timelog-submit-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
+@media (max-width: 360px) {
+  .nodu-mobile-timelog-footer--split,
+  .nodu-mobile-timelog-submit-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

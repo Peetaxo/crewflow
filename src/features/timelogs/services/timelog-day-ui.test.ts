@@ -30,6 +30,7 @@ const event: Event = {
     '2026-07-15': 'deinstal',
   },
   phaseTimes: {
+    pripravy: { from: '06:00', to: '08:00' },
     instal: { from: '07:00', to: '16:00' },
     provoz: { from: '09:00', to: '18:00' },
     deinstal: { from: '10:00', to: '15:00' },
@@ -70,17 +71,42 @@ describe('timelog day UI helpers', () => {
       f: '09:00',
       t: '18:00',
       type: 'provoz',
+      meals: [],
+      meal: null,
       note: '',
     });
   });
 
   it('lets a manually selected phase override the event day type', () => {
-    expect(resolveTimelogDayDefaults('2026-07-14', event, 'instal')).toEqual({
+    expect(resolveTimelogDayDefaults('2026-07-14', event, 'pripravy')).toEqual({
       d: '2026-07-14',
+      f: '06:00',
+      t: '08:00',
+      type: 'pripravy',
+      meals: [],
+      meal: null,
+      note: '',
+    });
+  });
+
+  it('lets a manually selected phase override the default instal phase when day types are disabled', () => {
+    expect(resolveTimelogDayDefaults('2026-07-14', {
+      ...event,
+      showDayTypes: false,
+    }, 'pripravy')).toMatchObject({
+      d: '2026-07-14',
+      f: '08:00',
+      t: '17:00',
+      type: 'pripravy',
+    });
+  });
+
+  it('defaults newly added non-scheduled days to instal', () => {
+    expect(resolveTimelogDayDefaults('2026-07-20', event)).toMatchObject({
+      d: '2026-07-20',
       f: '07:00',
       t: '16:00',
       type: 'instal',
-      note: '',
     });
   });
 
@@ -129,6 +155,20 @@ describe('timelog day UI helpers', () => {
     ]);
   });
 
+  it('can update only an existing entry without creating a fallback duplicate', () => {
+    const days: TimelogDay[] = [
+      { id: 'entry-1', d: '2026-07-14', f: '09:00', t: '12:00', type: 'provoz' },
+    ];
+
+    expect(upsertTimelogDay(days, {
+      id: 'missing-entry',
+      d: '2026-07-14',
+      f: '09:00',
+      t: '12:00',
+      type: 'instal',
+    }, 'missing-entry', { appendIfMissing: false })).toEqual(days);
+  });
+
   it('removes only one selected entry from a duplicated date', () => {
     const days: TimelogDay[] = [
       { id: 'entry-1', d: '2026-07-14', f: '09:00', t: '12:00', type: 'provoz' },
@@ -147,6 +187,24 @@ describe('timelog day UI helpers', () => {
       t: '12:00',
       type: 'provoz',
       note: 'Ranni blok',
-    }, 1)).toBe('2026-07-14|09:00|12:00|provoz|Ranni blok|1');
+    }, 1)).toBe('2026-07-14|1');
+  });
+
+  it('keeps the fallback entry key stable when editable values change', () => {
+    const originalKey = getTimelogDayEntryKey({
+      d: '2026-07-14',
+      f: '09:00',
+      t: '12:00',
+      type: 'provoz',
+      note: 'Ranni blok',
+    }, 1);
+
+    expect(getTimelogDayEntryKey({
+      d: '2026-07-14',
+      f: '10:00',
+      t: '13:00',
+      type: 'instal',
+      note: 'Zmeneno',
+    }, 1)).toBe(originalKey);
   });
 });

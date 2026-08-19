@@ -11,7 +11,8 @@ to authenticated
 using (
   public.has_role((select auth.uid()), 'crew'::public.app_role)
   and (
-    exists (
+    events.status in ('upcoming'::public.event_status, 'full'::public.event_status)
+    or exists (
       select 1
       from public.event_assignments assignment
       where assignment.event_id = events.id
@@ -22,6 +23,12 @@ using (
       from public.timelogs timelog
       where timelog.event_id = events.id
         and timelog.contractor_id = public.current_profile_id()
+    )
+    or exists (
+      select 1
+      from public.event_applications application
+      where application.event_id = events.id
+        and application.profile_id = public.current_profile_id()
     )
   )
 );

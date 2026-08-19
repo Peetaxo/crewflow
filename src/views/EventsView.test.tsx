@@ -464,9 +464,18 @@ describe('EventsView', () => {
     expect(screen.getByText('Obsazena akce')).toBeInTheDocument();
     expect(screen.getByText('Stara akce')).toBeInTheDocument();
 
+    const openCard = screen.getByText('Volna akce').closest('.relative.cursor-pointer');
+    expect(openCard).not.toBeNull();
+    expect(within(openCard as HTMLElement).getByRole('button', { name: 'Prihlasit na akci' })).toBeInTheDocument();
+
     const occupiedCard = screen.getByText('Obsazena akce').closest('.relative.cursor-pointer');
     expect(occupiedCard).not.toBeNull();
     expect(within(occupiedCard as HTMLElement).getByRole('button', { name: 'Obsazeno' })).toBeDisabled();
+
+    const pastCard = screen.getByText('Stara akce').closest('.relative.cursor-pointer');
+    expect(pastCard).not.toBeNull();
+    expect(within(pastCard as HTMLElement).queryByRole('button', { name: 'Prihlasit na akci' })).not.toBeInTheDocument();
+    expect(within(pastCard as HTMLElement).queryByRole('button', { name: 'Obsazeno' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Filtrovat akce' }));
     const filterPanel = document.querySelector('.nodu-mobile-events-filter-panel');

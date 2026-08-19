@@ -1069,6 +1069,8 @@ const EventsView = () => {
                     ? assignedCrew.some((contractor) => contractor.profileId === currentProfileId)
                     : false;
                   const isFullyStaffed = event.needed > 0 && event.filled >= event.needed;
+                  const isClosedForApplications = event.status === 'full' || isFullyStaffed;
+                  const canApplyToEvent = event.status === 'upcoming' && !isClosedForApplications;
                   const occurrenceTimeLabel = getEventOccurrenceTimeLabel(event, occurrenceDate, eventTimelogs);
                   const isMultiDayOccurrence = occurrence.dayCount > 1;
                   const shouldShowMultiDayAccent = canManageEvents && isMultiDayOccurrence;
@@ -1240,7 +1242,7 @@ const EventsView = () => {
                               Kopirovat
                             </Button>
                           )}
-                          {role === 'crew' && !isMeAssigned && !hasMyPendingApplication && !isFullyStaffed && (
+                          {role === 'crew' && !isMeAssigned && !hasMyPendingApplication && canApplyToEvent && (
                             event.allowCrewTimeProposal ? (
                               <div
                                 className="flex items-center gap-1 rounded-xl border border-[color:var(--nodu-border)] bg-white px-2 py-1"
@@ -1264,7 +1266,7 @@ const EventsView = () => {
                               </div>
                             ) : null
                           )}
-                          {role === 'crew' && !isMeAssigned && !hasMyPendingApplication && isFullyStaffed && (
+                          {role === 'crew' && !isMeAssigned && !hasMyPendingApplication && isClosedForApplications && (
                             <Button
                               type="button"
                               variant="outline"
@@ -1275,7 +1277,7 @@ const EventsView = () => {
                               Obsazeno
                             </Button>
                           )}
-                          {role === 'crew' && !isMeAssigned && !hasMyPendingApplication && !isFullyStaffed && (
+                          {role === 'crew' && !isMeAssigned && !hasMyPendingApplication && canApplyToEvent && (
                             <Button
                               onClick={(clickEvent) => {
                                 clickEvent.stopPropagation();

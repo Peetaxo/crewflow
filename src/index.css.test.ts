@@ -3,6 +3,23 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 describe('nodu CSS helpers', () => {
+  it('loads the complete mobile My Shifts stylesheet', () => {
+    const main = readFileSync(resolve(process.cwd(), 'src/main.tsx'), 'utf8');
+    const myShiftsCss = readFileSync(resolve(process.cwd(), 'src/styles/mobile-my-shifts.css'), 'utf8');
+
+    expect(main).toContain('import "./styles/mobile-my-shifts.css";');
+    [
+      '.nodu-my-shifts-shell',
+      '.nodu-my-shifts-next-card',
+      '.nodu-my-shifts-action-panel',
+      '.nodu-my-shifts-stats-grid',
+      '.nodu-my-shifts-tabs',
+      '.nodu-my-shifts-billing-panel',
+    ].forEach((selector) => {
+      expect(myShiftsCss).toContain(selector);
+    });
+  });
+
   it('defines token-driven nodu surface helpers for shared light and dark mode styling', () => {
     const css = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8');
     const darkTokenBlock = css.match(/\.dark\s*\{[\s\S]*?--nodu-accent-rgb:\s*224 138 74;[\s\S]*?\}/)?.[0];

@@ -462,7 +462,7 @@ describe('EventsView', () => {
 
     expect(screen.getByText('Volna akce')).toBeInTheDocument();
     expect(screen.getByText('Obsazena akce')).toBeInTheDocument();
-    expect(screen.queryByText('Stara akce')).not.toBeInTheDocument();
+    expect(screen.getByText('Stara akce')).toBeInTheDocument();
 
     const occupiedCard = screen.getByText('Obsazena akce').closest('.relative.cursor-pointer');
     expect(occupiedCard).not.toBeNull();
@@ -586,6 +586,12 @@ describe('EventsView', () => {
     expect(screen.queryByText('Akce pred vyberem')).not.toBeInTheDocument();
     expect(screen.getByText('Akce po vyberu')).toBeInTheDocument();
     expect(setEventsCalendarDate).toHaveBeenCalledWith('2026-08-20');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Vybrat datum akci' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Všechny akce' }));
+
+    expect(screen.getByText('Akce pred vyberem')).toBeInTheDocument();
+    expect(screen.getByText('Akce po vyberu')).toBeInTheDocument();
   });
 
   it('renders single-day event meta without dangling separators when client is missing', async () => {
@@ -1544,7 +1550,7 @@ describe('EventsView', () => {
     expect(screen.queryByText(/17\..*dubna/i)).not.toBeInTheDocument();
   });
 
-  it('shows mobile Crew events from today onward instead of the persisted month', async () => {
+  it('shows all mobile Crew event history by default instead of hiding past events', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-08-10T10:00:00+02:00'));
     mobileMockState.isMobile = true;
@@ -1634,7 +1640,7 @@ describe('EventsView', () => {
 
     expect(screen.getByText('Dnesni akce')).toBeInTheDocument();
     expect(screen.getByText('Zarijova akce')).toBeInTheDocument();
-    expect(screen.queryByText('Stara cervencova akce')).not.toBeInTheDocument();
+    expect(screen.getByText('Stara cervencova akce')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Nadchazejici' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Uplynule' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Vse' })).not.toBeInTheDocument();

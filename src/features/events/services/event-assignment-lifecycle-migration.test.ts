@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 const migrationDirectory = join(process.cwd(), 'supabase', 'migrations');
 const migrationFiles = readdirSync(migrationDirectory)
   .filter((name) => name.endsWith('_timelog_assignment_lifecycle.sql'));
+const coalesceHotfixMigrationFiles = readdirSync(migrationDirectory)
+  .filter((name) => name.endsWith('_fix_lifecycle_coalesce.sql'));
 const verificationScriptPath = join(
   process.cwd(),
   'supabase',
@@ -19,6 +21,13 @@ const readMigration = () => {
 
 const readVerificationScript = () => readFileSync(verificationScriptPath, 'utf8').toLowerCase();
 const readDatabaseTypes = () => readFileSync(databaseTypesPath, 'utf8');
+const readCoalesceHotfixMigration = () => {
+  expect.soft(coalesceHotfixMigrationFiles).toHaveLength(1);
+  const migrationFile = coalesceHotfixMigrationFiles[0];
+  return migrationFile
+    ? readFileSync(join(migrationDirectory, migrationFile), 'utf8').toLowerCase()
+    : '';
+};
 
 const repairPairs = [
   ['5e062036-278f-4e39-b0cd-8d02d33ced13', 'c55d4794-42d3-46be-aba4-931c40e495c0'],
@@ -782,7 +791,7 @@ describe('timelog assignment lifecycle migration', () => {
       "raise exception 'verification failed: installed lifecycle helper catalog is incompatible'",
     );
     expect(sql).toMatch(
-      /'search_path=""'\s*=\s*any\(\s*pg_catalog\.coalesce\(\s*function_row\.proconfig,\s*array\[\]::text\[\]\s*\)\s*\)/,
+      /'search_path=""'\s*=\s*any\(\s*coalesce\(\s*function_row\.proconfig,\s*array\[\]::text\[\]\s*\)\s*\)/,
     );
     expect(sql).toContain("where config_value like 'search_path=%'");
     expect(sql).toContain(
@@ -1187,5 +1196,33 @@ describe('timelog assignment lifecycle migration', () => {
     expect(types).toContain('timelogs: Json;');
     expect(types).toContain('receipts: Json;');
     expect(types).toContain('amount_meals: number;');
+  });
+
+  it('repairs every invalid lifecycle coalesce expression through one fail-closed migration', () => {
+    const hotfix = readCoalesceHotfixMigration();
+    const verifier = readVerificationScript();
+    const expectedFixes = [
+      [
+        'public.transition_receipt_statuses_atomic(jsonb,public.receipt_status,public.receipt_status)',
+        1,
+      ],
+      ['public.handle_timelog_approved()', 8],
+      ['public.create_invoice_atomic(jsonb,jsonb,jsonb,jsonb)', 2],
+      ['public.mark_invoice_sent_atomic(uuid,timestamptz,timestamptz)', 2],
+      ['public.mark_invoice_paid_atomic(uuid,public.invoice_status,timestamptz,timestamptz)', 2],
+      ['public.delete_invoice_atomic(uuid,public.invoice_status,timestamptz)', 2],
+    ] as const;
+
+    expectedFixes.forEach(([signature, invalidCount]) => {
+      expect.soft(hotfix).toContain(`('${signature}', ${invalidCount})`);
+    });
+    expect.soft(hotfix).toContain('pg_catalog.pg_get_functiondef');
+    expect.soft(hotfix).toMatch(
+      /pg_catalog\.replace\(\s*v_definition,\s*'pg_catalog\.coalesce\(',\s*'coalesce\('\s*\)/,
+    );
+    expect.soft(hotfix).toContain(
+      "raise exception 'lifecycle coalesce repair did not remove every invalid expression'",
+    );
+    expect.soft(verifier).not.toContain('pg_catalog.coalesce(');
   });
 });

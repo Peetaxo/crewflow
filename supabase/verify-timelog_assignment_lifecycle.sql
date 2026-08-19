@@ -577,7 +577,7 @@ begin
       or (policy.polqual is not null) is distinct from expected_policy.needs_qual
       or (policy.polwithcheck is not null) is distinct from expected_policy.needs_check
       or pg_catalog.strpos(
-        pg_catalog.coalesce(
+        coalesce(
           pg_catalog.pg_get_expr(policy.polqual, policy.polrelid),
           pg_catalog.pg_get_expr(policy.polwithcheck, policy.polrelid),
           ''
@@ -585,7 +585,7 @@ begin
         'coo'
       ) = 0
       or pg_catalog.strpos(
-        pg_catalog.coalesce(
+        coalesce(
           pg_catalog.pg_get_expr(policy.polqual, policy.polrelid),
           pg_catalog.pg_get_expr(policy.polwithcheck, policy.polrelid),
           ''
@@ -668,13 +668,13 @@ begin
           function_row.prosecdef is distinct from v_function_contract.is_security_definer
           or not (
             'search_path=""' = any(
-              pg_catalog.coalesce(function_row.proconfig, array[]::text[])
+              coalesce(function_row.proconfig, array[]::text[])
             )
           )
           or (
             select pg_catalog.count(*)
             from pg_catalog.unnest(
-              pg_catalog.coalesce(function_row.proconfig, array[]::text[])
+              coalesce(function_row.proconfig, array[]::text[])
             ) config_value
             where config_value like 'search_path=%'
           ) <> 1
@@ -686,14 +686,14 @@ begin
 
     select
       p.proowner,
-      pg_catalog.coalesce(
+      coalesce(
         pg_catalog.bool_or(
           acl.privilege_type = 'EXECUTE'
           and acl.grantee = v_authenticated_role_oid
         ),
         false
       ),
-      pg_catalog.coalesce(
+      coalesce(
         pg_catalog.bool_or(
           acl.privilege_type = 'EXECUTE'
           and acl.grantee <> p.proowner
@@ -701,7 +701,7 @@ begin
         ),
         false
       ),
-      pg_catalog.coalesce(
+      coalesce(
         pg_catalog.bool_or(
           acl.privilege_type = 'EXECUTE'
           and acl.grantee <> p.proowner
@@ -715,7 +715,7 @@ begin
       v_non_owner_can_execute
     from pg_catalog.pg_proc p
     cross join lateral pg_catalog.aclexplode(
-      pg_catalog.coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))
+      coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))
     ) acl
     where p.oid = v_function_signature::oid
     group by p.proowner;
@@ -2497,7 +2497,7 @@ begin
   select pg_catalog.to_jsonb(t) into v_timelog_before
   from public.timelogs t
   where t.id = v_atomic_delete_timelog_id;
-  select pg_catalog.coalesce(
+  select coalesce(
     pg_catalog.jsonb_agg(pg_catalog.to_jsonb(d) order by d.id),
     '[]'::jsonb
   ) into v_days_before
@@ -2527,7 +2527,7 @@ begin
   select pg_catalog.to_jsonb(t) into v_timelog_after
   from public.timelogs t
   where t.id = v_atomic_delete_timelog_id;
-  select pg_catalog.coalesce(
+  select coalesce(
     pg_catalog.jsonb_agg(pg_catalog.to_jsonb(d) order by d.id),
     '[]'::jsonb
   ) into v_days_after
@@ -2940,25 +2940,25 @@ begin
   select pg_catalog.jsonb_build_object(
     'invoice', (select pg_catalog.to_jsonb(i) from public.invoices i where i.id = v_invoice_id),
     'items', (
-      select pg_catalog.coalesce(
+      select coalesce(
         pg_catalog.jsonb_agg(pg_catalog.to_jsonb(item_row) order by item_row.id),
         '[]'::jsonb
       ) from public.invoice_items item_row where item_row.invoice_id = v_invoice_id
     ),
     'timelogs', (
-      select pg_catalog.coalesce(
+      select coalesce(
         pg_catalog.jsonb_agg(pg_catalog.to_jsonb(link_row) order by link_row.id),
         '[]'::jsonb
       ) from public.invoice_timelogs link_row where link_row.invoice_id = v_invoice_id
     ),
     'receipts', (
-      select pg_catalog.coalesce(
+      select coalesce(
         pg_catalog.jsonb_agg(pg_catalog.to_jsonb(link_row) order by link_row.id),
         '[]'::jsonb
       ) from public.invoice_receipts link_row where link_row.invoice_id = v_invoice_id
     ),
     'receipt_rows', (
-      select pg_catalog.coalesce(
+      select coalesce(
         pg_catalog.jsonb_agg(pg_catalog.to_jsonb(receipt_row) order by receipt_row.id),
         '[]'::jsonb
       )
@@ -3110,25 +3110,25 @@ begin
   select pg_catalog.jsonb_build_object(
     'invoice', (select pg_catalog.to_jsonb(i) from public.invoices i where i.id = v_invoice_id),
     'items', (
-      select pg_catalog.coalesce(
+      select coalesce(
         pg_catalog.jsonb_agg(pg_catalog.to_jsonb(item_row) order by item_row.id),
         '[]'::jsonb
       ) from public.invoice_items item_row where item_row.invoice_id = v_invoice_id
     ),
     'timelogs', (
-      select pg_catalog.coalesce(
+      select coalesce(
         pg_catalog.jsonb_agg(pg_catalog.to_jsonb(link_row) order by link_row.id),
         '[]'::jsonb
       ) from public.invoice_timelogs link_row where link_row.invoice_id = v_invoice_id
     ),
     'receipts', (
-      select pg_catalog.coalesce(
+      select coalesce(
         pg_catalog.jsonb_agg(pg_catalog.to_jsonb(link_row) order by link_row.id),
         '[]'::jsonb
       ) from public.invoice_receipts link_row where link_row.invoice_id = v_invoice_id
     ),
     'receipt_rows', (
-      select pg_catalog.coalesce(
+      select coalesce(
         pg_catalog.jsonb_agg(pg_catalog.to_jsonb(receipt_row) order by receipt_row.id),
         '[]'::jsonb
       )

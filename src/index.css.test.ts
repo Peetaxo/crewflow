@@ -3,6 +3,17 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 describe('nodu CSS helpers', () => {
+  it('enables iOS safe-area viewport insets for the mobile shell', () => {
+    const html = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
+    const viewport = html.match(
+      /<meta\s+name="viewport"\s+content="([^"]+)"\s*\/?>/,
+    )?.[1];
+
+    expect(viewport).toContain('width=device-width');
+    expect(viewport).toContain('initial-scale=1.0');
+    expect(viewport).toContain('viewport-fit=cover');
+  });
+
   it('loads the complete mobile My Shifts stylesheet', () => {
     const main = readFileSync(resolve(process.cwd(), 'src/main.tsx'), 'utf8');
     const myShiftsCss = readFileSync(resolve(process.cwd(), 'src/styles/mobile-my-shifts.css'), 'utf8');

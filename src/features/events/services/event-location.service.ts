@@ -8,6 +8,13 @@ export interface EventLocationInput {
   locationLng?: number | null;
 }
 
+export interface EventAddressSelection {
+  address: string;
+  placeId?: string;
+  locationLat: number | null;
+  locationLng: number | null;
+}
+
 const EMPTY_LOCATION_LABEL = 'Místo bude doplněno';
 
 const clean = (value: string | null | undefined): string => value?.trim() ?? '';
@@ -17,6 +24,19 @@ const hasCoordinatePair = (lat: number | null | undefined, lng: number | null | 
   && Number.isFinite(lat)
   && typeof lng === 'number'
   && Number.isFinite(lng)
+);
+
+export const getManualAddressSelection = (address: string): EventAddressSelection => ({
+  address: clean(address),
+  placeId: undefined,
+  locationLat: null,
+  locationLng: null,
+});
+
+export const hasEventCoordinates = <T extends Pick<EventLocationInput, 'locationLat' | 'locationLng'>>(
+  location: T,
+): location is T & { locationLat: number; locationLng: number } => (
+  hasCoordinatePair(location.locationLat, location.locationLng)
 );
 
 export const getEventAddressLabel = (event: Pick<Event, 'address' | 'city'>): string => (

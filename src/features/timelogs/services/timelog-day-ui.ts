@@ -1,13 +1,13 @@
 import { addDays, format, isAfter, parseISO } from 'date-fns';
 import type { Event, Timelog, TimelogDay, TimelogType } from '../../../types';
 
-const defaultType: TimelogType = 'provoz';
+const defaultType: TimelogType = 'instal';
 const fallbackFrom = '08:00';
 const fallbackTo = '17:00';
 
 const sortDays = (days: Timelog['days']) => (
   [...days].sort((a, b) => (
-    `${a.d}${a.f}${a.t}${a.type}${a.id ?? ''}`.localeCompare(`${b.d}${b.f}${b.t}${b.type}${b.id ?? ''}`)
+    `${a.d}${a.f}${a.t}${a.type}${(a.meals ?? []).join(',')}${a.meal ?? ''}${a.id ?? ''}`.localeCompare(`${b.d}${b.f}${b.t}${b.type}${(b.meals ?? []).join(',')}${b.meal ?? ''}${b.id ?? ''}`)
   ))
 );
 
@@ -16,14 +16,7 @@ export const createTimelogDayEntryId = (): string => (
 );
 
 export const getTimelogDayEntryKey = (day: TimelogDay, index = 0): string => (
-  day.id ?? [
-    day.d,
-    day.f,
-    day.t,
-    day.type,
-    day.note ?? '',
-    index,
-  ].join('|')
+  day.id ?? `${day.d}|${index}`
 );
 
 export const buildQuarterHourOptions = (): string[] => (
@@ -70,11 +63,15 @@ export const resolveTimelogDayDefaults = (
   preferredType?: TimelogType,
 ): TimelogDay => {
   if (!event.showDayTypes) {
+    const resolvedType = preferredType ?? defaultType;
+
     return {
       d: date,
       f: event.startTime || fallbackFrom,
       t: event.endTime || fallbackTo,
-      type: 'instal',
+      type: resolvedType,
+      meals: [],
+      meal: null,
       note: '',
     };
   }
@@ -92,6 +89,8 @@ export const resolveTimelogDayDefaults = (
     f: resolvedSlot?.from ?? event.phaseTimes?.[resolvedType]?.from ?? event.startTime ?? fallbackFrom,
     t: resolvedSlot?.to ?? event.phaseTimes?.[resolvedType]?.to ?? event.endTime ?? fallbackTo,
     type: resolvedType,
+    meals: [],
+    meal: null,
     note: '',
   };
 };
@@ -100,7 +99,9 @@ export const upsertTimelogDay = (
   days: TimelogDay[],
   nextDay: TimelogDay,
   entryKey?: string,
+  options: { appendIfMissing?: boolean } = {},
 ): TimelogDay[] => {
+  const { appendIfMissing = true } = options;
   const selectedEntryKey = entryKey ?? nextDay.id;
 
   if (!selectedEntryKey) {
@@ -123,7 +124,11 @@ export const upsertTimelogDay = (
     };
   });
 
-  return sortDays(hasReplacedEntry ? updatedDays : [...days, nextDay]);
+  if (hasReplacedEntry) {
+    return sortDays(updatedDays);
+  }
+
+  return appendIfMissing ? sortDays([...days, nextDay]) : sortDays(days);
 };
 
 export const removeTimelogDay = (

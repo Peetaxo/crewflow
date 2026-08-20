@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { EventApplication } from '../types';
 
 const mockAppContext = {
   role: 'crewhead',
@@ -13,6 +14,9 @@ const mockAppContext = {
   setSelectedEventId: vi.fn(),
   setEventTab: vi.fn(),
 };
+
+const mobileMockState = vi.hoisted(() => ({ isMobile: false }));
+const eventApplicationMockState = vi.hoisted(() => ({ applications: [] as EventApplication[] }));
 
 const mockEvents = [
   {
@@ -24,6 +28,16 @@ const mockEvents = [
     city: 'Praha',
     needed: 8,
     filled: 6,
+  },
+  {
+    id: 102,
+    name: 'Old understaffed event',
+    job: 'JOB-102',
+    startDate: '2026-01-10',
+    endDate: '2026-01-10',
+    city: 'Praha',
+    needed: 35,
+    filled: 0,
   },
 ];
 
@@ -73,6 +87,18 @@ const mockDependencies = {
       fg: '#7A4A20',
       rate: 350,
     },
+    {
+      id: 2,
+      profileId: 'profile-2',
+      name: 'Jana Svobodova',
+      ii: 'JS',
+      bg: '#E4F4EE',
+      fg: '#23644D',
+      rate: 320,
+      phone: '+420 777 111 222',
+      email: 'jana@example.test',
+      bank: '123-456789/0100',
+    },
   ],
 };
 
@@ -80,8 +106,16 @@ vi.mock('../context/useAppContext', () => ({
   useAppContext: () => mockAppContext,
 }));
 
+vi.mock('../hooks/use-mobile', () => ({
+  useIsMobile: () => mobileMockState.isMobile,
+}));
+
 vi.mock('../features/events/queries/useEventsQuery', () => ({
   useEventsQuery: () => ({ data: mockEvents, isLoading: false, error: null }),
+}));
+
+vi.mock('../features/events/services/events.service', () => ({
+  getPendingEventApplications: () => eventApplicationMockState.applications,
 }));
 
 vi.mock('../features/timelogs/queries/useTimelogsQuery', () => ({
@@ -103,6 +137,10 @@ vi.mock('../features/timelogs/services/timelogs.service', () => ({
 describe('DashboardView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockAppContext.role = 'crewhead';
+    mockAppContext.searchQuery = '';
+    mobileMockState.isMobile = false;
+    eventApplicationMockState.applications = [];
   });
 
   it('renders the dashboard with semantic nodu helpers instead of light-only surface utilities', async () => {
@@ -159,6 +197,83 @@ describe('DashboardView', () => {
     expect(mockAppContext.setSelectedEventId).toHaveBeenCalledWith(101);
     expect(mockAppContext.setEventTab).toHaveBeenCalledWith('approval');
     expect(mockAppContext.setTimelogFilter).not.toHaveBeenCalled();
+  });
+
+  it('renders a mobile management overview focused on CH and COO actions', async () => {
+    mobileMockState.isMobile = true;
+    const { default: DashboardView } = await import('./DashboardView');
+    const queryClient = new QueryClient();
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <DashboardView />
+      </QueryClientProvider>,
+    );
+
+    expect(container.querySelector('.nodu-management-overview-mobile')).not.toBeNull();
+    expect(screen.getByRole('heading', { name: 'Přehled' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Dashboard' })).not.toBeInTheDocument();
+    expect(screen.getByText('1 výkaz')).toBeInTheDocument();
+    expect(screen.getByText('2 volná místa')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Otevřít schvalování/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Otevřít akce/i })).toBeInTheDocument();
+    const upcomingSection = screen.getByRole('heading', { name: 'Nejbližší akce' }).closest('section');
+    expect(within(upcomingSection as HTMLElement).getByRole('button', { name: /Nodu pilot Prague/i })).toBeInTheDocument();
+  });
+
+  it('surfaces pending crew applications in the mobile management overview', async () => {
+    mobileMockState.isMobile = true;
+    eventApplicationMockState.applications = [
+      {
+        id: 'application-1',
+        eventId: 101,
+        contractorProfileId: 'profile-2',
+        status: 'pending',
+        plannedFrom: '09:00',
+        plannedTo: '18:00',
+      },
+    ];
+    const { default: DashboardView } = await import('./DashboardView');
+    const queryClient = new QueryClient();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <DashboardView />
+      </QueryClientProvider>,
+    );
+
+    const applicationsSection = screen.getByRole('heading', { name: 'Přihlášky crew' }).closest('section');
+    const applicationRow = within(applicationsSection as HTMLElement).getByRole('button', { name: /Jana Svobodova/i });
+
+    expect(applicationsSection).not.toBeNull();
+    expect(within(applicationsSection as HTMLElement).getByText('1 přihláška čeká')).toBeInTheDocument();
+    expect(applicationRow).toBeInTheDocument();
+    expect(applicationRow).toHaveTextContent('Nodu pilot Prague');
+    expect(applicationRow).toHaveTextContent('09:00-18:00');
+
+    fireEvent.click(applicationRow);
+
+    expect(mockAppContext.setCurrentTab).toHaveBeenCalledWith('events');
+    expect(mockAppContext.setSelectedEventId).toHaveBeenCalledWith(101);
+    expect(mockAppContext.setEventTab).toHaveBeenCalledWith('overview');
+  });
+
+  it('keeps incomplete management work compact on mobile', async () => {
+    mobileMockState.isMobile = true;
+    const { default: DashboardView } = await import('./DashboardView');
+    const queryClient = new QueryClient();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <DashboardView />
+      </QueryClientProvider>,
+    );
+
+    const incompleteSection = screen.getByRole('heading', { name: 'Rozpracované' }).closest('section');
+
+    expect(incompleteSection).not.toBeNull();
+    expect(within(incompleteSection as HTMLElement).getByText('2 položky vyžadují doplnění')).toBeInTheDocument();
+    expect(within(incompleteSection as HTMLElement).getByText('1 akce')).toBeInTheDocument();
+    expect(within(incompleteSection as HTMLElement).getByText('1 crew profil')).toBeInTheDocument();
+    expect(within(incompleteSection as HTMLElement).getByText('0 výkazů')).toBeInTheDocument();
+    expect(within(incompleteSection as HTMLElement).getByRole('button', { name: 'Zobrazit' })).toBeInTheDocument();
   });
 
   it('keeps dashboard helper styles wired to nodu tokens and preserves row borders for dark mode', () => {

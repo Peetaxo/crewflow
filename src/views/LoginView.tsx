@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { useAuth } from '../app/providers/useAuth';
+import noduLogo from '../assets/nodu-logo.svg';
 
 const LoginView = () => {
   const { signIn, isLoading } = useAuth();
@@ -41,7 +42,7 @@ const LoginView = () => {
         className="w-full max-w-md overflow-hidden rounded-[32px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] shadow-[0_28px_80px_rgba(47,38,31,0.12)] backdrop-blur"
       >
         <div className="border-b border-[color:var(--nodu-border)] bg-[radial-gradient(circle_at_top,_rgba(var(--nodu-accent-rgb),0.12),_transparent_58%)] px-8 py-9 text-center">
-          <img src="/nodu-logo.svg" alt="nodu" className="mx-auto h-16 w-auto" />
+          <img src={noduLogo} alt="nodu" className="mx-auto h-16 w-auto" />
           <h1 className="mt-7 text-2xl font-semibold tracking-tight text-[color:var(--nodu-text)]">Prihlaseni</h1>
         </div>
 

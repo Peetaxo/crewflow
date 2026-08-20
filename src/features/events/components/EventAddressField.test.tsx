@@ -1,159 +1,248 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import EventAddressField from './EventAddressField';
-import type { EventAddressSuggestion } from '../services/event-location-google.service';
+import type { EventGeocodingCandidate } from '../services/event-geocoding.service';
 
-const selectedSuggestion: EventAddressSuggestion = {
-  id: 'place-1',
+const candidate: EventGeocodingCandidate = {
+  id: 'way-123',
   label: 'Rohanské nábřeží 678/23, Praha',
-  placeId: 'place-1',
+  locationLat: 50.0929,
+  locationLng: 14.4502,
+  provider: 'nominatim',
 };
 
-const createDeferred = <T,>() => {
-  let resolve!: (value: T) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
+const runAutocomplete = async () => {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(700);
+    await Promise.resolve();
   });
-  return { promise, resolve, reject };
 };
 
 describe('EventAddressField', () => {
-  it('keeps manual address entry available and clears precise map metadata', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('keeps manual address entry editable and clears precise map metadata', () => {
     const onChange = vi.fn();
+    const geocodeAddress = vi.fn();
 
     render(
       <EventAddressField
-        value={{ address: 'Praha', city: 'Praha' }}
+        value={{ address: 'Praha', city: 'Praha', placeId: 'old-place', locationLat: 50.08, locationLng: 14.42 }}
         onChange={onChange}
-        autocompleteEnabled={false}
+        geocodeAddress={geocodeAddress}
       />,
     );
 
-    fireEvent.change(screen.getByLabelText('Adresa'), {
-      target: { value: 'Roudnice nad Labem' },
+    const addressInput = screen.getByLabelText('Adresa');
+    expect(addressInput).toHaveValue('Praha');
+
+    fireEvent.change(addressInput, {
+      target: { value: 'Ro' },
     });
 
     expect(onChange).toHaveBeenCalledWith({
-      address: 'Roudnice nad Labem',
+      address: 'Ro',
       placeId: undefined,
       locationLat: null,
       locationLng: null,
     });
-    expect(screen.getByText('Našeptávání adres není nakonfigurované. Adresu lze zadat ručně.')).toBeInTheDocument();
+    expect(geocodeAddress).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Najít na mapě' })).not.toBeInTheDocument();
   });
 
-  it('shows mocked suggestions after at least three typed characters', async () => {
-    const fetchSuggestions = vi.fn().mockResolvedValue([selectedSuggestion]);
+  it('searches automatically while typing and shows candidates', async () => {
+    vi.useFakeTimers();
+    const geocodeAddress = vi.fn().mockResolvedValue([candidate]);
 
     render(
       <EventAddressField
         value={{ address: '' }}
         onChange={vi.fn()}
-        autocompleteEnabled
-        fetchSuggestions={fetchSuggestions}
+        geocodeAddress={geocodeAddress}
       />,
     );
 
     fireEvent.change(screen.getByLabelText('Adresa'), {
-      target: { value: 'Ro' },
+      target: { value: '  Rohanské nábřeží  ' },
     });
 
-    expect(fetchSuggestions).not.toHaveBeenCalled();
+    expect(geocodeAddress).not.toHaveBeenCalled();
 
-    fireEvent.change(screen.getByLabelText('Adresa'), {
-      target: { value: 'Roh' },
-    });
+    await runAutocomplete();
 
-    await waitFor(() => expect(fetchSuggestions).toHaveBeenCalledWith('Roh'));
-    expect(await screen.findByRole('button', { name: 'Rohanské nábřeží 678/23, Praha' })).toBeInTheDocument();
+    expect(geocodeAddress).toHaveBeenCalledWith('Rohanské nábřeží');
+    expect(screen.getByRole('button', { name: 'Rohanské nábřeží 678/23, Praha' })).toBeInTheDocument();
   });
 
-  it('stores precise address metadata when selecting a suggestion', async () => {
+  it('stores precise coordinates and clears placeId when selecting a geocoding candidate', async () => {
+    vi.useFakeTimers();
     const onChange = vi.fn();
-    const onResolvingChange = vi.fn();
-    const fetchSuggestions = vi.fn().mockResolvedValue([selectedSuggestion]);
-    const resolveSuggestion = vi.fn().mockResolvedValue({
-      address: 'Rohanské nábřeží 678/23, 186 00 Praha 8',
-      placeId: 'place-1',
-      locationLat: 50.0929,
-      locationLng: 14.4502,
-    });
+    const geocodeAddress = vi.fn().mockResolvedValue([candidate]);
 
     render(
       <EventAddressField
         value={{ address: '' }}
         onChange={onChange}
-        autocompleteEnabled
-        fetchSuggestions={fetchSuggestions}
-        resolveSuggestion={resolveSuggestion}
-        onResolvingChange={onResolvingChange}
+        geocodeAddress={geocodeAddress}
       />,
     );
 
     fireEvent.change(screen.getByLabelText('Adresa'), {
-      target: { value: 'Roh' },
+      target: { value: 'Rohanské nábřeží' },
     });
-    const suggestionButton = await screen.findByRole('button', { name: 'Rohanské nábřeží 678/23, Praha' });
-    onChange.mockClear();
-    fireEvent.click(suggestionButton);
+    await runAutocomplete();
+    fireEvent.click(screen.getByRole('button', { name: 'Rohanské nábřeží 678/23, Praha' }));
 
-    await waitFor(() => expect(resolveSuggestion).toHaveBeenCalledWith(selectedSuggestion));
     expect(onChange).toHaveBeenLastCalledWith({
-      address: 'Rohanské nábřeží 678/23, 186 00 Praha 8',
-      placeId: 'place-1',
+      address: 'Rohanské nábřeží 678/23, Praha',
+      placeId: undefined,
       locationLat: 50.0929,
       locationLng: 14.4502,
     });
-    expect(onResolvingChange.mock.calls).toEqual([[true], [false]]);
-    expect(screen.getByDisplayValue('Rohanské nábřeží 678/23, 186 00 Praha 8')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Rohanské nábřeží 678/23, Praha')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Rohanské nábřeží 678/23, Praha' })).not.toBeInTheDocument();
+    expect(screen.getByText('Poloha je vybraná z mapových podkladů.')).toBeInTheDocument();
   });
 
-  it('discards a deferred suggestion resolution after the address field unmounts', async () => {
-    const resolution = createDeferred<{
-      address: string;
-      placeId: string;
-      locationLat: number;
-      locationLng: number;
-    }>();
-    const onChange = vi.fn();
-    const onResolvingChange = vi.fn();
-    const fetchSuggestions = vi.fn().mockResolvedValue([selectedSuggestion]);
-    const resolveSuggestion = vi.fn(() => resolution.promise);
-    const rendered = render(
+  it('ignores stale geocode results after the address changes mid-search', async () => {
+    vi.useFakeTimers();
+    let resolveSearch!: (candidates: EventGeocodingCandidate[]) => void;
+    const geocodeAddress = vi.fn(() => new Promise<EventGeocodingCandidate[]>((resolve) => {
+      resolveSearch = resolve;
+    }));
+
+    render(
       <EventAddressField
-        value={{ address: '' }}
-        onChange={onChange}
-        onResolvingChange={onResolvingChange}
-        autocompleteEnabled
-        fetchSuggestions={fetchSuggestions}
-        resolveSuggestion={resolveSuggestion}
+        value={{ address: 'Rohanské nábřeží' }}
+        onChange={vi.fn()}
+        geocodeAddress={geocodeAddress}
       />,
     );
 
     fireEvent.change(screen.getByLabelText('Adresa'), {
-      target: { value: 'Roh' },
+      target: { value: 'Rohanské nábřeží 1' },
     });
-    const suggestionButton = await screen.findByRole('button', { name: 'Rohanské nábřeží 678/23, Praha' });
-    onChange.mockClear();
-    fireEvent.click(suggestionButton);
-    await waitFor(() => expect(resolveSuggestion).toHaveBeenCalledWith(selectedSuggestion));
-    expect(onResolvingChange.mock.calls).toEqual([[true]]);
+    await runAutocomplete();
+    expect(geocodeAddress).toHaveBeenCalledWith('Rohanské nábřeží 1');
 
-    rendered.unmount();
+    fireEvent.change(screen.getByLabelText('Adresa'), {
+      target: { value: 'Nová adresa' },
+    });
+
     await act(async () => {
-      resolution.resolve({
-        address: 'Rohanské nábřeží 678/23, 186 00 Praha 8',
-        placeId: 'place-1',
-        locationLat: 50.0929,
-        locationLng: 14.4502,
-      });
-      await resolution.promise;
+      resolveSearch([candidate]);
     });
 
-    expect(onChange).not.toHaveBeenCalled();
-    expect(onResolvingChange.mock.calls).toEqual([[true]]);
+    expect(screen.queryByRole('button', { name: 'Rohanské nábřeží 678/23, Praha' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Vyberte správnou polohu z výsledků.')).not.toBeInTheDocument();
+  });
+
+  it('does not apply stale geocode results after value props change mid-search', async () => {
+    vi.useFakeTimers();
+    let resolveSearch!: (candidates: EventGeocodingCandidate[]) => void;
+    const geocodeAddress = vi.fn(() => new Promise<EventGeocodingCandidate[]>((resolve) => {
+      resolveSearch = resolve;
+    }));
+    const { rerender } = render(
+      <EventAddressField
+        value={{ address: 'Rohanské nábřeží' }}
+        onChange={vi.fn()}
+        geocodeAddress={geocodeAddress}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Adresa'), {
+      target: { value: 'Rohanské nábřeží 1' },
+    });
+    await runAutocomplete();
+
+    rerender(
+      <EventAddressField
+        value={{ address: 'Nová adresa' }}
+        onChange={vi.fn()}
+        geocodeAddress={geocodeAddress}
+      />,
+    );
+
+    await act(async () => {
+      resolveSearch([candidate]);
+    });
+
+    expect(screen.getByLabelText('Adresa')).toHaveValue('Nová adresa');
+    expect(screen.queryByRole('button', { name: 'Rohanské nábřeží 678/23, Praha' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Vyberte správnou polohu z výsledků.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Hledám adresy...')).not.toBeInTheDocument();
+  });
+
+  it('shows a safe Czech fallback when geocoding fails with a technical error', async () => {
+    vi.useFakeTimers();
+    const geocodeAddress = vi.fn().mockRejectedValue(new Error('Failed to fetch'));
+
+    render(
+      <EventAddressField
+        value={{ address: 'Rohanské nábřeží' }}
+        onChange={vi.fn()}
+        geocodeAddress={geocodeAddress}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Adresa'), {
+      target: { value: 'Rohanské nábřeží 1' },
+    });
+    await runAutocomplete();
+
+    expect(screen.getByText('Vyhledávání polohy se nepodařilo. Zkuste to prosím znovu.')).toBeInTheDocument();
+    expect(screen.queryByText('Failed to fetch')).not.toBeInTheDocument();
+  });
+
+  it('shows no-result and provider failure statuses in Czech', async () => {
+    vi.useFakeTimers();
+    const geocodeAddress = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error('Failed to fetch'));
+
+    render(
+      <EventAddressField
+        value={{ address: 'Rohanské nábřeží' }}
+        onChange={vi.fn()}
+        geocodeAddress={geocodeAddress}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Adresa'), {
+      target: { value: 'Rohanské nábřeží 1' },
+    });
+    await runAutocomplete();
+
+    expect(screen.getByText('Poloha nebyla nalezena. Adresu lze uložit ručně.')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Adresa'), {
+      target: { value: 'Rohanské nábřeží 2' },
+    });
+    await runAutocomplete();
+
+    expect(screen.getByText('Vyhledávání polohy se nepodařilo. Zkuste to prosím znovu.')).toBeInTheDocument();
+  });
+
+  it('offers a separate map picker action when provided', () => {
+    const onPickMap = vi.fn();
+
+    render(
+      <EventAddressField
+        value={{ address: 'Rohanské nábřeží' }}
+        onChange={vi.fn()}
+        onPickMap={onPickMap}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: 'Najít na mapě' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Vybrat na mapě' }));
+
+    expect(onPickMap).toHaveBeenCalledTimes(1);
   });
 });

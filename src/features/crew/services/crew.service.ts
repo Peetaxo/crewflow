@@ -12,8 +12,9 @@ import {
 } from '../types/crew.types';
 
 const DEFAULT_BILLING_COUNTRY = 'Ceska republika';
-let crewHydrationPromise: Promise<void> | null = null;
+let crewHydrationPromise: Promise<boolean> | null = null;
 let crewLoaded = false;
+let crewHydrationEpoch = 0;
 
 const getInitials = (name: string) => (
   name
@@ -117,9 +118,17 @@ const matchesSearch = (member: CrewMember, search: string) => {
   );
 };
 
-const hydrateCrewFromSupabase = async (): Promise<void> => {
+const hydrateCrewFromSupabase = async (epoch: number): Promise<boolean> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
-    return;
+    return false;
+  }
+
+  const sessionResult = await supabase.auth.getSession();
+  if (sessionResult.error) {
+    throw new Error(sessionResult.error.message);
+  }
+  if (!sessionResult.data.session?.user || epoch !== crewHydrationEpoch) {
+    return false;
   }
 
   const [profilesResult, timelogsResult] = await Promise.all([
@@ -130,6 +139,10 @@ const hydrateCrewFromSupabase = async (): Promise<void> => {
   const firstError = profilesResult.error ?? timelogsResult.error;
   if (firstError) {
     throw new Error(firstError.message);
+  }
+
+  if (epoch !== crewHydrationEpoch) {
+    return false;
   }
 
   const timelogRows = timelogsResult.data ?? [];
@@ -160,6 +173,8 @@ const hydrateCrewFromSupabase = async (): Promise<void> => {
     ...snapshot,
     contractors: supabaseCrew,
   }));
+
+  return true;
 };
 
 export const ensureSupabaseCrewLoaded = () => {
@@ -175,15 +190,23 @@ export const ensureSupabaseCrewLoaded = () => {
     return;
   }
 
-  crewHydrationPromise = hydrateCrewFromSupabase()
-    .then(() => {
-      crewLoaded = true;
+  const epoch = crewHydrationEpoch;
+  const request = hydrateCrewFromSupabase(epoch);
+  crewHydrationPromise = request;
+
+  void request
+    .then((didLoad) => {
+      if (didLoad && epoch === crewHydrationEpoch) {
+        crewLoaded = true;
+      }
     })
     .catch((error) => {
       console.warn('Nepodarilo se nacist crew ze Supabase, zustavam na lokalnich datech.', error);
     })
     .finally(() => {
-      crewHydrationPromise = null;
+      if (crewHydrationPromise === request) {
+        crewHydrationPromise = null;
+      }
     });
 };
 
@@ -419,6 +442,7 @@ export const subscribeToCrewChanges = (listener: () => void): (() => void) => {
 };
 
 export const resetSupabaseCrewHydration = () => {
+  crewHydrationEpoch += 1;
   crewHydrationPromise = null;
   crewLoaded = false;
 };

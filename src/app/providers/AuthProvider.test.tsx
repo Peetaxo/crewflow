@@ -11,6 +11,8 @@ const onAuthStateChangeMock = vi.fn(() => ({
   data: { subscription: { unsubscribe: vi.fn() } },
 }));
 const clearPersistedUiSessionMock = vi.fn();
+const getContractorsMock = vi.fn(() => []);
+const resetSupabaseDataScopeMock = vi.fn(async () => undefined);
 let rolesData: Array<{ role: string }> = [];
 const fromMock = vi.fn((table: string) => ({
   select: () => ({
@@ -31,8 +33,13 @@ vi.mock('../../lib/app-config', () => ({
 }));
 
 vi.mock('../../features/crew/services/crew.service', () => ({
-  getContractors: () => [],
+  getContractors: () => getContractorsMock(),
+  resetSupabaseCrewHydration: vi.fn(),
   subscribeToCrewChanges: () => () => {},
+}));
+
+vi.mock('./reset-supabase-data-scope', () => ({
+  resetSupabaseDataScope: () => resetSupabaseDataScopeMock(),
 }));
 
 vi.mock('../../lib/supabase', () => ({
@@ -58,7 +65,7 @@ const Probe = () => {
   return (
     <>
       <div data-testid="role">{role ?? 'none'}</div>
-      <button onClick={() => { void switchRole('crewhead'); }}>Switch to CrewHead</button>
+      <button onClick={() => { void switchRole('crewhead').catch(() => undefined); }}>Switch to CrewHead</button>
       <button onClick={() => { void signOut(); }}>Sign out</button>
     </>
   );
@@ -117,6 +124,29 @@ describe('AuthProvider', () => {
     await waitFor(() => {
       expect(rpcMock).toHaveBeenCalledWith('set_current_user_role', { p_role: 'crewhead' });
       expect(screen.getByTestId('role')).toHaveTextContent('crewhead');
+      expect(resetSupabaseDataScopeMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('keeps the previous role and data scope when the role RPC fails', async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: { message: 'role conflict' } });
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('role')).toHaveTextContent('coo');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Switch to CrewHead' }));
+
+    await waitFor(() => {
+      expect(rpcMock).toHaveBeenCalledWith('set_current_user_role', { p_role: 'crewhead' });
+      expect(screen.getByTestId('role')).toHaveTextContent('coo');
+      expect(resetSupabaseDataScopeMock).not.toHaveBeenCalled();
     });
   });
 });

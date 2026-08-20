@@ -8,8 +8,9 @@ describe('timelog permissions', () => {
   it.each([
     ['crew', 'draft', true],
     ['crew', 'rejected', true],
+    ['crew', 'pending_crew_confirmation', true],
     ['crew', 'pending_ch', false],
-    ['crewhead', 'draft', true],
+    ['crewhead', 'draft', false],
     ['crewhead', 'pending_ch', true],
     ['crewhead', 'pending_coo', false],
     ['coo', 'draft', false],
@@ -28,8 +29,9 @@ describe('timelog permissions', () => {
   it.each([
     ['crew', 'draft', true],
     ['crew', 'rejected', true],
+    ['crew', 'pending_crew_confirmation', true],
     ['crew', 'pending_ch', false],
-    ['crewhead', 'draft', true],
+    ['crewhead', 'draft', false],
     ['crewhead', 'rejected', false],
     ['coo', 'draft', false],
   ] satisfies [Role, TimelogStatus, boolean][])('returns submit permission for %s and %s', (role, status, expected) => {

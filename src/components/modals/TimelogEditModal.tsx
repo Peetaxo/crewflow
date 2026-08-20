@@ -1,12 +1,15 @@
 import React from 'react';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Plus, Send, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { useAppContext } from '../../context/useAppContext';
 import { useIsMobile } from '../../hooks/use-mobile';
+import { MEAL_CONFIG, PHASE_CONFIG } from '../../constants';
 import { KM_RATE } from '../../data';
-import { calculateTotalHours, formatCurrency } from '../../utils';
+import { calculateMealAllowance, calculateTotalHours, formatCurrency, normalizeMealSelection } from '../../utils';
 import { getTimelogDependencies, saveTimelog } from '../../features/timelogs/services/timelogs.service';
+import { buildTimelogChangeSummary } from '../../features/timelogs/services/timelog-change-summary';
+import { canSubmitTimelog } from '../../features/timelogs/services/timelog-permissions';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
@@ -22,7 +25,7 @@ const TimelogEditModal = () => {
   } = useAppContext();
   const isMobile = useIsMobile();
 
-  if (isMobile && role === 'crew') {
+  if (isMobile) {
     return <MobileTimelogEditModal />;
   }
 
@@ -31,16 +34,40 @@ const TimelogEditModal = () => {
   const { contractors, events } = getTimelogDependencies();
   const contractor = contractors.find((item) => item.profileId === editingTimelog.contractorProfileId)
     ?? null;
-  const event = events.find((item) => item.id === editingTimelog.eid) ?? null;
+  const event = events.find((item) => item.id === editingTimelog.eid || item.supabaseId === editingTimelog.eid) ?? null;
   if (!contractor || !event) return null;
 
   const totalHours = calculateTotalHours(editingTimelog.days);
+  const mealAllowanceEnabled = Boolean(event.mealAllowanceEnabled);
+  const totalMealAllowance = calculateMealAllowance(editingTimelog.days, { enabled: mealAllowanceEnabled });
   const isCrewHeadCorrection = role === 'crewhead' && editingTimelog.status === 'pending_ch';
+  const isCrewWorkflow = role === 'crew';
+  const canSubmitCurrentTimelog = isCrewWorkflow && canSubmitTimelog(editingTimelog, role);
+  const changeSummary = buildTimelogChangeSummary(editingTimelog);
+  const showCrewConfirmationChanges = editingTimelog.status === 'pending_crew_confirmation' && changeSummary.length > 0;
+  const showReturnedNotice = editingTimelog.status === 'rejected';
+  const correctionNote = editingTimelog.reviewNote?.trim() || '';
+  const returnedNote = editingTimelog.reviewNote?.trim() || '';
+  const saveButtonLabel = isCrewHeadCorrection ? 'Odeslat k potvrzení Crew' : 'Uložit změny';
+  const submitButtonLabel = editingTimelog.status === 'pending_crew_confirmation'
+    ? 'Potvrdit a odeslat'
+    : editingTimelog.status === 'rejected'
+      ? 'Odeslat znovu'
+      : 'Odeslat ke kontrole';
   const openContractorDetail = () => {
     if (!contractor.profileId) return;
     setEditingTimelog(null);
     setSelectedContractorProfileId(contractor.profileId);
     setCurrentTab('crew');
+  };
+
+  const submitTimelogForReview = async () => {
+    try {
+      await saveTimelog({ ...editingTimelog, status: 'pending_ch' });
+      setEditingTimelog(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Nepodařilo se odeslat výkaz ke kontrole.');
+    }
   };
 
   const resolveExpectedDay = (day: typeof editingTimelog.days[number]) => {
@@ -107,7 +134,7 @@ const TimelogEditModal = () => {
               <div className="mt-1 flex items-center justify-between">
                 <div className="text-xs text-[color:var(--nodu-text-soft)]">Odměna</div>
                 <div className="text-sm font-semibold text-[color:var(--nodu-text)]">
-                  {formatCurrency(totalHours * contractor.rate)}
+                  {formatCurrency(totalHours * contractor.rate + totalMealAllowance)}
                 </div>
               </div>
               {editingTimelog.km > 0 && (
@@ -119,6 +146,47 @@ const TimelogEditModal = () => {
                 </div>
               )}
             </div>
+
+            {showCrewConfirmationChanges && (
+              <div className="rounded-[18px] border border-[color:rgb(var(--nodu-accent-rgb)/0.24)] bg-[color:rgb(var(--nodu-accent-rgb)/0.07)] p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--nodu-accent)]">
+                    Upraveno CH
+                  </div>
+                  <div className="text-[11px] font-semibold text-[color:var(--nodu-text-soft)]">
+                    Čeká na tvoje potvrzení
+                  </div>
+                </div>
+                <div className="mt-2 space-y-1 text-xs font-medium text-[color:var(--nodu-text)]">
+                  {changeSummary.map((change) => (
+                    <div key={change}>{change}</div>
+                  ))}
+                  {correctionNote && (
+                    <div className="rounded-[12px] bg-[color:rgb(var(--nodu-surface-rgb)/0.72)] px-3 py-2 text-[color:var(--nodu-text)]">
+                      {correctionNote}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {showReturnedNotice && (
+              <div className="rounded-[18px] border border-[color:var(--nodu-error-border)] bg-[color:var(--nodu-error-bg)] p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--nodu-error-text)]">
+                    Vráceno k opravě
+                  </div>
+                  <div className="text-[11px] font-semibold text-[color:var(--nodu-text-soft)]">
+                    Uprav výkaz a odešli ho znovu ke kontrole.
+                  </div>
+                </div>
+                {returnedNote && (
+                  <div className="mt-2 rounded-[14px] bg-[color:rgb(var(--nodu-surface-rgb)/0.76)] px-3 py-2 text-xs font-medium text-[color:var(--nodu-text)]">
+                    {returnedNote}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div>
               <label className="mb-2 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">Dny</label>
@@ -180,9 +248,9 @@ const TimelogEditModal = () => {
                           }}
                           className="w-28 rounded-xl border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.88)] px-2 py-2 text-[10px] text-[color:var(--nodu-text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] outline-none focus:border-[color:rgb(var(--nodu-accent-rgb)/0.32)]"
                         >
-                          <option value="instal">Instal</option>
-                          <option value="provoz">Provoz</option>
-                          <option value="deinstal">Deinstal</option>
+                          {PHASE_CONFIG.map((phase) => (
+                            <option key={phase.type} value={phase.type}>{phase.label}</option>
+                          ))}
                         </select>
                         <button
                           onClick={() => {
@@ -194,6 +262,45 @@ const TimelogEditModal = () => {
                           <Trash2 size={14} />
                         </button>
                       </div>
+                      {mealAllowanceEnabled && (
+                        <div className="mt-2" role="group" aria-label={`Jídlo ${idx + 1}`}>
+                          <div className="mb-1 text-[10px] uppercase tracking-[0.2em] text-[color:var(--nodu-text-soft)]">Jídlo</div>
+                          <div className="grid grid-cols-2 gap-2">
+                            {MEAL_CONFIG.map((meal) => {
+                              const selectedMeals = normalizeMealSelection(day);
+                              const isSelected = selectedMeals.includes(meal.type);
+                              const nextMeals = isSelected
+                                ? selectedMeals.filter((selectedMeal) => selectedMeal !== meal.type)
+                                : [...selectedMeals, meal.type];
+
+                              return (
+                                <button
+                                  key={meal.type}
+                                  type="button"
+                                  aria-pressed={isSelected}
+                                  onClick={() => {
+                                    const newDays = [...editingTimelog.days];
+                                    newDays[idx] = {
+                                      ...newDays[idx],
+                                      meals: nextMeals,
+                                      meal: nextMeals[0] ?? null,
+                                    };
+                                    setEditingTimelog({ ...editingTimelog, days: newDays });
+                                  }}
+                                  className={[
+                                    'min-h-10 rounded-xl border px-3 text-xs font-semibold transition',
+                                    isSelected
+                                      ? 'border-[color:rgb(var(--nodu-accent-rgb)/0.4)] bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)]'
+                                      : 'border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.9)] text-[color:var(--nodu-text)] hover:border-[color:rgb(var(--nodu-accent-rgb)/0.22)]',
+                                  ].join(' ')}
+                                >
+                                  {meal.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                       <Input
                         value={day.note ?? ''}
                         onChange={(e) => {
@@ -249,13 +356,26 @@ const TimelogEditModal = () => {
               </div>
             </div>
 
+            {isCrewHeadCorrection && (
+              <div className="rounded-2xl border border-[color:rgb(var(--nodu-text-rgb)/0.08)] bg-[color:rgb(var(--nodu-text-rgb)/0.03)] p-3">
+                <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">
+                  Poznámka Crew
+                </div>
+                <p className="text-sm font-semibold text-[color:var(--nodu-text)]">
+                  {editingTimelog.note.trim() || 'Crew nepřidala poznámku.'}
+                </p>
+              </div>
+            )}
+
             <div>
               <label className="mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">
                 {isCrewHeadCorrection ? 'Poznámka pro Crew' : 'Poznámka'}
               </label>
               <Textarea
-                value={editingTimelog.note}
-                onChange={(e) => setEditingTimelog({ ...editingTimelog, note: e.target.value })}
+                value={isCrewHeadCorrection ? editingTimelog.reviewNote ?? '' : editingTimelog.note}
+                onChange={(e) => setEditingTimelog(isCrewHeadCorrection
+                  ? { ...editingTimelog, reviewNote: e.target.value }
+                  : { ...editingTimelog, note: e.target.value })}
                 className="h-20 resize-none"
                 placeholder={isCrewHeadCorrection ? 'Doplňte komentář k úpravě pro člena Crew...' : 'Doplňte detaily...'}
               />
@@ -273,7 +393,9 @@ const TimelogEditModal = () => {
             <Button
               onClick={async () => {
                 try {
-                  await saveTimelog(editingTimelog);
+                  await saveTimelog(isCrewHeadCorrection
+                    ? { ...editingTimelog, status: 'pending_crew_confirmation' }
+                    : editingTimelog);
                   setEditingTimelog(null);
                 } catch (error) {
                   toast.error(error instanceof Error ? error.message : 'Nepodařilo se uložit výkaz.');
@@ -281,8 +403,16 @@ const TimelogEditModal = () => {
               }}
               className="flex-1"
             >
-              Uložit změny
+              {saveButtonLabel}
             </Button>
+            {canSubmitCurrentTimelog && (
+              <Button
+                onClick={() => { void submitTimelogForReview(); }}
+                className="flex-1"
+              >
+                <Send size={16} /> {submitButtonLabel}
+              </Button>
+            )}
           </div>
         </motion.div>
       </div>

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Clock, Copy, FileText, MapPin, Receipt, Shirt, Trash2, User, Users, X } from 'lucide-react';
+import { ArrowLeft, Clock, Copy, FileText, MapPin, Phone, Receipt, Shirt, Trash2, User, Users, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { useAppContext } from '../context/useAppContext';
@@ -7,13 +7,14 @@ import { useAuth } from '../app/providers/useAuth';
 import { useIsMobile } from '../hooks/use-mobile';
 import { KM_RATE } from '../data';
 import { appDataSource } from '../lib/app-config';
-import { PHASE_CONFIG } from '../constants';
-import { calculateDayHours, calculateTotalHours, formatCurrency, formatDateRange, formatShortDate, getDatesBetween, getEventStatus } from '../utils';
+import { MEAL_CONFIG, PHASE_CONFIG } from '../constants';
+import { calculateDayHours, calculateMealAllowance, calculateTotalHours, formatCurrency, formatDateRange, formatShortDate, getDatesBetween, getEventStatus, normalizeMealSelection } from '../utils';
 import { Button } from '../components/ui/button';
 import StatusBadge from '../components/shared/StatusBadge';
 import EventEditModal from '../components/modals/EventEditModal';
 import AssignCrewModal from '../components/modals/AssignCrewModal';
 import EventCrewRatingPanel from '../features/crew/components/EventCrewRatingPanel';
+import EventMapPreview from '../features/events/components/EventMapPreview';
 import { getCrewRatingsForEvent } from '../features/crew/services/crew-ratings.service';
 import { Contractor, Event, InvoiceApprovalDocument, Timelog } from '../types';
 import {
@@ -32,13 +33,41 @@ import {
 import { buildGoogleMapsSearchUrl, getEventAddressLabel } from '../features/events/services/event-location.service';
 import { useInvoiceApprovalsQuery } from '../features/invoices/queries/useInvoiceApprovalsQuery';
 import { getEventApprovalDocuments } from '../features/invoices/services/invoice-approval-sync.service';
-import { updateTimelogStatus } from '../features/timelogs/services/timelogs.service';
-import { canCreateTimelog, canEditTimelog } from '../features/timelogs/services/timelog-permissions';
+import { subscribeToTimelogChanges, updateTimelogStatus } from '../features/timelogs/services/timelogs.service';
+import { canCreateTimelog, canEditTimelog, canOpenTimelogDetail } from '../features/timelogs/services/timelog-permissions';
 import { isDisposableTimelogStatus } from '../features/events/services/event-assignment-lifecycle.service';
 import { createEmptyReceipt } from '../features/receipts/services/receipts.service';
 
 const EMPTY_APPROVAL_DOCUMENTS: InvoiceApprovalDocument[] = [];
 const CREW_ACTION_NAVIGATION_GUARD_MESSAGE = 'Probíhá změna v obsazení Crew. Počkejte prosím na její dokončení.';
+const MOBILE_EDGE_SWIPE_START_MAX_X = 96;
+const MOBILE_EDGE_SWIPE_MIN_DISTANCE = 64;
+const MOBILE_EDGE_SWIPE_MAX_VERTICAL_DRIFT = 48;
+const MOBILE_EVENT_DETAIL_CLOSE_ANIMATION_MS = 180;
+const MOBILE_EVENT_DETAIL_HISTORY_KEY = 'noduMobileEventDetailId';
+const MOBILE_EVENT_SWIPE_INTERACTIVE_SELECTOR = [
+  'button',
+  'a',
+  'input',
+  'select',
+  'textarea',
+  'label',
+  '[role="button"]',
+  '[role="link"]',
+  '[data-mobile-event-swipe-ignore="true"]',
+].join(',');
+const shouldIgnoreMobileEventSwipeTarget = (target: EventTarget | null) => (
+  target instanceof Element && Boolean(target.closest(MOBILE_EVENT_SWIPE_INTERACTIVE_SELECTOR))
+);
+
+const normalizeContactName = (name: string) => (
+  name.trim().toLocaleLowerCase('cs-CZ')
+);
+
+const buildPhoneHref = (phone: string) => {
+  const normalizedPhone = phone.replace(/[^\d+]/g, '');
+  return normalizedPhone ? `tel:${normalizedPhone}` : null;
+};
 
 const getApprovalDocumentBadgeStatus = (document: InvoiceApprovalDocument) => (
   document.approvalStatus === 'unknown' ? 'needs_review' : document.approvalStatus
@@ -52,6 +81,33 @@ const getApprovalDocumentPersonLabel = (document: InvoiceApprovalDocument) => {
 
   return parsedPerson || document.supplierName || '-';
 };
+
+type TimelogApprovalAction = 'sub' | 'ch' | 'coo' | 'rej';
+
+const getTimelogApprovalAction = (timelog: Timelog): Exclude<TimelogApprovalAction, 'rej'> | null => {
+  if (timelog.status === 'draft') return 'sub';
+  if (timelog.status === 'pending_ch') return 'ch';
+  if (timelog.status === 'pending_coo') return 'coo';
+  return null;
+};
+
+const sortTimelogDaysForDisplay = (days: Timelog['days']) => (
+  [...days].sort((first, second) => (
+    `${first.d}${first.f}${first.t}${first.type}${normalizeMealSelection(first).join(',')}`.localeCompare(`${second.d}${second.f}${second.t}${second.type}${normalizeMealSelection(second).join(',')}`)
+  ))
+);
+
+const prepareApprovalTimelogs = (timelogs: Timelog[]): Timelog[] => (
+  timelogs
+    .map((timelog) => ({
+      ...timelog,
+      days: sortTimelogDaysForDisplay(timelog.days),
+    }))
+    .sort((first, second) => (
+      (first.contractorProfileId ?? '').localeCompare(second.contractorProfileId ?? '')
+      || first.id - second.id
+    ))
+);
 
 const EventDetailView = () => {
   const {
@@ -73,9 +129,19 @@ const EventDetailView = () => {
   const [applicationDraftTimes, setApplicationDraftTimes] = useState({ from: '', to: '' });
   const [crewPanelTab, setCrewPanelTab] = useState<'assigned' | 'approval'>('assigned');
   const [showWithdrawalConfirm, setShowWithdrawalConfirm] = useState(false);
+  const [showContactDialog, setShowContactDialog] = useState(false);
+  const [showMobileApprovalDialog, setShowMobileApprovalDialog] = useState(false);
+  const [selectedMobileCrewProfileId, setSelectedMobileCrewProfileId] = useState<string | null>(null);
+  const [showMobileCrewRemoveConfirm, setShowMobileCrewRemoveConfirm] = useState(false);
   const [pendingCrewAction, setPendingCrewAction] = useState<string | null>(null);
   const pendingCrewActionRef = useRef<string | null>(null);
   const isMountedRef = useRef(false);
+  const [mobileEdgeSwipeOffset, setMobileEdgeSwipeOffset] = useState(0);
+  const [mobileEdgeSwipePhase, setMobileEdgeSwipePhase] = useState<'idle' | 'dragging' | 'closing'>('idle');
+  const mobileEdgeSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
+  const mobileHistoryEventIdRef = useRef<string | number | null>(null);
+  const mobileCloseTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const mobileDetailRef = useRef<HTMLDivElement | null>(null);
   const invoiceApprovalsQuery = useInvoiceApprovalsQuery();
   const anyCrewActionPending = pendingCrewAction !== null;
 
@@ -104,9 +170,9 @@ const EventDetailView = () => {
   }, []);
 
   useEffect(() => {
-    setNavigationGuardMessage(anyCrewActionPending ? CREW_ACTION_NAVIGATION_GUARD_MESSAGE : null);
+    setNavigationGuardMessage?.(anyCrewActionPending ? CREW_ACTION_NAVIGATION_GUARD_MESSAGE : null);
     return () => {
-      setNavigationGuardMessage(null);
+      setNavigationGuardMessage?.(null);
     };
   }, [anyCrewActionPending, setNavigationGuardMessage]);
 
@@ -115,6 +181,7 @@ const EventDetailView = () => {
   }, [loadDetail]);
 
   useEffect(() => subscribeToEventChanges(loadDetail), [loadDetail]);
+  useEffect(() => subscribeToTimelogChanges(loadDetail), [loadDetail]);
 
   useEffect(() => {
     if (selectedEventId && !detail.event) {
@@ -128,6 +195,186 @@ const EventDetailView = () => {
     }
   }, [eventTab]);
 
+  useEffect(() => {
+    if (!isMobile || !selectedEventId || !detail.event) return;
+
+    mobileDetailRef.current?.scrollTo?.({ top: 0, left: 0 });
+  }, [detail.event, isMobile, selectedEventId]);
+
+  const scheduleMobileEventDetailClose = useCallback((shouldPopHistory = false) => {
+    if (mobileCloseTimeoutRef.current) {
+      window.clearTimeout(mobileCloseTimeoutRef.current);
+    }
+
+    mobileEdgeSwipeStartRef.current = null;
+    setMobileEdgeSwipePhase('closing');
+    setMobileEdgeSwipeOffset(window.innerWidth || 390);
+
+    mobileCloseTimeoutRef.current = window.setTimeout(() => {
+      mobileCloseTimeoutRef.current = null;
+      setSelectedEventId(null);
+
+      if (shouldPopHistory) {
+        window.history.back();
+      }
+    }, MOBILE_EVENT_DETAIL_CLOSE_ANIMATION_MS);
+  }, [setSelectedEventId]);
+
+  useEffect(() => () => {
+    if (mobileCloseTimeoutRef.current) {
+      window.clearTimeout(mobileCloseTimeoutRef.current);
+      mobileCloseTimeoutRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isMobile || selectedEventId == null || !detail.event) return undefined;
+
+    if (mobileHistoryEventIdRef.current !== selectedEventId) {
+      window.history.pushState(
+        { ...(window.history.state ?? {}), [MOBILE_EVENT_DETAIL_HISTORY_KEY]: selectedEventId },
+        '',
+        window.location.href,
+      );
+      mobileHistoryEventIdRef.current = selectedEventId;
+    }
+
+    const handlePopState = () => {
+      mobileHistoryEventIdRef.current = null;
+      scheduleMobileEventDetailClose(false);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [detail.event, isMobile, scheduleMobileEventDetailClose, selectedEventId]);
+
+  const closeMobileEventDetail = useCallback(() => {
+    const shouldPopHistory = (
+      isMobile
+      && selectedEventId != null
+      && window.history.state?.[MOBILE_EVENT_DETAIL_HISTORY_KEY] === selectedEventId
+    );
+
+    scheduleMobileEventDetailClose(shouldPopHistory);
+  }, [isMobile, scheduleMobileEventDetailClose, selectedEventId]);
+
+  const resetMobileEdgeSwipe = useCallback(() => {
+    mobileEdgeSwipeStartRef.current = null;
+    setMobileEdgeSwipeOffset(0);
+    setMobileEdgeSwipePhase('idle');
+  }, []);
+
+  const startMobileEdgeSwipe = useCallback((clientX: number, clientY: number, target: EventTarget | null = null) => {
+    if (shouldIgnoreMobileEventSwipeTarget(target)) {
+      resetMobileEdgeSwipe();
+      return;
+    }
+
+    if (clientX > MOBILE_EDGE_SWIPE_START_MAX_X) {
+      resetMobileEdgeSwipe();
+      return;
+    }
+
+    mobileEdgeSwipeStartRef.current = { x: clientX, y: clientY };
+    setMobileEdgeSwipeOffset(0);
+    setMobileEdgeSwipePhase('dragging');
+  }, [resetMobileEdgeSwipe]);
+
+  const completeMobileEdgeSwipe = useCallback((clientX: number, clientY: number, shouldFinalize = false) => {
+    const touchStart = mobileEdgeSwipeStartRef.current;
+
+    if (!touchStart) return false;
+
+    const deltaX = clientX - touchStart.x;
+    const deltaY = Math.abs(clientY - touchStart.y);
+
+    if (deltaY > MOBILE_EDGE_SWIPE_MAX_VERTICAL_DRIFT) {
+      resetMobileEdgeSwipe();
+      return false;
+    }
+
+    const swipeOffset = Math.max(0, deltaX);
+    setMobileEdgeSwipeOffset(Math.min(swipeOffset, window.innerWidth || 390));
+
+    if (shouldFinalize) {
+      mobileEdgeSwipeStartRef.current = null;
+      setMobileEdgeSwipePhase('idle');
+
+      if (deltaX >= MOBILE_EDGE_SWIPE_MIN_DISTANCE && deltaY <= MOBILE_EDGE_SWIPE_MAX_VERTICAL_DRIFT) {
+        closeMobileEventDetail();
+        return true;
+      }
+
+      setMobileEdgeSwipeOffset(0);
+    }
+
+    return swipeOffset > 0;
+  }, [closeMobileEventDetail, resetMobileEdgeSwipe]);
+
+  const finishMobileEdgeSwipe = useCallback((clientX: number, clientY: number) => {
+    completeMobileEdgeSwipe(clientX, clientY, true);
+  }, [completeMobileEdgeSwipe]);
+
+  useEffect(() => {
+    if (!isMobile || selectedEventId == null || !detail.event) return undefined;
+
+    const handleWindowTouchStart = (touchEvent: TouchEvent) => {
+      const touch = touchEvent.touches[0];
+
+      if (!touch) {
+        resetMobileEdgeSwipe();
+        return;
+      }
+
+      startMobileEdgeSwipe(touch.clientX, touch.clientY, touchEvent.target);
+    };
+
+    const handleWindowTouchMove = (touchEvent: TouchEvent) => {
+      const touch = touchEvent.touches[0];
+
+      if (!touch) return;
+
+      if (completeMobileEdgeSwipe(touch.clientX, touch.clientY)) {
+        touchEvent.preventDefault();
+      }
+    };
+
+    const handleWindowTouchEnd = (touchEvent: TouchEvent) => {
+      const touch = touchEvent.changedTouches[0];
+
+      if (!touch) {
+        resetMobileEdgeSwipe();
+        return;
+      }
+
+      finishMobileEdgeSwipe(touch.clientX, touch.clientY);
+    };
+
+    const listenerOptions = { capture: true, passive: false } as AddEventListenerOptions;
+
+    window.addEventListener('touchstart', handleWindowTouchStart, listenerOptions);
+    window.addEventListener('touchmove', handleWindowTouchMove, listenerOptions);
+    window.addEventListener('touchend', handleWindowTouchEnd, listenerOptions);
+    window.addEventListener('touchcancel', resetMobileEdgeSwipe, listenerOptions);
+
+    return () => {
+      window.removeEventListener('touchstart', handleWindowTouchStart, listenerOptions);
+      window.removeEventListener('touchmove', handleWindowTouchMove, listenerOptions);
+      window.removeEventListener('touchend', handleWindowTouchEnd, listenerOptions);
+      window.removeEventListener('touchcancel', resetMobileEdgeSwipe, listenerOptions);
+    };
+  }, [
+    completeMobileEdgeSwipe,
+    detail.event,
+    finishMobileEdgeSwipe,
+    isMobile,
+    resetMobileEdgeSwipe,
+    selectedEventId,
+    startMobileEdgeSwipe,
+  ]);
+
   const event = detail.event;
   const approvalDocuments = invoiceApprovalsQuery.data ?? EMPTY_APPROVAL_DOCUMENTS;
   const eventApprovalDocuments = useMemo(() => (
@@ -137,13 +384,14 @@ const EventDetailView = () => {
   if (!event) return null;
 
   const eventStatus = getEventStatus(event);
+  const mealAllowanceEnabled = Boolean(event.mealAllowanceEnabled);
   const eventTimelogs = detail.timelogs;
   const eventReceipts = detail.receipts;
   const contractors = detail.contractors;
   const totalHours = eventTimelogs.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
   const totalCrewCost = eventTimelogs.reduce((sum, timelog) => {
     const contractor = contractors.find((item) => item.profileId === timelog.contractorProfileId);
-    return sum + (contractor ? calculateTotalHours(timelog.days) * contractor.rate : 0);
+    return sum + (contractor ? calculateTotalHours(timelog.days) * contractor.rate + calculateMealAllowance(timelog.days, { enabled: mealAllowanceEnabled }) : 0);
   }, 0);
   const totalTravelCost = eventTimelogs.reduce((sum, timelog) => sum + timelog.km * KM_RATE, 0);
   const totalReceiptCost = eventReceipts.reduce((sum, receipt) => sum + receipt.amount, 0);
@@ -156,6 +404,17 @@ const EventDetailView = () => {
   const currentContractor = currentProfileId
     ? contractors.find((item) => item.profileId === currentProfileId) ?? null
     : null;
+  const rawContactPersonName = event.contactPerson?.trim() ?? '';
+  const contactProfileFromId = event.contactProfileId
+    ? contractors.find((item) => item.profileId === event.contactProfileId) ?? null
+    : null;
+  const contactProfileFromName = !contactProfileFromId && rawContactPersonName
+    ? contractors.find((item) => normalizeContactName(item.name) === normalizeContactName(rawContactPersonName)) ?? null
+    : null;
+  const contactPersonProfile = contactProfileFromId ?? contactProfileFromName;
+  const contactPersonName = contactPersonProfile?.name ?? rawContactPersonName;
+  const contactPhone = contactPersonProfile?.phone.trim() || event.contactPhone?.trim() || '';
+  const contactPhoneHref = contactPhone ? buildPhoneHref(contactPhone) : null;
   const visibleEventCrew = isCrewRole && currentProfileId
     ? eventCrew.filter((contractor) => contractor.profileId === currentProfileId)
     : eventCrew;
@@ -172,8 +431,9 @@ const EventDetailView = () => {
     : [];
   const visibleReceipts = isCrewRole ? myReceipts : eventReceipts;
   const myHours = myTimelogs.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
+  const myMealAllowance = myTimelogs.reduce((sum, timelog) => sum + calculateMealAllowance(timelog.days, { enabled: mealAllowanceEnabled }), 0);
   const myTravelCost = myTimelogs.reduce((sum, timelog) => sum + timelog.km * KM_RATE, 0);
-  const myProjectedProfit = myHours * (currentContractor?.rate ?? 0) + myTravelCost;
+  const myProjectedProfit = myHours * (currentContractor?.rate ?? 0) + myMealAllowance + myTravelCost;
   const pendingApplications = (detail.applications ?? [])
     .filter((application) => (
       application.status === 'pending'
@@ -204,13 +464,15 @@ const EventDetailView = () => {
     from: applicationDraftTimes.from || event.startTime || '08:00',
     to: applicationDraftTimes.to || event.endTime || '17:00',
   };
+  const canShowApprovalTimelog = (timelog: Timelog) => {
+    if (timelog.status === 'pending_ch' || timelog.status === 'pending_crew_confirmation') return role === 'crewhead';
+    if (timelog.status === 'pending_coo') return role === 'coo';
+    return false;
+  };
   const eventApprovalTimelogs = canManageEvents
-    ? eventTimelogs.filter((timelog) => (
-        role === 'crewhead'
-          ? timelog.status === 'draft' || timelog.status === 'pending_ch'
-          : timelog.status === 'pending_coo'
-      ))
+    ? prepareApprovalTimelogs(eventTimelogs.filter(canShowApprovalTimelog))
     : [];
+
   const getPhasesForDate = (date: string) => (
     event.showDayTypes
       ? PHASE_CONFIG.filter((phase) => (
@@ -223,19 +485,30 @@ const EventDetailView = () => {
   const handleRemoveFromEvent = async (contractorProfileId: string | undefined) => {
     if (!contractorProfileId) {
       toast.error('Nepodařilo se dohledat UUID identitu člena crew.');
-      return;
+      return false;
+    }
+
+    const matchingTimelogs = eventTimelogs.filter((timelog) => timelog.contractorProfileId === contractorProfileId);
+    if (matchingTimelogs.some((timelog) => !isDisposableTimelogStatus(timelog.status))) {
+      toast.error('Výkaz je ve schvalování. Nejdřív ho vrať nebo dořeš, potom půjde člena vyřadit.');
+      return false;
     }
 
     const actionKey = `remove:${contractorProfileId}`;
-    if (!beginCrewAction(actionKey)) return;
+    if (!beginCrewAction(actionKey)) return false;
 
     try {
       await removeContractorFromEvent(event.id, contractorProfileId);
-      if (isMountedRef.current) loadDetail();
+      if (isMountedRef.current) {
+        toast.success('Člen crew byl vyřazen z akce.');
+        loadDetail();
+      }
+      return true;
     } catch (error) {
       if (isMountedRef.current) {
         toast.error(error instanceof Error ? error.message : 'Nepodařilo se odebrat člena crew.');
       }
+      return false;
     } finally {
       endCrewAction(actionKey);
     }
@@ -266,13 +539,13 @@ const EventDetailView = () => {
       })),
       km: 0,
       note: '',
-      status: 'draft',
+      status: role === 'crewhead' ? 'pending_ch' : 'draft',
     };
   };
 
   const openCrewTimelog = (contractor: Contractor, timelog?: Timelog) => {
     if (timelog) {
-      if (!canEditTimelog(timelog, role)) return;
+      if (!canOpenTimelogDetail(timelog, role)) return;
       setEditingTimelog(timelog);
       return;
     }
@@ -400,18 +673,113 @@ const EventDetailView = () => {
     setEditingEvent(createEventCopy(event));
   };
 
-  const handleTimelogApprovalAction = (timelogId: number, action: 'sub' | 'ch' | 'coo' | 'rej') => {
-    void updateTimelogStatus(timelogId, action)
+  const handleTimelogApprovalAction = (timelog: Timelog, action?: TimelogApprovalAction) => {
+    if (action === 'rej' && timelog.status === 'draft') return;
+
+    const resolvedAction = action ?? getTimelogApprovalAction(timelog);
+    if (!resolvedAction) return;
+
+    void updateTimelogStatus(timelog.id, resolvedAction)
       .then(loadDetail)
       .catch((error) => {
         toast.error(error instanceof Error ? error.message : 'Nepodarilo se aktualizovat vykaz.');
       });
   };
 
-  if (isCrewRole && isMobile) {
+  const handleMobileDetailTouchStart = (touchEvent: React.TouchEvent<HTMLDivElement>) => {
+    const touch = touchEvent.touches[0];
+
+    if (!touch) {
+      resetMobileEdgeSwipe();
+      return;
+    }
+
+    startMobileEdgeSwipe(touch.clientX, touch.clientY, touchEvent.target);
+  };
+
+  const handleMobileDetailTouchMove = (touchEvent: React.TouchEvent<HTMLDivElement>) => {
+    const touch = touchEvent.touches[0];
+
+    if (!touch) return;
+
+    if (completeMobileEdgeSwipe(touch.clientX, touch.clientY)) {
+      touchEvent.preventDefault();
+    }
+  };
+
+  const handleMobileDetailTouchEnd = (touchEvent: React.TouchEvent<HTMLDivElement>) => {
+    const touch = touchEvent.changedTouches[0];
+
+    if (!touch) {
+      resetMobileEdgeSwipe();
+      return;
+    }
+
+    finishMobileEdgeSwipe(touch.clientX, touch.clientY);
+  };
+
+  const handleMobileDetailPointerDown = (pointerEvent: React.PointerEvent<HTMLDivElement>) => {
+    if (pointerEvent.pointerType === 'touch') return;
+
+    startMobileEdgeSwipe(pointerEvent.clientX, pointerEvent.clientY, pointerEvent.target);
+    if (mobileEdgeSwipeStartRef.current && pointerEvent.currentTarget.setPointerCapture) {
+      try {
+        pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId);
+      } catch {
+        // Some browser previews do not expose capture for synthetic pointer ids.
+      }
+    }
+  };
+
+  const handleMobileDetailPointerMove = (pointerEvent: React.PointerEvent<HTMLDivElement>) => {
+    if (pointerEvent.pointerType === 'touch') return;
+
+    if (completeMobileEdgeSwipe(pointerEvent.clientX, pointerEvent.clientY)) {
+      pointerEvent.preventDefault();
+    }
+  };
+
+  const handleMobileDetailPointerUp = (pointerEvent: React.PointerEvent<HTMLDivElement>) => {
+    if (pointerEvent.pointerType === 'touch') return;
+
+    finishMobileEdgeSwipe(pointerEvent.clientX, pointerEvent.clientY);
+    if (pointerEvent.currentTarget.releasePointerCapture) {
+      try {
+        pointerEvent.currentTarget.releasePointerCapture(pointerEvent.pointerId);
+      } catch {
+        // Capture can be missing when the pointer sequence was interrupted.
+      }
+    }
+  };
+
+  if (isMobile) {
     const canOpenNewTimelog = Boolean(currentContractor && isMeAssigned && canCreateTimelog(role));
     const ownTimelog = myTimelogs[0];
     const canUseEvidence = Boolean(currentContractor && isMeAssigned && (ownTimelog || canOpenNewTimelog));
+    const formatMobileCrewHours = (hours: number) => (hours > 0 ? `${hours.toFixed(1)}h` : '0h');
+    const selectedMobileCrew = selectedMobileCrewProfileId
+      ? eventCrew.find((contractor) => contractor.profileId === selectedMobileCrewProfileId) ?? null
+      : null;
+    const selectedMobileCrewTimelog = selectedMobileCrew
+      ? eventTimelogs.find((timelog) => timelog.contractorProfileId === selectedMobileCrew.profileId) ?? null
+      : null;
+    const selectedMobileCrewTimelogs = selectedMobileCrew
+      ? eventTimelogs.filter((timelog) => timelog.contractorProfileId === selectedMobileCrew.profileId)
+      : [];
+    const selectedMobileCrewHours = selectedMobileCrewTimelog ? calculateTotalHours(selectedMobileCrewTimelog.days) : 0;
+    const selectedMobileCrewTimelogSummary = selectedMobileCrewTimelog?.status === 'draft'
+      ? 'Rozpracované'
+      : formatMobileCrewHours(selectedMobileCrewHours);
+    const canRemoveSelectedMobileCrew = Boolean(
+      canManageEvents
+      && selectedMobileCrew
+      && selectedMobileCrewTimelogs.every((timelog) => isDisposableTimelogStatus(timelog.status)),
+    );
+    const selectedMobileCrewRemovalBlocked = Boolean(
+      canManageEvents
+      && selectedMobileCrew
+      && selectedMobileCrewTimelogs.some((timelog) => !isDisposableTimelogStatus(timelog.status)),
+    );
     const participationLabel = isMeAssigned
       ? 'Jsi přiřazen'
       : hasMyPendingApplication
@@ -419,6 +787,7 @@ const EventDetailView = () => {
         : hasMyWithdrawalRequest
           ? 'Odhlášení čeká'
           : 'Volná akce';
+    const crewCapacityLabel = `${event.filled}/${event.needed}`;
     const mobileAddress = getEventAddressLabel(event);
     const mobileMapUrl = buildGoogleMapsSearchUrl(event);
     const mobileMeetingLocation = event.meetingLocation?.trim();
@@ -432,10 +801,10 @@ const EventDetailView = () => {
     const mobileEndDateTime = `${formatMobileBoundaryDate(event.endDate)} · ${event.endTime || 'čas bude doplněn'}`;
     const floatingPanelClassName = [
       'nodu-mobile-event-floating-panel',
-      isMeAssigned ? 'nodu-mobile-event-floating-panel--actions-only' : '',
-      !isMeAssigned ? 'nodu-mobile-event-floating-panel--compact' : '',
+      canManageEvents ? 'nodu-mobile-event-floating-panel--manager' : '',
+      !canManageEvents && isMeAssigned ? 'nodu-mobile-event-floating-panel--actions-only' : '',
+      !canManageEvents && !isMeAssigned ? 'nodu-mobile-event-floating-panel--compact' : '',
     ].filter(Boolean).join(' ');
-    const formatMobileCrewHours = (hours: number) => (hours > 0 ? `${hours.toFixed(1)}h` : '0h');
     const handleOpenEvidence = () => {
       if (!currentContractor) return;
       openCrewTimelog(currentContractor, ownTimelog);
@@ -444,14 +813,242 @@ const EventDetailView = () => {
       setShowWithdrawalConfirm(false);
       handleRequestWithdrawal();
     };
+    const handleOpenMobileApproval = () => {
+      setShowMobileApprovalDialog(true);
+    };
+    const handleOpenMobileCrewDetail = (contractor: Contractor) => {
+      if (!canManageEvents) return;
+      if (!contractor.profileId) {
+        toast.error('Nepodařilo se dohledat UUID identitu člena crew.');
+        return;
+      }
+
+      setSelectedMobileCrewProfileId(contractor.profileId);
+      setShowMobileCrewRemoveConfirm(false);
+    };
+    const handleConfirmMobileCrewRemoval = () => {
+      const profileId = selectedMobileCrew?.profileId;
+
+      if (!canRemoveSelectedMobileCrew || !profileId) return;
+
+      void handleRemoveFromEvent(profileId).then((removed) => {
+        if (!removed) return;
+        setShowMobileCrewRemoveConfirm(false);
+        setSelectedMobileCrewProfileId(null);
+      });
+    };
+    const hasMobileEventOverlay = Boolean(
+      showMobileApprovalDialog
+      || showWithdrawalConfirm
+      || showMobileCrewRemoveConfirm
+      || selectedMobileCrew
+      || showContactDialog,
+    );
+    const mobileSwipeOpacity = Math.max(0.86, 1 - (mobileEdgeSwipeOffset / 900));
+    const mobileSwipeSurfaceClassName = [
+      'nodu-mobile-event-swipe-surface',
+      mobileEdgeSwipePhase === 'dragging' ? 'nodu-mobile-event-swipe-surface--dragging' : '',
+      mobileEdgeSwipePhase === 'closing' ? 'nodu-mobile-event-swipe-surface--closing' : '',
+    ].filter(Boolean).join(' ');
+    const mobileSwipeSurfaceStyle = {
+      '--nodu-mobile-event-swipe-x': `${mobileEdgeSwipeOffset}px`,
+      '--nodu-mobile-event-swipe-opacity': mobileSwipeOpacity.toFixed(3),
+      '--nodu-mobile-event-swipe-transition': mobileEdgeSwipePhase === 'dragging'
+        ? 'none'
+        : 'transform 180ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms ease',
+    } as React.CSSProperties;
+    const mobilePendingApplicationsContent = canManageEvents && pendingApplications.length > 0 ? (
+      <section className="nodu-mobile-event-section" aria-labelledby="mobile-event-pending-applications-title">
+        <div className="nodu-mobile-event-section-heading">
+          <h2 id="mobile-event-pending-applications-title">Přihlášky crew</h2>
+          <span className="nodu-mobile-event-capacity-chip">{pendingApplications.length}</span>
+        </div>
+        <div className="nodu-mobile-event-management-block">
+          <div className="nodu-mobile-event-management-list">
+            {pendingApplications.map(({ application, contractor }) => {
+              const approvalPending = pendingCrewAction === `approve-application:${application.id}`;
+              const rejectionPending = pendingCrewAction === `reject-application:${application.id}`;
+
+              return (
+              <div key={application.id} className="nodu-mobile-event-management-row">
+                <div className="av h-10 w-10 text-[12px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
+                <div className="min-w-0">
+                  <div className="nodu-mobile-event-crew-name">{contractor.name}</div>
+                  <div className="nodu-mobile-event-crew-meta">
+                    {application.plannedFrom && application.plannedTo ? `${application.plannedFrom} - ${application.plannedTo}` : 'Čas není navržen'}
+                  </div>
+                </div>
+                <div className="nodu-mobile-event-management-actions">
+                  <button
+                    type="button"
+                    aria-label={`Schválit přihlášku ${contractor.name}`}
+                    className="nodu-mobile-event-icon-action nodu-mobile-event-icon-action--success"
+                    onClick={() => void handleApproveApplication(application.id)}
+                    disabled={anyCrewActionPending}
+                    aria-busy={approvalPending || undefined}
+                  >
+                    Schválit
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Zamítnout přihlášku ${contractor.name}`}
+                    className="nodu-mobile-event-icon-action nodu-mobile-event-icon-action--danger"
+                    onClick={() => void handleRejectApplication(application.id)}
+                    disabled={anyCrewActionPending}
+                    aria-busy={rejectionPending || undefined}
+                  >
+                    Zamítnout
+                  </button>
+                </div>
+              </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+    ) : null;
+    const mobileManagementApprovalContent = canManageEvents ? (
+      <section id="mobile-event-management-approval" className="nodu-mobile-event-section" aria-labelledby="mobile-event-management-workreports-title">
+        <div className="nodu-mobile-event-management-block">
+          <div id="mobile-event-management-workreports-title" className="nodu-mobile-event-management-title">
+            <FileText size={16} />
+            <span>Výkazy práce</span>
+            <strong>{eventApprovalTimelogs.length}</strong>
+          </div>
+          {eventApprovalTimelogs.length > 0 ? (
+            <div className="nodu-mobile-event-management-list">
+              {eventApprovalTimelogs.map((timelog) => {
+                const contractor = contractors.find((item) => item.profileId === timelog.contractorProfileId);
+                const totalTimelogHours = calculateTotalHours(timelog.days);
+                const approveAction = getTimelogApprovalAction(timelog);
+                const contractorName = contractor?.name ?? 'Neznámý člen crew';
+                const isWaitingForCrewConfirmation = timelog.status === 'pending_crew_confirmation';
+
+                return (
+                  <div key={timelog.id} className="nodu-mobile-event-management-row nodu-mobile-event-management-row--timelog">
+                    <div className="av h-10 w-10 text-[12px]" style={{ backgroundColor: contractor?.bg ?? '#f3f4f6', color: contractor?.fg ?? '#6b7280' }}>{contractor?.ii ?? '?'}</div>
+                    <div className="min-w-0">
+                      <div className="nodu-mobile-event-management-report-header">
+                        <div className="min-w-0">
+                          <div className="nodu-mobile-event-crew-name">{contractorName}</div>
+                          <div className="nodu-mobile-event-management-report-label">
+                            <span>Výkaz</span>
+                            <StatusBadge status={timelog.status} />
+                          </div>
+                        </div>
+                        <div className="nodu-mobile-event-management-hours">{totalTimelogHours.toFixed(1)}h</div>
+                      </div>
+                    </div>
+                    {isWaitingForCrewConfirmation && (
+                      <p className="nodu-mobile-event-management-note">Čeká na potvrzení upraveného výkazu členem Crew.</p>
+                    )}
+                    <div className="nodu-mobile-event-management-day-list">
+                      {timelog.days.map((day, index) => {
+                        const mealLabels = mealAllowanceEnabled
+                          ? normalizeMealSelection(day).map((meal) => MEAL_CONFIG.find((item) => item.type === meal)?.label ?? meal)
+                          : [];
+
+                        return (
+                          <div key={`${timelog.id}-${day.d}-${index}`} className="nodu-mobile-event-management-day-row">
+                            <div className="nodu-mobile-event-management-day-main">
+                              <span className="nodu-mobile-event-management-day-date">{formatShortDate(day.d)}</span>
+                              <span className="nodu-mobile-event-management-day-time">{day.f} - {day.t}</span>
+                              <span className="nodu-mobile-event-management-day-phase">
+                                <StatusBadge status={day.type} />
+                              </span>
+                              {mealLabels.length > 0 && (
+                                <span className="nodu-mobile-event-management-day-meal">{mealLabels.join(' + ')}</span>
+                              )}
+                            </div>
+                            <span className="nodu-mobile-event-management-day-hours">{calculateDayHours(day.f, day.t).toFixed(1)}h</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="nodu-mobile-event-management-actions">
+                      {approveAction && (
+                        <button
+                          type="button"
+                          aria-label={`Schválit výkaz ${contractorName}`}
+                          className="nodu-mobile-event-icon-action nodu-mobile-event-icon-action--success"
+                          onClick={() => handleTimelogApprovalAction(timelog, approveAction)}
+                        >
+                          Schválit
+                        </button>
+                      )}
+                      {timelog.status !== 'draft' && !isWaitingForCrewConfirmation && (
+                        <button
+                          type="button"
+                          aria-label={`Vrátit výkaz ${contractorName}`}
+                          className="nodu-mobile-event-icon-action nodu-mobile-event-icon-action--danger"
+                          onClick={() => handleTimelogApprovalAction(timelog, 'rej')}
+                        >
+                          Vrátit
+                        </button>
+                      )}
+                      {canEditTimelog(timelog, role) && (
+                        <button
+                          type="button"
+                          aria-label={`Upravit výkaz ${contractorName}`}
+                          className="nodu-mobile-event-icon-action"
+                          onClick={() => setEditingTimelog(timelog)}
+                        >
+                          Upravit
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="nodu-mobile-event-empty-state">Žádné výkazy této akce teď nečekají na schválení.</div>
+          )}
+        </div>
+      </section>
+    ) : null;
 
     return (
-      <motion.div className="nodu-mobile-event-detail" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
+      <motion.div
+        ref={mobileDetailRef}
+        className="nodu-mobile-event-detail"
+        initial={{ opacity: 0, x: 20 }}
+        animate={{ opacity: 1, x: 0 }}
+        onTouchStart={handleMobileDetailTouchStart}
+        onTouchMove={handleMobileDetailTouchMove}
+        onTouchEnd={handleMobileDetailTouchEnd}
+        onTouchCancel={() => {
+          mobileEdgeSwipeStartRef.current = null;
+        }}
+        onPointerDown={handleMobileDetailPointerDown}
+        onPointerMove={handleMobileDetailPointerMove}
+        onPointerUp={handleMobileDetailPointerUp}
+        onPointerCancel={() => {
+          resetMobileEdgeSwipe();
+        }}
+      >
+        <div
+          className="nodu-mobile-event-swipe-edge"
+          aria-hidden="true"
+          onTouchStart={handleMobileDetailTouchStart}
+          onTouchMove={handleMobileDetailTouchMove}
+          onTouchEnd={handleMobileDetailTouchEnd}
+          onTouchCancel={() => {
+            resetMobileEdgeSwipe();
+          }}
+          onPointerDown={handleMobileDetailPointerDown}
+          onPointerMove={handleMobileDetailPointerMove}
+          onPointerUp={handleMobileDetailPointerUp}
+          onPointerCancel={() => {
+            resetMobileEdgeSwipe();
+          }}
+        />
+        <div className={mobileSwipeSurfaceClassName} style={mobileSwipeSurfaceStyle}>
         <div className="nodu-mobile-event-scroll">
           <header className="nodu-mobile-event-topbar">
             <button
               type="button"
-              onClick={() => setSelectedEventId(null)}
+              onClick={closeMobileEventDetail}
               disabled={anyCrewActionPending}
               aria-busy={anyCrewActionPending || undefined}
               aria-label={anyCrewActionPending
@@ -467,7 +1064,13 @@ const EventDetailView = () => {
           <section className="nodu-mobile-event-hero" aria-labelledby="mobile-event-title">
             <div className="mb-3 flex items-center justify-between gap-3">
               <span className="jn nodu-job-badge px-2 py-0.5 text-sm">{event.job}</span>
-              <span className="nodu-mobile-event-participation-chip">{participationLabel}</span>
+              {canManageEvents ? (
+                <button type="button" className="nodu-mobile-event-participation-chip nodu-mobile-event-hero-action" onClick={() => setEditingEvent(event)}>
+                  Upravit
+                </button>
+              ) : (
+                <span className="nodu-mobile-event-participation-chip">{participationLabel}</span>
+              )}
             </div>
             <h1 id="mobile-event-title" className="text-2xl font-bold text-[color:var(--nodu-text)]">{event.name}</h1>
             <div className="mt-2 text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--nodu-text-soft)]">
@@ -475,16 +1078,12 @@ const EventDetailView = () => {
             </div>
           </section>
 
-          <a
-            href={mobileMapUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="nodu-mobile-event-map"
-            aria-label={`Otevřít mapu: ${mobileAddress}`}
-          >
-            <div className="nodu-mobile-event-map-pin" aria-hidden="true" />
-            <span>Otevřít mapu</span>
-          </a>
+          <EventMapPreview
+            address={mobileAddress}
+            locationLat={event.locationLat}
+            locationLng={event.locationLng}
+            googleMapsUrl={mobileMapUrl}
+          />
 
           <section className="nodu-mobile-event-card nodu-mobile-event-info-card" aria-label="Informace k akci">
             <div className="nodu-mobile-event-info-row">
@@ -510,14 +1109,22 @@ const EventDetailView = () => {
                 </div>
               </div>
             </div>
-            {event.contactPerson && (
-              <div className="nodu-mobile-event-info-row">
+            {contactPersonName && (
+              <button
+                type="button"
+                className="nodu-mobile-event-info-row nodu-mobile-event-info-row--button"
+                aria-label={`Kontakt ${contactPersonName}`}
+                onClick={() => setShowContactDialog(true)}
+              >
                 <User size={18} />
-                <div>
-                  <span className="nodu-mobile-event-info-label">Kontakt</span>
-                  <p>{event.contactPerson}</p>
+                <div className="nodu-mobile-event-info-action">
+                  <div>
+                    <span className="nodu-mobile-event-info-label">Kontakt</span>
+                    <p>{contactPersonName}</p>
+                  </div>
+                  <Phone size={17} aria-hidden="true" />
                 </div>
-              </div>
+              </button>
             )}
             {shouldShowMeetingLocation && (
               <div className="nodu-mobile-event-info-row">
@@ -530,7 +1137,7 @@ const EventDetailView = () => {
             )}
           </section>
 
-          {!isMeAssigned && !hasMyPendingApplication && event.allowCrewTimeProposal && (
+          {!canManageEvents && !isMeAssigned && !hasMyPendingApplication && event.allowCrewTimeProposal && (
             <section className="nodu-mobile-event-card" aria-label="Čas přihlášky">
               <div className="grid grid-cols-2 gap-2">
                 <label className="nodu-mobile-event-time-field">
@@ -569,22 +1176,36 @@ const EventDetailView = () => {
           )}
 
           <section className="nodu-mobile-event-section" aria-labelledby="mobile-event-assigned-crew-title">
-            <h2 id="mobile-event-assigned-crew-title">Přiřazená crew</h2>
+            <div className="nodu-mobile-event-section-heading">
+              <h2 id="mobile-event-assigned-crew-title">Přiřazená crew</h2>
+              <span className="nodu-mobile-event-capacity-chip">{crewCapacityLabel}</span>
+            </div>
             {eventCrew.length > 0 ? (
               <div className="nodu-mobile-event-crew-list">
                 {eventCrew.map((contractor) => {
                   const timelog = eventTimelogs.find((item) => item.contractorProfileId === contractor.profileId);
                   const hours = timelog ? calculateTotalHours(timelog.days) : 0;
+                  const timelogSummary = timelog?.status === 'draft' ? 'Rozpracované' : formatMobileCrewHours(hours);
+                  const isCurrentCrewMember = contractor.profileId === currentProfileId;
 
                   return (
-                    <div key={contractor.id} className="nodu-mobile-event-crew-row">
+                    <button
+                      key={contractor.id}
+                      type="button"
+                      className={`nodu-mobile-event-crew-row ${canManageEvents ? 'nodu-mobile-event-crew-row--button' : ''}`}
+                      aria-label={canManageEvents ? `Detail člena ${contractor.name}` : undefined}
+                      onClick={() => handleOpenMobileCrewDetail(contractor)}
+                      disabled={!canManageEvents}
+                    >
                       <div className="av h-10 w-10 text-[12px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
                       <div>
                         <div className="nodu-mobile-event-crew-name">{contractor.name}</div>
-                        <div className="nodu-mobile-event-crew-meta">{formatMobileCrewHours(hours)}</div>
+                        {(!isCrewRole || isCurrentCrewMember) && (
+                          <div className="nodu-mobile-event-crew-meta">{timelogSummary}</div>
+                        )}
                       </div>
-                      {contractor.profileId === currentProfileId && <span className="nodu-mobile-event-crew-chip">Ty</span>}
-                    </div>
+                      {isCurrentCrewMember && <span className="nodu-mobile-event-crew-chip">Ty</span>}
+                    </button>
                   );
                 })}
               </div>
@@ -592,45 +1213,99 @@ const EventDetailView = () => {
               <div className="nodu-mobile-event-empty-state">Zatím není přiřazená žádná crew.</div>
             )}
           </section>
+
+          {mobilePendingApplicationsContent}
+
+        </div>
         </div>
 
-        <div className={floatingPanelClassName} aria-label="Akce k události">
-          {isMeAssigned ? (
-            <>
-              <button
-                type="button"
-                className="nodu-mobile-event-evidence-button"
-                onClick={handleOpenEvidence}
-                disabled={!canUseEvidence}
-              >
-                <FileText size={18} />
-                Evidence práce
-              </button>
-              {!hasMyWithdrawalRequest ? (
+        {!hasMobileEventOverlay && (
+          <div className={floatingPanelClassName} style={mobileSwipeSurfaceStyle} aria-label="Akce k události">
+            {canManageEvents ? (
+              <>
                 <button
                   type="button"
-                  aria-label="Požádat o odhlášení"
-                  className="nodu-mobile-event-withdraw-button"
-                  onClick={() => setShowWithdrawalConfirm(true)}
+                  className="nodu-mobile-event-evidence-button"
+                  onClick={() => setAssigningEvent(event)}
                 >
-                  <X size={22} />
+                  <Users size={18} />
+                  Přiřadit crew
                 </button>
-              ) : (
-                <div className="nodu-mobile-event-withdraw-pending">Odhlášení čeká</div>
-              )}
-            </>
-          ) : hasMyPendingApplication ? (
-            <button type="button" className="nodu-mobile-event-evidence-button nodu-mobile-event-evidence-button--secondary" onClick={handleWithdrawApplication}>
-              Odhlásit se z akce
-            </button>
-          ) : (
-            <>
-              <button type="button" className="nodu-mobile-event-evidence-button nodu-mobile-event-evidence-button--secondary" onClick={handleApplyForEvent}>
-                Přihlásit se
+                <button
+                  type="button"
+                  className="nodu-mobile-event-evidence-button nodu-mobile-event-evidence-button--secondary"
+                  onClick={handleOpenMobileApproval}
+                >
+                  <FileText size={18} />
+                  Schvalování
+                </button>
+              </>
+            ) : isMeAssigned ? (
+              <>
+                <button
+                  type="button"
+                  className="nodu-mobile-event-evidence-button"
+                  onClick={handleOpenEvidence}
+                  disabled={!canUseEvidence}
+                >
+                  <FileText size={18} />
+                  Evidence práce
+                </button>
+                {!hasMyWithdrawalRequest ? (
+                  <button
+                    type="button"
+                    aria-label="Požádat o odhlášení"
+                    className="nodu-mobile-event-withdraw-button"
+                    onClick={() => setShowWithdrawalConfirm(true)}
+                  >
+                    <X size={22} />
+                  </button>
+                ) : (
+                  <div className="nodu-mobile-event-withdraw-pending">Odhlášení čeká</div>
+                )}
+              </>
+            ) : hasMyPendingApplication ? (
+              <button type="button" className="nodu-mobile-event-evidence-button nodu-mobile-event-evidence-button--secondary" onClick={handleWithdrawApplication}>
+                Odhlásit se z akce
               </button>
-            </>
-          )}
-        </div>
+            ) : (
+              <>
+                <button type="button" className="nodu-mobile-event-evidence-button nodu-mobile-event-evidence-button--secondary" onClick={handleApplyForEvent}>
+                  Přihlásit se
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+        {showMobileApprovalDialog && canManageEvents && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mobile-event-management-approval-title"
+            className="nodu-mobile-event-approval-dialog"
+          >
+            <div className="nodu-mobile-event-approval-panel">
+              <header className="nodu-mobile-event-approval-header">
+                <div>
+                  <span>{event.name}</span>
+                  <h2 id="mobile-event-management-approval-title">Schvalování</h2>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Zavřít schvalování"
+                  className="nodu-mobile-event-approval-close"
+                  onClick={() => setShowMobileApprovalDialog(false)}
+                >
+                  <X size={18} />
+                </button>
+              </header>
+              <div className="nodu-mobile-event-approval-body">
+                {mobileManagementApprovalContent}
+              </div>
+            </div>
+          </div>
+        )}
 
         {showWithdrawalConfirm && (
           <div
@@ -653,6 +1328,137 @@ const EventDetailView = () => {
             </div>
           </div>
         )}
+
+        {selectedMobileCrew && canManageEvents && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Detail člena crew"
+            className="nodu-mobile-event-crew-dialog"
+          >
+            <div className="nodu-mobile-event-crew-panel">
+              <div className="nodu-mobile-event-crew-detail-header">
+                <div className="av h-12 w-12 text-[13px]" style={{ backgroundColor: selectedMobileCrew.bg, color: selectedMobileCrew.fg }}>
+                  {selectedMobileCrew.ii}
+                </div>
+                <div className="min-w-0">
+                  <span>Člen crew</span>
+                  <h2 id="mobile-event-crew-detail-title">{selectedMobileCrew.name}</h2>
+                </div>
+                <button type="button" aria-label="Zavřít detail člena" onClick={() => setSelectedMobileCrewProfileId(null)}>
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="nodu-mobile-event-crew-detail-grid">
+                <div>
+                  <span>Výkaz</span>
+                  <strong>{selectedMobileCrewTimelog ? selectedMobileCrewTimelogSummary : 'Bez výkazu'}</strong>
+                </div>
+                <div>
+                  <span>Hodiny</span>
+                  <strong>{formatMobileCrewHours(selectedMobileCrewHours)}</strong>
+                </div>
+              </div>
+
+              {selectedMobileCrew.phone && (
+                <a className="nodu-mobile-event-crew-call" href={buildPhoneHref(selectedMobileCrew.phone) ?? undefined}>
+                  <Phone size={17} />
+                  Zavolat {selectedMobileCrew.phone}
+                </a>
+              )}
+
+              {selectedMobileCrewRemovalBlocked && (
+                <p className="nodu-mobile-event-crew-warning">
+                  Výkaz je ve schvalování. Nejdřív ho vrať nebo dořeš, potom půjde člena vyřadit.
+                </p>
+              )}
+
+              {canRemoveSelectedMobileCrew && (
+                <button
+                  type="button"
+                  className="nodu-mobile-event-crew-remove"
+                  onClick={() => setShowMobileCrewRemoveConfirm(true)}
+                  disabled={anyCrewActionPending}
+                >
+                  <Trash2 size={17} />
+                  Vyřadit z akce
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {showMobileCrewRemoveConfirm && selectedMobileCrew && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mobile-event-remove-crew-title"
+            className="nodu-mobile-event-withdrawal-dialog nodu-mobile-event-withdrawal-dialog--top"
+          >
+            <div className="nodu-mobile-event-withdrawal-panel">
+              <h2 id="mobile-event-remove-crew-title">Vyřadit člena z akce</h2>
+              <p>Opravdu chceš vyřadit člena {selectedMobileCrew.name} z této akce? Rozpracovaný výkaz se tím odstraní.</p>
+              <div className="nodu-mobile-event-withdrawal-actions">
+                <button type="button" className="nodu-mobile-event-withdrawal-cancel" onClick={() => setShowMobileCrewRemoveConfirm(false)} disabled={anyCrewActionPending}>
+                  Zrušit
+                </button>
+                <button
+                  type="button"
+                  className="nodu-mobile-event-withdrawal-confirm nodu-mobile-event-withdrawal-confirm--danger"
+                  onClick={handleConfirmMobileCrewRemoval}
+                  disabled={anyCrewActionPending}
+                  aria-busy={pendingCrewAction === `remove:${selectedMobileCrew.profileId}` || undefined}
+                >
+                  Potvrdit vyřazení
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showContactDialog && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mobile-event-contact-title"
+            className="nodu-mobile-event-contact-dialog"
+          >
+            <div className="nodu-mobile-event-contact-panel">
+              <div className="nodu-mobile-event-contact-header">
+                <div>
+                  <span>Kontakt na akci</span>
+                  <h2 id="mobile-event-contact-title">Kontakt na akci</h2>
+                </div>
+                <button type="button" aria-label="Zavřít kontakt" onClick={() => setShowContactDialog(false)}>
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="nodu-mobile-event-contact-person">
+                <strong>{contactPersonName}</strong>
+                <span>{contactPhone || 'Telefon není doplněný'}</span>
+              </div>
+              {contactPhoneHref ? (
+                <a className="nodu-mobile-event-contact-call" href={contactPhoneHref}>
+                  <Phone size={18} />
+                  Zavolat {contactPhone}
+                </a>
+              ) : (
+                <p className="nodu-mobile-event-contact-empty">Telefon k této kontaktní osobě zatím není vyplněný.</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        <EventEditModal
+          editingEvent={editingEvent}
+          onClose={() => setEditingEvent(null)}
+          onChange={setEditingEvent}
+        />
+        <AssignCrewModal
+          event={assigningEvent}
+          onClose={() => setAssigningEvent(null)}
+        />
       </motion.div>
     );
   }
@@ -868,6 +1674,7 @@ const EventDetailView = () => {
                               const timelog = eventTimelogs.find((item) => item.contractorProfileId === contractor.profileId);
                               const hours = timelog ? calculateTotalHours(timelog.days) : 0;
                               const canOpenTimelog = timelog ? canEditTimelog(timelog, role) : canCreateTimelog(role);
+                              const timelogSummary = timelog?.status === 'draft' ? 'Rozpracované' : `${hours.toFixed(1)}h`;
                               const matchingTimelogs = eventTimelogs.filter((item) => (
                                 item.eid === event.id && item.contractorProfileId === contractor.profileId
                               ));
@@ -900,9 +1707,9 @@ const EventDetailView = () => {
                                       </div>
                                     </td>
                                   )}
-                                  <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text)]">{hours.toFixed(1)}h</td>
+                                  <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text)]">{timelogSummary}</td>
                                   {canManageEvents && (
-                                    <td className="px-4 py-3 text-right text-xs font-bold text-[color:var(--nodu-text)]">{formatCurrency(hours * contractor.rate)}</td>
+                                    <td className="px-4 py-3 text-right text-xs font-bold text-[color:var(--nodu-text)]">{formatCurrency(hours * contractor.rate + calculateMealAllowance(timelog?.days ?? [], { enabled: mealAllowanceEnabled }))}</td>
                                   )}
                                   <td className="px-4 py-3 text-right">
                                     {canManageEvents && (
@@ -962,15 +1769,14 @@ const EventDetailView = () => {
                           {eventApprovalTimelogs.map((timelog) => {
                             const contractor = contractors.find((item) => item.profileId === timelog.contractorProfileId);
                             const totalTimelogHours = calculateTotalHours(timelog.days);
-                            const amount = contractor ? totalTimelogHours * contractor.rate + timelog.km * KM_RATE : 0;
-                            const approveAction = timelog.status === 'draft'
-                              ? 'sub'
-                              : timelog.status === 'pending_ch' ? 'ch' : 'coo';
+                            const amount = contractor ? totalTimelogHours * contractor.rate + timelog.km * KM_RATE + calculateMealAllowance(timelog.days, { enabled: mealAllowanceEnabled }) : 0;
+                            const approveAction = getTimelogApprovalAction(timelog);
                             const approveLabel = timelog.status === 'draft'
                               ? 'Odeslat ke kontrole CH'
                               : timelog.status === 'pending_ch'
-                                ? 'Schvalit a poslat COO'
+                                ? 'Schvalit a vybrat schvalovatele'
                                 : 'Schvalit';
+                            const isWaitingForCrewConfirmation = timelog.status === 'pending_crew_confirmation';
 
                             return (
                               <div key={timelog.id} className="rounded-[18px] border border-[color:var(--nodu-border)] bg-white p-4">
@@ -986,22 +1792,40 @@ const EventDetailView = () => {
                                   </div>
                                 </div>
                                 <div className="rounded-xl border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] p-3">
-                                  {timelog.days.map((day, index) => (
-                                    <div key={`${timelog.id}-${day.d}-${index}`} className="flex items-center gap-3 py-1 text-xs">
-                                      <span className="w-16 text-[color:var(--nodu-text-soft)]">{formatShortDate(day.d)}</span>
-                                      <span className="font-mono font-semibold text-[color:var(--nodu-text)]">{day.f} - {day.t}</span>
-                                      <StatusBadge status={day.type} />
-                                      <span className="ml-auto text-[color:var(--nodu-text-soft)]">{calculateDayHours(day.f, day.t).toFixed(1)}h</span>
-                                    </div>
-                                  ))}
+                                  {timelog.days.map((day, index) => {
+                                    const mealLabels = mealAllowanceEnabled
+                                      ? normalizeMealSelection(day).map((meal) => MEAL_CONFIG.find((item) => item.type === meal)?.label ?? meal)
+                                      : [];
+
+                                    return (
+                                      <div key={`${timelog.id}-${day.d}-${index}`} className="flex items-center gap-3 py-1 text-xs">
+                                        <span className="w-16 text-[color:var(--nodu-text-soft)]">{formatShortDate(day.d)}</span>
+                                        <span className="font-mono font-semibold text-[color:var(--nodu-text)]">{day.f} - {day.t}</span>
+                                        <StatusBadge status={day.type} />
+                                        {mealLabels.length > 0 && (
+                                          <span className="rounded-full bg-[rgba(34,139,112,0.1)] px-2 py-0.5 text-[11px] font-semibold text-[rgb(31,112,92)]">
+                                            {mealLabels.join(' + ')}
+                                          </span>
+                                        )}
+                                        <span className="ml-auto text-[color:var(--nodu-text-soft)]">{calculateDayHours(day.f, day.t).toFixed(1)}h</span>
+                                      </div>
+                                    );
+                                  })}
                                 </div>
+                                {isWaitingForCrewConfirmation && (
+                                  <p className="mt-3 text-xs font-medium text-[color:var(--nodu-text-soft)]">
+                                    Čeká na potvrzení upraveného výkazu členem Crew.
+                                  </p>
+                                )}
                                 <div className="mt-3 flex flex-wrap gap-2">
-                                  <Button size="sm" className="h-8 text-[11px]" onClick={() => handleTimelogApprovalAction(timelog.id, approveAction)}>
-                                    {approveLabel}
-                                  </Button>
-                                  {timelog.status !== 'draft' && (
-                                    <Button size="sm" variant="outline" className="h-8 border-[#e8b4a3] text-[11px] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]" onClick={() => handleTimelogApprovalAction(timelog.id, 'rej')}>
-                                      Zamitnout
+                                  {approveAction && (
+                                    <Button size="sm" className="h-8 text-[11px]" onClick={() => handleTimelogApprovalAction(timelog, approveAction)}>
+                                      {approveLabel}
+                                    </Button>
+                                  )}
+                                  {timelog.status !== 'draft' && !isWaitingForCrewConfirmation && (
+                                    <Button size="sm" variant="outline" className="h-8 border-[#e8b4a3] text-[11px] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]" onClick={() => handleTimelogApprovalAction(timelog, 'rej')}>
+                                      Vrátit
                                     </Button>
                                   )}
                                   {canEditTimelog(timelog, role) && (
@@ -1046,47 +1870,47 @@ const EventDetailView = () => {
                               const rejectionPending = pendingCrewAction === `reject-application:${application.id}`;
 
                               return (
-                                <tr key={application.id} className="bg-white">
-                                  <td className="px-4 py-3">
-                                    <div className="flex items-center gap-2">
-                                      <div className="av h-7 w-7 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
-                                      <span className="text-xs font-medium text-[color:var(--nodu-text)]">{contractor.name}</span>
+                              <tr key={application.id} className="bg-white">
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center gap-2">
+                                    <div className="av h-7 w-7 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
+                                    <span className="text-xs font-medium text-[color:var(--nodu-text)]">{contractor.name}</span>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text-soft)]">
+                                  {application.plannedFrom && application.plannedTo ? `${application.plannedFrom} - ${application.plannedTo}` : '-'}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className="rounded-full border border-[color:rgb(var(--nodu-text-rgb)/0.16)] bg-[color:rgb(var(--nodu-text-rgb)/0.08)] px-2.5 py-1 text-[10px] font-semibold text-[color:var(--nodu-text-soft)]">
+                                    Ceka na schvaleni
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  {canManageEvents && (
+                                    <div className="flex justify-end gap-1.5">
+                                      <Button
+                                        size="sm"
+                                        className="h-8 text-[11px]"
+                                        onClick={() => void handleApproveApplication(application.id)}
+                                        disabled={anyCrewActionPending}
+                                        aria-busy={approvalPending || undefined}
+                                      >
+                                        Schvalit
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-8 border-[#e8b4a3] text-[11px] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]"
+                                        onClick={() => void handleRejectApplication(application.id)}
+                                        disabled={anyCrewActionPending}
+                                        aria-busy={rejectionPending || undefined}
+                                      >
+                                        Zamitnout
+                                      </Button>
                                     </div>
-                                  </td>
-                                  <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text-soft)]">
-                                    {application.plannedFrom && application.plannedTo ? `${application.plannedFrom} - ${application.plannedTo}` : '-'}
-                                  </td>
-                                  <td className="px-4 py-3">
-                                    <span className="rounded-full border border-[color:rgb(var(--nodu-text-rgb)/0.16)] bg-[color:rgb(var(--nodu-text-rgb)/0.08)] px-2.5 py-1 text-[10px] font-semibold text-[color:var(--nodu-text-soft)]">
-                                      Ceka na schvaleni
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-3 text-right">
-                                    {canManageEvents && (
-                                      <div className="flex justify-end gap-1.5">
-                                        <Button
-                                          size="sm"
-                                          className="h-8 text-[11px]"
-                                          onClick={() => void handleApproveApplication(application.id)}
-                                          disabled={anyCrewActionPending}
-                                          aria-busy={approvalPending || undefined}
-                                        >
-                                          Schvalit
-                                        </Button>
-                                        <Button
-                                          size="sm"
-                                          variant="outline"
-                                          className="h-8 border-[#e8b4a3] text-[11px] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]"
-                                          onClick={() => void handleRejectApplication(application.id)}
-                                          disabled={anyCrewActionPending}
-                                          aria-busy={rejectionPending || undefined}
-                                        >
-                                          Zamitnout
-                                        </Button>
-                                      </div>
-                                    )}
-                                  </td>
-                                </tr>
+                                  )}
+                                </td>
+                              </tr>
                               );
                             })}
                           </tbody>
@@ -1121,42 +1945,42 @@ const EventDetailView = () => {
                             const rejectionPending = pendingCrewAction === `reject-withdrawal:${application.id}`;
 
                             return (
-                              <tr key={application.id} className="bg-white">
-                                <td className="px-4 py-3">
-                                  <div className="flex items-center gap-2">
-                                    <div className="av h-7 w-7 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
-                                    <span className="text-xs font-medium text-[color:var(--nodu-text)]">{contractor.name}</span>
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3">
-                                  <span className="rounded-full border border-[color:rgb(var(--nodu-text-rgb)/0.16)] bg-[color:rgb(var(--nodu-text-rgb)/0.08)] px-2.5 py-1 text-[10px] font-semibold text-[color:var(--nodu-text-soft)]">
-                                    Ceka na schvaleni odhlaseni
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3 text-right">
-                                  <div className="flex justify-end gap-1.5">
-                                    <Button
-                                      size="sm"
-                                      className="h-8 text-[11px]"
-                                      onClick={() => void handleApproveWithdrawal(application.id)}
-                                      disabled={anyCrewActionPending}
-                                      aria-busy={approvalPending || undefined}
-                                    >
-                                      Schvalit odhlaseni
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="h-8 border-[#e8b4a3] text-[11px] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]"
-                                      onClick={() => void handleRejectWithdrawal(application.id)}
-                                      disabled={anyCrewActionPending}
-                                      aria-busy={rejectionPending || undefined}
-                                    >
-                                      Zamitnout
-                                    </Button>
-                                  </div>
-                                </td>
-                              </tr>
+                            <tr key={application.id} className="bg-white">
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2">
+                                  <div className="av h-7 w-7 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
+                                  <span className="text-xs font-medium text-[color:var(--nodu-text)]">{contractor.name}</span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className="rounded-full border border-[color:rgb(var(--nodu-text-rgb)/0.16)] bg-[color:rgb(var(--nodu-text-rgb)/0.08)] px-2.5 py-1 text-[10px] font-semibold text-[color:var(--nodu-text-soft)]">
+                                  Ceka na schvaleni odhlaseni
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                <div className="flex justify-end gap-1.5">
+                                  <Button
+                                    size="sm"
+                                    className="h-8 text-[11px]"
+                                    onClick={() => void handleApproveWithdrawal(application.id)}
+                                    disabled={anyCrewActionPending}
+                                    aria-busy={approvalPending || undefined}
+                                  >
+                                    Schvalit odhlaseni
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-8 border-[#e8b4a3] text-[11px] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]"
+                                    onClick={() => void handleRejectWithdrawal(application.id)}
+                                    disabled={anyCrewActionPending}
+                                    aria-busy={rejectionPending || undefined}
+                                  >
+                                    Zamitnout
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
                             );
                           })}
                         </tbody>
@@ -1182,6 +2006,10 @@ const EventDetailView = () => {
                       <div className="flex justify-between text-xs">
                         <span className="text-[color:var(--nodu-success-text)]">Cestovne</span>
                         <span className="font-bold text-[color:var(--nodu-text)]">{formatCurrency(myTravelCost)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-[color:var(--nodu-success-text)]">Jídlo</span>
+                        <span className="font-bold text-[color:var(--nodu-text)]">{formatCurrency(myMealAllowance)}</span>
                       </div>
                       <div className="mt-2 flex justify-between border-t border-[color:var(--nodu-success-border)] pt-2 text-sm">
                         <span className="font-bold text-[color:var(--nodu-success-text)]">Odhad celkem</span>
@@ -1227,7 +2055,7 @@ const EventDetailView = () => {
                         </div>
                       ) : (
                         <div className="rounded-[16px] border border-dashed border-[color:var(--nodu-border)] bg-white px-3 py-6 text-center text-xs text-[color:var(--nodu-text-soft)]">
-                          K teto akci zatim neni sparovany zadny dokument z PowerApps.
+                          K teto akci zatim neni sparovany zadny schvalovaci dokument.
                         </div>
                       )}
                     </div>
@@ -1252,7 +2080,7 @@ const EventDetailView = () => {
                           <span className="font-bold text-[color:var(--nodu-text)]">{formatCurrency(totalReceiptCost)}</span>
                         </div>
                         <div className="mt-2 flex justify-between border-t border-[color:var(--nodu-success-border)] pt-2 text-sm">
-                          <span className="font-bold text-[color:var(--nodu-success-text)]">Celkovy rozpocet</span>
+                          <span className="font-bold text-[color:var(--nodu-success-text)]">Celkove naklady</span>
                           <span className="font-black text-[color:var(--nodu-text)]">{formatCurrency(totalCrewCost + totalTravelCost + totalReceiptCost)}</span>
                         </div>
                       </div>
@@ -1367,6 +2195,9 @@ const EventDetailView = () => {
                       <div className="space-y-2">
                         {matchingDays.map((day, index) => {
                           const phase = PHASE_CONFIG.find((item) => item.type === day.type);
+                          const mealLabels = mealAllowanceEnabled
+                            ? normalizeMealSelection(day).map((meal) => MEAL_CONFIG.find((item) => item.type === meal)?.label ?? meal)
+                            : [];
                           return (
                             <div key={`${timelog.id}-${index}`} className="flex items-center justify-between rounded-xl bg-[color:var(--nodu-paper-strong)] p-2.5">
                               <div className="flex flex-col">
@@ -1376,6 +2207,11 @@ const EventDetailView = () => {
                                   {phase && (
                                     <span className={`rounded px-1.5 py-0.5 text-[9px] font-black text-white ${phase.color}`}>
                                       {phase.id}
+                                    </span>
+                                  )}
+                                  {mealLabels.length > 0 && (
+                                    <span className="rounded-full bg-[rgba(34,139,112,0.1)] px-2 py-0.5 text-[10px] font-semibold text-[rgb(31,112,92)]">
+                                      {mealLabels.join(' + ')}
                                     </span>
                                   )}
                                 </div>

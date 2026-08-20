@@ -1369,6 +1369,17 @@ describe('events.service write flow', () => {
           showDayTypes: false,
         },
       ],
+      timelogs: [{
+        id: 7,
+        eid: 99,
+        supabaseId: 'timelog-uuid-1',
+        eventSupabaseId: 'event-uuid-1',
+        contractorProfileId: 'profile-uuid-1',
+        days: [],
+        km: 0,
+        note: '',
+        status: 'rejected',
+      }],
     });
 
     vi.doMock('../../../lib/app-config', () => ({
@@ -1400,6 +1411,12 @@ describe('events.service write flow', () => {
     const detail = getEventDetailData(1);
 
     expect(detail.event?.filled).toBe(1);
+    expect(detail.timelogs).toEqual([
+      expect.objectContaining({
+        supabaseId: 'timelog-uuid-1',
+        eventSupabaseId: 'event-uuid-1',
+      }),
+    ]);
     expect(getEventDetailData('event-uuid-1').event?.name).toBe('Akce 1');
     await vi.waitFor(() => {
       expect(ensureSupabaseTimelogsLoaded).toHaveBeenCalledOnce();

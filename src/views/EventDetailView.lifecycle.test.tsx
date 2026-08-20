@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   approveEventWithdrawal: vi.fn(),
   getEventDetailData: vi.fn(),
   removeContractorFromEvent: vi.fn(),
+  setEditingTimelog: vi.fn(),
   setNavigationGuardMessage: vi.fn(),
   setSelectedEventId: vi.fn(),
   toastError: vi.fn(),
@@ -17,7 +18,7 @@ const mocks = vi.hoisted(() => ({
 
 const state = vi.hoisted(() => ({
   isMobile: false,
-  role: 'coo' as 'coo' | 'crew',
+  role: 'coo' as 'coo' | 'crewhead' | 'crew',
   detail: {} as {
     event: Record<string, unknown>;
     timelogs: Timelog[];
@@ -52,7 +53,7 @@ vi.mock('../context/useAppContext', () => ({
     setEventTab: vi.fn(),
     setEditingReceipt: vi.fn(),
     setDeleteConfirm: vi.fn(),
-    setEditingTimelog: vi.fn(),
+    setEditingTimelog: mocks.setEditingTimelog,
   }),
 }));
 
@@ -79,6 +80,7 @@ vi.mock('../features/events/services/events.service', () => ({
 }));
 
 vi.mock('../features/timelogs/services/timelogs.service', () => ({
+  subscribeToTimelogChanges: vi.fn(() => () => undefined),
   updateTimelogStatus: vi.fn(),
 }));
 
@@ -250,6 +252,20 @@ describe('EventDetailView Crew lifecycle guards', () => {
     renderManagerDetail({ timelogStatus: 'rejected' });
 
     expect(screen.getByRole('button', { name: 'Odebrat Petr Heitzer z akce' })).toBeEnabled();
+  });
+
+  it('keeps the stable event UUID when CrewHead creates a missing timelog draft', () => {
+    state.role = 'crewhead';
+    renderManagerDetail({ timelogs: [] });
+
+    fireEvent.click(screen.getByTitle('Vytvorit timelog'));
+
+    expect(mocks.setEditingTimelog).toHaveBeenCalledWith(expect.objectContaining({
+      eid: managerEvent.id,
+      eventSupabaseId: managerEvent.supabaseId,
+      contractorProfileId: assignedContractor.profileId,
+      status: 'pending_ch',
+    }));
   });
 
   it('blocks removal when any matching timelog is non-disposable', () => {

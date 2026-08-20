@@ -26,13 +26,15 @@ export const categorizeCrewTimelogs = (timelogs: Timelog[], events: Event[]) => 
   const eventById = new Map(events.map((event) => [event.id, event]));
 
   return {
+    drafts: timelogs.filter((timelog) => timelog.status === 'draft'),
     upcoming: timelogs.filter((timelog) => (
       timelog.status === 'draft' && !isPastEvent(eventById.get(timelog.eid))
     )),
     processing: timelogs.filter((timelog) => (
       timelog.status === 'pending_ch'
       || timelog.status === 'pending_coo'
-      || (timelog.status === 'draft' && isPastEvent(eventById.get(timelog.eid)))
+      || timelog.status === 'pending_crew_confirmation'
+      || timelog.status === 'rejected'
     )),
     invoiced: timelogs.filter((timelog) => (
       timelog.status === 'approved'

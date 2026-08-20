@@ -15,6 +15,8 @@ import {
   saveEvent,
 } from '../../features/events/services/events.service';
 import EventAddressField from '../../features/events/components/EventAddressField';
+import EventLocationPickerModal from '../../features/events/components/EventLocationPickerModal';
+import EventMapPreview from '../../features/events/components/EventMapPreview';
 
 interface EventEditModalProps {
   editingEvent: Event | null;
@@ -43,6 +45,7 @@ const EventEditModal = ({
   const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isAddressResolving, setIsAddressResolving] = useState(false);
+  const [isLocationPickerOpen, setIsLocationPickerOpen] = useState(false);
   const draftIdentity = editingEvent
     ? editingEvent.supabaseId ?? `local:${editingEvent.id}`
     : null;
@@ -128,6 +131,7 @@ const EventEditModal = ({
     saveInFlightRef.current = false;
     setIsSaving(false);
     setIsAddressResolving(false);
+    setIsLocationPickerOpen(false);
   }, [draftIdentity]);
 
   useLayoutEffect(() => {
@@ -311,6 +315,7 @@ const EventEditModal = ({
                   key={draftIdentity}
                   value={editingEvent}
                   onResolvingChange={setIsAddressResolving}
+                  onPickMap={() => setIsLocationPickerOpen(true)}
                   onChange={(selection) => updateEventDraft({
                     ...editingEvent,
                     address: selection.address,
@@ -320,6 +325,19 @@ const EventEditModal = ({
                     locationLng: selection.locationLng,
                   })}
                 />
+                <div className="mt-3">
+                  <EventMapPreview
+                    address={editingEvent.address || editingEvent.city}
+                    locationLat={editingEvent.locationLat}
+                    locationLng={editingEvent.locationLng}
+                    editable
+                    onLocationChange={({ locationLat, locationLng }) => updateEventDraft({
+                      ...editingEvent,
+                      locationLat,
+                      locationLng,
+                    })}
+                  />
+                </div>
               </div>
             </div>
 
@@ -642,6 +660,22 @@ const EventEditModal = ({
               Ulozit akci
             </button>
           </div>
+          {isLocationPickerOpen && (
+            <EventLocationPickerModal
+              address={editingEvent.address || editingEvent.city}
+              initialLocationLat={editingEvent.locationLat}
+              initialLocationLng={editingEvent.locationLng}
+              onCancel={() => setIsLocationPickerOpen(false)}
+              onConfirm={({ locationLat, locationLng }) => {
+                updateEventDraft({
+                  ...editingEvent,
+                  locationLat,
+                  locationLng,
+                });
+                setIsLocationPickerOpen(false);
+              }}
+            />
+          )}
         </motion.div>
       </div>
     </AnimatePresence>

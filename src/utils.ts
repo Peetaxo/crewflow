@@ -1,4 +1,5 @@
-﻿import { Event } from './types';
+﻿import { MEAL_RATE } from './data';
+import type { Event, TimelogMeal } from './types';
 
 /**
  * Formatuje datum do krátkého českého formátu (den. měsíc.)
@@ -85,6 +86,46 @@ export function calculateTotalHours(days: { f: string; t: string }[]): number {
   return days.reduce((sum, day) => sum + calculateDayHours(day.f, day.t), 0);
 }
 export const calcH = calculateTotalHours;
+
+const KNOWN_MEALS: TimelogMeal[] = ['obed', 'vecere'];
+
+const isKnownMeal = (value: unknown): value is TimelogMeal => (
+  typeof value === 'string' && KNOWN_MEALS.includes(value as TimelogMeal)
+);
+
+export function normalizeMealSelection(day: { meals?: unknown; meal?: unknown }): TimelogMeal[] {
+  const selected = new Set<TimelogMeal>();
+
+  if (Array.isArray(day.meals)) {
+    day.meals.forEach((meal) => {
+      if (isKnownMeal(meal)) selected.add(meal);
+    });
+  }
+
+  if (isKnownMeal(day.meal)) selected.add(day.meal);
+
+  return KNOWN_MEALS.filter((meal) => selected.has(meal));
+}
+
+export function calculateDayMealAllowance(day: { f: string; t: string; meals?: unknown; meal?: unknown }): number {
+  const meals = normalizeMealSelection(day);
+  if (meals.length === 0) return 0;
+
+  const hours = calculateDayHours(day.f, day.t);
+  if (hours < 6) return 0;
+  if (hours >= 12) return meals.length >= 2 ? MEAL_RATE * 2 : MEAL_RATE;
+  if (hours >= 10) return MEAL_RATE + 100;
+  return MEAL_RATE;
+}
+
+export function calculateMealAllowance(
+  days: { f: string; t: string; meals?: unknown; meal?: unknown }[],
+  options: { enabled?: boolean } = {},
+): number {
+  if (options.enabled === false) return 0;
+  return days.reduce((sum, day) => sum + calculateDayMealAllowance(day), 0);
+}
+export const calcMeal = calculateMealAllowance;
 
 /**
  * Vrátí odpočet do vypršení 72h lhůty pro rozporování faktury.

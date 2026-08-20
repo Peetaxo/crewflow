@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarDays, ChevronLeft, ChevronRight, Copy, List, Trash2 } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Copy, Filter, List, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import {
@@ -20,13 +20,13 @@ import {
 import { cs } from 'date-fns/locale';
 import { useAppContext } from '../context/useAppContext';
 import { useAuth } from '../app/providers/useAuth';
+import { useIsMobile } from '../hooks/use-mobile';
 import { Event, Timelog } from '../types';
 import type { SelectedEventId } from '../context/app-context';
-import { calculateTotalHours, eventOccursOnDate, getDatesBetween } from '../utils';
+import { eventOccursOnDate, getDatesBetween } from '../utils';
 import { Button } from '../components/ui/button';
 import EventDetailView from './EventDetailView';
 import EventEditModal from '../components/modals/EventEditModal';
-import AssignCrewModal from '../components/modals/AssignCrewModal';
 import { useEventsQuery } from '../features/events/queries/useEventsQuery';
 import { useTimelogsQuery } from '../features/timelogs/queries/useTimelogsQuery';
 import {
@@ -61,9 +61,14 @@ type CalendarSegment = {
   lane: number;
 };
 
+type EventListOccurrenceKind = 'single' | 'start' | 'continuation' | 'end';
+
 type EventListOccurrence = {
   event: CalendarEvent;
   date: string;
+  kind: EventListOccurrenceKind;
+  dayIndex: number;
+  dayCount: number;
 };
 
 type EventColorStyle = {
@@ -73,6 +78,72 @@ type EventColorStyle = {
   textColor: string;
   metaColor: string;
 };
+
+type EventListAccentStyle = React.CSSProperties & {
+  '--event-list-accent'?: string;
+  '--event-list-accent-border'?: string;
+};
+
+type MobileCrewEventFilter = 'all' | 'open' | 'assigned' | 'pending' | 'full';
+
+const EVENT_FILTER_OPTIONS = [
+  { id: 'upcoming' as const, label: 'Nadchazejici' },
+  { id: 'past' as const, label: 'Uplynule' },
+  { id: 'all' as const, label: 'Vse' },
+];
+
+const MOBILE_CREW_EVENT_FILTER_OPTIONS = [
+  { id: 'all' as const, label: 'Vse' },
+  { id: 'open' as const, label: 'Volne' },
+  { id: 'assigned' as const, label: 'Moje akce' },
+  { id: 'pending' as const, label: 'Cekam' },
+  { id: 'full' as const, label: 'Obsazeno' },
+];
+
+const EVENT_COLOR_TONES = [
+  {
+    accentColor: '#c98ca2',
+    backgroundColor: '#fff7f8',
+    borderColor: '#efced7',
+    textColor: '#5b4149',
+    metaColor: '#7f6770',
+  },
+  {
+    accentColor: '#88a79c',
+    backgroundColor: '#f6fbf8',
+    borderColor: '#cfe1da',
+    textColor: '#3e554d',
+    metaColor: '#687b74',
+  },
+  {
+    accentColor: '#7f9eb8',
+    backgroundColor: '#f6fafd',
+    borderColor: '#cbddeb',
+    textColor: '#3d5267',
+    metaColor: '#657789',
+  },
+  {
+    accentColor: '#a391bd',
+    backgroundColor: '#fbf8ff',
+    borderColor: '#d9d0e8',
+    textColor: '#51465f',
+    metaColor: '#746982',
+  },
+  {
+    accentColor: '#c79a70',
+    backgroundColor: '#fff9f3',
+    borderColor: '#ead5c0',
+    textColor: '#604a37',
+    metaColor: '#826d58',
+  },
+  {
+    accentColor: '#76aaa5',
+    backgroundColor: '#f5fbfa',
+    borderColor: '#c4dedb',
+    textColor: '#375957',
+    metaColor: '#627d7a',
+  },
+] as const;
 
 const buildWeekSegments = (weekDays: Date[], events: CalendarEvent[]): CalendarSegment[] => {
   const weekKeys = weekDays.map((day) => format(day, 'yyyy-MM-dd'));
@@ -122,21 +193,59 @@ const getWeekRowHeight = (segments: CalendarSegment[]) => {
   return 56 + Math.max(1, laneCount) * 58;
 };
 
-const getEventColorStyle = (index: number, status: CalendarEvent['derivedStatus']): EventColorStyle => {
-  const hue = Math.round((index * 137.508) % 360);
-  const saturation = status === 'past' ? 12 : 65;
-  const backgroundLightness = status === 'past' ? 96 : 97;
-  const borderLightness = status === 'past' ? 86 : 82;
-  const stripeLightness = status === 'past' ? 58 : 46;
-  const textLightness = status === 'past' ? 24 : 28;
-  const metaLightness = status === 'past' ? 36 : 38;
+const getStableEventColorSeed = (event: Event) => {
+  if (event.supabaseId) return event.supabaseId;
+
+  return [
+    event.projectId,
+    event.job,
+    event.name,
+    event.startDate,
+    event.endDate,
+  ].filter(Boolean).join('|') || String(event.id);
+};
+
+const getStableEventColorTone = (event: Event) => {
+  const seed = getStableEventColorSeed(event);
+  let hash = 0;
+
+  for (let index = 0; index < seed.length; index += 1) {
+    hash = (hash * 31 + seed.charCodeAt(index)) % EVENT_COLOR_TONES.length;
+  }
+
+  return EVENT_COLOR_TONES[hash];
+};
+
+const getEventColorStyle = (event: Event, status: CalendarEvent['derivedStatus']): EventColorStyle => {
+  const tone = getStableEventColorTone(event);
+
+  if (status === 'past') {
+    return {
+      backgroundColor: '#f7f5f2',
+      borderColor: '#ded8d1',
+      stripeColor: tone.accentColor,
+      textColor: '#4f4740',
+      metaColor: '#7a6f66',
+    };
+  }
 
   return {
-    backgroundColor: `hsl(${hue} ${saturation}% ${backgroundLightness}%)`,
-    borderColor: `hsl(${hue} ${Math.max(18, saturation - 18)}% ${borderLightness}%)`,
-    stripeColor: `hsl(${hue} ${Math.max(24, saturation)}% ${stripeLightness}%)`,
-    textColor: `hsl(${hue} ${Math.max(18, saturation - 20)}% ${textLightness}%)`,
-    metaColor: `hsl(${hue} ${Math.max(14, saturation - 28)}% ${metaLightness}%)`,
+    backgroundColor: tone.backgroundColor,
+    borderColor: tone.borderColor,
+    stripeColor: tone.accentColor,
+    textColor: tone.textColor,
+    metaColor: tone.metaColor,
+  };
+};
+
+const getEventListAccentStyle = (event: Event, dayCount: number): EventListAccentStyle | undefined => {
+  if (dayCount <= 1) return undefined;
+
+  const tone = getStableEventColorTone(event);
+
+  return {
+    '--event-list-accent': tone.accentColor,
+    '--event-list-accent-border': tone.borderColor,
   };
 };
 
@@ -145,6 +254,76 @@ const eventOverlapsDateRange = (event: Event, startDate: string, endDate: string
 );
 
 const formatOccurrenceDate = (date: string) => format(parseISO(date), 'd. M. yyyy', { locale: cs });
+const formatEventBoundaryDateTime = (date: string, time?: string) => (
+  `${formatOccurrenceDate(date)} · ${time?.trim() || 'čas bude doplněn'}`
+);
+const formatEventMetaParts = (...parts: Array<string | null | undefined>) => (
+  parts
+    .map((part) => part?.trim())
+    .filter((part): part is string => Boolean(part))
+    .join(' · ')
+);
+const formatSingleDayOccurrenceMeta = (date: string, timeLabel: string, client?: string) => (
+  formatEventMetaParts(formatOccurrenceDate(date), timeLabel, client)
+);
+
+const formatEventDayCount = (dayCount: number) => {
+  if (dayCount === 1) return '1 den';
+  if (dayCount >= 2 && dayCount <= 4) return `${dayCount} dny`;
+  return `${dayCount} dní`;
+};
+
+const getTodayDateKey = () => format(new Date(), 'yyyy-MM-dd');
+
+const MOBILE_CREW_DATE_PICKER_WEEKDAYS = ['PO', 'UT', 'ST', 'CT', 'PA', 'SO', 'NE'];
+
+const getSafeDateFromKey = (dateKey: string | null | undefined, fallback: Date) => {
+  if (!dateKey) return fallback;
+
+  const parsedDate = parseISO(dateKey);
+  return isValid(parsedDate) ? parsedDate : fallback;
+};
+
+const getListOccurrencesForEvent = (
+  event: CalendarEvent,
+  canManageEvents: boolean,
+  listStartDate?: string,
+): EventListOccurrence[] => {
+  const dates = getDatesBetween(event.startDate, event.endDate);
+  const dayCount = dates.length || 1;
+
+  if (dayCount === 1 || !dates[0]) {
+    return [{
+      event,
+      date: dates[0] ?? event.startDate,
+      kind: 'single',
+      dayIndex: 1,
+      dayCount,
+    }];
+  }
+
+  if (!canManageEvents) {
+    const occurrenceDate = listStartDate && event.startDate < listStartDate && event.endDate >= listStartDate
+      ? listStartDate
+      : dates[0];
+
+    return [{
+      event,
+      date: occurrenceDate,
+      kind: 'start',
+      dayIndex: 1,
+      dayCount,
+    }];
+  }
+
+  return dates.map((date, index) => ({
+    event,
+    date,
+    kind: index === 0 ? 'start' : (index === dates.length - 1 ? 'end' : 'continuation'),
+    dayIndex: index + 1,
+    dayCount,
+  }));
+};
 
 const formatTimelogShift = (from: string, to: string) => `${from} - ${to}`;
 
@@ -241,6 +420,41 @@ const getEventTimelogApprovalMeta = (timelogs: Timelog[]): EventTimelogApprovalM
 
 const getEventSelectionId = (event: Event): SelectedEventId => event.supabaseId ?? event.id;
 
+const isEventFullyStaffed = (event: Event) => event.needed > 0 && event.filled >= event.needed;
+
+const getMobileCrewEventState = (event: Event, currentProfileId?: string | null) => {
+  const eventDetail = getEventDetailData(getEventSelectionId(event));
+  const isAssigned = currentProfileId
+    ? eventDetail.crewAssignments.some((assignment) => assignment.contractorProfileId === currentProfileId)
+    : false;
+  const hasPendingApplication = currentProfileId
+    ? (eventDetail.applications ?? []).some((application) => (
+      application.contractorProfileId === currentProfileId && application.status === 'pending'
+    ))
+    : false;
+
+  return {
+    hasPendingApplication,
+    isAssigned,
+    isFullyStaffed: isEventFullyStaffed(event),
+  };
+};
+
+const matchesMobileCrewEventFilter = (
+  event: Event,
+  currentProfileId: string | null | undefined,
+  filter: MobileCrewEventFilter,
+) => {
+  if (filter === 'all') return true;
+
+  const { hasPendingApplication, isAssigned, isFullyStaffed } = getMobileCrewEventState(event, currentProfileId);
+
+  if (filter === 'open') return !isFullyStaffed;
+  if (filter === 'assigned') return isAssigned;
+  if (filter === 'pending') return hasPendingApplication;
+  return isFullyStaffed;
+};
+
 const EventsView = () => {
   const {
     role,
@@ -261,17 +475,26 @@ const EventsView = () => {
     setEventsCalendarDate,
   } = useAppContext();
   const { currentProfileId } = useAuth();
+  const isMobile = useIsMobile();
   const eventsQuery = useEventsQuery();
   const timelogsQuery = useTimelogsQuery();
   void timelogsQuery.data;
   const [didInitCalendarDate, setDidInitCalendarDate] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
-  const [assigningEvent, setAssigningEvent] = useState<Event | null>(null);
   const [applicationDraftTimes, setApplicationDraftTimes] = useState<Record<string, { from: string; to: string }>>({});
   const canManageEvents = role !== 'crew';
   const viewMode = eventsViewMode as EventsViewMode;
+  const canUseCalendarView = canManageEvents || !isMobile;
+  const effectiveViewMode: EventsViewMode = canUseCalendarView ? viewMode : 'list';
+  const isMobileCrewEventFeed = isMobile && role === 'crew' && effectiveViewMode === 'list';
   const calendarMode = eventsCalendarMode as CalendarMode;
   const eventFilter = eventsFilter as EventFilter;
+  const todayDateKey = getTodayDateKey();
+  const [showMobileCrewDatePicker, setShowMobileCrewDatePicker] = useState(false);
+  const [showMobileCrewFilters, setShowMobileCrewFilters] = useState(false);
+  const [mobileCrewStartDate, setMobileCrewStartDate] = useState('');
+  const [mobileCrewPickerMonthDate, setMobileCrewPickerMonthDate] = useState(todayDateKey);
+  const [mobileCrewFilter, setMobileCrewFilter] = useState<MobileCrewEventFilter>('all');
   const selectedEvent = useMemo(
     () => (eventsQuery.data ?? []).find((event) => (
       selectedEventId == null
@@ -280,6 +503,7 @@ const EventsView = () => {
     )) ?? null,
     [eventsQuery.data, selectedEventId],
   );
+  const isMobileEventDetailOpen = Boolean(isMobile && selectedEventId && selectedEvent);
   const events = useMemo(() => {
     const safeEvents = eventsQuery.data ?? [];
     const query = searchQuery.trim().toLowerCase();
@@ -322,39 +546,81 @@ const EventsView = () => {
     getEventsWithDerivedStatus(events)
   ), [events]);
 
+  const effectiveEventFilter: EventFilter = isMobileCrewEventFeed ? 'all' : eventFilter;
   const visibleEvents = useMemo(() => (
-    filterEventsByStatus(eventsWithDerivedStatus, eventFilter)
-  ), [eventFilter, eventsWithDerivedStatus]);
+    filterEventsByStatus(eventsWithDerivedStatus, effectiveEventFilter)
+  ), [effectiveEventFilter, eventsWithDerivedStatus]);
 
   const selectedMonthStart = format(startOfMonth(calendarDate), 'yyyy-MM-dd');
   const selectedMonthEnd = format(endOfMonth(calendarDate), 'yyyy-MM-dd');
   const monthVisibleEvents = useMemo(() => (
     visibleEvents.filter((event) => eventOverlapsDateRange(event, selectedMonthStart, selectedMonthEnd))
   ), [selectedMonthEnd, selectedMonthStart, visibleEvents]);
-  const listVisibleEvents = viewMode === 'list' ? monthVisibleEvents : visibleEvents;
+  const mobileCrewListStartDate = mobileCrewStartDate;
+  const listVisibleEvents = useMemo(() => {
+    if (effectiveViewMode !== 'list') return visibleEvents;
+
+    if (isMobileCrewEventFeed) {
+      return visibleEvents
+        .filter((event) => (
+          !mobileCrewListStartDate
+          || event.endDate >= mobileCrewListStartDate
+          || (isMobileEventDetailOpen && selectedEventId != null && getEventSelectionId(event) === selectedEventId)
+        ))
+        .filter((event) => matchesMobileCrewEventFilter(event, currentProfileId, mobileCrewFilter))
+        .sort((a, b) => {
+          if (a.startDate !== b.startDate) return a.startDate.localeCompare(b.startDate);
+          return a.name.localeCompare(b.name);
+        });
+    }
+
+    return monthVisibleEvents;
+  }, [currentProfileId, effectiveViewMode, isMobileCrewEventFeed, isMobileEventDetailOpen, mobileCrewFilter, mobileCrewListStartDate, monthVisibleEvents, selectedEventId, visibleEvents]);
+  const listRangeStart = isMobileCrewEventFeed
+    ? (mobileCrewListStartDate || '0001-01-01')
+    : selectedMonthStart;
+  const listRangeEnd = isMobileCrewEventFeed ? '9999-12-31' : selectedMonthEnd;
+  const mobileCrewPickerDate = useMemo(
+    () => getSafeDateFromKey(mobileCrewPickerMonthDate, getSafeDateFromKey(mobileCrewListStartDate, new Date())),
+    [mobileCrewListStartDate, mobileCrewPickerMonthDate],
+  );
+  const mobileCrewPickerStart = startOfWeek(startOfMonth(mobileCrewPickerDate), { weekStartsOn: 1 });
+  const mobileCrewPickerEnd = endOfWeek(endOfMonth(mobileCrewPickerDate), { weekStartsOn: 1 });
+  const mobileCrewPickerDays = useMemo(
+    () => eachDayOfInterval({ start: mobileCrewPickerStart, end: mobileCrewPickerEnd }),
+    [mobileCrewPickerStart, mobileCrewPickerEnd],
+  );
 
   const eventColorMap = useMemo(() => (
     new Map(
-      [...visibleEvents]
-        .sort((a, b) => a.id - b.id)
-        .map((event, index) => [event.id, getEventColorStyle(index, event.derivedStatus)]),
+      visibleEvents.map((event) => [
+        getEventSelectionId(event),
+        getEventColorStyle(event, event.derivedStatus),
+      ]),
     )
   ), [visibleEvents]);
 
   const groupedEventOccurrences = useMemo(() => (
     listVisibleEvents.reduce((acc, event) => {
-      getDatesBetween(event.startDate, event.endDate).forEach((date) => {
-        if (date < selectedMonthStart || date > selectedMonthEnd) return;
-        if (!acc[date]) acc[date] = [];
-        acc[date].push({ event, date });
+      getListOccurrencesForEvent(
+        event,
+        canManageEvents,
+        isMobileCrewEventFeed && mobileCrewListStartDate ? mobileCrewListStartDate : undefined,
+      ).forEach((occurrence) => {
+        const isSelectedOccurrence = isMobileEventDetailOpen
+          && selectedEventId != null
+          && getEventSelectionId(occurrence.event) === selectedEventId;
+        if (!isSelectedOccurrence && (occurrence.date < listRangeStart || occurrence.date > listRangeEnd)) return;
+        if (!acc[occurrence.date]) acc[occurrence.date] = [];
+        acc[occurrence.date].push(occurrence);
       });
       return acc;
     }, {} as Record<string, EventListOccurrence[]>)
-  ), [listVisibleEvents, selectedMonthEnd, selectedMonthStart]);
+  ), [canManageEvents, isMobileCrewEventFeed, isMobileEventDetailOpen, listRangeEnd, listRangeStart, listVisibleEvents, mobileCrewListStartDate, selectedEventId]);
 
   const sortedDates = Object.keys(groupedEventOccurrences).sort();
-  const hasNoVisibleEventsForView = viewMode === 'list'
-    ? listVisibleEvents.length === 0
+  const hasNoVisibleEventsForView = effectiveViewMode === 'list'
+    ? sortedDates.length === 0
     : visibleEvents.length === 0;
 
   const calendarStart = calendarMode === 'month'
@@ -458,62 +724,197 @@ const EventsView = () => {
     setEventsCalendarDate(format(startOfMonth(nextDate), 'yyyy-MM-dd'));
   };
 
-  if (selectedEventId && selectedEvent) {
+  const toggleMobileCrewDatePicker = () => {
+    setShowMobileCrewFilters(false);
+    setMobileCrewPickerMonthDate(mobileCrewListStartDate || todayDateKey);
+    setShowMobileCrewDatePicker((isOpen) => !isOpen);
+  };
+
+  const updateMobileCrewStartDate = (value: string) => {
+    if (!value) return;
+
+    setMobileCrewStartDate(value);
+    setMobileCrewPickerMonthDate(value);
+    setShowMobileCrewDatePicker(false);
+    setEventsCalendarDate(value);
+  };
+
+  const clearMobileCrewStartDate = () => {
+    setMobileCrewStartDate('');
+    setMobileCrewPickerMonthDate(todayDateKey);
+    setShowMobileCrewDatePicker(false);
+  };
+
+  if (selectedEventId && selectedEvent && !isMobile) {
     return <EventDetailView />;
   }
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      <div className="mb-5 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_auto_1fr] lg:items-start">
+      <div className={isMobileCrewEventFeed ? 'nodu-mobile-events-toolbar' : 'mb-5 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_auto_1fr] lg:items-start'}>
         <div className="flex min-w-0 flex-1 flex-col gap-3">
-          <div>
-            <div className="nodu-dashboard-kicker">Event Planner</div>
-            <div className="mt-1 flex flex-wrap items-center gap-4">
-              <h1 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--nodu-text)]">Akce</h1>
-              <div className="flex items-center rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
-                {[
-                  { id: 'list' as const, label: 'Seznam', icon: List },
-                  { id: 'calendar' as const, label: 'Kalendar', icon: CalendarDays },
-                ].map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => setEventsViewMode(item.id)}
-                    className={`flex items-center gap-1.5 rounded-[14px] px-3 py-2 text-xs font-medium transition-all ${viewMode === item.id ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)] shadow-[inset_0_0_0_1px_rgba(255,128,13,0.16)]' : 'text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
-                  >
-                    <item.icon size={14} />
-                    {item.label}
-                  </button>
-                ))}
+          {isMobileCrewEventFeed ? (
+            <div className="nodu-mobile-events-header">
+              <button
+                type="button"
+                aria-label="Vybrat datum akci"
+                className={`nodu-mobile-events-header__action nodu-mobile-events-header__action--left ${showMobileCrewDatePicker ? 'nodu-mobile-events-header__action--active' : ''}`}
+                aria-pressed={showMobileCrewDatePicker}
+                onClick={toggleMobileCrewDatePicker}
+              >
+                <CalendarDays size={18} />
+              </button>
+              <h1 className="nodu-mobile-events-header__title">Akce</h1>
+              <button
+                type="button"
+                aria-label="Filtrovat akce"
+                aria-pressed={showMobileCrewFilters}
+                className={`nodu-mobile-events-header__action nodu-mobile-events-header__action--right ${showMobileCrewFilters ? 'nodu-mobile-events-header__action--active' : ''}`}
+                onClick={() => {
+                  setShowMobileCrewDatePicker(false);
+                  setShowMobileCrewFilters((isOpen) => !isOpen);
+                }}
+              >
+                <Filter size={18} />
+              </button>
+            </div>
+          ) : (
+            <div>
+              <div className="nodu-dashboard-kicker">Event Planner</div>
+              <div className="mt-1 flex flex-wrap items-center gap-4">
+                <h1 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--nodu-text)]">Akce</h1>
+                <div className="flex items-center rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
+                  {[
+                    { id: 'list' as const, label: 'Seznam', icon: List },
+                    ...(canUseCalendarView ? [{ id: 'calendar' as const, label: 'Kalendar', icon: CalendarDays }] : []),
+                  ].map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => setEventsViewMode(item.id)}
+                      className={`flex items-center gap-1.5 rounded-[14px] px-3 py-2 text-xs font-medium transition-all ${effectiveViewMode === item.id ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)] shadow-[inset_0_0_0_1px_rgba(255,128,13,0.16)]' : 'text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
+                    >
+                      <item.icon size={14} />
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
-          <div className="flex flex-wrap items-center gap-2">
-            {[
-              { id: 'upcoming' as const, label: 'Nadchazejici' },
-              { id: 'past' as const, label: 'Uplynule' },
-              { id: 'all' as const, label: 'Vse' },
-            ].map((item) => (
+          {isMobileCrewEventFeed && showMobileCrewDatePicker && (
+            <div
+              className="nodu-mobile-events-date-panel"
+              role="dialog"
+              aria-label="Vyber data od kdy zobrazit akce"
+            >
+              <div className="nodu-mobile-events-date-panel__bar">
+                <button
+                  type="button"
+                  aria-label="Predchozi mesic vyberu akci"
+                  className="nodu-mobile-events-date-panel__nav"
+                  onClick={() => setMobileCrewPickerMonthDate(format(subMonths(mobileCrewPickerDate, 1), 'yyyy-MM-dd'))}
+                >
+                  <ChevronLeft size={15} />
+                </button>
+                <div className="nodu-mobile-events-date-panel__month">
+                  {format(mobileCrewPickerDate, 'LLLL yyyy', { locale: cs })}
+                </div>
+                <button
+                  type="button"
+                  aria-label="Dalsi mesic vyberu akci"
+                  className="nodu-mobile-events-date-panel__nav"
+                  onClick={() => setMobileCrewPickerMonthDate(format(addMonths(mobileCrewPickerDate, 1), 'yyyy-MM-dd'))}
+                >
+                  <ChevronRight size={15} />
+                </button>
+              </div>
+
               <button
-                key={item.id}
-                onClick={() => setEventsFilter(item.id)}
-                className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-all ${
-                  eventFilter === item.id
-                    ? 'border-[color:rgb(var(--nodu-accent-rgb)/0.18)] bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)]'
-                    : 'border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] text-[color:var(--nodu-text-soft)] hover:border-[color:rgb(var(--nodu-accent-rgb)/0.18)] hover:text-[color:var(--nodu-text)]'
-                }`}
+                type="button"
+                className="mb-3 w-full rounded-xl border border-[color:rgb(var(--nodu-accent-rgb)/0.2)] bg-[color:rgb(var(--nodu-accent-rgb)/0.08)] px-3 py-2 text-xs font-bold text-[color:var(--nodu-accent)]"
+                onClick={clearMobileCrewStartDate}
               >
-                {item.label}
+                Všechny akce
               </button>
-            ))}
-            <span className="text-[11px] font-medium text-[color:var(--nodu-text-soft)]">
-              {listVisibleEvents.length} akci
-            </span>
-          </div>
+
+              <div className="nodu-mobile-events-date-panel__weekdays" aria-hidden="true">
+                {MOBILE_CREW_DATE_PICKER_WEEKDAYS.map((day) => (
+                  <span key={day}>{day}</span>
+                ))}
+              </div>
+
+              <div className="nodu-mobile-events-date-panel__grid">
+                {mobileCrewPickerDays.map((day) => {
+                  const dayKey = format(day, 'yyyy-MM-dd');
+                  const isSelectedDay = Boolean(mobileCrewListStartDate) && dayKey === mobileCrewListStartDate;
+                  const isToday = dayKey === todayDateKey;
+
+                  return (
+                    <button
+                      key={dayKey}
+                      type="button"
+                      aria-label={`Zobrazit akce od ${format(day, 'd. MMMM yyyy', { locale: cs })}`}
+                      className={`nodu-mobile-events-date-panel__day ${
+                        isSelectedDay ? 'nodu-mobile-events-date-panel__day--selected' : ''
+                      } ${isToday ? 'nodu-mobile-events-date-panel__day--today' : ''} ${
+                        isSameMonth(day, mobileCrewPickerDate) ? '' : 'nodu-mobile-events-date-panel__day--outside'
+                      }`}
+                      onClick={() => updateMobileCrewStartDate(dayKey)}
+                    >
+                      {format(day, 'd.')}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {isMobileCrewEventFeed && showMobileCrewFilters && (
+            <div className="nodu-mobile-events-filter-panel">
+              {MOBILE_CREW_EVENT_FILTER_OPTIONS.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => setMobileCrewFilter(item.id)}
+                  className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-all ${
+                    mobileCrewFilter === item.id
+                      ? 'border-[color:rgb(var(--nodu-accent-rgb)/0.18)] bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)]'
+                      : 'border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] text-[color:var(--nodu-text-soft)] hover:border-[color:rgb(var(--nodu-accent-rgb)/0.18)] hover:text-[color:var(--nodu-text)]'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+              <span className="text-[11px] font-medium text-[color:var(--nodu-text-soft)]">
+                {listVisibleEvents.length} akci
+              </span>
+            </div>
+          )}
+
+          {!isMobileCrewEventFeed && (
+            <div className="flex flex-wrap items-center gap-2">
+              {EVENT_FILTER_OPTIONS.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => setEventsFilter(item.id)}
+                  className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-all ${
+                    eventFilter === item.id
+                      ? 'border-[color:rgb(var(--nodu-accent-rgb)/0.18)] bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)]'
+                      : 'border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] text-[color:var(--nodu-text-soft)] hover:border-[color:rgb(var(--nodu-accent-rgb)/0.18)] hover:text-[color:var(--nodu-text)]'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+              <span className="text-[11px] font-medium text-[color:var(--nodu-text-soft)]">
+                {listVisibleEvents.length} akci
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="justify-self-center lg:mt-[38px]">
-          {viewMode === 'list' && (
+          {effectiveViewMode === 'list' && !isMobileCrewEventFeed && (
             <div className="flex w-fit items-center rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.96)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.06)]">
               <button
                 aria-label="Predchozi mesic"
@@ -537,7 +938,7 @@ const EventsView = () => {
         </div>
 
         <div className="flex items-center justify-end gap-2 lg:mt-[38px]">
-          {viewMode === 'calendar' && (
+          {effectiveViewMode === 'calendar' && (
             <>
               <div className="flex items-center rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
                 {[
@@ -573,7 +974,7 @@ const EventsView = () => {
             <Button
               onClick={() => setEditingEvent(createEmptyEvent())}
               size="sm"
-              className="text-xs"
+              className="hidden text-xs md:inline-flex"
             >
               + Nova akce
             </Button>
@@ -581,14 +982,34 @@ const EventsView = () => {
         </div>
       </div>
 
+      {canManageEvents && !isMobileEventDetailOpen && (
+        <Button
+          aria-label="Nova akce"
+          title="Nova akce"
+          onClick={() => setEditingEvent(createEmptyEvent())}
+          size="icon"
+          className="nodu-event-mobile-create-fab h-10 w-10 rounded-full text-2xl font-semibold shadow-[0_14px_32px_rgba(255,128,13,0.24)] md:hidden"
+        >
+          +
+        </Button>
+      )}
+
       {hasNoVisibleEventsForView ? (
         <div className="rounded-[28px] border border-dashed border-[color:rgb(var(--nodu-accent-rgb)/0.24)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] px-6 py-12 text-center shadow-[0_18px_42px_rgba(47,38,31,0.08)]">
-          <div className="text-sm font-semibold text-[color:var(--nodu-text)]">Pro tento mesic a filtr tu zatim nejsou zadne akce.</div>
+          <div className="text-sm font-semibold text-[color:var(--nodu-text)]">
+            {isMobileCrewEventFeed
+              ? (mobileCrewListStartDate
+                ? 'Od zvoleného data tu zatím nejsou žádné akce.'
+                : 'Nejsou dostupné žádné akce.')
+              : 'Pro tento mesic a filtr tu zatim nejsou zadne akce.'}
+          </div>
           <div className="mt-1 text-xs text-[color:var(--nodu-text-soft)]">
-            Zkuste prepnout filtr nebo vytvorit novou akci.
+            {isMobileCrewEventFeed
+              ? 'Nove moznosti se tu objevi automaticky.'
+              : 'Zkuste prepnout filtr nebo vytvorit novou akci.'}
           </div>
         </div>
-      ) : viewMode === 'list' ? (
+      ) : effectiveViewMode === 'list' ? (
         <div className="space-y-6">
           {sortedDates.map((date) => (
             <div key={date} className="space-y-3">
@@ -601,7 +1022,8 @@ const EventsView = () => {
               </div>
 
               <div className="grid grid-cols-1 gap-3">
-                {groupedEventOccurrences[date].map(({ event, date: occurrenceDate }) => {
+                {groupedEventOccurrences[date].map((occurrence) => {
+                  const { event, date: occurrenceDate } = occurrence;
                   const eventDetail = getEventDetailData(getEventSelectionId(event));
                   const eventTimelogs: Timelog[] = eventDetail.timelogs;
                   const assignedCrew = eventDetail.crewAssignments.map((assignment) => ({
@@ -646,17 +1068,30 @@ const EventsView = () => {
                   const isMeAssigned = currentProfileId
                     ? assignedCrew.some((contractor) => contractor.profileId === currentProfileId)
                     : false;
-                  const totalHours = eventTimelogs.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
-                  const daysCount = getDatesBetween(event.startDate, event.endDate).length;
                   const isFullyStaffed = event.needed > 0 && event.filled >= event.needed;
+                  const isClosedForApplications = event.status === 'full' || isFullyStaffed;
+                  const canApplyToEvent = event.status === 'upcoming' && !isClosedForApplications;
                   const occurrenceTimeLabel = getEventOccurrenceTimeLabel(event, occurrenceDate, eventTimelogs);
+                  const isMultiDayOccurrence = occurrence.dayCount > 1;
+                  const shouldShowMultiDayAccent = canManageEvents && isMultiDayOccurrence;
+                  const isContinuationOccurrence = occurrence.kind === 'continuation' || occurrence.kind === 'end';
                   const approvalMeta = getEventTimelogApprovalMeta(eventTimelogs);
+                  const listAccentStyle = getEventListAccentStyle(event, occurrence.dayCount);
+                  const listBorderClass = shouldShowMultiDayAccent
+                    ? 'border-[color:var(--event-list-accent-border)]'
+                    : 'border-[color:var(--nodu-border)]';
+                  const continuationBorderClass = shouldShowMultiDayAccent
+                    ? 'border-dashed border-[color:var(--event-list-accent-border)]'
+                    : 'border-dashed border-[color:rgb(var(--nodu-text-rgb)/0.16)]';
 
                   return (
                     <div
                       key={`${event.supabaseId ?? event.id}-${occurrenceDate}`}
+                      data-testid="event-list-card"
+                      data-event-multiday={isMultiDayOccurrence ? 'true' : undefined}
                       role="button"
                       tabIndex={0}
+                      style={shouldShowMultiDayAccent ? listAccentStyle : undefined}
                       onClick={() => openEventDetail(event)}
                       onKeyDown={(keyboardEvent) => {
                         if (keyboardEvent.key === 'Enter' || keyboardEvent.key === ' ') {
@@ -664,8 +1099,19 @@ const EventsView = () => {
                           openEventDetail(event);
                         }
                       }}
-                      className="relative cursor-pointer overflow-hidden rounded-[28px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] shadow-[0_18px_42px_rgba(47,38,31,0.08)] transition-shadow hover:shadow-[0_22px_48px_rgba(47,38,31,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:rgb(var(--nodu-accent-rgb)/0.22)]"
+                      className={`relative cursor-pointer overflow-hidden rounded-[28px] border transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:rgb(var(--nodu-accent-rgb)/0.22)] ${
+                        isContinuationOccurrence
+                          ? `${continuationBorderClass} bg-[color:rgb(var(--nodu-text-rgb)/0.035)] shadow-none hover:shadow-[0_12px_28px_rgba(47,38,31,0.06)]`
+                          : `${listBorderClass} bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] shadow-[0_18px_42px_rgba(47,38,31,0.08)] hover:shadow-[0_22px_48px_rgba(47,38,31,0.12)]`
+                      }`}
                     >
+                      {shouldShowMultiDayAccent && (
+                        <span
+                          data-testid="event-list-accent"
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-y-4 left-0 w-1 rounded-r-full bg-[color:var(--event-list-accent)]"
+                        />
+                      )}
                       {canManageEvents && (
                         <button
                           onClick={(clickEvent) => {
@@ -690,14 +1136,26 @@ const EventsView = () => {
                               )}
                             </div>
                             <h3 className="text-base font-semibold text-[color:var(--nodu-text)]">{event.name}</h3>
-                            <div className="mt-1 flex items-center gap-1.5 text-xs text-[color:var(--nodu-text-soft)]">
-                              {formatOccurrenceDate(occurrenceDate)} - {occurrenceTimeLabel} - {event.client}
-                              {daysCount > 1 && (
-                                <span className="rounded bg-[color:rgb(var(--nodu-text-rgb)/0.08)] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-tighter text-[color:var(--nodu-text-soft)]">
-                                  {daysCount} dny
-                                </span>
-                              )}
-                            </div>
+                            {isMultiDayOccurrence ? (
+                              <div className="mt-1 space-y-0.5 text-xs text-[color:var(--nodu-text-soft)]">
+                                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                                  <span className="min-w-5 text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--nodu-text-soft)]">Od</span>
+                                  <span className="font-medium text-[color:var(--nodu-text)]">{formatEventBoundaryDateTime(event.startDate, event.startTime)}</span>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                                  <span className="min-w-5 text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--nodu-text-soft)]">Do</span>
+                                  <span className="font-medium text-[color:var(--nodu-text)]">{formatEventBoundaryDateTime(event.endDate, event.endTime)}</span>
+                                  <span className="rounded bg-[color:rgb(var(--nodu-text-rgb)/0.08)] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-tighter text-[color:var(--nodu-text-soft)]">
+                                    {formatEventDayCount(occurrence.dayCount)}
+                                  </span>
+                                </div>
+                                <div>{event.client}</div>
+                              </div>
+                            ) : (
+                              <div className="mt-1 flex items-center gap-1.5 text-xs text-[color:var(--nodu-text-soft)]">
+                                {formatSingleDayOccurrenceMeta(occurrenceDate, occurrenceTimeLabel, event.client)}
+                              </div>
+                            )}
                           </div>
 
                           <div className="hidden min-h-[72px] border-l border-[color:rgb(var(--nodu-text-rgb)/0.1)] pl-6 md:block">
@@ -768,42 +1226,23 @@ const EventsView = () => {
                             <span className="text-xs font-semibold text-[color:var(--nodu-text)]">{event.filled}/{event.needed}</span>
                           </div>
                         </div>
-                        {canManageEvents && (
-                          <div>
-                            <div className="mb-1 text-[10px] uppercase tracking-wider text-[color:var(--nodu-text-soft)]">Crew hodiny celkem</div>
-                            <div className="text-xs font-semibold text-[color:var(--nodu-text)]">{eventTimelogs.length} timelogy · {totalHours.toFixed(1)} h</div>
-                          </div>
-                        )}
                         <div className="ml-auto flex gap-2">
                           {canManageEvents && (
-                            <>
-                              <Button
-                                aria-label="Kopirovat akci na jiny den"
-                                onClick={(clickEvent) => {
-                                  clickEvent.stopPropagation();
-                                  setEditingEvent(createEventCopy(event));
-                                }}
-                                variant="outline"
-                                size="sm"
-                                className="text-[11px]"
-                              >
-                                <Copy size={13} />
-                                Kopirovat
-                              </Button>
-                              <Button
-                                onClick={(clickEvent) => {
-                                  clickEvent.stopPropagation();
-                                  setAssigningEvent(event);
-                                }}
-                                variant="outline"
-                                size="sm"
-                                className="text-[11px]"
-                              >
-                                Obsadit crew {'->'}
-                              </Button>
-                            </>
+                            <Button
+                              aria-label="Kopirovat akci na jiny den"
+                              onClick={(clickEvent) => {
+                                clickEvent.stopPropagation();
+                                setEditingEvent(createEventCopy(event));
+                              }}
+                              variant="outline"
+                              size="sm"
+                              className="text-[11px]"
+                            >
+                              <Copy size={13} />
+                              Kopirovat
+                            </Button>
                           )}
-                          {role === 'crew' && !isMeAssigned && !hasMyPendingApplication && (
+                          {role === 'crew' && !isMeAssigned && !hasMyPendingApplication && canApplyToEvent && (
                             event.allowCrewTimeProposal ? (
                               <div
                                 className="flex items-center gap-1 rounded-xl border border-[color:var(--nodu-border)] bg-white px-2 py-1"
@@ -827,7 +1266,18 @@ const EventsView = () => {
                               </div>
                             ) : null
                           )}
-                          {role === 'crew' && !isMeAssigned && !hasMyPendingApplication && (
+                          {role === 'crew' && !isMeAssigned && !hasMyPendingApplication && isClosedForApplications && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="text-[11px]"
+                              disabled
+                            >
+                              Obsazeno
+                            </Button>
+                          )}
+                          {role === 'crew' && !isMeAssigned && !hasMyPendingApplication && canApplyToEvent && (
                             <Button
                               onClick={(clickEvent) => {
                                 clickEvent.stopPropagation();
@@ -925,7 +1375,7 @@ const EventsView = () => {
                       const width = ((segment.endIndex - segment.startIndex + 1) / 7) * 100;
                       const left = (segment.startIndex / 7) * 100;
                       const spanDays = segment.endIndex - segment.startIndex + 1;
-                      const eventColor = eventColorMap.get(segment.event.id) || getEventColorStyle(segment.event.id, segment.event.derivedStatus);
+                      const eventColor = eventColorMap.get(getEventSelectionId(segment.event)) || getEventColorStyle(segment.event, segment.event.derivedStatus);
 
                       return (
                         <button
@@ -984,10 +1434,7 @@ const EventsView = () => {
         onClose={() => setEditingEvent(null)}
         onChange={setEditingEvent}
       />
-      <AssignCrewModal
-        event={assigningEvent}
-        onClose={() => setAssigningEvent(null)}
-      />
+      {selectedEventId && selectedEvent && isMobile && <EventDetailView />}
     </motion.div>
   );
 };

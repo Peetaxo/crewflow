@@ -1186,6 +1186,7 @@ const EventDetailView = () => {
                   const timelog = eventTimelogs.find((item) => item.contractorProfileId === contractor.profileId);
                   const hours = timelog ? calculateTotalHours(timelog.days) : 0;
                   const timelogSummary = timelog?.status === 'draft' ? 'Rozpracované' : formatMobileCrewHours(hours);
+                  const isCurrentCrewMember = contractor.profileId === currentProfileId;
 
                   return (
                     <button
@@ -1199,9 +1200,11 @@ const EventDetailView = () => {
                       <div className="av h-10 w-10 text-[12px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
                       <div>
                         <div className="nodu-mobile-event-crew-name">{contractor.name}</div>
-                        <div className="nodu-mobile-event-crew-meta">{timelogSummary}</div>
+                        {(!isCrewRole || isCurrentCrewMember) && (
+                          <div className="nodu-mobile-event-crew-meta">{timelogSummary}</div>
+                        )}
                       </div>
-                      {contractor.profileId === currentProfileId && <span className="nodu-mobile-event-crew-chip">Ty</span>}
+                      {isCurrentCrewMember && <span className="nodu-mobile-event-crew-chip">Ty</span>}
                     </button>
                   );
                 })}

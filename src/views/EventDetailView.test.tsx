@@ -940,7 +940,7 @@ describe('EventDetailView', () => {
     expect(screen.queryByRole('heading', { name: 'Kde se potkáme' })).not.toBeInTheDocument();
     expect(screen.queryByText('Provoz · 12.0h')).not.toBeInTheDocument();
     expect(screen.getByText('Rozpracované')).toBeInTheDocument();
-    expect(screen.getByText('0h')).toBeInTheDocument();
+    expect(screen.queryByText('0h')).not.toBeInTheDocument();
 
     const descriptionSection = screen.getByRole('heading', { name: 'Popis akce' }).closest('section');
     const crewSection = screen.getByRole('heading', { name: 'Přiřazená crew' }).closest('section');
@@ -1016,6 +1016,76 @@ describe('EventDetailView', () => {
     const crewSection = screen.getByRole('heading', { name: 'Přiřazená crew' }).closest('section');
 
     expect(crewSection).toHaveTextContent('2/5');
+  });
+
+  it('hides other assigned Crew hours while keeping the current Crew summary visible', async () => {
+    mobileMockState.isMobile = true;
+    const submittedOwnTimelog = {
+      ...timelog,
+      status: 'pending_ch' as const,
+    };
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        role: 'crew',
+        selectedEventId: 'event-uuid-1',
+        setSelectedEventId,
+        eventTab: 'overview',
+        setEventTab: vi.fn(),
+        setEditingReceipt: vi.fn(),
+        setDeleteConfirm: vi.fn(),
+        setEditingTimelog,
+      }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [contractor, applicant],
+      getEventDetailData: () => ({
+        event: { ...event, status: 'upcoming' as const },
+        timelogs: [submittedOwnTimelog, pendingApprovalTimelog],
+        contractors: [contractor, applicant],
+        receipts: [],
+        applications: [],
+        crewAssignments: [
+          { eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: contractor.profileId, name: contractor.name },
+          { eventId: event.id, eventSupabaseId: event.supabaseId, contractorProfileId: applicant.profileId, name: applicant.name },
+        ],
+      }),
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: requestEventWithdrawalMock,
+      subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatus,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
+    }));
+
+    vi.doMock('../components/modals/EventEditModal', () => ({
+      default: () => null,
+    }));
+
+    vi.doMock('../components/modals/AssignCrewModal', () => ({
+      default: () => null,
+    }));
+
+    const { default: EventDetailView } = await import('./EventDetailView');
+
+    render(<EventDetailView />);
+
+    const ownCrewRow = screen.getByText('Petr Heitzer').closest('.nodu-mobile-event-crew-row');
+    const otherCrewRow = screen.getByText('Jana Nova').closest('.nodu-mobile-event-crew-row');
+
+    expect(ownCrewRow).toHaveTextContent('12.0h');
+    expect(ownCrewRow).toHaveTextContent('Ty');
+    expect(otherCrewRow).not.toHaveTextContent('6.0h');
+    expect(otherCrewRow?.querySelector('.nodu-mobile-event-crew-meta')).not.toBeInTheDocument();
   });
 
   it('opens a mobile contact call dialog from the event info contact row', async () => {

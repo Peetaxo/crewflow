@@ -2,6 +2,72 @@
 @tailwind components;
 @tailwind utilities;
 
+.nodu-app-loading {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  padding: calc(env(safe-area-inset-top) + 1.5rem) 1.5rem calc(env(safe-area-inset-bottom) + 1.5rem);
+  background: var(--nodu-paper);
+}
+
+.nodu-app-loading__mark {
+  width: clamp(7rem, 30vw, 10rem);
+  height: auto;
+  overflow: visible;
+}
+
+.nodu-app-loading__ray {
+  transform-box: view-box;
+  transform-origin: 887px 302px;
+  animation: nodu-app-loading-ray-cycle 3.7s cubic-bezier(0.22, 0.78, 0.28, 1) infinite;
+}
+
+.nodu-app-loading__ray path {
+  fill: none;
+  stroke: #17130f;
+  stroke-width: 50;
+  stroke-linecap: round;
+}
+
+.nodu-app-loading__ray--1 { animation-delay: 0s; }
+.nodu-app-loading__ray--2 { animation-delay: 0.08s; }
+.nodu-app-loading__ray--3 { animation-delay: 0.16s; }
+.nodu-app-loading__ray--4 { animation-delay: 0.24s; }
+.nodu-app-loading__ray--5 { animation-delay: 0.32s; }
+.nodu-app-loading__ray--6 { animation-delay: 0.4s; }
+
+.nodu-app-loading__dot {
+  fill: #ff800d;
+  stroke: #c75e00;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: nodu-app-loading-dot-pulse 3.7s ease-in-out infinite;
+}
+
+@keyframes nodu-app-loading-ray-cycle {
+  0%, 8% { transform: scale(0.001); opacity: 0; }
+  37%, 62% { transform: scale(1); opacity: 1; }
+  94%, 100% { transform: scale(0.001); opacity: 0; }
+}
+
+@keyframes nodu-app-loading-dot-pulse {
+  0%, 100% { transform: scale(0.78); opacity: 0.76; }
+  16%, 76% { transform: scale(1); opacity: 1; }
+  91% { transform: scale(0.84); opacity: 0.86; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nodu-app-loading__ray {
+    animation: none;
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  .nodu-app-loading__dot {
+    animation: none;
+  }
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

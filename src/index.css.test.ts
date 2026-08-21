@@ -39,6 +39,23 @@ describe('nodu CSS helpers', () => {
     expect(tabletCardGridRule).toContain('overflow-y: visible;');
   });
 
+  it('animates the loading rays from and back into the orange dot', () => {
+    const css = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8');
+    const rayRule = css.match(/\.nodu-app-loading__ray\s*\{[\s\S]*?\}/)?.[0];
+    const rayKeyframes = css.match(/@keyframes nodu-app-loading-ray-cycle\s*\{[\s\S]*?\n\}/)?.[0];
+    const reducedMotion = css.match(/@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.nodu-app-loading__ray[\s\S]*?\n\}/)?.[0];
+
+    expect(rayRule).toContain('transform-box: view-box;');
+    expect(rayRule).toContain('transform-origin: 887px 302px;');
+    expect(rayRule).toContain('3.7s');
+    expect(rayKeyframes).toContain('transform: scale(0.001);');
+    expect(rayKeyframes).toContain('transform: scale(1);');
+    expect(css).toContain('.nodu-app-loading__ray--1');
+    expect(css).toContain('.nodu-app-loading__ray--6');
+    expect(reducedMotion).toContain('animation: none;');
+    expect(reducedMotion).toContain('transform: scale(1);');
+  });
+
   it('defines token-driven nodu surface helpers for shared light and dark mode styling', () => {
     const css = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8');
     const darkTokenBlock = css.match(/\.dark\s*\{[\s\S]*?--nodu-accent-rgb:\s*224 138 74;[\s\S]*?\}/)?.[0];

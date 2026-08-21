@@ -68,10 +68,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [authRole, persistedUiSession, shouldDeferUiRestore],
   );
   const skipInitialSearchReset = useRef(Boolean(initialUiSession));
+  const initialRole = authRole ?? 'crewhead';
   const [darkMode, setDarkMode] = useState(initialUiPreferences?.darkMode ?? false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(initialUiPreferences?.sidebarCollapsed ?? false);
-  const [role, setRole] = useState<Role>(authRole ?? 'crewhead');
-  const [currentTab, setCurrentTabState] = useState(initialUiSession?.currentTab ?? 'dashboard');
+  const [role, setRole] = useState<Role>(initialRole);
+  const [currentTab, setCurrentTabState] = useState(
+    initialUiSession?.currentTab ?? NAV_BY_ROLE[initialRole][0],
+  );
   const [navigationGuardMessage, setNavigationGuardMessage] = useState<string | null>(null);
   const [pendingTab, setPendingTab] = useState<string | null>(null);
   const [settingsSection, setSettingsSection] = useState<'menu' | 'profile' | 'appearance'>('menu');

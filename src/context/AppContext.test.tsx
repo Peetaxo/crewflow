@@ -92,6 +92,11 @@ function ContextProbe() {
   );
 }
 
+function FirstTabProbe({ values }: { values: string[] }) {
+  values.push(useAppContext().currentTab);
+  return null;
+}
+
 function AuthResolutionHarness() {
   const [, forceRender] = React.useState(0);
 
@@ -189,6 +194,64 @@ describe('AppProvider UI session restore', () => {
     );
 
     expect(screen.getByTestId('eventsFilter')).toHaveTextContent('all');
+  });
+
+  it('starts Crew on my shifts on the first render', () => {
+    mockAuthState.role = 'crew';
+    const values: string[] = [];
+
+    render(
+      <AppProvider>
+        <FirstTabProbe values={values} />
+      </AppProvider>,
+    );
+
+    expect(values[0]).toBe('my-shifts');
+  });
+
+  it.each(['crewhead', 'coo'] as const)('starts %s on dashboard on the first render', (role) => {
+    mockAuthState.role = role;
+    const values: string[] = [];
+
+    render(
+      <AppProvider>
+        <FirstTabProbe values={values} />
+      </AppProvider>,
+    );
+
+    expect(values[0]).toBe('dashboard');
+  });
+
+  it('keeps a valid persisted tab on the first render', () => {
+    mockAuthState.role = 'crew';
+    savePersistedUiSession({
+      currentTab: 'events',
+      searchQuery: '',
+      timelogFilter: 'all',
+      projectFilter: 'all',
+      selectedContractorProfileId: null,
+      selectedEventId: null,
+      selectedProjectIdForStats: null,
+      selectedClientIdForStats: null,
+      eventTab: 'overview',
+      eventsViewMode: 'list',
+      eventsCalendarMode: 'month',
+      eventsFilter: 'all',
+      eventsCalendarDate: '',
+      editingTimelog: null,
+      editingReceipt: null,
+      editingProject: null,
+      editingClient: null,
+    });
+    const values: string[] = [];
+
+    render(
+      <AppProvider>
+        <FirstTabProbe values={values} />
+      </AppProvider>,
+    );
+
+    expect(values[0]).toBe('events');
   });
 
   it('saves only persisted UI fields when context changes', async () => {

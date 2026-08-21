@@ -395,6 +395,11 @@ button.nodu-my-shifts-stat-card:active {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 0.8rem;
+  max-height: min(26rem, 52dvh);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding-right: 0.15rem;
+  -webkit-overflow-scrolling: touch;
 }
 
 .nodu-my-shifts-empty {
@@ -460,6 +465,9 @@ button.nodu-my-shifts-stat-card:active {
 
   .nodu-my-shifts-card-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-height: none;
+    overflow-y: visible;
+    padding-right: 0;
   }
 }
 
@@ -468,4 +476,3 @@ button.nodu-my-shifts-stat-card:active {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
-

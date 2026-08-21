@@ -17,6 +17,8 @@ describe('nodu CSS helpers', () => {
   it('loads the complete mobile My Shifts stylesheet', () => {
     const main = readFileSync(resolve(process.cwd(), 'src/main.tsx'), 'utf8');
     const myShiftsCss = readFileSync(resolve(process.cwd(), 'src/styles/mobile-my-shifts.css'), 'utf8');
+    const mobileCardGridRule = myShiftsCss.match(/\.nodu-my-shifts-card-grid\s*\{[\s\S]*?\}/)?.[0];
+    const tabletCardGridRule = myShiftsCss.match(/@media \(min-width: 768px\)[\s\S]*?\.nodu-my-shifts-card-grid\s*\{[\s\S]*?\}/)?.[0];
 
     expect(main).toContain('import "./styles/mobile-my-shifts.css";');
     [
@@ -29,6 +31,12 @@ describe('nodu CSS helpers', () => {
     ].forEach((selector) => {
       expect(myShiftsCss).toContain(selector);
     });
+    expect(mobileCardGridRule).toContain('max-height: min(26rem, 52dvh);');
+    expect(mobileCardGridRule).toContain('overflow-y: auto;');
+    expect(mobileCardGridRule).toContain('overscroll-behavior-y: contain;');
+    expect(mobileCardGridRule).toContain('-webkit-overflow-scrolling: touch;');
+    expect(tabletCardGridRule).toContain('max-height: none;');
+    expect(tabletCardGridRule).toContain('overflow-y: visible;');
   });
 
   it('defines token-driven nodu surface helpers for shared light and dark mode styling', () => {

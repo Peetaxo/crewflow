@@ -404,6 +404,51 @@ describe('EventsView', () => {
         status: 'past' as const,
         client: 'Klient E',
       },
+      {
+        id: 106,
+        supabaseId: 'event-ongoing-unrelated',
+        name: 'Probihajici cizi akce',
+        job: 'ONGOING001',
+        startDate: '2026-08-10',
+        endDate: '2026-08-12',
+        startTime: '08:00',
+        endTime: '17:00',
+        city: 'Praha',
+        needed: 1,
+        filled: 1,
+        status: 'full' as const,
+        client: 'Klient F',
+      },
+      {
+        id: 107,
+        supabaseId: 'event-ongoing-assigned',
+        name: 'Probihajici moje akce',
+        job: 'ONGOING002',
+        startDate: '2026-08-10',
+        endDate: '2026-08-12',
+        startTime: '08:00',
+        endTime: '17:00',
+        city: 'Praha',
+        needed: 1,
+        filled: 1,
+        status: 'full' as const,
+        client: 'Klient G',
+      },
+      {
+        id: 108,
+        supabaseId: 'event-ongoing-pending',
+        name: 'Probihajici cekajici akce',
+        job: 'ONGOING003',
+        startDate: '2026-08-10',
+        endDate: '2026-08-12',
+        startTime: '08:00',
+        endTime: '17:00',
+        city: 'Praha',
+        needed: 2,
+        filled: 1,
+        status: 'upcoming' as const,
+        client: 'Klient H',
+      },
     ];
 
     vi.doMock('../context/useAppContext', () => ({
@@ -431,11 +476,22 @@ describe('EventsView', () => {
         ...eventDetail,
         event: mobileCrewEvents.find((event) => event.supabaseId === eventId || event.id === eventId) ?? mobileCrewEvents[0],
         timelogs: [],
-        applications: eventId === 'event-pending'
-          ? [{ id: 201, eventId: 104, eventSupabaseId: 'event-pending', contractorProfileId: 'profile-current', status: 'pending' as const }]
+        applications: eventId === 'event-pending' || eventId === 'event-ongoing-pending'
+          ? [{
+              id: eventId === 'event-pending' ? 201 : 202,
+              eventId: eventId === 'event-pending' ? 104 : 108,
+              eventSupabaseId: String(eventId),
+              contractorProfileId: 'profile-current',
+              status: 'pending' as const,
+            }]
           : [],
-        crewAssignments: eventId === 'event-assigned'
-          ? [{ eventId: 103, eventSupabaseId: 'event-assigned', contractorProfileId: 'profile-current', name: 'Petr Heitzer' }]
+        crewAssignments: eventId === 'event-assigned' || eventId === 'event-ongoing-assigned'
+          ? [{
+              eventId: eventId === 'event-assigned' ? 103 : 107,
+              eventSupabaseId: String(eventId),
+              contractorProfileId: 'profile-current',
+              name: 'Petr Heitzer',
+            }]
           : [],
       }),
     }));
@@ -462,7 +518,10 @@ describe('EventsView', () => {
 
     expect(screen.getByText('Volna akce')).toBeInTheDocument();
     expect(screen.getByText('Obsazena akce')).toBeInTheDocument();
-    expect(screen.getByText('Stara akce')).toBeInTheDocument();
+    expect(screen.queryByText('Stara akce')).not.toBeInTheDocument();
+    expect(screen.queryByText('Probihajici cizi akce')).not.toBeInTheDocument();
+    expect(screen.getByText('Probihajici moje akce')).toBeInTheDocument();
+    expect(screen.getByText('Probihajici cekajici akce')).toBeInTheDocument();
 
     const openCard = screen.getByText('Volna akce').closest('.relative.cursor-pointer');
     expect(openCard).not.toBeNull();
@@ -471,11 +530,6 @@ describe('EventsView', () => {
     const occupiedCard = screen.getByText('Obsazena akce').closest('.relative.cursor-pointer');
     expect(occupiedCard).not.toBeNull();
     expect(within(occupiedCard as HTMLElement).getByRole('button', { name: 'Obsazeno' })).toBeDisabled();
-
-    const pastCard = screen.getByText('Stara akce').closest('.relative.cursor-pointer');
-    expect(pastCard).not.toBeNull();
-    expect(within(pastCard as HTMLElement).queryByRole('button', { name: 'Prihlasit na akci' })).not.toBeInTheDocument();
-    expect(within(pastCard as HTMLElement).queryByRole('button', { name: 'Obsazeno' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Filtrovat akce' }));
     const filterPanel = document.querySelector('.nodu-mobile-events-filter-panel');
@@ -493,6 +547,60 @@ describe('EventsView', () => {
     expect(screen.queryByText('Obsazena akce')).not.toBeInTheDocument();
   });
 
+  it.each(['crewhead', 'coo'] as const)(
+    'keeps active overlapping events visible from today for mobile %s',
+    async (role) => {
+      mobileMockState.isMobile = true;
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-08-11T12:00:00'));
+
+      const managerEvents = [
+        { ...events[0], id: 301, supabaseId: 'past-event', name: 'Skoncena akce', startDate: '2026-08-08', endDate: '2026-08-09' },
+        { ...events[0], id: 302, supabaseId: 'active-event', name: 'Probihajici akce', startDate: '2026-08-10', endDate: '2026-08-12' },
+        { ...events[0], id: 303, supabaseId: 'future-event', name: 'Budouci akce', startDate: '2026-08-15', endDate: '2026-08-15' },
+      ];
+
+      vi.doMock('../context/useAppContext', () => ({
+        useAppContext: () => ({ ...mockAppContext, role, eventsCalendarDate: '2026-08-11' }),
+      }));
+      vi.doMock('../features/events/queries/useEventsQuery', () => ({
+        useEventsQuery: () => ({ data: managerEvents, isLoading: false, error: null }),
+      }));
+      vi.doMock('../features/events/services/events.service', () => ({
+        createEmptyEvent: vi.fn(() => managerEvents[2]),
+        createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+        applyForEvent: vi.fn(),
+        requestEventWithdrawal: vi.fn(),
+        withdrawEventApplication: vi.fn(),
+        filterEventsByStatus: (items: typeof managerEvents) => items.map((item) => ({ ...item, derivedStatus: 'upcoming' as const })),
+        getEventsWithDerivedStatus: (items: typeof managerEvents) => items.map((item) => ({ ...item, derivedStatus: 'upcoming' as const })),
+        getReferenceDate: () => new Date('2026-08-11'),
+        getEventDetailData: (eventId: string | number) => ({
+          ...eventDetail,
+          event: managerEvents.find((event) => event.supabaseId === eventId || event.id === eventId) ?? managerEvents[0],
+          timelogs: [],
+          applications: [],
+          crewAssignments: [],
+        }),
+      }));
+      vi.doMock('./EventDetailView', () => ({ default: () => <div>detail</div> }));
+      vi.doMock('../components/modals/EventEditModal', () => ({ default: () => null }));
+      vi.doMock('../components/modals/AssignCrewModal', () => ({ default: () => null }));
+
+      const { default: EventsView } = await import('./EventsView');
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <EventsView />
+        </QueryClientProvider>,
+      );
+
+      expect(screen.queryByText('Skoncena akce')).not.toBeInTheDocument();
+      expect(screen.getAllByText('Probihajici akce')).toHaveLength(2);
+      expect(screen.getByText('Budouci akce')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Vybrat datum akci' })).toBeInTheDocument();
+    },
+  );
+
   it('opens an in-app date picker for mobile Crew events and filters from the selected date', async () => {
     mobileMockState.isMobile = true;
     vi.useFakeTimers();
@@ -500,6 +608,21 @@ describe('EventsView', () => {
 
     const setEventsCalendarDate = vi.fn();
     const mobileCrewEvents = [
+      {
+        id: 200,
+        supabaseId: 'event-before-today',
+        name: 'Akce pred dneskem',
+        job: 'OLD001',
+        startDate: '2026-08-05',
+        endDate: '2026-08-05',
+        startTime: '08:00',
+        endTime: '17:00',
+        city: 'Praha',
+        needed: 1,
+        filled: 0,
+        status: 'upcoming' as const,
+        client: 'Klient 0',
+      },
       {
         id: 201,
         supabaseId: 'event-before-date',
@@ -583,6 +706,7 @@ describe('EventsView', () => {
       </QueryClientProvider>,
     );
 
+    expect(screen.queryByText('Akce pred dneskem')).not.toBeInTheDocument();
     expect(screen.getByText('Akce pred vyberem')).toBeInTheDocument();
     expect(screen.getByText('Akce po vyberu')).toBeInTheDocument();
 
@@ -590,17 +714,20 @@ describe('EventsView', () => {
 
     expect(screen.getByText('srpen 2026')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Zobrazit akce od 20. srpna 2026' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Zobrazit akce od 5. srpna 2026' }));
 
-    expect(screen.queryByText('Akce pred vyberem')).not.toBeInTheDocument();
-    expect(screen.getByText('Akce po vyberu')).toBeInTheDocument();
-    expect(setEventsCalendarDate).toHaveBeenCalledWith('2026-08-20');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Vybrat datum akci' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Všechny akce' }));
-
+    expect(screen.getByText('Akce pred dneskem')).toBeInTheDocument();
     expect(screen.getByText('Akce pred vyberem')).toBeInTheDocument();
     expect(screen.getByText('Akce po vyberu')).toBeInTheDocument();
+    expect(setEventsCalendarDate).toHaveBeenCalledWith('2026-08-05');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Vybrat datum akci' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Dnes a dál' }));
+
+    expect(screen.queryByText('Akce pred dneskem')).not.toBeInTheDocument();
+    expect(screen.getByText('Akce pred vyberem')).toBeInTheDocument();
+    expect(screen.getByText('Akce po vyberu')).toBeInTheDocument();
+    expect(setEventsCalendarDate).toHaveBeenCalledWith('2026-08-11');
   });
 
   it('renders single-day event meta without dangling separators when client is missing', async () => {
@@ -1559,7 +1686,7 @@ describe('EventsView', () => {
     expect(screen.queryByText(/17\..*dubna/i)).not.toBeInTheDocument();
   });
 
-  it('shows all mobile Crew event history by default instead of hiding past events', async () => {
+  it('shows mobile Crew events from today by default and hides past history', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-08-10T10:00:00+02:00'));
     mobileMockState.isMobile = true;
@@ -1649,7 +1776,7 @@ describe('EventsView', () => {
 
     expect(screen.getByText('Dnesni akce')).toBeInTheDocument();
     expect(screen.getByText('Zarijova akce')).toBeInTheDocument();
-    expect(screen.getByText('Stara cervencova akce')).toBeInTheDocument();
+    expect(screen.queryByText('Stara cervencova akce')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Nadchazejici' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Uplynule' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Vse' })).not.toBeInTheDocument();

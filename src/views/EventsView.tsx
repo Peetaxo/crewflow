@@ -440,6 +440,20 @@ const getMobileCrewEventState = (event: Event, currentProfileId?: string | null)
   };
 };
 
+const isEventVisibleFromMobileDate = (
+  event: Event,
+  role: 'crew' | 'crewhead' | 'coo',
+  currentProfileId: string | null | undefined,
+  startDate: string,
+) => {
+  if (role !== 'crew') return event.endDate >= startDate;
+  if (event.startDate >= startDate) return true;
+  if (event.endDate < startDate) return false;
+
+  const { hasPendingApplication, isAssigned } = getMobileCrewEventState(event, currentProfileId);
+  return isAssigned || hasPendingApplication;
+};
+
 const matchesMobileCrewEventFilter = (
   event: Event,
   currentProfileId: string | null | undefined,
@@ -486,14 +500,15 @@ const EventsView = () => {
   const viewMode = eventsViewMode as EventsViewMode;
   const canUseCalendarView = canManageEvents || !isMobile;
   const effectiveViewMode: EventsViewMode = canUseCalendarView ? viewMode : 'list';
-  const isMobileCrewEventFeed = isMobile && role === 'crew' && effectiveViewMode === 'list';
+  const isMobileEventFeed = isMobile && effectiveViewMode === 'list';
+  const isMobileCrewEventFeed = isMobileEventFeed && role === 'crew';
   const calendarMode = eventsCalendarMode as CalendarMode;
   const eventFilter = eventsFilter as EventFilter;
   const todayDateKey = getTodayDateKey();
-  const [showMobileCrewDatePicker, setShowMobileCrewDatePicker] = useState(false);
+  const [showMobileDatePicker, setShowMobileDatePicker] = useState(false);
   const [showMobileCrewFilters, setShowMobileCrewFilters] = useState(false);
-  const [mobileCrewStartDate, setMobileCrewStartDate] = useState('');
-  const [mobileCrewPickerMonthDate, setMobileCrewPickerMonthDate] = useState(todayDateKey);
+  const [mobileListStartDate, setMobileListStartDate] = useState(() => getTodayDateKey());
+  const [mobilePickerMonthDate, setMobilePickerMonthDate] = useState(() => getTodayDateKey());
   const [mobileCrewFilter, setMobileCrewFilter] = useState<MobileCrewEventFilter>('all');
   const selectedEvent = useMemo(
     () => (eventsQuery.data ?? []).find((event) => (
@@ -556,39 +571,38 @@ const EventsView = () => {
   const monthVisibleEvents = useMemo(() => (
     visibleEvents.filter((event) => eventOverlapsDateRange(event, selectedMonthStart, selectedMonthEnd))
   ), [selectedMonthEnd, selectedMonthStart, visibleEvents]);
-  const mobileCrewListStartDate = mobileCrewStartDate;
   const listVisibleEvents = useMemo(() => {
     if (effectiveViewMode !== 'list') return visibleEvents;
 
-    if (isMobileCrewEventFeed) {
+    if (isMobileEventFeed) {
       return visibleEvents
         .filter((event) => (
-          !mobileCrewListStartDate
-          || event.endDate >= mobileCrewListStartDate
+          isEventVisibleFromMobileDate(event, role, currentProfileId, mobileListStartDate)
           || (isMobileEventDetailOpen && selectedEventId != null && getEventSelectionId(event) === selectedEventId)
         ))
-        .filter((event) => matchesMobileCrewEventFilter(event, currentProfileId, mobileCrewFilter))
-        .sort((a, b) => {
-          if (a.startDate !== b.startDate) return a.startDate.localeCompare(b.startDate);
-          return a.name.localeCompare(b.name);
-        });
+        .filter((event) => (
+          !isMobileCrewEventFeed
+          || matchesMobileCrewEventFilter(event, currentProfileId, mobileCrewFilter)
+        ))
+        .sort((a, b) => (
+          a.startDate.localeCompare(b.startDate)
+          || a.name.localeCompare(b.name)
+        ));
     }
 
     return monthVisibleEvents;
-  }, [currentProfileId, effectiveViewMode, isMobileCrewEventFeed, isMobileEventDetailOpen, mobileCrewFilter, mobileCrewListStartDate, monthVisibleEvents, selectedEventId, visibleEvents]);
-  const listRangeStart = isMobileCrewEventFeed
-    ? (mobileCrewListStartDate || '0001-01-01')
-    : selectedMonthStart;
-  const listRangeEnd = isMobileCrewEventFeed ? '9999-12-31' : selectedMonthEnd;
-  const mobileCrewPickerDate = useMemo(
-    () => getSafeDateFromKey(mobileCrewPickerMonthDate, getSafeDateFromKey(mobileCrewListStartDate, new Date())),
-    [mobileCrewListStartDate, mobileCrewPickerMonthDate],
+  }, [currentProfileId, effectiveViewMode, isMobileCrewEventFeed, isMobileEventDetailOpen, isMobileEventFeed, mobileCrewFilter, mobileListStartDate, monthVisibleEvents, role, selectedEventId, visibleEvents]);
+  const listRangeStart = isMobileEventFeed ? mobileListStartDate : selectedMonthStart;
+  const listRangeEnd = isMobileEventFeed ? '9999-12-31' : selectedMonthEnd;
+  const mobilePickerDate = useMemo(
+    () => getSafeDateFromKey(mobilePickerMonthDate, getSafeDateFromKey(mobileListStartDate, new Date())),
+    [mobileListStartDate, mobilePickerMonthDate],
   );
-  const mobileCrewPickerStart = startOfWeek(startOfMonth(mobileCrewPickerDate), { weekStartsOn: 1 });
-  const mobileCrewPickerEnd = endOfWeek(endOfMonth(mobileCrewPickerDate), { weekStartsOn: 1 });
-  const mobileCrewPickerDays = useMemo(
-    () => eachDayOfInterval({ start: mobileCrewPickerStart, end: mobileCrewPickerEnd }),
-    [mobileCrewPickerStart, mobileCrewPickerEnd],
+  const mobilePickerStart = startOfWeek(startOfMonth(mobilePickerDate), { weekStartsOn: 1 });
+  const mobilePickerEnd = endOfWeek(endOfMonth(mobilePickerDate), { weekStartsOn: 1 });
+  const mobilePickerDays = useMemo(
+    () => eachDayOfInterval({ start: mobilePickerStart, end: mobilePickerEnd }),
+    [mobilePickerStart, mobilePickerEnd],
   );
 
   const eventColorMap = useMemo(() => (
@@ -605,7 +619,7 @@ const EventsView = () => {
       getListOccurrencesForEvent(
         event,
         canManageEvents,
-        isMobileCrewEventFeed && mobileCrewListStartDate ? mobileCrewListStartDate : undefined,
+        isMobileEventFeed ? mobileListStartDate : undefined,
       ).forEach((occurrence) => {
         const isSelectedOccurrence = isMobileEventDetailOpen
           && selectedEventId != null
@@ -616,7 +630,7 @@ const EventsView = () => {
       });
       return acc;
     }, {} as Record<string, EventListOccurrence[]>)
-  ), [canManageEvents, isMobileCrewEventFeed, isMobileEventDetailOpen, listRangeEnd, listRangeStart, listVisibleEvents, mobileCrewListStartDate, selectedEventId]);
+  ), [canManageEvents, isMobileEventDetailOpen, isMobileEventFeed, listRangeEnd, listRangeStart, listVisibleEvents, mobileListStartDate, selectedEventId]);
 
   const sortedDates = Object.keys(groupedEventOccurrences).sort();
   const hasNoVisibleEventsForView = effectiveViewMode === 'list'
@@ -724,25 +738,26 @@ const EventsView = () => {
     setEventsCalendarDate(format(startOfMonth(nextDate), 'yyyy-MM-dd'));
   };
 
-  const toggleMobileCrewDatePicker = () => {
+  const toggleMobileDatePicker = () => {
     setShowMobileCrewFilters(false);
-    setMobileCrewPickerMonthDate(mobileCrewListStartDate || todayDateKey);
-    setShowMobileCrewDatePicker((isOpen) => !isOpen);
+    setMobilePickerMonthDate(mobileListStartDate);
+    setShowMobileDatePicker((isOpen) => !isOpen);
   };
 
-  const updateMobileCrewStartDate = (value: string) => {
+  const updateMobileStartDate = (value: string) => {
     if (!value) return;
 
-    setMobileCrewStartDate(value);
-    setMobileCrewPickerMonthDate(value);
-    setShowMobileCrewDatePicker(false);
+    setMobileListStartDate(value);
+    setMobilePickerMonthDate(value);
+    setShowMobileDatePicker(false);
     setEventsCalendarDate(value);
   };
 
-  const clearMobileCrewStartDate = () => {
-    setMobileCrewStartDate('');
-    setMobileCrewPickerMonthDate(todayDateKey);
-    setShowMobileCrewDatePicker(false);
+  const resetMobileStartDate = () => {
+    setMobileListStartDate(todayDateKey);
+    setMobilePickerMonthDate(todayDateKey);
+    setShowMobileDatePicker(false);
+    setEventsCalendarDate(todayDateKey);
   };
 
   if (selectedEventId && selectedEvent && !isMobile) {
@@ -758,9 +773,9 @@ const EventsView = () => {
               <button
                 type="button"
                 aria-label="Vybrat datum akci"
-                className={`nodu-mobile-events-header__action nodu-mobile-events-header__action--left ${showMobileCrewDatePicker ? 'nodu-mobile-events-header__action--active' : ''}`}
-                aria-pressed={showMobileCrewDatePicker}
-                onClick={toggleMobileCrewDatePicker}
+                className={`nodu-mobile-events-header__action nodu-mobile-events-header__action--left ${showMobileDatePicker ? 'nodu-mobile-events-header__action--active' : ''}`}
+                aria-pressed={showMobileDatePicker}
+                onClick={toggleMobileDatePicker}
               >
                 <CalendarDays size={18} />
               </button>
@@ -771,7 +786,7 @@ const EventsView = () => {
                 aria-pressed={showMobileCrewFilters}
                 className={`nodu-mobile-events-header__action nodu-mobile-events-header__action--right ${showMobileCrewFilters ? 'nodu-mobile-events-header__action--active' : ''}`}
                 onClick={() => {
-                  setShowMobileCrewDatePicker(false);
+                  setShowMobileDatePicker(false);
                   setShowMobileCrewFilters((isOpen) => !isOpen);
                 }}
               >
@@ -782,6 +797,21 @@ const EventsView = () => {
             <div>
               <div className="nodu-dashboard-kicker">Event Planner</div>
               <div className="mt-1 flex flex-wrap items-center gap-4">
+                {isMobileEventFeed && (
+                  <button
+                    type="button"
+                    aria-label="Vybrat datum akci"
+                    aria-pressed={showMobileDatePicker}
+                    onClick={toggleMobileDatePicker}
+                    className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.96)] text-[color:var(--nodu-text-soft)] shadow-[0_12px_28px_rgba(47,38,31,0.08)] ${
+                      showMobileDatePicker
+                        ? 'border-[color:rgb(var(--nodu-accent-rgb)/0.18)] bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)]'
+                        : ''
+                    }`}
+                  >
+                    <CalendarDays size={18} />
+                  </button>
+                )}
                 <h1 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--nodu-text)]">Akce</h1>
                 <div className="flex items-center rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
                   {[
@@ -802,7 +832,7 @@ const EventsView = () => {
             </div>
           )}
 
-          {isMobileCrewEventFeed && showMobileCrewDatePicker && (
+          {isMobileEventFeed && showMobileDatePicker && (
             <div
               className="nodu-mobile-events-date-panel"
               role="dialog"
@@ -813,18 +843,18 @@ const EventsView = () => {
                   type="button"
                   aria-label="Predchozi mesic vyberu akci"
                   className="nodu-mobile-events-date-panel__nav"
-                  onClick={() => setMobileCrewPickerMonthDate(format(subMonths(mobileCrewPickerDate, 1), 'yyyy-MM-dd'))}
+                  onClick={() => setMobilePickerMonthDate(format(subMonths(mobilePickerDate, 1), 'yyyy-MM-dd'))}
                 >
                   <ChevronLeft size={15} />
                 </button>
                 <div className="nodu-mobile-events-date-panel__month">
-                  {format(mobileCrewPickerDate, 'LLLL yyyy', { locale: cs })}
+                  {format(mobilePickerDate, 'LLLL yyyy', { locale: cs })}
                 </div>
                 <button
                   type="button"
                   aria-label="Dalsi mesic vyberu akci"
                   className="nodu-mobile-events-date-panel__nav"
-                  onClick={() => setMobileCrewPickerMonthDate(format(addMonths(mobileCrewPickerDate, 1), 'yyyy-MM-dd'))}
+                  onClick={() => setMobilePickerMonthDate(format(addMonths(mobilePickerDate, 1), 'yyyy-MM-dd'))}
                 >
                   <ChevronRight size={15} />
                 </button>
@@ -833,9 +863,9 @@ const EventsView = () => {
               <button
                 type="button"
                 className="mb-3 w-full rounded-xl border border-[color:rgb(var(--nodu-accent-rgb)/0.2)] bg-[color:rgb(var(--nodu-accent-rgb)/0.08)] px-3 py-2 text-xs font-bold text-[color:var(--nodu-accent)]"
-                onClick={clearMobileCrewStartDate}
+                onClick={resetMobileStartDate}
               >
-                Všechny akce
+                Dnes a dál
               </button>
 
               <div className="nodu-mobile-events-date-panel__weekdays" aria-hidden="true">
@@ -845,9 +875,9 @@ const EventsView = () => {
               </div>
 
               <div className="nodu-mobile-events-date-panel__grid">
-                {mobileCrewPickerDays.map((day) => {
+                {mobilePickerDays.map((day) => {
                   const dayKey = format(day, 'yyyy-MM-dd');
-                  const isSelectedDay = Boolean(mobileCrewListStartDate) && dayKey === mobileCrewListStartDate;
+                  const isSelectedDay = Boolean(mobileListStartDate) && dayKey === mobileListStartDate;
                   const isToday = dayKey === todayDateKey;
 
                   return (
@@ -858,9 +888,9 @@ const EventsView = () => {
                       className={`nodu-mobile-events-date-panel__day ${
                         isSelectedDay ? 'nodu-mobile-events-date-panel__day--selected' : ''
                       } ${isToday ? 'nodu-mobile-events-date-panel__day--today' : ''} ${
-                        isSameMonth(day, mobileCrewPickerDate) ? '' : 'nodu-mobile-events-date-panel__day--outside'
+                        isSameMonth(day, mobilePickerDate) ? '' : 'nodu-mobile-events-date-panel__day--outside'
                       }`}
-                      onClick={() => updateMobileCrewStartDate(dayKey)}
+                      onClick={() => updateMobileStartDate(dayKey)}
                     >
                       {format(day, 'd.')}
                     </button>
@@ -914,7 +944,7 @@ const EventsView = () => {
         </div>
 
         <div className="justify-self-center lg:mt-[38px]">
-          {effectiveViewMode === 'list' && !isMobileCrewEventFeed && (
+          {effectiveViewMode === 'list' && !isMobileEventFeed && (
             <div className="flex w-fit items-center rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.96)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.06)]">
               <button
                 aria-label="Predchozi mesic"
@@ -997,14 +1027,12 @@ const EventsView = () => {
       {hasNoVisibleEventsForView ? (
         <div className="rounded-[28px] border border-dashed border-[color:rgb(var(--nodu-accent-rgb)/0.24)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] px-6 py-12 text-center shadow-[0_18px_42px_rgba(47,38,31,0.08)]">
           <div className="text-sm font-semibold text-[color:var(--nodu-text)]">
-            {isMobileCrewEventFeed
-              ? (mobileCrewListStartDate
-                ? 'Od zvoleného data tu zatím nejsou žádné akce.'
-                : 'Nejsou dostupné žádné akce.')
+            {isMobileEventFeed
+              ? 'Od zvoleného data tu zatím nejsou žádné akce.'
               : 'Pro tento mesic a filtr tu zatim nejsou zadne akce.'}
           </div>
           <div className="mt-1 text-xs text-[color:var(--nodu-text-soft)]">
-            {isMobileCrewEventFeed
+            {isMobileEventFeed
               ? 'Nove moznosti se tu objevi automaticky.'
               : 'Zkuste prepnout filtr nebo vytvorit novou akci.'}
           </div>

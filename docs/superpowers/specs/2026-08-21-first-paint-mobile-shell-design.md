@@ -1,7 +1,7 @@
 # First-paint mobile shell design
 
 Date: 2026-08-21
-Status: awaiting approval after visual refinement
+Status: approved for implementation planning
 
 ## Goal
 

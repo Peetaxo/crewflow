@@ -38,7 +38,7 @@ vi.mock('../app/providers/useAuth', () => ({
 }));
 
 vi.mock('../app/providers/AppDataBootstrap', () => ({
-  default: () => null,
+  default: () => <div data-testid="app-data-bootstrap" />,
 }));
 
 vi.mock('../components/layout/AppLayout', () => ({
@@ -111,6 +111,26 @@ describe('Index unauthenticated routing', () => {
 
     expect(screen.getByText('App layout')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: /Cely provoz od akce po fakturu/i })).not.toBeInTheDocument();
+  });
+
+  it('keeps the authenticated layout hidden until profile and role loading finishes', () => {
+    Object.assign(mockAuthState, {
+      hasKnownSession: true,
+      isAuthRequired: true,
+      isAuthenticated: true,
+      isLoading: true,
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/app']}>
+        <AppShell />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('status', { name: 'Připravuji aplikaci' })).toBeInTheDocument();
+    expect(screen.queryByText('App layout')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('app-data-bootstrap')).not.toBeInTheDocument();
+    expect(screen.queryByText('Nacitam prihlaseni a data...')).not.toBeInTheDocument();
   });
 
   it('shows a configuration error instead of loading local data when Supabase env is missing', () => {

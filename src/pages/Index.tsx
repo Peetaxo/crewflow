@@ -3,6 +3,7 @@ import { AuthProvider } from '../app/providers/AuthProvider';
 import { useAuth } from '../app/providers/useAuth';
 import AppDataBootstrap from '../app/providers/AppDataBootstrap';
 import AppLayout from '../components/layout/AppLayout';
+import AppLoadingMark from '../components/shared/AppLoadingMark';
 import { AppProvider } from '../context/AppContext';
 import { appDataSource } from '../lib/app-config';
 import { isSupabaseConfigured } from '../lib/supabase';
@@ -28,7 +29,7 @@ const MissingSupabaseConfigView = () => (
 );
 
 export const AppShell = () => {
-  const { hasKnownSession, isAuthRequired, isAuthenticated, isLoading } = useAuth();
+  const { isAuthRequired, isAuthenticated, isLoading } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const isLoginPreview = import.meta.env.DEV
@@ -48,14 +49,8 @@ export const AppShell = () => {
     return <MissingSupabaseConfigView />;
   }
 
-  if (isLoading && !hasKnownSession) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
-        <div className="rounded-2xl border border-slate-200 bg-white px-6 py-5 text-sm text-slate-600 shadow-sm">
-          Nacitam prihlaseni a data...
-        </div>
-      </div>
-    );
+  if (isLoading) {
+    return <AppLoadingMark />;
   }
 
   if (isAuthRequired && !isAuthenticated) {

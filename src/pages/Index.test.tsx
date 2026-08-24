@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppShell } from './Index';
@@ -38,7 +39,9 @@ vi.mock('../app/providers/useAuth', () => ({
 }));
 
 vi.mock('../app/providers/AppDataBootstrap', () => ({
-  default: () => <div data-testid="app-data-bootstrap" />,
+  default: ({ children }: { children: ReactNode }) => (
+    <div data-testid="app-data-bootstrap">{children}</div>
+  ),
 }));
 
 vi.mock('../components/layout/AppLayout', () => ({
@@ -109,7 +112,7 @@ describe('Index unauthenticated routing', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('App layout')).toBeInTheDocument();
+    expect(screen.getByTestId('app-data-bootstrap')).toContainElement(screen.getByText('App layout'));
     expect(screen.queryByRole('heading', { name: /Cely provoz od akce po fakturu/i })).not.toBeInTheDocument();
   });
 

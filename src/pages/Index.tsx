@@ -67,8 +67,9 @@ export const AppShell = () => {
 
   return (
     <AppProvider>
-      <AppDataBootstrap />
-      <AppLayout />
+      <AppDataBootstrap>
+        <AppLayout />
+      </AppDataBootstrap>
     </AppProvider>
   );
 };

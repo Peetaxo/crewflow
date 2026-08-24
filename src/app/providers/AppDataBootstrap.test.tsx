@@ -1,41 +1,39 @@
-import { render } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import AppDataBootstrap from './AppDataBootstrap';
 
-const mockAuthState = {
-  isAuthRequired: true,
-  isAuthenticated: true,
+const createDeferred = <T,>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
 };
 
+const mockAuthState = {
+  currentProfileId: 'profile-1' as string | null,
+  currentUserId: 'user-1' as string | null,
+  isAuthRequired: true,
+  isAuthenticated: true,
+  role: 'crew' as 'crew' | 'coo',
+};
+
+const runtimeConfig = vi.hoisted(() => ({
+  appDataSource: 'supabase' as 'local' | 'supabase',
+}));
+
 const mocks = vi.hoisted(() => ({
-  resetSupabaseDataScope: vi.fn(async () => undefined),
-  legacyReset: vi.fn(),
-  updateLocalAppState: vi.fn(),
+  bootstrap: vi.fn<() => Promise<void>>(),
 }));
 
 vi.mock('../../lib/app-config', () => ({
-  appDataSource: 'supabase',
+  get appDataSource() {
+    return runtimeConfig.appDataSource;
+  },
 }));
 
-vi.mock('../../lib/app-data', () => ({
-  getLocalAppData: () => ({ marker: 'local-data' }),
-  updateLocalAppState: mocks.updateLocalAppState,
-}));
-
-vi.mock('../../features/clients/services/clients.service', () => ({ resetSupabaseClientsHydration: mocks.legacyReset }));
-vi.mock('../../features/budgets/services/budgets.service', () => ({ resetSupabaseBudgetsHydration: mocks.legacyReset }));
-vi.mock('../../features/projects/services/projects.service', () => ({ resetSupabaseProjectsHydration: mocks.legacyReset }));
-vi.mock('../../features/events/services/events.service', () => ({ resetSupabaseEventsHydration: mocks.legacyReset }));
-vi.mock('../../features/crew/services/crew.service', () => ({ resetSupabaseCrewHydration: mocks.legacyReset }));
-vi.mock('../../features/receipts/services/receipts.service', () => ({ resetSupabaseReceiptsHydration: mocks.legacyReset }));
-vi.mock('../../features/timelogs/services/timelogs.service', () => ({ resetSupabaseTimelogsHydration: mocks.legacyReset }));
-vi.mock('../../features/invoices/services/invoices.service', () => ({ resetSupabaseInvoicesHydration: mocks.legacyReset }));
-vi.mock('../../features/recruitment/services/candidates.service', () => ({ resetSupabaseCandidatesHydration: mocks.legacyReset }));
-vi.mock('../../features/fleet/services/fleet.service', () => ({ resetSupabaseFleetHydration: mocks.legacyReset }));
-vi.mock('../../features/warehouse/services/warehouse.service', () => ({ resetSupabaseWarehouseHydration: mocks.legacyReset }));
-
-vi.mock('./reset-supabase-data-scope', () => ({
-  resetSupabaseDataScope: mocks.resetSupabaseDataScope,
+vi.mock('./initial-app-data-bootstrap', () => ({
+  bootstrapInitialAppData: mocks.bootstrap,
 }));
 
 vi.mock('./useAuth', () => ({
@@ -44,24 +42,113 @@ vi.mock('./useAuth', () => ({
 
 describe('AppDataBootstrap', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    mockAuthState.isAuthRequired = true;
-    mockAuthState.isAuthenticated = true;
+    runtimeConfig.appDataSource = 'supabase';
+    Object.assign(mockAuthState, {
+      currentProfileId: 'profile-1',
+      currentUserId: 'user-1',
+      isAuthRequired: true,
+      isAuthenticated: true,
+      role: 'crew',
+    });
+    mocks.bootstrap.mockReset().mockResolvedValue(undefined);
   });
 
-  it('resets Supabase hydration state after authentication so pre-login empty loads cannot stick', () => {
-    render(<AppDataBootstrap />);
+  it('keeps children hidden until all initial data commits', async () => {
+    const attempt = createDeferred<void>();
+    mocks.bootstrap.mockReturnValueOnce(attempt.promise);
 
-    expect(mocks.resetSupabaseDataScope).toHaveBeenCalledTimes(1);
-    expect(mocks.updateLocalAppState).not.toHaveBeenCalled();
+    render(
+      <AppDataBootstrap>
+        <div>Ready dashboard</div>
+      </AppDataBootstrap>,
+    );
+
+    expect(screen.getByRole('status', { name: 'Připravuji aplikaci' })).toBeInTheDocument();
+    expect(screen.queryByText('Ready dashboard')).not.toBeInTheDocument();
+
+    await act(async () => { attempt.resolve(); });
+    expect(await screen.findByText('Ready dashboard')).toBeInTheDocument();
   });
 
-  it('resets local app data while waiting for authentication', () => {
-    mockAuthState.isAuthenticated = false;
+  it('shows a generic retry state without raw Supabase text', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.bootstrap
+      .mockRejectedValueOnce(new Error('new row violates row-level security'))
+      .mockResolvedValueOnce(undefined);
 
-    render(<AppDataBootstrap />);
+    try {
+      render(
+        <AppDataBootstrap>
+          <div>Ready dashboard</div>
+        </AppDataBootstrap>,
+      );
 
-    expect(mocks.resetSupabaseDataScope).toHaveBeenCalledTimes(1);
-    expect(mocks.updateLocalAppState).toHaveBeenCalledTimes(1);
+      expect(await screen.findByText('Data aplikace se nepodařilo načíst.')).toBeInTheDocument();
+      expect(screen.queryByText('new row violates row-level security')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Zkusit znovu' }));
+      expect(await screen.findByText('Ready dashboard')).toBeInTheDocument();
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('ignores completion from the previous role scope', async () => {
+    const crewAttempt = createDeferred<void>();
+    const cooAttempt = createDeferred<void>();
+    mocks.bootstrap
+      .mockReturnValueOnce(crewAttempt.promise)
+      .mockReturnValueOnce(cooAttempt.promise);
+
+    const view = render(
+      <AppDataBootstrap>
+        <div>Ready dashboard</div>
+      </AppDataBootstrap>,
+    );
+    await waitFor(() => expect(mocks.bootstrap).toHaveBeenCalledTimes(1));
+
+    mockAuthState.role = 'coo';
+    view.rerender(
+      <AppDataBootstrap>
+        <div>Ready dashboard</div>
+      </AppDataBootstrap>,
+    );
+    await waitFor(() => expect(mocks.bootstrap).toHaveBeenCalledTimes(2));
+
+    await act(async () => { crewAttempt.resolve(); });
+    expect(screen.queryByText('Ready dashboard')).not.toBeInTheDocument();
+
+    await act(async () => { cooAttempt.resolve(); });
+    expect(await screen.findByText('Ready dashboard')).toBeInTheDocument();
+  });
+
+  it('renders local data immediately without starting Supabase bootstrap', () => {
+    runtimeConfig.appDataSource = 'local';
+
+    render(
+      <AppDataBootstrap>
+        <div>Ready dashboard</div>
+      </AppDataBootstrap>,
+    );
+
+    expect(screen.getByText('Ready dashboard')).toBeInTheDocument();
+    expect(mocks.bootstrap).not.toHaveBeenCalled();
+  });
+
+  it('ignores an in-flight completion after unmount', async () => {
+    const attempt = createDeferred<void>();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.bootstrap.mockReturnValueOnce(attempt.promise);
+    const view = render(
+      <AppDataBootstrap>
+        <div>Ready dashboard</div>
+      </AppDataBootstrap>,
+    );
+    await waitFor(() => expect(mocks.bootstrap).toHaveBeenCalledTimes(1));
+
+    view.unmount();
+    await act(async () => { attempt.resolve(); });
+
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 });

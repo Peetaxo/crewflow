@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppShell } from './Index';
 
@@ -16,7 +16,14 @@ const mockAuthState = {
 
 const runtimeConfig = vi.hoisted(() => ({
   appDataSource: 'supabase' as 'local' | 'supabase',
+  isNativePlatform: false,
   isSupabaseConfigured: true,
+}));
+
+vi.mock('@capacitor/core', () => ({
+  Capacitor: {
+    isNativePlatform: () => runtimeConfig.isNativePlatform,
+  },
 }));
 
 vi.mock('../lib/app-config', () => ({
@@ -52,6 +59,11 @@ vi.mock('../components/layout/AppLayout', () => ({
   default: () => <div>App layout</div>,
 }));
 
+const CurrentPath = () => {
+  const location = useLocation();
+  return <div data-testid="current-path">{location.pathname}</div>;
+};
+
 describe('Index unauthenticated routing', () => {
   beforeEach(() => {
     Object.assign(mockAuthState, {
@@ -61,7 +73,67 @@ describe('Index unauthenticated routing', () => {
       isLoading: false,
     });
     runtimeConfig.appDataSource = 'supabase';
+    runtimeConfig.isNativePlatform = false;
     runtimeConfig.isSupabaseConfigured = true;
+  });
+
+  it('shows the auth loader instead of the public page during native session discovery', () => {
+    runtimeConfig.isNativePlatform = true;
+    Object.assign(mockAuthState, {
+      hasKnownSession: false,
+      isAuthRequired: true,
+      isAuthenticated: false,
+      isLoading: true,
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <AppShell />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('status', { name: 'Připravuji aplikaci' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /Cely provoz od akce po fakturu/i })).not.toBeInTheDocument();
+  });
+
+  it('shows login and replaces native root with the app route when no session exists', async () => {
+    runtimeConfig.isNativePlatform = true;
+    Object.assign(mockAuthState, {
+      hasKnownSession: false,
+      isAuthRequired: true,
+      isAuthenticated: false,
+      isLoading: false,
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <AppShell />
+        <CurrentPath />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Prihlaseni' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /Cely provoz od akce po fakturu/i })).not.toBeInTheDocument();
+    expect(await screen.findByTestId('current-path')).toHaveTextContent('/app');
+  });
+
+  it('enters the authenticated bootstrap from native root without the public page', () => {
+    runtimeConfig.isNativePlatform = true;
+    Object.assign(mockAuthState, {
+      hasKnownSession: true,
+      isAuthRequired: true,
+      isAuthenticated: true,
+      isLoading: false,
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <AppShell />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId('app-data-bootstrap')).toContainElement(screen.getByText('App layout'));
+    expect(screen.queryByRole('heading', { name: /Cely provoz od akce po fakturu/i })).not.toBeInTheDocument();
   });
 
   it('shows the public Nodu welcome page before login on the homepage', () => {

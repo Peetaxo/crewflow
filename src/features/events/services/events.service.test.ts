@@ -407,6 +407,7 @@ describe('events.service write flow', () => {
     refreshedReceipts = initialSnapshot.receipts ?? [],
     refreshedApplicationStatus = 'approved' as EventApplication['status'],
     failEventsRefresh = false,
+    failFirstEventsRefresh = false,
     failTimelogsRefresh = false,
     deferredPublicEvents = null as Event[] | null,
     eventSaveError = null as { code: string; message: string } | null,
@@ -598,7 +599,12 @@ describe('events.service write flow', () => {
     }>();
     const deferredPublicEventsQuery = createEventsQuery(deferredPublicEventsResult.promise);
     const eventsSelect = vi.fn(() => eventsQuery);
-    if (deferredPublicEvents) {
+    if (failFirstEventsRefresh) {
+      eventsSelect.mockImplementationOnce(() => createEventsQuery(Promise.resolve({
+        data: [],
+        error: { message: 'offline' },
+      })));
+    } else if (deferredPublicEvents) {
       eventsSelect.mockImplementationOnce(() => deferredPublicEventsQuery);
     }
 
@@ -3634,6 +3640,21 @@ describe('events.service write flow', () => {
       expect.objectContaining({ supabaseId: 'event-row-1', name: 'Fresh event' }),
     ]));
     expect(harness.updateLocalAppState).toHaveBeenCalledOnce();
+  });
+
+  it('shares one awaitable event hydration and retries after rejection', async () => {
+    const harness = await setupLifecycleService({
+      initialSnapshot: createSnapshot({ events: [], eventApplications: [] }),
+      failFirstEventsRefresh: true,
+    });
+
+    const first = harness.service.loadSupabaseEvents();
+    const duplicate = harness.service.loadSupabaseEvents();
+
+    expect(first).toBe(duplicate);
+    await expect(first).rejects.toThrow('offline');
+    await expect(harness.service.loadSupabaseEvents()).resolves.toBeUndefined();
+    expect(harness.eventsSelect).toHaveBeenCalledTimes(2);
   });
 
   it('retries a direct event fetch once after a same-session generation discard', async () => {

@@ -716,37 +716,43 @@ export const fetchEventsSnapshot = async (): Promise<Event[]> => {
   return result.events;
 };
 
-export const ensureSupabaseEventsLoaded = () => {
+export const loadSupabaseEvents = (): Promise<void> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
-    return;
+    return Promise.resolve();
   }
 
   if (eventsLoaded) {
-    return;
+    return Promise.resolve();
   }
 
   if (eventsHydrationPromise) {
-    return;
+    return eventsHydrationPromise;
   }
 
   const hydrationEpoch = eventsHydrationEpoch;
-  const hydrationPromise = loadAndCommitEventsSnapshotWithRetry(hydrationEpoch)
+  const request = loadAndCommitEventsSnapshotWithRetry(hydrationEpoch)
     .then((result) => {
-      if (result.committed && hydrationEpoch === eventsHydrationEpoch) {
-        eventsLoaded = true;
+      if (!result.committed || hydrationEpoch !== eventsHydrationEpoch) {
+        throw new Error('Event hydration scope changed.');
       }
-    })
-    .catch((error) => {
-      if (hydrationEpoch === eventsHydrationEpoch) {
-        console.warn('Nepodarilo se nacist akce ze Supabase, zustavam na lokalnich datech.', error);
-      }
-    })
-    .finally(() => {
-      if (eventsHydrationPromise === hydrationPromise) {
+      eventsLoaded = true;
+    });
+  const sharedRequest = request.finally(() => {
+      if (eventsHydrationPromise === sharedRequest) {
         eventsHydrationPromise = null;
       }
     });
-  eventsHydrationPromise = hydrationPromise;
+  eventsHydrationPromise = sharedRequest;
+  return sharedRequest;
+};
+
+export const ensureSupabaseEventsLoaded = () => {
+  const hydrationEpoch = eventsHydrationEpoch;
+  void loadSupabaseEvents().catch((error) => {
+    if (hydrationEpoch === eventsHydrationEpoch) {
+      console.warn('Nepodarilo se nacist akce ze Supabase, zustavam na lokalnich datech.', error);
+    }
+  });
 };
 
 const syncEventQueryCache = () => {

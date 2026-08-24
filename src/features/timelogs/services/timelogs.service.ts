@@ -16,6 +16,7 @@ import {
 type TimelogAction = 'sub' | 'ch' | 'coo' | 'rej';
 let timelogsHydrationPromise: Promise<void> | null = null;
 let timelogsLoaded = false;
+let timelogsHydrationEpoch = 0;
 let timelogSnapshotGeneration = 0;
 const statusMap: Record<TimelogAction, TimelogStatus> = {
   sub: 'pending_ch',
@@ -148,6 +149,7 @@ export const loadTimelogsSnapshot = async (): Promise<Timelog[]> => {
 };
 
 export const fetchTimelogsSnapshot = async (): Promise<Timelog[]> => {
+  const hydrationEpoch = timelogsHydrationEpoch;
   const lifecycleGeneration = getLifecycleSnapshotGeneration();
   const timelogGeneration = timelogSnapshotGeneration;
   const supabaseTimelogs = await loadTimelogsSnapshot();
@@ -157,6 +159,8 @@ export const fetchTimelogsSnapshot = async (): Promise<Timelog[]> => {
   }
 
   if (
+    hydrationEpoch !== timelogsHydrationEpoch
+    ||
     lifecycleGeneration !== getLifecycleSnapshotGeneration()
     || timelogGeneration !== timelogSnapshotGeneration
   ) {
@@ -211,33 +215,40 @@ const runTimelogMutation = async <T,>(
   },
 );
 
-const hydrateTimelogsFromSupabase = async (): Promise<void> => {
-  await fetchTimelogsSnapshot();
-};
-
-export const ensureSupabaseTimelogsLoaded = () => {
+export const loadSupabaseTimelogs = (): Promise<void> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
-    return;
+    return Promise.resolve();
   }
 
   if (timelogsLoaded) {
-    return;
+    return Promise.resolve();
   }
 
   if (timelogsHydrationPromise) {
-    return;
+    return timelogsHydrationPromise;
   }
 
-  timelogsHydrationPromise = hydrateTimelogsFromSupabase()
+  const epoch = timelogsHydrationEpoch;
+  const request = fetchTimelogsSnapshot()
     .then(() => {
+      if (epoch !== timelogsHydrationEpoch) {
+        throw new Error('Timelog hydration scope changed.');
+      }
       timelogsLoaded = true;
-    })
-    .catch((error) => {
-      console.warn('Nepodarilo se nacist timelogy ze Supabase, zustavam na lokalnich datech.', error);
-    })
-    .finally(() => {
-      timelogsHydrationPromise = null;
     });
+  const sharedRequest = request.finally(() => {
+    if (timelogsHydrationPromise === sharedRequest) {
+      timelogsHydrationPromise = null;
+    }
+  });
+  timelogsHydrationPromise = sharedRequest;
+  return sharedRequest;
+};
+
+export const ensureSupabaseTimelogsLoaded = () => {
+  void loadSupabaseTimelogs().catch((error) => {
+    console.warn('Nepodarilo se nacist timelogy ze Supabase, zustavam na lokalnich datech.', error);
+  });
 };
 
 const syncTimelogQueryData = (timelogs: Timelog[]) => {
@@ -982,6 +993,7 @@ export const subscribeToTimelogChanges = (listener: () => void): (() => void) =>
 };
 
 export const resetSupabaseTimelogsHydration = () => {
+  timelogsHydrationEpoch += 1;
   timelogsHydrationPromise = null;
   timelogsLoaded = false;
 };

@@ -459,6 +459,50 @@ describe('timelogs.service write flow', () => {
     expect(updateLocalAppState).toHaveBeenCalledOnce();
   });
 
+  it('rejects an awaitable timelog load reset before response', async () => {
+    const rows = createDeferred<{
+      data: Array<Record<string, unknown>>;
+      error: null;
+    }>();
+    const createOrderedQuery = <T,>(result: Promise<{ data: T[]; error: null }>) => {
+      const order = vi.fn();
+      const query = { order, then: result.then.bind(result) };
+      order.mockReturnValue(query);
+      return query;
+    };
+    const updateLocalAppState = vi.fn();
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: vi.fn((table: string) => ({
+          select: vi.fn(() => {
+            if (table === 'timelogs') return createOrderedQuery(rows.promise);
+            if (table === 'timelog_days') return createOrderedQuery(Promise.resolve({ data: [], error: null }));
+            if (table === 'profiles') return createOrderedQuery(Promise.resolve({ data: [], error: null }));
+            if (table === 'events') return createOrderedQuery(Promise.resolve({ data: [], error: null }));
+            throw new Error(`Unexpected table ${table}`);
+          }),
+        })),
+      },
+    }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => createSnapshot([]),
+      updateLocalAppState,
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    const { loadSupabaseTimelogs, resetSupabaseTimelogsHydration } = await import('./timelogs.service');
+
+    const staleLoad = loadSupabaseTimelogs();
+    resetSupabaseTimelogsHydration();
+    rows.resolve({ data: [], error: null });
+
+    await expect(staleLoad).rejects.toThrow('Timelog hydration scope changed.');
+    expect(updateLocalAppState).not.toHaveBeenCalled();
+  });
+
   it('invalidates an older public fetch after a successful status mutation', async () => {
     const targetTimelog: Timelog = {
       id: 1,

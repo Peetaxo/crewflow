@@ -40,7 +40,11 @@ vi.mock('../app/providers/useAuth', () => ({
 
 vi.mock('../app/providers/AppDataBootstrap', () => ({
   default: ({ children }: { children: ReactNode }) => (
-    <div data-testid="app-data-bootstrap">{children}</div>
+    <div data-testid="app-data-bootstrap">
+      {mockAuthState.isLoading
+        ? <div role="status" aria-label="Připravuji aplikaci" />
+        : children}
+    </div>
   ),
 }));
 
@@ -116,7 +120,7 @@ describe('Index unauthenticated routing', () => {
     expect(screen.queryByRole('heading', { name: /Cely provoz od akce po fakturu/i })).not.toBeInTheDocument();
   });
 
-  it('keeps the authenticated layout hidden until profile and role loading finishes', () => {
+  it('routes an accepted session through the persistent bootstrap gate while metadata loads', () => {
     Object.assign(mockAuthState, {
       hasKnownSession: true,
       isAuthRequired: true,
@@ -130,10 +134,28 @@ describe('Index unauthenticated routing', () => {
       </MemoryRouter>,
     );
 
+    expect(screen.getByTestId('app-data-bootstrap')).toBeInTheDocument();
     expect(screen.getByRole('status', { name: 'Připravuji aplikaci' })).toBeInTheDocument();
     expect(screen.queryByText('App layout')).not.toBeInTheDocument();
+  });
+
+  it('keeps an unknown unauthenticated session outside the data bootstrap gate', () => {
+    Object.assign(mockAuthState, {
+      hasKnownSession: false,
+      isAuthRequired: true,
+      isAuthenticated: false,
+      isLoading: true,
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/app']}>
+        <AppShell />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('status', { name: 'Připravuji aplikaci' })).toBeInTheDocument();
     expect(screen.queryByTestId('app-data-bootstrap')).not.toBeInTheDocument();
-    expect(screen.queryByText('Nacitam prihlaseni a data...')).not.toBeInTheDocument();
+    expect(screen.queryByText('App layout')).not.toBeInTheDocument();
   });
 
   it('shows a configuration error instead of loading local data when Supabase env is missing', () => {

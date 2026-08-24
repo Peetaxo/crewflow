@@ -49,7 +49,7 @@ export const AppShell = () => {
     return <MissingSupabaseConfigView />;
   }
 
-  if (isLoading) {
+  if (isLoading && !isAuthenticated) {
     return <AppLoadingMark />;
   }
 
@@ -66,11 +66,11 @@ export const AppShell = () => {
   }
 
   return (
-    <AppProvider>
-      <AppDataBootstrap>
+    <AppDataBootstrap>
+      <AppProvider>
         <AppLayout />
-      </AppDataBootstrap>
-    </AppProvider>
+      </AppProvider>
+    </AppDataBootstrap>
   );
 };
 

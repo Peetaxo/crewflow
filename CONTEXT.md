@@ -40,7 +40,7 @@ Aktualni podoba aplikace odpovida interaktivnimu produktu / prototypu, ktery uz 
 ### Crew
 
 - vidi pouze svoje data
-- sidebar: Moje smeny, Akce, Moje timelogy, Moje faktury
+- sidebar: Moje smeny, Akce, Schvalovani, Moje faktury
 - pozdeji muze mit i Profil / Nastaveni
 - muze pracovat se svymi vykazy a sledovat stav faktur
 - nema pristup ke klientum, projektum, cizimu crew ani schvalovani

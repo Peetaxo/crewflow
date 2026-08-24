@@ -238,8 +238,8 @@ export function buildGrasonEventsImportSql(rows) {
     .join(',\n');
 
   return `-- Generated Grason May import.
--- Imports events, confirmed Grason metadata, and matched people as event crew assignments.
--- Does not create timelogs, timelog days, invoices, or paid statuses.
+-- Imports events, confirmed Grason metadata, matched people as event crew assignments, and draft timelogs.
+-- Does not create invoices or paid statuses.
 
 begin;
 
@@ -450,6 +450,73 @@ ${valuesSql}
         and existing_assignment.profile_id = resolved_confirmations.profile_id
     )
   returning event_id, profile_id
+), timelog_candidates as materialized (
+  select
+    gen_random_uuid() as timelog_id,
+    resolved_confirmations.event_id,
+    resolved_confirmations.profile_id
+  from resolved_confirmations
+  where resolved_confirmations.profile_id is not null
+    and not exists (
+      select 1
+      from public.timelogs as existing_timelog
+      where existing_timelog.event_id = resolved_confirmations.event_id
+        and existing_timelog.contractor_id = resolved_confirmations.profile_id
+    )
+  group by
+    resolved_confirmations.event_id,
+    resolved_confirmations.profile_id
+), inserted_timelogs as (
+  insert into public.timelogs (
+    id,
+    event_id,
+    contractor_id,
+    km,
+    note,
+    status,
+    created_at,
+    updated_at
+  )
+  select
+    timelog_candidates.timelog_id,
+    timelog_candidates.event_id,
+    timelog_candidates.profile_id,
+    0,
+    '',
+    'draft'::timelog_status,
+    now(),
+    now()
+  from timelog_candidates
+  returning id
+), inserted_timelog_days as (
+  insert into public.timelog_days (
+    id,
+    timelog_id,
+    date,
+    time_from,
+    time_to,
+    day_type,
+    created_at
+  )
+  select distinct on (timelog_candidates.timelog_id, resolved_confirmations.shift_date::date)
+    gen_random_uuid(),
+    timelog_candidates.timelog_id,
+    resolved_confirmations.shift_date::date,
+    coalesce(events.time_from, '08:00'),
+    coalesce(events.time_to, '17:00'),
+    resolved_confirmations.phase::timelog_type,
+    now()
+  from timelog_candidates
+  join resolved_confirmations
+    on resolved_confirmations.event_id = timelog_candidates.event_id
+   and resolved_confirmations.profile_id = timelog_candidates.profile_id
+  left join public.events as events
+    on events.id = timelog_candidates.event_id
+  order by
+    timelog_candidates.timelog_id,
+    resolved_confirmations.shift_date::date,
+    resolved_confirmations.source_key
+  returning id
 )
 insert into public.grason_event_confirmations (
   source,
@@ -482,6 +549,8 @@ select
   raw_payload
 from resolved_confirmations
 cross join (select count(*) as inserted_assignment_count from inserted_event_assignments) as assignment_insert_checkpoint
+cross join (select count(*) as inserted_timelog_count from inserted_timelogs) as timelog_insert_checkpoint
+cross join (select count(*) as inserted_timelog_day_count from inserted_timelog_days) as timelog_day_insert_checkpoint
 on conflict (source, source_key, confirmed_name) do update set
   event_id = excluded.event_id,
   profile_id = excluded.profile_id,

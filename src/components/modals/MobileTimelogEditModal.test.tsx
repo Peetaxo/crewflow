@@ -138,8 +138,11 @@ describe('MobileTimelogEditModal', () => {
     expect(screen.queryByRole('button', { name: 'Uložit záznam' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Poznámka ke dni')).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Zavřít' })).toHaveLength(1);
-    expect(screen.getByText('18.0h')).toBeInTheDocument();
-    expect(screen.getByText('5 400 Kc')).toBeInTheDocument();
+    const summary = document.querySelector('.nodu-mobile-timelog-summary');
+    expect(summary?.querySelector('.nodu-mobile-timelog-summary-primary-label')).toHaveTextContent('Odměna');
+    expect(summary?.querySelector('.nodu-mobile-timelog-summary-primary-value')).toHaveTextContent('5 400 Kc');
+    expect(summary?.querySelector('.nodu-mobile-timelog-summary-secondary-label')).toHaveTextContent('Celkem hodin');
+    expect(summary?.querySelector('.nodu-mobile-timelog-summary-secondary-value')).toHaveTextContent('18.0h');
   });
 
   it('opens when the timelog references the event by Supabase id', () => {

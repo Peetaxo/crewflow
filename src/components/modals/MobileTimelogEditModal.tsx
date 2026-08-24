@@ -1377,15 +1377,19 @@ const MobileTimelogEditModal: React.FC = () => {
         <div className="nodu-mobile-timelog-body">
           <div className="nodu-mobile-timelog-summary">
             <div>
-              <div className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--nodu-accent)]">
+              <div className="nodu-mobile-timelog-summary-primary-label text-[10px] uppercase tracking-[0.2em] text-[color:var(--nodu-accent)]">
+                Odměna
+              </div>
+              <div className="nodu-mobile-timelog-summary-secondary-label mt-1 text-sm text-[color:var(--nodu-text-soft)]">
                 Celkem hodin
               </div>
-              <div className="mt-1 text-sm text-[color:var(--nodu-text-soft)]">Odměna</div>
             </div>
             <div className="text-right">
-              <div className="text-2xl font-bold text-[color:var(--nodu-text)]">{totalHours.toFixed(1)}h</div>
-              <div className="mt-1 text-sm font-semibold text-[color:var(--nodu-text)]">
+              <div className="nodu-mobile-timelog-summary-primary-value text-2xl font-bold text-[color:var(--nodu-text)]">
                 {formatCurrency(totalCompensation)}
+              </div>
+              <div className="nodu-mobile-timelog-summary-secondary-value mt-1 text-sm font-semibold text-[color:var(--nodu-text)]">
+                {totalHours.toFixed(1)}h
               </div>
             </div>
           </div>

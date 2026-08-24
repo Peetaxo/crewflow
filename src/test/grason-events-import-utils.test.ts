@@ -65,7 +65,7 @@ describe('Grason event import utilities', () => {
     });
   });
 
-  it('generates SQL that imports events and matched Grason people as event crew assignments', () => {
+  it('generates SQL that imports events, matched crew assignments, and draft timelogs', () => {
     const sql = buildGrasonEventsImportSql([
       {
         sourceKey: '2026-05-12|Miss Agro / JTI001',
@@ -91,14 +91,42 @@ describe('Grason event import utilities', () => {
     expect(sql).toContain('upserted_event_ids as');
     expect(sql).toContain('inserted_event_assignments as');
     expect(sql).toContain('insert into public.event_assignments');
+    expect(sql).toContain('inserted_timelogs as');
+    expect(sql).toContain('insert into public.timelogs');
+    expect(sql).toContain('inserted_timelog_days as');
+    expect(sql).toContain('insert into public.timelog_days');
+    expect(sql).toContain("'draft'::timelog_status");
     expect(sql).toContain('where resolved_confirmations.profile_id is not null');
     expect(sql).toContain('insert into public.grason_event_confirmations');
     expect(sql).toContain('Miss Agro');
     expect(sql).toContain('JTI001');
     expect(sql).not.toContain("'Grason import: ' || incoming_events.source_title");
     expect(sql).not.toContain("' | potvrzeni: ' ||");
-    expect(sql).not.toContain('insert into public.timelogs');
-    expect(sql).not.toContain('insert into public.timelog_days');
     expect(sql).not.toContain('insert into public.invoices');
+  });
+
+  it('does not require newly inserted events to be visible before creating timelog days', () => {
+    const sql = buildGrasonEventsImportSql([
+      {
+        sourceKey: '2026-06-26|Rohlik na KVIFF',
+        sourceMonth: '2026-06',
+        date: '2026-06-26',
+        sourceTitle: 'Rohlik na KVIFF',
+        eventName: 'Rohlik na KVIFF',
+        jobNumber: '',
+        phase: 'provoz',
+        confirmedCount: 1,
+        confirmedPeople: [
+          { name: 'Vít Kratochvíl', occurrenceCount: 1 },
+        ],
+      },
+    ]);
+    const timelogDaysBlock = sql.slice(
+      sql.indexOf('), inserted_timelog_days as ('),
+      sql.indexOf('  order by', sql.indexOf('), inserted_timelog_days as (')),
+    );
+
+    expect(timelogDaysBlock).toContain('left join public.events as events');
+    expect(timelogDaysBlock).not.toContain('  join public.events as events\n    on events.id = timelog_candidates.event_id');
   });
 });

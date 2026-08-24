@@ -12,7 +12,7 @@ import {
 } from '../types/crew.types';
 
 const DEFAULT_BILLING_COUNTRY = 'Ceska republika';
-let crewHydrationPromise: Promise<boolean> | null = null;
+let crewHydrationPromise: Promise<void> | null = null;
 let crewLoaded = false;
 let crewHydrationEpoch = 0;
 
@@ -177,37 +177,42 @@ const hydrateCrewFromSupabase = async (epoch: number): Promise<boolean> => {
   return true;
 };
 
-export const ensureSupabaseCrewLoaded = () => {
+export const loadSupabaseCrew = (): Promise<void> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
-    return;
+    return Promise.resolve();
   }
 
   if (crewLoaded) {
-    return;
+    return Promise.resolve();
   }
 
   if (crewHydrationPromise) {
-    return;
+    return crewHydrationPromise;
   }
 
   const epoch = crewHydrationEpoch;
-  const request = hydrateCrewFromSupabase(epoch);
-  crewHydrationPromise = request;
+  const request = hydrateCrewFromSupabase(epoch).then((didLoad) => {
+    if (epoch !== crewHydrationEpoch) {
+      throw new Error('Crew hydration scope changed.');
+    }
+    if (!didLoad) {
+      throw new Error('Crew hydration did not commit.');
+    }
+    crewLoaded = true;
+  });
+  const sharedRequest = request.finally(() => {
+    if (crewHydrationPromise === sharedRequest) {
+      crewHydrationPromise = null;
+    }
+  });
+  crewHydrationPromise = sharedRequest;
+  return sharedRequest;
+};
 
-  void request
-    .then((didLoad) => {
-      if (didLoad && epoch === crewHydrationEpoch) {
-        crewLoaded = true;
-      }
-    })
-    .catch((error) => {
-      console.warn('Nepodarilo se nacist crew ze Supabase, zustavam na lokalnich datech.', error);
-    })
-    .finally(() => {
-      if (crewHydrationPromise === request) {
-        crewHydrationPromise = null;
-      }
-    });
+export const ensureSupabaseCrewLoaded = () => {
+  void loadSupabaseCrew().catch((error) => {
+    console.warn('Nepodarilo se nacist crew ze Supabase, zustavam na lokalnich datech.', error);
+  });
 };
 
 export const getCrew = (filters: CrewListFilters = {}): CrewMember[] => {

@@ -49,8 +49,9 @@ const getSupabaseClientRowIdByName = async (clientName: string): Promise<string 
 
 let projectsHydrationPromise: Promise<void> | null = null;
 let projectsLoaded = false;
+let projectsHydrationEpoch = 0;
 
-const hydrateProjectsFromSupabase = async (): Promise<void> => {
+const hydrateProjectsFromSupabase = async (epoch: number): Promise<void> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
     return;
   }
@@ -74,35 +75,50 @@ const hydrateProjectsFromSupabase = async (): Promise<void> => {
     mapProject(row, row.client_id ? clientsByUuid.get(row.client_id)?.name : ''),
   ));
 
+  if (epoch !== projectsHydrationEpoch) {
+    throw new Error('Project hydration scope changed.');
+  }
+
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     projects: supabaseProjects,
   }));
 };
 
-const ensureSupabaseProjectsLoaded = () => {
+export const loadSupabaseProjects = (): Promise<void> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
-    return;
+    return Promise.resolve();
   }
 
   if (projectsLoaded) {
-    return;
+    return Promise.resolve();
   }
 
   if (projectsHydrationPromise) {
-    return;
+    return projectsHydrationPromise;
   }
 
-  projectsHydrationPromise = hydrateProjectsFromSupabase()
+  const epoch = projectsHydrationEpoch;
+  const request = hydrateProjectsFromSupabase(epoch)
     .then(() => {
+      if (epoch !== projectsHydrationEpoch) {
+        throw new Error('Project hydration scope changed.');
+      }
       projectsLoaded = true;
-    })
-    .catch((error) => {
-      console.warn('Nepodarilo se nacist projekty ze Supabase, zustavam na lokalnich datech.', error);
-    })
-    .finally(() => {
-      projectsHydrationPromise = null;
     });
+  const sharedRequest = request.finally(() => {
+    if (projectsHydrationPromise === sharedRequest) {
+      projectsHydrationPromise = null;
+    }
+  });
+  projectsHydrationPromise = sharedRequest;
+  return sharedRequest;
+};
+
+const ensureSupabaseProjectsLoaded = () => {
+  void loadSupabaseProjects().catch((error) => {
+    console.warn('Nepodarilo se nacist projekty ze Supabase, zustavam na lokalnich datech.', error);
+  });
 };
 
 const ensureSupabaseProjectDependenciesLoaded = () => {
@@ -298,6 +314,7 @@ export const subscribeToProjectChanges = (listener: () => void): (() => void) =>
 };
 
 export const resetSupabaseProjectsHydration = () => {
+  projectsHydrationEpoch += 1;
   projectsHydrationPromise = null;
   projectsLoaded = false;
 };

@@ -1,5 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const createDeferred = <T,>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+};
+
 describe('projects.service write flow', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -236,6 +244,43 @@ describe('projects.service write flow', () => {
     getProjectRows('', 'all');
 
     expect(ensureSupabaseEventsLoaded).toHaveBeenCalledOnce();
+  });
+
+  it('discards an in-flight project snapshot after reset and loads retry', async () => {
+    const firstProjects = createDeferred<{ data: []; error: null }>();
+    const projectsOrder = vi.fn()
+      .mockReturnValueOnce(firstProjects.promise)
+      .mockResolvedValueOnce({ data: [], error: null });
+    const clientsOrder = vi.fn().mockResolvedValue({ data: [], error: null });
+    const from = vi.fn((table: string) => ({
+      select: vi.fn(() => ({
+        order: table === 'projects' ? projectsOrder : clientsOrder,
+      })),
+    }));
+    const updateLocalAppState = vi.fn();
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: { from },
+    }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => ({ projects: [], clients: [] }),
+      updateLocalAppState,
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    const { loadSupabaseProjects, resetSupabaseProjectsHydration } = await import('./projects.service');
+
+    const staleLoad = loadSupabaseProjects();
+    resetSupabaseProjectsHydration();
+    firstProjects.resolve({ data: [], error: null });
+
+    await expect(staleLoad).rejects.toThrow('Project hydration scope changed.');
+    expect(updateLocalAppState).not.toHaveBeenCalled();
+
+    await expect(loadSupabaseProjects()).resolves.toBeUndefined();
+    expect(updateLocalAppState).toHaveBeenCalledTimes(1);
   });
 
   it('calculates crew cost from project timelogs and contractor rates', async () => {

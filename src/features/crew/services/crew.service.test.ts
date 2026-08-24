@@ -1,5 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const createDeferred = <T,>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+};
+
 describe('crew.service', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -112,6 +120,88 @@ describe('crew.service', () => {
     await vi.waitFor(() => expect(profilesOrder).toHaveBeenCalledTimes(1));
     await Promise.resolve();
     expect(updateLocalAppState).not.toHaveBeenCalled();
+  });
+
+  it('shares one awaitable Crew hydration and resolves after commit', async () => {
+    const profiles = createDeferred<{ data: []; error: null }>();
+    const getSession = vi.fn().mockResolvedValue({
+      data: { session: { user: { id: 'user-1' } } },
+      error: null,
+    });
+    const profilesOrder = vi.fn(() => profiles.promise);
+    const profilesFirstOrder = vi.fn(() => ({ order: profilesOrder }));
+    const timelogsSelect = vi.fn().mockResolvedValue({ data: [], error: null });
+    const from = vi.fn((table: string) => {
+      if (table === 'profiles') return { select: vi.fn(() => ({ order: profilesFirstOrder })) };
+      if (table === 'timelogs') return { select: timelogsSelect };
+      throw new Error(`Unexpected table ${table}`);
+    });
+    const updateLocalAppState = vi.fn();
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: { auth: { getSession }, from },
+    }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => ({ contractors: [] }),
+      updateLocalAppState,
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    const { loadSupabaseCrew } = await import('./crew.service');
+
+    const first = loadSupabaseCrew();
+    const duplicate = loadSupabaseCrew();
+
+    expect(first).toBe(duplicate);
+    expect(updateLocalAppState).not.toHaveBeenCalled();
+
+    profiles.resolve({ data: [], error: null });
+    await expect(first).resolves.toBeUndefined();
+    expect(updateLocalAppState).toHaveBeenCalledTimes(1);
+    expect(getSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a stale Crew load after reset and permits retry', async () => {
+    const firstProfiles = createDeferred<{ data: []; error: null }>();
+    const getSession = vi.fn().mockResolvedValue({
+      data: { session: { user: { id: 'user-1' } } },
+      error: null,
+    });
+    const profilesOrder = vi.fn()
+      .mockReturnValueOnce(firstProfiles.promise)
+      .mockResolvedValueOnce({ data: [], error: null });
+    const profilesFirstOrder = vi.fn(() => ({ order: profilesOrder }));
+    const timelogsSelect = vi.fn().mockResolvedValue({ data: [], error: null });
+    const from = vi.fn((table: string) => {
+      if (table === 'profiles') return { select: vi.fn(() => ({ order: profilesFirstOrder })) };
+      if (table === 'timelogs') return { select: timelogsSelect };
+      throw new Error(`Unexpected table ${table}`);
+    });
+    const updateLocalAppState = vi.fn();
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: { auth: { getSession }, from },
+    }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => ({ contractors: [] }),
+      updateLocalAppState,
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    const { loadSupabaseCrew, resetSupabaseCrewHydration } = await import('./crew.service');
+
+    const staleLoad = loadSupabaseCrew();
+    await vi.waitFor(() => expect(profilesOrder).toHaveBeenCalledTimes(1));
+    resetSupabaseCrewHydration();
+    firstProfiles.resolve({ data: [], error: null });
+
+    await expect(staleLoad).rejects.toThrow('Crew hydration scope changed.');
+    await expect(loadSupabaseCrew()).resolves.toBeUndefined();
+    expect(updateLocalAppState).toHaveBeenCalledTimes(1);
   });
 
   it('builds crew detail and receipts by contractorProfileId', async () => {

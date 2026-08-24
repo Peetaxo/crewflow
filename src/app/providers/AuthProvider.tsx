@@ -318,6 +318,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     },
     switchRole,
     signOut: async () => {
+      if (supabase) {
+        const { error } = await supabase.auth.signOut({ scope: 'local' });
+        if (error) {
+          throw new Error(error.message);
+        }
+      }
+
       writeStoredDevSession(null);
       clearPersistedUiSession();
       setIsDevSession(false);
@@ -325,13 +332,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setCurrentProfileId(null);
       setCurrentUserId(null);
       setCurrentContractorId(null);
-
-      if (!supabase) return;
-
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        throw new Error(error.message);
-      }
     },
   }), [currentContractorId, currentProfileId, currentUserId, devLoginOptions, isAuthRequired, isDevSession, isLoading, isRoleSwitching, profile, role, session, switchRole, user]);
 

@@ -4,7 +4,9 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { AuthProvider } from './AuthProvider';
 import { useAuth } from './useAuth';
 
-const signOutMock = vi.fn(async () => ({ error: null }));
+type SignOutResult = { error: { message: string } | null };
+
+const signOutMock = vi.fn(async (_options?: { scope?: string }): Promise<SignOutResult> => ({ error: null }));
 const getSessionMock = vi.fn();
 const rpcMock = vi.fn(async () => ({ data: null, error: null }));
 const onAuthStateChangeMock = vi.fn(() => ({
@@ -50,7 +52,7 @@ vi.mock('../../lib/supabase', () => ({
     auth: {
       getSession: () => getSessionMock(),
       onAuthStateChange: (...args: unknown[]) => onAuthStateChangeMock(...args),
-      signOut: () => signOutMock(),
+      signOut: (options?: { scope?: string }) => signOutMock(options),
     },
   },
 }));
@@ -66,7 +68,7 @@ const Probe = () => {
     <>
       <div data-testid="role">{role ?? 'none'}</div>
       <button onClick={() => { void switchRole('crewhead').catch(() => undefined); }}>Switch to CrewHead</button>
-      <button onClick={() => { void signOut(); }}>Sign out</button>
+      <button onClick={() => { void signOut().catch(() => undefined); }}>Sign out</button>
     </>
   );
 };
@@ -90,8 +92,30 @@ describe('AuthProvider', () => {
 
     await waitFor(() => {
       expect(clearPersistedUiSessionMock).toHaveBeenCalledTimes(1);
-      expect(signOutMock).toHaveBeenCalledTimes(1);
+      expect(signOutMock).toHaveBeenCalledWith({ scope: 'local' });
     });
+  });
+
+  it('keeps persisted UI session when Supabase rejects sign out', async () => {
+    signOutMock.mockResolvedValueOnce({ error: { message: 'network unavailable' } });
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('role')).toHaveTextContent('coo');
+    });
+    clearPersistedUiSessionMock.mockClear();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    await waitFor(() => {
+      expect(signOutMock).toHaveBeenCalledWith({ scope: 'local' });
+    });
+    expect(clearPersistedUiSessionMock).not.toHaveBeenCalled();
   });
 
   it('clears persisted UI session when there is no active session', async () => {

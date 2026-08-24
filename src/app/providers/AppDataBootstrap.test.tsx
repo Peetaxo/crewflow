@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import AppDataBootstrap from './AppDataBootstrap';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import AppDataBootstrap, { AUTHENTICATED_LOADING_INTRO_MS } from './AppDataBootstrap';
 
 const createDeferred = <T,>() => {
   let resolve!: (value: T) => void;
@@ -15,8 +15,11 @@ const mockAuthState = {
   currentUserId: 'user-1' as string | null,
   isAuthRequired: true,
   isAuthenticated: true,
+  isLoading: false,
   role: 'crew' as 'crew' | 'coo',
 };
+
+let prefersReducedMotion = true;
 
 const runtimeConfig = vi.hoisted(() => ({
   appDataSource: 'supabase' as 'local' | 'supabase',
@@ -43,14 +46,158 @@ vi.mock('./useAuth', () => ({
 describe('AppDataBootstrap', () => {
   beforeEach(() => {
     runtimeConfig.appDataSource = 'supabase';
+    prefersReducedMotion = true;
     Object.assign(mockAuthState, {
       currentProfileId: 'profile-1',
       currentUserId: 'user-1',
       isAuthRequired: true,
       isAuthenticated: true,
+      isLoading: false,
       role: 'crew',
     });
     mocks.bootstrap.mockReset().mockResolvedValue(undefined);
+    vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
+      matches: query === '(prefers-reduced-motion: reduce)' && prefersReducedMotion,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('keeps one loading mark mounted from auth metadata into data bootstrap', async () => {
+    const attempt = createDeferred<void>();
+    mocks.bootstrap.mockReturnValueOnce(attempt.promise);
+    mockAuthState.isLoading = true;
+
+    const view = render(
+      <AppDataBootstrap>
+        <div>Ready dashboard</div>
+      </AppDataBootstrap>,
+    );
+
+    const loadingMark = screen.getByRole('status', { name: 'Připravuji aplikaci' });
+    expect(mocks.bootstrap).not.toHaveBeenCalled();
+
+    mockAuthState.isLoading = false;
+    view.rerender(
+      <AppDataBootstrap>
+        <div>Ready dashboard</div>
+      </AppDataBootstrap>,
+    );
+
+    await waitFor(() => expect(mocks.bootstrap).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('status', { name: 'Připravuji aplikaci' })).toBe(loadingMark);
+
+    await act(async () => { attempt.resolve(); });
+    expect(await screen.findByText('Ready dashboard')).toBeInTheDocument();
+  });
+
+  it('waits for the outward-ray intro when bootstrap finishes early', async () => {
+    vi.useFakeTimers();
+    prefersReducedMotion = false;
+
+    render(
+      <AppDataBootstrap>
+        <div>Ready dashboard</div>
+      </AppDataBootstrap>,
+    );
+
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.queryByText('Ready dashboard')).not.toBeInTheDocument();
+
+    act(() => { vi.advanceTimersByTime(AUTHENTICATED_LOADING_INTRO_MS - 1); });
+    expect(screen.queryByText('Ready dashboard')).not.toBeInTheDocument();
+
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(screen.getByText('Ready dashboard')).toBeInTheDocument();
+  });
+
+  it('reveals immediately when bootstrap finishes after the outward-ray intro', async () => {
+    vi.useFakeTimers();
+    prefersReducedMotion = false;
+    const attempt = createDeferred<void>();
+    mocks.bootstrap.mockReturnValueOnce(attempt.promise);
+
+    render(
+      <AppDataBootstrap>
+        <div>Ready dashboard</div>
+      </AppDataBootstrap>,
+    );
+
+    act(() => { vi.advanceTimersByTime(AUTHENTICATED_LOADING_INTRO_MS); });
+    await act(async () => { attempt.resolve(); });
+
+    expect(screen.getByText('Ready dashboard')).toBeInTheDocument();
+  });
+
+  it('does not impose the intro minimum again for a later role scope', async () => {
+    vi.useFakeTimers();
+    prefersReducedMotion = false;
+    const cooAttempt = createDeferred<void>();
+    mocks.bootstrap
+      .mockResolvedValueOnce(undefined)
+      .mockReturnValueOnce(cooAttempt.promise);
+
+    const view = render(
+      <AppDataBootstrap>
+        <div>Ready dashboard</div>
+      </AppDataBootstrap>,
+    );
+
+    await act(async () => { await Promise.resolve(); });
+    act(() => { vi.advanceTimersByTime(AUTHENTICATED_LOADING_INTRO_MS); });
+    expect(screen.getByText('Ready dashboard')).toBeInTheDocument();
+
+    mockAuthState.role = 'coo';
+    view.rerender(
+      <AppDataBootstrap>
+        <div>Ready dashboard</div>
+      </AppDataBootstrap>,
+    );
+    await act(async () => { await Promise.resolve(); });
+    expect(mocks.bootstrap).toHaveBeenCalledTimes(2);
+
+    await act(async () => { cooAttempt.resolve(); });
+    expect(screen.getByText('Ready dashboard')).toBeInTheDocument();
+  });
+
+  it('skips the artificial minimum when reduced motion is requested', async () => {
+    prefersReducedMotion = true;
+
+    render(
+      <AppDataBootstrap>
+        <div>Ready dashboard</div>
+      </AppDataBootstrap>,
+    );
+
+    expect(await screen.findByText('Ready dashboard')).toBeInTheDocument();
+  });
+
+  it('cancels a delayed reveal after unmount', async () => {
+    vi.useFakeTimers();
+    prefersReducedMotion = false;
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const view = render(
+      <AppDataBootstrap>
+        <div>Ready dashboard</div>
+      </AppDataBootstrap>,
+    );
+
+    await act(async () => { await Promise.resolve(); });
+    view.unmount();
+    act(() => { vi.advanceTimersByTime(AUTHENTICATED_LOADING_INTRO_MS); });
+
+    expect(consoleError).not.toHaveBeenCalled();
   });
 
   it('keeps children hidden until all initial data commits', async () => {

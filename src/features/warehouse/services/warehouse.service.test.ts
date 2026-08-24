@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getLocalAppData, updateLocalAppState } from '../../../lib/app-data';
+import { withOperationsTestData } from '../../../test-utils/operations-test-data';
 import {
   createWarehouseReservation,
   findWarehouseReservationConflicts,
@@ -30,7 +31,7 @@ describe('warehouse service', () => {
   beforeEach(() => {
     supabaseMockState.isSupabaseConfigured = false;
     supabaseMockState.supabase = null;
-    updateLocalAppState(() => getLocalAppData());
+    updateLocalAppState(() => withOperationsTestData(getLocalAppData()));
   });
 
   it('returns imported Booqable items as catalog rows', () => {

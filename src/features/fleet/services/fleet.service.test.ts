@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { getLocalAppData, updateLocalAppState } from '../../../lib/app-data';
+import { withOperationsTestData } from '../../../test-utils/operations-test-data';
 import {
   createEmptyFleetReservation,
   findFleetReservationConflicts,
@@ -13,6 +15,10 @@ vi.mock('../../../lib/app-config', () => ({
 }));
 
 describe('fleet service', () => {
+  beforeEach(() => {
+    updateLocalAppState(() => withOperationsTestData(getLocalAppData()));
+  });
+
   it('shows STK warning only when a vehicle needs attention', () => {
     const rows = getFleetOverviewRows('2026-04-28');
 

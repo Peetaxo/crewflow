@@ -10,7 +10,7 @@ Přihlášený uživatel se musí umět odhlásit také v mobilní aplikaci. Des
 - Akce se zobrazí jen tehdy, když aplikace používá skutečné přihlášení (`isAuthRequired`). Vývojový režim bez přihlášení ji neuvidí.
 - Klepnutí zahájí odhlášení ihned, bez potvrzovacího dialogu.
 - Po dobu požadavku bude tlačítko zablokované, aby nešlo odhlášení odeslat vícekrát.
-- Úspěšné odhlášení použije existující `signOut` z `AuthProvider`, který vyčistí uloženou relaci a zavolá Supabase Auth.
+- Úspěšné odhlášení použije společný `signOut` z `AuthProvider`, který vyčistí uloženou relaci a zavolá Supabase Auth s `scope: 'local'`. Odhlásí se tím pouze aktuální zařízení; ostatní přihlášená zařízení zůstanou aktivní.
 - Při chybě zůstane uživatel na obrazovce a uvidí chybovou hlášku. Tlačítko se znovu zpřístupní.
 
 ## Umístění a vzhled

@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider } from '../app/providers/AuthProvider';
 import { useAuth } from '../app/providers/useAuth';
@@ -35,8 +37,15 @@ export const AppShell = () => {
   const isLoginPreview = import.meta.env.DEV
     && typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('previewLogin') === '1';
+  const isNativeRoot = Capacitor.isNativePlatform() && location.pathname === '/';
 
-  if (location.pathname === '/' && !isLoginPreview) {
+  useEffect(() => {
+    if (isNativeRoot) {
+      navigate('/app', { replace: true });
+    }
+  }, [isNativeRoot, navigate]);
+
+  if (location.pathname === '/' && !isNativeRoot && !isLoginPreview) {
     return (
       <WelcomeView
         onLogin={() => navigate('/login')}
@@ -49,7 +58,7 @@ export const AppShell = () => {
     return <MissingSupabaseConfigView />;
   }
 
-  if (isLoading) {
+  if (isLoading && !isAuthenticated) {
     return <AppLoadingMark />;
   }
 
@@ -66,11 +75,11 @@ export const AppShell = () => {
   }
 
   return (
-    <AppProvider>
-      <AppDataBootstrap>
+    <AppDataBootstrap>
+      <AppProvider>
         <AppLayout />
-      </AppDataBootstrap>
-    </AppProvider>
+      </AppProvider>
+    </AppDataBootstrap>
   );
 };
 

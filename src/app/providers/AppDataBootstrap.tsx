@@ -6,12 +6,21 @@ import { useAuth } from './useAuth';
 
 type BootstrapStatus = 'loading' | 'ready' | 'error';
 
+export const AUTHENTICATED_LOADING_INTRO_MS = 1_800;
+
+const prefersReducedMotion = () => (
+  typeof window !== 'undefined'
+  && typeof window.matchMedia === 'function'
+  && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+);
+
 const AppDataBootstrap = ({ children }: { children: ReactNode }) => {
   const {
     currentProfileId,
     currentUserId,
     isAuthRequired,
     isAuthenticated,
+    isLoading: isAuthLoading,
     role,
   } = useAuth();
   const scopeKey = isAuthRequired
@@ -23,21 +32,57 @@ const AppDataBootstrap = ({ children }: { children: ReactNode }) => {
     status: appDataSource === 'supabase' && isAuthRequired ? 'loading' : 'ready',
   });
   const generation = useRef(0);
+  const introStartedAt = useRef<number | null>(isAuthenticated ? Date.now() : null);
+  const hasCompletedInitialIntro = useRef(false);
+  const readyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    if (readyTimer.current !== null) {
+      clearTimeout(readyTimer.current);
+      readyTimer.current = null;
+    }
+
     if (appDataSource !== 'supabase' || !isAuthRequired) {
+      hasCompletedInitialIntro.current = true;
       setState({ scopeKey, status: 'ready' });
       return;
     }
     if (!isAuthenticated) return;
 
+    if (introStartedAt.current === null) {
+      introStartedAt.current = Date.now();
+    }
+
+    if (isAuthLoading) {
+      setState({ scopeKey, status: 'loading' });
+      return;
+    }
+
     const currentGeneration = ++generation.current;
     setState({ scopeKey, status: 'loading' });
+
+    const revealChildren = () => {
+      readyTimer.current = null;
+      if (generation.current !== currentGeneration) return;
+      hasCompletedInitialIntro.current = true;
+      setState({ scopeKey, status: 'ready' });
+    };
+
     void bootstrapInitialAppData()
       .then(() => {
-        if (generation.current === currentGeneration) {
-          setState({ scopeKey, status: 'ready' });
+        if (generation.current !== currentGeneration) return;
+
+        const elapsed = Date.now() - (introStartedAt.current ?? Date.now());
+        const remainingIntro = hasCompletedInitialIntro.current || prefersReducedMotion()
+          ? 0
+          : Math.max(0, AUTHENTICATED_LOADING_INTRO_MS - elapsed);
+
+        if (remainingIntro === 0) {
+          revealChildren();
+          return;
         }
+
+        readyTimer.current = setTimeout(revealChildren, remainingIntro);
       })
       .catch((error) => {
         if (generation.current !== currentGeneration) return;
@@ -47,8 +92,12 @@ const AppDataBootstrap = ({ children }: { children: ReactNode }) => {
 
     return () => {
       generation.current += 1;
+      if (readyTimer.current !== null) {
+        clearTimeout(readyTimer.current);
+        readyTimer.current = null;
+      }
     };
-  }, [attempt, isAuthRequired, isAuthenticated, scopeKey]);
+  }, [attempt, isAuthLoading, isAuthRequired, isAuthenticated, scopeKey]);
 
   const status = state.scopeKey === scopeKey ? state.status : 'loading';
   if (status === 'loading') return <AppLoadingMark />;

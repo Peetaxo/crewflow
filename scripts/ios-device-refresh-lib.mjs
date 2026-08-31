@@ -50,3 +50,183 @@ export const formatRefreshSummary = ({ commit, simulator, phone }) => {
     `phone: ${statusText[phone.state]}${phoneTransport}`,
   ].join('\n');
 };
+
+const command = (label, target, executable, args) => ({
+  label,
+  target,
+  executable,
+  args,
+});
+
+export const createRefreshPlan = (config) => {
+  const simulatorDerivedData = path.join(config.derivedDataRoot, 'simulator');
+  const phoneDerivedData = path.join(config.derivedDataRoot, 'phone');
+  const simulatorApp = path.join(
+    simulatorDerivedData,
+    'Build/Products/Debug-iphonesimulator/App.app',
+  );
+  const phoneApp = path.join(phoneDerivedData, 'Build/Products/Debug-iphoneos/App.app');
+
+  return [
+    command('Build web app', 'shared', 'npm', ['run', 'build']),
+    command('Sync Capacitor iOS', 'shared', 'npx', ['cap', 'sync', 'ios']),
+    command('Boot simulator', 'simulator', 'xcrun', [
+      'simctl',
+      'bootstatus',
+      config.simulatorId,
+      '-b',
+    ]),
+    command('Build simulator app', 'simulator', 'xcodebuild', [
+      '-project',
+      config.projectPath,
+      '-scheme',
+      config.scheme,
+      '-configuration',
+      'Debug',
+      '-destination',
+      `id=${config.simulatorId}`,
+      '-derivedDataPath',
+      simulatorDerivedData,
+      'CODE_SIGNING_ALLOWED=NO',
+      'build',
+    ]),
+    command('Install simulator app', 'simulator', 'xcrun', [
+      'simctl',
+      'install',
+      config.simulatorId,
+      simulatorApp,
+    ]),
+    command('Launch simulator app', 'simulator', 'xcrun', [
+      'simctl',
+      'launch',
+      config.simulatorId,
+      config.bundleId,
+    ]),
+    command('Probe phone availability', 'phoneProbe', 'xcrun', [
+      'devicectl',
+      'device',
+      'info',
+      'details',
+      '--device',
+      config.deviceId,
+      '--timeout',
+      '8',
+    ]),
+    command('Build phone app', 'phone', 'xcodebuild', [
+      '-project',
+      config.projectPath,
+      '-scheme',
+      config.scheme,
+      '-configuration',
+      'Debug',
+      '-destination',
+      `id=${config.deviceId}`,
+      '-derivedDataPath',
+      phoneDerivedData,
+      '-allowProvisioningUpdates',
+      'build',
+    ]),
+    command('Install phone app', 'phone', 'xcrun', [
+      'devicectl',
+      'device',
+      'install',
+      'app',
+      '--device',
+      config.deviceId,
+      '--timeout',
+      '30',
+      '--quiet',
+      phoneApp,
+    ]),
+    command('Launch phone app', 'phone', 'xcrun', [
+      'devicectl',
+      'device',
+      'process',
+      'launch',
+      '--device',
+      config.deviceId,
+      '--terminate-existing',
+      '--timeout',
+      '15',
+      '--quiet',
+      config.bundleId,
+    ]),
+  ];
+};
+
+export class RefreshCommandError extends Error {
+  constructor(step, result, summary) {
+    super(`${step.label} failed${result.stderr ? `: ${result.stderr.trim()}` : ''}`);
+    this.name = 'RefreshCommandError';
+    this.step = step;
+    this.result = result;
+    this.summary = summary;
+  }
+}
+
+const executeRequired = (run, step, summary) => {
+  const result = run(step.executable, step.args);
+  if (result.status !== 0) {
+    if (step.target === 'simulator') summary.simulator = { state: 'failed' };
+    if (step.target === 'phone') summary.phone = { state: 'failed' };
+    throw new RefreshCommandError(step, result, summary);
+  }
+  return result;
+};
+
+const capture = (run, executable, args) => {
+  const result = run(executable, args, { capture: true });
+  if (result.status !== 0) {
+    throw new Error(`${[executable, ...args].join(' ')} failed`);
+  }
+  return result.stdout.trim();
+};
+
+const readPreflight = (run) => ({
+  branch: capture(run, 'git', ['branch', '--show-current']),
+  status: capture(run, 'git', ['status', '--porcelain']),
+  head: capture(run, 'git', ['rev-parse', 'HEAD']),
+  originHead: capture(run, 'git', ['rev-parse', 'origin/main']),
+});
+
+export const runIosDeviceRefresh = ({
+  run,
+  env = process.env,
+  dryRun = false,
+}) => {
+  const config = createRefreshConfig(env);
+  const plan = createRefreshPlan(config);
+  if (dryRun) return { dryRun: true, plan };
+
+  const preflight = readPreflight(run);
+  assertMainPreflight(preflight);
+  const summary = {
+    commit: preflight.head.slice(0, 7),
+    simulator: { state: 'pending' },
+    phone: { state: 'pending' },
+  };
+
+  for (const step of plan.filter((item) => item.target === 'shared')) {
+    executeRequired(run, step, summary);
+  }
+  for (const step of plan.filter((item) => item.target === 'simulator')) {
+    executeRequired(run, step, summary);
+  }
+  summary.simulator = { state: 'updated' };
+
+  const probe = plan.find((item) => item.target === 'phoneProbe');
+  const probeResult = run(probe.executable, probe.args, { capture: true });
+  if (probeResult.status !== 0) {
+    summary.phone = { state: 'waiting' };
+    return summary;
+  }
+
+  for (const step of plan.filter((item) => item.target === 'phone')) {
+    executeRequired(run, step, summary);
+  }
+  summary.phone = {
+    state: 'updated',
+    transport: detectPhoneTransport(probeResult.stdout),
+  };
+  return summary;
+};

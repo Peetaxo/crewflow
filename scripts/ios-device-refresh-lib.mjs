@@ -7,12 +7,15 @@ export const DEFAULT_REFRESH_CONFIG = Object.freeze({
   bundleId: 'cz.nodu.app',
   simulatorId: 'B337323A-264B-4AAC-9236-BEAAB3701659',
   deviceId: '75DA6037-2430-56C9-A791-4DD552D102BA',
+  deviceDestinationId: '00008110-000C284E2299801E',
 });
 
 export const createRefreshConfig = (env = process.env) => ({
   ...DEFAULT_REFRESH_CONFIG,
   simulatorId: env.IOS_REFRESH_SIMULATOR_ID || DEFAULT_REFRESH_CONFIG.simulatorId,
   deviceId: env.IOS_REFRESH_DEVICE_ID || DEFAULT_REFRESH_CONFIG.deviceId,
+  deviceDestinationId:
+    env.IOS_REFRESH_DEVICE_DESTINATION_ID || DEFAULT_REFRESH_CONFIG.deviceDestinationId,
   derivedDataRoot:
     env.IOS_REFRESH_DERIVED_DATA_ROOT || path.join(os.tmpdir(), 'crewflow-ios-device-refresh'),
 });
@@ -120,7 +123,7 @@ export const createRefreshPlan = (config) => {
       '-configuration',
       'Debug',
       '-destination',
-      `id=${config.deviceId}`,
+      `id=${config.deviceDestinationId}`,
       '-derivedDataPath',
       phoneDerivedData,
       '-allowProvisioningUpdates',

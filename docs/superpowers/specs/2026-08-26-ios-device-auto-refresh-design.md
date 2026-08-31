@@ -32,7 +32,7 @@ Příkaz odmítne plnou aktualizaci, pokud není spuštěn nad větví `main`, p
 2. Spustit webový build.
 3. Spustit `cap sync ios`, aby nativní projekt obsahoval nový webový obsah a aktuální pluginy.
 4. Vybrat předvolený simulátor. Pokud je vypnutý, automatizace jej může spustit, sestaví aplikaci, nainstaluje ji a ověří její spuštění.
-5. Vyhledat předvolený spárovaný iPhone podle stabilního identifikátoru. Dostupnost přes Wi-Fi a kabel se považuje za rovnocennou.
+5. Vyhledat předvolený spárovaný iPhone podle CoreDevice identifikátoru. Dostupnost přes Wi-Fi a kabel se považuje za rovnocennou.
 6. Je-li iPhone dostupný, sestavit podepsanou aplikaci pro zařízení, nainstalovat ji a spustit.
 7. Vypsat commit a stav každého cíle.
 
@@ -46,7 +46,10 @@ Stabilní projektové hodnoty budou mít bezpečné výchozí nastavení:
 - scheme `App`,
 - bundle identifier `cz.nodu.app`,
 - známý předvolený simulátor,
-- známý spárovaný iPhone.
+- Xcode destination UDID známého spárovaného iPhonu,
+- CoreDevice identifikátor stejného iPhonu pro zjištění dostupnosti, instalaci a spuštění.
+
+Xcode destination UDID a CoreDevice identifikátor se nesmí zaměňovat: `xcodebuild` a `devicectl` pro stejný fyzický telefon používají rozdílné identifikátory.
 
 Identifikátory bude možné přepsat proměnnými prostředí, aby změna telefonu nebo simulátoru nevyžadovala úpravu logiky skriptu. Citlivé údaje, hesla ani podpisové klíče se do repozitáře neuloží; použije se existující Xcode signing a systémové párování.
 

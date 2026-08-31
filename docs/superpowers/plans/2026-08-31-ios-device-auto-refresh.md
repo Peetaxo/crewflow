@@ -46,6 +46,7 @@ describe('iOS device refresh configuration', () => {
       bundleId: 'cz.nodu.app',
       simulatorId: 'B337323A-264B-4AAC-9236-BEAAB3701659',
       deviceId: '75DA6037-2430-56C9-A791-4DD552D102BA',
+      deviceDestinationId: '00008110-000C284E2299801E',
     });
   });
 
@@ -53,10 +54,12 @@ describe('iOS device refresh configuration', () => {
     expect(createRefreshConfig({
       IOS_REFRESH_SIMULATOR_ID: 'sim-override',
       IOS_REFRESH_DEVICE_ID: 'phone-override',
+      IOS_REFRESH_DEVICE_DESTINATION_ID: 'destination-override',
       IOS_REFRESH_DERIVED_DATA_ROOT: '/tmp/custom-refresh',
     })).toMatchObject({
       simulatorId: 'sim-override',
       deviceId: 'phone-override',
+      deviceDestinationId: 'destination-override',
       derivedDataRoot: '/tmp/custom-refresh',
     });
   });
@@ -127,12 +130,15 @@ export const DEFAULT_REFRESH_CONFIG = Object.freeze({
   bundleId: 'cz.nodu.app',
   simulatorId: 'B337323A-264B-4AAC-9236-BEAAB3701659',
   deviceId: '75DA6037-2430-56C9-A791-4DD552D102BA',
+  deviceDestinationId: '00008110-000C284E2299801E',
 });
 
 export const createRefreshConfig = (env = process.env) => ({
   ...DEFAULT_REFRESH_CONFIG,
   simulatorId: env.IOS_REFRESH_SIMULATOR_ID || DEFAULT_REFRESH_CONFIG.simulatorId,
   deviceId: env.IOS_REFRESH_DEVICE_ID || DEFAULT_REFRESH_CONFIG.deviceId,
+  deviceDestinationId:
+    env.IOS_REFRESH_DEVICE_DESTINATION_ID || DEFAULT_REFRESH_CONFIG.deviceDestinationId,
   derivedDataRoot:
     env.IOS_REFRESH_DERIVED_DATA_ROOT || path.join(os.tmpdir(), 'crewflow-ios-device-refresh'),
 });
@@ -202,6 +208,7 @@ Append tests that record commands without invoking Xcode:
 ```ts
 import {
   RefreshCommandError,
+  createRefreshPlan,
   runIosDeviceRefresh,
 } from '../../scripts/ios-device-refresh-lib.mjs';
 
@@ -225,6 +232,15 @@ const makeRunner = (respond: (label: string) => { status: number; stdout?: strin
 };
 
 describe('iOS device refresh orchestration', () => {
+  it('uses the Xcode UDID for builds and the CoreDevice ID for installation', () => {
+    const plan = createRefreshPlan(createRefreshConfig({}));
+    const phoneBuild = plan.find((step) => step.label === 'Build phone app');
+    const phoneInstall = plan.find((step) => step.label === 'Install phone app');
+
+    expect(phoneBuild?.args).toContain('id=00008110-000C284E2299801E');
+    expect(phoneInstall?.args).toContain('75DA6037-2430-56C9-A791-4DD552D102BA');
+  });
+
   it('updates the simulator and skips a currently unavailable phone', () => {
     const runner = makeRunner((label) => ({
       status: label.includes('devicectl device info details') ? 1 : 0,
@@ -347,7 +363,7 @@ export const createRefreshPlan = (config) => {
       '-project', config.projectPath,
       '-scheme', config.scheme,
       '-configuration', 'Debug',
-      '-destination', `id=${config.deviceId}`,
+      '-destination', `id=${config.deviceDestinationId}`,
       '-derivedDataPath', phoneDerivedData,
       '-allowProvisioningUpdates',
       'build',
@@ -462,7 +478,7 @@ Run:
 npx vitest run src/test/ios-device-refresh.test.ts --reporter=default
 ```
 
-Expected: PASS, 12 tests. The fake runner must show no real `xcodebuild`, `simctl`, or `devicectl` side effects.
+Expected: PASS, 13 tests. The fake runner must show no real `xcodebuild`, `simctl`, or `devicectl` side effects.
 
 - [ ] **Step 6: Commit the orchestration**
 

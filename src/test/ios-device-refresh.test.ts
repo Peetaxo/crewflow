@@ -5,6 +5,7 @@ import {
   RefreshCommandError,
   assertMainPreflight,
   createRefreshConfig,
+  createRefreshPlan,
   detectPhoneTransport,
   formatRefreshSummary,
   runIosDeviceRefresh,
@@ -25,10 +26,12 @@ describe('iOS device refresh configuration', () => {
     expect(createRefreshConfig({
       IOS_REFRESH_SIMULATOR_ID: 'sim-override',
       IOS_REFRESH_DEVICE_ID: 'phone-override',
+      IOS_REFRESH_DEVICE_DESTINATION_ID: 'destination-override',
       IOS_REFRESH_DERIVED_DATA_ROOT: '/tmp/custom-refresh',
     })).toMatchObject({
       simulatorId: 'sim-override',
       deviceId: 'phone-override',
+      deviceDestinationId: 'destination-override',
       derivedDataRoot: '/tmp/custom-refresh',
     });
   });
@@ -94,6 +97,15 @@ const makeRunner = (
 };
 
 describe('iOS device refresh orchestration', () => {
+  it('uses the Xcode UDID for builds and the CoreDevice ID for installation', () => {
+    const plan = createRefreshPlan(createRefreshConfig({}));
+    const phoneBuild = plan.find((step) => step.label === 'Build phone app');
+    const phoneInstall = plan.find((step) => step.label === 'Install phone app');
+
+    expect(phoneBuild?.args).toContain('id=00008110-000C284E2299801E');
+    expect(phoneInstall?.args).toContain('75DA6037-2430-56C9-A791-4DD552D102BA');
+  });
+
   it('updates the simulator and skips a currently unavailable phone', () => {
     const runner = makeRunner((label) => ({
       status: label.includes('devicectl device info details') ? 1 : 0,

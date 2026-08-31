@@ -15,6 +15,8 @@
     "cap:sync:ios:live": "node scripts/capacitor-live-sync.mjs ios",
     "cap:sync:android:live": "node scripts/capacitor-live-sync.mjs android",
     "cap:sync:live": "node scripts/capacitor-live-sync.mjs ios android",
+    "ios:refresh:devices": "node scripts/ios-device-refresh.mjs",
+    "ios:refresh:devices:dry-run": "node scripts/ios-device-refresh.mjs --dry-run",
     "icons:generate": "node scripts/generate-app-icons.mjs",
     "lint": "eslint .",
     "preview": "vite preview",

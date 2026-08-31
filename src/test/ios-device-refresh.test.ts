@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -150,5 +151,19 @@ describe('iOS device refresh orchestration', () => {
     expect(runner.calls).toEqual([]);
     expect(result.plan.some((step) => step.label === 'Build web app')).toBe(true);
     expect(result.plan.some((step) => step.label === 'Install phone app')).toBe(true);
+  });
+});
+
+describe('iOS device refresh CLI', () => {
+  it('prints a dry-run plan without touching either device', () => {
+    const result = spawnSync(process.execPath, ['scripts/ios-device-refresh.mjs', '--dry-run'], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('Build web app: npm run build');
+    expect(result.stdout).toContain('Install simulator app: xcrun simctl install');
+    expect(result.stdout).toContain('Install phone app: xcrun devicectl device install app');
   });
 });

@@ -39,6 +39,34 @@ describe('nodu CSS helpers', () => {
     expect(tabletCardGridRule).toContain('overflow-y: visible;');
   });
 
+  it('loads the complete mobile management overview stylesheet at app startup', () => {
+    const main = readFileSync(resolve('src/main.tsx'), 'utf8');
+
+    expect(main).toContain('import "./styles/mobile-management-overview.css";');
+
+    const css = readFileSync(resolve('src/styles/mobile-management-overview.css'), 'utf8');
+    const dashboard = readFileSync(resolve('src/views/DashboardView.tsx'), 'utf8');
+    const overviewClasses = new Set(dashboard.match(/nodu-management-overview-[\w-]+/g));
+
+    for (const className of overviewClasses) {
+      expect(css).toContain(`.${className}`);
+    }
+
+    const gridRule = css.match(/\.nodu-management-overview-grid\s*\{[\s\S]*?\}/)?.[0];
+    const tileRule = css.match(/\.nodu-management-overview-tile\s*\{[\s\S]*?\}/)?.[0];
+    const stripRule = css.match(/\.nodu-management-overview-strip\s*\{[\s\S]*?\}/)?.[0];
+    const rowRule = css.match(/\.nodu-management-overview-row\s*\{[\s\S]*?\}/)?.[0];
+    const rowTitleRule = css.match(/\.nodu-management-overview-row strong\s*\{[\s\S]*?\}/)?.[0];
+
+    expect(gridRule).toContain('display: grid;');
+    expect(gridRule).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
+    expect(tileRule).toContain('flex-direction: column;');
+    expect(stripRule).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));');
+    expect(rowRule).toContain('display: flex;');
+    expect(rowTitleRule).toContain('display: block;');
+    expect(rowTitleRule).toContain('text-overflow: ellipsis;');
+  });
+
   it('animates the loading rays from and back into the orange dot', () => {
     const css = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8');
     const rayRule = css.match(/\.nodu-app-loading__ray\s*\{[\s\S]*?\}/)?.[0];

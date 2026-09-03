@@ -1,5 +1,9 @@
 # Project Budgets Design
 
+## Status — retired 2026-09-03
+
+The project budget UI and its dedicated editing service were removed at the user's request. The design below is historical, not an active requirement. Database tables, persisted budget types, and legacy data readers remain for compatibility; no saved budget data was deleted.
+
 ## Context
 
 Crewflow currently treats a project as the job-number container. A project aggregates events, timelogs, receipts, and invoices by job number. The user needs budgeting to live primarily inside the project detail, because a single job number can contain many operational events.

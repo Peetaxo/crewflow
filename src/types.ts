@@ -428,11 +428,6 @@ export interface BudgetPackage {
   createdAt: string;
 }
 
-export type BudgetPackageDraft = Omit<BudgetPackage, 'id' | 'createdAt'> & {
-  id?: number;
-  createdAt?: string;
-};
-
 export interface BudgetItem {
   id: number;
   supabaseId?: string;
@@ -448,11 +443,6 @@ export interface BudgetItem {
   note: string;
   createdAt: string;
 }
-
-export type BudgetItemDraft = Omit<BudgetItem, 'id' | 'createdAt'> & {
-  id?: number;
-  createdAt?: string;
-};
 
 export type WarehouseItemStatus = 'active' | 'draft' | 'maintenance' | 'retired';
 export type WarehouseReservationStatus = 'draft' | 'reserved' | 'picked_up' | 'returned' | 'cancelled';

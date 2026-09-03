@@ -1,14 +1,10 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ProjectStatsView from './ProjectStatsView';
 
 const mocks = vi.hoisted(() => ({
-  deleteBudgetItem: vi.fn(),
-  saveBudgetItem: vi.fn(),
-  saveBudgetPackage: vi.fn(),
   setSelectedProjectIdForStats: vi.fn(),
-  toastError: vi.fn(),
   timelogs: [] as Array<{
     id: number;
     eid: number;
@@ -64,31 +60,6 @@ const events = [
   { id: 2, name: 'Majales rozvozy', job: 'JTI001', startDate: '2026-05-02', endDate: '2026-05-02', city: 'Praha', needed: 1, filled: 0, status: 'upcoming', client: 'JTI' },
 ];
 
-const budgetOverview = {
-  projectId: 'JTI001',
-  plannedTotal: 7000,
-  actualTotal: 3500,
-  variance: 3500,
-  packages: [
-    {
-      id: 1,
-      projectId: 'JTI001',
-      name: 'Majales',
-      note: '',
-      eventIds: [1, 2],
-      createdAt: '2026-04-28',
-      linkedEvents: events,
-      plannedTotal: 7000,
-      actualTotal: 3500,
-      variance: 3500,
-      items: [
-        { id: 1, projectId: 'JTI001', budgetPackageId: 1, eventId: 1, section: 'TRANSPORTATION', name: 'Van', units: 'km/action/czk', amount: 10, quantity: 2, unitPrice: 100, note: '', createdAt: '2026-04-28' },
-        { id: 2, projectId: 'JTI001', budgetPackageId: 1, eventId: null, section: 'LOCATION', name: 'Fee', units: 'pcs/action/czk', amount: 1, quantity: 1, unitPrice: 5000, note: '', createdAt: '2026-04-28' },
-      ],
-    },
-  ],
-};
-
 vi.mock('framer-motion', () => ({
   motion: {
     div: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div>,
@@ -101,12 +72,6 @@ vi.mock('recharts', () => ({
   PieChart: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   ResponsiveContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Tooltip: () => null,
-}));
-
-vi.mock('sonner', () => ({
-  toast: {
-    error: mocks.toastError,
-  },
 }));
 
 vi.mock('../context/useAppContext', () => ({
@@ -140,26 +105,9 @@ vi.mock('../features/receipts/services/receipts.service', () => ({
   subscribeToReceiptChanges: () => vi.fn(),
 }));
 
-vi.mock('../features/budgets/services/budgets.service', () => ({
-  getBudgetDependencies: () => ({
-    projects: [project],
-    events,
-    budgetPackages: budgetOverview.packages,
-    budgetItems: budgetOverview.packages.flatMap((budgetPackage) => budgetPackage.items),
-  }),
-  getProjectBudgetOverview: () => budgetOverview,
-  deleteBudgetItem: mocks.deleteBudgetItem,
-  saveBudgetItem: mocks.saveBudgetItem,
-  saveBudgetPackage: mocks.saveBudgetPackage,
-  subscribeToBudgetChanges: () => vi.fn(),
-}));
-
-describe('ProjectStatsView budget section', () => {
+describe('ProjectStatsView project statistics', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.deleteBudgetItem.mockResolvedValue({});
-    mocks.saveBudgetItem.mockResolvedValue({});
-    mocks.saveBudgetPackage.mockResolvedValue({});
     mocks.timelogs = [];
     mocks.contractors = [];
     mocks.invoices = [
@@ -167,142 +115,46 @@ describe('ProjectStatsView budget section', () => {
     ];
   });
 
-  it('renders project budget summary, packages, events, sections, and items', () => {
+  it('does not render a budget section or budget editing controls', () => {
     render(<ProjectStatsView />);
 
-    expect(screen.getByRole('heading', { name: 'Rozpocet' })).toBeInTheDocument();
-    expect(screen.getByText('Planovany rozpocet')).toBeInTheDocument();
-    expect(screen.getByText('Skutecne naklady')).toBeInTheDocument();
-    expect(screen.getAllByText('7 000 Kč').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('3 500 Kč').length).toBeGreaterThan(0);
-
-    const packagePanel = screen.getByTestId('budget-package-1');
-    expect(within(packagePanel).getByRole('heading', { name: 'Majales' })).toBeInTheDocument();
-    expect(within(packagePanel).getAllByText('Majales priprava').length).toBeGreaterThan(0);
-    expect(within(packagePanel).getAllByText('Majales rozvozy').length).toBeGreaterThan(0);
-    expect(within(packagePanel).getByText('TRANSPORTATION')).toBeInTheDocument();
-    expect(within(packagePanel).getByText('LOCATION')).toBeInTheDocument();
-    expect(within(packagePanel).getByText('Van')).toBeInTheDocument();
-    expect(within(packagePanel).getByText('Fee')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'JTI 2026' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /rozpo[cč]et/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('Planovany rozpocet')).not.toBeInTheDocument();
+    expect(screen.queryByText('Variance')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Nazev baliku')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pridat balik' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pridat polozku' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('budget-package-1')).not.toBeInTheDocument();
   });
 
-  it('saves a new budget package linked to selected project events', async () => {
+  it('preserves project statistics, receipts, and approved invoices', () => {
     render(<ProjectStatsView />);
 
-    fireEvent.change(screen.getByLabelText('Nazev baliku'), { target: { value: 'Bitva o Prahu' } });
-    fireEvent.click(screen.getByLabelText('Majales priprava'));
-    fireEvent.click(screen.getByRole('button', { name: 'Pridat balik' }));
+    expect(screen.getByText('Naklady Crew')).toBeInTheDocument();
+    expect(screen.getByText('Hodiny')).toBeInTheDocument();
+    expect(screen.getByText('Kilometry')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Rozdeleni nakladu' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Proplacene hodiny' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Timelogy projektu' })).toBeInTheDocument();
 
-    await waitFor(() => {
-      expect(mocks.saveBudgetPackage).toHaveBeenCalledWith({
-        projectId: 'JTI001',
-        name: 'Bitva o Prahu',
-        note: '',
-        eventIds: [1],
-      });
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Uctenky projektu' }));
+    const receiptRow = screen.getByText('Parking').closest('tr');
+    expect(receiptRow).not.toBeNull();
+    expect(within(receiptRow!).getByText('500 Kc')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Schvalene faktury' }));
+    const invoiceRow = screen.getByText('inv-1').closest('tr');
+    expect(invoiceRow).not.toBeNull();
+    expect(within(invoiceRow!).getByText('3 000 Kc')).toBeInTheDocument();
   });
 
-  it('keeps the new package draft and shows a toast when saving fails', async () => {
-    mocks.saveBudgetPackage.mockRejectedValueOnce(new Error('Rozpoctovy balik nepatri do vybraneho projektu.'));
+  it('returns to the project list', () => {
     render(<ProjectStatsView />);
 
-    const packageNameInput = screen.getByLabelText('Nazev baliku');
-    const eventCheckbox = screen.getByLabelText('Majales priprava');
+    fireEvent.click(screen.getByRole('button', { name: 'Zpet na Projekty' }));
 
-    fireEvent.change(packageNameInput, { target: { value: 'Bitva o Prahu' } });
-    fireEvent.click(eventCheckbox);
-    fireEvent.click(screen.getByRole('button', { name: 'Pridat balik' }));
-
-    await waitFor(() => {
-      expect(mocks.toastError).toHaveBeenCalledWith('Rozpoctovy balik nepatri do vybraneho projektu.');
-    });
-    expect(packageNameInput).toHaveValue('Bitva o Prahu');
-    expect(eventCheckbox).toBeChecked();
-  });
-
-  it('saves a new budget item in a package', async () => {
-    render(<ProjectStatsView />);
-
-    const packagePanel = screen.getByTestId('budget-package-1');
-    fireEvent.change(within(packagePanel).getByLabelText('Sekce'), { target: { value: 'CATERING' } });
-    fireEvent.change(within(packagePanel).getByLabelText('Polozka'), { target: { value: 'Voda' } });
-    fireEvent.change(within(packagePanel).getByLabelText('Jednotky'), { target: { value: 'ks/action/czk' } });
-    fireEvent.change(within(packagePanel).getByLabelText('Pocet'), { target: { value: '20' } });
-    fireEvent.change(within(packagePanel).getByLabelText('Mnozstvi'), { target: { value: '1' } });
-    fireEvent.change(within(packagePanel).getByLabelText('Cena za jednotku'), { target: { value: '30' } });
-    fireEvent.click(within(packagePanel).getByRole('button', { name: 'Pridat polozku' }));
-
-    await waitFor(() => {
-      expect(mocks.saveBudgetItem).toHaveBeenCalledWith({
-        projectId: 'JTI001',
-        budgetPackageId: 1,
-        eventId: null,
-        section: 'CATERING',
-        name: 'Voda',
-        units: 'ks/action/czk',
-        amount: 20,
-        quantity: 1,
-        unitPrice: 30,
-        note: '',
-      });
-    });
-  });
-
-  it('saves a new budget item linked to a selected package event', async () => {
-    render(<ProjectStatsView />);
-
-    const packagePanel = screen.getByTestId('budget-package-1');
-    fireEvent.change(within(packagePanel).getByLabelText('Sekce'), { target: { value: 'CATERING' } });
-    fireEvent.change(within(packagePanel).getByLabelText('Polozka'), { target: { value: 'Voda' } });
-    fireEvent.change(within(packagePanel).getByLabelText('Akce polozky'), { target: { value: '1' } });
-    fireEvent.click(within(packagePanel).getByRole('button', { name: 'Pridat polozku' }));
-
-    await waitFor(() => {
-      expect(mocks.saveBudgetItem).toHaveBeenCalledWith(expect.objectContaining({
-        projectId: 'JTI001',
-        budgetPackageId: 1,
-        eventId: 1,
-        section: 'CATERING',
-        name: 'Voda',
-      }));
-    });
-  });
-
-  it('loads an existing budget item into the form and saves it with its id', async () => {
-    render(<ProjectStatsView />);
-
-    const packagePanel = screen.getByTestId('budget-package-1');
-    fireEvent.click(within(packagePanel).getAllByRole('button', { name: 'Upravit' })[0]);
-
-    expect(within(packagePanel).getByLabelText('Sekce')).toHaveValue('TRANSPORTATION');
-    expect(within(packagePanel).getByLabelText('Polozka')).toHaveValue('Van');
-    expect(within(packagePanel).getByLabelText('Akce polozky')).toHaveValue('1');
-
-    fireEvent.change(within(packagePanel).getByLabelText('Polozka'), { target: { value: 'Van upraveny' } });
-    fireEvent.click(within(packagePanel).getByRole('button', { name: 'Ulozit polozku' }));
-
-    await waitFor(() => {
-      expect(mocks.saveBudgetItem).toHaveBeenCalledWith(expect.objectContaining({
-        id: 1,
-        projectId: 'JTI001',
-        budgetPackageId: 1,
-        eventId: 1,
-        section: 'TRANSPORTATION',
-        name: 'Van upraveny',
-      }));
-    });
-  });
-
-  it('deletes an existing budget item', async () => {
-    render(<ProjectStatsView />);
-
-    const packagePanel = screen.getByTestId('budget-package-1');
-    fireEvent.click(within(packagePanel).getAllByRole('button', { name: 'Smazat' })[0]);
-
-    await waitFor(() => {
-      expect(mocks.deleteBudgetItem).toHaveBeenCalledWith(1);
-    });
+    expect(mocks.setSelectedProjectIdForStats).toHaveBeenCalledWith(null);
   });
 
   it('calculates project hours and crew costs across midnight', () => {

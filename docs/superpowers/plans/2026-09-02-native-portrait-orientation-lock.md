@@ -19,7 +19,7 @@
 
 ## Stav provedení — 2026-09-03
 
-Implementace je uložená v commitu `b270610` na větvi `codex/native-portrait-lock`.
+Implementace je uložená v commitu `b270610`, začleněná do `main` a odeslaná na `origin/main` (ověřený aplikační stav `a0a6da0`). Dočasná větev `codex/native-portrait-lock` a její čistý worktree byly po začlenění odstraněny; historie změny zůstává v `main`.
 
 - Výchozí stav: 896 testů prošlo.
 - Regresní test: nejprve 3 očekávaná selhání, po změně 3 úspěšné testy.
@@ -32,7 +32,12 @@ Implementace je uložená v commitu `b270610` na větvi `codex/native-portrait-l
 - Android `:app:processDebugMainManifest`, `:app:assembleDebug` a `:app:testDebugUnitTest` prošly (`BUILD SUCCESSFUL`, 1 nativní unit test bez chyb).
 - Ve výsledném `app-debug.apk` bylo přes APK Analyzer potvrzeno cílení na API 36, portrétní orientace `MainActivity` a hodnota `true` pro tabletovou kompatibilní výjimku.
 - Opakovaný běh celého testovacího balíku: 899 testů v 96 souborech prošlo.
-- Změna zatím není začleněná do `main` ani odeslaná na remote. Instalace v simulátoru a fyzickém telefonu nebyly aktualizovány; praktická zkouška otočení zůstává neprovedená.
+- Závěrečné nezávislé review nenašlo žádné actionable findings. Po začlenění do `main` znovu prošlo všech 899 testů.
+- Lint v kořenovém checkoutu zahrnul také nesouvisející vnořené worktrees a jejich build artefakty. Kontrola samotného `main` příkazem `npm run lint -- --ignore-pattern '.worktrees/**' --ignore-pattern '.claude/worktrees/**'` prošla bez chyb, se dvěma známými varováními. Konfigurace lintu ani ostatní worktrees se neměnily.
+- Projektový `npm run ios:refresh:devices` byl spuštěn na čistém synchronizovaném `main`. Původní dočasná Xcode cache měla neplatné odkazy na chybějící Capacitor/Cordova artefakty; opakování s `IOS_REFRESH_DERIVED_DATA_ROOT=/private/tmp/crewflow-ios-portrait-refresh.7ewktZ` úspěšně sestavilo, nainstalovalo a spustilo aplikaci v simulátoru iPhone 17 Pro (iOS 26.5).
+- Fyzický spárovaný iPhone byl dostupný. Jeho build v projektovém skriptu narazil na chybějící `DEVELOPMENT_TEAM`. Samostatný build s existujícím lokálním vývojovým týmem předaným jen jako argument `xcodebuild` následně prošel; `devicectl` potvrdil instalaci i spuštění `cz.nodu.app`. Podepisování se neukládalo do projektu.
+- Sestavený a instalovaný iOS bundle má v obou orientačních polích pouze `UIInterfaceOrientationPortrait`.
+- Praktický smoke test: přes nabídku Simulator > Device > Rotate Left byl telefon otočen na šířku. NODU zůstalo ve stejném portrétním mobilním shellu se spodní navigací, bez desktopového sidebaru. Simulátor byl poté vrácen přímou volbou Orientation > Portrait. Stav systémového zámku otáčení se nepodařilo nezávisle potvrdit; úplná zkouška s výslovně vypnutým systémovým zámkem a fyzické otočení iPhonu/Androidu zůstávají ruční kontrolou.
 
 ### Task 1: Přidat selhávající regresní test nativní orientace
 
@@ -243,7 +248,7 @@ Expected: commit mění jen nový regresní test, iOS plist a Android manifest; 
 - Verify: `AGENTS.md`
 - Run: `scripts/ios-device-refresh.mjs`
 
-- [ ] **Step 1: Ověřit čistý a synchronizovaný `main`**
+- [x] **Step 1: Ověřit čistý a synchronizovaný `main`**
 
 Run:
 
@@ -256,7 +261,7 @@ git rev-parse origin/main
 
 Expected: větev `main`, čistý pracovní strom a shodné hashe `main` a `origin/main`.
 
-- [ ] **Step 2: Spustit projektový refresh iOS zařízení**
+- [x] **Step 2: Spustit projektový refresh iOS zařízení**
 
 Run:
 

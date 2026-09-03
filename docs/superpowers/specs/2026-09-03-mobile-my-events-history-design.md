@@ -1,27 +1,25 @@
-# Historie v mobilním filtru „Moje akce“
+# Nápověda k výběru data v mobilním seznamu akcí
 
-## Schválený záměr
+## Upravený záměr
 
-V mobilním Nodu má filtr **Moje akce** zahrnovat také minulost. Nahoře budou probíhající a budoucí akce, pod nimi proběhlé. Uživatel tento návrh odsouhlasil v konverzaci a požádal o úpravu aplikace.
+Uživatel původní návrh na automatické zobrazování historie odvolal. Filtr „Moje akce“, řazení i výběr počátečního data zůstanou beze změny. Novým návrhem je pouze upravit pomocný text prázdného mobilního seznamu v roli crew, aby upozornil na možnost vybrat datum ikonou kalendáře.
 
-## Chování
+## Navržené znění k potvrzení
 
-- Změna platí jen pro mobilní seznam akcí v roli crew při zapnutém filtru „Moje akce“.
-- Zachová se dnešní význam „moje“: aktuální uživatel je přiřazený do crew dané akce. Samotná čekající přihláška nestačí. Nově se nezavádí ověřování skutečné účasti podle výkazů.
-- Seznam zobrazí všechny dostupné přiřazené akce bez spodní hranice data. Textové vyhledávání nadále funguje.
-- Skupina **Aktuální a nadcházející** obsahuje akce, které končí dnes nebo později. Probíhající akce budou první, budoucí budou následovat od nejbližšího začátku. Vícedenní akce zůstane jedinou kartou.
-- Skupina **Proběhlé** obsahuje akce, které skončily před dneškem, seřazené od nejnovějšího konce zpět. Rozdělení se řídí místním kalendářním datem, stejně jako stávající seznam.
-- Prázdná skupina se nevykreslí. Pokud nejsou žádné moje akce, zobrazí se „Zatím tu nemáš žádné přiřazené akce.“ bez zavádějící zmínky o zvoleném datu.
-- V tomto filtru se skryje výběr počátečního data, protože zobrazuje celou historii. Po přepnutí na jiný filtr se výběr data vrátí a zachová jeho předchozí hodnotu.
-- Ostatní mobilní filtry, role crewhead/coo a desktopový seznam i kalendář zůstanou beze změny.
-- Otevírání detailu akce a stávající oprávnění i akce na kartách zůstanou zachované.
+Hlavní věta zůstane:
+
+> Od zvoleného data tu zatím nejsou žádné akce.
+
+Pomocný text místo „Nove moznosti se tu objevi automaticky.“:
+
+> Chceš zobrazit i starší akce? Klepni na ikonu kalendáře vlevo nahoře a vyber datum, od kterého je chceš vidět.
 
 ## Technické hranice
 
-Současné `src/views/EventsView.tsx` vyřazuje historii jak ve filtru seznamu, tak při seskupování výskytů podle data. V režimu „Moje akce“ je nutné upravit obě místa a oddělit řazení aktuálních a minulých akcí. Znovu se použijí stávající karty, vzhled a načtená data. Není součástí změny upravovat databázi, oprávnění, přiřazení lidí ani výkazy.
+Úprava pouze v prázdném stavu `src/views/EventsView.tsx` pro `isMobileCrewEventFeed`, u všech jeho filtrů včetně „Moje akce“. Ostatní role a desktopové zobrazení si zachovají stávající text. Nebudou se měnit žádné podmínky filtrování, přiřazení, řazení, datum, ovládací prvky, databáze ani oprávnění.
 
 ## Ověření
 
-Testy v `src/views/EventsView.test.tsx` nejprve prokážou současné vynechání přiřazené historické akce. Následně ověří její zobrazení, oddělení a pořadí skupin, dnešní hranici, vícedenní akce, vyloučení cizích a pouze čekajících akcí, vyhledávání, prázdný stav a obnovení datového filtru po opuštění „Moje akce“. Stávající testy ochrání ostatní role a zobrazení.
+Regresní test v `src/views/EventsView.test.tsx` nejprve selže na chybějícím novém pomocném textu, poté ověří jeho zobrazení v prázdném mobilním seznamu crew. Stávající testy ochrání výběr data a ostatní role i zobrazení. Vizuálně se ověří zalomení delší nápovědy na mobilní šířce.
 
 Před dokončením proběhnou relevantní testy a sestavení. Podle projektového `AGENTS.md` dokončení zahrnuje začlenění do synchronizovaného `main` a `npm run ios:refresh:devices` z čisté pracovní kopie s existující lokální konfigurací. Výsledky simulátoru a fyzického iPhonu budou uvedeny zvlášť. Nejde o produkční nasazení.

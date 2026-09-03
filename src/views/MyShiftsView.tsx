@@ -401,7 +401,6 @@ const MyShiftsView = () => {
       <section className="nodu-my-shifts-list-panel" aria-labelledby="my-shifts-list-title">
         <div className="nodu-my-shifts-section-header">
           <div>
-            <div className="nodu-my-shifts-kicker">Workflow</div>
             <h2 id="my-shifts-list-title">Výkazy</h2>
           </div>
         </div>
@@ -410,7 +409,7 @@ const MyShiftsView = () => {
           {[
             { id: 'drafts' as const, lbl: 'Rozpracované', count: categorized.drafts.length },
             { id: 'processing' as const, lbl: 'Ke kontrole', count: categorized.processing.length },
-            { id: 'invoiced' as const, lbl: 'Vyúčtované', count: categorized.invoiced.length },
+            { id: 'invoiced' as const, lbl: 'Schválené', count: categorized.invoiced.length },
           ].map((tab) => (
             <button
               key={tab.id}

@@ -20,6 +20,7 @@
   transform-box: view-box;
   transform-origin: 887px 302px;
   animation: nodu-app-loading-ray-cycle 3.7s cubic-bezier(0.22, 0.78, 0.28, 1) infinite;
+  animation-fill-mode: backwards;
 }
 
 .nodu-app-loading__ray path {

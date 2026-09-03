@@ -4,7 +4,7 @@
 
 Uživatel původní návrh na automatické zobrazování historie odvolal. Filtr „Moje akce“, řazení i výběr počátečního data zůstanou beze změny. Novým návrhem je pouze upravit pomocný text prázdného mobilního seznamu v roli crew, aby upozornil na možnost vybrat datum ikonou kalendáře.
 
-## Navržené znění k potvrzení
+## Znění schválené uživatelem 3. září 2026
 
 Hlavní věta zůstane:
 

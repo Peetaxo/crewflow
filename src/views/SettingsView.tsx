@@ -4,7 +4,6 @@ import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { useAuth } from '../app/providers/useAuth';
 import { useAppContext } from '../context/useAppContext';
-import { useIsMobile } from '../hooks/use-mobile';
 import type { Contractor } from '../types';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
@@ -18,7 +17,6 @@ import {
 const SettingsView = () => {
   const { darkMode, setDarkMode, settingsSection, setSettingsSection } = useAppContext();
   const { currentProfileId, isAuthRequired, profile, signOut } = useAuth();
-  const isMobile = useIsMobile();
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -160,7 +158,7 @@ const SettingsView = () => {
             ))}
           </div>
 
-          {isMobile && isAuthRequired && (
+          {isAuthRequired && (
             <div className="mt-6 max-w-3xl">
               <Button
                 type="button"

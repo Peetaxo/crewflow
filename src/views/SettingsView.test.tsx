@@ -41,15 +41,18 @@ vi.mock('sonner', () => ({
   toast: { error: state.toastError },
 }));
 
-describe('SettingsView mobile sign out', () => {
+describe.each([
+  ['mobile', true],
+  ['desktop', false],
+] as const)('SettingsView %s sign out', (_viewport, isMobile) => {
   beforeEach(() => {
-    state.isMobile = true;
+    state.isMobile = isMobile;
     state.isAuthRequired = true;
     state.signOut.mockReset().mockResolvedValue(undefined);
     state.toastError.mockReset();
   });
 
-  it('signs out immediately from mobile settings', async () => {
+  it('signs out immediately from settings', async () => {
     render(<SettingsView />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Odhlásit se' }));
@@ -58,14 +61,9 @@ describe('SettingsView mobile sign out', () => {
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
 
-  it('hides sign out outside authenticated mobile settings', () => {
-    state.isMobile = false;
-    const { rerender } = render(<SettingsView />);
-    expect(screen.queryByRole('button', { name: 'Odhlásit se' })).not.toBeInTheDocument();
-
-    state.isMobile = true;
+  it('hides sign out when authentication is not required', () => {
     state.isAuthRequired = false;
-    rerender(<SettingsView />);
+    render(<SettingsView />);
     expect(screen.queryByRole('button', { name: 'Odhlásit se' })).not.toBeInTheDocument();
   });
 
@@ -77,6 +75,9 @@ describe('SettingsView mobile sign out', () => {
     const button = screen.getByRole('button', { name: 'Odhlásit se' });
     fireEvent.click(button);
     await waitFor(() => expect(button).toBeDisabled());
+    expect(button).toHaveAccessibleName('Odhlašuji…');
+    fireEvent.click(button);
+    expect(state.signOut).toHaveBeenCalledTimes(1);
 
     finishSignOut?.();
     await waitFor(() => expect(button).toBeEnabled());

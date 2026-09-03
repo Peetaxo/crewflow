@@ -17,6 +17,20 @@
 - Upravit `android/app/src/main/AndroidManifest.xml`: zamknout `MainActivity` na portrét a zapnout dočasnou API 36 kompatibilitu pro velké displeje.
 - Beze změny `android/variables.gradle`: test pouze ověří existující `targetSdkVersion = 36`; soubor se nemění.
 
+## Stav provedení — 2026-09-03
+
+Implementace je uložená v commitu `b270610` na větvi `codex/native-portrait-lock`.
+
+- Výchozí stav: 896 testů prošlo.
+- Regresní test: nejprve 3 očekávaná selhání, po změně 3 úspěšné testy.
+- Celý balík: 899 testů v 96 souborech prošlo.
+- Lint: bez chyb, dvě varování v nezměněném `MobileTimelogEditModal.tsx`.
+- Webový build a `cap sync` prošly; synchronizace zachovala orientační zámek.
+- `plutil` a XML validace Android manifestu prošly.
+- Nativní iOS Simulator build prošel; sestavený `Info.plist` obsahuje pouze portrét pro iPhone i iPad.
+- Android Gradle ověření je blokované: na počítači chybí Java Runtime a nebylo nalezeno Android SDK. Nástroje se bez potvrzení uživatele neinstalovaly.
+- Změna zatím není začleněná do `main` ani odeslaná na remote. Instalace v simulátoru a fyzickém telefonu nebyly aktualizovány; praktická zkouška otočení zůstává neprovedená.
+
 ### Task 1: Přidat selhávající regresní test nativní orientace
 
 **Files:**
@@ -24,7 +38,7 @@
 - Read: `android/variables.gradle`
 - Test: `src/nativeOrientationConfig.test.ts`
 
-- [ ] **Step 1: Vytvořit test konfigurace před změnou produkčních souborů**
+- [x] **Step 1: Vytvořit test konfigurace před změnou produkčních souborů**
 
 ```ts
 import { readFileSync } from 'node:fs';
@@ -91,7 +105,7 @@ describe('native portrait orientation lock', () => {
 });
 ```
 
-- [ ] **Step 2: Spustit zaměřený test a ověřit správné selhání**
+- [x] **Step 2: Spustit zaměřený test a ověřit správné selhání**
 
 Run:
 
@@ -108,7 +122,7 @@ Expected: `FAIL` se třemi věcnými selháními — iOS pole obsahují landscap
 - Modify: `android/app/src/main/AndroidManifest.xml`
 - Test: `src/nativeOrientationConfig.test.ts`
 
-- [ ] **Step 1: Omezit iPhone a iPad na vzpřímený portrét**
+- [x] **Step 1: Omezit iPhone a iPad na vzpřímený portrét**
 
 V `ios/App/App/Info.plist` nahradit obě pole orientací tímto přesným obsahem:
 
@@ -123,7 +137,7 @@ V `ios/App/App/Info.plist` nahradit obě pole orientací tímto přesným obsahe
 	</array>
 ```
 
-- [ ] **Step 2: Zamknout Android Activity na portrét**
+- [x] **Step 2: Zamknout Android Activity na portrét**
 
 V otevíracím tagu `MainActivity` v `android/app/src/main/AndroidManifest.xml` přidat atribut vedle ostatních atributů Activity:
 
@@ -131,7 +145,7 @@ V otevíracím tagu `MainActivity` v `android/app/src/main/AndroidManifest.xml` 
 android:screenOrientation="portrait"
 ```
 
-- [ ] **Step 3: Přidat API 36 kompatibilitu pro Android tablety**
+- [x] **Step 3: Přidat API 36 kompatibilitu pro Android tablety**
 
 Do `MainActivity`, před existující `<intent-filter>`, přidat:
 
@@ -143,7 +157,7 @@ Do `MainActivity`, před existující `<intent-filter>`, přidat:
 
 Výsledný blok Activity musí zachovat stávající `configChanges`, `launchMode`, theme a launcher intent. Nesmí se snižovat `targetSdkVersion` ani přidávat JavaScriptový orientační plugin.
 
-- [ ] **Step 4: Spustit zaměřený test a ověřit průchod**
+- [x] **Step 4: Spustit zaměřený test a ověřit průchod**
 
 Run:
 
@@ -164,7 +178,7 @@ plutil -lint ios/App/App/Info.plist
 
 Expected: `ios/App/App/Info.plist: OK` a Gradle `BUILD SUCCESSFUL` bez chyby při slučování manifestu.
 
-- [ ] **Step 6: Commitnout test a minimální konfiguraci**
+- [x] **Step 6: Commitnout test a minimální konfiguraci**
 
 ```bash
 git add src/nativeOrientationConfig.test.ts ios/App/App/Info.plist android/app/src/main/AndroidManifest.xml
@@ -178,7 +192,7 @@ git commit -m "fix: lock native apps to portrait orientation"
 - Verify: `ios/App/App/Info.plist`
 - Verify: `android/app/src/main/AndroidManifest.xml`
 
-- [ ] **Step 1: Spustit celý automatický testovací balík**
+- [x] **Step 1: Spustit celý automatický testovací balík**
 
 Run:
 
@@ -188,7 +202,7 @@ npm test
 
 Expected: všechny test files a testy `PASS`; žádné neočekávané chyby.
 
-- [ ] **Step 2: Spustit lint**
+- [x] **Step 2: Spustit lint**
 
 Run:
 
@@ -198,7 +212,7 @@ npm run lint
 
 Expected: exit code 0 bez nových lint chyb.
 
-- [ ] **Step 3: Sestavit produkční webový bundle**
+- [x] **Step 3: Sestavit produkční webový bundle**
 
 Run:
 
@@ -208,7 +222,7 @@ npm run build
 
 Expected: Vite dokončí produkční build s exit code 0.
 
-- [ ] **Step 4: Ověřit, že změna zůstala omezená na schválený rozsah**
+- [x] **Step 4: Ověřit, že změna zůstala omezená na schválený rozsah**
 
 Run:
 

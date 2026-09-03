@@ -21,6 +21,90 @@ export type CrewRatingSource = 'initial' | 'event';
 export interface Database {
   public: {
     Tables: {
+      billing_group_members: {
+        Row: {
+          event_id: string
+          group_id: string
+        }
+        Insert: {
+          event_id: string
+          group_id: string
+        }
+        Update: {
+          event_id?: string
+          group_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "billing_group_members_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: true
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "billing_group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "billing_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      billing_group_requests: {
+        Row: {
+          actor_id: string
+          created_at: string
+          payload: Json
+          request_id: string
+          result: Json
+        }
+        Insert: {
+          actor_id: string
+          created_at?: string
+          payload: Json
+          request_id: string
+          result: Json
+        }
+        Update: {
+          actor_id?: string
+          created_at?: string
+          payload?: Json
+          request_id?: string
+          result?: Json
+        }
+        Relationships: []
+      }
+      billing_group_state: {
+        Row: {
+          revision: number
+          singleton: boolean
+        }
+        Insert: {
+          revision?: number
+          singleton?: boolean
+        }
+        Update: {
+          revision?: number
+          singleton?: boolean
+        }
+        Relationships: []
+      }
+      billing_groups: {
+        Row: {
+          id: string
+          name: string
+        }
+        Insert: {
+          id: string
+          name: string
+        }
+        Update: {
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
       budget_items: {
         Row: {
           id: string;
@@ -505,6 +589,22 @@ export interface Database {
       };
     };
     Functions: {
+      can_manage_billing_groups: { Args: never; Returns: boolean }
+      read_billing_groups: { Args: never; Returns: Json }
+      save_billing_group_atomic: {
+        Args: {
+          p_confirm_cross_project: boolean
+          p_confirm_moves: boolean
+          p_delete: boolean
+          p_event_ids: string[]
+          p_event_versions: Json
+          p_expected_revision: number
+          p_group_id: string
+          p_name: string
+          p_request_id: string
+        }
+        Returns: Json
+      }
       approve_event_withdrawal: {
         Args: {
           p_event_id: string;

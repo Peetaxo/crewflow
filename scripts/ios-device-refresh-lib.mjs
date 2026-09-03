@@ -12,6 +12,7 @@ export const DEFAULT_REFRESH_CONFIG = Object.freeze({
 
 export const createRefreshConfig = (env = process.env) => ({
   ...DEFAULT_REFRESH_CONFIG,
+  developmentTeam: env.IOS_REFRESH_DEVELOPMENT_TEAM?.trim() || null,
   simulatorId: env.IOS_REFRESH_SIMULATOR_ID || DEFAULT_REFRESH_CONFIG.simulatorId,
   deviceId: env.IOS_REFRESH_DEVICE_ID || DEFAULT_REFRESH_CONFIG.deviceId,
   deviceDestinationId:
@@ -127,6 +128,7 @@ export const createRefreshPlan = (config) => {
       '-derivedDataPath',
       phoneDerivedData,
       '-allowProvisioningUpdates',
+      ...(config.developmentTeam ? [`DEVELOPMENT_TEAM=${config.developmentTeam}`] : []),
       'build',
     ]),
     command('Install phone app', 'phone', 'xcrun', [

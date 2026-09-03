@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
+import { loadEnvFile } from 'node:process';
 
 import {
   RefreshCommandError,
@@ -30,6 +31,11 @@ const run = (command, args, options = {}) => {
 };
 
 try {
+  try {
+    loadEnvFile('.env.local');
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
   const result = runIosDeviceRefresh({ run, dryRun });
   if (result.dryRun) {
     console.log(

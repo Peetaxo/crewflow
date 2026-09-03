@@ -1,4 +1,7 @@
 import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -97,6 +100,25 @@ const makeRunner = (
 };
 
 describe('iOS device refresh orchestration', () => {
+  it('passes a locally configured development team only to the phone build', () => {
+    const plan = createRefreshPlan(createRefreshConfig({
+      IOS_REFRESH_DEVELOPMENT_TEAM: 'TESTTEAM01',
+    }));
+
+    expect(plan.find((step) => step.label === 'Build phone app')?.args)
+      .toContain('DEVELOPMENT_TEAM=TESTTEAM01');
+    expect(plan.find((step) => step.label === 'Build simulator app')?.args)
+      .not.toContain('DEVELOPMENT_TEAM=TESTTEAM01');
+  });
+
+  it('preserves project signing settings when no development team is configured locally', () => {
+    const plan = createRefreshPlan(createRefreshConfig({}));
+    const phoneBuild = plan.find((step) => step.label === 'Build phone app');
+
+    expect(phoneBuild?.args.some((argument: string) => argument.startsWith('DEVELOPMENT_TEAM=')))
+      .toBe(false);
+  });
+
   it('uses the Xcode UDID for builds and the CoreDevice ID for installation', () => {
     const plan = createRefreshPlan(createRefreshConfig({}));
     const phoneBuild = plan.find((step) => step.label === 'Build phone app');
@@ -167,6 +189,46 @@ describe('iOS device refresh orchestration', () => {
 });
 
 describe('iOS device refresh CLI', () => {
+  it.each([
+    [undefined, 'LOCALTEAM1'],
+    ['ENVTEAM001', 'ENVTEAM001'],
+  ])('loads local signing configuration while respecting an explicit environment override (%s)', (override, expectedTeam) => {
+    const directory = mkdtempSync(join(tmpdir(), 'crewflow-refresh-env-test-'));
+    const env = { ...process.env };
+    delete env.IOS_REFRESH_DEVELOPMENT_TEAM;
+    if (override) env.IOS_REFRESH_DEVELOPMENT_TEAM = override;
+
+    try {
+      writeFileSync(join(directory, '.env.local'), 'IOS_REFRESH_DEVELOPMENT_TEAM=LOCALTEAM1\n');
+      const result = spawnSync(process.execPath, [resolve('scripts/ios-device-refresh.mjs'), '--dry-run'], {
+        cwd: directory,
+        encoding: 'utf8',
+        env,
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain(`DEVELOPMENT_TEAM=${expectedTeam}`);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('allows the local environment file to be absent', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'crewflow-refresh-no-env-test-'));
+
+    try {
+      const result = spawnSync(process.execPath, [resolve('scripts/ios-device-refresh.mjs'), '--dry-run'], {
+        cwd: directory,
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('Build phone app: xcodebuild');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it('prints a dry-run plan without touching either device', () => {
     const result = spawnSync(process.execPath, ['scripts/ios-device-refresh.mjs', '--dry-run'], {
       cwd: process.cwd(),

@@ -1032,7 +1032,9 @@ const EventsView = () => {
               : 'Pro tento mesic a filtr tu zatim nejsou zadne akce.'}
           </div>
           <div className="mt-1 text-xs text-[color:var(--nodu-text-soft)]">
-            {isMobileEventFeed
+            {isMobileCrewEventFeed
+              ? 'Chceš zobrazit i starší akce? Klepni na ikonu kalendáře vlevo nahoře a vyber datum, od kterého je chceš vidět.'
+              : isMobileEventFeed
               ? 'Nove moznosti se tu objevi automaticky.'
               : 'Zkuste prepnout filtr nebo vytvorit novou akci.'}
           </div>

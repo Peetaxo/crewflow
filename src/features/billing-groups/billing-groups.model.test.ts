@@ -66,16 +66,18 @@ describe('billing group selection contract', () => {
       { id: 'g1', name: 'První', eventIds: ['A'] },
       { id: 'g2', name: 'Druhá', eventIds: ['B', 'C'] },
     ];
-    const result = replaceMembership(source, { id: 'g1', name: 'První', eventIds: ['A', 'B'] });
+    const result = replaceMembership(source, { id: 'g1', name: 'První', eventIds: ['A', 'B', 'C'] });
 
     expect(result).toEqual([
-      { id: 'g2', name: 'Druhá', eventIds: ['C'] },
-      { id: 'g1', name: 'První', eventIds: ['A', 'B'] },
+      { id: 'g2', name: 'Druhá', eventIds: [] },
+      { id: 'g1', name: 'První', eventIds: ['A', 'B', 'C'] },
     ]);
     expect(source).toEqual([
       { id: 'g1', name: 'První', eventIds: ['A'] },
       { id: 'g2', name: 'Druhá', eventIds: ['B', 'C'] },
     ]);
+    expect(result[0].id).toBe('g2');
+    expect(result[0].eventIds).toEqual([]);
     expect(result[0]).not.toBe(source[1]);
     expect(result[1]).not.toBe(source[0]);
     expect(result[1].eventIds).not.toBe(source[0].eventIds);
@@ -146,10 +148,11 @@ describe('billing group selection contract', () => {
       revision: 8,
       groups: [{ id: 'g1', name: 'Old', eventIds: ['A', 'B'] }],
     };
+    const suppliedGroup: BillingGroup = { id: 'g1', name: '  New name  ', eventIds: ['C', 'A'] };
     const command = buildGroupCommand(
       { source: 'supabase', userId: 'user', profileId: 'profile', role: 'crewhead' },
       snapshot,
-      { id: 'g1', name: '  New name  ', eventIds: ['A', 'C'] },
+      suppliedGroup,
       [
         { ...a, supabaseId: 'A', updatedAt: 'vA' },
         { ...b, supabaseId: 'B', updatedAt: 'vB' },
@@ -171,7 +174,8 @@ describe('billing group selection contract', () => {
       confirmMoves: false,
       deleteGroup: false,
     });
-    expect(command.eventIds).not.toBe((snapshot.groups[0] as BillingGroup).eventIds);
+    expect(suppliedGroup.eventIds).toEqual(['C', 'A']);
+    expect(command.eventIds).not.toBe(suppliedGroup.eventIds);
   });
 
   it('fails commands when affected identities or versions are stale', () => {

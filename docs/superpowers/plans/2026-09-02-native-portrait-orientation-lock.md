@@ -28,7 +28,10 @@ Implementace je uložená v commitu `b270610` na větvi `codex/native-portrait-l
 - Webový build a `cap sync` prošly; synchronizace zachovala orientační zámek.
 - `plutil` a XML validace Android manifestu prošly.
 - Nativní iOS Simulator build prošel; sestavený `Info.plist` obsahuje pouze portrét pro iPhone i iPad.
-- Android Gradle ověření je blokované: na počítači chybí Java Runtime a nebylo nalezeno Android SDK. Nástroje se bez potvrzení uživatele neinstalovaly.
+- Po potvrzení uživatelem byly doplněny Temurin JDK 21.0.12.1 a Android SDK (Command-Line Tools 22.0, platforma API 36, Build Tools 35.0.0 a Platform Tools) do uživatelského profilu. Cesta k SDK je nastavená v ignorovaném `android/local.properties`; systémové ani shellové nastavení se neměnilo.
+- Android `:app:processDebugMainManifest`, `:app:assembleDebug` a `:app:testDebugUnitTest` prošly (`BUILD SUCCESSFUL`, 1 nativní unit test bez chyb).
+- Ve výsledném `app-debug.apk` bylo přes APK Analyzer potvrzeno cílení na API 36, portrétní orientace `MainActivity` a hodnota `true` pro tabletovou kompatibilní výjimku.
+- Opakovaný běh celého testovacího balíku: 899 testů v 96 souborech prošlo.
 - Změna zatím není začleněná do `main` ani odeslaná na remote. Instalace v simulátoru a fyzickém telefonu nebyly aktualizovány; praktická zkouška otočení zůstává neprovedená.
 
 ### Task 1: Přidat selhávající regresní test nativní orientace
@@ -167,7 +170,7 @@ npm test -- src/nativeOrientationConfig.test.ts
 
 Expected: `PASS`, 1 test file a 3 testy úspěšné.
 
-- [ ] **Step 5: Ověřit syntaxi obou nativních konfigurací**
+- [x] **Step 5: Ověřit syntaxi obou nativních konfigurací**
 
 Run:
 

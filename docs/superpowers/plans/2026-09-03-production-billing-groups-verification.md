@@ -384,3 +384,21 @@ its temporary tab and dev server were closed when work paused.
 - Simulator/device installation and final integrated review remain pending at
   this checkpoint. Booted simulator identified as iPhone 17 Pro on iOS 26.5,
   UUID B337323A-264B-4AAC-9236-BEAAB3701659.
+
+### Reviewed simulator candidate
+
+- `2c4636b` completes Task 9: local grouped-event deletion is rejected before
+  any dependent-data mutation; the remote Czech guidance applies only to SQLSTATE
+  23503 with the exact quoted billing-membership FK. Other delete failures keep
+  their existing mapping. The late-old-scope fixture now includes realistic data.
+- Independent Task 9 specification review passed 139 focused tests. Final
+  integrated quality review at `e99577d` passed 184 focused tests and found no
+  actionable blocker for this development simulator checkpoint.
+- Parent's final candidate verification: **101 files / 988 tests passed**;
+  web build passed; lint passed with the same 2 existing hook warnings. App
+  typecheck still fails with exactly the same 192 diagnostics as fresh clean
+  main `55e46b6`, comparing diagnostic text with source line shifts normalized:
+  no new or removed diagnostics. This is not a globally clean typecheck.
+- Main integration and native refresh are the remaining handoff steps. The
+  clean installation checkout preserves ignored `.env.local`; unrelated dirty
+  TimelogsView source/test edits are excluded from the installation candidate.

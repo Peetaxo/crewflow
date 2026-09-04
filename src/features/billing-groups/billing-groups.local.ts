@@ -26,6 +26,12 @@ type LocalBillingState = {
 const localState: LocalBillingState = { revision: 0, groups: [] };
 const requests = new Map<string, LocalRequest>();
 
+export function assertLocalEventNotGrouped(eventId: number): void {
+  if (localState.groups.some((group) => group.eventIds.includes(`local:${eventId}`))) {
+    throw new Error('Nejprve odeberte akci ze společné fakturace.');
+  }
+}
+
 function copyGroup(group: BillingGroup): BillingGroup {
   return { id: group.id, name: group.name, eventIds: [...group.eventIds] };
 }

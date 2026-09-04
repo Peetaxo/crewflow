@@ -238,8 +238,14 @@ describe('EventBillingSection', () => {
   });
 
   it('does not reopen a newer section when an old conflict reload resolves late', async () => {
-    let resolve!: (value: { isSuccess: boolean }) => void;
-    const reload = vi.fn(() => new Promise<{ isSuccess: boolean }>((nextResolve) => { resolve = nextResolve; }));
+    const reloadData = {
+      snapshot: { revision: 3, groups: [{ id: 'festival', name: 'Pozdní Festival', eventIds: ['local:1'] }] },
+      events: billingEvents,
+      timelogs: [],
+      projects,
+    };
+    let resolve!: (value: { isSuccess: boolean; data: typeof reloadData }) => void;
+    const reload = vi.fn(() => new Promise<{ isSuccess: boolean; data: typeof reloadData }>((nextResolve) => { resolve = nextResolve; }));
     const { BillingError } = await import('./billing-groups.model');
     boundary.value = billingValue({ reload, save: vi.fn().mockRejectedValue(new BillingError('conflict', 'Konflikt')) });
     const view = render(<EventBillingSection event={billingEvents[0]} />);
@@ -250,7 +256,7 @@ describe('EventBillingSection', () => {
 
     boundary.value = billingValue({ scope: { ...localScope, userId: 'user-2' } });
     view.rerender(<EventBillingSection event={billingEvents[0]} />);
-    await act(async () => { resolve({ isSuccess: true }); });
+    await act(async () => { resolve({ isSuccess: true, data: reloadData }); });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });

@@ -11,6 +11,7 @@ import { createStableDraftUuid } from '../../stable-draft-identity';
 import { EventAssignmentResult, EventConflictDetail, EventFilter, EventWithDerivedStatus } from '../types/events.types';
 import { approveEventWithdrawalRpc, assignEventCrewRpc, isDisposableTimelogStatus, removeEventCrewRpc } from './event-assignment-lifecycle.service';
 import { deleteEventAtomicRpc } from './event-mutation-rpc.service';
+import { assertLocalEventNotGrouped } from '../../billing-groups/billing-groups.local';
 
 const DEFAULT_TIME_FROM = '08:00';
 const DEFAULT_TIME_TO = '17:00';
@@ -2096,6 +2097,9 @@ const deleteLocalEventUncoordinated = async (
     const deletedEvent = typeof eventId === 'string'
       ? snapshot.events.find((event) => event.supabaseId === eventId)
       : snapshot.events.find((event) => event.id === eventId);
+    if (deletedEvent) {
+      assertLocalEventNotGrouped(deletedEvent.id);
+    }
     const deletedStableId = deletedEvent?.supabaseId ?? (typeof eventId === 'string' ? eventId : null);
     const deletedLocalId = deletedEvent?.id ?? (typeof eventId === 'number' ? eventId : null);
     const nextEvents = typeof eventId === 'string'

@@ -38,7 +38,10 @@ async function loadGateway(options: {
 } = {}) {
   vi.resetModules();
   vi.doMock('../../lib/app-config', () => ({ appDataSource: options.appDataSource ?? 'supabase' }));
-  vi.doMock('../../lib/app-data', () => ({ getLocalAppState: () => structuredClone(options.state ?? emptyState()) }));
+  vi.doMock('../../lib/app-data', async () => ({
+    ...(await vi.importActual<typeof import('../../lib/app-data')>('../../lib/app-data')),
+    getLocalAppState: () => structuredClone(options.state ?? emptyState()),
+  }));
   vi.doMock('../../lib/supabase', () => ({ supabase: options.client ?? null }));
   return import('./billing-groups.gateway');
 }
@@ -219,6 +222,29 @@ describe('local billing groups adapter', () => {
     expectBillingError(() => saveLocalBillingGroup({ ...managerScope, role: 'crew' }, command([])), 'denied');
   });
 
+  it('creates groups only through an explicit save and blocks deletion of a grouped local event', async () => {
+    const first = event(1, { job: 'SHARED-JOB' });
+    const second = event(2, { job: 'SHARED-JOB' });
+    await loadGateway({
+      appDataSource: 'local', state: { ...emptyState(), events: [first, second] },
+    });
+    const { assertLocalEventNotGrouped, readLocalBillingGroups, saveLocalBillingGroup } = await import('./billing-groups.local');
+
+    expect(readLocalBillingGroups(managerScope)).toEqual({ revision: 0, groups: [] });
+    expect(() => assertLocalEventNotGrouped(first.id)).not.toThrow();
+    expect(() => assertLocalEventNotGrouped(second.id)).not.toThrow();
+
+    saveLocalBillingGroup(managerScope, command([first]));
+
+    expect(() => assertLocalEventNotGrouped(first.id))
+      .toThrow('Nejprve odeberte akci ze společné fakturace.');
+    expect(() => assertLocalEventNotGrouped(second.id)).not.toThrow();
+    expect(readLocalBillingGroups(managerScope)).toEqual({
+      revision: 1,
+      groups: [{ id: UUIDS.group, name: 'Skupina', eventIds: ['local:1'] }],
+    });
+  });
+
   it('keeps only visible members and groups private to crew while managers see all', async () => {
     const first = event(1, { status: 'planning' });
     const second = event(2, { status: 'upcoming' });
@@ -291,6 +317,48 @@ describe('local billing groups adapter', () => {
     expect(saveLocalBillingGroup(managerScope, command([], {
       requestId: '55555555-5555-4555-8555-555555555555', groupId: UUIDS.otherGroup,
       expectedRevision: 2, eventVersions: {}, deleteGroup: true,
+    }))).toMatchObject({ revision: 3 });
+  });
+
+  it('rejects populated and missing local group deletion without changing the snapshot or request ledger', async () => {
+    const first = event(1);
+    const state = { ...emptyState(), events: [first] };
+    const { saveLocalBillingGroup, readLocalBillingGroups } = await loadGateway({ appDataSource: 'local', state });
+    saveLocalBillingGroup(managerScope, command([first]));
+    const version = billingEventVersion(first, 'local');
+    const before = readLocalBillingGroups(managerScope);
+    const populatedDelete = command([first], {
+      requestId: '44444444-4444-4444-8444-444444444444',
+      expectedRevision: 1,
+      eventIds: [],
+      eventVersions: { [version.id]: version.version },
+      deleteGroup: true,
+    });
+
+    expectBillingError(() => saveLocalBillingGroup(managerScope, populatedDelete), 'invalid');
+    expect(readLocalBillingGroups(managerScope)).toEqual(before);
+    expect(saveLocalBillingGroup(managerScope, command([], {
+      requestId: populatedDelete.requestId,
+      groupId: UUIDS.otherGroup,
+      eventVersions: {},
+      expectedRevision: 1,
+    }))).toMatchObject({ revision: 2 });
+
+    const beforeMissing = readLocalBillingGroups(managerScope);
+    const missingDelete = command([], {
+      requestId: '55555555-5555-4555-8555-555555555555',
+      groupId: '66666666-6666-4666-8666-666666666666',
+      eventVersions: {},
+      expectedRevision: 2,
+      deleteGroup: true,
+    });
+    expectBillingError(() => saveLocalBillingGroup(managerScope, missingDelete), 'invalid');
+    expect(readLocalBillingGroups(managerScope)).toEqual(beforeMissing);
+    expect(saveLocalBillingGroup(managerScope, command([], {
+      requestId: missingDelete.requestId,
+      groupId: missingDelete.groupId,
+      eventVersions: {},
+      expectedRevision: 2,
     }))).toMatchObject({ revision: 3 });
   });
 });

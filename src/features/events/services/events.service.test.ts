@@ -3936,6 +3936,69 @@ describe('events.service write flow', () => {
     expect(harness.removeEventCrewRpc).not.toHaveBeenCalled();
   });
 
+  it('keeps a grouped local event snapshot intact before allowing ordinary ungrouped deletion', async () => {
+    const localEvent = { ...lifecycleEvent, supabaseId: undefined };
+    const receipt: ReceiptItem = {
+      id: 1,
+      eid: localEvent.id,
+      job: localEvent.job,
+      title: 'Receipt',
+      vendor: 'Vendor',
+      amount: 100,
+      paidAt: '2026-04-20',
+      note: '',
+      status: 'draft',
+    };
+    const harness = await setupLifecycleService({
+      dataSource: 'local',
+      initialSnapshot: createSnapshot({
+        events: [localEvent],
+        timelogs: [{ ...canonicalTimelog, eventSupabaseId: undefined }],
+        receipts: [receipt],
+        eventApplications: [],
+      }),
+    });
+    const { billingEventVersion } = await import('../../billing-groups/billing-groups.model');
+    const { saveLocalBillingGroup } = await import('../../billing-groups/billing-groups.local');
+    const version = billingEventVersion(localEvent, 'local');
+    const scope = { source: 'local' as const, userId: 'manager', profileId: 'manager-profile', role: 'coo' as const };
+    const groupId = '11111111-1111-4111-8111-111111111111';
+    saveLocalBillingGroup(scope, {
+      requestId: '22222222-2222-4222-8222-222222222222',
+      groupId,
+      name: 'Skupina',
+      eventIds: [version.id],
+      expectedRevision: 0,
+      eventVersions: { [version.id]: version.version },
+      confirmCrossProject: true,
+      confirmMoves: true,
+      deleteGroup: false,
+    });
+    const before = harness.getSnapshot();
+    const updatesBeforeDelete = harness.updateLocalAppState.mock.calls.length;
+
+    await expect(harness.service.deleteEvent(localEvent.id))
+      .rejects.toThrow('Nejprve odeberte akci ze společné fakturace.');
+
+    expect(harness.updateLocalAppState).toHaveBeenCalledTimes(updatesBeforeDelete + 1);
+    expect(harness.getSnapshot()).toEqual(before);
+
+    saveLocalBillingGroup(scope, {
+      requestId: '33333333-3333-4333-8333-333333333333',
+      groupId,
+      name: 'Skupina',
+      eventIds: [],
+      expectedRevision: 1,
+      eventVersions: { [version.id]: version.version },
+      confirmCrossProject: true,
+      confirmMoves: true,
+      deleteGroup: false,
+    });
+
+    await expect(harness.service.deleteEvent(localEvent.id)).resolves.toEqual({ id: localEvent.id });
+    expect(harness.getSnapshot()).toMatchObject({ events: [], timelogs: [], receipts: [] });
+  });
+
   it('deletes the exact Supabase event UUID through one atomic RPC when local event ids collide', async () => {
     let snapshot = createSnapshot({
       events: [

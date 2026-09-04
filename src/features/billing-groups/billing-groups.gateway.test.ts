@@ -192,6 +192,15 @@ describe('billing groups gateway', () => {
     await expect(saveBillingGroup(remoteScope, remoteCommand)).rejects.toMatchObject({ kind: 'ambiguous' });
     expect(rpc).toHaveBeenCalledTimes(2);
   });
+
+  it.each(['toString', '__proto__'])('treats prototype token %s as ambiguous rather than known', async (message) => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: { code: '22023', message } });
+    const { saveBillingGroup } = await loadGateway({ client: { rpc } });
+    const remoteCommand = { ...command([], { eventVersions: {} }), eventIds: [] };
+    const remoteScope = { ...managerScope, source: 'supabase' as const, userId: 'user' };
+
+    await expect(saveBillingGroup(remoteScope, remoteCommand)).rejects.toMatchObject({ kind: 'ambiguous' });
+  });
 });
 
 describe('local billing groups adapter', () => {

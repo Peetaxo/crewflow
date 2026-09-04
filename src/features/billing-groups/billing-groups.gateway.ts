@@ -40,14 +40,14 @@ const mutationSchema = z.object({
   revision: z.number().int().nonnegative(),
 }).strict();
 
-const tokenMessages: Record<string, string> = {
-  billing_group_cross_project_confirmation: 'Potvrďte společnou fakturaci přes více projektů.',
-  billing_group_move_confirmation: 'Potvrďte přesun z jiné fakturační skupiny.',
-  billing_group_not_empty: 'Smazat lze pouze prázdnou skupinu.',
-  billing_group_request_mismatch: 'Požadavek má jiné údaje. Obnovte výběr.',
-  billing_group_missing: 'Skupina už neexistuje. Obnovte data.',
-  billing_group_invalid_input: 'Údaje skupiny nejsou platné.',
-};
+const tokenMessages = new Map<string, string>([
+  ['billing_group_cross_project_confirmation', 'Potvrďte společnou fakturaci přes více projektů.'],
+  ['billing_group_move_confirmation', 'Potvrďte přesun z jiné fakturační skupiny.'],
+  ['billing_group_not_empty', 'Smazat lze pouze prázdnou skupinu.'],
+  ['billing_group_request_mismatch', 'Požadavek má jiné údaje. Obnovte výběr.'],
+  ['billing_group_missing', 'Skupina už neexistuje. Obnovte data.'],
+  ['billing_group_invalid_input', 'Údaje skupiny nejsou platné.'],
+]);
 
 function ambiguous(): BillingError {
   return new BillingError('ambiguous', AMBIGUOUS_MESSAGE);
@@ -66,7 +66,7 @@ function domainError(error: RpcError): BillingError {
   if (error.code === '42501') {
     return new BillingError('denied', 'Ke změně skupiny nebo některé akce nemáte oprávnění.');
   }
-  const message = typeof error.message === 'string' ? tokenMessages[error.message] : undefined;
+  const message = typeof error.message === 'string' ? tokenMessages.get(error.message) : undefined;
   return message ? new BillingError('invalid', message) : ambiguous();
 }
 

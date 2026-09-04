@@ -16,6 +16,8 @@ One final approver per timelog, after CH. Additional approvers and real account 
 
 Existing `pending_coo` reports with no approval history retain the legacy role-based final action. Every new CH handoff creates an exact assignee record. Completed/history rows are not retroactively assigned. Changing the event contact never redirects an already handed-off report; a returned report uses current event configuration on its next handoff.
 
+The current managerial profile UPDATE policy permits changing `profiles.user_id`. Snapshot the linked auth-user IDs in the approval record as well as profile IDs, and require both at resolution. Otherwise a non-assigned manager could rebind their account to the assigned profile after handoff. This new-flow protection does not change the development role switch or broadly redesign profile permissions.
+
 Approval and invoicing are separate for both new and legacy flows. Remove the automatic approval trigger, not existing invoices or receipts. Explicit invoice creation remains available and unchanged.
 
 ## Task 1: Database routing, identity and transition enforcement
@@ -43,6 +45,8 @@ create table public.timelog_approvals (
   timelog_id uuid not null references public.timelogs(id) on delete cascade,
   approver_profile_id uuid not null references public.profiles(id) on delete restrict,
   requested_by_profile_id uuid not null references public.profiles(id) on delete restrict,
+  approver_user_id uuid not null references auth.users(id) on delete restrict,
+  requested_by_user_id uuid not null references auth.users(id) on delete restrict,
   status text not null check (status in ('pending','approved','returned')),
   requested_at timestamptz not null default clock_timestamp(),
   resolved_at timestamptz,
@@ -59,6 +63,10 @@ create index timelog_approvals_approver_idx
   on public.timelog_approvals(approver_profile_id, status) where superseded_at is null;
 create index timelog_approvals_requested_by_idx
   on public.timelog_approvals(requested_by_profile_id);
+create index timelog_approvals_approver_user_idx
+  on public.timelog_approvals(approver_user_id);
+create index timelog_approvals_requested_user_idx
+  on public.timelog_approvals(requested_by_user_id);
 alter table public.timelog_approvals enable row level security;
 revoke all on public.timelog_approvals from public, anon, authenticated;
 grant select on public.timelog_approvals to authenticated;
@@ -96,11 +104,11 @@ case when event_row.contact_approves_hours
 end
 ```
 
-The approver must exist, be linked to a COO user, differ from the sender and report author. Missing/unlinked/wrong-role candidates raise `timelog_approver_unavailable` (22023); self/author raises `timelog_approval_unauthorized` (42501). Require submitted complete days using Task 1 schedule assertion; never approve blanks. Require status pending_ch and exact updated_at, otherwise `timelog_approval_conflict` (40001). Supersede prior resolved round, insert the single pending record, set parent pending_coo. Return authoritative rows. No time/day edits, invoice creation or role changes.
+The approver must exist, be linked to a COO user, differ from the sender and report author by profile ID and by any linked auth-user ID. Missing/unlinked/wrong-role candidates raise `timelog_approver_unavailable` (22023); self/author raises `timelog_approval_unauthorized` (42501). Snapshot the chosen `approver_user_id` and caller's `auth.uid()` as `requested_by_user_id`. Require submitted complete days using Task 1 schedule assertion; never approve blanks. Require status pending_ch and exact updated_at, otherwise `timelog_approval_conflict` (40001). Supersede prior resolved round, insert the single pending record, set parent pending_coo. Return authoritative rows. No time/day edits, invoice creation or role changes.
 
 Idempotency precedes stale-parent rejection: the same supplied approval ID/round already attached to this report and requested by this actor is accepted only if the complete requested target batch identifies the same existing rounds; do not insert a second round. A reused ID/round for another report or actor is a conflict. Retry after resolution returns the actual current parent state, not a fabricated pending state. A partially matching batch must reject atomically.
 
-- [ ] Implement resolution under the same sorted parent locks, followed by approval row locks. Validate current caller's linked profile and COO role, exact active assignment, pending_coo parent, matching parent and approval versions. The assigned sender/crew author cannot resolve. `returned` requires a trimmed nonempty note; `approved` may have an empty note. Update record status/resolved_at/note/updated_at and parent approved or rejected/review_note in the same transaction. Successful retry with the same resolved approval, resolution and note returns current state; different payload, superseded round or later re-handoff rejects. All-or-nothing batch; wrong identity must not partially resolve valid neighbors.
+- [ ] Implement resolution under the same sorted parent locks, followed by approval row locks. Validate current caller's linked profile and COO role, exact active assignment including `auth.uid() = approver_user_id`, pending_coo parent, matching parent and approval versions. Never resolve solely through a mutable profile-to-user link. The assigned sender/crew author cannot resolve; compare to the snapshotted sender auth ID too. `returned` requires a trimmed nonempty note; `approved` may have an empty note. Update record status/resolved_at/note/updated_at and parent approved or rejected/review_note in the same transaction. Successful retry with the same resolved approval, resolution and note returns current state only for that snapshotted actor; different payload, superseded round or later re-handoff rejects. All-or-nothing batch; wrong identity must not partially resolve valid neighbors.
 
 For a legacy target with both approval fields null, require no approval history at all, exact parent version and pending_coo status, then allow the existing COO final action in the same transaction. This makes a mixed targeted/legacy bulk action atomic instead of splitting it into independently committed RPCs. A targeted/history report must never enter the legacy branch even if the client omits its approval ID.
 
@@ -114,7 +122,7 @@ drop trigger if exists trg_timelog_approved on public.timelogs;
 
 Keep the old function as historical migration content; do not call it and do not mutate existing invoices. Any final approved action, targeted or legacy, now stays approved. Existing explicit invoicing functions remain authoritative for later financial transitions.
 
-- [ ] GREEN SQL coverage: configured contact vs separate approver; missing login/wrong role/no target/self/author; wrong actor direct RPC; anon execute and table write denials; CH handoff direct REST/generic transition bypass; final direct REST/save/import bypass; success ending approved with unchanged invoice count/receipt state/days; mandatory return note; return/edit/resubmit/newround; changing contact after handoff leaves assignee unchanged; stale timelog/approval version, same/different-payload retries; mixed valid/invalid batch rollback; legacy pending_coo behavior; no automatic role grants. Add two-session race test for resolve vs resolve and new handoff vs stale resolution where practical, otherwise transactional locks and expected-version tests plus reviewed ordering are mandatory evidence.
+- [ ] GREEN SQL coverage: configured contact vs separate approver; missing login/wrong role/no target/self/author; wrong actor direct RPC; profile user_id rebinding after handoff cannot impersonate the snapshotted approver or sender; anon execute and table write denials; CH handoff direct REST/generic transition bypass; final direct REST/save/import bypass; success ending approved with unchanged invoice count/receipt state/days; mandatory return note; return/edit/resubmit/newround; changing contact after handoff leaves assignee unchanged; stale timelog/approval version, same/different-payload retries; mixed valid/invalid batch rollback; legacy pending_coo behavior; no automatic role grants. Add two-session race test for resolve vs resolve and new handoff vs stale resolution where practical, otherwise transactional locks and expected-version tests plus reviewed ordering are mandatory evidence.
 
 - [ ] Apply on the disposable DB with the schedule migration installed, then replay the complete migration sequence on a fresh schema-only baseline DB. Add narrow Vitest DDL contract checks, run full unit suite, inspect ACLs/search paths/RLS, and commit only the migration/tests. Independent spec review then quality review before Task 2.
 
@@ -124,12 +132,14 @@ Keep the old function as historical migration content; do not call it and do not
 - `src/types.ts`, `src/lib/database.types.ts`, `src/lib/supabase-mappers.ts`, `src/lib/app-data.ts` and tests.
 - New `src/features/timelogs/services/timelog-approval-rpc.service.ts` and tests.
 - New `src/features/timelogs/services/timelog-approval-state.ts` and tests.
+- New `src/features/timelogs/components/TimelogReturnDialog.tsx` and tests.
+- New `src/features/timelogs/hooks/useTimelogApprovalActions.tsx` and tests.
 - `src/features/timelogs/services/timelogs.service.ts` and tests.
 - `src/features/events/services/events.service.ts` and tests.
 - `src/views/ApprovalsView.tsx`, `TimelogsView.tsx`, `EventDetailView.tsx`, `DashboardView.tsx` and tests.
 - `src/components/layout/nav-badges.ts` and tests.
 
-- [ ] RED mapper/API tests. Extend Event with `contactApprovesHours?: boolean` and `timelogApproverProfileId?: string | null`. Extend TimelogApproval with `updatedAt: string`. Add database table/function types matching Task 1. Map metadata and approval records, preserving UUID and nullable timestamps; include new event fields, contact profile and phone in save payload and uncertain-save equality. Legacy missing metadata reads as true/null, no invented approval records.
+- [ ] RED mapper/API tests. Extend Event with `contactApprovesHours?: boolean` and `timelogApproverProfileId?: string | null`. Extend TimelogApproval with `updatedAt: string`, `approverUserId: string`, and `requestedByUserId: string` for the immutable auth identity snapshots. Add database table/function types matching Task 1. Map metadata and approval records, preserving UUID and nullable timestamps; include new event fields, contact profile and phone in save payload and uncertain-save equality. Legacy missing metadata reads as true/null, no invented approval records.
 
 ```ts
 export interface EventContactOption {
@@ -145,17 +155,19 @@ export const getActiveTimelogApproval = (timelog: Timelog) =>
 export const isTimelogWaitingForProfile = (timelog: Timelog, profileId?: string | null) => {
   if (timelog.status !== 'pending_coo') return false;
   const approval = getActiveTimelogApproval(timelog);
-  return approval ? approval.status === 'pending' && approval.approverProfileId === profileId : true;
+  return approval
+    ? approval.status === 'pending' && approval.approverProfileId === profileId
+    : !timelog.approvals?.length;
 };
 ```
 
-This helper deliberately preserves legacy no-round reports, while callers still require COO role. Never equate a local numeric ID to a profile or timelog UUID.
+This helper deliberately preserves legacy no-history reports, while callers still require COO role. History without an active round must fail closed, not masquerade as a legacy report. Never equate a local numeric ID to a profile or timelog UUID. UI profile checks only control presentation; the server additionally enforces the snapshotted auth identity.
 
 - [ ] Add typed RPC adapters with strict response parsing and Czech errors for unavailable approver, unauthorized actor, stale/conflicting round and missing return note. Create UUIDs once per mutation request. Bootstrap and timelog-specific reload both SELECT approval records and group by timelog UUID; do not swallow schema/network errors as empty approvals, which would enable a legacy UI fallback on targeted records. Preserve the existing identity reconciliation and lifecycle generation guards.
 
 - [ ] Route the centralized `updateTimelogStatuses` path: action ch uses handoff RPC; coo or rej on pending_coo uses resolution RPC (including its legacy branch); all remaining states use existing transition RPC. `approveAllTimelogsForEvent` includes only reports awaiting the current profile. Add optional `{note?: string, currentProfileId?: string}` action options without breaking current two-argument callers. Service obtains the authenticated profile via the existing authenticated client when needed, not a hard-coded role or browser-controlled profile as server authority. Run all changes through existing mutation serialization and authoritative reload/cache reconciliation on both success and uncertain failure. Local/demo data supports the same single-assignee state transitions with an explicit currentProfileId supplied by UI; it must not invent a remote success.
 
-- [ ] Add one reusable returned-hours note dialog/hook used by all three approval views. Before targeted return require a note and show pending/error state without closing on failure. CH rejection behavior may retain existing semantics. No new multi-approver picker. The CH action uses the event's configured person and reports a concise actionable error if the person is not ready; never falls back to an arbitrary COO.
+- [ ] Add one reusable returned-hours note dialog/hook used by all three approval views. Before returning a pending_coo report (targeted or legacy) require a note and show pending/error state without closing on failure; this matches the resolution RPC's required return note. CH rejection behavior retains existing semantics. No new multi-approver picker. The CH action uses the event's configured person and reports a concise actionable error if the person is not ready; never falls back to an arbitrary COO. Hook exposes `execute(ids: number[], action: TimelogAction): void`, `dialog: ReactNode`, `isPending: boolean`, and accepts optional `onSuccess: () => void` for selection clearing. Export the existing TimelogAction type from its service instead of duplicating strings. Canceling the dialog invokes no mutation; do not leave unresolved promises on unmount.
 
 - [ ] Filter current-COO action buttons, bulk selection and “čeká na mě” counts with `isTimelogWaitingForProfile` in ApprovalsView, TimelogsView, EventDetailView, DashboardView and nav badges. Other managers may still view reports but cannot see active approval actions for someone else's round. Display intended/current approver name using existing profiles, and returned note where reports are reviewed. Update “finalni schvaleni a financni prehled” copy to hours-only wording. Keep separate existing invoicing UI unchanged.
 

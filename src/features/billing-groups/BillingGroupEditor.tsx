@@ -207,7 +207,8 @@ export default function BillingGroupEditor(props: BillingGroupEditorProps) {
   return (
     <Dialog open onOpenChange={handleOpenChange}>
       <DialogContent
-        className="max-h-[90dvh] w-[calc(100%_-_2rem)] min-w-0 overflow-y-auto sm:max-w-2xl"
+        overlayClassName="z-[100]"
+        className="z-[101] max-h-[90dvh] w-[calc(100%_-_2rem)] min-w-0 overflow-y-auto sm:max-w-2xl"
         data-mobile-event-swipe-ignore="true"
       >
         <DialogHeader className="min-w-0 pr-10">

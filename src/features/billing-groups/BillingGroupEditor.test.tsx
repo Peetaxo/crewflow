@@ -196,6 +196,14 @@ describe('BillingGroupEditor', () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
+  it('layers the billing editor above the mobile event detail and its controls', () => {
+    renderEditor();
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveClass('z-[101]');
+    expect(dialog.previousElementSibling).toHaveClass('z-[100]');
+  });
+
   it('allows deletion only for a group that was already empty', async () => {
     const emptyId = '00000000-0000-4000-8000-000000000031';
     const first = renderEditor({

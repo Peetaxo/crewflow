@@ -203,6 +203,24 @@ describe('useBillingGroups', () => {
     return queryClient;
   }
 
+  it.each([
+    ['enabled is false', false, authFor('u1', 'p1', 'coo')],
+    ['auth is loading', true, authFor('u1', 'p1', 'coo', { isLoading: true })],
+    ['role is switching', true, authFor('u1', 'p1', 'coo', { isRoleSwitching: true })],
+    ['auth is unauthenticated', true, authFor('u1', 'p1', 'coo', { isAuthenticated: false })],
+    ['role is absent', true, authFor('u1', 'p1', null)],
+    ['user id is absent', true, authFor(null, 'p1', 'coo')],
+  ])('does not read while %s', (_label, enabled, auth) => {
+    boundaries.auth = auth;
+    boundaries.read.mockResolvedValue(snapshot(1));
+    const queryClient = client();
+    let latest!: HookValue;
+    renderProbe(queryClient, (value) => { latest = value; }, enabled);
+
+    expect(latest.ready).toBe(false);
+    expect(boundaries.read).not.toHaveBeenCalled();
+  });
+
   it('keeps the current scope empty when a previous identity read resolves late', async () => {
     const firstRead = deferred<BillingSnapshot>();
     boundaries.read.mockImplementation((scope: BillingScope) => (
@@ -354,5 +372,94 @@ describe('useBillingGroups', () => {
 
     await expect(staleSave(command())).rejects.toMatchObject({ kind: 'denied' });
     expect(boundaries.save).not.toHaveBeenCalled();
+  });
+
+  it('rejects a retained save after unmount without dispatching it', async () => {
+    boundaries.read.mockResolvedValue(snapshot(1));
+    const queryClient = client();
+    let latest!: HookValue;
+    const view = renderProbe(queryClient, (value) => { latest = value; });
+
+    await waitFor(() => expect(latest.query.isSuccess).toBe(true));
+    const staleSave = latest.save;
+    view.unmount();
+
+    await expect(staleSave(command())).rejects.toMatchObject({ kind: 'denied' });
+    expect(boundaries.save).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['A to B to A', () => {
+      boundaries.auth = authFor('u2', 'p2', 'crew');
+      boundaries.context = contextFor('crew');
+    }, () => {
+      boundaries.auth = authFor('u1', 'p1', 'coo');
+      boundaries.context = contextFor('coo');
+    }],
+    ['ready to paused to ready', () => {
+      boundaries.auth = authFor('u1', 'p1', 'coo', { isLoading: true });
+    }, () => {
+      boundaries.auth = authFor('u1', 'p1', 'coo');
+    }],
+  ])('rejects an old save after %s but allows the new activation', async (_label, makeStale, reactivate) => {
+    boundaries.read.mockResolvedValue(snapshot(1));
+    boundaries.save.mockResolvedValue({ requestId: 'request-1', groupId: command().groupId, revision: 2 });
+    const queryClient = client();
+    let latest!: HookValue;
+    const view = renderProbe(queryClient, (value) => { latest = value; });
+
+    await waitFor(() => expect(latest.query.isSuccess).toBe(true));
+    const staleSave = latest.save;
+    makeStale();
+    view.rerender(
+      <QueryClientProvider client={queryClient}>
+        <Probe onValue={(value) => { latest = value; }} />
+      </QueryClientProvider>,
+    );
+    reactivate();
+    view.rerender(
+      <QueryClientProvider client={queryClient}>
+        <Probe onValue={(value) => { latest = value; }} />
+      </QueryClientProvider>,
+    );
+
+    await expect(staleSave(command())).rejects.toMatchObject({ kind: 'denied' });
+    expect(boundaries.save).not.toHaveBeenCalled();
+    await expect(latest.save(command())).resolves.toMatchObject({ revision: 2 });
+    expect(boundaries.save).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'u1', profileId: 'p1', role: 'coo' }),
+      expect.anything(),
+    );
+  });
+
+  it('bypasses remote auth gates in local mode', async () => {
+    boundaries.source = 'local';
+    boundaries.auth = authFor(null, null, null, {
+      isLoading: true,
+      isRoleSwitching: true,
+      isAuthenticated: false,
+    });
+    boundaries.context = contextFor('coo');
+    boundaries.read.mockResolvedValue(snapshot(1));
+    vi.resetModules();
+    const { useBillingGroups: useLocalBillingGroups } = await import('./useBillingGroups');
+    type LocalHookValue = ReturnType<typeof useLocalBillingGroups>;
+    const LocalProbe = ({ onValue }: { onValue: (value: LocalHookValue) => void }) => {
+      onValue(useLocalBillingGroups());
+      return null;
+    };
+    const queryClient = client();
+    let latest!: LocalHookValue;
+    render(
+      <QueryClientProvider client={queryClient}>
+        <LocalProbe onValue={(value) => { latest = value; }} />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(latest.ready).toBe(true));
+    await waitFor(() => expect(boundaries.read).toHaveBeenCalledWith(
+      expect.objectContaining({ source: 'local', role: 'coo', userId: null, profileId: null }),
+      expect.any(AbortSignal),
+    ));
   });
 });

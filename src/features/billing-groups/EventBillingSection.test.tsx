@@ -183,10 +183,26 @@ describe('EventBillingSection', () => {
     expect(screen.getByDisplayValue('Rozpracováno')).toBeInTheDocument();
   });
 
-  it('reloads after a conflict and only reopens this current editor when the reload succeeds', async () => {
-    const reload = vi.fn().mockResolvedValue({ isSuccess: true });
-    const save = vi.fn().mockRejectedValue(new (await import('./billing-groups.model')).BillingError('conflict', 'Konflikt'));
-    boundary.value = billingValue({ reload, save });
+  it('reopens a conflict editor from successful reload data before the query observer catches up', async () => {
+    const initialData = {
+      snapshot: { revision: 1, groups: [{ id: 'festival', name: 'Původní Festival', eventIds: ['local:1', 'local:2'] }] },
+      events: billingEvents,
+      timelogs: [],
+      projects,
+    };
+    const refreshedData = {
+      snapshot: { revision: 2, groups: [{ id: 'festival', name: 'Čerstvý Festival', eventIds: ['local:1'] }] },
+      events: billingEvents,
+      timelogs: [],
+      projects,
+    };
+    const reload = vi.fn().mockResolvedValue({ isSuccess: true, data: refreshedData });
+    const { BillingError } = await import('./billing-groups.model');
+    const save = vi.fn()
+      .mockRejectedValueOnce(new BillingError('conflict', 'Konflikt'))
+      .mockResolvedValueOnce(undefined);
+    // Keep the observed query data stale to model React Query notifying this component after refetch resolves.
+    boundary.value = billingValue({ data: initialData, reload, save });
     render(<EventBillingSection event={billingEvents[0]} />);
     fireEvent.click(screen.getByRole('button', { name: 'Upravit propojení' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Potvrzuji společnou fakturaci přes více projektů' }));
@@ -194,7 +210,14 @@ describe('EventBillingSection', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Zahodit výběr a načíst aktuální data' }));
 
     await waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
-    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText('Název skupiny')).toHaveValue('Čerstvý Festival'));
+    fireEvent.click(screen.getByRole('button', { name: 'Uložit propojení' }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+    expect(save.mock.calls[1][0]).toMatchObject({
+      expectedRevision: 2,
+      name: 'Čerstvý Festival',
+      eventIds: ['local:1'],
+    });
   });
 
   it('keeps a conflict editor closed and exposes retry when its reload fails', async () => {

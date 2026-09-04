@@ -73,8 +73,34 @@ type BillingSectionBodyProps = {
   anchorId: string;
 };
 
+type BillingData = NonNullable<ReturnType<typeof useBillingGroups>['query']['data']>;
+
+type EditorSession = {
+  scope: BillingScope;
+  snapshot: BillingData['snapshot'];
+  events: BillingData['events'];
+  projects: BillingData['projects'];
+  anchor: Event;
+};
+
+function createEditorSession(
+  data: BillingData,
+  scope: BillingScope,
+  event: Event,
+  anchorId: string,
+): EditorSession {
+  return {
+    scope: { ...scope },
+    snapshot: data.snapshot,
+    events: data.events,
+    projects: data.projects,
+    anchor: data.events.find((candidate) => eventKey(candidate, scope) === anchorId) ?? event,
+  };
+}
+
 function BillingSectionBody({ billing, event, anchorId }: BillingSectionBodyProps) {
   const [open, setOpen] = useState(false);
+  const [editorSession, setEditorSession] = useState<EditorSession | null>(null);
   const [reloading, setReloading] = useState(false);
   const activeRef = useRef(false);
 
@@ -87,10 +113,6 @@ function BillingSectionBody({ billing, event, anchorId }: BillingSectionBodyProp
   // A refetch error must not tear down an editor that deliberately froze its review inputs.
   // Once it closes, the same error becomes retry-only until fresh data arrives.
   const queryUnavailable = !data || (billing.query.isError && !open);
-  const currentAnchor = useMemo(() => {
-    if (!data) return event;
-    return data.events.find((candidate) => eventKey(candidate, billing.scope) === anchorId) ?? event;
-  }, [anchorId, billing.scope, data, event]);
   const currentGroup = data?.snapshot.groups.find((group) => group.eventIds.includes(anchorId));
   const manageable = canManageBillingGroups(billing.scope.role);
 
@@ -98,21 +120,32 @@ function BillingSectionBody({ billing, event, anchorId }: BillingSectionBodyProp
     setReloading(true);
     try {
       const result = await billing.reload();
-      if (activeRef.current && reopen && result.isSuccess) setOpen(true);
+      if (activeRef.current && reopen && result.isSuccess && result.data) {
+        setEditorSession(createEditorSession(result.data, billing.scope, event, anchorId));
+        setOpen(true);
+      }
     } catch {
       // The query state exposes the retryable error; an interaction must not leak a rejected promise.
     } finally {
       if (activeRef.current) setReloading(false);
     }
-  }, [billing]);
+  }, [anchorId, billing, event]);
+
+  const openEditor = useCallback(() => {
+    if (!data) return;
+    setEditorSession(createEditorSession(data, billing.scope, event, anchorId));
+    setOpen(true);
+  }, [anchorId, billing.scope, data, event]);
 
   const closeEditor = useCallback(() => {
     setOpen(false);
+    setEditorSession(null);
     void reload(false);
   }, [reload]);
 
   const reloadAfterConflict = useCallback(() => {
     setOpen(false);
+    setEditorSession(null);
     void reload(true);
   }, [reload]);
 
@@ -150,17 +183,17 @@ function BillingSectionBody({ billing, event, anchorId }: BillingSectionBodyProp
         <p className="break-words text-sm text-[color:var(--nodu-text-soft)]">Tato akce se fakturuje samostatně.</p>
       )}
       {manageable && (
-        <Button type="button" disabled={reloading} onClick={() => setOpen(true)}>
+        <Button type="button" disabled={reloading} onClick={openEditor}>
           {currentGroup ? 'Upravit propojení' : 'Nastavit společnou fakturaci'}
         </Button>
       )}
-      {manageable && open && (
+      {manageable && open && editorSession && (
         <BillingGroupEditor
-          scope={billing.scope}
-          snapshot={data.snapshot}
-          events={data.events}
-          projects={data.projects}
-          anchor={currentAnchor}
+          scope={editorSession.scope}
+          snapshot={editorSession.snapshot}
+          events={editorSession.events}
+          projects={editorSession.projects}
+          anchor={editorSession.anchor}
           onSave={billing.save}
           onClose={closeEditor}
           onReload={reloadAfterConflict}

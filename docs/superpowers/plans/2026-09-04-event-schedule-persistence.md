@@ -1,6 +1,6 @@
 # Event schedule persistence Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Store schedule v2 and allow incomplete draft hours without permitting incomplete submission.
 
@@ -19,7 +19,7 @@
 
 **Verified sources:** `/private/tmp/crewflow-schema-before-20260904.sql` is a schema-only export of the linked database. Existing definitions also live in `supabase/migrations/20260817074631_timelog_assignment_lifecycle.sql`; later migration fixes invalid `pg_catalog.coalesce`. Use the audited export/current local catalog when copying definitions. Never reintroduce qualified `coalesce`.
 
-- [ ] Add synthetic CH and Crew auth/profile fixtures, event, and assertions in `BEGIN ... ROLLBACK`. Assert `assign_event_crew` can create a draft containing `time_from:''`, `time_to:''`; then save/reload partial/blank values, including preparation phase. The old functions must fail before the migration.
+- [x] Add synthetic CH and Crew auth/profile fixtures, event, and assertions in `BEGIN ... ROLLBACK`. Assert `assign_event_crew` can create a draft containing `time_from:''`, `time_to:''`; then save/reload partial/blank values, including preparation phase. The old functions must fail before the migration.
 
 ```sql
 select public.assign_event_crew(
@@ -32,8 +32,8 @@ select public.assign_event_crew(
 
 Fixtures use those UUIDs only in the rollback test, never in the migration. Set request claims to the synthetic actor and `SET LOCAL ROLE authenticated` when exercising RPC/RLS. Create auth users and profiles using database-owner setup before switching role. Test helpers must raise on unexpected success/failure, not swallow arbitrary errors.
 
-- [ ] Run old-schema RED test with `docker exec -i crewflow-event-form-db psql -U postgres -d postgres -v ON_ERROR_STOP=1 < supabase/tests/event-schedule-drafts.sql`. Expected assignment-invalid-days error.
-- [ ] Add these columns without reclassifying historical events:
+- [x] Run old-schema RED test with `docker exec -i crewflow-event-form-db psql -U postgres -d postgres -v ON_ERROR_STOP=1 < supabase/tests/event-schedule-drafts.sql`. Expected assignment-invalid-days error.
+- [x] Add these columns without reclassifying historical events:
 
 ```sql
 alter table public.events
@@ -42,7 +42,7 @@ alter table public.events
   add column free_days date[] not null default '{}';
 ```
 
-- [ ] Define an immutable time validator matching the frontend parser, with explicit ACLs. The following SQL body is the contract:
+- [x] Define an immutable time validator matching the frontend parser, with explicit ACLs. The following SQL body is the contract:
 
 ```sql
 create or replace function public.is_valid_timelog_time(p_value text)
@@ -52,7 +52,7 @@ revoke all on function public.is_valid_timelog_time(text) from public, anon;
 grant execute on function public.is_valid_timelog_time(text) to authenticated;
 ```
 
-- [ ] Copy full existing `assign_event_crew` and `save_timelog_atomic` definitions into the migration and modify only validation/casts. Keep auth checks, advisory/row locks, identities, expected versions, insert/update semantics, idempotency and grants unchanged. Expand the recognized phase list to include `pripravy` (already in the database enum). Missing day_type must fail explicitly, not rely on nullable SQL `NOT IN`.
+- [x] Copy full existing `assign_event_crew` and `save_timelog_atomic` definitions into the migration and modify only validation/casts. Keep auth checks, advisory/row locks, identities, expected versions, insert/update semantics, idempotency and grants unchanged. Expand the recognized phase list to include `pripravy` (already in the database enum). Missing day_type must fail explicitly, not rely on nullable SQL `NOT IN`.
 
 ```sql
 -- Per-element predicate, alongside existing date/object checks:
@@ -71,7 +71,7 @@ nullif(source.day->>'time_to', '')::time
 
 Only draft/rejected/pending_crew_confirmation may be incomplete. For save requests targeting any review/approved/financial state, both times must be valid and unequal as times (08:00 equals 8:00); invalid/zero intervals raise `timelog_incomplete`. Preserve original text when storing nonempty values and preserve empty string/null without a fallback.
 
-- [ ] Add a database-only completeness assertion and triggers. Keep the helper in non-exposed `private`, explicit empty search_path, no direct API execute. It checks only `pending_ch`, `pending_coo`, `approved`, `invoiced`, `paid`; returns for draft/rejected/confirmation or a deleted parent. No rewriting existing data. Implement this predicate after reading the parent's status:
+- [x] Add a database-only completeness assertion and triggers. Keep the helper in non-exposed `private`, explicit empty search_path, no direct API execute. It checks only `pending_ch`, `pending_coo`, `approved`, `invoiced`, `paid`; returns for draft/rejected/confirmation or a deleted parent. No rewriting existing data. Implement this predicate after reading the parent's status:
 
 ```sql
 if not exists (select 1 from public.timelog_days where timelog_id = p_timelog_id)
@@ -90,11 +90,13 @@ end if;
 
 Use DEFERRABLE INITIALLY DEFERRED constraint triggers on parent insert/status update and day insert/update/delete. This allows atomic delete-and-reinsert day saves and validates final transaction state. On day reassignment check both old and new parents; on cascade deletion missing parents are ignored. Schema-qualify all names. Trigger functions cannot be directly executed by API roles. A row lock on the parent protects concurrent day edits/status transitions; preserve existing lock ordering to avoid deadlocks.
 
-- [ ] Expand tests: blank/partial draft round-trip, valid single-digit times, invalid syntax/24:00, zero-length times, overnight, preparation, optimistic stale save, wrong actor, direct REST-equivalent pending_ch update with blanks, generic transition bypass, removal/blanking a day while pending_ch, valid submitted replacement, existing filled data untouched. Set constraints immediate inside exception-isolated test blocks when testing deferred violations. Verify no invoice/receipt data is touched by these tests.
-- [ ] Run local migration once, then SQL test to GREEN; test a second isolated database restored from the same schema-only baseline to confirm migration replay. No live application during task implementation.
-- [ ] Add Vitest contract tests checking additive default version1, no historical data UPDATE, nullable casts, four phases, helper/trigger ACL and presence of rollback fixture tests. Run focused test, then all `npm test -- --reporter=dot`.
-- [ ] Commit only migration/test files as `feat: persist event schedule versions and incomplete drafts`.
-- [ ] Independent spec then quality review, resolve findings before next task.
+Add an index on `public.timelog_days(timelog_id)` because each deferred assertion selects a report's days. The audited schema has no such index; without it a replacement would repeat full-table scans while holding the parent lock. The ordinary app writes already use parent-first atomic RPCs. An external direct child UPDATE can still deadlock against an atomic parent-first save because PostgreSQL locks the child tuple before its row trigger; PostgreSQL aborts one transaction and integrity is preserved. Do not weaken the guard to avoid this residual direct-API retry case.
+
+- [x] Expand tests: blank/partial draft round-trip, valid single-digit times, invalid syntax/24:00, zero-length times, overnight, preparation, optimistic stale save, wrong actor, direct REST-equivalent pending_ch update with blanks, generic transition bypass, removal/blanking a day while pending_ch, valid submitted replacement, existing filled data untouched. Set constraints immediate inside exception-isolated test blocks when testing deferred violations. Verify no invoice/receipt data is touched by these tests.
+- [x] Run local migration once, then SQL test to GREEN; test a second isolated database restored from the same schema-only baseline to confirm migration replay. No live application during task implementation.
+- [x] Add Vitest contract tests checking additive default version1, no historical data UPDATE, nullable casts, four phases, helper/trigger ACL and presence of rollback fixture tests. Run focused test, then all `npm test -- --reporter=dot`.
+- [x] Commit only migration/test files as `feat: persist event schedule versions and incomplete drafts`.
+- [x] Independent spec then quality review, resolve findings before next task.
 
 ## Task 2: Application persistence and time-entry readers
 
@@ -144,7 +146,7 @@ export const assertTimelogComplete = (timelog: Pick<Timelog, 'days'>): void => {
 - [ ] Replace v2 desktop add-day defaulting and expected-plan comparisons with `resolveTimelogDayDefaults`; preserve legacy branch. EventDetail new draft creation uses `buildEventScheduleDays(event)` for v2, legacy map remains. No automatic phase self-application.
 - [ ] Add `scheduleVersion` and `freeDays` to mobile event defaults signature. Empty TimeField displays `--:--`; opening the time wheel must not write 00:00 unless user selects/confirms. Save/reopen empty drafts must stay empty. Validate before submit and retain user input on errors.
 - [ ] For v2 multi-day event summaries show calendar day count, not recurring global time interval. Application-time proposal controls must not present boundary times as every-day shifts; leave existing user-provided proposal values unchanged.
-- [ ] Guard the existing invoice-comment hours importer against the same boundary mistake. For v2, `getScheduledPhaseForDate` must use `resolveEventScheduleDay` and return null for missing planned clocks. `getScheduledTimelogDaysForEvent` uses `buildEventScheduleDays`; if any active generated day lacks complete unequal clocks, return an empty schedule so the existing review-required path handles it. Do not infer actual daily hours from whole-event boundaries, disabled cached phases or partially known multi-day plans. Explicit times stated in imported comments keep existing behavior, including work on a day labelled free in the plan. Tests cover dateless/missing-clock multi-day inference requiring review, explicit comment times preserved, single-day and explicit complete plans, and legacy behavior.
+- [ ] Guard the existing invoice-comment hours importer against the same boundary mistake. For v2, `getScheduledPhaseForDate` must use `resolveEventScheduleDay` and return null for missing planned clocks. `getScheduledTimelogDaysForEvent` uses `buildEventScheduleDays`; if any active generated day lacks complete unequal clocks, return an empty schedule so the existing review-required path handles it. `getEventStartTimesForDate` must likewise use only actual per-date active planned clocks for v2, not global boundaries or disabled cached phases when ranking candidate events. V2 date containment must be calendar-correct across DST. Do not infer actual daily hours from whole-event boundaries or partially known multi-day plans. Explicit times stated in imported comments keep existing behavior, including work on a day labelled free in the plan. Tests cover dateless/missing-clock multi-day inference requiring review, explicit comment times preserved, single-day and explicit complete plans, and legacy behavior.
 - [ ] Run affected tests, all tests, build, and independent spec/quality reviews; commit only task files.
 
 ## Rollout constraint

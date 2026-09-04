@@ -33,7 +33,7 @@ Read-only kontrola schématu a definic funkcí propojeného projektu dne 2026-09
 
 ## Rozhodnutí uživatele
 
-Uživatel výslovně požaduje zobrazit „Schvaluje také hodiny“ a zajistit funkční schvalování v této dodávce. Odložení schvalování není součástí rozsahu. Realizace zahrnuje uloženého výchozího schvalovatele akce, předání po kontrole CH, volitelné další konkrétní schvalovatele, serverové oprávnění pouze pověřených osob a bezpečné stavové přechody. Výběr kontaktu nesmí udělovat roli.
+Uživatel výslovně požaduje zobrazit „Schvaluje také hodiny“ a zajistit funkční schvalování v této dodávce. Odložení schvalování není součástí rozsahu. Realizace zahrnuje uloženého výchozího schvalovatele akce, předání po kontrole CH, serverové oprávnění pouze pověřené osoby a bezpečné stavové přechody. Další schvalovatelé se podle posledního upřesnění odkládají. Výběr kontaktu nesmí udělovat roli.
 
 Implementace bude rozdělena na ověřitelné technické části (termín a koncepty, cílené schvalování, formulář), ale teprve propojení všech částí splní požadavek. Následující implementace musí respektovat ověření a aktualizaci iOS vývojových instalací podle `AGENTS.md`.
 
@@ -41,9 +41,9 @@ Implementace bude rozdělena na ověřitelné technické části (termín a konc
 
 **Aktualizace podle následné odpovědi uživatele:** Fakturace má být zatím oddělená od schvalování hodin. Přepínač rolí se nyní nemění, slouží uživateli k testování. Zavedení skutečných dalších schvalovatelských účtů bude řešeno později; není to blokace implementace a izolovaných testů. Níže uvedené otázky popisují předchozí audit a jsou tímto rozhodnutím vyřešené. Funkční přepínač „Schvaluje také hodiny“ zůstává v rozsahu. Není autorizováno zakládání uživatelů ani změna jejich rolí.
 
-- `handle_timelog_approved()` dnes při `pending_coo → approved` vytváří koncept faktury, položky a vazby výkazů/účtenek, mění účtenky na `attached` a výsledný výkaz na `invoiced`. Uživatel dostal otázku, zda tento finanční efekt zachovat po schválení všemi pověřenými osobami, nebo jej oddělit. Změna zatím není rozhodnutá.
-- V propojeném projektu nejsou přihlásitelní COO; jediný profil s uživatelským účtem má CH. Uživatel dostal otázku, koho zapojit jako druhého schvalovatele. Implementace nebude sama vytvářet účty ani udělovat role kontaktům.
-- `set_current_user_role()` skutečně přepisuje serverové role volajícího na libovolný požadovaný typ. Pro důvěryhodné oprávnění nelze tuto zkušební funkci zachovat jako cestu k eskalaci. Uživatel dostal otázku na změnu přepínače na výběr pouze již přidělených rolí; zvlášť upozorněn, že nynější účet má pouze CH. Bez rozhodnutí se nemění oprávnění stávajícího účtu.
+- `handle_timelog_approved()` v dosavadním nasazení při `pending_coo → approved` vytváří koncept faktury, položky a vazby výkazů/účtenek, mění účtenky na `attached` a výsledný výkaz na `invoiced`. Uživatel rozhodl finanční efekt oddělit; implementace odstraní tento automatický trigger a ponechá explicitní fakturaci.
+- V propojeném projektu nejsou přihlásitelní COO; jediný profil s uživatelským účtem má CH. Zavedení dalších účtů je odloženo a není překážkou implementace ani testů se syntetickými účty. Implementace nebude sama vytvářet live účty ani udělovat role kontaktům.
+- `set_current_user_role()` skutečně přepisuje serverové role volajícího na libovolný požadovaný typ. Uživatel výslovně ponechává přepínač pro vývojové testování. V této dodávce se funkce ani role stávajících účtů nemění; ostré zabezpečení přepínače zůstává samostatnou budoucí prací.
 - Guard cíleného schvalování musí pokrýt přímé REST zápisy i `transition_timelog_statuses_atomic`, `save_timelog_atomic` a import `import_approved_timelog_atomic`; import dnes připouští i `pending_coo` a jeho marker se vyhodnocuje před běžnými rolemi.
 - UI vstupy jsou v `ApprovalsView`, `TimelogsView` a `EventDetailView`; hydratace v `loadTimelogsSnapshot` a `getSupabaseAppData`. Nestačí napojit jedinou obrazovku. Aktuální subscription je lokální, nikoli Realtime.
 
@@ -65,4 +65,10 @@ Nezávisle spuštěné ověření hlavním agentem:
 - `npm run build`: exit 0; existující varování o velkých bundlech, neúčinných dynamických importech a starém Browserslist datasetu.
 - Spec review a následná samostatná kontrola kvality: vyhovuje omezenému doménovému Task 1, včetně opravy DST. Nejde o schválení dosud neimplementovaného formuláře ani schvalování.
 
-Původní pauza na rozhodnutí o finančním efektu a přepínači rolí byla vyřešena následným upřesněním uživatele výše. Navazující krok je konkrétní plán persistence, vývojového schvalovacího toku a formuláře. Formulář, serverové schvalování ani iOS instalace nejsou dokončené. Nebyla provedena migrace live schématu, push ani device refresh. Testovací Postgres byl při pauze zastaven bez smazání jeho schématu; obnoví se `docker start crewflow-event-form-db`.
+Původní pauza na rozhodnutí o finančním efektu a přepínači rolí byla vyřešena následným upřesněním uživatele výše. Plány persistence, cíleného schvalování a formuláře jsou uložené. Formulář, serverové schvalování ani iOS instalace nejsou dokončené. Nebyla provedena migrace live schématu, push ani device refresh.
+
+## Navazující databázový základ
+
+Commit `a1e200c` přidává verzi rozpisu a podporu prázdných konceptů v atomických RPC, odložené kontroly úplnosti a zámek proti souběžné úpravě předaných hodin. Oprava `180f1fd` sjednocuje chybový token všech neúplných odesílaných výkazů; `7773fa9` přidává index pro opakované kontroly dnů. Spec review i nezávislé quality review vyhovují. Hlavní agent ověřil celý suite 97 souborů / 956 testů a build před přidáním indexu; poslední úzký indexový test ověřil implementer i reviewer (5/5). Hlavní agent také spustil úspěšně celý rollback SQL test na původním i čistě obnoveném schématu. Nová migrace stále není nasazená do propojeného projektu.
+
+Testovací `crewflow-event-form-db` nyní běží s poslední verzí migrace a bez fixture dat. `crewflow-event-form-replay` je zastaven a zachovává syntetická data souběhového testu; neslouží k opakování stejného rollback fixture. Čisté opakování opravené migrace je v zastaveném `crewflow-event-form-replay-contract` (před posledním indexovým dodatkem), kde hlavní agent po testu ověřil 0 events/profiles/auth.users. Read-only kontrola propojeného projektu potvrdila, že před migrací neexistuje schéma `private`. Bezpečnostní advisors baseline: 1 informační chybějící policy na interní sekvenci, 3 mutable search_path, 9 anon a 19 authenticated definer upozornění a vypnutá ochrana uniklých hesel. Jde o existující nálezy, nikoli výsledek dosud nenasazených migrací; při rollout se kontroluje změna tohoto seznamu.

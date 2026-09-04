@@ -104,7 +104,7 @@ Stávající přepínač Crew / CH / COO je výslovně ponechán pro uživatelov
 - Kontaktní osoba je povinná a viditelná v hlavním formuláři. Crew v detailu akce potřebuje její identitu a dostupný telefon.
 - Kontakt a schvalovatel jsou oddělené vztahy, i když často směřují na stejnou osobu.
 - „Schvaluje také hodiny“ je výchozí volba pro kontakt, který má odpovídající schvalovací oprávnění.
-- Po vypnutí se zobrazí výběr konkrétního schvalovatele COO. Pokud kontakt nemá oprávnění schvalovat, je nutné zvolit oprávněného schvalovatele; výběr kontaktu nikdy neuděluje novou roli.
+- Po vypnutí se zobrazí výběr konkrétního schvalovatele COO. Pro skutečné předání hodin musí mít vybraná osoba odpovídající účet a oprávnění; výběr kontaktu nikdy neuděluje novou roli. Protože uživatel odložil zavádění dalších účtů, formulář dovolí uložit i zamýšlený kontakt bez účtu s jasnou informací o chybějícím schvalovacím přístupu. Takový kontakt ale nemůže schválit hodiny, dokud nebude účet připojen; RPC nesmí předání automaticky přesměrovat na jiného COO.
 - Zamýšlená posloupnost: kontrola CH, následně konkrétní schvalovatel COO. Podle posledního upřesnění uživatele se další schvalovatelé odkládají; tato dodávka má jednoho navazujícího schvalovatele. Datový záznam schvalovacího kola uchovává konkrétní identitu a historii, nikoli jen obecnou roli.
 - Ve formuláři nezobrazovat vysvětlení „Po tvé kontrole jako CH“, „Nejdřív kontrola CH, potom schválení kontaktní osobou“ ani „Další schvalovatele můžeš přidat při předání výkazu“.
 - Před ostrým zapojením ověřit a samostatně naplánovat návaznost na `2026-08-19-targeted-timelog-approvals-design.md`. Pouhý výběr v UI nestačí: uložení, směrování výkazu a serverová oprávnění musí odpovídat zvolené osobě.

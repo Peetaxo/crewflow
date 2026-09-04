@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   Contractor,
   Event,
@@ -299,6 +299,73 @@ const timelogs: Timelog[] = [
 describe('approval timelog sync service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  const previewV2 = (event: Event, comment: string) => buildApprovalTimelogPreview({
+    approvalDocuments: [createApprovalDocument({ comment })], events: [event], contractors,
+    timelogs: [], eventCrewAssignments, grasonConfirmations: [],
+  });
+
+  it.each([
+    'RunCzech 1/2 Maraton KV - Mattoni\nOndřej Šafařík\n16.5 (8h)',
+    'RunCzech 1/2 Maraton KV - Mattoni Ondřej Šafařík (16h)',
+  ])('requires review when v2 multi-day planned clocks are unknown: %s', (comment) => {
+    const rows = previewV2(createEvent({ scheduleVersion: 2, endDate: '2026-05-17' }), comment);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: 'needs_review', proposedDays: [] });
+  });
+
+  it('does not silently infer only the complete subset of a v2 multiday schedule', () => {
+    const rows = previewV2(createEvent({ scheduleVersion: 2, showDayTypes: true, endDate: '2026-05-17', phaseSchedules: {
+      instal: [{ id: 'known', dates: ['2026-05-16'], from: '05:00', to: '13:00' }],
+    } }), 'RunCzech 1/2 Maraton KV - Mattoni Ondřej Šafařík (8h)');
+    expect(rows[0]).toMatchObject({ status: 'needs_review', proposedDays: [] });
+  });
+
+  it('preserves explicit comment actuals on a v2 plan-free day', () => {
+    const rows = previewV2(createEvent({ scheduleVersion: 2, showDayTypes: true, freeDays: ['2026-05-16'] }), createApprovalDocument().comment!);
+    expect(rows[0]).toMatchObject({ status: 'ready', proposedDays: [{ d: '2026-05-16', f: '05:00', t: '13:00' }] });
+  });
+
+  it('ignores v2 cached disabled phases in schedule inference and event ranking', () => {
+    const v2 = createEvent({ scheduleVersion: 2, startTime: undefined, endTime: undefined, showDayTypes: false,
+      phaseTimes: { instal: { from: '05:00', to: '13:00' } },
+      phaseSchedules: { instal: [{ id: 'cached', dates: ['2026-05-16'], from: '05:00', to: '13:00' }] },
+    });
+    expect(previewV2(v2, 'RunCzech 1/2 Maraton KV - Mattoni\nOndřej Šafařík\n16.5 (8h)')[0])
+      .toMatchObject({ status: 'needs_review', proposedDays: [] });
+    const rows = buildApprovalTimelogPreview({
+      approvalDocuments: [createApprovalDocument()], contractors, timelogs: [], eventCrewAssignments: [], grasonConfirmations: [],
+      events: [v2, createEvent({ id: 2, supabaseId: 'event-2', scheduleVersion: 2, startTime: '06:00', endTime: '14:00' })],
+    });
+    expect(rows[0].matchedEvent?.id).toBe(2);
+  });
+
+  it.each([false, true])('uses complete v2 single-day schedule with phases enabled %s', (showDayTypes) => {
+    const rows = previewV2(createEvent({ scheduleVersion: 2, showDayTypes, phaseSchedules: { instal: [{ id: 'plan', dates: ['2026-05-16'], from: '05:00', to: '13:00' }] } }),
+      'RunCzech 1/2 Maraton KV - Mattoni Ondřej Šafařík (8h)');
+    expect(rows[0]).toMatchObject({ status: 'ready', proposedDays: [{ d: '2026-05-16', f: '05:00', t: '13:00' }] });
+  });
+
+  it.each([
+    ['2026-03-28', '2026-03-31', '31.3'],
+    ['2026-10-24', '2026-10-27', '27.10'],
+  ])('retains explicit actuals on the last calendar day across DST %s', (startDate, endDate, commentDate) => {
+    vi.stubEnv('TZ', 'Europe/Prague');
+    const rows = previewV2(createEvent({ scheduleVersion: 2, startDate, endDate }),
+      `RunCzech 1/2 Maraton KV - Mattoni\nOndřej Šafařík\n${commentDate} 5:00-13:00 (8h)`);
+    expect(rows[0]).toMatchObject({ status: 'ready', proposedDays: [{ d: endDate, f: '05:00', t: '13:00' }] });
+  });
+
+  it('infers all complete v2 phase dates while omitting free days', () => {
+    const rows = previewV2(createEvent({ scheduleVersion: 2, showDayTypes: true, endDate: '2026-05-18', freeDays: ['2026-05-17'],
+      phaseSchedules: { pripravy: [{ id: 'plan', dates: ['2026-05-16', '2026-05-18'], from: '05:00', to: '13:00' }] },
+    }), 'RunCzech 1/2 Maraton KV - Mattoni Ondřej Šafařík (16h)');
+    expect(rows[0]).toMatchObject({ status: 'ready', proposedDays: [
+      { d: '2026-05-16', f: '05:00', t: '13:00', type: 'pripravy' },
+      { d: '2026-05-18', f: '05:00', t: '13:00', type: 'pripravy' },
+    ] });
   });
 
   it('uses the person from comment before supplier and proposes an approved timelog row', () => {

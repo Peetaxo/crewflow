@@ -1025,6 +1025,8 @@ describe('events.service write flow', () => {
         dresscode: row.dresscode ?? undefined,
         meetingLocation: row.meeting_point ?? undefined,
         showDayTypes: row.show_day_types,
+        scheduleVersion: row.schedule_version ?? 1,
+        freeDays: row.free_days ?? [],
         allowCrewTimeProposal: row.allow_crew_time_proposal,
         dayTypes: row.day_types ?? undefined,
         phaseTimes: row.phase_times ?? undefined,
@@ -1721,6 +1723,8 @@ describe('events.service write flow', () => {
       meeting_point: null,
       show_day_types: false,
       allow_crew_time_proposal: false,
+      schedule_version: 1,
+      free_days: [],
       day_types: null,
       phase_times: null,
       phase_schedules: null,
@@ -2287,6 +2291,18 @@ describe('events.service write flow', () => {
     }
   });
 
+  it.each([false, true])('persists and roundtrips v2 metadata with lost response %s', async (loseFirstInsertResponse) => {
+    const harness = await setupEventCreateIntentHarness({ loseFirstInsertResponse });
+    const draft = { ...newEventDraft(), supabaseId: 'event-client-uuid-1', scheduleVersion: 2 as const, freeDays: ['2026-04-21'] };
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const saved = await harness.service.saveEvent(draft);
+      expect(harness.insert).toHaveBeenCalledWith(expect.objectContaining({ schedule_version: 2, free_days: draft.freeDays }));
+      expect(saved).toMatchObject({ scheduleVersion: 2, freeDays: draft.freeDays, supabaseId: 'event-client-uuid-1' });
+      expect(saved.updatedAt).toBeTruthy();
+    } finally { consoleError.mockRestore(); }
+  });
+
   it.each([
     {
       label: 'no exact UUID row',
@@ -2295,6 +2311,14 @@ describe('events.service write flow', () => {
     {
       label: 'a mismatched persisted field',
       recoveryRowTransform: (row: Record<string, unknown>) => ({ ...row, name: 'Jiná akce' }),
+    },
+    {
+      label: 'a mismatched schedule version',
+      recoveryRowTransform: (row: Record<string, unknown>) => ({ ...row, schedule_version: 2 }),
+    },
+    {
+      label: 'mismatched free days',
+      recoveryRowTransform: (row: Record<string, unknown>) => ({ ...row, free_days: ['2026-04-21'] }),
     },
   ])('does not commit an unsuccessful recovery with $label', async ({ recoveryRowTransform }) => {
     const harness = await setupEventCreateIntentHarness({

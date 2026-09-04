@@ -3,6 +3,8 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Event, Role, Timelog } from '../../types';
 import MobileTimelogEditModal from './MobileTimelogEditModal';
+import { assertTimelogComplete } from '../../features/timelogs/services/timelog-validation';
+import { toast } from 'sonner';
 
 const testState = vi.hoisted(() => ({
   editingTimelog: null as Timelog | null,
@@ -110,6 +112,9 @@ describe('MobileTimelogEditModal', () => {
     testState.role = 'crew';
     testData.event.mealAllowanceEnabled = true;
     testData.event.supabaseId = undefined;
+    testData.event.scheduleVersion = undefined;
+    testData.event.freeDays = undefined;
+    testMocks.saveTimelog.mockResolvedValue(undefined);
     testState.editingTimelog = {
       id: 1,
       eid: 1,
@@ -126,6 +131,66 @@ describe('MobileTimelogEditModal', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it.each([['', ''], ['8:00', '']])('preserves partial actuals %s/%s through opening, programmatic scroll, save and reopen', async (f, t) => {
+    testData.event.scheduleVersion = 2;
+    testState.editingTimelog!.days = [{ id: 'actual-1', d: '2026-07-13', f, t, type: 'instal' }];
+    const view = render(<MobileTimelogEditModal />);
+    expect(within(screen.getByRole('group', { name: 'Do' })).getByText('--:--')).toBeInTheDocument();
+    if (f) expect(within(screen.getByRole('group', { name: 'Od' })).getByText('08:00')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^Otevřít výběr času Do/ }));
+    const column = document.querySelector('[data-time-part="hour"]')!;
+    fireEvent.scroll(column);
+    fireEvent.click(screen.getByRole('button', { name: 'Uložit výkaz' }));
+    await waitFor(() => expect(testMocks.saveTimelog).toHaveBeenCalled());
+    const saved = testMocks.saveTimelog.mock.calls.at(-1)![0] as Timelog;
+    expect(saved.days).toEqual([{ id: 'actual-1', d: '2026-07-13', f, t, type: 'instal' }]);
+    view.unmount();
+    testState.editingTimelog = saved;
+    render(<MobileTimelogEditModal />);
+    expect(within(screen.getByRole('group', { name: 'Do' })).getByText('--:--')).toBeInTheDocument();
+  });
+
+  it('allows deliberate midnight confirmation and keeps incomplete submission in the modal', async () => {
+    testData.event.scheduleVersion = 2;
+    testState.editingTimelog!.days = [{ id: 'actual-1', d: '2026-07-13', f: '', t: '', type: 'instal' }];
+    testMocks.saveTimelog.mockImplementation(async (timelog: Timelog) => {
+      if (timelog.status === 'pending_ch') assertTimelogComplete(timelog);
+      return timelog;
+    });
+    render(<MobileTimelogEditModal />);
+    fireEvent.click(screen.getByRole('button', { name: /^Otevřít výběr času Od/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Potvrdit čas Od' }));
+    expect(within(screen.getByRole('group', { name: 'Od' })).getByText('00:00')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Odeslat ke kontrole' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Odeslat výkaz ke kontrole?' })).getByRole('button', { name: 'Odeslat ke kontrole' }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('Doplňte platný čas')));
+    expect(screen.getByRole('heading', { name: 'Upravit výkaz' })).toBeInTheDocument();
+    expect(testMocks.setEditingTimelog).not.toHaveBeenCalledWith(null);
+  });
+
+  it('does not carry scroll intent from the start picker into an empty end picker', () => {
+    testData.event.scheduleVersion = 2;
+    testState.editingTimelog!.days = [{ id: 'actual-1', d: '2026-07-13', f: '08:00', t: '', type: 'instal' }];
+    render(<MobileTimelogEditModal />);
+    fireEvent.click(screen.getByRole('button', { name: /^Otevřít výběr času Od/ }));
+    const fromColumn = document.querySelector('[data-time-part="hour"]')!;
+    fireEvent.wheel(fromColumn);
+    fireEvent.click(screen.getByRole('button', { name: /^Otevřít výběr času Do/ }));
+    fireEvent.scroll(document.querySelector('[data-time-part="hour"]')!);
+    expect(within(screen.getByRole('group', { name: 'Do' })).getByText('--:--')).toBeInTheDocument();
+  });
+
+  it('preserves a stored non-quarter-hour actual when opening and confirming without a selection', async () => {
+    testState.editingTimelog!.days = [{ id: 'actual-1', d: '2026-07-13', f: '9:10', t: '17:00', type: 'instal' }];
+    render(<MobileTimelogEditModal />);
+    fireEvent.click(screen.getByRole('button', { name: /^Otevřít výběr času Od/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Potvrdit čas Od' }));
+    expect(within(screen.getByRole('group', { name: 'Od' })).getByText('09:10')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Uložit výkaz' }));
+    await waitFor(() => expect(testMocks.saveTimelog).toHaveBeenCalled());
+    expect(testMocks.saveTimelog.mock.calls.at(-1)![0].days[0].f).toBe('9:10');
   });
 
   it('renders a mobile calendar with event days only and an add-day action', () => {
@@ -400,6 +465,7 @@ describe('MobileTimelogEditModal', () => {
     expect(hourColumn.scrollTop).toBe(8 * 40);
     expect(minuteColumn.scrollTop).toBe(0);
     minuteColumn.scrollTop = 1 * 40;
+    fireEvent.wheel(minuteColumn);
     fireEvent.scroll(minuteColumn);
 
     expect(screen.getByRole('button', { name: 'Otevřít výběr času Od 08:15' })).toHaveTextContent('08:15');

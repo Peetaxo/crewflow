@@ -145,6 +145,7 @@ describe('atomic timelog RPC adapter', () => {
   });
 
   it.each([
+    ['timelog_incomplete', 'Doplňte platný čas od a do u všech záznamů hodin.'],
     ['timelog_mutation_invalid', 'Výkaz obsahuje neplatné údaje nebo směny.'],
     ['timelog_mutation_not_found', 'Výkaz už neexistuje nebo k němu nemáte přístup.'],
     ['timelog_mutation_conflict', 'Výkaz se mezitím změnil. Obnovte data a zkuste to znovu.'],

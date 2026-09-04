@@ -10,6 +10,7 @@ import { calculateMealAllowance, calculateTotalHours, formatCurrency, normalizeM
 import { getTimelogDependencies, saveTimelog } from '../../features/timelogs/services/timelogs.service';
 import { buildTimelogChangeSummary } from '../../features/timelogs/services/timelog-change-summary';
 import { canSubmitTimelog } from '../../features/timelogs/services/timelog-permissions';
+import { resolveTimelogDayDefaults } from '../../features/timelogs/services/timelog-day-ui';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
@@ -71,6 +72,7 @@ const TimelogEditModal = () => {
   };
 
   const resolveExpectedDay = (day: typeof editingTimelog.days[number]) => {
+    if (event.scheduleVersion === 2) return resolveTimelogDayDefaults(day.d, event, day.type);
     if (!event.showDayTypes) {
       return {
         type: 'instal',
@@ -328,7 +330,7 @@ const TimelogEditModal = () => {
                       ...editingTimelog,
                       days: [
                         ...editingTimelog.days,
-                        {
+                        event.scheduleVersion === 2 ? resolveTimelogDayDefaults(nextDate, event) : {
                           d: nextDate,
                           f: matchingSlot?.from || event.phaseTimes?.[defaultType]?.from || event.startTime || '08:00',
                           t: matchingSlot?.to || event.phaseTimes?.[defaultType]?.to || event.endTime || '17:00',

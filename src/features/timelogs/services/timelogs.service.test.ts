@@ -290,6 +290,72 @@ describe('timelogs.service write flow', () => {
     vi.clearAllMocks();
   });
 
+  describe.each(['local', 'supabase'] as const)('complete hours in %s mode', (source) => {
+    const complete: Timelog = {
+      id: 1, eid: 1, supabaseId: 'timelog-1', eventSupabaseId: 'event-1',
+      contractorProfileId: 'profile-1', updatedAt: 'v1', status: 'draft', km: 0, note: '',
+      days: [{ d: '2026-09-01', f: '22:00', t: '6:00', type: 'instal' }],
+    };
+    const incomplete: Timelog = { ...complete, id: 2, supabaseId: 'timelog-2', days: [{ ...complete.days[0], t: '' }] };
+    const setup = async (timelogs = [complete, incomplete]) => {
+      const harness = await setupStableUuidWriteHarness({ timelogs, snapshotEventSupabaseId: 'event-1' });
+      if (source === 'supabase') return harness;
+      vi.resetModules();
+      vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'local' }));
+      return { ...harness, service: await import('./timelogs.service') };
+    };
+
+    it.each(['pending_ch', 'pending_coo', 'approved', 'invoiced', 'paid'] as const)('rejects incomplete save/create with intended status %s without changing input', async (status) => {
+      const harness = await setup();
+      const submitted = { ...incomplete, status };
+      await expect(harness.service.saveTimelog(submitted)).rejects.toThrow('Doplňte platný čas od a do');
+      await expect(harness.service.createTimelog(submitted)).rejects.toThrow('Doplňte platný čas od a do');
+      expect(submitted.days[0].t).toBe('');
+      expect(harness.getSnapshot().timelogs[1]).toEqual(incomplete);
+      expect(harness.rpc).not.toHaveBeenCalled();
+    });
+
+    it('rejects zero-day submission before the empty-draft deletion branch', async () => {
+      const harness = await setup();
+      await expect(harness.service.saveTimelog({ ...incomplete, days: [], status: 'pending_ch' }))
+        .rejects.toThrow('Doplňte alespoň jeden záznam hodin.');
+      expect(harness.getSnapshot().timelogs).toHaveLength(2);
+      expect(harness.rpc).not.toHaveBeenCalled();
+    });
+
+    it('rejects invoicing and paid transitions for the complete batch before writing', async () => {
+      const harness = await setup();
+      await expect(harness.service.markTimelogsAsInvoiced([1, 2])).rejects.toThrow('Doplňte platný čas');
+      await expect(harness.service.markTimelogsAsPaid([1, 2])).rejects.toThrow('Doplňte platný čas');
+      expect(harness.getSnapshot().timelogs).toEqual([complete, incomplete]);
+      expect(harness.rpc).not.toHaveBeenCalled();
+    });
+
+    it.each(['sub', 'ch', 'coo'] as const)('validates every row before a bulk or single %s transition', async (action) => {
+      const harness = await setup();
+      await expect(harness.service.updateTimelogStatuses([1, 2], action)).rejects.toThrow('Doplňte platný čas od a do');
+      await expect(harness.service.updateTimelogStatus(2, action)).rejects.toThrow('Doplňte platný čas od a do');
+      expect(harness.getSnapshot().timelogs).toEqual([complete, incomplete]);
+      expect(harness.rpc).not.toHaveBeenCalled();
+    });
+
+    it('validates approval imports and approve-all before mutations', async () => {
+      const items = [complete, incomplete].map((item) => ({ ...item, status: 'pending_coo' as const }));
+      const harness = await setup(items);
+      await expect(harness.service.importApprovedTimelog(incomplete)).rejects.toThrow('Doplňte platný čas od a do');
+      await expect(harness.service.approveAllTimelogsForEvent(1)).rejects.toThrow('Doplňte platný čas od a do');
+      expect(harness.getSnapshot().timelogs).toEqual(items);
+      expect(harness.rpc).not.toHaveBeenCalled();
+    });
+
+    it.each(['draft', 'rejected', 'pending_crew_confirmation'] as const)('preserves partial actuals saved as %s', async (status) => {
+      const harness = await setup();
+      const saved = await harness.service.saveTimelog({ ...incomplete, status });
+      expect(saved.days).toEqual(incomplete.days);
+      expect(saved.status).toBe(status);
+    });
+  });
+
   it('loads stable Supabase timelog identity without mutating state and orders event mappings deterministically', async () => {
     const updateLocalAppState = vi.fn();
     const createOrderedQuery = <T,>(data: T[]) => {
@@ -510,7 +576,7 @@ describe('timelogs.service write flow', () => {
       supabaseId: 'target-timelog-row',
       eventSupabaseId: 'event-row-1',
       contractorProfileId: 'profile-uuid-1',
-      days: [],
+      days: [{ d: '2026-08-15', f: '08:00', t: '17:00', type: 'provoz' }],
       km: 0,
       note: 'Current',
       status: 'draft',
@@ -626,7 +692,7 @@ describe('timelogs.service write flow', () => {
         supabaseId: 'timelog-uuid-1',
         eventSupabaseId: 'event-uuid-1',
         contractorProfileId: 'profile-uuid-1',
-        days: [],
+        days: [{ d: '2026-08-15', f: '08:00', t: '17:00', type: 'provoz' }],
         km: 0,
         note: '',
         status: 'draft',
@@ -660,7 +726,7 @@ describe('timelogs.service write flow', () => {
         supabaseId: 'timelog-uuid-1',
         eventSupabaseId: 'event-uuid-1',
         contractorProfileId: 'profile-uuid-1',
-        days: [],
+        days: [{ d: '2026-08-15', f: '08:00', t: '17:00', type: 'provoz' }],
         km: 0,
         note: '',
         status: 'draft',
@@ -682,8 +748,8 @@ describe('timelogs.service write flow', () => {
   it('approves all matching event timelogs in Supabase and updates local state', async () => {
     const harness = await setupStableUuidWriteHarness({
       timelogs: [
-        { id: 1, eid: 7, supabaseId: 'timelog-uuid-1', contractorProfileId: 'profile-uuid-1', days: [], km: 0, note: '', status: 'pending_coo' },
-        { id: 2, eid: 7, supabaseId: 'timelog-uuid-2', contractorProfileId: 'profile-uuid-2', days: [], km: 0, note: '', status: 'pending_coo' },
+        { id: 1, eid: 7, supabaseId: 'timelog-uuid-1', contractorProfileId: 'profile-uuid-1', days: [{ d: '2026-08-15', f: '08:00', t: '17:00', type: 'provoz' }], km: 0, note: '', status: 'pending_coo' },
+        { id: 2, eid: 7, supabaseId: 'timelog-uuid-2', contractorProfileId: 'profile-uuid-2', days: [{ d: '2026-08-15', f: '08:00', t: '17:00', type: 'provoz' }], km: 0, note: '', status: 'pending_coo' },
         { id: 3, eid: 8, supabaseId: 'timelog-uuid-3', contractorProfileId: 'profile-uuid-3', days: [], km: 0, note: '', status: 'pending_coo' },
       ],
     });
@@ -1269,7 +1335,7 @@ describe('timelogs.service write flow', () => {
       supabaseId: 'target-timelog-uuid',
       eventSupabaseId: 'target-event-uuid',
       contractorProfileId: 'profile-target',
-      days: [],
+      days: [{ d: '2026-08-15', f: '08:00', t: '17:00', type: 'provoz' }],
       km: 0,
       note: 'Target',
       status: 'draft',
@@ -1356,7 +1422,7 @@ describe('timelogs.service write flow', () => {
       supabaseId: 'target-timelog-uuid',
       eventSupabaseId: 'target-event-uuid',
       contractorProfileId: 'profile-target',
-      days: [],
+      days: [{ d: '2026-08-15', f: '08:00', t: '17:00', type: 'provoz' }],
       km: 0,
       note: 'Target',
       status: 'approved',

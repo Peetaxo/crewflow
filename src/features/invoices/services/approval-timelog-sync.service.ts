@@ -8,8 +8,10 @@ import type {
   TimelogDay,
   TimelogType,
 } from '../../../types';
-import { getDatesBetween } from '../../../utils';
+import { getDatesBetween, parseTimeToMinutes } from '../../../utils';
 import { importApprovedTimelog } from '../../timelogs/services/timelogs.service';
+import { buildEventScheduleDays, resolveEventScheduleDay } from '../../events/services/event-schedule';
+import { listEventDates } from '../../timelogs/services/timelog-day-ui';
 
 export type ApprovalTimelogPreviewStatus = 'ready' | 'needs_review' | 'blocked' | 'applied';
 
@@ -474,10 +476,15 @@ const eventNameMatches = (candidate: string, event: Event): boolean => {
 };
 
 const eventContainsDate = (event: Event, date: string): boolean => (
-  getDatesBetween(event.startDate, event.endDate).includes(date)
+  (event.scheduleVersion === 2 ? listEventDates(event) : getDatesBetween(event.startDate, event.endDate)).includes(date)
 );
 
 const getEventStartTimesForDate = (event: Event, date: string): string[] => {
+  if (event.scheduleVersion === 2) {
+    return [...new Set(buildEventScheduleDays(event)
+      .filter((day) => day.d === date && parseTimeToMinutes(day.f) !== null)
+      .map((day) => day.f))];
+  }
   const starts = new Set<string>();
   if (event.startTime) starts.add(event.startTime);
 
@@ -562,7 +569,7 @@ const scoreEventMatch = (
     score += startDistance === 0 ? 160 : Math.max(0, 90 - startDistance);
   }
 
-  if (event.startTime) score += 8;
+  if (event.scheduleVersion === 2 ? entry.date && getEventStartTimesForDate(event, entry.date).length > 0 : event.startTime) score += 8;
 
   return score;
 };
@@ -646,6 +653,10 @@ const getScheduledPhaseForDate = (
   event: Event,
   date: string,
 ): { type: TimelogType; from: string | null; to: string | null } => {
+  if (event.scheduleVersion === 2) {
+    const day = resolveEventScheduleDay(date, event);
+    return { type: day.type, from: day.f || null, to: day.t || null };
+  }
   const scheduled = (Object.entries(event.phaseSchedules ?? {}) as Array<[TimelogType, NonNullable<Event['phaseSchedules']>[TimelogType]]>)
     .flatMap(([type, slots]) => (slots ?? []).map((slot) => ({ type, slot })))
     .find(({ slot }) => slot.dates.includes(date));
@@ -674,6 +685,15 @@ const durationHoursBetween = (from: string, to: string): number => {
 };
 
 const getScheduledTimelogDaysForEvent = (event: Event): TimelogDay[] => {
+  if (event.scheduleVersion === 2) {
+    const days = buildEventScheduleDays(event);
+    const incomplete = days.some((day) => {
+      const from = parseTimeToMinutes(day.f);
+      const to = parseTimeToMinutes(day.t);
+      return from === null || to === null || from === to;
+    });
+    return incomplete ? [] : days;
+  }
   const fromPhaseSchedules = (Object.entries(event.phaseSchedules ?? {}) as Array<[TimelogType, NonNullable<Event['phaseSchedules']>[TimelogType]]>)
     .flatMap(([type, slots]) => (slots ?? []).flatMap((slot) => (
       slot.dates.map((date) => ({

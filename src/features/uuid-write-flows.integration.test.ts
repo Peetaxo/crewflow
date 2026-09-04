@@ -329,7 +329,8 @@ describe('UUID write flows integration', () => {
       mapInvoice: vi.fn(),
     }));
     vi.doMock('../data', () => ({ KM_RATE: 5 }));
-    vi.doMock('../utils', () => ({
+    vi.doMock('../utils', async () => ({
+      ...await vi.importActual<typeof import('../utils')>('../utils'),
       calculateTotalHours: (days: Timelog['days']) => {
         if (!Array.isArray(days)) return 0;
         const [day] = days;

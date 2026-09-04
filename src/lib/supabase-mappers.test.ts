@@ -13,6 +13,14 @@ type InvoiceRow = Database['public']['Tables']['invoices']['Row'];
 type ReceiptRow = Database['public']['Tables']['receipts']['Row'];
 
 describe('supabase mappers', () => {
+  it('hydrates scheduling metadata while defaulting legacy rows', () => {
+    const row = { id: 'event-uuid', date_from: '2026-09-01', date_to: '2026-09-03' } as EventRow;
+    expect(mapEvent(row)).toMatchObject({ scheduleVersion: 1, freeDays: [] });
+    expect(mapEvent({ ...row, schedule_version: 2, free_days: ['2026-09-02'] })).toMatchObject({
+      scheduleVersion: 2, freeDays: ['2026-09-02'], supabaseId: 'event-uuid',
+    });
+  });
+
   it('preserves stable invoice and receipt identities and versions', () => {
     const invoice = mapInvoice({
       id: 'invoice-uuid-1',

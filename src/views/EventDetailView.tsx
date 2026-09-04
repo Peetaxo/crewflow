@@ -9,6 +9,8 @@ import { KM_RATE } from '../data';
 import { appDataSource } from '../lib/app-config';
 import { MEAL_CONFIG, PHASE_CONFIG } from '../constants';
 import { calculateDayHours, calculateMealAllowance, calculateTotalHours, formatCurrency, formatDateRange, formatShortDate, getDatesBetween, getEventStatus, normalizeMealSelection } from '../utils';
+import { buildEventScheduleDays } from '../features/events/services/event-schedule';
+import { listEventDates } from '../features/timelogs/services/timelog-day-ui';
 import { Button } from '../components/ui/button';
 import StatusBadge from '../components/shared/StatusBadge';
 import EventEditModal from '../components/modals/EventEditModal';
@@ -395,7 +397,7 @@ const EventDetailView = () => {
   }, 0);
   const totalTravelCost = eventTimelogs.reduce((sum, timelog) => sum + timelog.km * KM_RATE, 0);
   const totalReceiptCost = eventReceipts.reduce((sum, receipt) => sum + receipt.amount, 0);
-  const days = getDatesBetween(event.startDate, event.endDate);
+  const days = event.scheduleVersion === 2 ? listEventDates(event) : getDatesBetween(event.startDate, event.endDate);
   const eventCrew = getEventCrew(event.id);
   const canManageEvents = role !== 'crew';
   const isCrewRole = role === 'crew';
@@ -460,7 +462,7 @@ const EventDetailView = () => {
   const isMeAssigned = currentProfileId
     ? eventCrew.some((contractor) => contractor.profileId === currentProfileId)
     : false;
-  const effectiveDraftTimes = {
+  const effectiveDraftTimes = event.scheduleVersion === 2 ? applicationDraftTimes : {
     from: applicationDraftTimes.from || event.startTime || '08:00',
     to: applicationDraftTimes.to || event.endTime || '17:00',
   };
@@ -520,7 +522,7 @@ const EventDetailView = () => {
       return null;
     }
 
-    const eventDates = getDatesBetween(event.startDate, event.endDate);
+    const eventDates = event.scheduleVersion === 2 ? listEventDates(event) : getDatesBetween(event.startDate, event.endDate);
     if (eventDates.length === 0) {
       toast.error('Akce nemá platné datum pro nový výkaz.');
       return null;
@@ -531,7 +533,7 @@ const EventDetailView = () => {
       eid: event.id,
       eventSupabaseId: event.supabaseId,
       contractorProfileId: contractor.profileId,
-      days: eventDates.map((date) => ({
+      days: event.scheduleVersion === 2 ? buildEventScheduleDays(event) : eventDates.map((date) => ({
         d: date,
         f: event.startTime || '08:00',
         t: event.endTime || '17:00',

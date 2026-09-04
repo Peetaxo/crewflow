@@ -241,6 +241,8 @@ export interface Database {
           dresscode: string | null;
           meeting_point: string | null;
           show_day_types: boolean | null;
+          schedule_version?: 1 | 2;
+          free_days?: string[] | null;
           allow_crew_time_proposal: boolean | null;
           day_types: Json | null;
           phase_times: Json | null;

@@ -181,6 +181,8 @@ const getEventDefaultsSignature = (event: Event | null): string => {
     startTime: event.startTime,
     endTime: event.endTime,
     showDayTypes: event.showDayTypes,
+    scheduleVersion: event.scheduleVersion,
+    freeDays: event.freeDays ?? [],
     dayTypes: event.dayTypes ?? null,
     phaseTimes: event.phaseTimes ?? null,
     phaseSchedules: event.phaseSchedules ?? null,
@@ -482,7 +484,8 @@ type ActiveTimePicker = 'from' | 'to';
 
 const splitTimeValue = (value: string): { hour: string; minute: string } => {
   const [rawHour = '00', rawMinute = '00'] = value.split(':');
-  const hour = hourOptions.includes(rawHour) ? rawHour : '00';
+  const paddedHour = rawHour.padStart(2, '0');
+  const hour = hourOptions.includes(paddedHour) ? paddedHour : '00';
   const minute = minuteOptions.includes(rawMinute) ? rawMinute : '00';
 
   return { hour, minute };
@@ -524,7 +527,7 @@ const TimeField: React.FC<TimeFieldProps> = ({
       disabled={disabled}
       onClick={onActivate}
     >
-      <span>{value}</span>
+      <span>{value ? value.replace(/^(\d):/, '0$1:') : '--:--'}</span>
     </button>
   </div>
 );
@@ -544,6 +547,7 @@ const TimeWheelPicker: React.FC<TimeWheelPickerProps> = ({
 }) => {
   const hourColumnRef = React.useRef<HTMLDivElement | null>(null);
   const minuteColumnRef = React.useRef<HTMLDivElement | null>(null);
+  const userScrollIntent = React.useRef({ hour: false, minute: false });
   const { hour, minute } = splitTimeValue(value);
 
   React.useEffect(() => {
@@ -568,6 +572,8 @@ const TimeWheelPicker: React.FC<TimeWheelPickerProps> = ({
     part: 'hour' | 'minute',
     event: React.UIEvent<HTMLDivElement>,
   ) => {
+    // Mount/value synchronization also dispatches scroll; it is not a user choice.
+    if (!userScrollIntent.current[part]) return;
     const options = part === 'hour' ? hourOptions : minuteOptions;
     const selectedIndex = Math.round(event.currentTarget.scrollTop / timeOptionHeight);
     const nextPartValue = options[Math.max(0, Math.min(options.length - 1, selectedIndex))];
@@ -595,6 +601,10 @@ const TimeWheelPicker: React.FC<TimeWheelPickerProps> = ({
         `nodu-mobile-timelog-time-column--${part}`,
       ].join(' ')}
       data-time-part={part}
+      onPointerDown={() => { userScrollIntent.current[part] = true; }}
+      onTouchStart={() => { userScrollIntent.current[part] = true; }}
+      onWheel={() => { userScrollIntent.current[part] = true; }}
+      onKeyDown={() => { userScrollIntent.current[part] = true; }}
       onScroll={(event) => handleColumnScroll(part, event)}
     >
       {options.map((option) => {
@@ -634,7 +644,10 @@ const TimeWheelPicker: React.FC<TimeWheelPickerProps> = ({
         type="button"
         aria-label={`Potvrdit čas ${label}`}
         className="nodu-mobile-timelog-time-confirm"
-        onClick={onConfirm}
+        onClick={() => {
+          if (!value) updateTime(hour, minute);
+          onConfirm();
+        }}
       >
         <Check size={16} aria-hidden="true" />
       </button>
@@ -1680,6 +1693,7 @@ const MobileTimelogEditModal: React.FC = () => {
             </div>
             {activeTimePicker && (
               <TimeWheelPicker
+                key={`${selectedDate}:${activeEntryKey}:${activeTimePicker}`}
                 label={activeTimePicker === 'from' ? 'Od' : 'Do'}
                 value={activeTimePicker === 'from' ? draftDay.f : draftDay.t}
                 onConfirm={() => setActiveTimePicker(null)}

@@ -12,6 +12,7 @@ import {
   saveTimelogAtomicRpc,
   transitionTimelogStatusesAtomicRpc,
 } from './timelog-mutation-rpc.service';
+import { assertTimelogComplete } from './timelog-validation';
 
 type TimelogAction = 'sub' | 'ch' | 'coo' | 'rej';
 let timelogsHydrationPromise: Promise<void> | null = null;
@@ -23,6 +24,12 @@ const statusMap: Record<TimelogAction, TimelogStatus> = {
   ch: 'pending_coo',
   coo: 'approved',
   rej: 'rejected',
+};
+
+const assertCompleteForStatus = (timelog: Pick<Timelog, 'days'>, status: TimelogStatus): void => {
+  if (['pending_ch', 'pending_coo', 'approved', 'invoiced', 'paid'].includes(status)) {
+    assertTimelogComplete(timelog);
+  }
 };
 
 const sortTimelogDays = (days: Timelog['days']) => (
@@ -414,6 +421,7 @@ const persistSupabaseTimelogStatus = async (
       if (!timelog?.supabaseId || !timelog.updatedAt) {
         throw new Error('Výkaz už neexistuje nebo k němu nemáte přístup.');
       }
+      assertCompleteForStatus(timelog, nextStatus);
       return { localId, timelog };
     });
     const expectedStatuses = new Set(targets.map(({ timelog }) => timelog.status));
@@ -518,12 +526,24 @@ const updateTimelogStatusesTo = async (
 ): Promise<Timelog[]> => {
   if (ids.length === 0) return [];
 
+  const initialTimelogs = getLocalAppState().timelogs ?? [];
+  ids.forEach((id) => {
+    const timelog = initialTimelogs.find((item) => item.id === id);
+    if (timelog) assertCompleteForStatus(timelog, nextStatus);
+  });
+
   const persistedTimelogs = await persistSupabaseTimelogStatus(ids, nextStatus);
   if (persistedTimelogs) {
     return persistedTimelogs;
   }
 
   return runTimelogMutation(ids.map((id) => `local:${id}`), async () => {
+    const currentTimelogs = getLocalAppState().timelogs ?? [];
+    ids.forEach((id) => {
+      const timelog = currentTimelogs.find((item) => item.id === id);
+      if (!timelog) throw new Error('Výkaz nebyl nalezen.');
+      assertCompleteForStatus(timelog, nextStatus);
+    });
     const updatedTimelogs: Timelog[] = [];
     updateLocalAppState((snapshot) => ({
       ...snapshot,
@@ -573,6 +593,7 @@ export const approveAllTimelogsForEvent = async (eventId: number): Promise<Timel
 };
 
 export const createTimelog = async (timelog: Omit<Timelog, 'id'>): Promise<Timelog> => {
+  assertCompleteForStatus(timelog, timelog.status);
   const normalizedDays = sortTimelogDays(timelog.days);
   if (normalizedDays.length === 0) {
     throw new Error('Vykaz musi obsahovat alespon jeden den.');
@@ -663,6 +684,7 @@ type ApprovedTimelogImport = Omit<Timelog, 'id'> & { id?: number };
 export const importApprovedTimelog = async (
   imported: ApprovedTimelogImport,
 ): Promise<Timelog> => {
+  assertTimelogComplete(imported);
   const normalizedDays = sortTimelogDays(imported.days);
   if (normalizedDays.length === 0) {
     throw new Error('Vykaz musi obsahovat alespon jeden den.');
@@ -765,6 +787,8 @@ export const importApprovedTimelog = async (
 };
 
 export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
+  // Submission must fail before the empty-draft deletion path or any identity refresh.
+  assertCompleteForStatus(updated, updated.status);
   const persistsToSupabase = appDataSource === 'supabase' && Boolean(supabase) && isSupabaseConfigured;
   const findExistingTimelog = (timelogs: Timelog[]) => {
     if (updated.supabaseId) {

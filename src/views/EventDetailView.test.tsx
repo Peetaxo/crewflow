@@ -1852,7 +1852,7 @@ describe('EventDetailView', () => {
     expect(setEditingTimelog).toHaveBeenCalledWith(pendingCrewheadTimelog);
   });
 
-  it('lets CrewHead create a new timelog proposal for Crew confirmation when no report exists yet', async () => {
+  it.each([1, 2] as const)('lets CrewHead create a new v%s timelog proposal when no report exists yet', async (scheduleVersion) => {
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => ({
         role: 'crewhead',
@@ -1869,7 +1869,7 @@ describe('EventDetailView', () => {
     vi.doMock('../features/events/services/events.service', () => ({
       getEventCrew: () => [contractor],
       getEventDetailData: () => ({
-        event: { ...event, startTime: '14:00', endTime: '17:00' },
+        event: { ...event, scheduleVersion, startTime: '14:00', endTime: '17:00' },
         timelogs: [],
         contractors: [contractor],
         receipts: [],
@@ -1910,7 +1910,10 @@ describe('EventDetailView', () => {
       id: expect.any(Number),
       eid: 1,
       contractorProfileId: 'profile-1',
-      days: [
+      days: scheduleVersion === 2 ? [
+        expect.objectContaining({ d: '2026-04-16', f: '', t: '', type: 'instal' }),
+        expect.objectContaining({ d: '2026-04-17', f: '', t: '', type: 'instal' }),
+      ] : [
         { d: '2026-04-16', f: '14:00', t: '17:00', type: 'provoz' },
         { d: '2026-04-17', f: '14:00', t: '17:00', type: 'provoz' },
       ],
@@ -1918,6 +1921,41 @@ describe('EventDetailView', () => {
       note: '',
       status: 'pending_ch',
     }));
+  });
+
+  it('keeps v2 multiday application clocks blank and preserves a typed or cleared proposal', async () => {
+    mobileMockState.isMobile = true;
+    let proposalEvent = { ...event, scheduleVersion: 2, status: 'upcoming', filled: 0, startTime: '08:00', endTime: '17:00', allowCrewTimeProposal: true };
+    let eventChanged: (() => void) | undefined;
+    vi.doMock('../context/useAppContext', () => ({ useAppContext: () => ({
+      role: 'crew', selectedEventId: event.supabaseId, setSelectedEventId,
+      eventTab: 'overview', setEventTab: vi.fn(), setEditingReceipt: vi.fn(), setDeleteConfirm: vi.fn(), setEditingTimelog,
+    }) }));
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [], getEventDetailData: () => ({
+        event: proposalEvent,
+        timelogs: [], contractors: [contractor], receipts: [], applications: [], crewAssignments: [],
+      }),
+      applyForEvent: vi.fn(), approveEventApplication: vi.fn(), approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn(), removeContractorFromEvent: vi.fn(), requestEventWithdrawal: vi.fn(),
+      subscribeToEventChanges: (listener: () => void) => { eventChanged = listener; return () => undefined; },
+      updateEventApplicationStatus: vi.fn(), withdrawEventApplication: vi.fn(),
+    }));
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({ updateTimelogStatus, subscribeToTimelogChanges: vi.fn(() => () => undefined) }));
+    vi.doMock('../components/modals/EventEditModal', () => ({ default: () => null }));
+    vi.doMock('../components/modals/AssignCrewModal', () => ({ default: () => null }));
+    const { default: EventDetailView } = await import('./EventDetailView');
+    render(<EventDetailView />);
+    const from = screen.getByLabelText('Plánovaný příchod');
+    expect(from).toHaveValue('');
+    expect(screen.getByLabelText('Plánovaný odchod')).toHaveValue('');
+    fireEvent.change(from, { target: { value: '12:30' } });
+    proposalEvent = { ...proposalEvent, startTime: '06:00', endTime: '23:00', endDate: '2026-04-18' };
+    act(() => eventChanged?.());
+    expect(from).toHaveValue('12:30');
+    expect(screen.getByLabelText('Plánovaný odchod')).toHaveValue('');
+    fireEvent.change(from, { target: { value: '' } });
+    expect(from).toHaveValue('');
   });
 
   it('opens a new draft timelog when Crew opens their own assigned event', async () => {

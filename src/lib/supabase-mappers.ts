@@ -139,6 +139,8 @@ export function mapEvent(row: EventRow): Event {
     dresscode: row.dresscode ?? undefined,
     meetingLocation: row.meeting_point ?? undefined,
     showDayTypes: row.show_day_types ?? undefined,
+    scheduleVersion: row.schedule_version ?? 1,
+    freeDays: row.free_days ?? [],
     allowCrewTimeProposal: row.allow_crew_time_proposal ?? undefined,
     dayTypes: asRecord(row.day_types) as Event['dayTypes'],
     phaseTimes: asRecord(row.phase_times) as Event['phaseTimes'],

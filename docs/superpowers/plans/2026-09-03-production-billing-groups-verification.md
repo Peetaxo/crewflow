@@ -274,3 +274,63 @@ its temporary tab and dev server were closed when work paused.
   and Escape/X close interception. Integrated responsive/focus checks still
   await Task 7; the editor has not yet been claimed available in the app.
 - Task 7 event-detail integration and crew-safe summary are in progress.
+
+### Task 7 integration checkpoint (not complete)
+
+- At `9679cee`, parent independently ran the billing feature and the three
+  event-detail suites: 8 files / 121 tests passed. Changed-file ESLint passed.
+  Application typecheck still reports 199 pre-existing diagnostics. The only
+  textual difference from baseline is an existing event-detail test diagnostic
+  moving from line 296 to line 300 after the added mock; no new diagnostic.
+- Independent specification review reproduced a real React Query scheduling
+  race: a successful refetch returns revision 2 before the observer updates its
+  revision-1 props. Reopening the frozen editor from observer data can therefore
+  retain obsolete membership/revision. The fix must reopen from the successful
+  result's data, with a regression proving fresh command inputs.
+- In the loopback-only local preview, parent explicitly grouped synthetic
+  `QA Nakládka` and `QA Instal` as `QA Festival`. `QA Jiná akce` from project B
+  was initially hidden; opt-in revealed it, and saving was rejected until the
+  separate cross-project confirmation was checked. The resulting summary kept
+  all three original names, dates and Job Numbers. No remote records changed.
+- Both CrewHead and COO opened the editor. Crew saw the summary without a
+  management button or any timelogs for the null local profile. Desktop Escape
+  closed the idle editor. Broader privacy and in-flight cases remain covered by
+  component/database tests, not by this synthetic UI observation alone.
+- At 375 × 812, actual screenshots exposed another integration defect: the
+  portal dialog and overlay have z-index 50, behind the mobile detail (70),
+  floating actions (80) and test role switcher (90). Accessibility-tree presence
+  was not sufficient evidence of a usable dialog. A narrowly scoped layering
+  fix and fresh visual verification are required before accepting Task 7.
+- Task 8 event-save assignment, Task 9 deletion guards, final acceptance,
+  target-schema deployment approval, main integration and device refresh remain
+  outstanding. Invoice upload and extraction are not part of this stage.
+
+### Task 7 repairs verified and reviewed
+
+- `7f3698d` repairs conflict recovery by retaining an explicit editor session
+  built from the successful reload result. The regression failed with the old
+  handoff and now proves the next command uses refreshed revision, name and
+  membership while observer data is deliberately still stale.
+- `8fb2a90` adds a backward-compatible optional overlay class to the shared
+  dialog. Only the billing editor requests overlay z-index 100 / content 101;
+  other dialogs retain their existing defaults. Parent repeated actual mobile
+  screenshots at 375 × 812: overlay and editor now cover the detail and floating
+  controls correctly. Keyboard Tab reaches the footer and scrolls it into view;
+  Escape closes the editor. Dialog clientWidth and scrollWidth both measured
+  326px, confirming no horizontal overflow for the synthetic review content.
+  The temporary viewport override was reset afterwards.
+- Parent fresh verification at `8fb2a90`: **9 files / 124 targeted tests passed**,
+  changed-file ESLint and `git diff --check` passed. Fresh app typecheck retains
+  exactly the 199 baseline diagnostics after normalizing the one known existing
+  event-detail test line-number shift. It is not a globally passing typecheck.
+- Independent specification and quality reviews both accepted Task 7. They
+  independently passed 21 and 23 focused tests respectively. One nonblocking
+  follow-up remains: return a realistic successful `data` payload in the
+  late-old-scope reload fixture, so the active-scope guard is tested independently
+  of the newer missing-data guard. Record this with the other final regression
+  coverage follow-ups; no remaining functional Task 7 blocker was identified.
+- This is a partial implementation checkpoint in the isolated worktree, not a
+  completed or deployed app change. Tasks 8–10 remain as above. The synthetic
+  local preview tab on port 8087 is retained for continuation; the user's main
+  preview on port 8086 was not replaced, and no remote schema/data or development
+  device installation was changed at this checkpoint.

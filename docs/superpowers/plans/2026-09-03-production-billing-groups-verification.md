@@ -119,12 +119,14 @@ Supabase sessions. This is not merely a local preview switch.
 
 No escalation call was executed and no production role or policy was changed.
 This predates the billing feature, but blocks its promised production-only
-authorization in the deployed application. Changing the global role workflow
-is a scope/authorization decision for the user. Implementation is paused at
-the database checkpoint pending that decision; do not silently remove the
-RPC or grant a new management role. A possible policy is keeping role
-switching only in local preview and using assigned server roles for real
-sessions. The user has not yet approved that policy or its deployment.
+authorization in the deployed application. On 2026-09-04 the user clarified
+that role switching is intentional for testing different roles and will be
+removed later. Leave the current test switch and server roles unchanged;
+resume the approved billing-group implementation in the isolated branch.
+This clarification does not authorize a production database migration or
+claim that the current test role mechanism is production-safe. Before a real
+release, restrict the server-side role-changing endpoint as well as removing
+its UI. That release gate does not block local feature development or tests.
 
 ## Tasks 2–3 checkpoint
 

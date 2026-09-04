@@ -95,6 +95,12 @@ Současné `event.startTime` / `event.endTime` slouží také jako denní předv
 
 ## Kontakt a schvalování
 
+### Upřesnění vývojového rozsahu od uživatele
+
+Uživatel po technické přípravě upřesnil, že aplikace je stále ve vývoji. Schvalování hodin a fakturace mají být zatím oddělené: nový schvalovací tok končí schváleným výkazem, nikoli automatickým založením faktury. „Jako dnes“ v předchozí odpovědi označovalo existující implementaci databázového triggeru, ne nově odsouhlasené produktové chování.
+
+Stávající přepínač Crew / CH / COO je výslovně ponechán pro uživatelovo testování. Tato dodávka nemění `set_current_user_role` ani nepřiděluje nové role. Zavádění konkrétních dalších účtů schvalovatelů se odkládá; jejich absence neblokuje implementaci formuláře a testování schvalovací logiky na syntetických účtech v izolované databázi. Neznamená to odložení dříve výslovně požadovaného přepínače „Schvaluje také hodiny“ ani tvrzení, že stávající vývojové přepínání rolí je bezpečné pro ostrý provoz.
+
 - Kontaktní osoba je povinná a viditelná v hlavním formuláři. Crew v detailu akce potřebuje její identitu a dostupný telefon.
 - Kontakt a schvalovatel jsou oddělené vztahy, i když často směřují na stejnou osobu.
 - „Schvaluje také hodiny“ je výchozí volba pro kontakt, který má odpovídající schvalovací oprávnění.

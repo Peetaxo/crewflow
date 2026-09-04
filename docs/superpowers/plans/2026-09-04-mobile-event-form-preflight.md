@@ -39,6 +39,8 @@ Implementace bude rozdělena na ověřitelné technické části (termín a konc
 
 ## Další ověřené návaznosti schvalování
 
+**Aktualizace podle následné odpovědi uživatele:** Fakturace má být zatím oddělená od schvalování hodin. Přepínač rolí se nyní nemění, slouží uživateli k testování. Zavedení skutečných dalších schvalovatelských účtů bude řešeno později; není to blokace implementace a izolovaných testů. Níže uvedené otázky popisují předchozí audit a jsou tímto rozhodnutím vyřešené. Funkční přepínač „Schvaluje také hodiny“ zůstává v rozsahu. Není autorizováno zakládání uživatelů ani změna jejich rolí.
+
 - `handle_timelog_approved()` dnes při `pending_coo → approved` vytváří koncept faktury, položky a vazby výkazů/účtenek, mění účtenky na `attached` a výsledný výkaz na `invoiced`. Uživatel dostal otázku, zda tento finanční efekt zachovat po schválení všemi pověřenými osobami, nebo jej oddělit. Změna zatím není rozhodnutá.
 - V propojeném projektu nejsou přihlásitelní COO; jediný profil s uživatelským účtem má CH. Uživatel dostal otázku, koho zapojit jako druhého schvalovatele. Implementace nebude sama vytvářet účty ani udělovat role kontaktům.
 - `set_current_user_role()` skutečně přepisuje serverové role volajícího na libovolný požadovaný typ. Pro důvěryhodné oprávnění nelze tuto zkušební funkci zachovat jako cestu k eskalaci. Uživatel dostal otázku na změnu přepínače na výběr pouze již přidělených rolí; zvlášť upozorněn, že nynější účet má pouze CH. Bez rozhodnutí se nemění oprávnění stávajícího účtu.
@@ -63,4 +65,4 @@ Nezávisle spuštěné ověření hlavním agentem:
 - `npm run build`: exit 0; existující varování o velkých bundlech, neúčinných dynamických importech a starém Browserslist datasetu.
 - Spec review a následná samostatná kontrola kvality: vyhovuje omezenému doménovému Task 1, včetně opravy DST. Nejde o schválení dosud neimplementovaného formuláře ani schvalování.
 
-Další implementace schvalování a integrace do main čeká na rozhodnutí o finančním efektu a oprávněních. Formulář, serverové schvalování ani iOS instalace nejsou dokončené. Nebyla provedena migrace live schématu, push ani device refresh. Testovací Postgres byl při pauze zastaven bez smazání jeho schématu; obnoví se `docker start crewflow-event-form-db`.
+Původní pauza na rozhodnutí o finančním efektu a přepínači rolí byla vyřešena následným upřesněním uživatele výše. Navazující krok je konkrétní plán persistence, vývojového schvalovacího toku a formuláře. Formulář, serverové schvalování ani iOS instalace nejsou dokončené. Nebyla provedena migrace live schématu, push ani device refresh. Testovací Postgres byl při pauze zastaven bez smazání jeho schématu; obnoví se `docker start crewflow-event-form-db`.

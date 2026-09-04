@@ -1,7 +1,21 @@
+import { addDays, format, parseISO } from 'date-fns';
 import type { Event, TimelogDay, TimelogType } from '../../../types';
-import { getDatesBetween, parseTimeToMinutes } from '../../../utils';
+import { parseTimeToMinutes } from '../../../utils';
 
 const phaseTypes: TimelogType[] = ['pripravy', 'instal', 'provoz', 'deinstal'];
+
+const getScheduleDates = (event: Event): string[] => {
+  const start = parseISO(event.startDate);
+  const end = parseISO(event.endDate);
+  const dates: string[] = [];
+
+  // Planning dates are local calendar days, not UTC instants across DST changes.
+  for (let date = start; date <= end; date = addDays(date, 1)) {
+    dates.push(format(date, 'yyyy-MM-dd'));
+  }
+
+  return dates;
+};
 
 const createDay = (date: string, type: TimelogType, from = '', to = ''): TimelogDay => {
   const fromMinutes = parseTimeToMinutes(from);
@@ -65,7 +79,7 @@ export const buildEventScheduleDays = (
   event: Event,
   choices: Array<TimelogType | 'all'> = ['all'],
 ): TimelogDay[] => {
-  const dates = getDatesBetween(event.startDate, event.endDate);
+  const dates = getScheduleDates(event);
   if (!event.showDayTypes) return dates.map((date) => resolveEventScheduleDay(date, event));
 
   const includesAll = choices.includes('all');

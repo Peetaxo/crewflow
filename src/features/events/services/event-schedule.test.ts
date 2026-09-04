@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Event, EventPhaseSlot, Timelog, TimelogDay, TimelogType } from '../../../types';
 import { buildEventScheduleDays, resolveEventScheduleDay } from './event-schedule';
 import {
@@ -31,6 +31,53 @@ const day = (date: string, type: TimelogType = 'instal', from = '', to = ''): Ti
 
 const slot = (id: string, dates: string[], from = '', to = ''): EventPhaseSlot => ({
   id, dates, from, to,
+});
+
+describe('v2 event schedule across Prague daylight saving changes', () => {
+  beforeEach(() => {
+    vi.stubEnv('TZ', 'Europe/Prague');
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  const transitions = [
+    { name: 'spring', dates: ['2026-03-28', '2026-03-29', '2026-03-30', '2026-03-31'], offsets: [-60, -120] },
+    { name: 'autumn', dates: ['2026-10-24', '2026-10-25', '2026-10-26', '2026-10-27'], offsets: [-120, -60] },
+  ];
+
+  it.each(transitions)('includes every date exactly once across the $name transition', ({ dates, offsets }) => {
+    expect([
+      new Date(`${dates[0]}T12:00:00`).getTimezoneOffset(),
+      new Date(`${dates[3]}T12:00:00`).getTimezoneOffset(),
+    ]).toEqual(offsets);
+
+    const schedule = buildEventScheduleDays({ ...event, startDate: dates[0], endDate: dates[3] });
+    expect(schedule.map((entry) => entry.d)).toEqual(dates);
+    expect(new Set(schedule.map((entry) => entry.d)).size).toBe(4);
+  });
+
+  it.each(transitions)('keeps phase and free-day assignments on their calendar dates across the $name transition', ({ dates }) => {
+    const phasedEvent: Event = {
+      ...event,
+      startDate: dates[0],
+      endDate: dates[3],
+      showDayTypes: true,
+      dayTypes: { [dates[1]]: 'instal' },
+      freeDays: [dates[2]],
+      phaseSchedules: {
+        pripravy: [slot('prep', [dates[0]], '08:00', '12:00')],
+        provoz: [slot('work', [dates[2], dates[3]], '10:00', '18:00')],
+      },
+    };
+
+    expect(buildEventScheduleDays(phasedEvent)).toEqual([
+      day(dates[0], 'pripravy', '08:00', '12:00'),
+      day(dates[1], 'instal'),
+      day(dates[3], 'provoz', '10:00', '18:00'),
+    ]);
+    expect(buildEventScheduleDays(phasedEvent, ['provoz'])).toEqual([day(dates[3], 'provoz', '10:00', '18:00')]);
+  });
 });
 
 describe('v2 event schedule defaults', () => {

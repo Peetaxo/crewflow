@@ -212,17 +212,16 @@ begin
     or p_km < 0
     or p_status is null
     or p_days is null
-    or pg_catalog.jsonb_typeof(p_days) <> 'array'
-    or pg_catalog.jsonb_array_length(p_days) = 0
-    or exists (
+    or pg_catalog.jsonb_typeof(p_days) <> 'array' then
+    raise exception 'timelog_mutation_invalid' using errcode = '22023';
+  end if;
+
+  -- Structural errors keep their generic contract regardless of target status.
+  if exists (
       select 1
       from pg_catalog.jsonb_array_elements(p_days) day
       where pg_catalog.jsonb_typeof(day) <> 'object'
         or nullif(day->>'date', '') is null
-        or (nullif(day->>'time_from', '') is not null
-          and not public.is_valid_timelog_time(day->>'time_from'))
-        or (nullif(day->>'time_to', '') is not null
-          and not public.is_valid_timelog_time(day->>'time_to'))
         or nullif(day->>'day_type', '') is null
         or day->>'day_type' not in ('pripravy', 'instal', 'provoz', 'deinstal')
     ) then
@@ -230,9 +229,7 @@ begin
   end if;
 
   begin
-    perform (day->>'date')::date,
-      nullif(day->>'time_from', '')::time,
-      nullif(day->>'time_to', '')::time
+    perform (day->>'date')::date
     from pg_catalog.jsonb_array_elements(p_days) day;
   exception
     when invalid_datetime_format or datetime_field_overflow or invalid_text_representation then
@@ -241,7 +238,7 @@ begin
 
   -- Review/financial targets require actuals, while drafts may remain partial.
   if p_status in ('pending_ch', 'pending_coo', 'approved', 'invoiced', 'paid')
-    and exists (
+    and (pg_catalog.jsonb_array_length(p_days) = 0 or exists (
       select 1 from pg_catalog.jsonb_array_elements(p_days) day
       where case
         when public.is_valid_timelog_time(day->>'time_from')
@@ -249,8 +246,20 @@ begin
         then nullif(day->>'time_from', '')::time = nullif(day->>'time_to', '')::time
         else true
       end
-    ) then
+    )) then
     raise exception 'timelog_incomplete' using errcode = '22023';
+  end if;
+
+  -- Empty draft payloads and malformed nonempty draft clocks remain prohibited.
+  -- Run this after the strict check so every incomplete actual has the same token.
+  if pg_catalog.jsonb_array_length(p_days) = 0 or exists (
+    select 1 from pg_catalog.jsonb_array_elements(p_days) day
+    where (nullif(day->>'time_from', '') is not null
+        and not public.is_valid_timelog_time(day->>'time_from'))
+      or (nullif(day->>'time_to', '') is not null
+        and not public.is_valid_timelog_time(day->>'time_to'))
+  ) then
+    raise exception 'timelog_mutation_invalid' using errcode = '22023';
   end if;
 
   perform pg_catalog.pg_advisory_xact_lock(

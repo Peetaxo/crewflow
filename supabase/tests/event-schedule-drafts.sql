@@ -90,6 +90,24 @@ begin
 end;
 $$;
 
+create function pg_temp.expect_save_error_no_mutation(days jsonb, target public.timelog_status, message text)
+returns void language plpgsql as $$
+declare before_parent jsonb; before_days jsonb; after_parent jsonb; after_days jsonb;
+begin
+  select to_jsonb(t), (select jsonb_agg(to_jsonb(d) order by d.id)
+    from public.timelog_days d where d.timelog_id = t.id)
+  into strict before_parent, before_days from public.timelogs t
+  where t.event_id = '00000000-0000-4000-8000-000000000301';
+  perform pg_temp.expect_error(format('select pg_temp.save_days(%L::jsonb, %L)', days, target), '22023', message);
+  select to_jsonb(t), (select jsonb_agg(to_jsonb(d) order by d.id)
+    from public.timelog_days d where d.timelog_id = t.id)
+  into strict after_parent, after_days from public.timelogs t
+  where t.event_id = '00000000-0000-4000-8000-000000000301';
+  perform pg_temp.check_true(before_parent = after_parent and before_days = after_days,
+    'invalid save must leave the entire parent and day payload unchanged');
+end;
+$$;
+
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-000000000101","role":"authenticated"}', true);
 select set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-000000000101', true);
@@ -158,6 +176,50 @@ select pg_temp.check_true((select count(*) = 2 from public.timelog_days d join p
   where t.event_id = '00000000-0000-4000-8000-000000000301'
     and ((d.time_from = '' and d.time_to is null) or (d.time_from = '8:00' and d.time_to = ''))),
   'blank and partial draft reload preserves original strings');
+
+-- BEGIN empty strict regression
+do $$
+declare target public.timelog_status;
+begin
+  foreach target in array array['pending_ch', 'pending_coo', 'approved', 'invoiced', 'paid']::public.timelog_status[] loop
+    perform pg_temp.expect_save_error_no_mutation('[]', target, 'timelog_incomplete');
+  end loop;
+end;
+$$;
+-- END empty strict regression
+
+-- BEGIN malformed strict regression
+do $$
+declare target public.timelog_status;
+begin
+  foreach target in array array['pending_ch', 'pending_coo', 'approved', 'invoiced', 'paid']::public.timelog_status[] loop
+    perform pg_temp.expect_save_error_no_mutation(
+      '[{"date":"2099-01-01","day_type":"provoz","time_from":"24:00","time_to":"08:00"}]',
+      target, 'timelog_incomplete');
+    perform pg_temp.expect_save_error_no_mutation(
+      '[{"date":"2099-01-01","day_type":"provoz","time_from":"08:00","time_to":"08:00:00"}]',
+      target, 'timelog_incomplete');
+    perform pg_temp.expect_save_error_no_mutation(
+      '[{"date":"2099-01-01","day_type":"provoz","time_to":"08:00"}]', target, 'timelog_incomplete');
+    perform pg_temp.expect_save_error_no_mutation(
+      '[{"date":"2099-01-01","day_type":"provoz","time_from":"8:00","time_to":"08:00"}]',
+      target, 'timelog_incomplete');
+  end loop;
+end;
+$$;
+-- END malformed strict regression
+
+-- Structural errors keep their generic token even for review/financial targets.
+select pg_temp.expect_save_error_no_mutation('{}', 'pending_ch', 'timelog_mutation_invalid');
+select pg_temp.expect_save_error_no_mutation('[null]', 'pending_ch', 'timelog_mutation_invalid');
+select pg_temp.expect_save_error_no_mutation(
+  '[{"date":"2099-99-99","day_type":"provoz","time_from":"24:00"}]', 'pending_ch', 'timelog_mutation_invalid');
+select pg_temp.expect_save_error_no_mutation(
+  '[{"date":"2099-01-01","time_from":"24:00"}]', 'pending_ch', 'timelog_mutation_invalid');
+select pg_temp.expect_save_error_no_mutation('[]', 'draft', 'timelog_mutation_invalid');
+select pg_temp.expect_save_error_no_mutation(
+  '[{"date":"2099-01-01","day_type":"provoz","time_from":"24:00"}]', 'draft', 'timelog_mutation_invalid');
+
 select pg_temp.expect_error($q$select pg_temp.save_days(
   '[{"date":"2099-01-01","day_type":"provoz","time_from":"24:00","time_to":"08:00"}]')$q$,
   '22023', 'timelog_mutation_invalid');

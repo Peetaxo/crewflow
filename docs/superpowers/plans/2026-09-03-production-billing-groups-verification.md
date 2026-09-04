@@ -168,3 +168,45 @@ its temporary tab and dev server were closed when work paused.
   are required before enabling the Supabase-backed feature there.
 - Main integration/synchronization and separate simulator/physical iPhone
   development-installation reports are still required by `AGENTS.md`.
+
+## Resumption on 2026-09-04
+
+- The user confirmed that the role switch is currently intentional for testing.
+  No role switch, authorization function or server role has been modified.
+- Fresh model verification: 13/13 tests passed. A fresh application typecheck
+  still reports 199 pre-existing diagnostics, none in `features/billing-groups`.
+- Independent static specification and code-quality reviews approved database
+  Tasks 2–3 for proceeding to frontend work; source and migration remain identical.
+  The local database runtime was not restarted or retested during this review.
+- Two nonblocking database-test improvements remain noted for acceptance:
+  guard already-ended child stdin and bound exit waits in the concurrency
+  harness; extend the mutex proof with a concurrent ordinary event edit.
+  Neither review found an introduced blocking database correctness issue.
+- Current Supabase changelog and RPC/abort documentation were consulted.
+  The additive schema already includes the explicit grants required by the
+  [Data API exposure change](https://supabase.com/changelog/45329-breaking-change-tables-not-exposed-to-data-and-graphql-api-automatically).
+  [Automatic transient retries](https://supabase.com/changelog/45071-automatic-postgrest-retries-for-transient-errors)
+  apply to GET/HEAD reads; billing mutations remain explicit POST RPC calls
+  with application-controlled exact-command replay.
+- Started a separate loopback-only Vite server on `127.0.0.1:8087` with
+  `VITE_APP_DATA_SOURCE=local`. Through the actual UI, created synthetic
+  projects `BILL-QA-A` / `BILL-QA-B` and events `QA Nakládka` (September 4),
+  `QA Instal` (September 5), and `QA Jiná akce` (September 6), 2026. The first
+  two share project A; the third belongs to B. These exist only in that tab's
+  in-memory local app state. This is acceptance-fixture preparation, not
+  evidence that the not-yet-integrated billing UI works. No real account was
+  signed in and no remote record was created.
+
+### Task 4 verified and reviewed
+
+- Gateway/local adapter committed as `62b86d3`; a narrow follow-up
+  `9969cb6` restricts known error tokens to exact `Map` entries, so inherited
+  object names cannot be treated as definitive server failures.
+- Parent independently reran all current billing feature tests after that
+  fix: 2 files / 29 tests passed. Changed-file ESLint passed. Application
+  typecheck diagnostics at the gateway checkpoint are byte-identical to the
+  fresh 199-diagnostic baseline, with none in the billing feature.
+- Independent specification and code-quality reviews both approved Task 4.
+  Quality review noted nonblocking negative local deletion-test coverage;
+  cover populated/missing groups without state changes when extending local
+  deletion tests in Task 9. Task 5 is now in progress.

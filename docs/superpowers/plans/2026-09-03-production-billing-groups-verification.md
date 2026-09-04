@@ -209,4 +209,33 @@ its temporary tab and dev server were closed when work paused.
 - Independent specification and code-quality reviews both approved Task 4.
   Quality review noted nonblocking negative local deletion-test coverage;
   cover populated/missing groups without state changes when extending local
-  deletion tests in Task 9. Task 5 is now in progress.
+  deletion tests in Task 9.
+
+### Task 5 implementation and specification verification
+
+- Hook committed as `a97031b`; test-only follow-up `fe9b70d` independently
+  covers every authentication readiness gate, local-mode bypass, unmount,
+  A→B→A role switching and same-key readiness reactivation. Retained callbacks
+  cannot submit from an obsolete activation; fresh callbacks remain usable.
+- Parent independently reran all billing tests at `fe9b70d`: 3 files / 46 tests
+  passed. Changed-file ESLint passed. Fresh application TypeScript output is
+  byte-identical to the 199-diagnostic baseline, with no billing diagnostics.
+- Independent specification re-review approved Task 5. Code-quality review
+  found a P2 shared-query lifetime issue: a pending query used the initiating
+  observer's activation guard, so same-scope readiness reactivation or that
+  observer's unmount could publish a denied error to another active consumer.
+  Fix `362b256` removes only the observer guards from the query function;
+  scoped keys and the consumed AbortSignal govern shared reads. Strict
+  activation guards remain on save/mutation/reload callbacks. Both corrected
+  regressions failed against the old guards and passed with the fix. The
+  StrictMode test now also exercises a successful fresh save.
+- Specification re-review independently passed 19 hook tests. Quality re-review
+  approved the fix without new findings. Parent's fresh feature rerun passed
+  3 files / 48 tests in 1.33 seconds after running the same command outside the
+  sandbox. Two restricted runs stalled before the Vitest banner with idle
+  process stacks; their exact test PIDs were terminated. No test configuration,
+  dependencies, application servers or database were changed for this retry.
+  Task 6 editor implementation is now in progress.
+- The user has been asked for separate permission to apply the additive
+  billing schema to the connected Staff database after verification. There
+  has not yet been an affirmative answer; remote schema/data remain unchanged.

@@ -36,6 +36,10 @@ vi.mock('framer-motion', () => ({
   },
 }));
 
+vi.mock('../features/billing-groups/EventBillingSection', () => ({
+  default: () => null,
+}));
+
 vi.mock('sonner', () => ({
   toast: {
     success: mocks.toastSuccess,

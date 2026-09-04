@@ -19,6 +19,10 @@ vi.mock('framer-motion', () => ({
   },
 }));
 
+vi.mock('../features/billing-groups/EventBillingSection', () => ({
+  default: () => null,
+}));
+
 vi.mock('../lib/app-config', () => ({
   get appDataSource() {
     return state.appDataSource;

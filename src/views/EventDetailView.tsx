@@ -14,6 +14,7 @@ import StatusBadge from '../components/shared/StatusBadge';
 import EventEditModal from '../components/modals/EventEditModal';
 import AssignCrewModal from '../components/modals/AssignCrewModal';
 import EventCrewRatingPanel from '../features/crew/components/EventCrewRatingPanel';
+import EventBillingSection from '../features/billing-groups/EventBillingSection';
 import EventMapPreview from '../features/events/components/EventMapPreview';
 import { getCrewRatingsForEvent } from '../features/crew/services/crew-ratings.service';
 import { Contractor, Event, InvoiceApprovalDocument, Timelog } from '../types';
@@ -1175,6 +1176,8 @@ const EventDetailView = () => {
             </section>
           )}
 
+          <EventBillingSection event={event} />
+
           <section className="nodu-mobile-event-section" aria-labelledby="mobile-event-assigned-crew-title">
             <div className="nodu-mobile-event-section-heading">
               <h2 id="mobile-event-assigned-crew-title">Přiřazená crew</h2>
@@ -1634,6 +1637,7 @@ const EventDetailView = () => {
           {eventTab === 'overview' || eventTab === 'approval' ? (
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
               <div className="space-y-6 lg:col-span-2">
+                <EventBillingSection event={event} />
                 <div>
                   <div className="mb-4 flex flex-wrap items-center gap-2">
                     <button

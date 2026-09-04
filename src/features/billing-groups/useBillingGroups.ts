@@ -78,13 +78,14 @@ export function useBillingGroups(enabled = true) {
     enabled: ready,
     retry: false,
     queryFn: async ({ signal }) => {
-      if (!isCurrent(activationRef, activation)) inactive();
       const [snapshot, events, timelogs] = await Promise.all([
         readBillingGroups(scope, signal),
         fetchEventsSnapshot(),
         fetchTimelogsSnapshot(),
       ]);
-      if (signal.aborted || !isCurrent(activationRef, activation)) inactive();
+      if (signal.aborted) {
+        throw new DOMException('Billing groups read aborted.', 'AbortError');
+      }
 
       return {
         snapshot,

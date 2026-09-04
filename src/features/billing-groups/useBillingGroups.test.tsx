@@ -223,9 +223,15 @@ describe('useBillingGroups', () => {
 
   it('keeps the current scope empty when a previous identity read resolves late', async () => {
     const firstRead = deferred<BillingSnapshot>();
-    boundaries.read.mockImplementation((scope: BillingScope) => (
-      scope.userId === 'u1' ? firstRead.promise : Promise.resolve(snapshot(null))
-    ));
+    boundaries.read.mockImplementation((scope: BillingScope, signal: AbortSignal) => {
+      if (scope.userId !== 'u1') return Promise.resolve(snapshot(null));
+      return new Promise<BillingSnapshot>((resolve, reject) => {
+        signal.addEventListener('abort', () => {
+          reject(signal.reason ?? new DOMException('Billing groups read aborted.', 'AbortError'));
+        }, { once: true });
+        firstRead.promise.then(resolve);
+      });
+    });
     const queryClient = client();
     let latest!: HookValue;
     const view = renderProbe(queryClient, (value) => { latest = value; });
@@ -243,10 +249,16 @@ describe('useBillingGroups', () => {
       </QueryClientProvider>,
     );
 
-    await waitFor(() => expect(latest.query.data?.snapshot.revision).toBeNull());
+    const firstSignal = boundaries.read.mock.calls[0]?.[1] as AbortSignal;
+    await waitFor(() => expect(firstSignal.aborted).toBe(true));
+    await waitFor(() => expect(queryClient.getQueryData<{ snapshot: BillingSnapshot }>(
+      billingQueryKey({ source: 'supabase', userId: 'u2', profileId: 'p2', role: 'crew' }),
+    )?.snapshot.revision).toBeNull());
     await act(async () => { firstRead.resolve(snapshot(99)); });
 
-    await waitFor(() => expect(latest.query.data?.snapshot.revision).toBeNull());
+    await waitFor(() => expect(queryClient.getQueryData<{ snapshot: BillingSnapshot }>(
+      billingQueryKey({ source: 'supabase', userId: 'u2', profileId: 'p2', role: 'crew' }),
+    )?.snapshot.revision).toBeNull());
   });
 
   it('waits for a complete remote auth scope before reading', async () => {
@@ -340,6 +352,7 @@ describe('useBillingGroups', () => {
 
   it('keeps the committed activation active through StrictMode lifecycle checks', async () => {
     boundaries.read.mockResolvedValue(snapshot(1));
+    boundaries.save.mockResolvedValue({ requestId: 'request-1', groupId: command().groupId, revision: 2 });
     const queryClient = client();
     let latest!: HookValue;
     render(
@@ -352,6 +365,7 @@ describe('useBillingGroups', () => {
 
     await waitFor(() => expect(latest.query.isSuccess).toBe(true));
     await expect(latest.reload()).resolves.toMatchObject({ isSuccess: true });
+    await expect(latest.save(command())).resolves.toMatchObject({ revision: 2 });
   });
 
   it('rejects a stale save before dispatching it', async () => {
@@ -386,6 +400,64 @@ describe('useBillingGroups', () => {
 
     await expect(staleSave(command())).rejects.toMatchObject({ kind: 'denied' });
     expect(boundaries.save).not.toHaveBeenCalled();
+  });
+
+  it('keeps a same-scope pending read valid after readiness is restored', async () => {
+    const firstRead = deferred<BillingSnapshot>();
+    boundaries.read.mockReturnValue(firstRead.promise);
+    const queryClient = client();
+    let latest!: HookValue;
+    const view = renderProbe(queryClient, (value) => { latest = value; });
+
+    await waitFor(() => expect(boundaries.read).toHaveBeenCalledTimes(1));
+    boundaries.auth = authFor('u1', 'p1', 'coo', { isLoading: true });
+    view.rerender(
+      <QueryClientProvider client={queryClient}>
+        <Probe onValue={(value) => { latest = value; }} />
+      </QueryClientProvider>,
+    );
+    boundaries.auth = authFor('u1', 'p1', 'coo');
+    view.rerender(
+      <QueryClientProvider client={queryClient}>
+        <Probe onValue={(value) => { latest = value; }} />
+      </QueryClientProvider>,
+    );
+
+    await act(async () => { firstRead.resolve(snapshot(1)); });
+    await waitFor(() => expect(queryClient.getQueryData<NonNullable<HookValue['query']['data']>>(
+      billingQueryKey(latest.scope),
+    )?.snapshot.revision).toBe(1));
+    expect(boundaries.read).toHaveBeenCalledTimes(1);
+    expect(latest.query.error).toBeNull();
+  });
+
+  it('lets a remaining same-scope observer receive its shared pending read', async () => {
+    const pendingRead = deferred<BillingSnapshot>();
+    boundaries.read.mockReturnValue(pendingRead.promise);
+    const queryClient = client();
+    let first!: HookValue;
+    let second!: HookValue;
+    const Pair = ({ showFirst }: { showFirst: boolean }) => (
+      <QueryClientProvider client={queryClient}>
+        {showFirst && <Probe key="first" onValue={(value) => { first = value; }} />}
+        <Probe key="second" onValue={(value) => { second = value; }} />
+      </QueryClientProvider>
+    );
+    const view = render(<Pair showFirst />);
+
+    await waitFor(() => expect(boundaries.read).toHaveBeenCalledTimes(1));
+    const sharedSignal = boundaries.read.mock.calls[0]?.[1] as AbortSignal;
+    view.rerender(<Pair showFirst={false} />);
+    expect(sharedSignal.aborted).toBe(false);
+    await act(async () => { pendingRead.resolve(snapshot(3)); });
+
+    expect(sharedSignal.aborted).toBe(false);
+    await waitFor(() => expect(queryClient.getQueryData<NonNullable<HookValue['query']['data']>>(
+      billingQueryKey(second.scope),
+    )?.snapshot.revision).toBe(3));
+    view.rerender(<Pair showFirst={false} />);
+    await waitFor(() => expect(second.query.data?.snapshot.revision).toBe(3));
+    expect(first.scope.userId).toBe('u1');
   });
 
   it.each([

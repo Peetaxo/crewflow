@@ -2,7 +2,7 @@
 
 Datum: 2026-09-04
 
-Stav: produktový směr odsouhlasen v konverzaci; písemné shrnutí čeká na kontrolu uživatele před implementačním plánem. Aplikace zatím nebyla změněna.
+Stav: uživatel souhlasí s realizací formuláře. Příprava probíhá na větvi `codex/mobile-event-form`; před dokončením implementačního plánu čeká rozhodnutí o odděleném dodání cíleného schvalování. Aplikace zatím nebyla změněna.
 
 ## Cíl a rozsah
 
@@ -11,7 +11,7 @@ Založení i úprava akce mají být na mobilu pohodlné a přehledné. Formulá
 Návrh má dvě navazující části:
 
 1. Mobilní formulář a bezpečné oddělení termínu od předvyplňování výkazů. Tyto změny tvoří společný celek: samotné přejmenování nebo přesunutí polí by změnilo jejich význam bez opravy jejich použití.
-2. Propojení kontaktní osoby s konkrétním schvalovatelem. Cílené schvalování je samostatná implementační oblast; tento návrh neznamená schválení nasazení staršího schvalovacího návrhu beze změn.
+2. Propojení kontaktní osoby s konkrétním schvalovatelem. Uživatel dne 2026-09-04 výslovně požaduje funkční cílené schvalování v této dodávce včetně přepínače „Schvaluje také hodiny“. Starší schvalovací návrh je podkladem, nikoli automatickým schválením všech jeho detailů beze změn.
 
 ## Mobilní obrazovka
 
@@ -60,6 +60,8 @@ Produktově odsouhlaseno po revizi původního náhledu: základní jednotkou ro
 - Změny data rozsahu párovat podle skutečného data, ne podle pořadového čísla řádku. Zachovat nastavení shodných dnů; nově přidané dny jsou neurčené bez časů.
 - Během stejné editace ponechat rozpracovaný rozpis v paměti při vypnutí/zapnutí fází, při dočasném zkrácení rozsahu i při přepnutí dne na volno. Obnovení původního data nebo pracovní fáze umožní pokračovat bez ztráty zadání. Pro předvyplňování používat jen aktivní dny a fáze; skryté rozpracované hodnoty se nepovažují za aktivní směny. Před vyřazením již uložených směn mimo nový termín vyžádat potvrzení místo tichého odstranění. Existující výkazy se tím nemažou.
 - Hromadné přiřazování rozsahů dnů a automatické rozdělování na instalaci/provoz/deinstalaci nejsou součástí této první varianty.
+- Název přepínače zůstává „Rozdělit akci na fáze“, nikoli „Naplánovat fáze podle dnů“.
+- Nepřidávat samostatné přihlašování crew na vybrané fáze. Individuální domluvu případně promítne produkce ručním přiřazením na fáze. Stávající přihlášení na celou akci zůstává beze změny.
 
 ## Pravidla předvyplňování výkazů
 

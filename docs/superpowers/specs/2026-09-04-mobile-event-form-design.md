@@ -2,7 +2,7 @@
 
 Datum: 2026-09-04
 
-Stav: uživatel souhlasí s realizací formuláře. Příprava probíhá na větvi `codex/mobile-event-form`; před dokončením implementačního plánu čeká rozhodnutí o odděleném dodání cíleného schvalování. Aplikace zatím nebyla změněna.
+Stav: uživatel souhlasí s realizací formuláře i funkčního cíleného schvalování. Implementace a izolované testování probíhají na větvi `codex/mobile-event-form`; žádné další rozhodnutí o odděleném dodání již neblokuje práci.
 
 ## Cíl a rozsah
 
@@ -105,7 +105,7 @@ Stávající přepínač Crew / CH / COO je výslovně ponechán pro uživatelov
 - Kontakt a schvalovatel jsou oddělené vztahy, i když často směřují na stejnou osobu.
 - „Schvaluje také hodiny“ je výchozí volba pro kontakt, který má odpovídající schvalovací oprávnění.
 - Po vypnutí se zobrazí výběr konkrétního schvalovatele COO. Pokud kontakt nemá oprávnění schvalovat, je nutné zvolit oprávněného schvalovatele; výběr kontaktu nikdy neuděluje novou roli.
-- Zamýšlená posloupnost: kontrola CH, následně konkrétní schvalovatel COO. Případní další schvalovatelé se řeší při předání výkazu, ne povinně při založení akce.
+- Zamýšlená posloupnost: kontrola CH, následně konkrétní schvalovatel COO. Podle posledního upřesnění uživatele se další schvalovatelé odkládají; tato dodávka má jednoho navazujícího schvalovatele. Datový záznam schvalovacího kola uchovává konkrétní identitu a historii, nikoli jen obecnou roli.
 - Ve formuláři nezobrazovat vysvětlení „Po tvé kontrole jako CH“, „Nejdřív kontrola CH, potom schválení kontaktní osobou“ ani „Další schvalovatele můžeš přidat při předání výkazu“.
 - Před ostrým zapojením ověřit a samostatně naplánovat návaznost na `2026-08-19-targeted-timelog-approvals-design.md`. Pouhý výběr v UI nestačí: uložení, směrování výkazu a serverová oprávnění musí odpovídat zvolené osobě.
 - Nenaznačovat funkční cílené schvalování v nasazeném formuláři, dokud není skutečně vynuceno. Tato část není záminkou k zavedení automatické fakturace ani k rozšíření oprávnění.

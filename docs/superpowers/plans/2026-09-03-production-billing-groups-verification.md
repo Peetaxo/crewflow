@@ -334,3 +334,53 @@ its temporary tab and dev server were closed when work paused.
   local preview tab on port 8087 is retained for continuation; the user's main
   preview on port 8086 was not replaced, and no remote schema/data or development
   device installation was changed at this checkpoint.
+
+### Simulator handoff requested — 2026-09-04
+
+- User requested the existing detail-based grouping in the simulator, pointed
+  out missing management overview styles and logout in local preview 8087, and
+  explicitly approved adding the billing tables/functions to Staff. The current
+  handoff therefore prioritizes reviewed Tasks 1–7 plus deletion safety (Task 9).
+  Task 8 assignment inside the event-save form remains a separate follow-up;
+  this checkpoint does not claim that workflow or invoice upload is complete.
+- Root causes were distinct: the isolated branch lacked main's `7992c58` mobile
+  overview CSS/routing fix; logout was already implemented but intentionally
+  hidden by `isAuthRequired` in the `VITE_APP_DATA_SOURCE=local` preview. The
+  ordinary ignored configuration uses Supabase and targets Staff. No auth UI
+  workaround or fabricated local login was added.
+- Merged current main `55e46b6` into the feature worktree as `f3dafe4`, without
+  conflicts. Fresh integrated checks passed: 101 files / 982 tests, web build,
+  lint (0 errors, 2 existing hook warnings), staged diff whitespace check.
+  Main's uncommitted TimelogsView source/test edits were not changed or included.
+- Repeated the isolated local pgTAP suite: **107/107 passed**. The two-session
+  concurrency proof again observed the loser waiting, then rejecting stale
+  revision with no partial state. Exact synthetic fixtures were cleaned; local
+  counts and revision returned to 0. Restored Supautils hint settings and stopped
+  the isolated Colima profile. No local test touched Staff data.
+- Deployment target independently rechecked: Staff `gkxbluqkugprwcpdephk`,
+  PostgreSQL 17.6.1.104, matching the ordinary app's public URL. Billing objects
+  were absent; existing event columns/RLS and authoritative `has_role` helper
+  matched the reviewed migration. Exposed GUC writers use fixed unrelated
+  lifecycle settings; no generic SQL/GUC setter was found.
+- After the user's explicit approval, applied the byte-identical reviewed SQL
+  using Supabase migration tooling as **20260904112112 / billing_groups**.
+  Renamed the local migration from its original local-only timestamp to match
+  the actual remote history; source SQL still compares byte-for-byte identical.
+  Post-deploy catalog confirms RLS on all four tables, no anon table/RPC access,
+  invoker-only functions with empty search paths, private trigger helper, the
+  restrictive event FK, and an empty snapshot at revision 0.
+- Post-deploy advisors: no new security findings (33 pre-existing findings),
+  no new performance warnings. Two INFO notices identify the expected unused
+  indexes on the newly empty tables; these support group/actor access and are
+  retained. The existing role-switch RPC and other historical security findings
+  remain unchanged; this is development testing, not a production-security
+  sign-off. Current Data API grant changes were checked against the official
+  Supabase changelog; the migration already contains explicit grants and RLS.
+- The live project currently has only a crew role, not a COO/crewhead actor.
+  An attempted read-only manager-context probe therefore correctly returned
+  false/null revision and is not counted as a successful manager test. Manager
+  writes are established by the local role tests; no live user's role was
+  changed to manufacture a passing result.
+- Simulator/device installation and final integrated review remain pending at
+  this checkpoint. Booted simulator identified as iPhone 17 Pro on iOS 26.5,
+  UUID B337323A-264B-4AAC-9236-BEAAB3701659.

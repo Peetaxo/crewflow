@@ -47,15 +47,30 @@ Každá skupina má vlastní nadpis. Datum a čas mohou být vedle sebe, na úzk
 - Datum i čas obou hranic musí tvořit platný interval. U vícedenní akce je možné začít první den později než je hodina konce posledního dne.
 - Zakládání akce nevyžaduje každodenní rozpis. Plán směn/fází je volitelný.
 
+## Volitelný rozpis fází podle dnů
+
+Produktově odsouhlaseno po revizi původního náhledu: základní jednotkou rozpisu je den. Nejčastější případ je jeden den instalace, další den/dny provoz a poslední den deinstalace; formulář nemá zobrazovat automaticky všechny fáze pro každý den.
+
+- Po zapnutí „Rozdělit akci na fáze“ zobrazit chronologicky jednotlivá data z termínu akce, včetně dne v týdnu. U jednodenní akce stejný princip zobrazí jeden den.
+- U každého dne jeden výběr: Instalace, Provoz, Deinstalace nebo Volný den. Výchozí „Zatím neurčeno“ znamená chybějící rozpis, nikoli volno. Neodhadovat fázi automaticky jen podle pozice dne v termínu.
+- Pro vybranou pracovní fázi nabídnout „Doplnit časy“. Plánované Od / Do jsou nepovinné a zpočátku prázdné. Samotný výběr fáze nevyžaduje časy ani je neodvozuje z hranic akce.
+- Pokud uživatel zadá plánované časy, musí zadat oba. Shodné časy jsou neplatné; při konci před hodinou začátku zřetelně označit konec následující den v souladu s podporou nočních směn.
+- Výjimečně umožnit u konkrétního dne „Přidat další fázi“, například Provoz a poté Deinstalaci. Další fáze má vlastní výběr a nepovinné časy a lze ji odebrat. Není nutné, aby den obsahoval všechny tři fáze.
+- Volný den je stav celého dne bez plánované směny; v tomto stavu skrýt časy i přidávání dalších fází. Označení volna nepřepisuje již existující skutečné výkazy.
+- Změny data rozsahu párovat podle skutečného data, ne podle pořadového čísla řádku. Zachovat nastavení shodných dnů; nově přidané dny jsou neurčené bez časů.
+- Během stejné editace ponechat rozpracovaný rozpis v paměti při vypnutí/zapnutí fází, při dočasném zkrácení rozsahu i při přepnutí dne na volno. Obnovení původního data nebo pracovní fáze umožní pokračovat bez ztráty zadání. Pro předvyplňování používat jen aktivní dny a fáze; skryté rozpracované hodnoty se nepovažují za aktivní směny. Před vyřazením již uložených směn mimo nový termín vyžádat potvrzení místo tichého odstranění. Existující výkazy se tím nemažou.
+- Hromadné přiřazování rozsahů dnů a automatické rozdělování na instalaci/provoz/deinstalaci nejsou součástí této první varianty.
+
 ## Pravidla předvyplňování výkazů
 
 | Situace | Návrh časů nového záznamu |
 | --- | --- |
-| Existuje explicitní rozpis příslušného dne/fáze | Použít jeho plánované časy. |
+| Existuje explicitní rozpis příslušného dne/fáze s úplnými časy | Použít jeho plánované časy. |
 | Jednodenní akce bez explicitního rozpisu | Nabídnout časy akce jako upravitelný návrh. |
-| Vícedenní akce bez explicitního rozpisu pro daný den/fázi | Nechat Od / Do nevyplněné. |
+| Vícedenní akce bez naplánovaných časů pro daný den/fázi | Nechat Od / Do nevyplněné, i když je fáze vybraná. |
+| Den označený jako Volný den | Nevytvářet automaticky plánovanou směnu ani předvyplněné hodiny. |
 
-Explicitní rozpis má přednost i u jednodenní akce. Žádný návrh sám o sobě není potvrzením odpracovaných hodin.
+Explicitní rozpis má přednost i u jednodenní akce. Pokud obsahuje fáze bez časů, neodvozovat automaticky délku každé fáze z celého termínu; jejich časy zůstanou prázdné. Žádný návrh sám o sobě není potvrzením odpracovaných hodin.
 
 - Crew může navržené časy upravit podle skutečnosti.
 - Rozpracovaný výkaz smí obsahovat nevyplněné časy. Neúplný záznam nevytváří odpracované hodiny a jeho součet nesmí být NaN.
@@ -98,6 +113,9 @@ Požadované testovací případy pro implementační plán:
 - Přepnutí Jeden den / Více dní bez ztráty časů, zachování koncového data a správné pořadí polí.
 - Akce pátek 14:00 až neděle 18:00 nesmí nabídnout směnu 14:00–18:00 pro každý den ani účtovat celé trvání.
 - Jednodenní návrh, explicitní rozpis s předností a chybějící rozpis pouze některého dne.
+- Rozpis všech dnů termínu: Instalace / Provoz / Deinstalace v samostatných dnech, neurčený den a explicitní Volný den jako odlišné stavy.
+- Jedna i více fází za den, přidání/odebrání další fáze, nepovinné časy, neúplná dvojice časů, noční plánovaná směna a shodné časy.
+- Zachování fází a časů podle data při změně rozsahu, vypnutí/zapnutí fází a dočasném označení volna; bez automatického přepisování všech dnů společnými časy.
 - Uložení a opětovné načtení prázdného konceptu, nulový příspěvek neúplného záznamu k součtu, zákaz odeslání neúplného výkazu.
 - Změna termínu bez přepsání historických hodnot, explicitních směn a existujících výkazů.
 - Povinný kontakt, odlišný schvalovatel, kontakt bez oprávnění a zákaz automatického přidělení role.

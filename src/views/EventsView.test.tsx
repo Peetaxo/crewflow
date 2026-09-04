@@ -1158,6 +1158,67 @@ describe('EventsView', () => {
     expect(screen.getByText('Pro tento mesic a filtr tu zatim nejsou zadne akce.')).toBeInTheDocument();
   });
 
+  it.each([
+    { isMobile: true, role: 'crew' as const, showsCalendarHint: true },
+    { isMobile: true, role: 'crewhead' as const, showsCalendarHint: false },
+    { isMobile: true, role: 'coo' as const, showsCalendarHint: false },
+    { isMobile: false, role: 'crew' as const, showsCalendarHint: false },
+    { isMobile: false, role: 'crewhead' as const, showsCalendarHint: false },
+    { isMobile: false, role: 'coo' as const, showsCalendarHint: false },
+  ])('guides only mobile crew to the calendar date picker when the feed is empty', async ({ isMobile, role, showsCalendarHint }) => {
+    mobileMockState.isMobile = isMobile;
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({ ...mockAppContext, role }),
+    }));
+
+    vi.doMock('../features/events/queries/useEventsQuery', () => ({
+      useEventsQuery: () => ({ data: [], isLoading: false, error: null }),
+    }));
+
+    vi.doMock('../features/events/services/events.service', () => ({
+      createEmptyEvent: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      applyForEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+      filterEventsByStatus: () => [],
+      getEventsWithDerivedStatus: () => [],
+      getReferenceDate: () => new Date('2026-04-20'),
+      getEventDetailData: () => eventDetail,
+    }));
+
+    vi.doMock('./EventDetailView', () => ({ default: () => <div>detail</div> }));
+    vi.doMock('../components/modals/EventEditModal', () => ({ default: () => null }));
+    vi.doMock('../components/modals/AssignCrewModal', () => ({ default: () => null }));
+
+    const { default: EventsView } = await import('./EventsView');
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <EventsView />
+      </QueryClientProvider>,
+    );
+
+    const approvedHint = 'Chceš zobrazit i starší akce? Klepni na ikonu kalendáře vlevo nahoře a vyber datum, od kterého je chceš vidět.';
+    const existingMobileHelper = 'Nove moznosti se tu objevi automaticky.';
+    const existingDesktopHelper = 'Zkuste prepnout filtr nebo vytvorit novou akci.';
+
+    if (showsCalendarHint) {
+      expect(screen.getByText('Od zvoleného data tu zatím nejsou žádné akce.')).toBeInTheDocument();
+      expect(screen.getByText(approvedHint)).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Filtrovat akce' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Moje akce' }));
+      expect(screen.getByText(approvedHint)).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Vybrat datum akci' }));
+      expect(document.querySelector('.nodu-mobile-events-date-panel')).toBeInTheDocument();
+    } else {
+      expect(screen.queryByText(approvedHint)).not.toBeInTheDocument();
+      expect(screen.getByText(isMobile ? existingMobileHelper : existingDesktopHelper)).toBeInTheDocument();
+    }
+  });
+
   it('shows assigned crew names and opens detail by clicking the event card', async () => {
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => mockAppContext,

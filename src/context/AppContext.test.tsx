@@ -76,6 +76,7 @@ function ContextProbe() {
   return (
     <div>
       <div data-testid="currentTab">{context.currentTab}</div>
+      <div data-testid="role">{context.role}</div>
       <div data-testid="searchQuery">{context.searchQuery}</div>
       <div data-testid="selectedEventId">{context.selectedEventId ?? 'null'}</div>
       <div data-testid="eventTab">{context.eventTab}</div>
@@ -83,6 +84,11 @@ function ContextProbe() {
       <div data-testid="editingReceiptTitle">{context.editingReceipt?.title ?? 'null'}</div>
       <button onClick={() => context.setCurrentTab('events')}>set-events-tab</button>
       <button onClick={() => context.setCurrentTab('dashboard')}>set-dashboard-tab</button>
+      <button onClick={() => context.setCurrentTab('my-shifts')}>set-my-shifts-tab</button>
+      <button onClick={() => context.setCurrentTab('settings')}>set-settings-tab</button>
+      <button onClick={() => context.setRole('crew')}>set-role-crew</button>
+      <button onClick={() => context.setRole('crewhead')}>set-role-crewhead</button>
+      <button onClick={() => context.setRole('coo')}>set-role-coo</button>
       <button onClick={() => context.setSearchQuery('rozdelana prace')}>set-search</button>
       <button onClick={() => context.setSelectedEventId(55)}>set-event-id</button>
       <button onClick={() => context.setEventTab('crew')}>set-event-tab</button>
@@ -97,14 +103,14 @@ function FirstTabProbe({ values }: { values: string[] }) {
   return null;
 }
 
-function AuthResolutionHarness() {
+function AuthResolutionHarness({ role = 'crew' }: { role?: Role }) {
   const [, forceRender] = React.useState(0);
 
   React.useEffect(() => {
     mockAuthState.isLoading = false;
-    mockAuthState.role = 'crew';
+    mockAuthState.role = role;
     forceRender(1);
-  }, []);
+  }, [role]);
 
   return (
     <AppProvider>
@@ -118,6 +124,7 @@ describe('AppProvider UI session restore', () => {
     mockAuthState.isAuthRequired = true;
     mockAuthState.isLoading = false;
     mockAuthState.role = 'coo';
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1024 });
     clearPersistedUiSession();
     window.sessionStorage.clear();
   });
@@ -220,6 +227,111 @@ describe('AppProvider UI session restore', () => {
     );
 
     expect(values[0]).toBe('dashboard');
+  });
+
+  it.each(['crewhead', 'coo'] as const)('switches the mobile overview between Crew and %s without another navigation click', (role) => {
+    window.innerWidth = 390;
+    mockAuthState.isAuthRequired = false;
+    mockAuthState.role = 'crew';
+    render(<AppProvider><ContextProbe /></AppProvider>);
+
+    expect(screen.getByTestId('currentTab')).toHaveTextContent('my-shifts');
+    fireEvent.click(screen.getByText(`set-role-${role}`));
+    expect(screen.getByTestId('role')).toHaveTextContent(role);
+    expect(screen.getByTestId('currentTab')).toHaveTextContent('dashboard');
+    expect(loadPersistedUiSession()?.currentTab).toBe('dashboard');
+
+    fireEvent.click(screen.getByText('set-role-crew'));
+    expect(screen.getByTestId('currentTab')).toHaveTextContent('my-shifts');
+    expect(loadPersistedUiSession()?.currentTab).toBe('my-shifts');
+
+    fireEvent.click(screen.getByText(`set-role-${role}`));
+    expect(screen.getByTestId('currentTab')).toHaveTextContent('dashboard');
+  });
+
+  it.each(['crewhead', 'coo'] as const)('switches the mobile overview when the authenticated role becomes %s', (role) => {
+    window.innerWidth = 390;
+    mockAuthState.role = 'crew';
+    const { rerender } = render(<AppProvider><ContextProbe /></AppProvider>);
+
+    for (const nextRole of [role, 'crew', role] as const) {
+      mockAuthState.role = nextRole;
+      rerender(<AppProvider><ContextProbe /></AppProvider>);
+      expect(screen.getByTestId('role')).toHaveTextContent(nextRole);
+      expect(screen.getByTestId('currentTab')).toHaveTextContent(nextRole === 'crew' ? 'my-shifts' : 'dashboard');
+    }
+  });
+
+  it.each(['crewhead', 'coo'] as const)('restores the mobile overview for %s after the role switch remounts the provider', (role) => {
+    window.innerWidth = 390;
+    mockAuthState.role = 'crew';
+    const { unmount } = render(<AppProvider><ContextProbe /></AppProvider>);
+    expect(loadPersistedUiSession()?.currentTab).toBe('my-shifts');
+    unmount();
+
+    mockAuthState.role = role;
+    const values: string[] = [];
+    render(<AppProvider><FirstTabProbe values={values} /></AppProvider>);
+
+    expect(values[0]).toBe('dashboard');
+    expect(loadPersistedUiSession()?.currentTab).toBe('dashboard');
+  });
+
+  it('restores the management overview after deferred mobile authentication', () => {
+    window.innerWidth = 390;
+    mockAuthState.role = 'crew';
+    const { unmount } = render(<AppProvider><ContextProbe /></AppProvider>);
+    unmount();
+
+    mockAuthState.role = null;
+    mockAuthState.isLoading = true;
+    render(<AuthResolutionHarness role="coo" />);
+
+    expect(screen.getByTestId('currentTab')).toHaveTextContent('dashboard');
+    expect(loadPersistedUiSession()?.currentTab).toBe('dashboard');
+  });
+
+  it('clears a restored search on the next navigation when the deferred mobile overview stays unchanged', () => {
+    window.innerWidth = 390;
+    mockAuthState.role = 'crew';
+    const { unmount } = render(<AppProvider><ContextProbe /></AppProvider>);
+    fireEvent.click(screen.getByText('set-search'));
+    unmount();
+
+    mockAuthState.role = null;
+    mockAuthState.isLoading = true;
+    render(<AuthResolutionHarness role="coo" />);
+    expect(screen.getByTestId('currentTab')).toHaveTextContent('dashboard');
+    expect(screen.getByTestId('searchQuery')).toHaveTextContent('rozdelana prace');
+
+    fireEvent.click(screen.getByText('set-events-tab'));
+    expect(screen.getByTestId('searchQuery')).toBeEmptyDOMElement();
+    expect(loadPersistedUiSession()?.searchQuery).toBe('');
+  });
+
+  it.each(['events', 'settings'] as const)('preserves the mobile %s section when switching roles', (tab) => {
+    window.innerWidth = 390;
+    mockAuthState.isAuthRequired = false;
+    mockAuthState.role = 'crew';
+    render(<AppProvider><ContextProbe /></AppProvider>);
+    fireEvent.click(screen.getByText(`set-${tab}-tab`));
+
+    for (const nextRole of ['crewhead', 'coo', 'crew'] as const) {
+      fireEvent.click(screen.getByText(`set-role-${nextRole}`));
+      expect(screen.getByTestId('currentTab')).toHaveTextContent(tab);
+    }
+  });
+
+  it('keeps desktop My Shifts separate from the management dashboard', () => {
+    mockAuthState.role = 'crewhead';
+    const { unmount } = render(<AppProvider><ContextProbe /></AppProvider>);
+    fireEvent.click(screen.getByText('set-my-shifts-tab'));
+    expect(screen.getByTestId('currentTab')).toHaveTextContent('my-shifts');
+    unmount();
+
+    mockAuthState.role = 'coo';
+    render(<AppProvider><ContextProbe /></AppProvider>);
+    expect(screen.getByTestId('currentTab')).toHaveTextContent('my-shifts');
   });
 
   it('keeps a valid persisted tab on the first render', () => {

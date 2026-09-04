@@ -1,4 +1,3 @@
-import { resetSupabaseBudgetsHydration } from '../../features/budgets/services/budgets.service';
 import { resetSupabaseClientsHydration } from '../../features/clients/services/clients.service';
 import { resetSupabaseCrewHydration } from '../../features/crew/services/crew.service';
 import { resetSupabaseEventsHydration } from '../../features/events/services/events.service';
@@ -13,7 +12,6 @@ import { queryClient } from '../../lib/query-client';
 
 const resetHydrationGuards = () => {
   resetSupabaseClientsHydration();
-  resetSupabaseBudgetsHydration();
   resetSupabaseProjectsHydration();
   resetSupabaseEventsHydration();
   resetSupabaseCrewHydration();

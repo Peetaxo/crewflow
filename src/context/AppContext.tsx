@@ -13,6 +13,7 @@ import {
 } from '../components/ui/alert-dialog';
 import { Client, Project, ReceiptItem, Role, Timelog } from '../types';
 import { NAV_BY_ROLE } from '../constants';
+import { useIsMobile } from '../hooks/use-mobile';
 import { deleteCrew } from '../features/crew/services/crew.service';
 import { deleteEvent } from '../features/events/services/events.service';
 import { deleteProject } from '../features/projects/services/projects.service';
@@ -21,6 +22,11 @@ import { deleteReceipt } from '../features/receipts/services/receipts.service';
 import { loadPersistedUiSession, savePersistedUiSession, type PersistedUiSessionState } from './ui-session-storage';
 import { loadUiPreferences, saveUiPreferences } from './ui-preferences-storage';
 import { AppContext, type AppContextType, type DeleteConfirmData, type SelectedEventId } from './app-context';
+
+// Both home routes represent one mobile Overview, including after session restore.
+const resolveCurrentTab = (tab: string, role: Role, isMobile: boolean): string => (
+  isMobile && (tab === 'dashboard' || tab === 'my-shifts') ? NAV_BY_ROLE[role][0] : tab
+);
 
 const normalizeUiSessionState = (
   state: PersistedUiSessionState,
@@ -57,6 +63,7 @@ const normalizeUiSessionState = (
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const { isAuthRequired, isLoading: isAuthLoading, role: authRole } = useAuth();
+  const isMobile = useIsMobile();
   const initialUiPreferences = useMemo(() => loadUiPreferences(), []);
   const persistedUiSession = useMemo(() => loadPersistedUiSession(), []);
   const shouldDeferUiRestore = isAuthRequired && isAuthLoading && Boolean(persistedUiSession);
@@ -72,9 +79,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [darkMode, setDarkMode] = useState(initialUiPreferences?.darkMode ?? false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(initialUiPreferences?.sidebarCollapsed ?? false);
   const [role, setRole] = useState<Role>(initialRole);
-  const [currentTab, setCurrentTabState] = useState(
+  const [requestedTab, setCurrentTabState] = useState(
     initialUiSession?.currentTab ?? NAV_BY_ROLE[initialRole][0],
   );
+  const currentTab = resolveCurrentTab(requestedTab, role, isMobile);
   const [navigationGuardMessage, setNavigationGuardMessage] = useState<string | null>(null);
   const [pendingTab, setPendingTab] = useState<string | null>(null);
   const [settingsSection, setSettingsSection] = useState<'menu' | 'profile' | 'appearance'>('menu');
@@ -149,8 +157,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         authRole ?? role ?? null,
       );
 
-      skipInitialSearchReset.current = true;
-      setCurrentTabState(restoredState.currentTab);
+      const restoredTab = resolveCurrentTab(restoredState.currentTab, authRole ?? role, isMobile);
+      skipInitialSearchReset.current = restoredTab !== currentTab;
+      setCurrentTabState(restoredTab);
       setSearchQuery(restoredState.searchQuery);
       setTimelogFilter(restoredState.timelogFilter);
       setProjectFilter(restoredState.projectFilter);
@@ -169,7 +178,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setEditingClient(restoredState.editingClient);
       pendingDeferredUiSession.current = null;
     }
-  }, [authRole, isAuthLoading, isAuthRequired, role]);
+  }, [authRole, currentTab, isAuthLoading, isAuthRequired, isMobile, role]);
 
   useEffect(() => {
     saveUiPreferences({ darkMode, sidebarCollapsed });

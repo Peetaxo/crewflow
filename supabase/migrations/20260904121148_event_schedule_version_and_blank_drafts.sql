@@ -7,6 +7,10 @@ alter table public.events
     constraint events_schedule_version_check check (schedule_version in (1, 2)),
   add column free_days date[] not null default '{}'::date[];
 
+-- Bound each deferred completeness lookup to the affected timelog's days.
+create index timelog_days_timelog_id_idx
+  on public.timelog_days using btree (timelog_id);
+
 create or replace function public.is_valid_timelog_time(value text)
 returns boolean language sql immutable
 set search_path = ''

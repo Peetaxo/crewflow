@@ -28,6 +28,12 @@ describe('event schedule persistence migration contract (SQL integration test is
     expect(sql).not.toContain("'08:00'");
   });
 
+  it('indexes the parent lookup used by deferred per-day assertions', () => {
+    expect(sql).toMatch(/create index timelog_days_timelog_id_idx\s+on public\.timelog_days using btree \(timelog_id\)/);
+    expect(fixture).toContain('pg_catalog.pg_get_indexdef(i.indexrelid)');
+    expect(fixture).toContain('i.indisvalid and i.indisready');
+  });
+
   it('preserves audited RPC locking and restricts helper execution', () => {
     expect(sql.match(/pg_advisory_xact_lock/g)).toHaveLength(2);
     expect(sql).toContain('v_timelog.updated_at is distinct from p_expected_updated_at');

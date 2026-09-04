@@ -36,6 +36,10 @@
 --    WHERE t.id='00000000-0000-4000-8000-000000000401';
 --    Without the before-day guard B commits 18:00: completeness alone is insufficient.
 --    Stop/discard the disposable database after this separate committed-fixture test.
+-- Lock-order caveat: a direct external child UPDATE locks its day row before the
+-- parent-lock trigger runs, so it can deadlock with a parent-first atomic RPC.
+-- PostgreSQL aborts one transaction with 40P01; retry that entire transaction.
+-- The application writes days through the parent-first RPCs, not direct UPDATEs.
 begin;
 
 insert into auth.users (id) values
@@ -62,6 +66,15 @@ begin
   if ok is distinct from true then raise exception 'Assertion failed: %', message; end if;
 end;
 $$;
+
+-- Every deferred per-day completeness assertion filters this foreign key.
+select pg_temp.check_true(exists (
+  select 1 from pg_catalog.pg_index i
+  where i.indexrelid = pg_catalog.to_regclass('public.timelog_days_timelog_id_idx')
+    and i.indisvalid and i.indisready
+    and pg_catalog.pg_get_indexdef(i.indexrelid) =
+      'CREATE INDEX timelog_days_timelog_id_idx ON public.timelog_days USING btree (timelog_id)'
+), 'timelog_days.timelog_id must have a valid ready B-tree index');
 
 -- Every negative test rolls back only its statement and deferred trigger queue.
 -- Unexpected error codes/messages are rethrown, never treated as a passing test.

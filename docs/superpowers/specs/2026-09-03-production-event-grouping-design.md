@@ -2,6 +2,8 @@
 
 Datum: 2026-09-03
 
+Aktualizace 2026-09-04: Následující text zachycuje původní návrh a jeho implementovaný základ. Revidovaný produktový směr odděluje propojené směny se společnou evidencí od individuálního výběru podkladů pro fakturu a přesouvá správu do detailu crew. Je popsán v [novém návrhu](2026-09-04-shared-crew-workflow-and-invoice-selection-design.md), který čeká na závěrečnou kontrolu písemné specifikace. Původní umístění ovládání a omezení faktury na jednu obecnou skupinu již nejsou cílovým zadáním; tento dokument zůstává historickým záznamem, nikoli pokynem k přepsání existujících dat.
+
 Stav: Schváleno uživatelem 2026-09-03, včetně rolí CrewHead a COO a volitelné společné fakturace přes více Job Number. Uživatel zdůraznil, že půjde o výjimečnou možnost, nikoli výchozí chování. Následuje implementační plán první etapy.
 
 ## Cíl a první etapa

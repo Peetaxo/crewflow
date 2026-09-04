@@ -31,6 +31,8 @@ export interface Event {
   endDate: string;
   startTime?: string;
   endTime?: string;
+  /** Verze vychozich casu vykazu; chybejici hodnota zachovava puvodni chovani. */
+  scheduleVersion?: 1 | 2;
   city: string;
   address?: string;
   placeId?: string;
@@ -52,6 +54,8 @@ export interface Event {
   showDayTypes?: boolean;
   /** Mapovani datum -> typ dne */
   dayTypes?: Record<string, TimelogType>;
+  /** Explicitne volne dny; pouzivaji se pouze pri zapnutych typech dnu. */
+  freeDays?: string[];
   /** Vychozi casy pro jednotlive typy dnů */
   phaseTimes?: Partial<Record<TimelogType, EventPhaseTime>>;
   /** Konkretni bloky casu pro jednotlive typy dnů */

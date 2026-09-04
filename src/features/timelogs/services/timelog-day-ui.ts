@@ -1,5 +1,6 @@
 import { addDays, format, isAfter, parseISO } from 'date-fns';
 import type { Event, Timelog, TimelogDay, TimelogType } from '../../../types';
+import { resolveEventScheduleDay } from '../../events/services/event-schedule';
 
 const defaultType: TimelogType = 'instal';
 const fallbackFrom = '08:00';
@@ -62,6 +63,8 @@ export const resolveTimelogDayDefaults = (
   event: Event,
   preferredType?: TimelogType,
 ): TimelogDay => {
+  if (event.scheduleVersion === 2) return resolveEventScheduleDay(date, event, preferredType);
+
   if (!event.showDayTypes) {
     const resolvedType = preferredType ?? defaultType;
 

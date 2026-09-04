@@ -11,6 +11,7 @@ import { createStableDraftUuid } from '../../stable-draft-identity';
 import { EventAssignmentResult, EventConflictDetail, EventFilter, EventWithDerivedStatus } from '../types/events.types';
 import { approveEventWithdrawalRpc, assignEventCrewRpc, isDisposableTimelogStatus, removeEventCrewRpc } from './event-assignment-lifecycle.service';
 import { deleteEventAtomicRpc } from './event-mutation-rpc.service';
+import { buildEventScheduleDays } from './event-schedule';
 
 const DEFAULT_TIME_FROM = '08:00';
 const DEFAULT_TIME_TO = '17:00';
@@ -1627,6 +1628,7 @@ const createEmptySchedules = (from: string, to: string) => ({
 });
 
 export const normalizeEventSchedules = (event: Event) => {
+  if (event.scheduleVersion === 2) return event.phaseSchedules ?? {};
   if (event.phaseSchedules) return event.phaseSchedules;
 
   const defaultFrom = event.startTime || DEFAULT_TIME_FROM;
@@ -1649,8 +1651,11 @@ export const normalizeEventSchedules = (event: Event) => {
 
 export const syncDayTypesFromSchedules = (event: Event) => {
   const nextDayTypes: Record<string, TimelogType> = {};
+  const phaseTypes: TimelogType[] = event.scheduleVersion === 2
+    ? ['pripravy', ...EVENT_PHASE_TYPES]
+    : EVENT_PHASE_TYPES;
 
-  EVENT_PHASE_TYPES.forEach((phaseType) => {
+  phaseTypes.forEach((phaseType) => {
     (event.phaseSchedules?.[phaseType] || []).forEach((slot) => {
       slot.dates.forEach((date) => {
         nextDayTypes[date] = nextDayTypes[date] || phaseType;
@@ -1702,6 +1707,8 @@ export const ensureProjectForEvent = (projects: Project[], event: Event): Projec
 };
 
 export const getScheduledEventDay = (event: Event, day: Timelog['days'][number]) => {
+  if (event.scheduleVersion === 2) return day;
+
   if (!event.showDayTypes) {
     return {
       ...day,
@@ -2321,7 +2328,9 @@ export const getContractorConflictsForEvent = (
 export const buildTimelogDaysForEvent = (
   event: Event,
   phaseChoices?: Array<TimelogType | 'all'>,
-): Timelog['days'][] => {
+): Timelog['days'] => {
+  if (event.scheduleVersion === 2) return buildEventScheduleDays(event, phaseChoices ?? ['all']);
+
   const eventDates = getDatesBetween(event.startDate, event.endDate);
   const defaultFrom = event.startTime || DEFAULT_TIME_FROM;
   const defaultTo = event.endTime || DEFAULT_TIME_TO;

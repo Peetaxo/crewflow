@@ -239,3 +239,38 @@ its temporary tab and dev server were closed when work paused.
 - The user has been asked for separate permission to apply the additive
   billing schema to the connected Staff database after verification. There
   has not yet been an affirmative answer; remote schema/data remain unchanged.
+
+### Fresh local database regression on 2026-09-04
+
+- Restarted only the existing mount-free `crewflow-billing` Colima profile;
+  Docker's default context remained `default`. The database exposed only
+  `127.0.0.1:54322`, with an empty billing snapshot (revision 0).
+- Source SQL and committed migration were still byte-identical. Reused the
+  actual pg_prove container with the current test file: **107/107 passed**.
+  This included the real anonymous-denial, crew privacy, exact replay,
+  independent confirmation, transaction rollback and linked-event deletion
+  assertions; original event/project/assignment/hour/invoice rows were unchanged.
+- Applied only the previously documented temporary local `supautils.hint_roles`
+  workaround during this test, then RESET/reloaded it and verified the original
+  `anon, authenticated, service_role` value. Post-test groups, memberships,
+  requests and revision were all 0. The isolated profile was stopped cleanly.
+- The two-session harness was not rerun at this checkpoint; its follow-up
+  improvements and concurrency acceptance remain pending.
+
+### Task 6 editor verified and reviewed
+
+- Commit `03d51ea` adds the production editor, synthetic fixtures and ten
+  real-control tests. Parent independently reran all current billing tests:
+  4 files / 58 passed, no React act/accessibility warnings. Changed-file ESLint
+  passed, and fresh application TypeScript output is byte-identical to the
+  199-diagnostic baseline (no billing diagnostics).
+- Both independent specification and code-quality reviews approved Task 6.
+  Review confirmed frozen inputs, separate cross-project/move confirmation,
+  exact ambiguous replay, conflict recovery, remote identity filtering and
+  initially-empty-only deletion. Bounded candidate scrolling, text wrapping
+  and explicit disabled custom controls are present.
+- Nonblocking coverage follow-ups for final UI/regression acceptance:
+  confirmation resets after edits, definitive-error draft preservation,
+  and Escape/X close interception. Integrated responsive/focus checks still
+  await Task 7; the editor has not yet been claimed available in the app.
+- Task 7 event-detail integration and crew-safe summary are in progress.

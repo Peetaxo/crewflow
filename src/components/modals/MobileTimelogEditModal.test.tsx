@@ -152,6 +152,22 @@ describe('MobileTimelogEditModal', () => {
     expect(within(screen.getByRole('group', { name: 'Do' })).getByText('--:--')).toBeInTheDocument();
   });
 
+  it('ignores programmatic scroll after Tab leaves a blank time wheel option', () => {
+    testData.event.scheduleVersion = 2;
+    testState.editingTimelog!.days = [{ id: 'actual-1', d: '2026-07-13', f: '', t: '', type: 'instal' }];
+    render(<MobileTimelogEditModal />);
+    fireEvent.click(screen.getByRole('button', { name: /^Otevřít výběr času Od/ }));
+    const timeWheel = screen.getByRole('group', { name: 'Výběr času Od' });
+    const hourColumn = timeWheel.querySelector('[data-time-part="hour"]') as HTMLDivElement;
+    const selectedHour = within(timeWheel).getByRole('button', { name: 'Od hodina 00' });
+
+    selectedHour.focus();
+    fireEvent.keyDown(selectedHour, { key: 'Tab' });
+    fireEvent.scroll(hourColumn);
+
+    expect(within(screen.getByRole('group', { name: 'Od' })).getByText('--:--')).toBeInTheDocument();
+  });
+
   it('allows deliberate midnight confirmation and keeps incomplete submission in the modal', async () => {
     testData.event.scheduleVersion = 2;
     testState.editingTimelog!.days = [{ id: 'actual-1', d: '2026-07-13', f: '', t: '', type: 'instal' }];

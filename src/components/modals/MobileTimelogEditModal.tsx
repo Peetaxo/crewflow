@@ -604,7 +604,11 @@ const TimeWheelPicker: React.FC<TimeWheelPickerProps> = ({
       onPointerDown={() => { userScrollIntent.current[part] = true; }}
       onTouchStart={() => { userScrollIntent.current[part] = true; }}
       onWheel={() => { userScrollIntent.current[part] = true; }}
-      onKeyDown={() => { userScrollIntent.current[part] = true; }}
+      onKeyDown={(event) => {
+        if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key)) {
+          userScrollIntent.current[part] = true;
+        }
+      }}
       onScroll={(event) => handleColumnScroll(part, event)}
     >
       {options.map((option) => {

@@ -8,6 +8,10 @@ vi.mock('framer-motion', () => ({
   },
 }));
 
+vi.mock('../features/billing-groups/EventBillingSection', () => ({
+  default: () => null,
+}));
+
 vi.mock('../app/providers/useAuth', () => ({
   useAuth: () => ({ currentProfileId: 'profile-1' }),
 }));

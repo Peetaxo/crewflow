@@ -2,7 +2,9 @@
 
 Datum: 2026-09-03
 
-Stav: Uživatel schválil správu propojení pouze produkcí a výslovně potvrdil obě role, CrewHead a COO. Následně navrhl možnost spojit pro fakturaci i akce s různým Job Number. Tento revidovaný návrh popisuje takové volitelné rozšíření a čeká na kontrolu před implementačním plánem.
+Aktualizace 2026-09-04: Následující text zachycuje původní návrh a jeho implementovaný základ. Revidovaný produktový směr odděluje propojené směny se společnou evidencí od individuálního výběru podkladů pro fakturu a přesouvá správu do detailu crew. Je popsán v [novém návrhu](2026-09-04-shared-crew-workflow-and-invoice-selection-design.md), který čeká na závěrečnou kontrolu písemné specifikace. Původní umístění ovládání a omezení faktury na jednu obecnou skupinu již nejsou cílovým zadáním; tento dokument zůstává historickým záznamem, nikoli pokynem k přepsání existujících dat.
+
+Stav: Schváleno uživatelem 2026-09-03, včetně rolí CrewHead a COO a volitelné společné fakturace přes více Job Number. Uživatel zdůraznil, že půjde o výjimečnou možnost, nikoli výchozí chování. Následuje implementační plán první etapy.
 
 ## Cíl a první etapa
 
@@ -21,7 +23,7 @@ První samostatná implementační etapa zahrnuje správu tohoto propojení a je
 - Propojení nemění způsob vypisování, obsazování nebo schvalování jednotlivých směn.
 - Cílově půjde nahrát vlastní fakturu společně s výkazy nebo později. Nahrání nebude znamenat automatické schválení k proplacení.
 
-Revidované pravidlo ke kontrole: cílem příjmu faktur bude jedna aktivní faktura jednoho dodavatele za jednu produkcí určenou fakturační skupinu, nebo za jednu samostatnou nepropojenou událost, s historií opravených verzí. Toto pravidlo nahrazuje původní striktní omezení na jednu skutečnou akci.
+Schválené pravidlo: cílem příjmu faktur bude jedna aktivní faktura jednoho dodavatele za jednu produkcí určenou fakturační skupinu, nebo za jednu samostatnou nepropojenou událost, s historií opravených verzí. Toto pravidlo nahrazuje původní striktní omezení na jednu skutečnou akci.
 
 Omezení „pouze produkce“ se v tomto návrhu vztahuje na propojování směn. Budoucí nahrávání vlastní faktury členem crew zůstává součástí dohodnutého směru; v první etapě se ještě nepřidává.
 
@@ -129,4 +131,4 @@ Dodatečné připojení, přejmenování nebo přesun směny nesmí potichu změ
 
 ## Další krok
 
-Po kontrole revidovaného návrhu společné fakturace přes více Job Number vznikne implementační plán pouze pro první etapu. Oprávnění pro CrewHead i COO jsou již potvrzená a není potřeba se na ně ptát znovu. Následná realizace musí respektovat aktuální projektový postup v `AGENTS.md`, včetně ověření a aktualizace vývojových instalací aplikace. Tento dokument sám není implementací ani nasazením.
+Na schválený návrh navazuje implementační plán pouze pro první etapu. Oprávnění pro CrewHead i COO i výjimečné propojení přes více Job Number jsou potvrzená a není potřeba se na ně ptát znovu. Následná realizace musí respektovat aktuální projektový postup v `AGENTS.md`, včetně ověření a aktualizace vývojových instalací aplikace. Tento dokument sám není implementací ani nasazením.

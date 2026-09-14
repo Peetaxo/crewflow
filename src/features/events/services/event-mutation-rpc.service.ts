@@ -21,6 +21,13 @@ const toDomainError = (error: unknown): Error => {
   const rawMessage = isRecord(error) && typeof error.message === 'string'
     ? error.message
     : '';
+  if (
+    isRecord(error)
+    && error.code === '23503'
+    && rawMessage.includes('"billing_group_members_event_id_fkey"')
+  ) {
+    return new Error('Nejprve odeberte akci ze společné fakturace.');
+  }
   const token = (Object.keys(ERROR_MESSAGES) as Array<keyof typeof ERROR_MESSAGES>)
     .find((candidate) => (
       new RegExp(`(^|[^A-Za-z0-9_])${candidate}($|[^A-Za-z0-9_])`).test(rawMessage)

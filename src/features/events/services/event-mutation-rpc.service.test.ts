@@ -45,6 +45,45 @@ describe('event mutation RPC adapter', () => {
     )).rejects.toThrow(expectedMessage);
   });
 
+  it('maps only the billing membership foreign-key rejection to actionable deletion guidance', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: {
+        code: '23503',
+        message: 'update or delete on table "events" violates foreign key constraint "billing_group_members_event_id_fkey"',
+      },
+    });
+    vi.doMock('../../../lib/supabase', () => ({ supabase: { rpc } }));
+
+    const { deleteEventAtomicRpc } = await import('./event-mutation-rpc.service');
+
+    await expect(deleteEventAtomicRpc(
+      'event-uuid-1',
+      '2026-08-18T09:15:00.000Z',
+    )).rejects.toThrow('Nejprve odeberte akci ze společné fakturace.');
+  });
+
+  it.each([
+    { code: '23503', message: 'update or delete on table "events" violates foreign key constraint "other_event_fk"' },
+    { code: 'XX000', message: 'billing_group_members_event_id_fkey' },
+  ])('does not expose deletion guidance for a non-matching billing foreign-key error', async (databaseError) => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: databaseError });
+    vi.doMock('../../../lib/supabase', () => ({ supabase: { rpc } }));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const { deleteEventAtomicRpc } = await import('./event-mutation-rpc.service');
+
+      await expect(deleteEventAtomicRpc(
+        'event-uuid-1',
+        '2026-08-18T09:15:00.000Z',
+      )).rejects.toThrow('Akci se nepodařilo smazat.');
+      expect(consoleError).toHaveBeenCalledWith('Unexpected atomic event delete RPC error', databaseError);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it.each([
     null,
     [],

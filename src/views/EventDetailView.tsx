@@ -9,7 +9,7 @@ import { KM_RATE } from '../data';
 import { appDataSource } from '../lib/app-config';
 import { MEAL_CONFIG, PHASE_CONFIG } from '../constants';
 import { calculateDayHours, calculateMealAllowance, calculateTotalHours, formatCurrency, formatDateRange, formatShortDate, getDatesBetween, getEventStatus, normalizeMealSelection } from '../utils';
-import { buildEventScheduleDays } from '../features/events/services/event-schedule';
+import { buildEventScheduleDays, resolveEventScheduleDay } from '../features/events/services/event-schedule';
 import { listEventDates } from '../features/timelogs/services/timelog-day-ui';
 import { Button } from '../components/ui/button';
 import StatusBadge from '../components/shared/StatusBadge';
@@ -128,7 +128,7 @@ const EventDetailView = () => {
   const [detail, setDetail] = useState(() => getEventDetailData(selectedEventId));
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const [assigningEvent, setAssigningEvent] = useState<Event | null>(null);
-  const [applicationDraftTimes, setApplicationDraftTimes] = useState({ from: '', to: '' });
+  const [applicationDraftTimes, setApplicationDraftTimes] = useState<Record<string, { from: string; to: string }>>({});
   const [crewPanelTab, setCrewPanelTab] = useState<'assigned' | 'approval'>('assigned');
   const [showWithdrawalConfirm, setShowWithdrawalConfirm] = useState(false);
   const [showContactDialog, setShowContactDialog] = useState(false);
@@ -462,9 +462,25 @@ const EventDetailView = () => {
   const isMeAssigned = currentProfileId
     ? eventCrew.some((contractor) => contractor.profileId === currentProfileId)
     : false;
-  const effectiveDraftTimes = event.scheduleVersion === 2 ? applicationDraftTimes : {
-    from: applicationDraftTimes.from || event.startTime || '08:00',
-    to: applicationDraftTimes.to || event.endTime || '17:00',
+  const applicationDraftKey = String(event.supabaseId ?? event.id);
+  const defaultApplicationDraftTimes = event.scheduleVersion === 2
+    ? (() => {
+        const day = resolveEventScheduleDay(event.startDate, event);
+        return { from: day.f, to: day.t };
+      })()
+    : {
+        from: event.startTime || '08:00',
+        to: event.endTime || '17:00',
+      };
+  const effectiveDraftTimes = applicationDraftTimes[applicationDraftKey] ?? defaultApplicationDraftTimes;
+  const updateApplicationDraftTime = (field: 'from' | 'to', value: string) => {
+    setApplicationDraftTimes((current) => ({
+      ...current,
+      [applicationDraftKey]: {
+        ...(current[applicationDraftKey] ?? defaultApplicationDraftTimes),
+        [field]: value,
+      },
+    }));
   };
   const canShowApprovalTimelog = (timelog: Timelog) => {
     if (timelog.status === 'pending_ch' || timelog.status === 'pending_crew_confirmation') return role === 'crewhead';
@@ -1147,7 +1163,7 @@ const EventDetailView = () => {
                   <input
                     type="time"
                     value={effectiveDraftTimes.from}
-                    onChange={(changeEvent) => setApplicationDraftTimes((current) => ({ ...current, from: changeEvent.target.value }))}
+                    onChange={(changeEvent) => updateApplicationDraftTime('from', changeEvent.target.value)}
                     aria-label="Plánovaný příchod"
                   />
                 </label>
@@ -1156,7 +1172,7 @@ const EventDetailView = () => {
                   <input
                     type="time"
                     value={effectiveDraftTimes.to}
-                    onChange={(changeEvent) => setApplicationDraftTimes((current) => ({ ...current, to: changeEvent.target.value }))}
+                    onChange={(changeEvent) => updateApplicationDraftTime('to', changeEvent.target.value)}
                     aria-label="Plánovaný odchod"
                   />
                 </label>
@@ -1562,7 +1578,7 @@ const EventDetailView = () => {
                     <input
                       type="time"
                       value={effectiveDraftTimes.from}
-                      onChange={(changeEvent) => setApplicationDraftTimes((current) => ({ ...current, from: changeEvent.target.value }))}
+                      onChange={(changeEvent) => updateApplicationDraftTime('from', changeEvent.target.value)}
                       className="w-20 bg-transparent text-[11px] font-semibold text-[color:var(--nodu-text)] outline-none"
                       aria-label="Planovany prichod"
                     />
@@ -1570,7 +1586,7 @@ const EventDetailView = () => {
                     <input
                       type="time"
                       value={effectiveDraftTimes.to}
-                      onChange={(changeEvent) => setApplicationDraftTimes((current) => ({ ...current, to: changeEvent.target.value }))}
+                      onChange={(changeEvent) => updateApplicationDraftTime('to', changeEvent.target.value)}
                       className="w-20 bg-transparent text-[11px] font-semibold text-[color:var(--nodu-text)] outline-none"
                       aria-label="Planovany odchod"
                     />

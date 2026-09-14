@@ -1923,10 +1923,79 @@ describe('EventDetailView', () => {
     }));
   });
 
+  it.each([
+    [
+      'single-day boundaries',
+      {
+        ...event,
+        scheduleVersion: 2,
+        status: 'upcoming' as const,
+        filled: 0,
+        endDate: event.startDate,
+        startTime: '14:00',
+        endTime: '18:00',
+        allowCrewTimeProposal: true,
+      },
+      '14:00',
+      '18:00',
+    ],
+    [
+      'the explicit first-day phase slot',
+      {
+        ...event,
+        scheduleVersion: 2,
+        status: 'upcoming' as const,
+        filled: 0,
+        startTime: '14:00',
+        endTime: '18:00',
+        showDayTypes: true,
+        dayTypes: { [event.startDate]: 'provoz' as const },
+        phaseSchedules: {
+          provoz: [{ id: 'first-day-shift', dates: [event.startDate], from: '09:30', to: '13:45' }],
+        },
+        allowCrewTimeProposal: true,
+      },
+      '09:30',
+      '13:45',
+    ],
+  ])('prefills and sends v2 application times from %s', async (_source, proposalEvent, expectedFrom, expectedTo) => {
+    mobileMockState.isMobile = true;
+    const applyForEvent = vi.fn().mockResolvedValue(undefined);
+    vi.doMock('../context/useAppContext', () => ({ useAppContext: () => ({
+      role: 'crew', selectedEventId: proposalEvent.supabaseId, setSelectedEventId,
+      eventTab: 'overview', setEventTab: vi.fn(), setEditingReceipt: vi.fn(), setDeleteConfirm: vi.fn(), setEditingTimelog,
+    }) }));
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [], getEventDetailData: () => ({
+        event: proposalEvent,
+        timelogs: [], contractors: [contractor], receipts: [], applications: [], crewAssignments: [],
+      }),
+      applyForEvent, approveEventApplication: vi.fn(), approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn(), removeContractorFromEvent: vi.fn(), requestEventWithdrawal: vi.fn(),
+      subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(), withdrawEventApplication: vi.fn(),
+    }));
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({ updateTimelogStatus, subscribeToTimelogChanges: vi.fn(() => () => undefined) }));
+    vi.doMock('../components/modals/EventEditModal', () => ({ default: () => null }));
+    vi.doMock('../components/modals/AssignCrewModal', () => ({ default: () => null }));
+    const { default: EventDetailView } = await import('./EventDetailView');
+    render(<EventDetailView />);
+
+    expect(screen.getByLabelText('Plánovaný příchod')).toHaveValue(expectedFrom);
+    expect(screen.getByLabelText('Plánovaný odchod')).toHaveValue(expectedTo);
+    fireEvent.click(screen.getByRole('button', { name: 'Přihlásit se' }));
+    await waitFor(() => expect(applyForEvent).toHaveBeenCalledWith(
+      proposalEvent.supabaseId,
+      contractor.profileId,
+      { from: expectedFrom, to: expectedTo },
+    ));
+  });
+
   it('keeps v2 multiday application clocks blank and preserves a typed or cleared proposal', async () => {
     mobileMockState.isMobile = true;
     let proposalEvent = { ...event, scheduleVersion: 2, status: 'upcoming', filled: 0, startTime: '08:00', endTime: '17:00', allowCrewTimeProposal: true };
     let eventChanged: (() => void) | undefined;
+    const applyForEvent = vi.fn().mockResolvedValue(undefined);
     vi.doMock('../context/useAppContext', () => ({ useAppContext: () => ({
       role: 'crew', selectedEventId: event.supabaseId, setSelectedEventId,
       eventTab: 'overview', setEventTab: vi.fn(), setEditingReceipt: vi.fn(), setDeleteConfirm: vi.fn(), setEditingTimelog,
@@ -1936,7 +2005,7 @@ describe('EventDetailView', () => {
         event: proposalEvent,
         timelogs: [], contractors: [contractor], receipts: [], applications: [], crewAssignments: [],
       }),
-      applyForEvent: vi.fn(), approveEventApplication: vi.fn(), approveEventWithdrawal: vi.fn(),
+      applyForEvent, approveEventApplication: vi.fn(), approveEventWithdrawal: vi.fn(),
       createEventCopy: vi.fn(), removeContractorFromEvent: vi.fn(), requestEventWithdrawal: vi.fn(),
       subscribeToEventChanges: (listener: () => void) => { eventChanged = listener; return () => undefined; },
       updateEventApplicationStatus: vi.fn(), withdrawEventApplication: vi.fn(),
@@ -1955,7 +2024,74 @@ describe('EventDetailView', () => {
     expect(from).toHaveValue('12:30');
     expect(screen.getByLabelText('Plánovaný odchod')).toHaveValue('');
     fireEvent.change(from, { target: { value: '' } });
+    proposalEvent = { ...proposalEvent, endDate: proposalEvent.startDate, startTime: '07:00', endTime: '22:00' };
+    act(() => eventChanged?.());
     expect(from).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: 'Přihlásit se' }));
+    await waitFor(() => expect(applyForEvent).toHaveBeenCalledWith(
+      proposalEvent.supabaseId,
+      contractor.profileId,
+      { from: '', to: '' },
+    ));
+  });
+
+  it('does not carry an edited proposal into another event in the mounted detail', async () => {
+    mobileMockState.isMobile = true;
+    let selectedEventId = 'event-uuid-1';
+    const firstEvent = {
+      ...event,
+      scheduleVersion: 2,
+      status: 'upcoming' as const,
+      filled: 0,
+      endDate: event.startDate,
+      startTime: '14:00',
+      endTime: '18:00',
+      allowCrewTimeProposal: true,
+    };
+    const secondEvent = {
+      ...firstEvent,
+      id: 2,
+      supabaseId: 'event-uuid-2',
+      name: 'SECOND',
+      startDate: '2026-05-01',
+      endDate: '2026-05-01',
+      startTime: '09:00',
+      endTime: '13:00',
+    };
+    const applyForEvent = vi.fn().mockResolvedValue(undefined);
+    vi.doMock('../context/useAppContext', () => ({ useAppContext: () => ({
+      role: 'crew', selectedEventId, setSelectedEventId,
+      eventTab: 'overview', setEventTab: vi.fn(), setEditingReceipt: vi.fn(), setDeleteConfirm: vi.fn(), setEditingTimelog,
+    }) }));
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [], getEventDetailData: (eventId: string) => ({
+        event: eventId === secondEvent.supabaseId ? secondEvent : firstEvent,
+        timelogs: [], contractors: [contractor], receipts: [], applications: [], crewAssignments: [],
+      }),
+      applyForEvent, approveEventApplication: vi.fn(), approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn(), removeContractorFromEvent: vi.fn(), requestEventWithdrawal: vi.fn(),
+      subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(), withdrawEventApplication: vi.fn(),
+    }));
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({ updateTimelogStatus, subscribeToTimelogChanges: vi.fn(() => () => undefined) }));
+    vi.doMock('../components/modals/EventEditModal', () => ({ default: () => null }));
+    vi.doMock('../components/modals/AssignCrewModal', () => ({ default: () => null }));
+    const { default: EventDetailView } = await import('./EventDetailView');
+    const view = render(<EventDetailView />);
+
+    expect(screen.getByLabelText('Plánovaný příchod')).toHaveValue('14:00');
+    fireEvent.change(screen.getByLabelText('Plánovaný příchod'), { target: { value: '12:30' } });
+    selectedEventId = secondEvent.supabaseId;
+    view.rerender(<EventDetailView />);
+
+    await waitFor(() => expect(screen.getByLabelText('Plánovaný příchod')).toHaveValue('09:00'));
+    expect(screen.getByLabelText('Plánovaný odchod')).toHaveValue('13:00');
+    fireEvent.click(screen.getByRole('button', { name: 'Přihlásit se' }));
+    await waitFor(() => expect(applyForEvent).toHaveBeenCalledWith(
+      secondEvent.supabaseId,
+      contractor.profileId,
+      { from: '09:00', to: '13:00' },
+    ));
   });
 
   it('opens a new draft timelog when Crew opens their own assigned event', async () => {

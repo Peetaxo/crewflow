@@ -104,6 +104,26 @@ describe('ApprovalsView targeted approvals', () => {
     expect(screen.getByText('Schvaluje: Current COO')).toBeInTheDocument();
     expect(screen.getByText('Schvaluje: Other COO')).toBeInTheDocument();
     expect(screen.queryByText(/financni prehled/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Vrátit výkaz Crew One #1' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Vrátit výkaz Crew Two #2' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Vrátit výkaz Crew Two #3' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Vrátit výkaz Crew One #1' }));
+    expect(screen.getByRole('dialog', { name: 'Vrátit výkaz k opravě' })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Důvod vrácení'), { target: { value: '  Doplň pauzu.  ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Vrátit výkaz' }));
+
+    await waitFor(() => {
+      expect(updateTimelogStatuses).toHaveBeenCalledWith([1], 'rej', {
+        currentProfileId: 'profile-me',
+        note: 'Doplň pauzu.',
+      });
+    });
+    expect(screen.queryByRole('dialog', { name: 'Vrátit výkaz k opravě' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Vrátit výkaz Crew Two #3' }));
+    expect(screen.getByRole('dialog', { name: 'Vrátit výkaz k opravě' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Zrušit' }));
 
     fireEvent.click(screen.getByRole('button', { name: /Schvalit moje vykazy.*\(2\)/i }));
 

@@ -198,6 +198,7 @@ const ApprovalsView = () => {
                     if (!contractor) return null;
                     const hours = calculateTotalHours(timelog.days);
                     const approverName = getTimelogApprovalAssigneeName(timelog, group.event, contractors);
+                    const isActionable = isTimelogApprovalActionable(timelog, role, currentProfileId);
 
                     return (
                       <div key={timelog.id} className="flex items-center gap-3 border-b border-[rgba(var(--nodu-text-rgb),0.06)] py-2 last:border-0">
@@ -213,6 +214,17 @@ const ApprovalsView = () => {
                         <div className="flex gap-1">{Array.from(new Set(timelog.days.map((day) => day.type))).map((type) => <StatusBadge key={type} status={type} />)}</div>
                         <span className="text-[10px] text-[var(--nodu-text-soft)]">{timelog.days.length} {timelog.days.length === 1 ? 'den' : 'dny'}</span>
                         <span className="ml-auto text-xs font-semibold text-[var(--nodu-text)]">{hours.toFixed(1)}h = {formatCurrency(hours * contractor.rate)}{timelog.km > 0 ? ` + ${formatCurrency(timelog.km * KM_RATE)} km` : ''}</span>
+                        {isActionable && (
+                          <button
+                            type="button"
+                            aria-label={`Vrátit výkaz ${contractor.name} #${timelog.id}`}
+                            disabled={isTimelogActionPending}
+                            onClick={() => handleTimelogAction(timelog.id, 'rej')}
+                            className="rounded-xl border border-[var(--nodu-error-border)] px-3 py-1.5 text-[11px] font-medium text-[var(--nodu-error-text)] hover:bg-[var(--nodu-error-bg)]"
+                          >
+                            Vrátit
+                          </button>
+                        )}
                       </div>
                     );
                   })}

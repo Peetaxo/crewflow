@@ -90,6 +90,17 @@ describe('useTimelogApprovalActions', () => {
     expect(updateTimelogStatuses).not.toHaveBeenCalled();
   });
 
+  it('renders the return dialog above mobile event fullscreen layers', () => {
+    render(<Harness timelogs={[pendingCooTimelog(4)]} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Vrátit' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Vrátit výkaz k opravě' });
+    const overlay = document.querySelector('[data-state="open"].fixed.inset-0');
+    expect(overlay).toHaveClass('z-[100]');
+    expect(dialog).toHaveClass('z-[101]');
+  });
+
   it('keeps the dialog open with pending and error feedback, then closes it on success', async () => {
     let rejectRequest: ((error: Error) => void) | undefined;
     updateTimelogStatuses.mockImplementationOnce(() => new Promise((_, reject) => {

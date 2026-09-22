@@ -147,7 +147,11 @@ export const useTimelogApprovalActions = ({
         if (!open) closeDialog();
       }}
     >
-      <DialogContent className="max-w-md" aria-busy={isPending || undefined}>
+      <DialogContent
+        overlayClassName="z-[100]"
+        className="z-[101] max-w-md"
+        aria-busy={isPending || undefined}
+      >
         <DialogHeader>
           <DialogTitle>{dialogTitle}</DialogTitle>
           <DialogDescription>

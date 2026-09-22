@@ -12,11 +12,16 @@ type Snapshot = {
   clients: Client[];
 };
 
+const INTEGRATION_TIMELOG_ID = '11111111-1111-4111-8111-111111111111';
+const INTEGRATION_EVENT_ID = '22222222-2222-4222-8222-222222222222';
+const INTEGRATION_APPROVAL_ID = '33333333-3333-4333-8333-333333333333';
+const INTEGRATION_APPROVAL_ROUND_ID = '44444444-4444-4444-8444-444444444444';
+
 const createSnapshot = (): Snapshot => ({
   events: [
     {
       id: 1,
-      supabaseId: 'event-row-1',
+      supabaseId: INTEGRATION_EVENT_ID,
       projectId: 'project-uuid-1',
       name: 'Akce 1',
       job: 'AK001',
@@ -27,6 +32,8 @@ const createSnapshot = (): Snapshot => ({
       filled: 1,
       status: 'upcoming',
       client: 'Klient A',
+      contactProfileId: 'approver-profile-uuid',
+      contactApprovesHours: true,
     },
   ],
   contractors: [
@@ -60,8 +67,8 @@ const createSnapshot = (): Snapshot => ({
     {
       id: 1,
       eid: 1,
-      supabaseId: 'timelog-row-1',
-      eventSupabaseId: 'event-row-1',
+      supabaseId: INTEGRATION_TIMELOG_ID,
+      eventSupabaseId: INTEGRATION_EVENT_ID,
       contractorProfileId: 'profile-uuid-1',
       updatedAt: '2026-08-17T10:00:00.000Z',
       days: [{ d: '2026-04-10', f: '08:00', t: '16:00', type: 'instal' }],
@@ -88,16 +95,20 @@ describe('UUID write flows integration', () => {
     vi.unstubAllGlobals();
   });
 
-  it('completes timelog, receipt and invoice write flows without profiles lookup when contractor profileId exists locally', async () => {
-    vi.stubGlobal('crypto', { randomUUID: vi.fn(() => 'receipt-row-1') });
+  it('completes timelog, receipt and invoice write flows with targeted approval identity', async () => {
+    vi.stubGlobal('crypto', { randomUUID: vi.fn()
+      .mockReturnValueOnce(INTEGRATION_APPROVAL_ID)
+      .mockReturnValueOnce(INTEGRATION_APPROVAL_ROUND_ID)
+      .mockReturnValue('receipt-row-1') });
     let snapshot = createSnapshot();
     const timelogRows: Array<Record<string, unknown> & { id: string; updated_at: string }> = [{
-      id: 'timelog-row-1',
-      event_id: 'event-row-1',
+      id: INTEGRATION_TIMELOG_ID,
+      event_id: INTEGRATION_EVENT_ID,
       contractor_id: 'profile-uuid-1',
       updated_at: '2026-08-17T10:00:00.000Z',
       status: 'draft',
     }];
+    const approvalRows: Array<Record<string, unknown>> = [];
     let profileSelectCalls = 0;
     const invalidateQueries = vi.fn().mockResolvedValue(undefined);
     const setQueryData = vi.fn();
@@ -127,11 +138,19 @@ describe('UUID write flows integration', () => {
     const fromMock = vi.fn((table: string) => {
       if (table === 'profiles') {
         profileSelectCalls += 1;
+        const result = Promise.resolve({
+          data: [{ id: 'profile-uuid-1' }, { id: 'approver-profile-uuid' }],
+          error: null,
+        });
+        const orderedQuery = Object.assign(result, {
+          order: vi.fn(() => orderedQuery),
+        });
         return {
           select: vi.fn(() => ({
-            order: vi.fn(() => ({
-              order: vi.fn().mockResolvedValue({
-                data: [{ id: 'profile-uuid-1' }],
+            order: vi.fn(() => orderedQuery),
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: { id: 'approver-profile-uuid' },
                 error: null,
               }),
             })),
@@ -141,7 +160,7 @@ describe('UUID write flows integration', () => {
 
       if (table === 'events') {
         const eventResult = Promise.resolve({
-          data: [{ id: 'event-row-1' }],
+          data: [{ id: INTEGRATION_EVENT_ID }],
           error: null,
         });
         const eventOrderQuery = Object.assign(eventResult, {
@@ -161,6 +180,14 @@ describe('UUID write flows integration', () => {
               data: [],
               error: null,
             }),
+          })),
+        };
+      }
+
+      if (table === 'timelog_approvals') {
+        return {
+          select: vi.fn(() => ({
+            order: vi.fn().mockResolvedValue({ data: approvalRows, error: null }),
           })),
         };
       }
@@ -249,6 +276,64 @@ describe('UUID write flows integration', () => {
           error: null,
         };
       }
+      if (name === 'handoff_timelogs_for_approval_atomic') {
+        timelogRpcVersion += 1;
+        const data = (args.p_targets as Array<{
+          id: string;
+          approval_id: string;
+          approval_round_id: string;
+        }>).map((target) => {
+          const canonical = {
+            id: target.id,
+            updated_at: `2026-08-17T${timelogRpcVersion}:00:00.000Z`,
+            status: 'pending_coo',
+            approval_id: target.approval_id,
+            approval_round_id: target.approval_round_id,
+            approval_status: 'pending',
+            approval_updated_at: `2026-08-17T${timelogRpcVersion}:00:00.000Z`,
+          };
+          const row = timelogRows.find((item) => item.id === target.id);
+          if (row) Object.assign(row, canonical);
+          approvalRows.push({
+            timelog_id: target.id,
+            approval: {
+              id: target.approval_id,
+              approvalRoundId: target.approval_round_id,
+              timelogId: target.id,
+              approverProfileId: 'approver-profile-uuid',
+              approverUserId: 'approver-user-uuid',
+              status: 'pending',
+              requestedByProfileId: 'crewhead-profile-uuid',
+              requestedByUserId: 'crewhead-user-uuid',
+              requestedAt: canonical.approval_updated_at,
+              resolvedAt: null,
+              supersededAt: null,
+              note: '',
+              updatedAt: canonical.approval_updated_at,
+            },
+          });
+          return canonical;
+        });
+        return { data, error: null };
+      }
+      if (name === 'resolve_timelog_approvals_atomic') {
+        timelogRpcVersion += 1;
+        const data = (args.p_targets as Array<{ id: string; approval_id: string | null }>).map((target) => {
+          const canonical = {
+            id: target.id,
+            updated_at: `2026-08-17T${timelogRpcVersion}:00:00.000Z`,
+            status: args.p_resolution === 'approved' ? 'approved' : 'rejected',
+          };
+          const row = timelogRows.find((item) => item.id === target.id);
+          if (row) Object.assign(row, canonical);
+          const approvalRow = approvalRows.find((item) => item.timelog_id === target.id);
+          if (approvalRow && typeof approvalRow.approval === 'object' && approvalRow.approval) {
+            Object.assign(approvalRow.approval, { status: args.p_resolution });
+          }
+          return canonical;
+        });
+        return { data, error: null };
+      }
       if (name === 'transition_receipt_statuses_atomic') {
         const nextStatus = args.p_next_status as string;
         const updatedAt = nextStatus === 'submitted'
@@ -272,7 +357,7 @@ describe('UUID write flows integration', () => {
         return {
           data: [{
             invoice_id: 'invoice-row-1', invoice_status: 'draft', invoice_updated_at: '2026-08-17T15:00:00.000Z', paid_at: null,
-            timelogs: [{ id: 'timelog-row-1', status: 'invoiced', updated_at: '2026-08-17T15:00:00.000Z' }],
+            timelogs: [{ id: INTEGRATION_TIMELOG_ID, status: 'invoiced', updated_at: '2026-08-17T15:00:00.000Z' }],
             receipts: [{ id: 'receipt-row-1', status: 'attached', updated_at: '2026-08-17T15:00:00.000Z' }],
           }],
           error: null,
@@ -283,6 +368,12 @@ describe('UUID write flows integration', () => {
     vi.doMock('../lib/supabase', () => ({
       isSupabaseConfigured: true,
       supabase: {
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: 'authenticated-user-uuid' } },
+            error: null,
+          }),
+        },
         from: fromMock,
         rpc,
       },
@@ -311,6 +402,7 @@ describe('UUID write flows integration', () => {
         updatedAt: row.updated_at,
         status: row.status,
       })),
+      mapTimelogApproval: vi.fn((row: { approval: Record<string, unknown> }) => row.approval),
       mapReceipt: vi.fn((row: Record<string, unknown>) => ({
         id: Number.NaN,
         supabaseId: row.id,
@@ -361,7 +453,7 @@ describe('UUID write flows integration', () => {
     let savedReceipt = await saveReceipt({
       ...receiptDraft,
       eid: 1,
-      eventSupabaseId: 'event-row-1',
+      eventSupabaseId: INTEGRATION_EVENT_ID,
       job: 'AK001',
       title: 'Parkovne',
       vendor: 'Parking',
@@ -370,10 +462,10 @@ describe('UUID write flows integration', () => {
     savedReceipt = await updateReceiptStatus(savedReceipt.id, 'submit');
     savedReceipt = await updateReceiptStatus(savedReceipt.id, 'approve');
 
-    expect(profileSelectCalls).toBe(0);
+    expect(profileSelectCalls).toBeGreaterThanOrEqual(4);
 
     expect(snapshot.timelogs).toEqual([
-      expect.objectContaining({ id: savedTimelog.id, supabaseId: 'timelog-row-1', updatedAt: expect.any(String) }),
+      expect.objectContaining({ id: savedTimelog.id, supabaseId: INTEGRATION_TIMELOG_ID, updatedAt: expect.any(String) }),
     ]);
     expect(snapshot.receipts).toEqual([
       expect.objectContaining({ id: savedReceipt.id, supabaseId: 'receipt-row-1', updatedAt: '2026-08-17T14:20:00.000Z' }),
@@ -397,10 +489,10 @@ describe('UUID write flows integration', () => {
     expect(receiptInsert).toHaveBeenCalledWith(expect.objectContaining({
       id: receiptDraft.supabaseId,
       contractor_id: 'profile-uuid-1',
-      event_id: 'event-row-1',
+      event_id: INTEGRATION_EVENT_ID,
     }));
     expect(rpc).toHaveBeenCalledWith('save_timelog_atomic', expect.objectContaining({
-      p_timelog_id: 'timelog-row-1',
+      p_timelog_id: INTEGRATION_TIMELOG_ID,
       p_contractor_id: 'profile-uuid-1',
     }));
     expect(snapshot.timelogs[0].status).toBe('invoiced');

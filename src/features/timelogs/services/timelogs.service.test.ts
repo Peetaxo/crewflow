@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Timelog } from '../../../types';
+import type { Contractor, Event, Timelog, TimelogApproval } from '../../../types';
 
 const createSnapshot = (timelogs: Timelog[]) => ({
   events: [],
@@ -122,13 +122,17 @@ const setupStableUuidWriteHarness = async ({
   };
   const timelogDaysSelect = vi.fn(() => createOrderedQuery([]));
   const timelogApprovalsSelect = vi.fn(() => createOrderedQuery([]));
-  const profilesSelect = vi.fn(() => createOrderedQuery(
+  const profilesSelect = vi.fn(() => Object.assign(createOrderedQuery(
     [...new Set(
       authoritativeTimelogs
         ?.map((timelog) => timelog.contractorProfileId)
         .filter((profileId): profileId is string => Boolean(profileId)) ?? [],
     )].map((id) => ({ id })),
-  ));
+  ), {
+    eq: vi.fn(() => ({
+      maybeSingle: vi.fn().mockResolvedValue({ data: { id: 'profile-uuid-1' }, error: null }),
+    })),
+  }));
   const defaultRpcImplementation = async (name: string, args: Record<string, unknown>) => {
     if (name === 'save_timelog_atomic') {
       if (args.p_timelog_id == null) {
@@ -169,6 +173,18 @@ const setupStableUuidWriteHarness = async ({
       };
     }
 
+    if (name === 'resolve_timelog_approvals_atomic') {
+      await (timelogUpdateResult ?? Promise.resolve({ data: null, error: null }));
+      return {
+        data: (args.p_targets as Array<{ id: string }>).map((target) => ({
+          id: target.id,
+          updated_at: '2026-08-17T12:00:00.000Z',
+          status: args.p_resolution === 'approved' ? 'approved' : 'rejected',
+        })),
+        error: null,
+      };
+    }
+
     if (name === 'delete_timelog_atomic') {
       await (timelogDaysDeleteResult ?? Promise.resolve({ error: null }));
       return {
@@ -192,6 +208,12 @@ const setupStableUuidWriteHarness = async ({
   vi.doMock('../../../lib/supabase', () => ({
     isSupabaseConfigured: true,
     supabase: {
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: 'user-uuid-1' } },
+          error: null,
+        }),
+      },
       rpc,
       from: vi.fn((table: string) => {
         if (table === 'timelogs') {
@@ -827,24 +849,28 @@ describe('timelogs.service write flow', () => {
   });
 
   it('approves all matching event timelogs in Supabase and updates local state', async () => {
+    const first = { id: 1, eid: 7, supabaseId: '11111111-1111-4111-8111-111111111111', contractorProfileId: 'profile-uuid-1', days: [{ d: '2026-08-15', f: '08:00', t: '17:00', type: 'provoz' as const }], km: 0, note: '', status: 'pending_coo' as const, approvals: [] };
+    const second = { id: 2, eid: 7, supabaseId: '22222222-2222-4222-8222-222222222222', contractorProfileId: 'profile-uuid-2', days: [{ d: '2026-08-15', f: '08:00', t: '17:00', type: 'provoz' as const }], km: 0, note: '', status: 'pending_coo' as const, approvals: [] };
+    const unrelated = { id: 3, eid: 8, supabaseId: '33333333-3333-4333-8333-333333333333', contractorProfileId: 'profile-uuid-3', days: [], km: 0, note: '', status: 'pending_coo' as const, approvals: [] };
     const harness = await setupStableUuidWriteHarness({
-      timelogs: [
-        { id: 1, eid: 7, supabaseId: 'timelog-uuid-1', contractorProfileId: 'profile-uuid-1', days: [{ d: '2026-08-15', f: '08:00', t: '17:00', type: 'provoz' }], km: 0, note: '', status: 'pending_coo' },
-        { id: 2, eid: 7, supabaseId: 'timelog-uuid-2', contractorProfileId: 'profile-uuid-2', days: [{ d: '2026-08-15', f: '08:00', t: '17:00', type: 'provoz' }], km: 0, note: '', status: 'pending_coo' },
-        { id: 3, eid: 8, supabaseId: 'timelog-uuid-3', contractorProfileId: 'profile-uuid-3', days: [], km: 0, note: '', status: 'pending_coo' },
+      timelogs: [first, second, unrelated],
+      authoritativeTimelogs: [
+        { ...first, status: 'approved' },
+        { ...second, status: 'approved' },
+        unrelated,
       ],
     });
 
     const approved = await harness.service.approveAllTimelogsForEvent(7);
 
     expect(harness.rpc).toHaveBeenCalledOnce();
-    expect(harness.rpc).toHaveBeenCalledWith('transition_timelog_statuses_atomic', {
+    expect(harness.rpc).toHaveBeenLastCalledWith('resolve_timelog_approvals_atomic', {
       p_targets: [
-        { id: 'timelog-uuid-1', expected_updated_at: '2026-08-17T10:00:00.000Z' },
-        { id: 'timelog-uuid-2', expected_updated_at: '2026-08-17T10:00:00.000Z' },
+        { id: '11111111-1111-4111-8111-111111111111', expected_updated_at: '2026-08-17T10:00:00.000Z', approval_id: null, approval_updated_at: null },
+        { id: '22222222-2222-4222-8222-222222222222', expected_updated_at: '2026-08-17T10:00:00.000Z', approval_id: null, approval_updated_at: null },
       ],
-      p_expected_status: 'pending_coo',
-      p_next_status: 'approved',
+      p_resolution: 'approved',
+      p_note: '',
     });
     expect(approved).toHaveLength(2);
     expect(harness.getSnapshot().timelogs.map(({ status }) => status)).toEqual([
@@ -1803,6 +1829,706 @@ describe('timelogs.service write flow', () => {
       note: 'Legacy cid only',
     })).rejects.toThrow('Nepodarilo se dohledat UUID identitu clena crew.');
     expect(timelogUpdate).not.toHaveBeenCalled();
+  });
+});
+
+const TARGETED_IDS = {
+  timelog1: '11111111-1111-4111-8111-111111111111',
+  timelog2: '22222222-2222-4222-8222-222222222222',
+  event1: '33333333-3333-4333-8333-333333333333',
+  requester: '44444444-4444-4444-8444-444444444444',
+  approver: '55555555-5555-4555-8555-555555555555',
+  otherApprover: '66666666-6666-4666-8666-666666666666',
+  contractor1: '77777777-7777-4777-8777-777777777777',
+  contractor2: '88888888-8888-4888-8888-888888888888',
+  approval1: '99999999-9999-4999-8999-999999999999',
+  approval2: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  round1: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  round2: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+} as const;
+
+const targetedEvent = (overrides: Partial<Event> = {}): Event => ({
+  id: 7,
+  supabaseId: TARGETED_IDS.event1,
+  name: 'Targeted approval event',
+  job: 'TARGET-1',
+  startDate: '2026-09-21',
+  endDate: '2026-09-21',
+  city: 'Praha',
+  needed: 2,
+  filled: 2,
+  status: 'upcoming',
+  client: 'Klient',
+  contactProfileId: TARGETED_IDS.approver,
+  contactApprovesHours: true,
+  timelogApproverProfileId: null,
+  ...overrides,
+});
+
+const targetedContractor = (
+  profileId: string,
+  userId: string,
+  overrides: Partial<Contractor> = {},
+): Contractor => ({
+  id: 1,
+  profileId,
+  userId,
+  name: profileId,
+  ii: 'TA',
+  bg: '#000',
+  fg: '#fff',
+  tags: [],
+  events: 1,
+  rate: 250,
+  phone: '',
+  email: '',
+  ico: '',
+  dic: '',
+  bank: '',
+  city: 'Praha',
+  reliable: true,
+  note: '',
+  ...overrides,
+});
+
+const targetedApproval = (overrides: Partial<TimelogApproval> = {}): TimelogApproval => ({
+  id: TARGETED_IDS.approval1,
+  approvalRoundId: TARGETED_IDS.round1,
+  timelogId: TARGETED_IDS.timelog1,
+  approverProfileId: TARGETED_IDS.approver,
+  approverUserId: 'approver-user',
+  status: 'pending',
+  requestedByProfileId: TARGETED_IDS.requester,
+  requestedByUserId: 'requester-user',
+  requestedAt: '2026-09-21T09:00:00.000Z',
+  resolvedAt: null,
+  supersededAt: null,
+  note: '',
+  updatedAt: '2026-09-21T09:00:00.000Z',
+  ...overrides,
+});
+
+const targetedTimelog = (overrides: Partial<Timelog> = {}): Timelog => ({
+  id: 47,
+  eid: 7,
+  supabaseId: TARGETED_IDS.timelog1,
+  eventSupabaseId: TARGETED_IDS.event1,
+  contractorProfileId: TARGETED_IDS.contractor1,
+  updatedAt: '2026-09-21T10:00:00.000Z',
+  days: [{ d: '2026-09-21', f: '08:00', t: '17:00', type: 'provoz' }],
+  km: 0,
+  note: '',
+  status: 'pending_ch',
+  approvals: [],
+  ...overrides,
+});
+
+const setupTargetedRemoteHarness = async ({
+  timelogs,
+  authoritativeTimelogs = timelogs,
+  events = [targetedEvent()],
+  contractors,
+  authenticatedProfileId = TARGETED_IDS.requester,
+  handoffImplementation,
+  resolveImplementation,
+}: {
+  timelogs: Timelog[];
+  authoritativeTimelogs?: Timelog[];
+  events?: Event[];
+  contractors?: Contractor[];
+  authenticatedProfileId?: string | null;
+  handoffImplementation?: (targets: Array<Record<string, unknown>>) => Promise<Array<Record<string, unknown>>>;
+  resolveImplementation?: (input: Record<string, unknown>) => Promise<Array<Record<string, unknown>>>;
+}) => {
+  let snapshot = {
+    ...createSnapshot(timelogs),
+    events,
+    contractors: contractors ?? [
+      targetedContractor(TARGETED_IDS.requester, 'requester-user'),
+      targetedContractor(TARGETED_IDS.approver, 'approver-user', { id: 2 }),
+      targetedContractor(TARGETED_IDS.otherApprover, 'other-user', { id: 3 }),
+    ],
+  };
+  const setQueryData = vi.fn();
+  const invalidateQueries = vi.fn();
+  const getUser = vi.fn().mockResolvedValue({
+    data: { user: { id: 'authenticated-user' } },
+    error: null,
+  });
+  const maybeSingleProfile = vi.fn().mockResolvedValue({
+    data: authenticatedProfileId ? { id: authenticatedProfileId } : null,
+    error: null,
+  });
+  const profileEq = vi.fn(() => ({ maybeSingle: maybeSingleProfile }));
+  let authoritativeReadCount = 0;
+
+  const createOrderedQuery = <T,>(data: T[]) => {
+    const result = Promise.resolve({ data, error: null });
+    const order = vi.fn();
+    const query = { order, then: result.then.bind(result) };
+    order.mockReturnValue(query);
+    return query;
+  };
+  const from = vi.fn((table: string) => ({
+    select: vi.fn((columns: string) => {
+      if (table === 'profiles' && columns === 'id') {
+        const query = createOrderedQuery(snapshot.contractors
+          .flatMap((contractor) => contractor.profileId ? [{ id: contractor.profileId }] : []));
+        return Object.assign(query, { eq: profileEq });
+      }
+      authoritativeReadCount += 1;
+      if (table === 'timelogs') {
+        return createOrderedQuery(authoritativeTimelogs.map((timelog) => ({
+          id: timelog.supabaseId,
+          event_id: timelog.eventSupabaseId,
+          contractor_id: timelog.contractorProfileId,
+          km: timelog.km,
+          note: timelog.note,
+          review_note: timelog.reviewNote ?? null,
+          status: timelog.status,
+          updated_at: timelog.updatedAt,
+        })));
+      }
+      if (table === 'timelog_days') {
+        return createOrderedQuery(authoritativeTimelogs.flatMap((timelog) => timelog.days.map((day, index) => ({
+          id: `${timelog.supabaseId}-day-${index}`,
+          timelog_id: timelog.supabaseId,
+          date: day.d,
+          time_from: day.f,
+          time_to: day.t,
+          day_type: day.type,
+          note: day.note ?? null,
+        }))));
+      }
+      if (table === 'timelog_approvals') {
+        return createOrderedQuery(authoritativeTimelogs.flatMap((timelog) => (
+          (timelog.approvals ?? []).map((approval) => ({
+            ...approval,
+            timelog_id: timelog.supabaseId,
+          }))
+        )));
+      }
+      if (table === 'events') {
+        return createOrderedQuery(events.flatMap((event) => event.supabaseId ? [{ id: event.supabaseId }] : []));
+      }
+      throw new Error(`Unexpected read table ${table}`);
+    }),
+  }));
+
+  const handoffTimelogsForApprovalAtomicRpc = vi.fn(handoffImplementation ?? (async (targets) => targets.map((target) => ({
+    id: target.id,
+    updated_at: '2026-09-21T11:00:00.000Z',
+    status: 'pending_coo',
+    approval_id: target.approvalId,
+    approval_round_id: target.approvalRoundId,
+    approval_status: 'pending',
+    approval_updated_at: '2026-09-21T11:00:00.000Z',
+  }))));
+  const resolveTimelogApprovalsAtomicRpc = vi.fn(resolveImplementation ?? (async (input) => (
+    (input.targets as Array<Record<string, unknown>>).map((target) => ({
+      id: target.id,
+      updated_at: '2026-09-21T12:00:00.000Z',
+      status: input.resolution === 'approved' ? 'approved' : 'rejected',
+    }))
+  )));
+  const transitionTimelogStatusesAtomicRpc = vi.fn(async (input: {
+    targets: Array<{ id: string }>;
+    nextStatus: string;
+  }) => input.targets.map(({ id }) => ({
+    id,
+    updated_at: '2026-09-21T13:00:00.000Z',
+    status: input.nextStatus,
+  })));
+
+  vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+  vi.doMock('../../../lib/supabase', () => ({
+    isSupabaseConfigured: true,
+    supabase: { auth: { getUser }, from },
+  }));
+  vi.doMock('./timelog-approval-rpc.service', () => ({
+    handoffTimelogsForApprovalAtomicRpc,
+    resolveTimelogApprovalsAtomicRpc,
+  }));
+  vi.doMock('./timelog-mutation-rpc.service', () => ({
+    transitionTimelogStatusesAtomicRpc,
+    saveTimelogAtomicRpc: vi.fn(),
+    deleteTimelogAtomicRpc: vi.fn(),
+    importApprovedTimelogAtomicRpc: vi.fn(),
+  }));
+  vi.doMock('../../../lib/supabase-mappers', () => ({
+    mapTimelog: (row: Record<string, unknown>, days: Array<Record<string, unknown>>) => ({
+      id: Number.NaN,
+      eid: Number.NaN,
+      days: days.map((day) => ({
+        d: day.date,
+        f: day.time_from,
+        t: day.time_to,
+        type: day.day_type,
+        note: day.note ?? '',
+      })),
+      km: row.km,
+      note: row.note,
+      reviewNote: row.review_note ?? undefined,
+      status: row.status,
+      updatedAt: row.updated_at,
+    }),
+    mapTimelogApproval: (row: TimelogApproval) => structuredClone(row),
+  }));
+  vi.doMock('../../../lib/app-data', () => ({
+    getLocalAppState: () => structuredClone(snapshot),
+    updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+      snapshot = structuredClone(updater(structuredClone(snapshot)));
+      return structuredClone(snapshot);
+    },
+    subscribeToLocalAppState: vi.fn(() => () => undefined),
+  }));
+  vi.doMock('../../../lib/query-client', () => ({
+    queryClient: { setQueryData, invalidateQueries },
+  }));
+  vi.doMock('../../../lib/query-keys', () => ({ queryKeys: { timelogs: { all: ['timelogs'] } } }));
+
+  return {
+    service: await import('./timelogs.service'),
+    getSnapshot: () => structuredClone(snapshot),
+    getUser,
+    profileEq,
+    from,
+    handoffTimelogsForApprovalAtomicRpc,
+    resolveTimelogApprovalsAtomicRpc,
+    transitionTimelogStatusesAtomicRpc,
+    getAuthoritativeReadCount: () => authoritativeReadCount,
+  };
+};
+
+const setupTargetedLocalHarness = async ({
+  timelogs,
+  events = [targetedEvent()],
+}: {
+  timelogs: Timelog[];
+  events?: Event[];
+}) => {
+  let snapshot = {
+    ...createSnapshot(timelogs),
+    events,
+    contractors: [
+      targetedContractor(TARGETED_IDS.requester, 'requester-user'),
+      targetedContractor(TARGETED_IDS.approver, 'approver-user', { id: 2 }),
+      targetedContractor(TARGETED_IDS.otherApprover, 'other-user', { id: 3 }),
+    ],
+  };
+  const handoffTimelogsForApprovalAtomicRpc = vi.fn();
+  const resolveTimelogApprovalsAtomicRpc = vi.fn();
+  const transitionTimelogStatusesAtomicRpc = vi.fn();
+
+  vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'local' }));
+  vi.doMock('../../../lib/supabase', () => ({ isSupabaseConfigured: false, supabase: null }));
+  vi.doMock('./timelog-approval-rpc.service', () => ({
+    handoffTimelogsForApprovalAtomicRpc,
+    resolveTimelogApprovalsAtomicRpc,
+  }));
+  vi.doMock('./timelog-mutation-rpc.service', () => ({
+    transitionTimelogStatusesAtomicRpc,
+    saveTimelogAtomicRpc: vi.fn(),
+    deleteTimelogAtomicRpc: vi.fn(),
+    importApprovedTimelogAtomicRpc: vi.fn(),
+  }));
+  vi.doMock('../../../lib/app-data', () => ({
+    getLocalAppState: () => structuredClone(snapshot),
+    updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+      snapshot = structuredClone(updater(structuredClone(snapshot)));
+      return structuredClone(snapshot);
+    },
+    subscribeToLocalAppState: vi.fn(() => () => undefined),
+  }));
+  vi.doMock('../../../lib/query-client', () => ({
+    queryClient: { setQueryData: vi.fn(), invalidateQueries: vi.fn() },
+  }));
+  vi.doMock('../../../lib/query-keys', () => ({ queryKeys: { timelogs: { all: ['timelogs'] } } }));
+
+  return {
+    service: await import('./timelogs.service'),
+    getSnapshot: () => structuredClone(snapshot),
+    handoffTimelogsForApprovalAtomicRpc,
+    resolveTimelogApprovalsAtomicRpc,
+  };
+};
+
+describe('targeted timelog approval action routing', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('exports TimelogAction and routes remote CH handoff with stable tokens before reloading canonical data', async () => {
+    const randomUUID = vi.fn()
+      .mockReturnValueOnce(TARGETED_IDS.approval1)
+      .mockReturnValueOnce(TARGETED_IDS.round1);
+    vi.stubGlobal('crypto', { randomUUID });
+    const canonicalApproval = targetedApproval();
+    const canonical = targetedTimelog({
+      id: 1,
+      status: 'pending_coo',
+      updatedAt: '2026-09-21T11:00:00.000Z',
+      approvals: [canonicalApproval],
+    });
+    const initial = targetedTimelog({ id: 47 });
+    const harness = await setupTargetedRemoteHarness({
+      timelogs: [initial],
+      authoritativeTimelogs: [canonical],
+    });
+
+    const result = await harness.service.updateTimelogStatus(47, 'ch', {
+      currentProfileId: TARGETED_IDS.otherApprover,
+    });
+
+    expect(harness.getUser).toHaveBeenCalledOnce();
+    expect(harness.profileEq).toHaveBeenCalledWith('user_id', 'authenticated-user');
+    expect(randomUUID).toHaveBeenCalledTimes(2);
+    expect(harness.handoffTimelogsForApprovalAtomicRpc).toHaveBeenCalledWith([{
+      id: TARGETED_IDS.timelog1,
+      expectedUpdatedAt: '2026-09-21T10:00:00.000Z',
+      approvalId: TARGETED_IDS.approval1,
+      approvalRoundId: TARGETED_IDS.round1,
+    }]);
+    expect(harness.transitionTimelogStatusesAtomicRpc).not.toHaveBeenCalled();
+    expect(harness.getAuthoritativeReadCount()).toBe(4);
+    expect(result).toMatchObject({
+      id: 47,
+      supabaseId: TARGETED_IDS.timelog1,
+      status: 'pending_coo',
+      approvals: [expect.objectContaining({ id: TARGETED_IDS.approval1 })],
+    });
+  });
+
+  it('routes targeted COO approval and return with exact active approval tokens and trimmed note', async () => {
+    const active = targetedApproval();
+    const pending = targetedTimelog({ status: 'pending_coo', approvals: [active] });
+    const approvedHarness = await setupTargetedRemoteHarness({
+      timelogs: [pending],
+      authoritativeTimelogs: [targetedTimelog({ status: 'approved', approvals: [{ ...active, status: 'approved' }] })],
+      authenticatedProfileId: TARGETED_IDS.approver,
+    });
+
+    await approvedHarness.service.updateTimelogStatus(47, 'coo');
+
+    expect(approvedHarness.resolveTimelogApprovalsAtomicRpc).toHaveBeenCalledWith({
+      targets: [{
+        id: TARGETED_IDS.timelog1,
+        expectedUpdatedAt: '2026-09-21T10:00:00.000Z',
+        approvalId: TARGETED_IDS.approval1,
+        approvalUpdatedAt: '2026-09-21T09:00:00.000Z',
+      }],
+      resolution: 'approved',
+      note: '',
+    });
+
+    vi.resetModules();
+    const returnHarness = await setupTargetedRemoteHarness({
+      timelogs: [pending],
+      authoritativeTimelogs: [targetedTimelog({
+        status: 'rejected',
+        reviewNote: 'Opravte pauzu.',
+        approvals: [{ ...active, status: 'returned', note: 'Opravte pauzu.' }],
+      })],
+      authenticatedProfileId: TARGETED_IDS.approver,
+    });
+    const returned = await returnHarness.service.updateTimelogStatus(47, 'rej', {
+      note: '  Opravte pauzu.  ',
+      currentProfileId: TARGETED_IDS.otherApprover,
+    });
+
+    expect(returnHarness.resolveTimelogApprovalsAtomicRpc).toHaveBeenCalledWith({
+      targets: [{
+        id: TARGETED_IDS.timelog1,
+        expectedUpdatedAt: '2026-09-21T10:00:00.000Z',
+        approvalId: TARGETED_IDS.approval1,
+        approvalUpdatedAt: '2026-09-21T09:00:00.000Z',
+      }],
+      resolution: 'returned',
+      note: 'Opravte pauzu.',
+    });
+    expect(returned.reviewNote).toBe('Opravte pauzu.');
+  });
+
+  it('routes legacy zero-history COO resolution with null approval tokens', async () => {
+    const legacy = targetedTimelog({ status: 'pending_coo', approvals: [] });
+    const harness = await setupTargetedRemoteHarness({
+      timelogs: [legacy],
+      authoritativeTimelogs: [targetedTimelog({ status: 'approved', approvals: [] })],
+      authenticatedProfileId: TARGETED_IDS.approver,
+    });
+
+    await harness.service.updateTimelogStatus(47, 'coo');
+
+    expect(harness.resolveTimelogApprovalsAtomicRpc).toHaveBeenCalledWith({
+      targets: [{
+        id: TARGETED_IDS.timelog1,
+        expectedUpdatedAt: '2026-09-21T10:00:00.000Z',
+        approvalId: null,
+        approvalUpdatedAt: null,
+      }],
+      resolution: 'approved',
+      note: '',
+    });
+  });
+
+  it('fails closed before RPC for a wrong authenticated assignee, multiple active approvals, or missing event approver', async () => {
+    const pending = targetedTimelog({ status: 'pending_coo', approvals: [targetedApproval()] });
+    const wrongAssignee = await setupTargetedRemoteHarness({
+      timelogs: [pending],
+      authenticatedProfileId: TARGETED_IDS.otherApprover,
+    });
+    await expect(wrongAssignee.service.updateTimelogStatus(47, 'coo', {
+      currentProfileId: TARGETED_IDS.approver,
+    })).rejects.toThrow('Tento výkaz čeká na jiného schvalovatele.');
+    expect(wrongAssignee.resolveTimelogApprovalsAtomicRpc).not.toHaveBeenCalled();
+    expect(wrongAssignee.getAuthoritativeReadCount()).toBe(4);
+
+    vi.resetModules();
+    const ambiguous = await setupTargetedRemoteHarness({
+      timelogs: [targetedTimelog({
+        status: 'pending_coo',
+        approvals: [targetedApproval(), targetedApproval({ id: TARGETED_IDS.approval2 })],
+      })],
+      authenticatedProfileId: TARGETED_IDS.approver,
+    });
+    await expect(ambiguous.service.updateTimelogStatus(47, 'coo'))
+      .rejects.toThrow('Schválení výkazu není jednoznačné.');
+    expect(ambiguous.resolveTimelogApprovalsAtomicRpc).not.toHaveBeenCalled();
+
+    vi.resetModules();
+    const missingApprover = await setupTargetedRemoteHarness({
+      timelogs: [targetedTimelog()],
+      events: [targetedEvent({ contactProfileId: null })],
+    });
+    await expect(missingApprover.service.updateTimelogStatus(47, 'ch'))
+      .rejects.toThrow('Akce nemá nastaveného schvalovatele hodin.');
+    expect(missingApprover.handoffTimelogsForApprovalAtomicRpc).not.toHaveBeenCalled();
+    expect(missingApprover.getUser).not.toHaveBeenCalled();
+    expect(missingApprover.getAuthoritativeReadCount()).toBe(0);
+  });
+
+  it('reloads server truth after an uncertain approval RPC failure and rethrows the same error object', async () => {
+    const uncertain = { message: 'connection lost after commit', details: 'unknown result' };
+    const active = targetedApproval();
+    const harness = await setupTargetedRemoteHarness({
+      timelogs: [targetedTimelog({ status: 'pending_coo', approvals: [active] })],
+      authoritativeTimelogs: [targetedTimelog({
+        status: 'approved',
+        updatedAt: '2026-09-21T12:00:00.000Z',
+        approvals: [{ ...active, status: 'approved' }],
+      })],
+      authenticatedProfileId: TARGETED_IDS.approver,
+      resolveImplementation: async () => { throw uncertain; },
+    });
+
+    await expect(harness.service.updateTimelogStatus(47, 'coo')).rejects.toBe(uncertain);
+
+    expect(harness.getAuthoritativeReadCount()).toBe(4);
+    expect(harness.getSnapshot().timelogs[0]).toMatchObject({
+      id: 47,
+      status: 'approved',
+      updatedAt: '2026-09-21T12:00:00.000Z',
+    });
+  });
+
+  it('serializes overlapping targeted mutations and reuses the first request UUIDs until it settles', async () => {
+    const handoff = createDeferred<Array<Record<string, unknown>>>();
+    const randomUUID = vi.fn()
+      .mockReturnValueOnce(TARGETED_IDS.approval1)
+      .mockReturnValueOnce(TARGETED_IDS.round1);
+    vi.stubGlobal('crypto', { randomUUID });
+    const harness = await setupTargetedRemoteHarness({
+      timelogs: [targetedTimelog()],
+      authoritativeTimelogs: [targetedTimelog({
+        status: 'pending_coo',
+        updatedAt: '2026-09-21T11:00:00.000Z',
+        approvals: [targetedApproval()],
+      })],
+      handoffImplementation: async () => handoff.promise,
+    });
+
+    const first = harness.service.updateTimelogStatus(47, 'ch');
+    const second = harness.service.updateTimelogStatus(47, 'ch');
+    await vi.waitFor(() => expect(harness.handoffTimelogsForApprovalAtomicRpc).toHaveBeenCalledOnce());
+    expect(randomUUID).toHaveBeenCalledTimes(2);
+
+    handoff.resolve([{
+      id: TARGETED_IDS.timelog1,
+      updated_at: '2026-09-21T11:00:00.000Z',
+      status: 'pending_coo',
+      approval_id: TARGETED_IDS.approval1,
+      approval_round_id: TARGETED_IDS.round1,
+      approval_status: 'pending',
+      approval_updated_at: '2026-09-21T11:00:00.000Z',
+    }]);
+
+    await expect(first).resolves.toMatchObject({ id: 47, status: 'pending_coo' });
+    await expect(second).rejects.toThrow('Vybrané výkazy nelze schválit společně.');
+    expect(harness.handoffTimelogsForApprovalAtomicRpc).toHaveBeenCalledOnce();
+    expect(randomUUID).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects ambiguous mixed return batches without partially routing either mutation path', async () => {
+    const harness = await setupTargetedRemoteHarness({
+      timelogs: [
+        targetedTimelog({ id: 47, status: 'pending_coo', approvals: [targetedApproval()] }),
+        targetedTimelog({ id: 9, supabaseId: TARGETED_IDS.timelog2, status: 'pending_ch' }),
+      ],
+      authenticatedProfileId: TARGETED_IDS.approver,
+    });
+
+    await expect(harness.service.updateTimelogStatuses([47, 9], 'rej', { note: 'Opravit.' }))
+      .rejects.toThrow('Vybrané výkazy nelze schválit společně.');
+    expect(harness.resolveTimelogApprovalsAtomicRpc).not.toHaveBeenCalled();
+    expect(harness.transitionTimelogStatusesAtomicRpc).not.toHaveBeenCalled();
+    expect(harness.getSnapshot().timelogs.map(({ status }) => status)).toEqual(['pending_coo', 'pending_ch']);
+  });
+
+  it('bulk-approves only targeted reports assigned to the authenticated profile plus deliberate legacy rows', async () => {
+    const mine = targetedTimelog({ approvals: [targetedApproval()], status: 'pending_coo' });
+    const someoneElses = targetedTimelog({
+      id: 9,
+      supabaseId: TARGETED_IDS.timelog2,
+      contractorProfileId: TARGETED_IDS.contractor2,
+      approvals: [targetedApproval({
+        id: TARGETED_IDS.approval2,
+        approvalRoundId: TARGETED_IDS.round2,
+        timelogId: TARGETED_IDS.timelog2,
+        approverProfileId: TARGETED_IDS.otherApprover,
+      })],
+      status: 'pending_coo',
+    });
+    const legacy = targetedTimelog({ id: 12, supabaseId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', status: 'pending_coo' });
+    const harness = await setupTargetedRemoteHarness({
+      timelogs: [mine, someoneElses, legacy],
+      authoritativeTimelogs: [
+        { ...mine, status: 'approved' },
+        someoneElses,
+        { ...legacy, status: 'approved' },
+      ],
+      authenticatedProfileId: TARGETED_IDS.approver,
+    });
+
+    const approved = await harness.service.approveAllTimelogsForEvent(7, {
+      currentProfileId: TARGETED_IDS.otherApprover,
+    });
+
+    expect(harness.resolveTimelogApprovalsAtomicRpc).toHaveBeenCalledWith(expect.objectContaining({
+      targets: [
+        expect.objectContaining({ id: TARGETED_IDS.timelog1, approvalId: TARGETED_IDS.approval1 }),
+        expect.objectContaining({ id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', approvalId: null }),
+      ],
+      resolution: 'approved',
+    }));
+    expect(approved.map(({ id }) => id)).toEqual([47, 12]);
+  });
+
+  it('keeps non-approval status routing on the existing transition RPC', async () => {
+    const draft = targetedTimelog({ status: 'draft' });
+    const harness = await setupTargetedRemoteHarness({ timelogs: [draft] });
+
+    await harness.service.updateTimelogStatus(47, 'sub');
+
+    expect(harness.transitionTimelogStatusesAtomicRpc).toHaveBeenCalledOnce();
+    expect(harness.handoffTimelogsForApprovalAtomicRpc).not.toHaveBeenCalled();
+    expect(harness.resolveTimelogApprovalsAtomicRpc).not.toHaveBeenCalled();
+  });
+
+  it('mirrors single-assignee handoff and resolution locally with stable synthetic approval metadata', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-21T10:30:00.000Z'));
+    const randomUUID = vi.fn()
+      .mockReturnValueOnce(TARGETED_IDS.approval1)
+      .mockReturnValueOnce(TARGETED_IDS.round1);
+    vi.stubGlobal('crypto', { randomUUID });
+    const handoffHarness = await setupTargetedLocalHarness({ timelogs: [targetedTimelog()] });
+
+    const handedOff = await handoffHarness.service.updateTimelogStatus(47, 'ch', {
+      currentProfileId: TARGETED_IDS.requester,
+    });
+
+    expect(handedOff).toMatchObject({
+      status: 'pending_coo',
+      approvals: [expect.objectContaining({
+        id: TARGETED_IDS.approval1,
+        approvalRoundId: TARGETED_IDS.round1,
+        approverProfileId: TARGETED_IDS.approver,
+        requestedByProfileId: TARGETED_IDS.requester,
+        status: 'pending',
+        requestedAt: '2026-09-21T10:30:00.000Z',
+        updatedAt: '2026-09-21T10:30:00.000Z',
+      })],
+    });
+    expect(handoffHarness.handoffTimelogsForApprovalAtomicRpc).not.toHaveBeenCalled();
+
+    vi.resetModules();
+    const resolutionHarness = await setupTargetedLocalHarness({ timelogs: [handedOff] });
+    const returned = await resolutionHarness.service.updateTimelogStatus(47, 'rej', {
+      currentProfileId: TARGETED_IDS.approver,
+      note: '  Opravte pauzu.  ',
+    });
+    expect(returned).toMatchObject({
+      status: 'rejected',
+      reviewNote: 'Opravte pauzu.',
+      approvals: [expect.objectContaining({
+        status: 'returned',
+        note: 'Opravte pauzu.',
+        resolvedAt: '2026-09-21T10:30:00.000Z',
+      })],
+    });
+    expect(resolutionHarness.resolveTimelogApprovalsAtomicRpc).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('validates an entire local resolution batch before changing any report', async () => {
+    const mine = targetedTimelog({ status: 'pending_coo', approvals: [targetedApproval()] });
+    const other = targetedTimelog({
+      id: 9,
+      supabaseId: TARGETED_IDS.timelog2,
+      status: 'pending_coo',
+      approvals: [targetedApproval({
+        id: TARGETED_IDS.approval2,
+        approvalRoundId: TARGETED_IDS.round2,
+        timelogId: TARGETED_IDS.timelog2,
+        approverProfileId: TARGETED_IDS.otherApprover,
+      })],
+    });
+    const harness = await setupTargetedLocalHarness({ timelogs: [mine, other] });
+
+    await expect(harness.service.updateTimelogStatuses([47, 9], 'coo', {
+      currentProfileId: TARGETED_IDS.approver,
+    })).rejects.toThrow('Tento výkaz čeká na jiného schvalovatele.');
+    expect(harness.getSnapshot().timelogs).toEqual([mine, other]);
+  });
+
+  it('bulk-approves only the local assignee reports and deliberate legacy rows', async () => {
+    const mine = targetedTimelog({ status: 'pending_coo', approvals: [targetedApproval()] });
+    const other = targetedTimelog({
+      id: 9,
+      supabaseId: TARGETED_IDS.timelog2,
+      status: 'pending_coo',
+      approvals: [targetedApproval({
+        id: TARGETED_IDS.approval2,
+        approvalRoundId: TARGETED_IDS.round2,
+        timelogId: TARGETED_IDS.timelog2,
+        approverProfileId: TARGETED_IDS.otherApprover,
+      })],
+    });
+    const legacy = targetedTimelog({ id: 12, supabaseId: undefined, status: 'pending_coo', approvals: [] });
+    const harness = await setupTargetedLocalHarness({ timelogs: [mine, other, legacy] });
+
+    const approved = await harness.service.approveAllTimelogsForEvent(7, {
+      currentProfileId: TARGETED_IDS.approver,
+    });
+
+    expect(approved.map(({ id }) => id)).toEqual([47, 12]);
+    expect(harness.getSnapshot().timelogs.map(({ status }) => status)).toEqual([
+      'approved',
+      'pending_coo',
+      'approved',
+    ]);
   });
 });
 

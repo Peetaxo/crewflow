@@ -13,9 +13,19 @@ import {
   saveTimelogAtomicRpc,
   transitionTimelogStatusesAtomicRpc,
 } from './timelog-mutation-rpc.service';
+import {
+  handoffTimelogsForApprovalAtomicRpc,
+  resolveTimelogApprovalsAtomicRpc,
+} from './timelog-approval-rpc.service';
+import { getActiveTimelogApproval, isTimelogWaitingForProfile } from './timelog-approval-state';
 import { assertTimelogComplete } from './timelog-validation';
 
-type TimelogAction = 'sub' | 'ch' | 'coo' | 'rej';
+export type TimelogAction = 'sub' | 'ch' | 'coo' | 'rej';
+export interface TimelogActionOptions {
+  note?: string;
+  /** Local/demo identity only. Remote authority always comes from Supabase Auth. */
+  currentProfileId?: string;
+}
 let timelogsHydrationPromise: Promise<void> | null = null;
 let timelogsLoaded = false;
 let timelogsHydrationEpoch = 0;
@@ -204,6 +214,36 @@ export const fetchTimelogsSnapshot = async (): Promise<Timelog[]> => {
   return supabaseTimelogs;
 };
 
+const preserveStableLocalTimelogIds = (authoritativeTimelogs: Timelog[]): Timelog[] => {
+  const snapshot = getLocalAppState();
+  const currentTimelogs = snapshot.timelogs ?? [];
+  const events = snapshot.events ?? [];
+  const usedIds = new Set<number>();
+  let nextId = Math.max(0, ...currentTimelogs.map((timelog) => timelog.id)) + 1;
+
+  return authoritativeTimelogs.map((timelog) => {
+    const currentTimelog = timelog.supabaseId
+      ? currentTimelogs.find((current) => current.supabaseId === timelog.supabaseId)
+      : undefined;
+    const currentEvent = timelog.eventSupabaseId
+      ? events.find((event) => event.supabaseId === timelog.eventSupabaseId)
+      : undefined;
+    let localId = currentTimelog?.id;
+    if (localId === undefined || usedIds.has(localId)) {
+      while (usedIds.has(nextId)) nextId += 1;
+      localId = nextId;
+      nextId += 1;
+    }
+    usedIds.add(localId);
+
+    return {
+      ...timelog,
+      id: localId,
+      eid: currentEvent?.id ?? currentTimelog?.eid ?? timelog.eid,
+    };
+  });
+};
+
 const reloadAuthoritativeTimelogsAfterMutationFailure = async (): Promise<void> => {
   while (true) {
     const generationAtLoadStart = timelogSnapshotGeneration;
@@ -213,11 +253,7 @@ const reloadAuthoritativeTimelogsAfterMutationFailure = async (): Promise<void> 
       continue;
     }
 
-    updateLocalAppState((snapshot) => ({
-      ...snapshot,
-      timelogs: authoritativeTimelogs,
-    }));
-    syncTimelogQueryData(authoritativeTimelogs);
+    commitAuthoritativeTimelogSnapshot(authoritativeTimelogs);
     return;
   }
 };
@@ -328,13 +364,15 @@ const getSupabaseEventRowId = async ({
   return (await getSupabaseEventIdMap()).get(eid) ?? null;
 };
 
-const commitAuthoritativeTimelogSnapshot = (timelogs: Timelog[]) => {
+function commitAuthoritativeTimelogSnapshot(timelogs: Timelog[]): Timelog[] {
+  const reconciledTimelogs = preserveStableLocalTimelogIds(timelogs);
   updateLocalAppState((snapshot) => ({
     ...snapshot,
-    timelogs,
+    timelogs: reconciledTimelogs,
   }));
-  syncTimelogQueryData(timelogs);
-};
+  syncTimelogQueryData(reconciledTimelogs);
+  return reconciledTimelogs;
+}
 
 const findTimelogForMutation = (
   localId: number,
@@ -542,6 +580,333 @@ export const getTimelogDependencies = (): { contractors: Contractor[]; events: E
   };
 };
 
+const TARGETED_BATCH_MESSAGE = 'Vybrané výkazy nelze schválit společně.';
+const TARGETED_APPROVER_MESSAGE = 'Akce nemá nastaveného schvalovatele hodin.';
+const TARGETED_ASSIGNEE_MESSAGE = 'Tento výkaz čeká na jiného schvalovatele.';
+const TARGETED_AMBIGUOUS_MESSAGE = 'Schválení výkazu není jednoznačné.';
+const TARGETED_PROFILE_MESSAGE = 'Nepodařilo se ověřit profil přihlášeného uživatele.';
+const RETURN_NOTE_MESSAGE = 'Pro vrácení výkazu doplňte poznámku.';
+
+const uniqueTimelogIds = (ids: number[]): number[] => {
+  if (new Set(ids).size !== ids.length) {
+    throw new Error(TARGETED_BATCH_MESSAGE);
+  }
+  return ids;
+};
+
+const getRequestedTimelogs = (ids: number[]): Timelog[] => {
+  uniqueTimelogIds(ids);
+  const timelogs = getLocalAppState().timelogs ?? [];
+  return ids.map((id) => {
+    const timelog = timelogs.find((item) => item.id === id);
+    if (!timelog) throw new Error('Výkaz nebyl nalezen.');
+    return timelog;
+  });
+};
+
+const getConfiguredEventApprover = (timelog: Timelog): string => {
+  const event = (getLocalAppState().events ?? []).find((item) => (
+    (Boolean(timelog.eventSupabaseId) && item.supabaseId === timelog.eventSupabaseId)
+    || item.id === timelog.eid
+  ));
+  const approverProfileId = (event?.contactApprovesHours ?? true)
+    ? event?.contactProfileId
+    : event?.timelogApproverProfileId;
+  if (!approverProfileId) throw new Error(TARGETED_APPROVER_MESSAGE);
+  return approverProfileId;
+};
+
+const assertApprovalActionShape = (
+  timelogs: Timelog[],
+  action: TimelogAction,
+  options: TimelogActionOptions,
+): 'handoff' | 'resolve-approved' | 'resolve-returned' | 'transition' => {
+  if (action === 'ch') {
+    timelogs.forEach((timelog) => assertCompleteForStatus(timelog, 'pending_coo'));
+    if (timelogs.some((timelog) => timelog.status !== 'pending_ch')) {
+      throw new Error(TARGETED_BATCH_MESSAGE);
+    }
+    timelogs.forEach(getConfiguredEventApprover);
+    return 'handoff';
+  }
+
+  if (action === 'coo') {
+    timelogs.forEach((timelog) => assertCompleteForStatus(timelog, 'approved'));
+    if (timelogs.some((timelog) => timelog.status !== 'pending_coo')) {
+      throw new Error(TARGETED_BATCH_MESSAGE);
+    }
+    return 'resolve-approved';
+  }
+
+  if (action === 'rej') {
+    const pendingCooCount = timelogs.filter((timelog) => timelog.status === 'pending_coo').length;
+    if (pendingCooCount > 0 && pendingCooCount !== timelogs.length) {
+      throw new Error(TARGETED_BATCH_MESSAGE);
+    }
+    if (pendingCooCount === timelogs.length) {
+      if (!options.note?.trim()) throw new Error(RETURN_NOTE_MESSAGE);
+      return 'resolve-returned';
+    }
+  }
+
+  return 'transition';
+};
+
+type AuthenticatedProfileClient = {
+  auth: {
+    getUser: () => Promise<{
+      data: { user: { id: string } | null };
+      error: { message: string } | null;
+    }>;
+  };
+  from: (table: 'profiles') => {
+    select: (columns: 'id') => {
+      eq: (column: 'user_id', userId: string) => {
+        maybeSingle: () => Promise<{
+          data: { id: string } | null;
+          error: { message: string } | null;
+        }>;
+      };
+    };
+  };
+};
+
+const getAuthenticatedSupabaseProfileId = async (): Promise<string> => {
+  if (!supabase) throw new Error(TARGETED_PROFILE_MESSAGE);
+  const client = supabase as unknown as AuthenticatedProfileClient;
+  const userResult = await client.auth.getUser();
+  if (userResult.error || !userResult.data.user) {
+    throw new Error(TARGETED_PROFILE_MESSAGE);
+  }
+  const profileResult = await client
+    .from('profiles')
+    .select('id')
+    .eq('user_id', userResult.data.user.id)
+    .maybeSingle();
+  if (profileResult.error || !profileResult.data?.id) {
+    throw new Error(TARGETED_PROFILE_MESSAGE);
+  }
+  return profileResult.data.id;
+};
+
+const getResolutionApprovalTokens = (
+  timelog: Timelog,
+  currentProfileId: string,
+): { approvalId: string | null; approvalUpdatedAt: string | null } => {
+  const approvals = timelog.approvals ?? [];
+  if (approvals.length === 0) {
+    return { approvalId: null, approvalUpdatedAt: null };
+  }
+
+  const activeApproval = getActiveTimelogApproval(timelog);
+  if (!activeApproval || activeApproval.status !== 'pending') {
+    throw new Error(TARGETED_AMBIGUOUS_MESSAGE);
+  }
+  if (activeApproval.approverProfileId !== currentProfileId) {
+    throw new Error(TARGETED_ASSIGNEE_MESSAGE);
+  }
+  return {
+    approvalId: activeApproval.id,
+    approvalUpdatedAt: activeApproval.updatedAt,
+  };
+};
+
+const createApprovalUuid = (): string => {
+  if (!globalThis.crypto?.randomUUID) {
+    throw new Error('Pro schválení výkazu se nepodařilo vytvořit bezpečný identifikátor.');
+  }
+  return globalThis.crypto.randomUUID();
+};
+
+const reloadApprovalMutationResults = async (
+  stableIds: string[],
+): Promise<Timelog[]> => {
+  const reconciledTimelogs = commitAuthoritativeTimelogSnapshot(await loadTimelogsSnapshot());
+  return stableIds.map((stableId) => {
+    const timelog = reconciledTimelogs.find((item) => item.supabaseId === stableId);
+    if (!timelog) throw new Error('Výkaz už neexistuje nebo k němu nemáte přístup.');
+    return timelog;
+  });
+};
+
+const persistSupabaseApprovalAction = async (
+  ids: number[],
+  mode: 'handoff' | 'resolve-approved' | 'resolve-returned',
+  options: TimelogActionOptions,
+): Promise<Timelog[]> => {
+  const initialTargets = getRequestedTimelogs(ids).map((timelog) => ({
+    localId: timelog.id,
+    supabaseId: timelog.supabaseId,
+    identityHint: timelog,
+  }));
+  const keys = initialTargets.flatMap(({ localId, supabaseId }) => (
+    getTimelogMutationKeys(localId, supabaseId)
+  ));
+
+  return runTimelogMutation(keys, async () => {
+    const missingIdentity = initialTargets.find(({ supabaseId, identityHint }) => (
+      !supabaseId || !identityHint.updatedAt
+    ));
+    if (missingIdentity) {
+      await resolvePersistedTimelog(
+        missingIdentity.localId,
+        missingIdentity.supabaseId,
+        missingIdentity.identityHint,
+      );
+    }
+
+    const targets = initialTargets.map(({ localId, supabaseId, identityHint }) => {
+      const timelog = findTimelogForIdentity(localId, supabaseId, identityHint);
+      if (!timelog?.supabaseId || !timelog.updatedAt) {
+        throw new Error('Výkaz už neexistuje nebo k němu nemáte přístup.');
+      }
+      return timelog;
+    });
+    assertApprovalActionShape(
+      targets,
+      mode === 'handoff' ? 'ch' : mode === 'resolve-approved' ? 'coo' : 'rej',
+      options,
+    );
+    const authenticatedProfileId = await getAuthenticatedSupabaseProfileId();
+
+    if (mode === 'handoff') {
+      const rpcTargets = targets.map((timelog) => ({
+        id: timelog.supabaseId as string,
+        expectedUpdatedAt: timelog.updatedAt as string,
+        approvalId: createApprovalUuid(),
+        approvalRoundId: createApprovalUuid(),
+      }));
+      await handoffTimelogsForApprovalAtomicRpc(rpcTargets);
+    } else {
+      const rpcTargets = targets.map((timelog) => ({
+        id: timelog.supabaseId as string,
+        expectedUpdatedAt: timelog.updatedAt as string,
+        ...getResolutionApprovalTokens(timelog, authenticatedProfileId),
+      }));
+      await resolveTimelogApprovalsAtomicRpc({
+        targets: rpcTargets,
+        resolution: mode === 'resolve-approved' ? 'approved' : 'returned',
+        note: mode === 'resolve-returned' ? options.note?.trim() ?? '' : '',
+      });
+    }
+
+    return reloadApprovalMutationResults(targets.map((timelog) => timelog.supabaseId as string));
+  });
+};
+
+const getLocalActor = (profileId: string | undefined): Contractor => {
+  if (!profileId) throw new Error(TARGETED_PROFILE_MESSAGE);
+  const actor = (getLocalAppState().contractors ?? []).find((contractor) => (
+    contractor.profileId === profileId
+  ));
+  if (!actor?.profileId || !actor.userId) throw new Error(TARGETED_PROFILE_MESSAGE);
+  return actor;
+};
+
+const updateLocalApprovalAction = async (
+  ids: number[],
+  mode: 'handoff' | 'resolve-approved' | 'resolve-returned',
+  options: TimelogActionOptions,
+): Promise<Timelog[]> => runTimelogMutation(ids.map((id) => `local:${id}`), async () => {
+  const targets = getRequestedTimelogs(ids);
+  assertApprovalActionShape(
+    targets,
+    mode === 'handoff' ? 'ch' : mode === 'resolve-approved' ? 'coo' : 'rej',
+    options,
+  );
+  const actor = getLocalActor(options.currentProfileId);
+  const now = new Date().toISOString();
+
+  const validated = targets.map((timelog) => {
+    if (mode !== 'handoff') {
+      return {
+        timelog,
+        approvalTokens: getResolutionApprovalTokens(timelog, actor.profileId as string),
+      };
+    }
+
+    const approverProfileId = getConfiguredEventApprover(timelog);
+    const approver = (getLocalAppState().contractors ?? []).find((contractor) => (
+      contractor.profileId === approverProfileId
+    ));
+    if (!approver?.profileId || !approver.userId) {
+      throw new Error(TARGETED_APPROVER_MESSAGE);
+    }
+    if (approver.profileId === actor.profileId || approver.profileId === timelog.contractorProfileId) {
+      throw new Error('Schvalovatel hodin musí být jiná osoba než CH a člen crew.');
+    }
+    const activeApprovals = (timelog.approvals ?? []).filter((approval) => approval.supersededAt === null);
+    if (activeApprovals.length > 1 || activeApprovals[0]?.status === 'pending') {
+      throw new Error(TARGETED_AMBIGUOUS_MESSAGE);
+    }
+    return { timelog, approver };
+  });
+
+  const handoffIds = mode === 'handoff'
+    ? validated.map(() => ({ approvalId: createApprovalUuid(), approvalRoundId: createApprovalUuid() }))
+    : [];
+  const updatedById = new Map<number, Timelog>();
+  validated.forEach((target, index) => {
+    const { timelog } = target;
+    if (mode === 'handoff' && 'approver' in target) {
+      const generated = handoffIds[index];
+      const historicalApprovals = (timelog.approvals ?? []).map((approval) => (
+        approval.supersededAt === null ? { ...approval, supersededAt: now, updatedAt: now } : approval
+      ));
+      const approval = {
+        id: generated.approvalId,
+        approvalRoundId: generated.approvalRoundId,
+        timelogId: timelog.supabaseId ?? `local-timelog-${timelog.id}`,
+        approverProfileId: target.approver.profileId as string,
+        approverUserId: target.approver.userId as string,
+        status: 'pending' as const,
+        requestedByProfileId: actor.profileId as string,
+        requestedByUserId: actor.userId as string,
+        requestedAt: now,
+        resolvedAt: null,
+        supersededAt: null,
+        note: '',
+        updatedAt: now,
+      };
+      updatedById.set(timelog.id, {
+        ...timelog,
+        status: 'pending_coo',
+        updatedAt: now,
+        approvals: [...historicalApprovals, approval],
+      });
+      return;
+    }
+
+    const approvalId = 'approvalTokens' in target ? target.approvalTokens.approvalId : null;
+    const isApproved = mode === 'resolve-approved';
+    const note = isApproved ? '' : options.note?.trim() ?? '';
+    updatedById.set(timelog.id, {
+      ...timelog,
+      status: isApproved ? 'approved' : 'rejected',
+      reviewNote: isApproved ? undefined : note,
+      updatedAt: now,
+      approvals: (timelog.approvals ?? []).map((approval) => (
+        approval.id === approvalId
+          ? {
+              ...approval,
+              status: isApproved ? 'approved' : 'returned',
+              note,
+              resolvedAt: now,
+              updatedAt: now,
+            }
+          : approval
+      )),
+    });
+  });
+
+  updateLocalAppState((snapshot) => ({
+    ...snapshot,
+    timelogs: (snapshot.timelogs ?? []).map((timelog) => updatedById.get(timelog.id) ?? timelog),
+  }));
+  invalidateTimelogQueries();
+  return ids.map((id) => updatedById.get(id) as Timelog);
+});
+
 const updateTimelogStatusesTo = async (
   ids: number[],
   nextStatus: TimelogStatus,
@@ -589,29 +954,54 @@ const updateTimelogStatusesTo = async (
 export const updateTimelogStatuses = async (
   ids: number[],
   action: TimelogAction,
-): Promise<Timelog[]> => updateTimelogStatusesTo(ids, statusMap[action]);
+  options: TimelogActionOptions = {},
+): Promise<Timelog[]> => {
+  if (ids.length === 0) return [];
+  const mode = assertApprovalActionShape(getRequestedTimelogs(ids), action, options);
+  if (mode === 'transition') {
+    return updateTimelogStatusesTo(ids, statusMap[action]);
+  }
+  if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    return persistSupabaseApprovalAction(ids, mode, options);
+  }
+  return updateLocalApprovalAction(ids, mode, options);
+};
 
-export const updateTimelogStatus = async (id: number, action: TimelogAction): Promise<Timelog> => {
-  const [updatedTimelog] = await updateTimelogStatuses([id], action);
+export const updateTimelogStatus = async (
+  id: number,
+  action: TimelogAction,
+  options: TimelogActionOptions = {},
+): Promise<Timelog> => {
+  const [updatedTimelog] = await updateTimelogStatuses([id], action, options);
   if (!updatedTimelog) {
     throw new Error('Výkaz nebyl nalezen.');
   }
   return updatedTimelog;
 };
 
-export const approveAllTimelogsForEvent = async (eventId: number): Promise<Timelog[]> => {
-  const approvedTimelogs: Timelog[] = [];
+export const approveAllTimelogsForEvent = async (
+  eventId: number,
+  options: TimelogActionOptions = {},
+): Promise<Timelog[]> => {
   const safeTimelogs = getLocalAppState().timelogs ?? [];
-  const localTimelogIds = safeTimelogs
+  safeTimelogs
     .filter((timelog) => timelog.eid === eventId && timelog.status === 'pending_coo')
+    .forEach((timelog) => assertCompleteForStatus(timelog, 'approved'));
+  const currentProfileId = appDataSource === 'supabase' && supabase && isSupabaseConfigured
+    ? await getAuthenticatedSupabaseProfileId()
+    : getLocalActor(options.currentProfileId).profileId as string;
+  const localTimelogIds = safeTimelogs
+    .filter((timelog) => (
+      timelog.eid === eventId
+      && isTimelogWaitingForProfile(timelog, currentProfileId)
+    ))
     .map((timelog) => timelog.id);
 
   if (localTimelogIds.length === 0) {
-    return approvedTimelogs;
+    return [];
   }
 
-  approvedTimelogs.push(...await updateTimelogStatusesTo(localTimelogIds, 'approved'));
-  return approvedTimelogs;
+  return updateTimelogStatuses(localTimelogIds, 'coo', options);
 };
 
 export const createTimelog = async (timelog: Omit<Timelog, 'id'>): Promise<Timelog> => {

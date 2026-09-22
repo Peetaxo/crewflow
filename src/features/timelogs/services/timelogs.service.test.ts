@@ -32,6 +32,7 @@ const setupStableUuidWriteHarness = async ({
   timelogDaysDeleteResult,
   rpcImplementation,
   authoritativeTimelogs,
+  contractors = [],
 }: {
   timelogs?: Timelog[];
   snapshotEventSupabaseId?: string;
@@ -45,6 +46,7 @@ const setupStableUuidWriteHarness = async ({
     args: Record<string, unknown>,
   ) => Promise<{ data: unknown; error: unknown }>;
   authoritativeTimelogs?: Timelog[];
+  contractors?: Contractor[];
 }) => {
   const versionedTimelogs = timelogs.map((timelog) => (
     timelog.supabaseId && !timelog.updatedAt
@@ -53,6 +55,7 @@ const setupStableUuidWriteHarness = async ({
   ));
   let snapshot = {
     ...createSnapshot(versionedTimelogs),
+    contractors,
     events: events ?? [{ id: 1, supabaseId: snapshotEventSupabaseId }],
   };
   const setQueryData = vi.fn();
@@ -326,7 +329,13 @@ describe('timelogs.service write flow', () => {
     };
     const incomplete: Timelog = { ...complete, id: 2, supabaseId: 'timelog-2', days: [{ ...complete.days[0], t: '' }] };
     const setup = async (timelogs = [complete, incomplete]) => {
-      const harness = await setupStableUuidWriteHarness({ timelogs, snapshotEventSupabaseId: 'event-1' });
+      const harness = await setupStableUuidWriteHarness({
+        timelogs,
+        snapshotEventSupabaseId: 'event-1',
+        contractors: source === 'local'
+          ? [targetedContractor('profile-1', 'user-1')]
+          : [],
+      });
       if (source === 'supabase') return harness;
       vi.resetModules();
       vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'local' }));
@@ -371,7 +380,9 @@ describe('timelogs.service write flow', () => {
       const items = [complete, incomplete].map((item) => ({ ...item, status: 'pending_coo' as const }));
       const harness = await setup(items);
       await expect(harness.service.importApprovedTimelog(incomplete)).rejects.toThrow('Doplňte platný čas od a do');
-      await expect(harness.service.approveAllTimelogsForEvent(1)).rejects.toThrow('Doplňte platný čas od a do');
+      await expect(harness.service.approveAllTimelogsForEvent(1, {
+        currentProfileId: 'profile-1',
+      })).rejects.toThrow('Doplňte platný čas od a do');
       expect(harness.getSnapshot().timelogs).toEqual(items);
       expect(harness.rpc).not.toHaveBeenCalled();
     });
@@ -2392,6 +2403,7 @@ describe('targeted timelog approval action routing', () => {
       id: 9,
       supabaseId: TARGETED_IDS.timelog2,
       contractorProfileId: TARGETED_IDS.contractor2,
+      days: [{ d: '2026-09-21', f: '08:00', t: '', type: 'provoz' }],
       approvals: [targetedApproval({
         id: TARGETED_IDS.approval2,
         approvalRoundId: TARGETED_IDS.round2,
@@ -2482,6 +2494,34 @@ describe('targeted timelog approval action routing', () => {
     vi.useRealTimers();
   });
 
+  it('uses the stable event UUID exclusively when a stale numeric event id points elsewhere', async () => {
+    const staleNumericEvent = targetedEvent({
+      supabaseId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      contactProfileId: TARGETED_IDS.otherApprover,
+    });
+    const stableEvent = targetedEvent({
+      id: 99,
+      supabaseId: TARGETED_IDS.event1,
+      contactProfileId: TARGETED_IDS.approver,
+    });
+    const randomUUID = vi.fn()
+      .mockReturnValueOnce(TARGETED_IDS.approval1)
+      .mockReturnValueOnce(TARGETED_IDS.round1);
+    vi.stubGlobal('crypto', { randomUUID });
+    const harness = await setupTargetedLocalHarness({
+      timelogs: [targetedTimelog({ eid: staleNumericEvent.id })],
+      events: [staleNumericEvent, stableEvent],
+    });
+
+    const handedOff = await harness.service.updateTimelogStatus(47, 'ch', {
+      currentProfileId: TARGETED_IDS.requester,
+    });
+
+    expect(handedOff.approvals).toEqual([
+      expect.objectContaining({ approverProfileId: TARGETED_IDS.approver }),
+    ]);
+  });
+
   it('validates an entire local resolution batch before changing any report', async () => {
     const mine = targetedTimelog({ status: 'pending_coo', approvals: [targetedApproval()] });
     const other = targetedTimelog({
@@ -2509,6 +2549,7 @@ describe('targeted timelog approval action routing', () => {
       id: 9,
       supabaseId: TARGETED_IDS.timelog2,
       status: 'pending_coo',
+      days: [{ d: '2026-09-21', f: '08:00', t: '', type: 'provoz' }],
       approvals: [targetedApproval({
         id: TARGETED_IDS.approval2,
         approvalRoundId: TARGETED_IDS.round2,

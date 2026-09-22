@@ -605,10 +605,10 @@ const getRequestedTimelogs = (ids: number[]): Timelog[] => {
 };
 
 const getConfiguredEventApprover = (timelog: Timelog): string => {
-  const event = (getLocalAppState().events ?? []).find((item) => (
-    (Boolean(timelog.eventSupabaseId) && item.supabaseId === timelog.eventSupabaseId)
-    || item.id === timelog.eid
-  ));
+  const events = getLocalAppState().events ?? [];
+  const event = timelog.eventSupabaseId
+    ? events.find((item) => item.supabaseId === timelog.eventSupabaseId)
+    : events.find((item) => item.id === timelog.eid);
   const approverProfileId = (event?.contactApprovesHours ?? true)
     ? event?.contactProfileId
     : event?.timelogApproverProfileId;
@@ -984,18 +984,16 @@ export const approveAllTimelogsForEvent = async (
   options: TimelogActionOptions = {},
 ): Promise<Timelog[]> => {
   const safeTimelogs = getLocalAppState().timelogs ?? [];
-  safeTimelogs
-    .filter((timelog) => timelog.eid === eventId && timelog.status === 'pending_coo')
-    .forEach((timelog) => assertCompleteForStatus(timelog, 'approved'));
   const currentProfileId = appDataSource === 'supabase' && supabase && isSupabaseConfigured
     ? await getAuthenticatedSupabaseProfileId()
     : getLocalActor(options.currentProfileId).profileId as string;
-  const localTimelogIds = safeTimelogs
+  const selectedTimelogs = safeTimelogs
     .filter((timelog) => (
       timelog.eid === eventId
       && isTimelogWaitingForProfile(timelog, currentProfileId)
-    ))
-    .map((timelog) => timelog.id);
+    ));
+  selectedTimelogs.forEach((timelog) => assertCompleteForStatus(timelog, 'approved'));
+  const localTimelogIds = selectedTimelogs.map((timelog) => timelog.id);
 
   if (localTimelogIds.length === 0) {
     return [];

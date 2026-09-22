@@ -2305,7 +2305,15 @@ describe('events.service write flow', () => {
 
   it.each([false, true])('persists and roundtrips v2 metadata with lost response %s', async (loseFirstInsertResponse) => {
     const harness = await setupEventCreateIntentHarness({ loseFirstInsertResponse });
-    const draft = { ...newEventDraft(), supabaseId: 'event-client-uuid-1', scheduleVersion: 2 as const, freeDays: ['2026-04-21'] };
+    const draft = {
+      ...newEventDraft(),
+      supabaseId: 'event-client-uuid-1',
+      scheduleVersion: 2 as const,
+      startTime: '08:00',
+      endTime: '17:00',
+      contactPerson: 'Jana Nováková',
+      freeDays: ['2026-04-21'],
+    };
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     try {
       const saved = await harness.service.saveEvent(draft);
@@ -4249,5 +4257,175 @@ describe('events.service write flow', () => {
     } finally {
       consoleError.mockRestore();
     }
+  });
+});
+
+describe('events.service v2 form boundary', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  const validV2Event = (overrides: Partial<Event> = {}): Event => ({
+    id: 10,
+    name: 'Nová akce',
+    job: 'AK001',
+    startDate: '2026-09-04',
+    endDate: '2026-09-05',
+    startTime: '08:00',
+    endTime: '18:00',
+    scheduleVersion: 2,
+    city: 'Praha',
+    needed: 2,
+    filled: 0,
+    status: 'upcoming',
+    client: 'Klient A',
+    contactPerson: 'Jana Nováková',
+    contactApprovesHours: true,
+    showDayTypes: true,
+    freeDays: [],
+    phaseSchedules: {
+      instal: [{ id: 'setup', dates: ['2026-09-04'], from: '08:00', to: '12:00' }],
+    },
+    ...overrides,
+  });
+
+  const setupLocalService = async (initialSnapshot = createSnapshot()) => {
+    let snapshot = structuredClone(initialSnapshot);
+    const updateLocalAppState = vi.fn((updater: (state: typeof snapshot) => typeof snapshot) => {
+      snapshot = structuredClone(updater(structuredClone(snapshot)));
+      return structuredClone(snapshot);
+    });
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'local' }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState,
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+    vi.doMock('../../../lib/supabase', () => ({ isSupabaseConfigured: false, supabase: null }));
+    vi.doMock('../../../lib/supabase-mappers', () => ({ mapClient: vi.fn(), mapEvent: vi.fn() }));
+
+    return {
+      service: await import('./events.service'),
+      updateLocalAppState,
+      getSnapshot: () => structuredClone(snapshot),
+    };
+  };
+
+  it('creates v2 drafts with approval enabled and no invented phase rows', async () => {
+    const { service } = await setupLocalService();
+
+    expect(service.createEmptyEvent()).toMatchObject({
+      scheduleVersion: 2,
+      freeDays: [],
+      contactApprovesHours: true,
+      showDayTypes: false,
+    });
+    expect(service.createEmptyEvent().phaseSchedules).toBeUndefined();
+    expect(service.createEmptyEvent().dayTypes).toBeUndefined();
+  });
+
+  it('shifts copied free days by the same calendar offset as day types and schedules', async () => {
+    const source = validV2Event({
+      id: 4,
+      startDate: '2026-09-04',
+      endDate: '2026-09-06',
+      freeDays: ['2026-09-05'],
+      dayTypes: { '2026-09-04': 'instal', '2026-09-06': 'deinstal' },
+      phaseSchedules: {
+        instal: [{ id: 'setup', dates: ['2026-09-04'], from: '08:00', to: '12:00' }],
+        deinstal: [{ id: 'break', dates: ['2026-09-06'], from: '18:00', to: '20:00' }],
+      },
+    });
+    const { service } = await setupLocalService(createSnapshot({ events: [source] }));
+
+    const copy = service.createEventCopy(source);
+
+    expect(copy.startDate).toBe('2026-09-07');
+    expect(copy.endDate).toBe('2026-09-09');
+    expect(copy.freeDays).toEqual(['2026-09-08']);
+    expect(copy.freeDays).not.toContain('2026-09-05');
+    expect(copy.dayTypes).toEqual({ '2026-09-07': 'instal', '2026-09-09': 'deinstal' });
+    expect(copy.phaseSchedules?.instal?.[0].dates).toEqual(['2026-09-07']);
+    expect(copy.phaseSchedules?.deinstal?.[0].dates).toEqual(['2026-09-09']);
+  });
+
+  it('rejects invalid v2 drafts at the service boundary before any write', async () => {
+    const harness = await setupLocalService();
+
+    await expect(harness.service.saveEvent(validV2Event({ contactPerson: ' ', contactProfileId: null })))
+      .rejects.toThrow('kontaktní osobu');
+    await expect(harness.service.saveEvent(validV2Event({
+      phaseSchedules: {
+        instal: [{ id: 'bad', dates: ['2026-09-04'], from: '08:00', to: '' }],
+      },
+    }))).rejects.toThrow('platné časy fáze pro 2026-09-04');
+    expect(harness.updateLocalAppState).not.toHaveBeenCalled();
+  });
+
+  it('keeps legacy rows on their old validation path until explicitly upgraded', async () => {
+    const legacy = validV2Event({
+      scheduleVersion: 1,
+      name: '',
+      client: '',
+      startDate: '',
+      endDate: '',
+      startTime: undefined,
+      endTime: undefined,
+      contactPerson: undefined,
+      phaseSchedules: undefined,
+    });
+    const harness = await setupLocalService(createSnapshot({ events: [legacy] }));
+
+    const saved = await harness.service.saveEvent(legacy);
+
+    expect(saved.scheduleVersion).toBe(1);
+    expect(harness.getSnapshot().events[0].scheduleVersion).toBe(1);
+  });
+
+  it('preserves a historical dresscode when the v2 editor omits the field', async () => {
+    const stored = validV2Event({ dresscode: 'All black' });
+    const { dresscode: _omitted, ...draftWithoutDresscode } = stored;
+    const harness = await setupLocalService(createSnapshot({ events: [stored] }));
+
+    const saved = await harness.service.saveEvent(draftWithoutDresscode);
+
+    expect(saved.dresscode).toBe('All black');
+    expect(harness.getSnapshot().events[0].dresscode).toBe('All black');
+  });
+
+  it('does not synthesize global phase times for v2 drafts', async () => {
+    const { service } = await setupLocalService();
+    const drafted = service.applyEventDraft(validV2Event({ phaseTimes: undefined }));
+
+    expect(drafted.phaseTimes).toBeUndefined();
+  });
+
+  it('saves changed v2 planning without mutating actual timelog rows or out-of-range days', async () => {
+    const actualTimelog: Timelog = {
+      id: 8,
+      eid: 10,
+      contractorProfileId: 'crew-profile',
+      days: [
+        { d: '2026-09-03', f: '10:00', t: '23:00', type: 'pripravy', note: 'Skutečnost' },
+        { d: '2026-09-04', f: '09:00', t: '19:00', type: 'provoz', note: 'Skutečnost' },
+      ],
+      km: 12,
+      note: 'Výkaz',
+      status: 'draft',
+    };
+    const event = validV2Event();
+    const before = structuredClone(actualTimelog);
+    const harness = await setupLocalService(createSnapshot({ events: [event], timelogs: [actualTimelog] }));
+
+    await harness.service.saveEvent(validV2Event({
+      startDate: '2026-09-05',
+      endDate: '2026-09-05',
+      phaseSchedules: {},
+    }));
+
+    expect(harness.getSnapshot().timelogs).toEqual([before]);
   });
 });

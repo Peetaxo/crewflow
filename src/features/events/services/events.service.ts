@@ -10,6 +10,7 @@ import { advanceLifecycleSnapshotGeneration, getLifecycleSnapshotGeneration, run
 import { createStableDraftUuid } from '../../stable-draft-identity';
 import { EventAssignmentResult, EventConflictDetail, EventFilter, EventWithDerivedStatus } from '../types/events.types';
 import { approveEventWithdrawalRpc, assignEventCrewRpc, isDisposableTimelogStatus, removeEventCrewRpc } from './event-assignment-lifecycle.service';
+import { createEventFormPlan, validateEventForm } from './event-form-state';
 import { deleteEventAtomicRpc } from './event-mutation-rpc.service';
 import { buildEventScheduleDays } from './event-schedule';
 import { assertLocalEventNotGrouped } from '../../billing-groups/billing-groups.local';
@@ -1558,7 +1559,10 @@ export const createEmptyEvent = (): Event => {
     filled: 0,
     status: 'upcoming',
     client: '',
+    scheduleVersion: 2,
     showDayTypes: false,
+    freeDays: [],
+    contactApprovesHours: true,
     allowCrewTimeProposal: false,
   };
 };
@@ -1584,6 +1588,7 @@ export const createEventCopy = (event: Event): Event => {
     filled: 0,
     status: 'upcoming',
     dayTypes: shiftDateRecordKeys(event.dayTypes, dateShift),
+    freeDays: event.freeDays?.map((date) => addDaysToDateKey(date, dateShift)),
     phaseSchedules: shiftPhaseSchedules(event.phaseSchedules, dateShift),
   };
 };
@@ -1895,8 +1900,19 @@ export const saveEvent = async (event: Event): Promise<Event> => {
       if (appDataSource === 'supabase') {
         requireCurrentEventMutationEpoch(mutationEpoch);
       }
-      let normalized = normalizeEvent(event);
+      const currentEvent = (getLocalAppState().events ?? []).find((item) => (
+        event.supabaseId
+          ? item.supabaseId === event.supabaseId
+          : item.id === event.id
+      ));
+      const eventWithHistoricalFields = event.dresscode === undefined && currentEvent?.dresscode !== undefined
+        ? { ...event, dresscode: currentEvent.dresscode }
+        : event;
+      let normalized = normalizeEvent(eventWithHistoricalFields);
       validateEvent(normalized);
+      if (normalized.scheduleVersion === 2) {
+        validateEventForm(normalized, createEventFormPlan(normalized));
+      }
 
       if (appDataSource === 'supabase') {
         if (!event.supabaseId) {

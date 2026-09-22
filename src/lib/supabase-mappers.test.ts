@@ -304,6 +304,7 @@ describe('supabase mappers', () => {
     expect(mapTimelog(timelogRow, [dayRow]).updatedAt).toBe(
       '2026-04-28T00:00:00Z',
     );
+    expect(mapTimelog(timelogRow, [dayRow]).reviewNote).toBe('');
     expect(mapTimelog(timelogRow, [{ ...dayRow, note: null }]).days[0].note).toBe('');
   });
 });

@@ -257,6 +257,7 @@ export function mapTimelog(row: TimelogRow, days: TimelogDayRow[] = []): Timelog
     days: days.map(mapTimelogDay),
     km: Number(row.km ?? 0),
     note: row.note ?? '',
+    reviewNote: row.review_note ?? '',
     status: row.status,
   };
 }

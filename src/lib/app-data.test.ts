@@ -110,7 +110,7 @@ describe('app-data Supabase loading', () => {
       }],
       timelogs: [{
         id: 'linked-timelog-uuid', event_id: 'event-uuid-1', contractor_id: 'profile-uuid-1',
-        km: 0, note: null, status: 'invoiced', submitted_at: null, approved_at: null,
+        km: 0, note: null, review_note: 'Doplňte podpis klienta.', status: 'invoiced', submitted_at: null, approved_at: null,
         created_at: '2026-04-28T00:00:00Z', updated_at: '2026-04-28T09:00:00Z',
       }],
       timelog_approvals: [{
@@ -300,6 +300,7 @@ describe('app-data Supabase loading', () => {
     expect(snapshot.timelogs[0]).toEqual(expect.objectContaining({
       id: 1,
       supabaseId: 'linked-timelog-uuid',
+      reviewNote: 'Doplňte podpis klienta.',
     }));
     expect(snapshot.timelogs[0].approvals).toEqual([
       expect.objectContaining({

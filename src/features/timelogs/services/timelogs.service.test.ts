@@ -380,7 +380,12 @@ describe('timelogs.service write flow', () => {
       contractor_id: 'profile-uuid-1',
       km: 0,
       note: '',
+      review_note: 'Opravte přestávku.',
       status: 'draft',
+      submitted_at: null,
+      approved_at: null,
+      created_at: '2026-04-20T07:00:00Z',
+      updated_at: '2026-04-20T09:00:00Z',
     }]);
     const timelogDaysQuery = createOrderedQuery([{
       id: 'timelog-day-row-1',
@@ -390,15 +395,42 @@ describe('timelogs.service write flow', () => {
       time_to: '17:00',
       day_type: 'instal',
       note: null,
+      created_at: '2026-04-20T07:00:00Z',
     }]);
     const timelogApprovalsQuery = createOrderedQuery([{
       id: 'approval-row-1',
+      handoff_batch_id: 'batch-row-1',
+      approval_round_id: 'round-row-1',
       timelog_id: 'timelog-row-1',
+      approver_profile_id: 'approver-profile-1',
+      approver_user_id: 'approver-user-1',
+      requested_by_profile_id: 'requester-profile-1',
+      requested_by_user_id: 'requester-user-1',
       status: 'pending',
+      requested_at: '2026-04-20T08:00:00Z',
+      resolved_at: null,
+      resolved_timelog_expected_updated_at: null,
+      resolved_approval_expected_updated_at: null,
+      superseded_at: null,
+      note: '',
+      updated_at: '2026-04-20T08:00:00Z',
     }, {
       id: 'approval-for-local-id',
+      handoff_batch_id: 'batch-local-id',
+      approval_round_id: 'round-local-id',
       timelog_id: '1',
+      approver_profile_id: 'approver-profile-1',
+      approver_user_id: 'approver-user-1',
+      requested_by_profile_id: 'requester-profile-1',
+      requested_by_user_id: 'requester-user-1',
       status: 'pending',
+      requested_at: '2026-04-20T08:00:00Z',
+      resolved_at: null,
+      resolved_timelog_expected_updated_at: null,
+      resolved_approval_expected_updated_at: null,
+      superseded_at: null,
+      note: '',
+      updated_at: '2026-04-20T08:00:00Z',
     }]);
     const profilesQuery = createOrderedQuery([{ id: 'profile-uuid-1' }]);
     const eventsQuery = createOrderedQuery([{ id: 'event-row-1' }]);
@@ -423,21 +455,7 @@ describe('timelogs.service write flow', () => {
       },
     }));
 
-    vi.doMock('../../../lib/supabase-mappers', () => ({
-      mapTimelog: () => ({
-        id: Number.NaN,
-        eid: Number.NaN,
-        days: [{ d: '2026-04-20', f: '08:00', t: '17:00', type: 'instal' }],
-        km: 0,
-        note: '',
-        status: 'draft',
-      }),
-      mapTimelogApproval: (row: { id: string; timelog_id: string; status: 'pending' }) => ({
-        id: row.id,
-        timelogId: row.timelog_id,
-        status: row.status,
-      }),
-    }));
+    vi.doUnmock('../../../lib/supabase-mappers');
 
     vi.doMock('../../../lib/app-data', () => ({
       getLocalAppState: () => createSnapshot([]),
@@ -453,11 +471,12 @@ describe('timelogs.service write flow', () => {
       supabaseId: 'timelog-row-1',
       eventSupabaseId: 'event-row-1',
       contractorProfileId: 'profile-uuid-1',
-      approvals: [{
+      reviewNote: 'Opravte přestávku.',
+      approvals: [expect.objectContaining({
         id: 'approval-row-1',
         timelogId: 'timelog-row-1',
         status: 'pending',
-      }],
+      })],
     })]);
     expect(eventsQuery.order.mock.calls).toEqual([
       ['date_from'],

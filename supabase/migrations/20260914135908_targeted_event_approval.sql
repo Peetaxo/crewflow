@@ -64,6 +64,7 @@ create index events_timelog_approver_profile_id_idx
 
 create table public.timelog_approvals (
   id uuid primary key,
+  handoff_batch_id uuid not null,
   approval_round_id uuid not null,
   timelog_id uuid not null references public.timelogs(id) on delete cascade,
   approver_profile_id uuid not null references public.profiles(id) on delete restrict,
@@ -79,6 +80,7 @@ create table public.timelog_approvals (
   note text not null default '',
   updated_at timestamptz not null default clock_timestamp(),
   unique (approval_round_id, timelog_id),
+  constraint timelog_approvals_handoff_batch_anchor_check check (handoff_batch_id <= id),
   constraint timelog_approvals_resolution_check check (
     (
       status = 'pending'
@@ -97,6 +99,8 @@ create table public.timelog_approvals (
 
 create index timelog_approvals_timelog_id_idx
   on public.timelog_approvals (timelog_id);
+create index timelog_approvals_handoff_batch_id_idx
+  on public.timelog_approvals (handoff_batch_id);
 create index timelog_approvals_approver_profile_id_idx
   on public.timelog_approvals (approver_profile_id);
 create index timelog_approvals_approver_user_id_idx
@@ -175,15 +179,15 @@ declare
   v_locked_count integer;
   v_exact_count integer;
   v_exact_batch_count integer;
-  v_exact_requested_at_count integer;
   v_changed_count integer;
   v_batch_requested_at timestamptz := clock_timestamp();
-  v_exact_requested_at timestamptz;
+  v_handoff_batch_id uuid;
   v_requester_profile_id uuid;
   v_requester_user_id uuid := auth.uid();
   v_approver_user_id uuid;
   v_contractor_id uuid;
   v_contractor_user_id uuid;
+  v_batch_targets jsonb;
   v_result jsonb;
   v_target record;
 begin
@@ -259,6 +263,14 @@ begin
     raise exception 'timelog_approval_invalid' using errcode = '22023';
   end if;
 
+  -- The smallest client-generated approval UUID is a collision-proof batch
+  -- anchor: its globally unique approval row must belong to this batch.
+  select (target->>'approval_id')::uuid
+  into v_handoff_batch_id
+  from pg_catalog.jsonb_array_elements(p_targets) target
+  order by (target->>'approval_id')::uuid
+  limit 1;
+
   -- Every mutating endpoint locks parent timelogs in UUID order first.
   perform t.id
   from pg_catalog.jsonb_array_elements(p_targets) target
@@ -273,11 +285,8 @@ begin
 
   -- An exact whole-batch retry is authoritative even after resolution. Partial
   -- matches are never completed, so client timeouts cannot split a batch.
-  select
-    pg_catalog.count(*)::integer,
-    pg_catalog.count(distinct a.requested_at)::integer,
-    pg_catalog.min(a.requested_at)
-  into v_exact_count, v_exact_requested_at_count, v_exact_requested_at
+  select pg_catalog.count(*)::integer
+  into v_exact_count
   from pg_catalog.jsonb_array_elements(p_targets) target
   join public.timelog_approvals a
     on a.id = (target->>'approval_id')::uuid
@@ -285,18 +294,24 @@ begin
    and a.timelog_id = (target->>'id')::uuid
    and a.requested_by_profile_id = v_requester_profile_id
    and a.requested_by_user_id = v_requester_user_id
+   and a.handoff_batch_id = v_handoff_batch_id
    and a.superseded_at is null;
 
-  if v_exact_count = v_target_count
-    and v_exact_requested_at_count = 1 then
+  if v_exact_count = v_target_count then
     select pg_catalog.count(*)::integer
     into v_exact_batch_count
     from public.timelog_approvals a
     where a.requested_by_profile_id = v_requester_profile_id
       and a.requested_by_user_id = v_requester_user_id
-      and a.requested_at = v_exact_requested_at;
+      and a.handoff_batch_id = v_handoff_batch_id;
 
-    if v_exact_batch_count <> v_target_count then
+    if v_exact_batch_count <> v_target_count
+      or not exists (
+        select 1
+        from public.timelog_approvals a
+        where a.id = a.handoff_batch_id
+          and a.id = v_handoff_batch_id
+      ) then
       raise exception 'timelog_approval_conflict' using errcode = '40001';
     end if;
 
@@ -334,16 +349,32 @@ begin
     raise exception 'timelog_approval_conflict' using errcode = '40001';
   end if;
 
-  -- Freeze event configuration before resolving each selected approver.
-  perform e.id
-  from public.events e
-  where e.id in (
-    select t.event_id
-    from pg_catalog.jsonb_array_elements(p_targets) target
-    join public.timelogs t on t.id = (target->>'id')::uuid
+  -- Read event selection exactly once after the timelog locks. This immutable
+  -- local snapshot avoids the event -> timelog lock order used by event delete
+  -- while ensuring later contact edits cannot redirect this approval round.
+  select pg_catalog.jsonb_agg(
+    pg_catalog.jsonb_build_object(
+      'id', (target->>'id')::uuid,
+      'expected_updated_at', (target->>'expected_updated_at')::timestamptz,
+      'approval_id', (target->>'approval_id')::uuid,
+      'approval_round_id', (target->>'approval_round_id')::uuid,
+      'event_id', t.event_id,
+      'contractor_id', t.contractor_id,
+      'contact_approves_hours', e.contact_approves_hours,
+      'approver_profile_id', case
+        when e.contact_approves_hours then e.contact_profile_id
+        else e.timelog_approver_profile_id
+      end
+    ) order by t.id
   )
-  order by e.id
-  for update;
+  into v_batch_targets
+  from pg_catalog.jsonb_array_elements(p_targets) target
+  join public.timelogs t on t.id = (target->>'id')::uuid
+  join public.events e on e.id = t.event_id;
+
+  if pg_catalog.jsonb_array_length(v_batch_targets) is distinct from v_target_count then
+    raise exception 'timelog_approval_conflict' using errcode = '40001';
+  end if;
 
   -- Profile user bindings are mutable. Lock every requester, contractor, and
   -- selected approver binding once, in UUID order, before snapshotting users.
@@ -351,18 +382,12 @@ begin
   from public.profiles p
   where p.id = v_requester_profile_id
     or p.id in (
-      select t.contractor_id
-      from pg_catalog.jsonb_array_elements(p_targets) target
-      join public.timelogs t on t.id = (target->>'id')::uuid
+      select (target->>'contractor_id')::uuid
+      from pg_catalog.jsonb_array_elements(v_batch_targets) target
     )
     or p.id in (
-      select case
-        when e.contact_approves_hours then e.contact_profile_id
-        else e.timelog_approver_profile_id
-      end
-      from pg_catalog.jsonb_array_elements(p_targets) target
-      join public.timelogs t on t.id = (target->>'id')::uuid
-      join public.events e on e.id = t.event_id
+      select (target->>'approver_profile_id')::uuid
+      from pg_catalog.jsonb_array_elements(v_batch_targets) target
     )
   order by p.id
   for update;
@@ -380,14 +405,9 @@ begin
       (target->>'expected_updated_at')::timestamptz as expected_updated_at,
       (target->>'approval_id')::uuid as approval_id,
       (target->>'approval_round_id')::uuid as approval_round_id,
-      t.contractor_id,
-      case
-        when e.contact_approves_hours then e.contact_profile_id
-        else e.timelog_approver_profile_id
-      end as approver_profile_id
-    from pg_catalog.jsonb_array_elements(p_targets) target
-    join public.timelogs t on t.id = (target->>'id')::uuid
-    join public.events e on e.id = t.event_id
+      (target->>'contractor_id')::uuid as contractor_id,
+      (target->>'approver_profile_id')::uuid as approver_profile_id
+    from pg_catalog.jsonb_array_elements(v_batch_targets) target
     order by (target->>'id')::uuid
   loop
     if v_target.approver_profile_id is null then
@@ -449,6 +469,7 @@ begin
 
     insert into public.timelog_approvals (
       id,
+      handoff_batch_id,
       approval_round_id,
       timelog_id,
       approver_profile_id,
@@ -459,6 +480,7 @@ begin
       requested_at
     ) values (
       v_target.approval_id,
+      v_handoff_batch_id,
       v_target.approval_round_id,
       v_target.id,
       v_target.approver_profile_id,

@@ -235,6 +235,16 @@ begin
           and requested_by_user_id = '10000000-0000-4000-8000-000000000001') <> 2 then
     raise exception 'handoff snapshot/idempotency assertion failed';
   end if;
+  if (select count(*) from public.timelog_approvals
+      where id in ('10000000-0000-4000-8000-000000000401', '10000000-0000-4000-8000-000000000402')
+        and handoff_batch_id = '10000000-0000-4000-8000-000000000401') <> 2
+    or not exists (
+      select 1 from public.timelog_approvals
+      where id = handoff_batch_id
+        and id = '10000000-0000-4000-8000-000000000401'
+    ) then
+    raise exception 'handoff batch anchor/cardinality assertion failed';
+  end if;
 end
 $$;
 
@@ -599,6 +609,12 @@ begin
     where id = '10000000-0000-4000-8000-000000000410'
       and approver_profile_id = '10000000-0000-4000-8000-000000000013'
       and status = 'pending'
+      and handoff_batch_id = id
+  ) or not exists (
+    select 1 from public.timelog_approvals
+    where id = '10000000-0000-4000-8000-000000000409'
+      and handoff_batch_id = id
+      and handoff_batch_id <> '10000000-0000-4000-8000-000000000410'
   ) then raise exception 'rehandoff did not supersede and use current config'; end if;
 end
 $$;

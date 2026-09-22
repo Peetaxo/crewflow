@@ -48,6 +48,31 @@ describe('targeted event approval migration DDL contract', () => {
     expect(sql).toMatch(/create unique index timelog_approvals_active_timelog_idx[\s\S]*where superseded_at is null/);
   });
 
+  it('uses a collision-proof handoff batch anchor instead of audit timestamps for retry identity', () => {
+    const sql = migrationSql();
+
+    expect(sql).toContain('handoff_batch_id uuid not null');
+    expect(sql).toMatch(/constraint timelog_approvals_handoff_batch_anchor_check check \(handoff_batch_id <= id\)/);
+    expect(sql).toMatch(/create index timelog_approvals_handoff_batch_id_idx[\s\S]*on public\.timelog_approvals \(handoff_batch_id\)/);
+    expect(sql).toContain('a.handoff_batch_id = v_handoff_batch_id');
+    expect(sql).toContain('a.id = a.handoff_batch_id');
+    expect(sql).not.toContain('count(distinct a.requested_at)');
+    expect(sql).not.toContain('a.requested_at = v_exact_requested_at');
+  });
+
+  it('snapshots event approval configuration after timelog locks without locking event rows', () => {
+    const sql = migrationSql();
+    const handoff = sql.match(
+      /create or replace function private\.handoff_timelogs_for_approval_atomic\(p_targets jsonb\)([\s\S]*?)create or replace function private\.resolve_timelog_approvals_atomic/,
+    )?.[1];
+
+    expect(handoff).toBeDefined();
+    expect(handoff).toContain('v_batch_targets jsonb');
+    expect(handoff).toContain("'contact_approves_hours', e.contact_approves_hours");
+    expect(handoff).toContain("'approver_profile_id', case");
+    expect(handoff).not.toMatch(/perform e\.id[\s\S]*for update/);
+  });
+
   it('keeps approval rows read-only through authenticated RLS', () => {
     const sql = migrationSql();
 

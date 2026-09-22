@@ -55,6 +55,24 @@ insert into public.events (
   ('10000000-0000-4000-8000-000000000110', 'Legacy', null, true, null),
   ('10000000-0000-4000-8000-000000000111', 'Batch rollback', '10000000-0000-4000-8000-000000000012', true, null);
 
+insert into public.receipts (
+  id, contractor_id, event_id, job_number, name, supplier, amount,
+  paid_at, note, status, created_at, updated_at
+) values (
+  '30000000-0000-4000-8000-000000000201',
+  '10000000-0000-4000-8000-000000000014',
+  '10000000-0000-4000-8000-000000000101',
+  'TARGET-201',
+  'Approval invariant receipt',
+  'Invariant Supplier s.r.o.',
+  1234.56,
+  '2099-01-02',
+  'Must stay unattached and untouched',
+  'approved',
+  '2099-01-01 07:00:00+00',
+  '2099-01-01 07:05:00+00'
+);
+
 insert into public.timelogs (id, event_id, contractor_id, status, km, note) values
   ('10000000-0000-4000-8000-000000000201', '10000000-0000-4000-8000-000000000101', '10000000-0000-4000-8000-000000000014', 'pending_ch', 3, 'contact'),
   ('10000000-0000-4000-8000-000000000202', '10000000-0000-4000-8000-000000000102', '10000000-0000-4000-8000-000000000014', 'pending_ch', 4, 'separate'),
@@ -68,13 +86,40 @@ insert into public.timelogs (id, event_id, contractor_id, status, km, note) valu
   ('10000000-0000-4000-8000-000000000210', '10000000-0000-4000-8000-000000000109', '10000000-0000-4000-8000-000000000014', 'pending_coo', 0, 'legacy mixed'),
   ('10000000-0000-4000-8000-000000000211', '10000000-0000-4000-8000-000000000110', '10000000-0000-4000-8000-000000000014', 'pending_coo', 0, 'legacy direct');
 
+insert into public.timelog_days (
+  id, timelog_id, date, time_from, time_to, day_type,
+  created_at, note, meal, meals
+) values (
+  '20000000-0000-4000-8000-000000000201',
+  '10000000-0000-4000-8000-000000000201',
+  '2099-01-01',
+  '08:00',
+  '17:00',
+  'provoz',
+  '2099-01-01 06:30:00+00',
+  'Invariant work day',
+  'obed',
+  array['obed']::text[]
+);
+
 insert into public.timelog_days (id, timelog_id, date, time_from, time_to, day_type)
 select
   ('20000000-0000-4000-8000-' || pg_catalog.lpad((200 + n)::text, 12, '0'))::uuid,
   ('10000000-0000-4000-8000-' || pg_catalog.lpad((200 + n)::text, 12, '0'))::uuid,
   ('2099-01-' || pg_catalog.lpad(n::text, 2, '0'))::date,
   '08:00', '17:00', 'provoz'::public.timelog_type
-from pg_catalog.generate_series(1, 11) n;
+from pg_catalog.generate_series(2, 11) n;
+
+create temporary table targeted_approval_day_snapshot on commit drop as
+select * from public.timelog_days
+where id = '20000000-0000-4000-8000-000000000201';
+
+create temporary table targeted_approval_receipt_snapshot on commit drop as
+select * from public.receipts
+where id = '30000000-0000-4000-8000-000000000201';
+
+grant select on table targeted_approval_day_snapshot to authenticated;
+grant select on table targeted_approval_receipt_snapshot to authenticated;
 
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"10000000-0000-4000-8000-000000000001","role":"authenticated"}', true);
@@ -412,8 +457,37 @@ begin
     or exists (select 1 from public.invoices where timelog_id = '10000000-0000-4000-8000-000000000201')
     or exists (select 1 from public.invoice_timelogs where timelog_id = '10000000-0000-4000-8000-000000000201')
     or (select count(*) from public.timelog_days where timelog_id = '10000000-0000-4000-8000-000000000201') <> 1
+    or exists (
+      select * from public.timelog_days
+      where id = '20000000-0000-4000-8000-000000000201'
+      except all
+      select * from pg_temp.targeted_approval_day_snapshot
+    )
+    or exists (
+      select * from pg_temp.targeted_approval_day_snapshot
+      except all
+      select * from public.timelog_days
+      where id = '20000000-0000-4000-8000-000000000201'
+    )
+    or (select count(*) from public.receipts where id = '30000000-0000-4000-8000-000000000201') <> 1
+    or exists (
+      select * from public.receipts
+      where id = '30000000-0000-4000-8000-000000000201'
+      except all
+      select * from pg_temp.targeted_approval_receipt_snapshot
+    )
+    or exists (
+      select * from pg_temp.targeted_approval_receipt_snapshot
+      except all
+      select * from public.receipts
+      where id = '30000000-0000-4000-8000-000000000201'
+    )
+    or exists (
+      select 1 from public.invoice_receipts
+      where receipt_id = '30000000-0000-4000-8000-000000000201'
+    )
     or (select status from public.timelog_approvals where id = '10000000-0000-4000-8000-000000000401') <> 'approved' then
-    raise exception 'approval changed finance/days or wrong final state';
+    raise exception 'approval changed day/receipt/finance data or wrong final state';
   end if;
 end
 $$;

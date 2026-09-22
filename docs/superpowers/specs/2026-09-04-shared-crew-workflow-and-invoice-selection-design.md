@@ -2,7 +2,7 @@
 
 Datum: 2026-09-04
 
-Stav: Uživatel potvrdil produktový směr a chování společné evidence. Tento písemný návrh čeká na závěrečnou kontrolu před implementačním plánem. Nejde o hotovou funkci ani o souhlas s nasazením dalších změn do Staff.
+Stav: Uživatel schválil produktový směr, chování společné evidence i bezpečná pravidla první implementace. Implementační plán etapy 1 je v `docs/superpowers/plans/2026-09-22-shared-crew-shift-workflow.md`. Nejde o hotovou funkci ani o souhlas s nasazením dalších změn do Staff.
 
 ## Stručně pro uživatele
 
@@ -73,9 +73,9 @@ Jeden přehled pro jednoho člověka obsahuje rozpis všech jeho částí, souč
 
 Samotné dokončení schválení hodin nevytvoří fakturu ani ji nepředá k proplacení. Před implementací se ověří i existující serverové triggery a návazné operace, aby tento požadavek platil skutečně na serveru, ne pouze v novém formuláři.
 
-## Navržená bezpečná pravidla první implementace — ke kontrole
+## Potvrzená bezpečná pravidla první implementace
 
-Tato pravidla doplňují odsouhlasený běžný průchod a jsou součástí písemného návrhu, který uživatel ještě zkontroluje.
+Tato pravidla doplňují odsouhlasený běžný průchod a uživatel je schválil jako součást návrhu.
 
 1. **Průběžné ukládání:** chybějící údaje v pozdější směně nebrání uložení rozpracované evidence. Při odeslání musí všechny zahrnuté části projít současnou validací. Prázdná část se tiše nevynechá a plánovaný čas se nepovažuje automaticky za skutečně odpracovaný.
 2. **Společné rozhodnutí:** odeslání, příslušné schválení nebo vrácení aktuálního společného kola se uloží jako celek, nebo vůbec. Vrácení celku zachová vyplněné údaje; schvalovatel označí důvod a dotčenou část. Opravené společné kolo projde potřebným schválením znovu. Historická samostatná schválení se zpětně nepřepisují.
@@ -143,4 +143,4 @@ Ověření implementace zahrne doménové a komponentové testy, serverové test
 
 ## Aktuální krok
 
-Tento dokument zachycuje návrh a doplňující pravidla ke kontrole. Žádná nová databázová změna, úprava aplikace ani instalace zařízení se při jeho sepsání neprovádí. Teprve po kontrole písemného návrhu následuje implementační plán.
+Návrh je schválený a navazuje na něj implementační plán etapy 1. Žádná nová databázová změna, úprava aplikace ani instalace zařízení samotným schválením dokumentu nevznikla. Vzdálené nasazení bude vyžadovat nové konkrétní schválení jeho rozsahu.

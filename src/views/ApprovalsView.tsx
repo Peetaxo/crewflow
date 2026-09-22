@@ -1,18 +1,22 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { toast } from 'sonner';
+import { useAuth } from '../app/providers/useAuth';
 import { useAppContext } from '../context/useAppContext';
 import { KM_RATE } from '../data';
 import { Contractor, Event, Timelog } from '../types';
 import { calculateDayHours, calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';
 import {
-  approveAllTimelogsForEvent,
   getTimelogDependencies,
-  updateTimelogStatus,
+  type TimelogAction,
 } from '../features/timelogs/services/timelogs.service';
 import { useTimelogsQuery } from '../features/timelogs/queries/useTimelogsQuery';
 import { canEditTimelog } from '../features/timelogs/services/timelog-permissions';
+import { useTimelogApprovalActions } from '../features/timelogs/hooks/useTimelogApprovalActions';
+import {
+  getTimelogApprovalAssigneeName,
+  isTimelogApprovalActionable,
+} from '../features/timelogs/services/timelog-approval-presentation';
 
 const ApprovalsView = () => {
   const {
@@ -21,6 +25,7 @@ const ApprovalsView = () => {
     searchQuery,
     setEditingTimelog,
   } = useAppContext();
+  const { currentProfileId } = useAuth();
   const timelogsQuery = useTimelogsQuery();
 
   const [contractors, setContractors] = useState<Contractor[]>([]);
@@ -66,31 +71,37 @@ const ApprovalsView = () => {
   }, [events, findContractor, searchQuery, timelogsQuery.data]);
 
   const isCrewHead = role === 'crewhead';
-  const mine = useMemo(() => (
+  const approvalQueue = useMemo(() => (
     timelogs.filter((timelog) => timelog.status === (isCrewHead ? 'pending_ch' : 'pending_coo'))
   ), [isCrewHead, timelogs]);
+  const mine = useMemo(() => (
+    approvalQueue.filter((timelog) => isTimelogApprovalActionable(timelog, role, currentProfileId))
+  ), [approvalQueue, currentProfileId, role]);
+  const hasVisibleApprovals = isCrewHead ? mine.length > 0 : approvalQueue.length > 0;
 
   const grouped = useMemo(() => {
     if (isCrewHead) return null;
 
     return filteredEvents.reduce((acc, event) => {
-      const eventTimelogs = mine.filter((timelog) => timelog.eid === event.id);
+      const eventTimelogs = approvalQueue.filter((timelog) => timelog.eid === event.id);
       if (eventTimelogs.length) acc.push({ event, tls: eventTimelogs });
       return acc;
     }, [] as { event: typeof filteredEvents[number]; tls: typeof mine }[]);
-  }, [filteredEvents, isCrewHead, mine]);
+  }, [approvalQueue, filteredEvents, isCrewHead]);
 
-  const handleTimelogAction = useCallback((timelogId: number, action: 'ch' | 'rej') => {
-    void updateTimelogStatus(timelogId, action).catch((error) => {
-      toast.error(error instanceof Error ? error.message : 'Nepodařilo se aktualizovat výkaz.');
-    });
-  }, []);
+  const timelogActions = useTimelogApprovalActions({
+    currentProfileId,
+    timelogs,
+  });
+  const { dialog: timelogActionDialog, execute: executeTimelogAction, isPending: isTimelogActionPending } = timelogActions;
 
-  const handleApproveAll = useCallback((eventId: number) => {
-    void approveAllTimelogsForEvent(eventId).catch((error) => {
-      toast.error(error instanceof Error ? error.message : 'Nepodařilo se schválit výkazy.');
-    });
-  }, []);
+  const handleTimelogAction = useCallback((timelogId: number, action: TimelogAction) => {
+    executeTimelogAction([timelogId], action);
+  }, [executeTimelogAction]);
+
+  const handleApproveAll = useCallback((ids: number[]) => {
+    executeTimelogAction(ids, 'coo');
+  }, [executeTimelogAction]);
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -98,13 +109,13 @@ const ApprovalsView = () => {
         <div>
           <h1 className="text-lg font-semibold text-[var(--nodu-text)]">Schvalovani</h1>
           <p className="mt-0.5 text-xs text-[var(--nodu-text-soft)]">
-            {isCrewHead ? 'CrewHead - vizualni kontrola a predani COO' : 'COO - finalni schvaleni a financni prehled'}
+            {isCrewHead ? 'CrewHead - kontrola hodin a predani COO' : 'COO - finalni schvaleni hodin'}
           </p>
         </div>
         <StatusBadge status={mine.length ? (isCrewHead ? 'pending_ch' : 'pending_coo') : 'approved'} label={`${mine.length} ceka`} />
       </div>
 
-      {mine.length === 0 ? (
+      {!hasVisibleApprovals ? (
         <div className="rounded-[24px] border border-[var(--nodu-border)] bg-white p-12 text-center shadow-[0_18px_40px_rgba(var(--nodu-text-rgb),0.06)]">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full border border-[var(--nodu-success-border)] bg-[var(--nodu-success-bg)] text-xl font-semibold text-[var(--nodu-success-text)]">✓</div>
           <div className="text-sm font-medium text-[var(--nodu-text)]">Vse schvaleno</div>
@@ -118,6 +129,7 @@ const ApprovalsView = () => {
             if (!contractor || !event) return null;
 
             const totalHours = calculateTotalHours(timelog.days);
+            const approverName = getTimelogApprovalAssigneeName(timelog, event, contractors);
 
             return (
               <div key={timelog.id} className="rounded-[24px] border border-[var(--nodu-border)] bg-white p-5 shadow-[0_18px_40px_rgba(var(--nodu-text-rgb),0.06)]">
@@ -129,6 +141,9 @@ const ApprovalsView = () => {
                       <span className="jn">{event.job}</span>
                       <span className="text-xs text-[var(--nodu-text-soft)]">{event.name}</span>
                     </div>
+                    {approverName && (
+                      <div className="mt-1 text-[10px] text-[var(--nodu-text-soft)]">Další schvalovatel: {approverName}</div>
+                    )}
                   </div>
                   <div className="ml-auto text-right">
                     <div className="text-base font-semibold text-[var(--nodu-text)]">{totalHours.toFixed(1)}h = {formatCurrency(totalHours * contractor.rate)}</div>
@@ -146,8 +161,8 @@ const ApprovalsView = () => {
                   ))}
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => handleTimelogAction(timelog.id, 'ch')} className="rounded-xl border border-[var(--nodu-success-border)] bg-[var(--nodu-success-bg)] px-4 py-1.5 text-xs font-semibold text-[var(--nodu-success-text)] shadow-[0_14px_28px_rgba(47,125,79,0.10)] hover:bg-[var(--nodu-success-bg-hover)] hover:shadow-[0_16px_32px_rgba(47,125,79,0.14)]">Schvalit a poslat COO</button>
-                  <button onClick={() => handleTimelogAction(timelog.id, 'rej')} className="rounded-xl border border-[var(--nodu-error-border)] px-4 py-1.5 text-xs font-medium text-[var(--nodu-error-text)] hover:bg-[var(--nodu-error-bg)]">Zamitnout</button>
+                  <button disabled={isTimelogActionPending} onClick={() => handleTimelogAction(timelog.id, 'ch')} className="rounded-xl border border-[var(--nodu-success-border)] bg-[var(--nodu-success-bg)] px-4 py-1.5 text-xs font-semibold text-[var(--nodu-success-text)] shadow-[0_14px_28px_rgba(47,125,79,0.10)] hover:bg-[var(--nodu-success-bg-hover)] hover:shadow-[0_16px_32px_rgba(47,125,79,0.14)]">Schvalit a poslat COO</button>
+                  <button disabled={isTimelogActionPending} onClick={() => handleTimelogAction(timelog.id, 'rej')} className="rounded-xl border border-[var(--nodu-error-border)] px-4 py-1.5 text-xs font-medium text-[var(--nodu-error-text)] hover:bg-[var(--nodu-error-bg)]">Zamitnout</button>
                   {canEditTimelog(timelog, role) && (
                     <button onClick={() => setEditingTimelog(timelog)} className="ml-auto rounded-xl border border-[var(--nodu-border)] px-4 py-1.5 text-xs font-medium text-[var(--nodu-text)] hover:bg-[var(--nodu-accent-soft)]">Upravit</button>
                   )}
@@ -159,6 +174,9 @@ const ApprovalsView = () => {
       ) : (
         <div className="space-y-4">
           {grouped?.map((group) => {
+            const actionableIds = group.tls
+              .filter((timelog) => isTimelogApprovalActionable(timelog, role, currentProfileId))
+              .map((timelog) => timelog.id);
             const totalHours = group.tls.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
             const totalAmount = group.tls.reduce((sum, timelog) => {
               const contractor = findContractor(timelog.contractorProfileId);
@@ -179,11 +197,19 @@ const ApprovalsView = () => {
                     const contractor = findContractor(timelog.contractorProfileId);
                     if (!contractor) return null;
                     const hours = calculateTotalHours(timelog.days);
+                    const approverName = getTimelogApprovalAssigneeName(timelog, group.event, contractors);
 
                     return (
                       <div key={timelog.id} className="flex items-center gap-3 border-b border-[rgba(var(--nodu-text-rgb),0.06)] py-2 last:border-0">
                         <div className="av h-6 w-6 text-[9px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>{contractor.ii}</div>
-                        <span className="text-xs font-medium text-[var(--nodu-text)]">{contractor.name}</span>
+                        <div className="min-w-0">
+                          <div className="text-xs font-medium text-[var(--nodu-text)]">{contractor.name}</div>
+                          {approverName && (
+                            <div className="text-[10px] text-[var(--nodu-text-soft)]">
+                              Schvaluje: {approverName}
+                            </div>
+                          )}
+                        </div>
                         <div className="flex gap-1">{Array.from(new Set(timelog.days.map((day) => day.type))).map((type) => <StatusBadge key={type} status={type} />)}</div>
                         <span className="text-[10px] text-[var(--nodu-text-soft)]">{timelog.days.length} {timelog.days.length === 1 ? 'den' : 'dny'}</span>
                         <span className="ml-auto text-xs font-semibold text-[var(--nodu-text)]">{hours.toFixed(1)}h = {formatCurrency(hours * contractor.rate)}{timelog.km > 0 ? ` + ${formatCurrency(timelog.km * KM_RATE)} km` : ''}</span>
@@ -191,14 +217,17 @@ const ApprovalsView = () => {
                     );
                   })}
                 </div>
-                <div className="mt-4 flex gap-2">
-                  <button onClick={() => handleApproveAll(group.event.id)} className="rounded-xl border border-[var(--nodu-success-border)] bg-[var(--nodu-success-bg)] px-4 py-2 text-xs font-semibold text-[var(--nodu-success-text)] shadow-[0_14px_28px_rgba(47,125,79,0.10)] hover:bg-[var(--nodu-success-bg-hover)] hover:shadow-[0_16px_32px_rgba(47,125,79,0.14)]">Schvalit vse - {group.event.job} ({formatCurrency(totalAmount)})</button>
-                </div>
+                {actionableIds.length > 0 && (
+                  <div className="mt-4 flex gap-2">
+                    <button disabled={isTimelogActionPending} onClick={() => handleApproveAll(actionableIds)} className="rounded-xl border border-[var(--nodu-success-border)] bg-[var(--nodu-success-bg)] px-4 py-2 text-xs font-semibold text-[var(--nodu-success-text)] shadow-[0_14px_28px_rgba(47,125,79,0.10)] hover:bg-[var(--nodu-success-bg-hover)] hover:shadow-[0_16px_32px_rgba(47,125,79,0.14)]">Schvalit moje vykazy - {group.event.job} ({actionableIds.length})</button>
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
       )}
+      {timelogActionDialog}
     </motion.div>
   );
 };

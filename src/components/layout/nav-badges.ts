@@ -1,7 +1,9 @@
-import type { Candidate, Invoice, Receipt, Timelog } from '../../types';
+import type { Candidate, Invoice, Receipt, Role, Timelog } from '../../types';
+import { isTimelogWaitingForProfile } from '../../features/timelogs/services/timelog-approval-state';
 
 interface NavBadgeInput {
   currentProfileId: string | null | undefined;
+  role: Role;
   timelogs: Timelog[];
   invoices: Invoice[];
   receipts: Receipt[];
@@ -10,14 +12,17 @@ interface NavBadgeInput {
 
 export const buildNavBadgeCounts = ({
   currentProfileId,
+  role,
   timelogs,
   invoices,
   receipts,
   candidates,
 }: NavBadgeInput): Record<string, number> => ({
-  timelogs: timelogs.filter((timelog) => (
-    timelog.status === 'pending_ch' || timelog.status === 'pending_coo'
-  )).length,
+  timelogs: timelogs.filter((timelog) => {
+    if (role === 'crewhead') return timelog.status === 'pending_ch';
+    if (role === 'coo') return isTimelogWaitingForProfile(timelog, currentProfileId ?? undefined);
+    return false;
+  }).length,
   'my-timelogs': currentProfileId
     ? timelogs.filter((timelog) => (
       timelog.contractorProfileId === currentProfileId

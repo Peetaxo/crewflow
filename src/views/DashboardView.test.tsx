@@ -17,6 +17,7 @@ const mockAppContext = {
 
 const mobileMockState = vi.hoisted(() => ({ isMobile: false }));
 const eventApplicationMockState = vi.hoisted(() => ({ applications: [] as EventApplication[] }));
+const authMockState = vi.hoisted(() => ({ currentProfileId: 'profile-current' as string | null }));
 
 const mockEvents = [
   {
@@ -41,7 +42,7 @@ const mockEvents = [
   },
 ];
 
-const mockTimelogs = [
+const defaultMockTimelogs = [
   {
     id: 'tl-1',
     eid: 101,
@@ -51,6 +52,7 @@ const mockTimelogs = [
     days: [{ f: '08:00', t: '16:00' }],
   },
 ];
+const mockTimelogsState = { timelogs: [...defaultMockTimelogs] };
 
 const mockReceipts = [
   {
@@ -106,6 +108,10 @@ vi.mock('../context/useAppContext', () => ({
   useAppContext: () => mockAppContext,
 }));
 
+vi.mock('../app/providers/useAuth', () => ({
+  useAuth: () => authMockState,
+}));
+
 vi.mock('../hooks/use-mobile', () => ({
   useIsMobile: () => mobileMockState.isMobile,
 }));
@@ -119,7 +125,7 @@ vi.mock('../features/events/services/events.service', () => ({
 }));
 
 vi.mock('../features/timelogs/queries/useTimelogsQuery', () => ({
-  useTimelogsQuery: () => ({ data: mockTimelogs, isLoading: false, error: null }),
+  useTimelogsQuery: () => ({ data: mockTimelogsState.timelogs, isLoading: false, error: null }),
 }));
 
 vi.mock('../features/receipts/queries/useReceiptsQuery', () => ({
@@ -141,6 +147,40 @@ describe('DashboardView', () => {
     mockAppContext.searchQuery = '';
     mobileMockState.isMobile = false;
     eventApplicationMockState.applications = [];
+    authMockState.currentProfileId = 'profile-current';
+    mockTimelogsState.timelogs = [...defaultMockTimelogs];
+  });
+
+  it('shows a COO only reports assigned to the current profile plus legacy reports', async () => {
+    mockAppContext.role = 'coo';
+    mobileMockState.isMobile = true;
+    mockTimelogsState.timelogs = [
+      {
+        ...defaultMockTimelogs[0],
+        id: 'mine',
+        status: 'pending_coo',
+        approvals: [{ status: 'pending', supersededAt: null, approverProfileId: 'profile-current' }],
+      },
+      {
+        ...defaultMockTimelogs[0],
+        id: 'other',
+        status: 'pending_coo',
+        approvals: [{ status: 'pending', supersededAt: null, approverProfileId: 'profile-other' }],
+      },
+      {
+        ...defaultMockTimelogs[0],
+        id: 'legacy',
+        status: 'pending_coo',
+        approvals: [],
+      },
+    ];
+
+    const { default: DashboardView } = await import('./DashboardView');
+    render(<DashboardView />);
+
+    expect(screen.getByText('2 výkazy')).toBeInTheDocument();
+    const approvalSection = screen.getByRole('heading', { name: 'Schvalování' }).closest('section');
+    expect(within(approvalSection as HTMLElement).getAllByRole('button')).toHaveLength(3);
   });
 
   it('renders the dashboard with semantic nodu helpers instead of light-only surface utilities', async () => {

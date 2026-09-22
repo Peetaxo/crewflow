@@ -30,12 +30,13 @@ describe('buildNavBadgeCounts', () => {
 
     expect(buildNavBadgeCounts({
       currentProfileId: 'profile-1',
+      role: 'crewhead',
       timelogs,
       invoices,
       receipts,
       candidates,
     })).toEqual({
-      timelogs: 3,
+      timelogs: 2,
       'my-timelogs': 4,
       invoices: 2,
       'my-invoices': 1,
@@ -48,6 +49,7 @@ describe('buildNavBadgeCounts', () => {
   it('returns crew scoped badges as zero when no current profile is selected', () => {
     expect(buildNavBadgeCounts({
       currentProfileId: null,
+      role: 'crew',
       timelogs: [{ id: 1, contractorProfileId: 'profile-1', status: 'draft' } as Timelog],
       invoices: [{ id: 'invoice-1', contractorProfileId: 'profile-1', status: 'sent' } as Invoice],
       receipts: [{ id: 'receipt-1', contractorProfileId: 'profile-1', status: 'submitted' } as Receipt],
@@ -57,5 +59,40 @@ describe('buildNavBadgeCounts', () => {
       'my-invoices': 0,
       'my-receipts': 0,
     });
+  });
+
+  it('counts only the current COO assignee plus legacy reports in the approval badge', () => {
+    const approval = (approverProfileId: string) => ({
+      id: `approval-${approverProfileId}`,
+      approvalRoundId: `round-${approverProfileId}`,
+      timelogId: `timelog-${approverProfileId}`,
+      approverProfileId,
+      status: 'pending' as const,
+      supersededAt: null,
+    });
+    const timelogs = [
+      { id: 1, status: 'pending_coo', approvals: [approval('profile-me')] },
+      { id: 2, status: 'pending_coo', approvals: [approval('profile-other')] },
+      { id: 3, status: 'pending_coo', approvals: [] },
+      { id: 4, status: 'pending_ch' },
+    ] as Timelog[];
+
+    expect(buildNavBadgeCounts({
+      currentProfileId: 'profile-me',
+      role: 'coo',
+      timelogs,
+      invoices: [],
+      receipts: [],
+      candidates: [],
+    }).timelogs).toBe(2);
+
+    expect(buildNavBadgeCounts({
+      currentProfileId: null,
+      role: 'coo',
+      timelogs,
+      invoices: [],
+      receipts: [],
+      candidates: [],
+    }).timelogs).toBe(1);
   });
 });

@@ -12,8 +12,10 @@ vi.mock('../features/billing-groups/EventBillingSection', () => ({
   default: () => null,
 }));
 
+const authMockState = vi.hoisted(() => ({ currentProfileId: 'profile-1' as string | null }));
+
 vi.mock('../app/providers/useAuth', () => ({
-  useAuth: () => ({ currentProfileId: 'profile-1' }),
+  useAuth: () => authMockState,
 }));
 
 const setEditingTimelog = vi.fn();
@@ -151,6 +153,7 @@ describe('EventDetailView', () => {
     eventMapPreviewMock.mockClear();
     requestEventWithdrawalMock.mockReset();
     requestEventWithdrawalMock.mockResolvedValue(undefined);
+    authMockState.currentProfileId = 'profile-1';
     vi.doUnmock('../features/invoices/queries/useInvoiceApprovalsQuery');
     vi.doMock('../features/invoices/queries/useInvoiceApprovalsQuery', () => ({
       useInvoiceApprovalsQuery: () => ({ data: [] }),
@@ -270,7 +273,7 @@ describe('EventDetailView', () => {
     }));
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
-      updateTimelogStatus,
+      updateTimelogStatuses: updateTimelogStatus,
       subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
@@ -1228,7 +1231,7 @@ describe('EventDetailView', () => {
     }));
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
-      updateTimelogStatus,
+      updateTimelogStatuses: updateTimelogStatus,
       subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
@@ -1291,7 +1294,9 @@ describe('EventDetailView', () => {
     await waitFor(() => expect(approveEventApplication).toHaveBeenCalledWith(12));
 
     fireEvent.click(within(approvalDialog).getAllByRole('button', { name: 'Schválit výkaz Jana Nova' })[0]);
-    await waitFor(() => expect(updateTimelogStatus).toHaveBeenCalledWith(pendingCrewheadTimelog.id, 'ch'));
+    await waitFor(() => expect(updateTimelogStatus).toHaveBeenCalledWith([pendingCrewheadTimelog.id], 'ch', {
+      currentProfileId: 'profile-1',
+    }));
   });
 
   it('opens assigned crew detail and removes a draft crew member after confirmation on mobile management detail', async () => {
@@ -1333,7 +1338,7 @@ describe('EventDetailView', () => {
     }));
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
-      updateTimelogStatus,
+      updateTimelogStatuses: updateTimelogStatus,
       subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
@@ -2471,7 +2476,7 @@ describe('EventDetailView', () => {
     }));
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
-      updateTimelogStatus,
+      updateTimelogStatuses: updateTimelogStatus,
       subscribeToTimelogChanges: vi.fn(() => () => undefined),
     }));
 
@@ -2495,8 +2500,151 @@ describe('EventDetailView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Schvalit' }));
 
     await waitFor(() => {
-      expect(updateTimelogStatus).toHaveBeenCalledWith(8, 'coo');
+      expect(updateTimelogStatus).toHaveBeenCalledWith([8], 'coo', {
+        currentProfileId: 'profile-1',
+      });
     });
+  });
+
+  it('shows another COO assignment readonly and returns current-assignee hours with a required note', async () => {
+    authMockState.currentProfileId = 'profile-current';
+    const currentApprovalTimelog = {
+      ...pendingApprovalTimelog,
+      approvals: [{
+        id: 'approval-current',
+        approvalRoundId: 'round-current',
+        timelogId: 'timelog-current',
+        approverProfileId: 'profile-current',
+        status: 'pending' as const,
+        supersededAt: null,
+      }],
+    };
+    const otherApprovalTimelog = {
+      ...pendingApprovalTimelog,
+      id: 18,
+      approvals: [{
+        id: 'approval-other',
+        approvalRoundId: 'round-other',
+        timelogId: 'timelog-other',
+        approverProfileId: 'profile-other',
+        status: 'pending' as const,
+        supersededAt: null,
+      }],
+    };
+    const currentCoo = { ...contractor, id: 3, profileId: 'profile-current', name: 'Current COO' };
+    const otherCoo = { ...contractor, id: 4, profileId: 'profile-other', name: 'Other COO' };
+    const updateTimelogStatuses = vi.fn().mockResolvedValue([]);
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        role: 'coo',
+        selectedEventId: 'event-uuid-1',
+        setSelectedEventId,
+        eventTab: 'overview',
+        setEventTab: vi.fn(),
+        setEditingReceipt: vi.fn(),
+        setDeleteConfirm: vi.fn(),
+        setEditingTimelog,
+      }),
+    }));
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [applicant],
+      getEventDetailData: () => ({
+        event,
+        timelogs: [currentApprovalTimelog, otherApprovalTimelog],
+        contractors: [applicant, currentCoo, otherCoo],
+        receipts: [],
+        applications: [],
+        crewAssignments: [],
+      }),
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
+      subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+    }));
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatuses,
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
+    }));
+    vi.doMock('../components/modals/EventEditModal', () => ({ default: () => null }));
+    vi.doMock('../components/modals/AssignCrewModal', () => ({ default: () => null }));
+
+    const { default: EventDetailView } = await import('./EventDetailView');
+    render(<EventDetailView />);
+    fireEvent.click(screen.getByRole('button', { name: /Schvalovani timelogu \(2\)/ }));
+
+    expect(screen.getByText('Schvaluje: Current COO')).toBeInTheDocument();
+    expect(screen.getByText('Schvaluje: Other COO')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Schvalit' })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Vrátit' }));
+    expect(screen.getByRole('dialog', { name: 'Vrátit výkaz k opravě' })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Důvod vrácení'), { target: { value: 'Doplň konec směny.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Vrátit výkaz' }));
+
+    await waitFor(() => {
+      expect(updateTimelogStatuses).toHaveBeenCalledWith([8], 'rej', {
+        currentProfileId: 'profile-current',
+        note: 'Doplň konec směny.',
+      });
+    });
+  });
+
+  it('shows a returned review note in the event approval history', async () => {
+    const returnedTimelog = {
+      ...pendingApprovalTimelog,
+      status: 'rejected' as const,
+      reviewNote: 'Oprav začátek směny.',
+    };
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        role: 'coo',
+        selectedEventId: 'event-uuid-1',
+        setSelectedEventId,
+        eventTab: 'approval',
+        setEventTab: vi.fn(),
+        setEditingReceipt: vi.fn(),
+        setDeleteConfirm: vi.fn(),
+        setEditingTimelog,
+      }),
+    }));
+    vi.doMock('../features/events/services/events.service', () => ({
+      getEventCrew: () => [applicant],
+      getEventDetailData: () => ({
+        event,
+        timelogs: [returnedTimelog],
+        contractors: [applicant],
+        receipts: [],
+        applications: [],
+        crewAssignments: [],
+      }),
+      applyForEvent: vi.fn(),
+      approveEventApplication: vi.fn(),
+      approveEventWithdrawal: vi.fn(),
+      createEventCopy: vi.fn((eventToCopy) => eventToCopy),
+      removeContractorFromEvent: vi.fn(),
+      requestEventWithdrawal: vi.fn(),
+      subscribeToEventChanges: vi.fn(() => () => undefined),
+      updateEventApplicationStatus: vi.fn(),
+      withdrawEventApplication: vi.fn(),
+    }));
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      updateTimelogStatuses: vi.fn(),
+      subscribeToTimelogChanges: vi.fn(() => () => undefined),
+    }));
+    vi.doMock('../components/modals/EventEditModal', () => ({ default: () => null }));
+    vi.doMock('../components/modals/AssignCrewModal', () => ({ default: () => null }));
+
+    const { default: EventDetailView } = await import('./EventDetailView');
+    render(<EventDetailView />);
+
+    expect(screen.getByText('Důvod vrácení')).toBeInTheDocument();
+    expect(screen.getByText('Oprav začátek směny.')).toBeInTheDocument();
   });
 
   it('does not merge duplicate approval timelogs for the same contractor', async () => {

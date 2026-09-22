@@ -36,7 +36,12 @@ import {
 import { buildGoogleMapsSearchUrl, getEventAddressLabel } from '../features/events/services/event-location.service';
 import { useInvoiceApprovalsQuery } from '../features/invoices/queries/useInvoiceApprovalsQuery';
 import { getEventApprovalDocuments } from '../features/invoices/services/invoice-approval-sync.service';
-import { subscribeToTimelogChanges, updateTimelogStatus } from '../features/timelogs/services/timelogs.service';
+import { subscribeToTimelogChanges, type TimelogAction } from '../features/timelogs/services/timelogs.service';
+import { useTimelogApprovalActions } from '../features/timelogs/hooks/useTimelogApprovalActions';
+import {
+  getTimelogApprovalAssigneeName,
+  isTimelogApprovalActionable,
+} from '../features/timelogs/services/timelog-approval-presentation';
 import { canCreateTimelog, canEditTimelog, canOpenTimelogDetail } from '../features/timelogs/services/timelog-permissions';
 import { isDisposableTimelogStatus } from '../features/events/services/event-assignment-lifecycle.service';
 import { createEmptyReceipt } from '../features/receipts/services/receipts.service';
@@ -85,9 +90,7 @@ const getApprovalDocumentPersonLabel = (document: InvoiceApprovalDocument) => {
   return parsedPerson || document.supplierName || '-';
 };
 
-type TimelogApprovalAction = 'sub' | 'ch' | 'coo' | 'rej';
-
-const getTimelogApprovalAction = (timelog: Timelog): Exclude<TimelogApprovalAction, 'rej'> | null => {
+const getTimelogApprovalAction = (timelog: Timelog): Exclude<TimelogAction, 'rej'> | null => {
   if (timelog.status === 'draft') return 'sub';
   if (timelog.status === 'pending_ch') return 'ch';
   if (timelog.status === 'pending_coo') return 'coo';
@@ -185,6 +188,12 @@ const EventDetailView = () => {
 
   useEffect(() => subscribeToEventChanges(loadDetail), [loadDetail]);
   useEffect(() => subscribeToTimelogChanges(loadDetail), [loadDetail]);
+
+  const timelogActions = useTimelogApprovalActions({
+    currentProfileId,
+    timelogs: detail.timelogs,
+    onSuccess: loadDetail,
+  });
 
   useEffect(() => {
     if (selectedEventId && !detail.event) {
@@ -483,11 +492,12 @@ const EventDetailView = () => {
       },
     }));
   };
-  const canShowApprovalTimelog = (timelog: Timelog) => {
-    if (timelog.status === 'pending_ch' || timelog.status === 'pending_crew_confirmation') return role === 'crewhead';
-    if (timelog.status === 'pending_coo') return role === 'coo';
-    return false;
-  };
+  const canShowApprovalTimelog = (timelog: Timelog) => (
+    timelog.status === 'pending_ch'
+    || timelog.status === 'pending_crew_confirmation'
+    || timelog.status === 'pending_coo'
+    || timelog.status === 'rejected'
+  );
   const eventApprovalTimelogs = canManageEvents
     ? prepareApprovalTimelogs(eventTimelogs.filter(canShowApprovalTimelog))
     : [];
@@ -692,17 +702,13 @@ const EventDetailView = () => {
     setEditingEvent(createEventCopy(event));
   };
 
-  const handleTimelogApprovalAction = (timelog: Timelog, action?: TimelogApprovalAction) => {
+  const handleTimelogApprovalAction = (timelog: Timelog, action?: TimelogAction) => {
     if (action === 'rej' && timelog.status === 'draft') return;
 
     const resolvedAction = action ?? getTimelogApprovalAction(timelog);
     if (!resolvedAction) return;
 
-    void updateTimelogStatus(timelog.id, resolvedAction)
-      .then(loadDetail)
-      .catch((error) => {
-        toast.error(error instanceof Error ? error.message : 'Nepodarilo se aktualizovat vykaz.');
-      });
+    timelogActions.execute([timelog.id], resolvedAction);
   };
 
   const handleMobileDetailTouchStart = (touchEvent: React.TouchEvent<HTMLDivElement>) => {
@@ -939,7 +945,10 @@ const EventDetailView = () => {
               {eventApprovalTimelogs.map((timelog) => {
                 const contractor = contractors.find((item) => item.profileId === timelog.contractorProfileId);
                 const totalTimelogHours = calculateTotalHours(timelog.days);
-                const approveAction = getTimelogApprovalAction(timelog);
+                const isActionable = isTimelogApprovalActionable(timelog, role, currentProfileId);
+                const approveAction = isActionable ? getTimelogApprovalAction(timelog) : null;
+                const approverName = getTimelogApprovalAssigneeName(timelog, event, contractors);
+                const returnedReason = timelog.reviewNote?.trim();
                 const contractorName = contractor?.name ?? 'Neznámý člen crew';
                 const isWaitingForCrewConfirmation = timelog.status === 'pending_crew_confirmation';
 
@@ -954,12 +963,20 @@ const EventDetailView = () => {
                             <span>Výkaz</span>
                             <StatusBadge status={timelog.status} />
                           </div>
+                          {approverName && (
+                            <div className="nodu-mobile-event-management-note">Schvaluje: {approverName}</div>
+                          )}
                         </div>
                         <div className="nodu-mobile-event-management-hours">{totalTimelogHours.toFixed(1)}h</div>
                       </div>
                     </div>
                     {isWaitingForCrewConfirmation && (
                       <p className="nodu-mobile-event-management-note">Čeká na potvrzení upraveného výkazu členem Crew.</p>
+                    )}
+                    {returnedReason && (
+                      <p className="nodu-mobile-event-management-note">
+                        <strong>Důvod vrácení</strong> {returnedReason}
+                      </p>
                     )}
                     <div className="nodu-mobile-event-management-day-list">
                       {timelog.days.map((day, index) => {
@@ -991,16 +1008,18 @@ const EventDetailView = () => {
                           aria-label={`Schválit výkaz ${contractorName}`}
                           className="nodu-mobile-event-icon-action nodu-mobile-event-icon-action--success"
                           onClick={() => handleTimelogApprovalAction(timelog, approveAction)}
+                          disabled={timelogActions.isPending}
                         >
                           Schválit
                         </button>
                       )}
-                      {timelog.status !== 'draft' && !isWaitingForCrewConfirmation && (
+                      {isActionable && timelog.status !== 'draft' && !isWaitingForCrewConfirmation && (
                         <button
                           type="button"
                           aria-label={`Vrátit výkaz ${contractorName}`}
                           className="nodu-mobile-event-icon-action nodu-mobile-event-icon-action--danger"
                           onClick={() => handleTimelogApprovalAction(timelog, 'rej')}
+                          disabled={timelogActions.isPending}
                         >
                           Vrátit
                         </button>
@@ -1471,6 +1490,7 @@ const EventDetailView = () => {
           </div>
         )}
 
+        {timelogActions.dialog}
         <EventEditModal
           editingEvent={editingEvent}
           onClose={() => setEditingEvent(null)}
@@ -1792,11 +1812,14 @@ const EventDetailView = () => {
                             const contractor = contractors.find((item) => item.profileId === timelog.contractorProfileId);
                             const totalTimelogHours = calculateTotalHours(timelog.days);
                             const amount = contractor ? totalTimelogHours * contractor.rate + timelog.km * KM_RATE + calculateMealAllowance(timelog.days, { enabled: mealAllowanceEnabled }) : 0;
-                            const approveAction = getTimelogApprovalAction(timelog);
+                            const isActionable = isTimelogApprovalActionable(timelog, role, currentProfileId);
+                            const approveAction = isActionable ? getTimelogApprovalAction(timelog) : null;
+                            const approverName = getTimelogApprovalAssigneeName(timelog, event, contractors);
+                            const returnedReason = timelog.reviewNote?.trim();
                             const approveLabel = timelog.status === 'draft'
                               ? 'Odeslat ke kontrole CH'
                               : timelog.status === 'pending_ch'
-                                ? 'Schvalit a vybrat schvalovatele'
+                                ? 'Schválit a poslat COO'
                                 : 'Schvalit';
                             const isWaitingForCrewConfirmation = timelog.status === 'pending_crew_confirmation';
 
@@ -1807,6 +1830,9 @@ const EventDetailView = () => {
                                   <div>
                                     <div className="text-sm font-semibold text-[color:var(--nodu-text)]">{contractor?.name ?? 'Neznamy clen crew'}</div>
                                     <StatusBadge status={timelog.status} />
+                                    {approverName && (
+                                      <div className="mt-1 text-xs font-medium text-[color:var(--nodu-text-soft)]">Schvaluje: {approverName}</div>
+                                    )}
                                   </div>
                                   <div className="ml-auto text-right">
                                     <div className="text-sm font-bold text-[color:var(--nodu-text)]">{totalTimelogHours.toFixed(1)}h</div>
@@ -1839,14 +1865,19 @@ const EventDetailView = () => {
                                     Čeká na potvrzení upraveného výkazu členem Crew.
                                   </p>
                                 )}
+                                {returnedReason && (
+                                  <p className="mt-3 rounded-xl border border-[color:var(--nodu-error-border)] bg-[color:var(--nodu-error-bg)] px-3 py-2 text-xs font-medium text-[color:var(--nodu-error-text)]">
+                                    <strong>Důvod vrácení</strong> {returnedReason}
+                                  </p>
+                                )}
                                 <div className="mt-3 flex flex-wrap gap-2">
                                   {approveAction && (
-                                    <Button size="sm" className="h-8 text-[11px]" onClick={() => handleTimelogApprovalAction(timelog, approveAction)}>
+                                    <Button size="sm" className="h-8 text-[11px]" onClick={() => handleTimelogApprovalAction(timelog, approveAction)} disabled={timelogActions.isPending}>
                                       {approveLabel}
                                     </Button>
                                   )}
-                                  {timelog.status !== 'draft' && !isWaitingForCrewConfirmation && (
-                                    <Button size="sm" variant="outline" className="h-8 border-[#e8b4a3] text-[11px] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]" onClick={() => handleTimelogApprovalAction(timelog, 'rej')}>
+                                  {isActionable && timelog.status !== 'draft' && !isWaitingForCrewConfirmation && (
+                                    <Button size="sm" variant="outline" className="h-8 border-[#e8b4a3] text-[11px] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]" onClick={() => handleTimelogApprovalAction(timelog, 'rej')} disabled={timelogActions.isPending}>
                                       Vrátit
                                     </Button>
                                   )}
@@ -2261,6 +2292,7 @@ const EventDetailView = () => {
         </div>
       </div>
 
+      {timelogActions.dialog}
       <EventEditModal
         editingEvent={editingEvent}
         onClose={() => setEditingEvent(null)}

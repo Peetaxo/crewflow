@@ -297,6 +297,10 @@ describe('app-data Supabase loading', () => {
         receiptSupabaseIds: ['receipt-uuid-1'],
       }),
     ]);
+    expect(snapshot.timelogs[0]).toEqual(expect.objectContaining({
+      id: 1,
+      supabaseId: 'linked-timelog-uuid',
+    }));
     expect(snapshot.timelogs[0].approvals).toEqual([
       expect.objectContaining({
         id: '11111111-1111-4111-8111-111111111111',

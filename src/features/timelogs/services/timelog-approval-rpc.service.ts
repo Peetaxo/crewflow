@@ -59,6 +59,20 @@ export interface TimelogApprovalResolutionResult {
   status: TimelogStatus;
 }
 
+interface MappedTimelogApprovalHandoffTarget {
+  id: string;
+  expected_updated_at: string;
+  approval_id: string;
+  approval_round_id: string;
+}
+
+interface MappedTimelogApprovalResolutionTarget {
+  id: string;
+  expected_updated_at: string;
+  approval_id: string | null;
+  approval_updated_at: string | null;
+}
+
 type ApprovalResolution = 'approved' | 'returned';
 type ApprovalRpcResult = { data: unknown; error: unknown };
 type ApprovalRpcClient = {
@@ -84,9 +98,15 @@ const invalidResponse = (): never => {
   throw new Error(INVALID_RESPONSE_MESSAGE);
 };
 
+const invalidRequest = (): never => {
+  throw new Error(INVALID_REQUEST_MESSAGE);
+};
+
+const hasDuplicates = (values: string[]): boolean => new Set(values).size !== values.length;
+
 const parseContactOptions = (data: unknown): EventContactOption[] => {
   if (!Array.isArray(data)) return invalidResponse();
-  return data.map((value) => {
+  const options = data.map((value) => {
     if (
       !isRecord(value)
       || !isUuid(value.profile_id)
@@ -102,11 +122,16 @@ const parseContactOptions = (data: unknown): EventContactOption[] => {
       canApproveHours: value.can_approve_hours,
     };
   });
+  if (hasDuplicates(options.map((option) => option.profileId))) return invalidResponse();
+  return options;
 };
 
-const parseHandoffResults = (data: unknown): TimelogApprovalHandoffResult[] => {
+const parseHandoffResults = (
+  data: unknown,
+  targets: MappedTimelogApprovalHandoffTarget[],
+): TimelogApprovalHandoffResult[] => {
   if (!Array.isArray(data)) return invalidResponse();
-  return data.map((value) => {
+  const results = data.map((value) => {
     if (
       !isRecord(value)
       || !isUuid(value.id)
@@ -119,11 +144,26 @@ const parseHandoffResults = (data: unknown): TimelogApprovalHandoffResult[] => {
     ) return invalidResponse();
     return value as unknown as TimelogApprovalHandoffResult;
   });
+  if (results.length !== targets.length) return invalidResponse();
+  const resultsByTimelogId = new Map(results.map((result) => [result.id, result]));
+  if (resultsByTimelogId.size !== results.length) return invalidResponse();
+  return targets.map((target) => {
+    const result = resultsByTimelogId.get(target.id);
+    if (
+      !result
+      || result.approval_id !== target.approval_id
+      || result.approval_round_id !== target.approval_round_id
+    ) return invalidResponse();
+    return result;
+  });
 };
 
-const parseResolutionResults = (data: unknown): TimelogApprovalResolutionResult[] => {
+const parseResolutionResults = (
+  data: unknown,
+  targets: MappedTimelogApprovalResolutionTarget[],
+): TimelogApprovalResolutionResult[] => {
   if (!Array.isArray(data)) return invalidResponse();
-  return data.map((value) => {
+  const results = data.map((value) => {
     if (
       !isRecord(value)
       || !isUuid(value.id)
@@ -132,6 +172,10 @@ const parseResolutionResults = (data: unknown): TimelogApprovalResolutionResult[
     ) return invalidResponse();
     return value as unknown as TimelogApprovalResolutionResult;
   });
+  if (results.length !== targets.length) return invalidResponse();
+  const resultsByTimelogId = new Map(results.map((result) => [result.id, result]));
+  if (resultsByTimelogId.size !== results.length) return invalidResponse();
+  return targets.map((target) => resultsByTimelogId.get(target.id) ?? invalidResponse());
 };
 
 const errorText = (error: unknown): { code: string; message: string } => ({
@@ -147,7 +191,7 @@ const includesToken = (message: string, token: string): boolean => (
   new RegExp(`(^|[^A-Za-z0-9_])${token}($|[^A-Za-z0-9_])`).test(message)
 );
 
-const toApprovalError = (error: unknown): Error => {
+const toApprovalError = (error: unknown): unknown => {
   const { code, message } = errorText(error);
   if (includesToken(message, 'timelog_approver_unavailable')) {
     return new Error('Vybraný schvalovatel není dostupný. Upravte schvalovatele akce a zkuste to znovu.');
@@ -161,6 +205,7 @@ const toApprovalError = (error: unknown): Error => {
   if (includesToken(message, 'timelog_approval_invalid') || code === '22023') {
     return new Error(INVALID_REQUEST_MESSAGE);
   }
+  if (isRecord(error) || error instanceof Error) return error;
   return new Error(`Operaci schválení se nepodařilo dokončit: ${message || 'neznámá chyba'}`);
 };
 
@@ -169,29 +214,41 @@ const getClient = (): ApprovalRpcClient => {
   return supabase as unknown as ApprovalRpcClient;
 };
 
-const mapHandoffTargets = (targets: TimelogApprovalHandoffTarget[]) => targets
-  .map((target) => {
+const mapHandoffTargets = (
+  targets: TimelogApprovalHandoffTarget[],
+): MappedTimelogApprovalHandoffTarget[] => {
+  if (targets.length === 0) return invalidRequest();
+  const mappedTargets = targets.map((target) => {
     if (
       !isUuid(target.id)
       || !isVersion(target.expectedUpdatedAt)
       || !isUuid(target.approvalId)
       || !isUuid(target.approvalRoundId)
-    ) throw new Error(INVALID_REQUEST_MESSAGE);
+    ) return invalidRequest();
     return {
       id: target.id,
       expected_updated_at: target.expectedUpdatedAt,
       approval_id: target.approvalId,
       approval_round_id: target.approvalRoundId,
     };
-  })
-  .sort((left, right) => left.id.localeCompare(right.id));
+  });
+  if (
+    hasDuplicates(mappedTargets.map((target) => target.id))
+    || hasDuplicates(mappedTargets.map((target) => target.approval_id))
+    || hasDuplicates(mappedTargets.map((target) => target.approval_round_id))
+  ) return invalidRequest();
+  return mappedTargets.sort((left, right) => left.id.localeCompare(right.id));
+};
 
-const mapResolutionTargets = (targets: TimelogApprovalResolutionTarget[]) => targets
-  .map((target) => {
+const mapResolutionTargets = (
+  targets: TimelogApprovalResolutionTarget[],
+): MappedTimelogApprovalResolutionTarget[] => {
+  if (targets.length === 0) return invalidRequest();
+  const mappedTargets = targets.map((target) => {
     const hasValidApproval = target.approvalId === null && target.approvalUpdatedAt === null
       || isUuid(target.approvalId) && isVersion(target.approvalUpdatedAt);
     if (!isUuid(target.id) || !isVersion(target.expectedUpdatedAt) || !hasValidApproval) {
-      throw new Error(INVALID_REQUEST_MESSAGE);
+      return invalidRequest();
     }
     return {
       id: target.id,
@@ -199,8 +256,15 @@ const mapResolutionTargets = (targets: TimelogApprovalResolutionTarget[]) => tar
       approval_id: target.approvalId,
       approval_updated_at: target.approvalUpdatedAt,
     };
-  })
-  .sort((left, right) => left.id.localeCompare(right.id));
+  });
+  if (
+    hasDuplicates(mappedTargets.map((target) => target.id))
+    || hasDuplicates(mappedTargets.flatMap((target) => (
+      target.approval_id === null ? [] : [target.approval_id]
+    )))
+  ) return invalidRequest();
+  return mappedTargets.sort((left, right) => left.id.localeCompare(right.id));
+};
 
 export const listEventContactOptionsRpc = async (): Promise<EventContactOption[]> => {
   const result = await getClient().rpc('list_event_contact_options');
@@ -211,11 +275,12 @@ export const listEventContactOptionsRpc = async (): Promise<EventContactOption[]
 export const handoffTimelogsForApprovalAtomicRpc = async (
   targets: TimelogApprovalHandoffTarget[],
 ): Promise<TimelogApprovalHandoffResult[]> => {
+  const mappedTargets = mapHandoffTargets(targets);
   const result = await getClient().rpc('handoff_timelogs_for_approval_atomic', {
-    p_targets: mapHandoffTargets(targets),
+    p_targets: mappedTargets,
   });
   if (result.error) throw toApprovalError(result.error);
-  return parseHandoffResults(result.data);
+  return parseHandoffResults(result.data, mappedTargets);
 };
 
 export const resolveTimelogApprovalsAtomicRpc = async ({
@@ -230,11 +295,12 @@ export const resolveTimelogApprovalsAtomicRpc = async ({
   if (resolution === 'returned' && note.trim() === '') {
     throw new Error(RETURN_NOTE_REQUIRED_MESSAGE);
   }
+  const mappedTargets = mapResolutionTargets(targets);
   const result = await getClient().rpc('resolve_timelog_approvals_atomic', {
-    p_targets: mapResolutionTargets(targets),
+    p_targets: mappedTargets,
     p_resolution: resolution,
     p_note: note,
   });
   if (result.error) throw toApprovalError(result.error);
-  return parseResolutionResults(result.data);
+  return parseResolutionResults(result.data, mappedTargets);
 };

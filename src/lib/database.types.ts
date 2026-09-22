@@ -763,15 +763,7 @@ export interface Database {
         Args: {
           p_targets: Json;
         };
-        Returns: Array<{
-          id: string;
-          updated_at: string;
-          status: TimelogStatus;
-          approval_id: string;
-          approval_round_id: string;
-          approval_status: TimelogApprovalStatus;
-          approval_updated_at: string;
-        }>;
+        Returns: Json;
       };
       resolve_timelog_approvals_atomic: {
         Args: {
@@ -779,11 +771,7 @@ export interface Database {
           p_resolution: 'approved' | 'returned';
           p_note?: string;
         };
-        Returns: Array<{
-          id: string;
-          updated_at: string;
-          status: TimelogStatus;
-        }>;
+        Returns: Json;
       };
       next_self_billing_invoice_sequence: {
         Args: {

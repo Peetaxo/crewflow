@@ -524,6 +524,7 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
   const timelogs = timelogRows.map((row) => ({
     ...mapTimelog(row, timelogDayRowsByTimelogId.get(row.id) ?? []),
     id: timelogIdMap.get(row.id) ?? Number.NaN,
+    supabaseId: row.id,
     eid: eventIdMap.get(row.event_id) ?? Number.NaN,
     eventSupabaseId: row.event_id,
     contractorProfileId: row.contractor_id,

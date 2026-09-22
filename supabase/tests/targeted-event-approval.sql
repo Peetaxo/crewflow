@@ -13,6 +13,14 @@ insert into auth.users (id) values
   ('10000000-0000-4000-8000-000000000005'),
   ('10000000-0000-4000-8000-000000000006');
 
+-- The oldest committed migration auto-creates profiles and Crew roles from an
+-- auth.users trigger; the supplied drifted schema snapshot does not retain it.
+-- Normalize only these synthetic fixture identities before inserting exact IDs.
+delete from public.user_roles
+where user_id::text like '10000000-0000-4000-8000-%';
+delete from public.profiles
+where user_id::text like '10000000-0000-4000-8000-%';
+
 insert into public.profiles (id, user_id, first_name, last_name, phone) values
   ('10000000-0000-4000-8000-000000000011', '10000000-0000-4000-8000-000000000001', 'Synthetic', 'CH', '+420111'),
   ('10000000-0000-4000-8000-000000000012', '10000000-0000-4000-8000-000000000002', 'Intended', 'COO', '+420222'),
@@ -335,7 +343,14 @@ $$;
 
 -- Frozen actor resolves, exact retry is idempotent, and a different retry conflicts.
 do $$
-declare v_t public.timelogs%rowtype; v_a public.timelog_approvals%rowtype; v_payload jsonb; v_result jsonb;
+declare
+  v_t public.timelogs%rowtype;
+  v_a public.timelog_approvals%rowtype;
+  v_resolved_t public.timelogs%rowtype;
+  v_resolved_a public.timelog_approvals%rowtype;
+  v_payload jsonb;
+  v_changed_payload jsonb;
+  v_result jsonb;
 begin
   select * into v_t from public.timelogs where id = '10000000-0000-4000-8000-000000000201';
   select * into v_a from public.timelog_approvals where id = '10000000-0000-4000-8000-000000000401';
@@ -344,8 +359,45 @@ begin
     'approval_id', v_a.id, 'approval_updated_at', v_a.updated_at
   ));
   v_result := public.resolve_timelog_approvals_atomic(v_payload, 'approved');
+  select * into v_resolved_t from public.timelogs where id = v_t.id;
+  select * into v_resolved_a from public.timelog_approvals where id = v_a.id;
   v_result := public.resolve_timelog_approvals_atomic(v_payload, 'approved');
-  if v_result->0->>'status' <> 'approved' then raise exception 'approved retry result wrong'; end if;
+  if v_result->0->>'status' <> 'approved'
+    or (select updated_at from public.timelogs where id = v_t.id) <> v_resolved_t.updated_at
+    or (select updated_at from public.timelog_approvals where id = v_a.id) <> v_resolved_a.updated_at then
+    raise exception 'approved exact retry result or mutation assertion failed';
+  end if;
+
+  v_changed_payload := jsonb_set(
+    v_payload,
+    '{0,expected_updated_at}',
+    to_jsonb(v_t.updated_at - interval '1 second')
+  );
+  begin
+    perform public.resolve_timelog_approvals_atomic(v_changed_payload, 'approved');
+    raise exception 'changed parent retry token succeeded';
+  exception when sqlstate '40001' then
+    if sqlerrm <> 'timelog_approval_conflict' then raise; end if;
+  end;
+
+  v_changed_payload := jsonb_set(
+    v_payload,
+    '{0,approval_updated_at}',
+    to_jsonb(v_a.updated_at - interval '1 second')
+  );
+  begin
+    perform public.resolve_timelog_approvals_atomic(v_changed_payload, 'approved');
+    raise exception 'changed approval retry token succeeded';
+  exception when sqlstate '40001' then
+    if sqlerrm <> 'timelog_approval_conflict' then raise; end if;
+  end;
+
+  if (select updated_at from public.timelogs where id = v_t.id) <> v_resolved_t.updated_at
+    or (select updated_at from public.timelog_approvals where id = v_a.id) <> v_resolved_a.updated_at
+    or (select status from public.timelogs where id = v_t.id) <> 'approved'
+    or (select status from public.timelog_approvals where id = v_a.id) <> 'approved' then
+    raise exception 'conflicting resolved retry mutated state';
+  end if;
   begin
     perform public.resolve_timelog_approvals_atomic(v_payload, 'returned', 'different');
     raise exception 'different resolution retry succeeded';
@@ -645,10 +697,30 @@ do $$ begin
   end;
 end $$;
 
--- Anonymous and PUBLIC have neither RPC execution nor table writes. Use catalog
--- assertions here; a PostgreSQL 15 test-process bug can segfault when a DO block
--- catches multiple SET ROLE anon permission errors in the same subtransaction.
+-- Anonymous table writes are denied at runtime. Do not invoke revoked functions:
+-- this local PostgreSQL 17.6 image segfaults on revoked function EXECUTE denial.
 reset role;
+set local role anon;
+do $$
+begin
+  begin
+    insert into public.timelog_approvals (
+      id, approval_round_id, timelog_id, approver_profile_id, approver_user_id,
+      requested_by_profile_id, requested_by_user_id, status
+    ) values (
+      gen_random_uuid(), gen_random_uuid(), '10000000-0000-4000-8000-000000000208',
+      '10000000-0000-4000-8000-000000000012', '10000000-0000-4000-8000-000000000002',
+      '10000000-0000-4000-8000-000000000011', '10000000-0000-4000-8000-000000000001', 'pending'
+    );
+    raise exception 'anonymous table write succeeded';
+  exception when insufficient_privilege then
+    if sqlerrm <> 'permission denied for table timelog_approvals' then raise; end if;
+  end;
+end
+$$;
+reset role;
+
+-- Catalog assertions cover revoked function execution without triggering that bug.
 do $$
 begin
   if has_function_privilege('anon', 'public.list_event_contact_options()', 'EXECUTE')

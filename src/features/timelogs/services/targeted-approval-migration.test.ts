@@ -14,6 +14,19 @@ const migrationSql = () => {
 };
 
 describe('targeted event approval migration DDL contract', () => {
+  it('normalizes clean and drifted profile/contact schemas without replacing a valid contact foreign key', () => {
+    const sql = migrationSql();
+
+    expect(sql).toMatch(/alter table public\.profiles\s+alter column user_id drop not null/);
+    expect(sql).toContain('add column if not exists contact_profile_id uuid');
+    expect(sql).toContain("confrelid = 'public.profiles'::pg_catalog.regclass");
+    expect(sql).toContain("attname = 'contact_profile_id'");
+    expect(sql).toContain("confdeltype = 'n'");
+    expect(sql).toMatch(/foreign key \(contact_profile_id\) references public\.profiles\(id\) on delete set null/);
+    expect(sql).toContain('create index if not exists idx_events_contact_profile_id');
+    expect(sql).toContain('add column if not exists review_note text');
+  });
+
   it('adds explicit event configuration and immutable approval identity snapshots', () => {
     const sql = migrationSql();
 
@@ -26,6 +39,10 @@ describe('targeted event approval migration DDL contract', () => {
     expect(sql).toContain('requested_by_profile_id uuid not null references public.profiles(id) on delete restrict');
     expect(sql).toContain('approver_user_id uuid not null references auth.users(id) on delete restrict');
     expect(sql).toContain('requested_by_user_id uuid not null references auth.users(id) on delete restrict');
+    expect(sql).toContain('resolved_timelog_expected_updated_at timestamptz');
+    expect(sql).toContain('resolved_approval_expected_updated_at timestamptz');
+    expect(sql).toMatch(/status = 'pending'[\s\S]*resolved_timelog_expected_updated_at is null[\s\S]*resolved_approval_expected_updated_at is null/);
+    expect(sql).toMatch(/status in \('approved', 'returned'\)[\s\S]*resolved_timelog_expected_updated_at is not null[\s\S]*resolved_approval_expected_updated_at is not null/);
     expect(sql).toMatch(/check\s*\(status in \('pending', 'approved', 'returned'\)\)/);
     expect(sql).toContain('unique (approval_round_id, timelog_id)');
     expect(sql).toMatch(/create unique index timelog_approvals_active_timelog_idx[\s\S]*where superseded_at is null/);

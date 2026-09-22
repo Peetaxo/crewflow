@@ -1,9 +1,62 @@
 -- Targeted timelog approvals. Approval actors are snapshotted as both profile
 -- and auth identities because profiles.user_id is mutable.
 
+alter table public.profiles
+  alter column user_id drop not null;
+
 alter table public.events
+  add column if not exists contact_profile_id uuid,
   add column contact_approves_hours boolean not null default true,
   add column timelog_approver_profile_id uuid references public.profiles(id) on delete restrict;
+
+do $$
+declare
+  v_contact_attnum smallint;
+  v_profile_id_attnum smallint;
+  v_contact_fk_count integer;
+begin
+  select a.attnum into strict v_contact_attnum
+  from pg_catalog.pg_attribute a
+  where a.attrelid = 'public.events'::pg_catalog.regclass
+    and a.attname = 'contact_profile_id'
+    and not a.attisdropped;
+
+  select a.attnum into strict v_profile_id_attnum
+  from pg_catalog.pg_attribute a
+  where a.attrelid = 'public.profiles'::pg_catalog.regclass
+    and a.attname = 'id'
+    and not a.attisdropped;
+
+  select pg_catalog.count(*)::integer into v_contact_fk_count
+  from pg_catalog.pg_constraint c
+  where c.contype = 'f'
+    and c.conrelid = 'public.events'::pg_catalog.regclass
+    and v_contact_attnum = any(c.conkey);
+
+  if v_contact_fk_count = 0 then
+    alter table public.events
+      add constraint events_contact_profile_id_fkey
+      foreign key (contact_profile_id) references public.profiles(id) on delete set null;
+  elsif v_contact_fk_count <> 1 or not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    where c.contype = 'f'
+      and c.conrelid = 'public.events'::pg_catalog.regclass
+      and c.conkey = array[v_contact_attnum]::smallint[]
+      and c.confrelid = 'public.profiles'::pg_catalog.regclass
+      and c.confkey = array[v_profile_id_attnum]::smallint[]
+      and c.confdeltype = 'n'
+  ) then
+    raise exception 'events_contact_profile_id_fkey_invalid' using errcode = '22023';
+  end if;
+end
+$$;
+
+create index if not exists idx_events_contact_profile_id
+  on public.events (contact_profile_id);
+
+alter table public.timelogs
+  add column if not exists review_note text;
 
 create index events_timelog_approver_profile_id_idx
   on public.events (timelog_approver_profile_id)
@@ -20,13 +73,25 @@ create table public.timelog_approvals (
   status text not null check (status in ('pending', 'approved', 'returned')),
   requested_at timestamptz not null default clock_timestamp(),
   resolved_at timestamptz,
+  resolved_timelog_expected_updated_at timestamptz,
+  resolved_approval_expected_updated_at timestamptz,
   superseded_at timestamptz,
   note text not null default '',
   updated_at timestamptz not null default clock_timestamp(),
   unique (approval_round_id, timelog_id),
   constraint timelog_approvals_resolution_check check (
-    (status = 'pending' and resolved_at is null)
-    or (status in ('approved', 'returned') and resolved_at is not null)
+    (
+      status = 'pending'
+      and resolved_at is null
+      and resolved_timelog_expected_updated_at is null
+      and resolved_approval_expected_updated_at is null
+    )
+    or (
+      status in ('approved', 'returned')
+      and resolved_at is not null
+      and resolved_timelog_expected_updated_at is not null
+      and resolved_approval_expected_updated_at is not null
+    )
   )
 );
 
@@ -652,6 +717,10 @@ begin
 
       if v_approval.status = p_resolution
         and v_approval.note = v_note then
+        if v_approval.resolved_timelog_expected_updated_at is distinct from v_target.expected_updated_at
+          or v_approval.resolved_approval_expected_updated_at is distinct from v_target.approval_updated_at then
+          raise exception 'timelog_approval_conflict' using errcode = '40001';
+        end if;
         continue;
       end if;
 
@@ -667,8 +736,11 @@ begin
   for v_target in
     select
       (target->>'id')::uuid as id,
+      (target->>'expected_updated_at')::timestamptz as expected_updated_at,
       case when (target->>'approval_id') is null then null
-        else (target->>'approval_id')::uuid end as approval_id
+        else (target->>'approval_id')::uuid end as approval_id,
+      case when (target->>'approval_updated_at') is null then null
+        else (target->>'approval_updated_at')::timestamptz end as approval_updated_at
     from pg_catalog.jsonb_array_elements(p_targets) target
     order by (target->>'id')::uuid
   loop
@@ -685,6 +757,8 @@ begin
       set status = p_resolution,
           note = v_note,
           resolved_at = clock_timestamp(),
+          resolved_timelog_expected_updated_at = v_target.expected_updated_at,
+          resolved_approval_expected_updated_at = v_target.approval_updated_at,
           updated_at = clock_timestamp()
       where a.id = v_target.approval_id
         and a.status = 'pending'

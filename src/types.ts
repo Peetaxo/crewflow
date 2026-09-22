@@ -46,6 +46,8 @@ export interface Event {
   client: string;
   description?: string;
   contactProfileId?: string | null;
+  contactApprovesHours?: boolean;
+  timelogApproverProfileId?: string | null;
   contactPerson?: string;
   contactPhone?: string;
   dresscode?: string;
@@ -142,17 +144,27 @@ export type TimelogStatus = 'draft' | 'pending_crew_confirmation' | 'pending_ch'
 
 export type TimelogApprovalStatus = 'pending' | 'approved' | 'returned';
 
+export interface EventContactOption {
+  profileId: string;
+  name: string;
+  phone: string;
+  canApproveHours: boolean;
+}
+
 export interface TimelogApproval {
   id: string;
   approvalRoundId: string;
   timelogId: string;
   approverProfileId: string;
+  approverUserId: string;
   status: TimelogApprovalStatus;
-  requestedByProfileId: string | null;
+  requestedByProfileId: string;
+  requestedByUserId: string;
   requestedAt: string;
   resolvedAt: string | null;
   supersededAt: string | null;
   note: string;
+  updatedAt: string;
 }
 
 /** Jeden den ve vykazu prace */

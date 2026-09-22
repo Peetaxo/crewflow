@@ -41,7 +41,7 @@ import type {
   WarehouseReservationItem,
 } from '@/types';
 import type { Database } from './database.types';
-import { mapBudgetItem, mapBudgetPackage, mapCandidate, mapClient, mapContractor, mapEvent, mapFleetReservation, mapFleetVehicle, mapInvoice, mapProject, mapReceipt, mapTimelog } from './supabase-mappers';
+import { mapBudgetItem, mapBudgetPackage, mapCandidate, mapClient, mapContractor, mapEvent, mapFleetReservation, mapFleetVehicle, mapInvoice, mapProject, mapReceipt, mapTimelog, mapTimelogApproval } from './supabase-mappers';
 import { appDataSource } from './app-config';
 import { isSupabaseConfigured, supabase } from './supabase';
 
@@ -363,6 +363,7 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     eventsResult,
     eventApplicationsResult,
     timelogsResult,
+    timelogApprovalsResult,
     eventAssignmentsResult,
     timelogDaysResult,
     invoicesResult,
@@ -388,6 +389,7 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     supabase.from('events').select('*').order('date_from').order('name'),
     supabase.from('event_applications').select('*').order('created_at'),
     supabase.from('timelogs').select('*').order('created_at'),
+    supabase.from('timelog_approvals').select('*').order('requested_at'),
     supabase.from('event_assignments').select('*').order('assigned_at'),
     supabase.from('timelog_days').select('*').order('date'),
     supabase.from('invoices').select('*').order('created_at'),
@@ -415,6 +417,7 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
     eventsResult,
     eventApplicationsResult,
     timelogsResult,
+    timelogApprovalsResult,
     eventAssignmentsResult,
     timelogDaysResult,
     invoicesResult,
@@ -450,6 +453,7 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
   const eventRows = eventsResult.data ?? [];
   const eventApplicationRows = eventApplicationsResult.data ?? [];
   const timelogRows = timelogsResult.data ?? [];
+  const timelogApprovalRows = timelogApprovalsResult.data ?? [];
   const eventAssignmentRows = (eventAssignmentsResult.data ?? []) as EventAssignmentRow[];
   const timelogDayRows = timelogDaysResult.data ?? [];
   const invoiceRows = invoicesResult.data ?? [];
@@ -511,11 +515,19 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
   }
 
   const timelogIdMap = indexById(timelogRows);
+  const timelogApprovalsByTimelogId = new Map<string, ReturnType<typeof mapTimelogApproval>[]>();
+  for (const approvalRow of timelogApprovalRows) {
+    const current = timelogApprovalsByTimelogId.get(approvalRow.timelog_id) ?? [];
+    current.push(mapTimelogApproval(approvalRow));
+    timelogApprovalsByTimelogId.set(approvalRow.timelog_id, current);
+  }
   const timelogs = timelogRows.map((row) => ({
     ...mapTimelog(row, timelogDayRowsByTimelogId.get(row.id) ?? []),
     id: timelogIdMap.get(row.id) ?? Number.NaN,
     eid: eventIdMap.get(row.event_id) ?? Number.NaN,
+    eventSupabaseId: row.event_id,
     contractorProfileId: row.contractor_id,
+    approvals: timelogApprovalsByTimelogId.get(row.id) ?? [],
   }));
 
   const eventApplicationIdMap = indexById(eventApplicationRows);

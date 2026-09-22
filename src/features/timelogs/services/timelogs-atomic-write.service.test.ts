@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Timelog, TimelogStatus } from '../../../types';
+import type { Timelog, TimelogApproval, TimelogStatus } from '../../../types';
 
 const createDeferred = <T,>() => {
   let resolve!: (value: T) => void;
@@ -36,6 +36,23 @@ const makeTimelog = (overrides: Partial<Timelog> = {}): Timelog => ({
   km: 0,
   note: '',
   status: 'draft',
+  ...overrides,
+});
+
+const makeApproval = (overrides: Partial<TimelogApproval> = {}): TimelogApproval => ({
+  id: '11111111-1111-4111-8111-111111111111',
+  approvalRoundId: '22222222-2222-4222-8222-222222222222',
+  timelogId: 'timelog-uuid-1',
+  approverProfileId: '33333333-3333-4333-8333-333333333333',
+  approverUserId: '44444444-4444-4444-8444-444444444444',
+  status: 'pending',
+  requestedByProfileId: '55555555-5555-4555-8555-555555555555',
+  requestedByUserId: '66666666-6666-4666-8666-666666666666',
+  requestedAt: '2026-08-17T09:00:00.000Z',
+  resolvedAt: null,
+  supersededAt: null,
+  note: '',
+  updatedAt: '2026-08-17T09:00:00.000Z',
   ...overrides,
 });
 
@@ -137,6 +154,14 @@ const setupAtomicHarness = async ({
           }))
         )));
       }
+      if (table === 'timelog_approvals') {
+        return createOrderedQuery(authoritativeTimelogs.flatMap((timelog) => (
+          (timelog.approvals ?? []).map((approval) => ({
+            timelog_id: timelog.supabaseId,
+            approval,
+          }))
+        )));
+      }
       if (table === 'profiles') {
         return createOrderedQuery([{ id: 'profile-uuid-1' }, { id: 'profile-uuid-2' }]);
       }
@@ -175,6 +200,7 @@ const setupAtomicHarness = async ({
       note: row.note,
       status: row.status,
     }),
+    mapTimelogApproval: (row: { approval: TimelogApproval }) => structuredClone(row.approval),
   }));
   vi.doMock('../../../lib/app-data', () => ({
     getLocalAppState: () => structuredClone(snapshot),
@@ -342,7 +368,7 @@ describe('timelog atomic write coordination', () => {
     const firstSave = harness.service.saveTimelog({ ...staleLocalTimelog, note: 'first' });
     const secondSave = harness.service.saveTimelog({ ...staleLocalTimelog, note: 'second' });
 
-    await vi.waitFor(() => expect(harness.from).toHaveBeenCalledTimes(4));
+    await vi.waitFor(() => expect(harness.from).toHaveBeenCalledTimes(5));
     expect(harness.saveTimelogAtomicRpc).not.toHaveBeenCalled();
 
     authoritativeRead.resolve();
@@ -458,6 +484,7 @@ describe('timelog atomic write coordination', () => {
     const authoritative = makeTimelog({
       note: 'server truth',
       updatedAt: '2026-08-17T15:00:00.000Z',
+      approvals: [makeApproval()],
     });
     const harness = await setupAtomicHarness({
       timelogs: [makeTimelog()],
@@ -475,7 +502,11 @@ describe('timelog atomic write coordination', () => {
     expect(harness.getSnapshot().timelogs[0]).toMatchObject({
       note: 'server truth',
       updatedAt: '2026-08-17T15:00:00.000Z',
+      approvals: [expect.objectContaining({
+        id: '11111111-1111-4111-8111-111111111111',
+        approverUserId: '44444444-4444-4444-8444-444444444444',
+      })],
     });
-    expect(harness.from).toHaveBeenCalledTimes(4);
+    expect(harness.from).toHaveBeenCalledTimes(5);
   });
 });

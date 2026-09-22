@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Database } from './database.types';
-import { mapContractor, mapEvent, mapFleetReservation, mapFleetVehicle, mapInvoice, mapProject, mapReceipt, mapTimelog } from './supabase-mappers';
+import { mapContractor, mapEvent, mapFleetReservation, mapFleetVehicle, mapInvoice, mapProject, mapReceipt, mapTimelog, mapTimelogApproval } from './supabase-mappers';
 
 type EventRow = Database['public']['Tables']['events']['Row'];
 type FleetReservationRow = Database['public']['Tables']['fleet_reservations']['Row'];
@@ -9,15 +9,80 @@ type ProfileRow = Database['public']['Tables']['profiles']['Row'];
 type ProjectRow = Database['public']['Tables']['projects']['Row'];
 type TimelogRow = Database['public']['Tables']['timelogs']['Row'];
 type TimelogDayRow = Database['public']['Tables']['timelog_days']['Row'];
+type TimelogApprovalRow = Database['public']['Tables']['timelog_approvals']['Row'];
 type InvoiceRow = Database['public']['Tables']['invoices']['Row'];
 type ReceiptRow = Database['public']['Tables']['receipts']['Row'];
 
 describe('supabase mappers', () => {
   it('hydrates scheduling metadata while defaulting legacy rows', () => {
     const row = { id: 'event-uuid', date_from: '2026-09-01', date_to: '2026-09-03' } as EventRow;
-    expect(mapEvent(row)).toMatchObject({ scheduleVersion: 1, freeDays: [] });
+    expect(mapEvent(row)).toMatchObject({
+      scheduleVersion: 1,
+      freeDays: [],
+      contactProfileId: null,
+      contactApprovesHours: true,
+      timelogApproverProfileId: null,
+    });
     expect(mapEvent({ ...row, schedule_version: 2, free_days: ['2026-09-02'] })).toMatchObject({
       scheduleVersion: 2, freeDays: ['2026-09-02'], supabaseId: 'event-uuid',
+    });
+  });
+
+  it('maps linked event contact metadata and preserves contact snapshots', () => {
+    const row = {
+      id: 'event-uuid',
+      date_from: '2026-09-01',
+      date_to: '2026-09-03',
+      contact_profile_id: '11111111-1111-4111-8111-111111111111',
+      contact_person: 'Snapshot Name',
+      contact_phone: '+420 777 111 222',
+      contact_approves_hours: false,
+      timelog_approver_profile_id: '22222222-2222-4222-8222-222222222222',
+    } as EventRow;
+
+    expect(mapEvent(row)).toMatchObject({
+      contactProfileId: '11111111-1111-4111-8111-111111111111',
+      contactPerson: 'Snapshot Name',
+      contactPhone: '+420 777 111 222',
+      contactApprovesHours: false,
+      timelogApproverProfileId: '22222222-2222-4222-8222-222222222222',
+    });
+  });
+
+  it('maps complete approval history without inventing or rewriting identities', () => {
+    const row = {
+      id: '11111111-1111-4111-8111-111111111111',
+      handoff_batch_id: '11111111-1111-4111-8111-111111111111',
+      approval_round_id: '22222222-2222-4222-8222-222222222222',
+      timelog_id: '33333333-3333-4333-8333-333333333333',
+      approver_profile_id: '44444444-4444-4444-8444-444444444444',
+      approver_user_id: '55555555-5555-4555-8555-555555555555',
+      requested_by_profile_id: '66666666-6666-4666-8666-666666666666',
+      requested_by_user_id: '77777777-7777-4777-8777-777777777777',
+      status: 'returned',
+      requested_at: '2026-09-20T08:00:00Z',
+      resolved_at: '2026-09-20T09:00:00Z',
+      resolved_timelog_expected_updated_at: '2026-09-20T07:59:00Z',
+      resolved_approval_expected_updated_at: '2026-09-20T08:00:00Z',
+      superseded_at: null,
+      note: 'Doplňte přestávku.',
+      updated_at: '2026-09-20T09:00:00Z',
+    } satisfies TimelogApprovalRow;
+
+    expect(mapTimelogApproval(row)).toEqual({
+      id: row.id,
+      approvalRoundId: row.approval_round_id,
+      timelogId: row.timelog_id,
+      approverProfileId: row.approver_profile_id,
+      approverUserId: row.approver_user_id,
+      requestedByProfileId: row.requested_by_profile_id,
+      requestedByUserId: row.requested_by_user_id,
+      status: 'returned',
+      requestedAt: row.requested_at,
+      resolvedAt: row.resolved_at,
+      supersededAt: null,
+      note: row.note,
+      updatedAt: row.updated_at,
     });
   });
 
@@ -101,12 +166,16 @@ describe('supabase mappers', () => {
       crew_filled: 0,
       status: 'upcoming',
       description: null,
+      contact_profile_id: null,
+      contact_approves_hours: true,
+      timelog_approver_profile_id: null,
       contact_person: null,
       contact_phone: null,
       contact_email: null,
       dresscode: null,
       meeting_point: null,
       show_day_types: null,
+      allow_crew_time_proposal: null,
       day_types: null,
       phase_times: null,
       phase_schedules: null,
@@ -209,6 +278,7 @@ describe('supabase mappers', () => {
       contractor_id: 'profile-uuid-1',
       km: 0,
       note: null,
+      review_note: null,
       status: 'draft',
       submitted_at: null,
       approved_at: null,

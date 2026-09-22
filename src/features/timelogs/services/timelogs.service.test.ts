@@ -121,6 +121,7 @@ const setupStableUuidWriteHarness = async ({
     return query;
   };
   const timelogDaysSelect = vi.fn(() => createOrderedQuery([]));
+  const timelogApprovalsSelect = vi.fn(() => createOrderedQuery([]));
   const profilesSelect = vi.fn(() => createOrderedQuery(
     [...new Set(
       authoritativeTimelogs
@@ -210,6 +211,10 @@ const setupStableUuidWriteHarness = async ({
           };
         }
 
+        if (table === 'timelog_approvals') {
+          return { select: timelogApprovalsSelect };
+        }
+
         if (table === 'events') {
           return {
             select: authoritativeTimelogs
@@ -239,6 +244,7 @@ const setupStableUuidWriteHarness = async ({
       status: row.status ?? 'draft',
       updatedAt: row.updated_at,
     })),
+    mapTimelogApproval: vi.fn(),
   }));
 
   vi.doMock('../../../lib/app-data', () => ({
@@ -356,7 +362,7 @@ describe('timelogs.service write flow', () => {
     });
   });
 
-  it('loads stable Supabase timelog identity without mutating state and orders event mappings deterministically', async () => {
+  it('loads stable Supabase timelog identity and approval history without matching local numeric ids', async () => {
     const updateLocalAppState = vi.fn();
     const createOrderedQuery = <T,>(data: T[]) => {
       const result = Promise.resolve({ data, error: null });
@@ -385,6 +391,15 @@ describe('timelogs.service write flow', () => {
       day_type: 'instal',
       note: null,
     }]);
+    const timelogApprovalsQuery = createOrderedQuery([{
+      id: 'approval-row-1',
+      timelog_id: 'timelog-row-1',
+      status: 'pending',
+    }, {
+      id: 'approval-for-local-id',
+      timelog_id: '1',
+      status: 'pending',
+    }]);
     const profilesQuery = createOrderedQuery([{ id: 'profile-uuid-1' }]);
     const eventsQuery = createOrderedQuery([{ id: 'event-row-1' }]);
 
@@ -399,6 +414,7 @@ describe('timelogs.service write flow', () => {
           select: vi.fn(() => {
             if (table === 'timelogs') return timelogsQuery;
             if (table === 'timelog_days') return timelogDaysQuery;
+            if (table === 'timelog_approvals') return timelogApprovalsQuery;
             if (table === 'profiles') return profilesQuery;
             if (table === 'events') return eventsQuery;
             throw new Error(`Unexpected table ${table}`);
@@ -416,6 +432,11 @@ describe('timelogs.service write flow', () => {
         note: '',
         status: 'draft',
       }),
+      mapTimelogApproval: (row: { id: string; timelog_id: string; status: 'pending' }) => ({
+        id: row.id,
+        timelogId: row.timelog_id,
+        status: row.status,
+      }),
     }));
 
     vi.doMock('../../../lib/app-data', () => ({
@@ -432,6 +453,11 @@ describe('timelogs.service write flow', () => {
       supabaseId: 'timelog-row-1',
       eventSupabaseId: 'event-row-1',
       contractorProfileId: 'profile-uuid-1',
+      approvals: [{
+        id: 'approval-row-1',
+        timelogId: 'timelog-row-1',
+        status: 'pending',
+      }],
     })]);
     expect(eventsQuery.order.mock.calls).toEqual([
       ['date_from'],
@@ -439,6 +465,37 @@ describe('timelogs.service write flow', () => {
       ['id'],
     ]);
     expect(updateLocalAppState).not.toHaveBeenCalled();
+  });
+
+  it('propagates approval history query failures from authoritative reloads', async () => {
+    const createOrderedQuery = (table: string) => {
+      const result = Promise.resolve({
+        data: [],
+        error: table === 'timelog_approvals' ? { message: 'approval history unavailable' } : null,
+      });
+      const order = vi.fn();
+      const query = { order, then: result.then.bind(result) };
+      order.mockReturnValue(query);
+      return query;
+    };
+
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: vi.fn((table: string) => ({
+          select: vi.fn(() => createOrderedQuery(table)),
+        })),
+      },
+    }));
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => createSnapshot([]),
+      updateLocalAppState: vi.fn(),
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+
+    const { loadTimelogsSnapshot } = await import('./timelogs.service');
+    await expect(loadTimelogsSnapshot()).rejects.toThrow('approval history unavailable');
   });
 
   it('does not let an older public timelog fetch overwrite a newer lifecycle generation', async () => {
@@ -478,6 +535,7 @@ describe('timelogs.service write flow', () => {
           select: vi.fn(() => {
             if (table === 'timelogs') return createOrderedQuery(deferredTimelogs.promise);
             if (table === 'timelog_days') return createOrderedQuery(Promise.resolve({ data: [], error: null }));
+            if (table === 'timelog_approvals') return createOrderedQuery(Promise.resolve({ data: [], error: null }));
             if (table === 'profiles') return createOrderedQuery(Promise.resolve({ data: [{ id: 'profile-uuid-1' }], error: null }));
             if (table === 'events') return createOrderedQuery(Promise.resolve({ data: [{ id: 'event-row-1' }], error: null }));
             throw new Error(`Unexpected table ${table}`);
@@ -546,6 +604,7 @@ describe('timelogs.service write flow', () => {
           select: vi.fn(() => {
             if (table === 'timelogs') return createOrderedQuery(rows.promise);
             if (table === 'timelog_days') return createOrderedQuery(Promise.resolve({ data: [], error: null }));
+            if (table === 'timelog_approvals') return createOrderedQuery(Promise.resolve({ data: [], error: null }));
             if (table === 'profiles') return createOrderedQuery(Promise.resolve({ data: [], error: null }));
             if (table === 'events') return createOrderedQuery(Promise.resolve({ data: [], error: null }));
             throw new Error(`Unexpected table ${table}`);
@@ -621,6 +680,9 @@ describe('timelogs.service write flow', () => {
             return { select: timelogSelect, update: timelogUpdate };
           }
           if (table === 'timelog_days') {
+            return { select: vi.fn(() => createOrderedQuery(Promise.resolve({ data: [], error: null }))) };
+          }
+          if (table === 'timelog_approvals') {
             return { select: vi.fn(() => createOrderedQuery(Promise.resolve({ data: [], error: null }))) };
           }
           if (table === 'profiles') {
@@ -838,6 +900,14 @@ describe('timelogs.service write flow', () => {
             };
           }
 
+          if (table === 'timelog_approvals') {
+            return {
+              select: vi.fn(() => ({
+                order: vi.fn().mockResolvedValue({ data: [], error: null }),
+              })),
+            };
+          }
+
           if (table === 'profiles') {
             return {
               select: vi.fn(() => createDoubleOrderMock([
@@ -887,6 +957,7 @@ describe('timelogs.service write flow', () => {
     expect(timelogs[0].eid).toBe(1);
     expect(timelogs[0].supabaseId).toBe('timelog-row-1');
     expect(timelogs[0].eventSupabaseId).toBe('event-row-1');
+    expect(timelogs[0].approvals).toEqual([]);
     expect(updateLocalAppState).toHaveBeenCalledOnce();
   });
 

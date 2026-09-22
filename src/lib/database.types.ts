@@ -10,6 +10,7 @@ export type AppRole = 'crew' | 'crewhead' | 'coo';
 export type EventStatus = 'planning' | 'upcoming' | 'full' | 'past';
 export type TimelogType = 'instal' | 'provoz' | 'deinstal';
 export type TimelogStatus = 'draft' | 'pending_crew_confirmation' | 'pending_ch' | 'pending_coo' | 'approved' | 'invoiced' | 'paid' | 'rejected';
+export type TimelogApprovalStatus = 'pending' | 'approved' | 'returned';
 export type InvoiceStatus = 'draft' | 'sent' | 'paid';
 export type InvoiceApprovalDocumentSource = 'powerapps_document_approval';
 export type PowerAppsApprovalStatus = 'pending' | 'approved' | 'rejected' | 'unknown';
@@ -319,6 +320,9 @@ export interface Database {
           crew_filled: number | null;
           status: EventStatus;
           description: string | null;
+          contact_profile_id: string | null;
+          contact_approves_hours: boolean;
+          timelog_approver_profile_id: string | null;
           contact_person: string | null;
           contact_phone: string | null;
           contact_email: string | null;
@@ -568,6 +572,26 @@ export interface Database {
           created_at: string;
         };
       };
+      timelog_approvals: {
+        Row: {
+          id: string;
+          handoff_batch_id: string;
+          approval_round_id: string;
+          timelog_id: string;
+          approver_profile_id: string;
+          approver_user_id: string;
+          requested_by_profile_id: string;
+          requested_by_user_id: string;
+          status: TimelogApprovalStatus;
+          requested_at: string;
+          resolved_at: string | null;
+          resolved_timelog_expected_updated_at: string | null;
+          resolved_approval_expected_updated_at: string | null;
+          superseded_at: string | null;
+          note: string;
+          updated_at: string;
+        };
+      };
       timelogs: {
         Row: {
           id: string;
@@ -575,6 +599,7 @@ export interface Database {
           contractor_id: string;
           km: number | null;
           note: string | null;
+          review_note: string | null;
           status: TimelogStatus;
           submitted_at: string | null;
           approved_at: string | null;
@@ -723,6 +748,41 @@ export interface Database {
           profile_id: string;
           first_name: string | null;
           last_name: string | null;
+        }>;
+      };
+      list_event_contact_options: {
+        Args: Record<string, never>;
+        Returns: Array<{
+          profile_id: string;
+          name: string;
+          phone: string | null;
+          can_approve_hours: boolean;
+        }>;
+      };
+      handoff_timelogs_for_approval_atomic: {
+        Args: {
+          p_targets: Json;
+        };
+        Returns: Array<{
+          id: string;
+          updated_at: string;
+          status: TimelogStatus;
+          approval_id: string;
+          approval_round_id: string;
+          approval_status: TimelogApprovalStatus;
+          approval_updated_at: string;
+        }>;
+      };
+      resolve_timelog_approvals_atomic: {
+        Args: {
+          p_targets: Json;
+          p_resolution: 'approved' | 'returned';
+          p_note?: string;
+        };
+        Returns: Array<{
+          id: string;
+          updated_at: string;
+          status: TimelogStatus;
         }>;
       };
       next_self_billing_invoice_sequence: {

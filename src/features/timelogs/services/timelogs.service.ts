@@ -2,7 +2,8 @@ import { appDataSource } from '../../../lib/app-config';
 import { getLocalAppState, subscribeToLocalAppState, updateLocalAppState } from '../../../lib/app-data';
 import { queryClient } from '../../../lib/query-client';
 import { queryKeys } from '../../../lib/query-keys';
-import { mapTimelog } from '../../../lib/supabase-mappers';
+import type { Database } from '../../../lib/database.types';
+import { mapTimelog, mapTimelogApproval } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { Contractor, Event, Timelog, TimelogStatus } from '../../../types';
 import { getLifecycleSnapshotGeneration, runLifecycleDataMutation } from '../../event-lifecycle-generation';
@@ -97,11 +98,18 @@ const matchesSearch = (
   );
 };
 
+type TimelogRow = Database['public']['Tables']['timelogs']['Row'];
+type TimelogDayRow = Database['public']['Tables']['timelog_days']['Row'];
+type TimelogApprovalRow = Database['public']['Tables']['timelog_approvals']['Row'];
+type ProfileIdentityRow = Pick<Database['public']['Tables']['profiles']['Row'], 'id'>;
+type EventIdentityRow = Pick<Database['public']['Tables']['events']['Row'], 'id'>;
+
 const mapSupabaseTimelogs = (
-  timelogRows: NonNullable<Awaited<ReturnType<typeof supabase.from<'timelogs'>>>['data']>,
-  timelogDayRows: NonNullable<Awaited<ReturnType<typeof supabase.from<'timelog_days'>>>['data']>,
-  profileRows: NonNullable<Awaited<ReturnType<typeof supabase.from<'profiles'>>>['data']>,
-  eventRows: NonNullable<Awaited<ReturnType<typeof supabase.from<'events'>>>['data']>,
+  timelogRows: TimelogRow[],
+  timelogDayRows: TimelogDayRow[],
+  timelogApprovalRows: TimelogApprovalRow[],
+  profileRows: ProfileIdentityRow[],
+  eventRows: EventIdentityRow[],
 ) => {
   const profileIdMap = new Map(
     profileRows.map((row, index) => [row.id, index + 1]),
@@ -117,6 +125,13 @@ const mapSupabaseTimelogs = (
     timelogDayRowsByTimelogId.set(dayRow.timelog_id, current);
   }
 
+  const timelogApprovalsByTimelogId = new Map<string, ReturnType<typeof mapTimelogApproval>[]>();
+  for (const approvalRow of timelogApprovalRows) {
+    const current = timelogApprovalsByTimelogId.get(approvalRow.timelog_id) ?? [];
+    current.push(mapTimelogApproval(approvalRow));
+    timelogApprovalsByTimelogId.set(approvalRow.timelog_id, current);
+  }
+
   return timelogRows.map((row, index) => ({
     ...mapTimelog(row, timelogDayRowsByTimelogId.get(row.id) ?? []),
     id: index + 1,
@@ -124,6 +139,7 @@ const mapSupabaseTimelogs = (
     eid: eventIdMap.get(row.event_id) ?? Number.NaN,
     eventSupabaseId: row.event_id,
     contractorProfileId: row.contractor_id,
+    approvals: timelogApprovalsByTimelogId.get(row.id) ?? [],
   }));
 };
 
@@ -132,15 +148,20 @@ export const loadTimelogsSnapshot = async (): Promise<Timelog[]> => {
     return getLocalAppState().timelogs ?? [];
   }
 
-  const [timelogsResult, timelogDaysResult, profilesResult, eventsResult] = await Promise.all([
+  const [timelogsResult, timelogDaysResult, timelogApprovalsResult, profilesResult, eventsResult] = await Promise.all([
     supabase.from('timelogs').select('*').order('created_at'),
     supabase.from('timelog_days').select('*').order('date'),
+    supabase.from('timelog_approvals').select('*').order('requested_at'),
     supabase.from('profiles').select('id').order('last_name').order('first_name'),
     supabase.from('events').select('id').order('date_from').order('name').order('id'),
   ]);
 
   const firstError =
-    timelogsResult.error ?? timelogDaysResult.error ?? profilesResult.error ?? eventsResult.error;
+    timelogsResult.error
+    ?? timelogDaysResult.error
+    ?? timelogApprovalsResult.error
+    ?? profilesResult.error
+    ?? eventsResult.error;
   if (firstError) {
     throw new Error(firstError.message);
   }
@@ -148,6 +169,7 @@ export const loadTimelogsSnapshot = async (): Promise<Timelog[]> => {
   const supabaseTimelogs = mapSupabaseTimelogs(
     timelogsResult.data ?? [],
     timelogDaysResult.data ?? [],
+    timelogApprovalsResult.data ?? [],
     profilesResult.data ?? [],
     eventsResult.data ?? [],
   );

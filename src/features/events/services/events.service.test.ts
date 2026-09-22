@@ -512,7 +512,11 @@ describe('events.service write flow', () => {
       crew_filled: event.filled,
       status: event.status,
       description: null,
-      contact_person: null,
+      contact_profile_id: event.contactProfileId ?? null,
+      contact_approves_hours: event.contactApprovesHours ?? true,
+      timelog_approver_profile_id: event.timelogApproverProfileId ?? null,
+      contact_person: event.contactPerson ?? null,
+      contact_phone: event.contactPhone ?? null,
       dresscode: null,
       meeting_point: null,
       show_day_types: event.showDayTypes ?? false,
@@ -1021,7 +1025,11 @@ describe('events.service write flow', () => {
         status: row.status,
         client: row.client_name,
         description: row.description ?? undefined,
+        contactProfileId: row.contact_profile_id ?? null,
+        contactApprovesHours: row.contact_approves_hours ?? true,
+        timelogApproverProfileId: row.timelog_approver_profile_id ?? null,
         contactPerson: row.contact_person ?? undefined,
+        contactPhone: row.contact_phone ?? undefined,
         dresscode: row.dresscode ?? undefined,
         meetingLocation: row.meeting_point ?? undefined,
         showDayTypes: row.show_day_types,
@@ -1718,7 +1726,11 @@ describe('events.service write flow', () => {
       crew_needed: 2,
       status: 'upcoming',
       description: null,
+      contact_profile_id: null,
+      contact_approves_hours: true,
+      timelog_approver_profile_id: null,
       contact_person: null,
+      contact_phone: null,
       dresscode: null,
       meeting_point: null,
       show_day_types: false,
@@ -2303,6 +2315,37 @@ describe('events.service write flow', () => {
     } finally { consoleError.mockRestore(); }
   });
 
+  it.each([false, true])('persists and roundtrips approval routing metadata with lost response %s', async (loseFirstInsertResponse) => {
+    const harness = await setupEventCreateIntentHarness({ loseFirstInsertResponse });
+    const draft = {
+      ...newEventDraft(),
+      supabaseId: 'event-client-uuid-1',
+      contactProfileId: '11111111-1111-4111-8111-111111111111',
+      contactApprovesHours: false,
+      timelogApproverProfileId: '22222222-2222-4222-8222-222222222222',
+      contactPerson: 'Contact Snapshot',
+      contactPhone: '+420 777 111 222',
+    };
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const saved = await harness.service.saveEvent(draft);
+      expect(harness.insert).toHaveBeenCalledWith(expect.objectContaining({
+        contact_profile_id: draft.contactProfileId,
+        contact_approves_hours: false,
+        timelog_approver_profile_id: draft.timelogApproverProfileId,
+        contact_person: draft.contactPerson,
+        contact_phone: draft.contactPhone,
+      }));
+      expect(saved).toMatchObject({
+        contactProfileId: draft.contactProfileId,
+        contactApprovesHours: false,
+        timelogApproverProfileId: draft.timelogApproverProfileId,
+        contactPerson: draft.contactPerson,
+        contactPhone: draft.contactPhone,
+      });
+    } finally { consoleError.mockRestore(); }
+  });
+
   it.each([
     {
       label: 'no exact UUID row',
@@ -2319,6 +2362,13 @@ describe('events.service write flow', () => {
     {
       label: 'mismatched free days',
       recoveryRowTransform: (row: Record<string, unknown>) => ({ ...row, free_days: ['2026-04-21'] }),
+    },
+    {
+      label: 'mismatched approval routing metadata',
+      recoveryRowTransform: (row: Record<string, unknown>) => ({
+        ...row,
+        timelog_approver_profile_id: '22222222-2222-4222-8222-222222222222',
+      }),
     },
   ])('does not commit an unsuccessful recovery with $label', async ({ recoveryRowTransform }) => {
     const harness = await setupEventCreateIntentHarness({

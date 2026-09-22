@@ -1,4 +1,4 @@
-import type { BudgetItem, BudgetPackage, Candidate, Client, Contractor, Event, FleetReservation, FleetVehicle, Invoice, Project, ReceiptItem, Timelog, TimelogDay } from '@/types';
+import type { BudgetItem, BudgetPackage, Candidate, Client, Contractor, Event, FleetReservation, FleetVehicle, Invoice, Project, ReceiptItem, Timelog, TimelogApproval, TimelogDay } from '@/types';
 import type { Database, Json } from './database.types';
 
 type BudgetItemRow = Database['public']['Tables']['budget_items']['Row'];
@@ -13,6 +13,7 @@ type ProfileRow = Database['public']['Tables']['profiles']['Row'];
 type ProjectRow = Database['public']['Tables']['projects']['Row'];
 type ReceiptRow = Database['public']['Tables']['receipts']['Row'];
 type TimelogRow = Database['public']['Tables']['timelogs']['Row'];
+type TimelogApprovalRow = Database['public']['Tables']['timelog_approvals']['Row'];
 type TimelogDayRow = Database['public']['Tables']['timelog_days']['Row'];
 
 function asRecord(value: Json | null): Record<string, unknown> | undefined {
@@ -135,7 +136,11 @@ export function mapEvent(row: EventRow): Event {
     status: row.status,
     client: row.client_name ?? '',
     description: row.description ?? undefined,
+    contactProfileId: row.contact_profile_id ?? null,
+    contactApprovesHours: row.contact_approves_hours ?? true,
+    timelogApproverProfileId: row.timelog_approver_profile_id ?? null,
     contactPerson: row.contact_person ?? undefined,
+    contactPhone: row.contact_phone ?? undefined,
     dresscode: row.dresscode ?? undefined,
     meetingLocation: row.meeting_point ?? undefined,
     showDayTypes: row.show_day_types ?? undefined,
@@ -253,6 +258,24 @@ export function mapTimelog(row: TimelogRow, days: TimelogDayRow[] = []): Timelog
     km: Number(row.km ?? 0),
     note: row.note ?? '',
     status: row.status,
+  };
+}
+
+export function mapTimelogApproval(row: TimelogApprovalRow): TimelogApproval {
+  return {
+    id: row.id,
+    approvalRoundId: row.approval_round_id,
+    timelogId: row.timelog_id,
+    approverProfileId: row.approver_profile_id,
+    approverUserId: row.approver_user_id,
+    requestedByProfileId: row.requested_by_profile_id,
+    requestedByUserId: row.requested_by_user_id,
+    status: row.status,
+    requestedAt: row.requested_at,
+    resolvedAt: row.resolved_at,
+    supersededAt: row.superseded_at,
+    note: row.note,
+    updatedAt: row.updated_at,
   };
 }
 

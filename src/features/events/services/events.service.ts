@@ -1016,7 +1016,11 @@ const toSupabaseEventPayload = async (event: Event, expectedEpoch: number) => {
     crew_needed: event.needed,
     status: event.status,
     description: event.description ?? null,
+    contact_profile_id: event.contactProfileId ?? null,
+    contact_approves_hours: event.contactApprovesHours ?? true,
+    timelog_approver_profile_id: event.timelogApproverProfileId ?? null,
     contact_person: event.contactPerson ?? null,
+    contact_phone: event.contactPhone ?? null,
     dresscode: event.dresscode ?? null,
     meeting_point: event.meetingLocation ?? null,
     show_day_types: event.showDayTypes ?? false,
@@ -1794,7 +1798,11 @@ const matchesSavedEvent = (actual: Event, expected: Event): boolean => (
   && actual.needed === expected.needed
   && actual.status === expected.status
   && actual.description === expected.description
+  && (actual.contactProfileId ?? null) === (expected.contactProfileId ?? null)
+  && (actual.contactApprovesHours ?? true) === (expected.contactApprovesHours ?? true)
+  && (actual.timelogApproverProfileId ?? null) === (expected.timelogApproverProfileId ?? null)
   && actual.contactPerson === expected.contactPerson
+  && actual.contactPhone === expected.contactPhone
   && actual.dresscode === expected.dresscode
   && actual.meetingLocation === expected.meetingLocation
   && (actual.showDayTypes ?? false) === (expected.showDayTypes ?? false)

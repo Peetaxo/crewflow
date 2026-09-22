@@ -113,6 +113,41 @@ describe('app-data Supabase loading', () => {
         km: 0, note: null, status: 'invoiced', submitted_at: null, approved_at: null,
         created_at: '2026-04-28T00:00:00Z', updated_at: '2026-04-28T09:00:00Z',
       }],
+      timelog_approvals: [{
+        id: '11111111-1111-4111-8111-111111111111',
+        handoff_batch_id: '11111111-1111-4111-8111-111111111111',
+        approval_round_id: '22222222-2222-4222-8222-222222222222',
+        timelog_id: 'linked-timelog-uuid',
+        approver_profile_id: '33333333-3333-4333-8333-333333333333',
+        approver_user_id: '44444444-4444-4444-8444-444444444444',
+        requested_by_profile_id: '55555555-5555-4555-8555-555555555555',
+        requested_by_user_id: '66666666-6666-4666-8666-666666666666',
+        status: 'approved',
+        requested_at: '2026-04-28T08:00:00Z',
+        resolved_at: '2026-04-28T08:30:00Z',
+        resolved_timelog_expected_updated_at: '2026-04-28T08:00:00Z',
+        resolved_approval_expected_updated_at: '2026-04-28T08:00:00Z',
+        superseded_at: '2026-04-28T10:00:00Z',
+        note: '',
+        updated_at: '2026-04-28T08:30:00Z',
+      }, {
+        id: '77777777-7777-4777-8777-777777777777',
+        handoff_batch_id: '77777777-7777-4777-8777-777777777777',
+        approval_round_id: '88888888-8888-4888-8888-888888888888',
+        timelog_id: '1',
+        approver_profile_id: '33333333-3333-4333-8333-333333333333',
+        approver_user_id: '44444444-4444-4444-8444-444444444444',
+        requested_by_profile_id: '55555555-5555-4555-8555-555555555555',
+        requested_by_user_id: '66666666-6666-4666-8666-666666666666',
+        status: 'pending',
+        requested_at: '2026-04-28T09:00:00Z',
+        resolved_at: null,
+        resolved_timelog_expected_updated_at: null,
+        resolved_approval_expected_updated_at: null,
+        superseded_at: null,
+        note: '',
+        updated_at: '2026-04-28T09:00:00Z',
+      }],
       timelog_days: [],
       crew_ratings: [{
         id: 'rating-uuid-1',
@@ -262,6 +297,18 @@ describe('app-data Supabase loading', () => {
         receiptSupabaseIds: ['receipt-uuid-1'],
       }),
     ]);
+    expect(snapshot.timelogs[0].approvals).toEqual([
+      expect.objectContaining({
+        id: '11111111-1111-4111-8111-111111111111',
+        timelogId: 'linked-timelog-uuid',
+        approverUserId: '44444444-4444-4444-8444-444444444444',
+        supersededAt: '2026-04-28T10:00:00Z',
+        updatedAt: '2026-04-28T08:30:00Z',
+      }),
+    ]);
+    expect(snapshot.timelogs[0].approvals).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ timelogId: '1' }),
+    ]));
     expect(snapshot.fleetReservations).toEqual([
       expect.objectContaining({
         id: 1,
@@ -298,5 +345,31 @@ describe('app-data Supabase loading', () => {
         name: 'Petr Heitzer',
       },
     ]);
+  });
+
+  it('propagates timelog approval query errors instead of substituting legacy history', async () => {
+    const createOrderedQuery = (table: string) => {
+      const result = Promise.resolve({
+        data: [],
+        error: table === 'timelog_approvals' ? { message: 'approval schema unavailable' } : null,
+      });
+      const order = vi.fn();
+      const query = { order, then: result.then.bind(result) };
+      order.mockReturnValue(query);
+      return query;
+    };
+
+    vi.doMock('./supabase', () => ({
+      isSupabaseConfigured: true,
+      supabase: {
+        from: vi.fn((table: string) => ({
+          select: vi.fn(() => createOrderedQuery(table)),
+        })),
+        rpc: vi.fn().mockResolvedValue({ data: [], error: null }),
+      },
+    }));
+
+    const { getSupabaseAppData } = await import('./app-data');
+    await expect(getSupabaseAppData()).rejects.toThrow('approval schema unavailable');
   });
 });

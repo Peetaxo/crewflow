@@ -1,4 +1,5 @@
 import React from 'react';
+import * as Dialog from '@radix-ui/react-dialog';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import EventLocationPickerModal from './EventLocationPickerModal';
@@ -67,8 +68,23 @@ vi.mock('maplibre-gl/dist/maplibre-gl.css', () => ({}));
 
 describe('EventLocationPickerModal', () => {
   beforeEach(() => {
+    vi.useRealTimers();
     vi.clearAllMocks();
     mapEventHandlers = {};
+  });
+
+  it('keeps its controls focusable above a parent modal and handles Escape itself', () => {
+    const onCancel = vi.fn();
+    render(<Dialog.Root open><Dialog.Portal><Dialog.Overlay /><Dialog.Content aria-describedby={undefined}>
+      <Dialog.Title>Akce</Dialog.Title>
+      <input aria-label="Název akce" />
+      <EventLocationPickerModal address="Praha" onCancel={onCancel} onConfirm={vi.fn()} />
+    </Dialog.Content></Dialog.Portal></Dialog.Root>);
+    const confirm = screen.getByRole('button', { name: 'Potvrdit polohu' });
+    act(() => confirm.focus());
+    expect(confirm).toHaveFocus();
+    fireEvent.keyDown(confirm, { key: 'Escape' });
+    expect(onCancel).toHaveBeenCalledOnce();
   });
 
   it('confirms the current MapLibre map center while the compact pin stays fixed', () => {

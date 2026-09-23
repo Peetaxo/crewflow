@@ -13,7 +13,7 @@ import ShiftCard from '../components/shared/ShiftCard';
 import { useTimelogsQuery } from '../features/timelogs/queries/useTimelogsQuery';
 import { getProjects, subscribeToProjectChanges } from '../features/projects/services/projects.service';
 import { getContractors, subscribeToCrewChanges } from '../features/crew/services/crew.service';
-import { categorizeCrewTimelogs, resolveShiftProject } from '../features/crew/services/crew-shift-display';
+import { categorizeCrewTimelogs, resolveNextShiftDisplay, resolveShiftProject } from '../features/crew/services/crew-shift-display';
 import MobileSettingsButton from '../components/layout/MobileSettingsButton';
 import { buildTimelogChangeSummary } from '../features/timelogs/services/timelog-change-summary';
 
@@ -219,20 +219,18 @@ const MyShiftsView = () => {
         const event = findEvent(timelog.eid);
         const project = resolveShiftProject(event, projects);
         if (!event || !project) return [];
+        const display = resolveNextShiftDisplay(timelog, event);
+        if (!display) return [];
 
         return [{
           timelog,
           event,
           project,
+          display,
           hours: calculateTotalHours(timelog.days),
         }];
       })
-      .sort((a, b) => {
-        const firstDate = `${a.event.startDate}T${a.event.startTime ?? a.timelog.days[0]?.f ?? '00:00'}`;
-        const secondDate = `${b.event.startDate}T${b.event.startTime ?? b.timelog.days[0]?.f ?? '00:00'}`;
-
-        return firstDate.localeCompare(secondDate);
-      })[0] ?? null
+      .sort((a, b) => a.display.sortKey.localeCompare(b.display.sortKey))[0] ?? null
   ), [categorized.upcoming, findEvent, projects]);
 
   const actionRequiredTimelogs = useMemo(() => (
@@ -311,7 +309,9 @@ const MyShiftsView = () => {
             <div className="nodu-my-shifts-next-meta">
               <span>
                 <Calendar size={15} aria-hidden="true" />
-                {formatShortDate(nextShift.event.startDate)} · {nextShift.event.startTime ?? nextShift.timelog.days[0]?.f}
+                {nextShift.event.scheduleVersion === 2
+                  ? format(parseISO(nextShift.display.date), 'd. M.')
+                  : formatShortDate(nextShift.display.date)} · {nextShift.display.time}
               </span>
               <span>
                 <Clock size={15} aria-hidden="true" />

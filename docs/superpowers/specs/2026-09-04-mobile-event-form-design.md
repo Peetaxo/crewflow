@@ -2,7 +2,7 @@
 
 Datum: 2026-09-04
 
-Stav: produktový směr odsouhlasen v konverzaci; písemné shrnutí čeká na kontrolu uživatele před implementačním plánem. Aplikace zatím nebyla změněna.
+Stav: uživatel souhlasí s realizací formuláře i funkčního cíleného schvalování. Implementace a izolované testování probíhají na větvi `codex/mobile-event-form`; žádné další rozhodnutí o odděleném dodání již neblokuje práci.
 
 ## Cíl a rozsah
 
@@ -11,7 +11,7 @@ Založení i úprava akce mají být na mobilu pohodlné a přehledné. Formulá
 Návrh má dvě navazující části:
 
 1. Mobilní formulář a bezpečné oddělení termínu od předvyplňování výkazů. Tyto změny tvoří společný celek: samotné přejmenování nebo přesunutí polí by změnilo jejich význam bez opravy jejich použití.
-2. Propojení kontaktní osoby s konkrétním schvalovatelem. Cílené schvalování je samostatná implementační oblast; tento návrh neznamená schválení nasazení staršího schvalovacího návrhu beze změn.
+2. Propojení kontaktní osoby s konkrétním schvalovatelem. Uživatel dne 2026-09-04 výslovně požaduje funkční cílené schvalování v této dodávce včetně přepínače „Schvaluje také hodiny“. Starší schvalovací návrh je podkladem, nikoli automatickým schválením všech jeho detailů beze změn.
 
 ## Mobilní obrazovka
 
@@ -60,6 +60,8 @@ Produktově odsouhlaseno po revizi původního náhledu: základní jednotkou ro
 - Změny data rozsahu párovat podle skutečného data, ne podle pořadového čísla řádku. Zachovat nastavení shodných dnů; nově přidané dny jsou neurčené bez časů.
 - Během stejné editace ponechat rozpracovaný rozpis v paměti při vypnutí/zapnutí fází, při dočasném zkrácení rozsahu i při přepnutí dne na volno. Obnovení původního data nebo pracovní fáze umožní pokračovat bez ztráty zadání. Pro předvyplňování používat jen aktivní dny a fáze; skryté rozpracované hodnoty se nepovažují za aktivní směny. Před vyřazením již uložených směn mimo nový termín vyžádat potvrzení místo tichého odstranění. Existující výkazy se tím nemažou.
 - Hromadné přiřazování rozsahů dnů a automatické rozdělování na instalaci/provoz/deinstalaci nejsou součástí této první varianty.
+- Název přepínače zůstává „Rozdělit akci na fáze“, nikoli „Naplánovat fáze podle dnů“.
+- Nepřidávat samostatné přihlašování crew na vybrané fáze. Individuální domluvu případně promítne produkce ručním přiřazením na fáze. Stávající přihlášení na celou akci zůstává beze změny.
 
 ## Pravidla předvyplňování výkazů
 
@@ -93,11 +95,17 @@ Současné `event.startTime` / `event.endTime` slouží také jako denní předv
 
 ## Kontakt a schvalování
 
+### Upřesnění vývojového rozsahu od uživatele
+
+Uživatel po technické přípravě upřesnil, že aplikace je stále ve vývoji. Schvalování hodin a fakturace mají být zatím oddělené: nový schvalovací tok končí schváleným výkazem, nikoli automatickým založením faktury. „Jako dnes“ v předchozí odpovědi označovalo existující implementaci databázového triggeru, ne nově odsouhlasené produktové chování.
+
+Stávající přepínač Crew / CH / COO je výslovně ponechán pro uživatelovo testování. Tato dodávka nemění `set_current_user_role` ani nepřiděluje nové role. Zavádění konkrétních dalších účtů schvalovatelů se odkládá; jejich absence neblokuje implementaci formuláře a testování schvalovací logiky na syntetických účtech v izolované databázi. Neznamená to odložení dříve výslovně požadovaného přepínače „Schvaluje také hodiny“ ani tvrzení, že stávající vývojové přepínání rolí je bezpečné pro ostrý provoz.
+
 - Kontaktní osoba je povinná a viditelná v hlavním formuláři. Crew v detailu akce potřebuje její identitu a dostupný telefon.
 - Kontakt a schvalovatel jsou oddělené vztahy, i když často směřují na stejnou osobu.
 - „Schvaluje také hodiny“ je výchozí volba pro kontakt, který má odpovídající schvalovací oprávnění.
-- Po vypnutí se zobrazí výběr konkrétního schvalovatele COO. Pokud kontakt nemá oprávnění schvalovat, je nutné zvolit oprávněného schvalovatele; výběr kontaktu nikdy neuděluje novou roli.
-- Zamýšlená posloupnost: kontrola CH, následně konkrétní schvalovatel COO. Případní další schvalovatelé se řeší při předání výkazu, ne povinně při založení akce.
+- Po vypnutí se zobrazí výběr konkrétního schvalovatele COO. Pro skutečné předání hodin musí mít vybraná osoba odpovídající účet a oprávnění; výběr kontaktu nikdy neuděluje novou roli. Protože uživatel odložil zavádění dalších účtů, formulář dovolí uložit i zamýšlený kontakt bez účtu s jasnou informací o chybějícím schvalovacím přístupu. Takový kontakt ale nemůže schválit hodiny, dokud nebude účet připojen; RPC nesmí předání automaticky přesměrovat na jiného COO.
+- Zamýšlená posloupnost: kontrola CH, následně konkrétní schvalovatel COO. Podle posledního upřesnění uživatele se další schvalovatelé odkládají; tato dodávka má jednoho navazujícího schvalovatele. Datový záznam schvalovacího kola uchovává konkrétní identitu a historii, nikoli jen obecnou roli.
 - Ve formuláři nezobrazovat vysvětlení „Po tvé kontrole jako CH“, „Nejdřív kontrola CH, potom schválení kontaktní osobou“ ani „Další schvalovatele můžeš přidat při předání výkazu“.
 - Před ostrým zapojením ověřit a samostatně naplánovat návaznost na `2026-08-19-targeted-timelog-approvals-design.md`. Pouhý výběr v UI nestačí: uložení, směrování výkazu a serverová oprávnění musí odpovídat zvolené osobě.
 - Nenaznačovat funkční cílené schvalování v nasazeném formuláři, dokud není skutečně vynuceno. Tato část není záminkou k zavedení automatické fakturace ani k rozšíření oprávnění.

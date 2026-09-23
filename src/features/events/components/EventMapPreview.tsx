@@ -13,6 +13,7 @@ interface EventMapPreviewProps {
   editable?: boolean;
   googleMapsUrl?: string;
   onLocationChange?: (coords: { locationLat: number; locationLng: number }) => void;
+  onEdit?: (opener: HTMLButtonElement) => void;
 }
 
 const EVENT_MAP_ZOOM = 15;
@@ -29,6 +30,7 @@ const EventMapPreview = ({
   editable = false,
   googleMapsUrl,
   onLocationChange,
+  onEdit,
 }: EventMapPreviewProps) => {
   const [mapUnavailable, setMapUnavailable] = React.useState(false);
   const mapElementRef = React.useRef<HTMLDivElement | null>(null);
@@ -156,6 +158,7 @@ const EventMapPreview = ({
           <p className="nodu-event-map-preview__placeholder-title">Mapa se zobrazí po výběru polohy.</p>
           <p className="nodu-event-map-preview__placeholder-address">{addressLabel}</p>
         </div>
+        {onEdit && <button type="button" aria-haspopup="dialog" className="event-form-map-preview-edit" onClick={(event) => onEdit(event.currentTarget)}><span>Upravit polohu</span></button>}
         {googleMapsLink}
       </div>
     );
@@ -166,12 +169,13 @@ const EventMapPreview = ({
       <div
         ref={mapElementRef}
         className="nodu-event-map-preview__canvas"
-        role="img"
-        aria-label={addressLabel}
+        role={onEdit ? undefined : 'img'}
+        aria-label={onEdit ? undefined : addressLabel}
       />
       {editable && (
         <div className="nodu-event-map-preview__fixed-pin" data-testid="event-map-fixed-pin" aria-hidden="true" />
       )}
+      {onEdit && <button type="button" aria-haspopup="dialog" className="event-form-map-preview-edit" onClick={(event) => onEdit(event.currentTarget)}><span>Upravit polohu</span></button>}
       {googleMapsLink}
     </div>
   );

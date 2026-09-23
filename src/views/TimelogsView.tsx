@@ -3,7 +3,6 @@ import { addMonths, endOfMonth, format, isValid, parseISO, startOfMonth, subMont
 import { cs } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, SlidersHorizontal } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { useAuth } from '../app/providers/useAuth';
 import { useAppContext } from '../context/useAppContext';
@@ -16,9 +15,13 @@ import { getContractors, subscribeToCrewChanges } from '../features/crew/service
 import { useEventsQuery } from '../features/events/queries/useEventsQuery';
 import {
   getTimelogDependencies,
-  updateTimelogStatus,
-  updateTimelogStatuses,
+  type TimelogAction,
 } from '../features/timelogs/services/timelogs.service';
+import { useTimelogApprovalActions } from '../features/timelogs/hooks/useTimelogApprovalActions';
+import {
+  getTimelogApprovalAssigneeName,
+  isTimelogApprovalActionable,
+} from '../features/timelogs/services/timelog-approval-presentation';
 import { buildTimelogChangeSummary } from '../features/timelogs/services/timelog-change-summary';
 import { useTimelogsQuery } from '../features/timelogs/queries/useTimelogsQuery';
 import { canEditTimelog, canSeeTimelogNote, canSubmitTimelog } from '../features/timelogs/services/timelog-permissions';
@@ -226,16 +229,18 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
     });
   }, [filtered, findEvent]);
 
-  const handleTimelogAction = useCallback((id: Timelog['id'], action: 'sub' | 'ch' | 'coo' | 'rej') => {
-    void updateTimelogStatus(id, action).catch((error) => {
-      toast.error(error instanceof Error ? error.message : 'Nepodařilo se aktualizovat výkaz.');
-    });
-  }, []);
+  const timelogActions = useTimelogApprovalActions({
+    currentProfileId,
+    timelogs: baseTimelogs,
+  });
+  const { dialog: timelogActionDialog, execute: executeTimelogAction, isPending: isTimelogActionPending } = timelogActions;
 
-  const runBulkAction = (ids: Timelog['id'][], action: 'ch' | 'coo') => {
-    void updateTimelogStatuses(ids, action).catch((error) => {
-      toast.error(error instanceof Error ? error.message : 'Nepodařilo se aktualizovat výkazy.');
-    });
+  const handleTimelogAction = useCallback((id: Timelog['id'], action: TimelogAction) => {
+    executeTimelogAction([id], action);
+  }, [executeTimelogAction]);
+
+  const runBulkAction = (ids: Timelog['id'][], action: TimelogAction) => {
+    executeTimelogAction(ids, action);
   };
 
   const getBulkActionMeta = (timelogsInGroup: typeof filtered) => {
@@ -243,7 +248,10 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
 
     const pendingStatus = role === 'crewhead' ? 'pending_ch' : 'pending_coo';
     const actionableIds = timelogsInGroup
-      .filter((timelog) => timelog.status === pendingStatus)
+      .filter((timelog) => (
+        timelog.status === pendingStatus
+        && isTimelogApprovalActionable(timelog, role, currentProfileId)
+      ))
       .map((timelog) => timelog.id);
 
     if (actionableIds.length === 0) return null;
@@ -255,6 +263,34 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
         ? `Schválit vše a poslat COO (${actionableIds.length})`
         : `Schválit vše (${actionableIds.length})`,
     };
+  };
+
+  const renderApprovalAssignee = (timelog: Timelog, event: Event) => {
+    if (timelog.status !== 'pending_ch' && timelog.status !== 'pending_coo') return null;
+    const approverName = getTimelogApprovalAssigneeName(timelog, event, contractors);
+    if (!approverName) return null;
+
+    return (
+      <div className="mt-0.5 text-[11px] font-medium text-[color:var(--nodu-text-soft)]">
+        Schvaluje: {approverName}
+      </div>
+    );
+  };
+
+  const renderReturnedReview = (timelog: Timelog) => {
+    const returnedReason = timelog.reviewNote?.trim();
+    if (timelog.status !== 'rejected' || !returnedReason) return null;
+
+    return (
+      <div className="mb-3 rounded-[18px] border border-[color:var(--nodu-error-border)] bg-[color:var(--nodu-error-bg)] p-3">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--nodu-error-text)]">
+          Důvod vrácení
+        </div>
+        <div className="mt-2 rounded-[14px] bg-[color:rgb(var(--nodu-surface-rgb)/0.76)] px-3 py-2 text-xs font-medium text-[color:var(--nodu-text)]">
+          {returnedReason}
+        </div>
+      </div>
+    );
   };
 
   const renderTimelogDayRow = (timelogId: EventId, day: TimelogDay, index: number, mealAllowanceEnabled: boolean) => {
@@ -323,6 +359,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
       {canSubmitTimelog(timelog, role) && (
         <Button
           onClick={() => handleTimelogAction(timelog.id, 'sub')}
+          disabled={isTimelogActionPending}
           size="sm"
           className="border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] text-[11px] text-[color:var(--nodu-success-text)] shadow-[0_12px_24px_rgba(47,125,79,0.10)] hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)] hover:text-[color:var(--nodu-success-text)]"
         >
@@ -333,6 +370,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
         <>
           <Button
             onClick={() => handleTimelogAction(timelog.id, 'ch')}
+            disabled={isTimelogActionPending}
             size="sm"
             className="border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] text-[11px] text-[color:var(--nodu-success-text)] shadow-[0_12px_24px_rgba(47,125,79,0.10)] hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)] hover:text-[color:var(--nodu-success-text)]"
           >
@@ -340,6 +378,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
           </Button>
           <Button
             onClick={() => handleTimelogAction(timelog.id, 'rej')}
+            disabled={isTimelogActionPending}
             variant="outline"
             size="sm"
             className="border-[#e8b4a3] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39] text-[11px]"
@@ -348,10 +387,11 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
           </Button>
         </>
       )}
-      {timelog.status === 'pending_coo' && role === 'coo' && (
+      {timelog.status === 'pending_coo' && isTimelogApprovalActionable(timelog, role, currentProfileId) && (
         <>
           <Button
             onClick={() => handleTimelogAction(timelog.id, 'coo')}
+            disabled={isTimelogActionPending}
             size="sm"
             className="border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] text-[11px] text-[color:var(--nodu-success-text)] shadow-[0_12px_24px_rgba(47,125,79,0.10)] hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)] hover:text-[color:var(--nodu-success-text)]"
           >
@@ -359,11 +399,12 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
           </Button>
           <Button
             onClick={() => handleTimelogAction(timelog.id, 'rej')}
+            disabled={isTimelogActionPending}
             variant="outline"
             size="sm"
             className="border-[#e8b4a3] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39] text-[11px]"
           >
-            Zamítnout
+            Vrátit
           </Button>
         </>
       )}
@@ -544,6 +585,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="text-sm font-semibold text-[color:var(--nodu-text)]">{contractor.name}</div>
+                            {renderApprovalAssignee(timelog, event)}
                           </div>
                           <StatusBadge status={timelog.status} label={getTimelogStatusLabel(timelog.status, isCrewMineScope)} />
                           <div className="text-right">
@@ -556,6 +598,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                         </div>
 
                         {showCrewConfirmedCorrection && renderCrewConfirmedCorrectionNotice(changeSummary)}
+                        {renderReturnedReview(timelog)}
 
                         <div className="mb-3 space-y-2">
                           {timelog.days.map((day, index) => renderTimelogDayRow(
@@ -584,6 +627,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                           {canSubmitTimelog(timelog, role) && (
                             <button
                               onClick={() => handleTimelogAction(timelog.id, 'sub')}
+                              disabled={isTimelogActionPending}
                               className="rounded-xl border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] px-3 py-1.5 text-[11px] font-semibold text-[color:var(--nodu-success-text)] shadow-[0_12px_24px_rgba(47,125,79,0.10)] transition hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)]"
                             >
                               {getSubmitActionLabel(timelog)}
@@ -593,31 +637,35 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                             <>
                               <button
                                 onClick={() => handleTimelogAction(timelog.id, 'ch')}
+                                disabled={isTimelogActionPending}
                                 className="rounded-xl border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] px-3 py-1.5 text-[11px] font-semibold text-[color:var(--nodu-success-text)] shadow-[0_12px_24px_rgba(47,125,79,0.10)] transition hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)]"
                               >
                                 Schválit a poslat COO
                               </button>
                               <button
                                 onClick={() => handleTimelogAction(timelog.id, 'rej')}
+                                disabled={isTimelogActionPending}
                                 className="rounded-xl border border-[color:var(--nodu-error-border)] px-3 py-1.5 text-[11px] font-medium text-[color:var(--nodu-error-text)] transition hover:bg-[color:var(--nodu-error-bg)]"
                               >
                                 Zamítnout
                               </button>
                             </>
                           )}
-                          {timelog.status === 'pending_coo' && role === 'coo' && (
+                          {timelog.status === 'pending_coo' && isTimelogApprovalActionable(timelog, role, currentProfileId) && (
                             <>
                               <button
                                 onClick={() => handleTimelogAction(timelog.id, 'coo')}
+                                disabled={isTimelogActionPending}
                                 className="rounded-xl border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] px-3 py-1.5 text-[11px] font-semibold text-[color:var(--nodu-success-text)] shadow-[0_12px_24px_rgba(47,125,79,0.10)] transition hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)]"
                               >
                                 Schválit
                               </button>
                               <button
                                 onClick={() => handleTimelogAction(timelog.id, 'rej')}
+                                disabled={isTimelogActionPending}
                                 className="rounded-xl border border-[color:var(--nodu-error-border)] px-3 py-1.5 text-[11px] font-medium text-[color:var(--nodu-error-text)] transition hover:bg-[color:var(--nodu-error-bg)]"
                               >
-                                Zamítnout
+                                Vrátit
                               </button>
                             </>
                           )}
@@ -631,6 +679,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                   <div className="mt-4 flex justify-end">
                     <Button
                       onClick={() => runBulkAction(bulkAction.ids, bulkAction.action)}
+                      disabled={isTimelogActionPending}
                       size="sm"
                       className="border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] text-xs text-[color:var(--nodu-success-text)] shadow-[0_14px_28px_rgba(47,125,79,0.10)] hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)] hover:text-[color:var(--nodu-success-text)]"
                     >
@@ -690,6 +739,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                     </div>
                     <div className="flex-1">
                       <div className="text-sm font-semibold text-[color:var(--nodu-text)]">{contractor.name}</div>
+                      {renderApprovalAssignee(timelog, event)}
                       <div className="mt-0.5 flex items-center gap-1.5">
                         <span className="jn nodu-job-badge">{event.job}</span>
                         <span className="text-xs text-[color:var(--nodu-text-soft)]">{event.name}</span>
@@ -728,7 +778,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
 
                 {showCrewConfirmedCorrection && renderCrewConfirmedCorrectionNotice(changeSummary)}
 
-                {showReturnedNotice && (
+                {showReturnedNotice && !returnedReason && (
                   <div className="mb-3 rounded-[18px] border border-[color:var(--nodu-error-border)] bg-[color:var(--nodu-error-bg)] p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--nodu-error-text)]">
@@ -745,6 +795,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                     )}
                   </div>
                 )}
+                {renderReturnedReview(timelog)}
 
                 <div className="mb-3 space-y-2">
                   {timelog.days.map((day, index) => renderTimelogDayRow(
@@ -768,6 +819,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
           )}
         </div>
       )}
+      {timelogActionDialog}
     </motion.div>
   );
 };

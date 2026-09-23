@@ -77,6 +77,21 @@ describe('timelog day UI helpers', () => {
     });
   });
 
+  it('does not use event boundaries or legacy phase times as v2 multiday defaults', () => {
+    expect(resolveTimelogDayDefaults('2026-07-14', {
+      ...event,
+      scheduleVersion: 2,
+    })).toEqual({
+      d: '2026-07-14',
+      f: '',
+      t: '',
+      type: 'provoz',
+      meals: [],
+      meal: null,
+      note: '',
+    });
+  });
+
   it('lets a manually selected phase override the event day type', () => {
     expect(resolveTimelogDayDefaults('2026-07-14', event, 'pripravy')).toEqual({
       d: '2026-07-14',

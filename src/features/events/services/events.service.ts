@@ -5,13 +5,16 @@ import { queryKeys } from '../../../lib/query-keys';
 import { mapClient, mapEvent } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { getDatesBetween, getEventStatus } from '../../../utils';
-import { Client, Contractor, Event, EventApplication, EventApplicationStatus, EventCrewAssignment, EventPhaseSlot, GrasonEventConfirmation, Project, ReceiptItem, Timelog, TimelogType } from '../../../types';
+import { Client, Contractor, Event, EventApplication, EventApplicationStatus, EventContactOption, EventCrewAssignment, EventPhaseSlot, GrasonEventConfirmation, Project, ReceiptItem, Timelog, TimelogType } from '../../../types';
 import { advanceLifecycleSnapshotGeneration, getLifecycleSnapshotGeneration, runLifecycleDataMutation } from '../../event-lifecycle-generation';
 import { createStableDraftUuid } from '../../stable-draft-identity';
 import { EventAssignmentResult, EventConflictDetail, EventFilter, EventWithDerivedStatus } from '../types/events.types';
 import { approveEventWithdrawalRpc, assignEventCrewRpc, isDisposableTimelogStatus, removeEventCrewRpc } from './event-assignment-lifecycle.service';
+import { createEventFormPlan, validateEventForm } from './event-form-state';
 import { deleteEventAtomicRpc } from './event-mutation-rpc.service';
+import { buildEventScheduleDays } from './event-schedule';
 import { assertLocalEventNotGrouped } from '../../billing-groups/billing-groups.local';
+import { listEventContactOptionsRpc } from '../../timelogs/services/timelog-approval-rpc.service';
 
 const DEFAULT_TIME_FROM = '08:00';
 const DEFAULT_TIME_TO = '17:00';
@@ -1015,10 +1018,16 @@ const toSupabaseEventPayload = async (event: Event, expectedEpoch: number) => {
     crew_needed: event.needed,
     status: event.status,
     description: event.description ?? null,
+    contact_profile_id: event.contactProfileId ?? null,
+    contact_approves_hours: event.contactApprovesHours ?? true,
+    timelog_approver_profile_id: event.timelogApproverProfileId ?? null,
     contact_person: event.contactPerson ?? null,
+    contact_phone: event.contactPhone ?? null,
     dresscode: event.dresscode ?? null,
     meeting_point: event.meetingLocation ?? null,
     show_day_types: event.showDayTypes ?? false,
+    schedule_version: event.scheduleVersion ?? 1,
+    free_days: event.freeDays ?? [],
     allow_crew_time_proposal: event.allowCrewTimeProposal ?? false,
     day_types: event.dayTypes ?? null,
     phase_times: event.phaseTimes ?? null,
@@ -1534,6 +1543,17 @@ export const getEventFormOptions = (): { projects: Project[]; clients: Client[] 
   };
 };
 
+export const getEventContactOptions = async (): Promise<EventContactOption[]> => {
+  if (appDataSource === 'supabase') return listEventContactOptionsRpc();
+  // Local contractor records have no authoritative COO membership information.
+  return (getLocalAppState().contractors ?? []).flatMap((contractor) => contractor.profileId ? [{
+    profileId: contractor.profileId,
+    name: contractor.name,
+    phone: contractor.phone,
+    canApproveHours: false,
+  }] : []);
+};
+
 export const createEmptyEvent = (): Event => {
   const { events } = getLocalAppState();
 
@@ -1551,7 +1571,10 @@ export const createEmptyEvent = (): Event => {
     filled: 0,
     status: 'upcoming',
     client: '',
+    scheduleVersion: 2,
     showDayTypes: false,
+    freeDays: [],
+    contactApprovesHours: true,
     allowCrewTimeProposal: false,
   };
 };
@@ -1577,6 +1600,7 @@ export const createEventCopy = (event: Event): Event => {
     filled: 0,
     status: 'upcoming',
     dayTypes: shiftDateRecordKeys(event.dayTypes, dateShift),
+    freeDays: event.freeDays?.map((date) => addDaysToDateKey(date, dateShift)),
     phaseSchedules: shiftPhaseSchedules(event.phaseSchedules, dateShift),
   };
 };
@@ -1628,6 +1652,7 @@ const createEmptySchedules = (from: string, to: string) => ({
 });
 
 export const normalizeEventSchedules = (event: Event) => {
+  if (event.scheduleVersion === 2) return event.phaseSchedules ?? {};
   if (event.phaseSchedules) return event.phaseSchedules;
 
   const defaultFrom = event.startTime || DEFAULT_TIME_FROM;
@@ -1650,8 +1675,11 @@ export const normalizeEventSchedules = (event: Event) => {
 
 export const syncDayTypesFromSchedules = (event: Event) => {
   const nextDayTypes: Record<string, TimelogType> = {};
+  const phaseTypes: TimelogType[] = event.scheduleVersion === 2
+    ? ['pripravy', ...EVENT_PHASE_TYPES]
+    : EVENT_PHASE_TYPES;
 
-  EVENT_PHASE_TYPES.forEach((phaseType) => {
+  phaseTypes.forEach((phaseType) => {
     (event.phaseSchedules?.[phaseType] || []).forEach((slot) => {
       slot.dates.forEach((date) => {
         nextDayTypes[date] = nextDayTypes[date] || phaseType;
@@ -1703,6 +1731,8 @@ export const ensureProjectForEvent = (projects: Project[], event: Event): Projec
 };
 
 export const getScheduledEventDay = (event: Event, day: Timelog['days'][number]) => {
+  if (event.scheduleVersion === 2) return day;
+
   if (!event.showDayTypes) {
     return {
       ...day,
@@ -1785,10 +1815,16 @@ const matchesSavedEvent = (actual: Event, expected: Event): boolean => (
   && actual.needed === expected.needed
   && actual.status === expected.status
   && actual.description === expected.description
+  && (actual.contactProfileId ?? null) === (expected.contactProfileId ?? null)
+  && (actual.contactApprovesHours ?? true) === (expected.contactApprovesHours ?? true)
+  && (actual.timelogApproverProfileId ?? null) === (expected.timelogApproverProfileId ?? null)
   && actual.contactPerson === expected.contactPerson
+  && actual.contactPhone === expected.contactPhone
   && actual.dresscode === expected.dresscode
   && actual.meetingLocation === expected.meetingLocation
   && (actual.showDayTypes ?? false) === (expected.showDayTypes ?? false)
+  && (actual.scheduleVersion ?? 1) === (expected.scheduleVersion ?? 1)
+  && sameJsonValue(actual.freeDays ?? [], expected.freeDays ?? [])
   && (actual.allowCrewTimeProposal ?? false) === (expected.allowCrewTimeProposal ?? false)
   && sameJsonValue(actual.dayTypes, expected.dayTypes)
   && sameJsonValue(actual.phaseTimes, expected.phaseTimes)
@@ -1876,8 +1912,19 @@ export const saveEvent = async (event: Event): Promise<Event> => {
       if (appDataSource === 'supabase') {
         requireCurrentEventMutationEpoch(mutationEpoch);
       }
-      let normalized = normalizeEvent(event);
+      const currentEvent = (getLocalAppState().events ?? []).find((item) => (
+        event.supabaseId
+          ? item.supabaseId === event.supabaseId
+          : item.id === event.id
+      ));
+      const eventWithHistoricalFields = event.dresscode === undefined && currentEvent?.dresscode !== undefined
+        ? { ...event, dresscode: currentEvent.dresscode }
+        : event;
+      let normalized = normalizeEvent(eventWithHistoricalFields);
       validateEvent(normalized);
+      if (normalized.scheduleVersion === 2) {
+        validateEventForm(normalized, createEventFormPlan(normalized));
+      }
 
       if (appDataSource === 'supabase') {
         if (!event.supabaseId) {
@@ -2325,7 +2372,9 @@ export const getContractorConflictsForEvent = (
 export const buildTimelogDaysForEvent = (
   event: Event,
   phaseChoices?: Array<TimelogType | 'all'>,
-): Timelog['days'][] => {
+): Timelog['days'] => {
+  if (event.scheduleVersion === 2) return buildEventScheduleDays(event, phaseChoices ?? ['all']);
+
   const eventDates = getDatesBetween(event.startDate, event.endDate);
   const defaultFrom = event.startTime || DEFAULT_TIME_FROM;
   const defaultTo = event.endTime || DEFAULT_TIME_TO;

@@ -239,6 +239,44 @@ const contractors = [
     reliable: true,
     note: '',
   },
+  {
+    id: 3,
+    profileId: 'profile-coo',
+    name: 'Current COO',
+    ii: 'CC',
+    bg: '#000',
+    fg: '#fff',
+    tags: [],
+    events: 1,
+    rate: 250,
+    phone: '',
+    email: '',
+    ico: '',
+    dic: '',
+    bank: '',
+    city: 'Praha',
+    reliable: true,
+    note: '',
+  },
+  {
+    id: 4,
+    profileId: 'profile-other',
+    name: 'Other COO',
+    ii: 'OC',
+    bg: '#000',
+    fg: '#fff',
+    tags: [],
+    events: 1,
+    rate: 250,
+    phone: '',
+    email: '',
+    ico: '',
+    dic: '',
+    bank: '',
+    city: 'Praha',
+    reliable: true,
+    note: '',
+  },
 ];
 
 const mockExternalApprovalModules = () => {
@@ -657,10 +695,10 @@ describe('TimelogsView', () => {
   });
 
   it('lets Crew confirm a CrewHead correction from Schvalovani', async () => {
-    const updateTimelogStatus = vi.fn().mockResolvedValue({
+    const updateTimelogStatuses = vi.fn().mockResolvedValue([{
       ...pendingCrewConfirmationTimelogs[0],
       status: 'pending_ch',
-    });
+    }]);
     mockExternalApprovalModules();
 
     vi.doMock('../context/useAppContext', () => ({
@@ -680,7 +718,7 @@ describe('TimelogsView', () => {
 
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       getTimelogDependencies: () => ({ contractors, events }),
-      updateTimelogStatus,
+      updateTimelogStatuses,
     }));
 
     const { default: TimelogsView } = await import('./TimelogsView');
@@ -692,7 +730,9 @@ describe('TimelogsView', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Potvrdit a odeslat' }));
 
-    await waitFor(() => expect(updateTimelogStatus).toHaveBeenCalledWith(1, 'sub'));
+    await waitFor(() => expect(updateTimelogStatuses).toHaveBeenCalledWith([1], 'sub', {
+      currentProfileId: 'profile-1',
+    }));
   });
 
   it('labels rejected Crew timelogs as returned for correction in mine scope', async () => {
@@ -957,5 +997,76 @@ describe('TimelogsView', () => {
     expect(screen.queryByText('PowerApps timelogy')).not.toBeInTheDocument();
     expect(screen.queryByText('Safarik - 20260015.pdf')).not.toBeInTheDocument();
     expect(buildApprovalTimelogPreview).not.toHaveBeenCalled();
+  });
+
+  it('keeps other COO reports readonly, excludes them from bulk approval, and passes the current identity', async () => {
+    const updateTimelogStatuses = vi.fn().mockResolvedValue([]);
+    mockExternalApprovalModules();
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockContext,
+        role: 'coo',
+        timelogFilter: 'pending_coo',
+      }),
+    }));
+    vi.doMock('../app/providers/useAuth', () => ({
+      useAuth: () => ({ currentProfileId: 'profile-coo' }),
+    }));
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
+      useTimelogsQuery: () => ({ data: bulkFinalApprovalTimelogs }),
+    }));
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      getTimelogDependencies: () => ({ contractors, events }),
+      updateTimelogStatuses,
+    }));
+
+    const { default: TimelogsView } = await import('./TimelogsView');
+    render(<TimelogsView />);
+
+    expect(screen.getByText('Schvaluje: Current COO')).toBeInTheDocument();
+    expect(screen.getByText('Schvaluje: Other COO')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Schválit' })).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Schválit vše (1)' }));
+
+    await waitFor(() => {
+      expect(updateTimelogStatuses).toHaveBeenCalledWith([30], 'coo', {
+        currentProfileId: 'profile-coo',
+      });
+    });
+  });
+
+  it('shows the returned review note to management as approval history', async () => {
+    mockExternalApprovalModules();
+    const returnedTimelog = {
+      ...timelogs[0],
+      status: 'rejected' as const,
+      reviewNote: 'Doplň čas ukončení.',
+    };
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({
+        ...mockContext,
+        role: 'coo',
+        timelogFilter: 'rejected',
+      }),
+    }));
+    vi.doMock('../app/providers/useAuth', () => ({
+      useAuth: () => ({ currentProfileId: 'profile-coo' }),
+    }));
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
+      useTimelogsQuery: () => ({ data: [returnedTimelog] }),
+    }));
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      getTimelogDependencies: () => ({ contractors, events }),
+      updateTimelogStatuses: vi.fn(),
+    }));
+
+    const { default: TimelogsView } = await import('./TimelogsView');
+    render(<TimelogsView />);
+
+    expect(screen.getByText('Důvod vrácení')).toBeInTheDocument();
+    expect(screen.getByText('Doplň čas ukončení.')).toBeInTheDocument();
   });
 });

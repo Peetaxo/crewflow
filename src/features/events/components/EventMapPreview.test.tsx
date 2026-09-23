@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import EventMapPreview from './EventMapPreview';
 
@@ -99,6 +99,17 @@ describe('EventMapPreview', () => {
     expect(screen.getByText('Mapa se zobrazí po výběru polohy.')).toBeInTheDocument();
     expect(screen.getByText('Rohanské nábřeží 678/23, Praha')).toBeInTheDocument();
     expect(mapMock).not.toHaveBeenCalled();
+  });
+
+  it('offers the edit button in the unavailable-map fallback', () => {
+    mapMock.mockImplementationOnce(function UnavailableMap() { throw new Error('WebGL unavailable'); });
+    const onEdit = vi.fn();
+    render(<EventMapPreview address="Praha" locationLat={50.0929} locationLng={14.4502} onEdit={onEdit} />);
+
+    const edit = screen.getByRole('button', { name: 'Upravit polohu' });
+    expect(screen.getByText('Mapa se zobrazí po výběru polohy.')).toBeInTheDocument();
+    fireEvent.click(edit);
+    expect(onEdit).toHaveBeenCalledWith(edit);
   });
 
   it('renders a Google Maps link when href is provided', () => {

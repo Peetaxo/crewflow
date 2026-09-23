@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { CalendarDays, ChevronRight, ClipboardCheck, UserPlus, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAppContext } from '../context/useAppContext';
+import { useAuth } from '../app/providers/useAuth';
 import { Contractor, Event, EventApplication, ReceiptItem, Timelog } from '../types';
 import { calculateMealAllowance, calculateTotalHours, formatCurrency, formatDateRange, getDatesBetween, getEventStatus } from '../utils';
 import StatCard from '../components/shared/StatCard';
@@ -15,6 +16,7 @@ import { useEventsQuery } from '../features/events/queries/useEventsQuery';
 import { useTimelogsQuery } from '../features/timelogs/queries/useTimelogsQuery';
 import { useReceiptsQuery } from '../features/receipts/queries/useReceiptsQuery';
 import { useInvoicesQuery } from '../features/invoices/queries/useInvoicesQuery';
+import { isTimelogApprovalActionable } from '../features/timelogs/services/timelog-approval-presentation';
 
 type PendingCrewApplicationViewModel = {
   application: EventApplication;
@@ -41,6 +43,7 @@ const DashboardView = () => {
     setSelectedEventId,
     setEventTab,
   } = useAppContext();
+  const { currentProfileId } = useAuth();
   const eventsQuery = useEventsQuery();
   const timelogsQuery = useTimelogsQuery();
   const receiptsQuery = useReceiptsQuery();
@@ -147,8 +150,11 @@ const DashboardView = () => {
   const reviewLabel = role === 'crewhead' ? 'Ke kontrole (CH)' : 'Ke schvaleni (COO)';
 
   const timelogQueue = useMemo(() => (
-    timelogs.filter((timelog) => timelog.status === approvalStatus)
-  ), [approvalStatus, timelogs]);
+    timelogs.filter((timelog) => (
+      timelog.status === approvalStatus
+      && isTimelogApprovalActionable(timelog, role, currentProfileId)
+    ))
+  ), [approvalStatus, currentProfileId, role, timelogs]);
   const pendingForMe = timelogQueue.length;
   const pendingInvoices = filteredInvoices.filter((invoice) => invoice.status === 'sent').length;
   const pendingReceipts = receipts.filter((receipt) => receipt.status === 'submitted' || receipt.status === 'approved').length;

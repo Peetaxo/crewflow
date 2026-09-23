@@ -24,6 +24,8 @@ import { useIsMobile } from '../hooks/use-mobile';
 import { Event, Timelog } from '../types';
 import type { SelectedEventId } from '../context/app-context';
 import { eventOccursOnDate, getDatesBetween } from '../utils';
+import { buildEventScheduleDays, resolveEventScheduleDay } from '../features/events/services/event-schedule';
+import { listEventDates } from '../features/timelogs/services/timelog-day-ui';
 import { Button } from '../components/ui/button';
 import EventDetailView from './EventDetailView';
 import EventEditModal from '../components/modals/EventEditModal';
@@ -289,7 +291,7 @@ const getListOccurrencesForEvent = (
   canManageEvents: boolean,
   listStartDate?: string,
 ): EventListOccurrence[] => {
-  const dates = getDatesBetween(event.startDate, event.endDate);
+  const dates = event.scheduleVersion === 2 ? listEventDates(event) : getDatesBetween(event.startDate, event.endDate);
   const dayCount = dates.length || 1;
 
   if (dayCount === 1 || !dates[0]) {
@@ -351,6 +353,13 @@ const getEventOccurrenceTimeLabel = (event: Event, date: string, timelogs: Timel
   if (uniqueTimelogTimes.length > 0) {
     if (uniqueTimelogTimes.length <= 2) return uniqueTimelogTimes.join(', ');
     return `${uniqueTimelogTimes[0]} + ${uniqueTimelogTimes.length - 1} smeny`;
+  }
+
+  if (event.scheduleVersion === 2) {
+    const plannedTimes = buildEventScheduleDays(event)
+      .filter((day) => day.d === date && day.f && day.t)
+      .map((day) => formatTimelogShift(day.f, day.t));
+    return [...new Set(plannedTimes)].join(', ') || 'Cas neurcen';
   }
 
   const phaseTimes = event.showDayTypes
@@ -661,6 +670,10 @@ const EventsView = () => {
   const getApplicationDraftKey = (event: Event) => String(getEventSelectionId(event));
   const getApplicationDraftTimes = (event: Event) => {
     const key = getApplicationDraftKey(event);
+    if (event.scheduleVersion === 2) {
+      const day = resolveEventScheduleDay(event.startDate, event);
+      return applicationDraftTimes[key] ?? { from: day.f, to: day.t };
+    }
     return applicationDraftTimes[key] ?? {
       from: event.startTime || '08:00',
       to: event.endTime || '17:00',

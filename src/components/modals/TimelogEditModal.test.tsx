@@ -1,7 +1,7 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Role, Timelog } from '../../types';
+import type { Event, Role, Timelog } from '../../types';
 import TimelogEditModal from './TimelogEditModal';
 
 let mockIsMobile = false;
@@ -10,6 +10,7 @@ let editingTimelog: Timelog | null = null;
 let setEditingTimelogMock = vi.fn();
 const testMocks = vi.hoisted(() => ({
   saveTimelog: vi.fn(),
+  eventOverrides: {} as Partial<Event>,
 }));
 
 vi.mock('../../hooks/use-mobile', () => ({
@@ -71,6 +72,7 @@ vi.mock('../../features/timelogs/services/timelogs.service', () => ({
         status: 'upcoming',
         client: 'NEXTLEVEL',
         mealAllowanceEnabled: true,
+        ...testMocks.eventOverrides,
       },
     ],
   }),
@@ -80,6 +82,7 @@ vi.mock('../../features/timelogs/services/timelogs.service', () => ({
 describe('TimelogEditModal responsive switch', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    testMocks.eventOverrides = {};
     setEditingTimelogMock = vi.fn();
     testMocks.saveTimelog.mockResolvedValue(undefined);
     mockIsMobile = false;
@@ -101,6 +104,24 @@ describe('TimelogEditModal responsive switch', () => {
     render(<TimelogEditModal />);
 
     expect(screen.getByTestId('mobile-timelog-modal')).toBeInTheDocument();
+  });
+
+  it('adds blank v2 multi-day actuals without borrowing whole-event boundaries', () => {
+    testMocks.eventOverrides = { scheduleVersion: 2, endDate: '2026-07-15' };
+    render(<TimelogEditModal />);
+    fireEvent.click(screen.getByRole('button', { name: 'Přidat den' }));
+    expect(setEditingTimelogMock).toHaveBeenLastCalledWith(expect.objectContaining({
+      days: [editingTimelog!.days[0], expect.objectContaining({ d: '2026-07-13', f: '', t: '' })],
+    }));
+  });
+
+  it('compares blank v2 actuals against the blank per-date plan', () => {
+    testMocks.eventOverrides = { scheduleVersion: 2, endDate: '2026-07-15' };
+    editingTimelog!.days = [{ d: '2026-07-13', f: '', t: '', type: 'instal' }];
+    const { container } = render(<TimelogEditModal />);
+    const row = container.querySelector('input[type="date"]')!.parentElement!.parentElement!;
+    expect(row.className).not.toContain('nodu-accent-rgb');
+    expect(setEditingTimelogMock).not.toHaveBeenCalled();
   });
 
   it.each(['crewhead', 'coo'] as const)('uses the mobile timelog editor for %s on mobile', (mobileRole) => {

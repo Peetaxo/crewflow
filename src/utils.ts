@@ -51,7 +51,7 @@ export const fc = formatCurrency;
  * Spocita hodiny jednoho dne z casu od-do.
  * Podporuje prechod pres pulnoc (napr. 22:00 - 06:00 = 8h).
  */
-const parseTimeToMinutes = (time: string): number | null => {
+export const parseTimeToMinutes = (time: string): number | null => {
   const match = time.match(/^(\d{1,2}):(\d{2})$/);
   if (!match) return null;
 
@@ -71,8 +71,9 @@ export function isOvernightTimeRange(from: string, to: string): boolean {
 }
 
 export function calculateDayHours(from: string, to: string): number {
-  const fromMinutes = parseTimeToMinutes(from) ?? 0;
-  const toMinutes = parseTimeToMinutes(to) ?? 0;
+  const fromMinutes = parseTimeToMinutes(from);
+  const toMinutes = parseTimeToMinutes(to);
+  if (fromMinutes === null || toMinutes === null) return 0;
   let minutes = toMinutes - fromMinutes;
   if (minutes < 0) minutes += 1440;
   return minutes / 60;

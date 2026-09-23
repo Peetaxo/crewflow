@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../app/providers/useAuth';
+import { useAppContext } from '../../context/useAppContext';
 import { getCandidates, subscribeToCandidateChanges } from '../../features/recruitment/services/candidates.service';
 import { useInvoicesQuery } from '../../features/invoices/queries/useInvoicesQuery';
 import { useReceiptsQuery } from '../../features/receipts/queries/useReceiptsQuery';
@@ -7,7 +8,9 @@ import { useTimelogsQuery } from '../../features/timelogs/queries/useTimelogsQue
 import { buildNavBadgeCounts } from './nav-badges';
 
 export const useNavBadgeCounts = () => {
-  const { currentProfileId } = useAuth();
+  const { currentProfileId, role: authRole } = useAuth();
+  const { role: previewRole } = useAppContext();
+  const role = authRole ?? previewRole;
   const timelogsQuery = useTimelogsQuery();
   const receiptsQuery = useReceiptsQuery();
   const invoicesQuery = useInvoicesQuery();
@@ -29,9 +32,10 @@ export const useNavBadgeCounts = () => {
 
   return useMemo(() => buildNavBadgeCounts({
     currentProfileId,
+    role,
     timelogs,
     invoices,
     receipts,
     candidates,
-  }), [candidates, currentProfileId, invoices, receipts, timelogs]);
+  }), [candidates, currentProfileId, invoices, receipts, role, timelogs]);
 };

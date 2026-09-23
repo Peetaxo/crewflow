@@ -31,6 +31,8 @@ export interface Event {
   endDate: string;
   startTime?: string;
   endTime?: string;
+  /** Verze vychozich casu vykazu; chybejici hodnota zachovava puvodni chovani. */
+  scheduleVersion?: 1 | 2;
   city: string;
   address?: string;
   placeId?: string;
@@ -44,6 +46,8 @@ export interface Event {
   client: string;
   description?: string;
   contactProfileId?: string | null;
+  contactApprovesHours?: boolean;
+  timelogApproverProfileId?: string | null;
   contactPerson?: string;
   contactPhone?: string;
   dresscode?: string;
@@ -52,6 +56,8 @@ export interface Event {
   showDayTypes?: boolean;
   /** Mapovani datum -> typ dne */
   dayTypes?: Record<string, TimelogType>;
+  /** Explicitne volne dny; pouzivaji se pouze pri zapnutych typech dnu. */
+  freeDays?: string[];
   /** Vychozi casy pro jednotlive typy dnů */
   phaseTimes?: Partial<Record<TimelogType, EventPhaseTime>>;
   /** Konkretni bloky casu pro jednotlive typy dnů */
@@ -138,17 +144,27 @@ export type TimelogStatus = 'draft' | 'pending_crew_confirmation' | 'pending_ch'
 
 export type TimelogApprovalStatus = 'pending' | 'approved' | 'returned';
 
+export interface EventContactOption {
+  profileId: string;
+  name: string;
+  phone: string;
+  canApproveHours: boolean;
+}
+
 export interface TimelogApproval {
   id: string;
   approvalRoundId: string;
   timelogId: string;
   approverProfileId: string;
+  approverUserId: string;
   status: TimelogApprovalStatus;
-  requestedByProfileId: string | null;
+  requestedByProfileId: string;
+  requestedByUserId: string;
   requestedAt: string;
   resolvedAt: string | null;
   supersededAt: string | null;
   note: string;
+  updatedAt: string;
 }
 
 /** Jeden den ve vykazu prace */

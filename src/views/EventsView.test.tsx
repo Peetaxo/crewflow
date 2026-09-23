@@ -154,6 +154,38 @@ describe('EventsView', () => {
     vi.useRealTimers();
   });
 
+  it('keeps v2 multiday proposal clocks blank and does not present boundaries as daily shifts', async () => {
+    let v2Events = [{ ...multiDayEvents[0], scheduleVersion: 2, allowCrewTimeProposal: true }];
+    vi.doMock('../context/useAppContext', () => ({ useAppContext: () => ({ ...mockAppContext, role: 'crew', eventsCalendarDate: '2026-04-16' }) }));
+    vi.doMock('../features/events/queries/useEventsQuery', () => ({ useEventsQuery: () => ({ data: v2Events, isLoading: false, error: null }) }));
+    vi.doMock('../features/events/services/events.service', () => ({
+      createEmptyEvent: vi.fn(), createEventCopy: vi.fn(), applyForEvent: vi.fn(), requestEventWithdrawal: vi.fn(), withdrawEventApplication: vi.fn(),
+      filterEventsByStatus: (items: typeof v2Events) => items.map((item) => ({ ...item, derivedStatus: 'upcoming' })),
+      getEventsWithDerivedStatus: (items: typeof v2Events) => items.map((item) => ({ ...item, derivedStatus: 'upcoming' })),
+      getReferenceDate: () => new Date('2026-04-16'),
+      getEventDetailData: () => ({ ...eventDetail, event: v2Events[0], timelogs: [], crewAssignments: [] }),
+    }));
+    vi.doMock('./EventDetailView', () => ({ default: () => null }));
+    vi.doMock('../components/modals/EventEditModal', () => ({ default: () => null }));
+    vi.doMock('../components/modals/AssignCrewModal', () => ({ default: () => null }));
+    const { default: EventsView } = await import('./EventsView');
+    const queryClient = new QueryClient();
+    const view = render(<QueryClientProvider client={queryClient}><EventsView /></QueryClientProvider>);
+    const from = screen.getByLabelText('Planovany prichod');
+    expect(from).toHaveValue('');
+    expect(screen.getByLabelText('Planovany odchod')).toHaveValue('');
+    expect(screen.getByText('2 dny')).toBeInTheDocument();
+    expect(screen.queryByText('09:00 - 17:00')).not.toBeInTheDocument();
+    fireEvent.change(from, { target: { value: '12:30' } });
+    v2Events = [{ ...v2Events[0], startTime: '06:00', endTime: '23:00', endDate: '2026-04-18' }];
+    view.rerender(<QueryClientProvider client={queryClient}><EventsView /></QueryClientProvider>);
+    expect(from).toHaveValue('12:30');
+    expect(screen.getByLabelText('Planovany odchod')).toHaveValue('');
+    expect(screen.getByText('3 dny')).toBeInTheDocument();
+    fireEvent.change(from, { target: { value: '' } });
+    expect(from).toHaveValue('');
+  });
+
   it('renders event list without crashing when events query is active', async () => {
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => mockAppContext,

@@ -146,7 +146,7 @@ const EventDetailView = () => {
   const [mobileEdgeSwipePhase, setMobileEdgeSwipePhase] = useState<'idle' | 'dragging' | 'closing'>('idle');
   const mobileEdgeSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const mobileHistoryEventIdRef = useRef<string | number | null>(null);
-  const mobileCloseTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const mobileCloseTimeoutRef = useRef<number | null>(null);
   const mobileDetailRef = useRef<HTMLDivElement | null>(null);
   const invoiceApprovalsQuery = useInvoiceApprovalsQuery();
   const anyCrewActionPending = pendingCrewAction !== null;

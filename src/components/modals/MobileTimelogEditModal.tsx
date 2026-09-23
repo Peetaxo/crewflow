@@ -705,7 +705,7 @@ const MobileTimelogEditModal: React.FC = () => {
   const isMountedRef = React.useRef(true);
   const saveInFlightRef = React.useRef(false);
   const timelogSwipeStartRef = React.useRef<{ x: number; y: number } | null>(null);
-  const timelogCloseTimeoutRef = React.useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const timelogCloseTimeoutRef = React.useRef<number | null>(null);
   const calendarDates = React.useMemo(() => (
     editingTimelog && event
       ? buildTimelogCalendarDates(event, [

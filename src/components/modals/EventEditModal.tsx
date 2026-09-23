@@ -44,6 +44,13 @@ const createDraftCache = (event: Event | null, identity: string | null): DraftCa
     multipleDays: Boolean(event?.endDate && event.endDate !== event.startDate), cachedEndDate: event?.endDate ?? '', dirty: false, advancedOpen: Boolean(event?.showDayTypes) };
 };
 
+const restoreFocus = (preferred: HTMLElement | null, fallback: HTMLElement | null) => {
+  const target = preferred?.isConnected && !preferred.matches(':disabled') ? preferred : fallback;
+  if (!target?.isConnected || target === document.body) return;
+  if (!target.matches('button, a[href], input, select, textarea, [tabindex]')) target.tabIndex = -1;
+  target.focus({ preventScroll: true });
+};
+
 const EventEditModal = ({ editingEvent, onClose, onChange, mode }: EventEditModalProps) => {
   const draftIdentity = editingEvent ? editingEvent.supabaseId ?? `local:${editingEvent.id}` : null;
   const [cacheState, setCache] = useState(() => createDraftCache(editingEvent, draftIdentity));
@@ -61,6 +68,12 @@ const EventEditModal = ({ editingEvent, onClose, onChange, mode }: EventEditModa
   const [contactsRetry, setContactsRetry] = useState(0);
   const projectMenuRef = useRef<HTMLDivElement | null>(null);
   const titleRef = useRef<HTMLHeadingElement | null>(null);
+  const focusScopeMarkerRef = useRef<HTMLSpanElement | null>(null);
+  const formOpenerRef = useRef<HTMLElement | null>(null);
+  const formFallbackRef = useRef<HTMLElement | null>(null);
+  const mapButtonRef = useRef<HTMLButtonElement | null>(null);
+  const saveButtonRef = useRef<HTMLButtonElement | null>(null);
+  const confirmationOpenerRef = useRef<HTMLElement | null>(null);
   const saveInFlightRef = useRef(false);
   const activeSaveRequestRef = useRef<symbol | null>(null);
   const mountedRef = useRef(false);
@@ -114,9 +127,12 @@ const EventEditModal = ({ editingEvent, onClose, onChange, mode }: EventEditModa
     setCache((current) => ({ ...current, dirty: true })); setError('');
     onChange(applyEventDraft({ ...editingEvent, ...patch }));
   };
-  const requestClose = () => {
+  const requestClose = (opener?: HTMLElement) => {
     if (saveInFlightRef.current) return;
-    if (cache.dirty) setConfirmation('discard'); else onClose();
+    if (cache.dirty) {
+      confirmationOpenerRef.current = opener ?? titleRef.current;
+      setConfirmation('discard');
+    } else onClose();
   };
   const selectProject = (projectId: string) => {
     const project = projects.find((item) => item.id === projectId);
@@ -130,7 +146,11 @@ const EventEditModal = ({ editingEvent, onClose, onChange, mode }: EventEditModa
     try { validateEventForm(nextEvent, cache.plan); } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Zkontrolujte údaje akce.'); return;
     }
-    if (!confirmedTrim && trimmedDates.length && editingEvent.showDayTypes) { setConfirmation('trim'); return; }
+    if (!confirmedTrim && trimmedDates.length) {
+      confirmationOpenerRef.current = saveButtonRef.current;
+      setConfirmation('trim');
+      return;
+    }
     setConfirmation(null);
     const requestIdentity = draftIdentity;
     const requestToken = Symbol('event-save-request');
@@ -146,16 +166,27 @@ const EventEditModal = ({ editingEvent, onClose, onChange, mode }: EventEditModa
     }
   };
 
-  return <Dialog.Root open onOpenChange={(open) => { if (!open) requestClose(); }}>
+  return <><span ref={focusScopeMarkerRef} hidden /><Dialog.Root open onOpenChange={(open) => { if (!open) requestClose(); }}>
     <Dialog.Portal container={portalContainer}>
       <Dialog.Overlay className="event-form-overlay" />
       <Dialog.Content className="event-form-dialog" aria-describedby={undefined}
-        onOpenAutoFocus={(event) => { event.preventDefault(); titleRef.current?.focus(); }}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          const activeElement = document.activeElement;
+          formOpenerRef.current = activeElement instanceof HTMLElement && activeElement !== document.body ? activeElement : null;
+          formFallbackRef.current = focusScopeMarkerRef.current?.parentElement?.querySelector<HTMLElement>('h1, h2') ?? null;
+          titleRef.current?.focus();
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          // A replacement draft owns focus if it opened before this dialog finished closing.
+          if (!document.querySelector('.event-form-dialog')) restoreFocus(formOpenerRef.current, formFallbackRef.current);
+        }}
         onEscapeKeyDown={(event) => { event.preventDefault(); requestClose(); }}
         onInteractOutside={(event) => event.preventDefault()}>
         <header className="event-form-header">
           <Dialog.Title ref={titleRef} tabIndex={-1}>{isEdit ? 'Upravit akci' : 'Nová akce'}</Dialog.Title>
-          <button type="button" disabled={isSaving} className="event-form-icon-button" aria-label="Zavřít formulář" onClick={requestClose}><X size={22} /></button>
+          <button type="button" disabled={isSaving} className="event-form-icon-button" aria-label="Zavřít formulář" onClick={(event) => requestClose(event.currentTarget)}><X size={22} /></button>
         </header>
         <form className="event-form-layout" onSubmit={(event) => { event.preventDefault(); void handleSave(); }} noValidate>
           <fieldset disabled={isSaving} aria-busy={isSaving} className="event-form-body">
@@ -203,7 +234,7 @@ const EventEditModal = ({ editingEvent, onClose, onChange, mode }: EventEditModa
               </>}
             </section>
             <section className="event-form-section" aria-label="Místo akce">
-              <EventAddressField key={draftIdentity} value={editingEvent} onResolvingChange={setIsAddressResolving} onPickMap={() => setIsLocationPickerOpen(true)} onChange={(selection) => patchEvent({ ...selection, city: selection.address })} />
+              <EventAddressField key={draftIdentity} value={editingEvent} mapButtonRef={mapButtonRef} onResolvingChange={setIsAddressResolving} onPickMap={() => setIsLocationPickerOpen(true)} onChange={(selection) => patchEvent({ ...selection, city: selection.address })} />
               {hasMapCoordinates && <EventMapPreview address={editingEvent.address || editingEvent.city} locationLat={editingEvent.locationLat} locationLng={editingEvent.locationLng} editable onLocationChange={(coordinates) => patchEvent(coordinates)} />}
             </section>
             <section className="event-form-section" aria-labelledby="event-contact-title">
@@ -249,16 +280,19 @@ const EventEditModal = ({ editingEvent, onClose, onChange, mode }: EventEditModa
           <footer className="event-form-footer">
             {error && <p role="alert" className="event-form-error">{error}</p>}
             <div className="event-form-footer-actions">
-              <button type="button" className="event-form-secondary" disabled={isSaving} onClick={requestClose}>Zrušit</button>
-              <button type="submit" className="event-form-primary" disabled={isSaving || isAddressResolving}>{isSaving ? 'Ukládám…' : isEdit ? 'Uložit akci' : 'Vytvořit akci'}</button>
+              <button type="button" className="event-form-secondary" disabled={isSaving} onClick={(event) => requestClose(event.currentTarget)}>Zrušit</button>
+              <button ref={saveButtonRef} type="submit" className="event-form-primary" disabled={isSaving || isAddressResolving}>{isSaving ? 'Ukládám…' : isEdit ? 'Uložit akci' : 'Vytvořit akci'}</button>
             </div>
           </footer>
         </form>
-        {isLocationPickerOpen && <EventLocationPickerModal address={editingEvent.address || editingEvent.city} initialLocationLat={editingEvent.locationLat} initialLocationLng={editingEvent.locationLng} onCancel={() => setIsLocationPickerOpen(false)} onConfirm={(coordinates) => { patchEvent(coordinates); setIsLocationPickerOpen(false); }} />}
+        {isLocationPickerOpen && <EventLocationPickerModal address={editingEvent.address || editingEvent.city} initialLocationLat={editingEvent.locationLat} initialLocationLng={editingEvent.locationLng} onCancel={() => setIsLocationPickerOpen(false)} onConfirm={(coordinates) => { patchEvent(coordinates); setIsLocationPickerOpen(false); }} onCloseAutoFocus={() => restoreFocus(mapButtonRef.current, titleRef.current)} />}
         <AlertDialog.Root open={confirmation !== null} onOpenChange={(open) => { if (!open) setConfirmation(null); }}>
           <AlertDialog.Portal container={portalContainer}>
             <AlertDialog.Overlay className="event-form-confirm-overlay" />
-            <AlertDialog.Content className="event-form-confirm">
+            <AlertDialog.Content className="event-form-confirm" onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              restoreFocus(confirmationOpenerRef.current, titleRef.current);
+            }}>
               <AlertDialog.Title>{confirmation === 'discard' ? 'Zahodit změny?' : 'Uložit zkrácený termín?'}</AlertDialog.Title>
               <AlertDialog.Description>{confirmation === 'discard' ? 'Rozpracované změny se neuloží.' : `Plán pro tyto dny se odstraní: ${trimmedDates.map((date) => format(parseISO(date), 'd. M. yyyy')).join(', ')}.`}</AlertDialog.Description>
               <div className="event-form-confirm-actions">
@@ -270,7 +304,7 @@ const EventEditModal = ({ editingEvent, onClose, onChange, mode }: EventEditModa
         </AlertDialog.Root>
       </Dialog.Content>
     </Dialog.Portal>
-  </Dialog.Root>;
+  </Dialog.Root></>;
 };
 
 export default EventEditModal;

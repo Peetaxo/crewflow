@@ -14,6 +14,7 @@ interface EventLocationPickerModalProps {
   initialLocationLng?: number | null;
   onCancel: () => void;
   onConfirm: (coords: { locationLat: number; locationLng: number }) => void;
+  onCloseAutoFocus?: () => void;
 }
 
 const DEFAULT_LOCATION: [number, number] = [49.8175, 15.473];
@@ -41,6 +42,7 @@ const EventLocationPickerModal = ({
   initialLocationLng,
   onCancel,
   onConfirm,
+  onCloseAutoFocus,
 }: EventLocationPickerModalProps) => {
   const [mapElement, setMapElement] = React.useState<HTMLDivElement | null>(null);
   const mapRef = React.useRef<MapLibreMap | null>(null);
@@ -107,7 +109,9 @@ const EventLocationPickerModal = ({
     <Dialog.Root open onOpenChange={(open) => { if (!open) onCancel(); }}>
       <Dialog.Portal container={document.querySelector<HTMLElement>('.nodu-app-shell') ?? undefined}>
         <Dialog.Overlay className="event-form-map-overlay" />
-        <Dialog.Content className="nodu-event-location-picker-dialog event-form-map-dialog" aria-describedby={undefined} onInteractOutside={(event) => event.preventDefault()}>
+        <Dialog.Content className="nodu-event-location-picker-dialog event-form-map-dialog" aria-describedby={undefined}
+          onInteractOutside={(event) => event.preventDefault()}
+          onCloseAutoFocus={onCloseAutoFocus ? (event) => { event.preventDefault(); onCloseAutoFocus(); } : undefined}>
           <section className="nodu-event-location-picker-panel">
             <header className="nodu-event-location-picker-header">
               <div className="min-w-0">

@@ -16,6 +16,20 @@ vi.mock('../../features/events/services/events.service', async (importOriginal) 
   return { ...actual, getEventContactOptions: () => getEventContactOptions(), getEventById: (id: unknown) => getEventById(id), saveEvent: (event: Event) => saveEvent(event), getEventFormOptions: () => ({ projects: [{ id: 'JOB2', name: 'Nový projekt', client: 'Druhý klient' }], clients: [{ id: 1, name: 'Klient' }, { id: 2, name: 'Druhý klient' }] }) };
 });
 vi.mock('../../features/events/components/EventMapPreview', () => ({ default: () => <div data-testid="map-preview" /> }));
+vi.mock('maplibre-gl', () => ({
+  Map: class {
+    container: HTMLElement;
+    constructor({ container }: { container: HTMLElement }) { this.container = container; }
+    addControl() {}
+    getCenter() { return { lat: 50, lng: 14 }; }
+    getContainer() { return this.container; }
+    on() {}
+    remove() {}
+    resize() {}
+    triggerRepaint() {}
+  },
+  NavigationControl: class {},
+}));
 vi.mock('../../lib/app-config', () => ({ appDataSource: 'local' }));
 vi.mock('../../lib/supabase', () => ({ isSupabaseConfigured: false, supabase: null }));
 import EventEditModal from './EventEditModal';
@@ -200,6 +214,63 @@ describe('Event form', () => {
     expect(saveEvent).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Uložit bez těchto dnů' }));
     await waitFor(() => expect(saveEvent).toHaveBeenCalledWith(expect.objectContaining({ phaseSchedules: { instal: [expect.objectContaining({ id: 'one', dates: ['2026-09-23'] })] } })));
+  });
+
+  it('requires trim confirmation after shortening a saved plan even when phases are then disabled', async () => {
+    render(<Host initial={{ ...fixture, endDate: '2026-09-24', showDayTypes: true, phaseSchedules: { instal: [{ id: 'saved', dates: ['2026-09-24'], from: '', to: '' }] } }} />);
+    fireEvent.click(screen.getByLabelText('Více dní'));
+    fireEvent.click(screen.getByLabelText('Rozdělit akci na fáze'));
+    fireEvent.click(screen.getByRole('button', { name: 'Vytvořit akci' }));
+    expect(saveEvent).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('24. 9. 2026');
+    fireEvent.click(screen.getByRole('button', { name: 'Uložit bez těchto dnů' }));
+    await waitFor(() => expect(saveEvent).toHaveBeenCalledWith(expect.objectContaining({ showDayTypes: false, phaseSchedules: {}, dayTypes: {}, freeDays: [] })));
+  });
+
+  it.each(['escape', 'confirm'])('returns focus to the map button after map %s', async (closeMethod) => {
+    render(<Host />);
+    const opener = screen.getByRole('button', { name: 'Vybrat na mapě' });
+    act(() => opener.focus());
+    fireEvent.click(opener);
+    const mapDialog = screen.getByRole('dialog', { name: 'Vybrat polohu' });
+    if (closeMethod === 'escape') fireEvent.keyDown(mapDialog, { key: 'Escape' });
+    else fireEvent.click(within(mapDialog).getByRole('button', { name: 'Potvrdit polohu' }));
+    await waitFor(() => expect(opener).toHaveFocus());
+  });
+
+  it('returns focus to the cancel button after dismissing the discard alert', async () => {
+    render(<Host />);
+    fireEvent.change(screen.getByLabelText('Název akce'), { target: { value: 'Upravená akce' } });
+    const opener = screen.getByRole('button', { name: 'Zrušit' });
+    act(() => opener.focus());
+    fireEvent.click(opener);
+    fireEvent.click(screen.getByRole('button', { name: 'Pokračovat v úpravách' }));
+    await waitFor(() => expect(opener).toHaveFocus());
+  });
+
+  it('returns focus to the heading after canceling an Escape alert from a text field', async () => {
+    render(<Host />);
+    const name = screen.getByLabelText('Název akce');
+    fireEvent.change(name, { target: { value: 'Upravená akce' } });
+    act(() => name.focus());
+    fireEvent.keyDown(name, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Pokračovat v úpravách' }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Nová akce' })).toHaveFocus());
+  });
+
+  it.each([false, true])('returns focus after closing the main dialog, with removed opener: %s', async (removeOpener) => {
+    const FocusHost = () => {
+      const [draft, setDraft] = useState<Event | null>(null);
+      return <div><h1>Akce</h1>{(!removeOpener || !draft) && <button type="button" onClick={() => setDraft(fixture)}>Otevřít formulář</button>}
+        <EventEditModal editingEvent={draft} onChange={setDraft} onClose={() => setDraft(null)} />
+      </div>;
+    };
+    render(<FocusHost />);
+    const opener = screen.getByRole('button', { name: 'Otevřít formulář' });
+    act(() => opener.focus());
+    fireEvent.click(opener);
+    fireEvent.click(screen.getByRole('button', { name: 'Zavřít formulář' }));
+    await waitFor(() => expect(removeOpener ? screen.getByRole('heading', { name: 'Akce' }) : opener).toHaveFocus());
   });
 
   it.each([{ locationLat: NaN, locationLng: 14 }, { locationLat: 91, locationLng: 14 }, { locationLat: 50, locationLng: 181 }, { locationLat: 50, locationLng: null }])('does not render a map preview for invalid coordinates $locationLat $locationLng', async (coordinates) => {

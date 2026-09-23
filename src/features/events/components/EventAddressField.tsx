@@ -22,6 +22,7 @@ interface EventAddressFieldProps {
   onChange: (selection: EventAddressSelection) => void;
   geocodeAddress?: (input: string) => Promise<EventGeocodingCandidate[]>;
   onPickMap?: () => void;
+  mapButtonRef?: React.Ref<HTMLButtonElement>;
   onResolvingChange?: (isResolving: boolean) => void;
 }
 
@@ -40,6 +41,7 @@ const EventAddressField = ({
   onChange,
   geocodeAddress = searchFreeEventLocations,
   onPickMap,
+  mapButtonRef,
 }: EventAddressFieldProps) => {
   const addressFromProps = getInitialAddress(value);
   const [inputValue, setInputValue] = React.useState(addressFromProps);
@@ -156,6 +158,7 @@ const EventAddressField = ({
         />
         {onPickMap && (
           <button
+            ref={mapButtonRef}
             type="button"
             onClick={onPickMap}
             className={actionClass}

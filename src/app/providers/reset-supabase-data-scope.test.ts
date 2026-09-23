@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   order: [] as string[],
   cancelQueries: vi.fn(async () => { mocks.order.push('cancel'); }),
+  removeQueries: vi.fn(() => { mocks.order.push('remove-workflows'); }),
   invalidateQueries: vi.fn(async () => { mocks.order.push('invalidate'); }),
   resets: Array.from({ length: 10 }, (_, index) => vi.fn(() => {
     mocks.order.push(`reset-${index + 1}`);
@@ -12,6 +13,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../lib/query-client', () => ({
   queryClient: {
     cancelQueries: mocks.cancelQueries,
+    removeQueries: mocks.removeQueries,
     invalidateQueries: mocks.invalidateQueries,
   },
 }));
@@ -39,8 +41,10 @@ describe('resetSupabaseDataScope', () => {
     await resetSupabaseDataScope();
 
     expect(mocks.resets.every((reset) => reset.mock.calls.length === 1)).toBe(true);
+    expect(mocks.removeQueries).toHaveBeenCalledWith({ queryKey: ['shift-workflows'] });
     expect(mocks.order).toEqual([
       'cancel',
+      'remove-workflows',
       ...mocks.resets.map((_, index) => `reset-${index + 1}`),
       'invalidate',
     ]);

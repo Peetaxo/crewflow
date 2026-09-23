@@ -25,6 +25,7 @@ const resetHydrationGuards = () => {
 
 export const resetSupabaseDataScope = async (): Promise<void> => {
   await queryClient.cancelQueries();
+  queryClient.removeQueries({ queryKey: ['shift-workflows'] });
   resetHydrationGuards();
   await queryClient.invalidateQueries();
 };

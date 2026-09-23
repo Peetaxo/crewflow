@@ -19,7 +19,7 @@ import { deleteEvent } from '../features/events/services/events.service';
 import { deleteProject } from '../features/projects/services/projects.service';
 import { deleteClient } from '../features/clients/services/clients.service';
 import { deleteReceipt } from '../features/receipts/services/receipts.service';
-import { loadPersistedUiSession, savePersistedUiSession, type PersistedUiSessionState } from './ui-session-storage';
+import { loadPersistedUiSession, readPersistedUiSession, savePersistedUiSession, type PersistedUiSessionState } from './ui-session-storage';
 import { loadUiPreferences, saveUiPreferences } from './ui-preferences-storage';
 import { AppContext, type AppContextType, type DeleteConfirmData, type SelectedEventId } from './app-context';
 
@@ -98,7 +98,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   } = useAuth();
   const isMobile = useIsMobile();
   const initialUiPreferences = useMemo(() => loadUiPreferences(), []);
-  const persistedUiSession = useMemo(() => loadPersistedUiSession(), []);
+  const persistedUiSession = useMemo(() => readPersistedUiSession(), []);
+  useLayoutEffect(() => {
+    // Scrub before paint, but never mutate storage from a repeatable initializer.
+    loadPersistedUiSession();
+  }, []);
   const shouldDeferUiRestore = isAuthRequired && isAuthLoading && Boolean(persistedUiSession);
   const pendingDeferredUiSession = useRef<PersistedUiSessionState | null>(shouldDeferUiRestore ? persistedUiSession : null);
   const initialUiSession = useMemo(
@@ -107,7 +111,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       : (persistedUiSession ? normalizeUiSessionState(persistedUiSession, authRole ?? null) : null)),
     [authRole, persistedUiSession, shouldDeferUiRestore],
   );
-  const skipInitialSearchReset = useRef(Boolean(initialUiSession));
+  const skipInitialSearchReset = useRef(false);
   const initialRole = authRole ?? 'crewhead';
   const [darkMode, setDarkMode] = useState(initialUiPreferences?.darkMode ?? false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(initialUiPreferences?.sidebarCollapsed ?? false);
@@ -116,6 +120,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     initialUiSession?.currentTab ?? NAV_BY_ROLE[initialRole][0],
   );
   const currentTab = resolveCurrentTab(requestedTab, role, isMobile);
+  const previousTab = useRef(currentTab);
   const [navigationGuardMessage, setNavigationGuardMessage] = useState<string | null>(null);
   const [pendingTab, setPendingTab] = useState<string | null>(null);
   const [settingsSection, setSettingsSection] = useState<'menu' | 'profile' | 'appearance'>('menu');
@@ -154,6 +159,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [currentTab, navigationGuardMessage]);
 
   useEffect(() => {
+    if (previousTab.current === currentTab) return;
+    previousTab.current = currentTab;
     if (skipInitialSearchReset.current) {
       skipInitialSearchReset.current = false;
       return;

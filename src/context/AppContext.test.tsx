@@ -207,6 +207,34 @@ describe('AppProvider UI session restore', () => {
     expect(window.sessionStorage.getItem('crewflow.ui-session.v2')).not.toContain('edited in scope');
   });
 
+  it('retains legacy navigation in StrictMode when scrubbing private evidence cannot rewrite storage', () => {
+    window.sessionStorage.setItem('crewflow.ui-session.v2', JSON.stringify({
+      version: 2,
+      state: {
+        currentTab: 'events', searchQuery: 'obnovene hledani', timelogFilter: 'draft',
+        projectFilter: 'all', selectedContractorProfileId: null, selectedEventId: 12,
+        selectedProjectIdForStats: null, selectedClientIdForStats: null, eventTab: 'crew',
+        eventsViewMode: 'list', eventsCalendarMode: 'month', eventsFilter: 'all',
+        eventsCalendarDate: '2026-09-23', editingTimelog,
+        editingReceipt: null, editingProject: null, editingClient: null,
+      },
+    }));
+    const storageSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('quota');
+    });
+    try {
+      render(<React.StrictMode><AppProvider><ContextProbe /></AppProvider></React.StrictMode>);
+      expect(screen.getByTestId('currentTab')).toHaveTextContent('events');
+      expect(screen.getByTestId('selectedEventId')).toHaveTextContent('12');
+      expect(screen.getByTestId('eventTab')).toHaveTextContent('crew');
+      expect(screen.getByTestId('searchQuery')).toHaveTextContent('obnovene hledani');
+      expect(screen.getByTestId('editingTimelogNote')).toHaveTextContent('null');
+      expect(window.sessionStorage.getItem('crewflow.ui-session.v2')).toBeNull();
+    } finally {
+      storageSpy.mockRestore();
+    }
+  });
+
   it('restores persisted UI snapshot on initial load', () => {
     savePersistedUiSession({
       currentTab: 'events',

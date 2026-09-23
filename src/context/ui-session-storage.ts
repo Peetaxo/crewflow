@@ -105,7 +105,7 @@ const safelyRemovePersistedUiSession = () => {
   }
 };
 
-export const loadPersistedUiSession = (): PersistedUiSessionState | null => {
+const readUiSession = (sanitizeStorage: boolean): PersistedUiSessionState | null => {
   if (!isStorageAvailable()) {
     return null;
   }
@@ -118,23 +118,29 @@ export const loadPersistedUiSession = (): PersistedUiSessionState | null => {
 
     const parsed = JSON.parse(raw) as Partial<PersistedUiSessionPayload>;
     if (parsed.version !== 2 || !isPersistedUiSessionState(parsed.state)) {
-      safelyRemovePersistedUiSession();
+      if (sanitizeStorage) safelyRemovePersistedUiSession();
       return null;
     }
 
     // Legacy v2 sessions may contain a full report. Preserve navigation, never
     // reopen that report, and remove its contents from storage immediately.
     const state = { ...parsed.state, editingTimelog: null };
-    if ('editingTimelog' in parsed.state) {
+    if (sanitizeStorage && 'editingTimelog' in parsed.state) {
       safelyRemovePersistedUiSession();
       savePersistedUiSession(state);
     }
     return state;
   } catch {
-    safelyRemovePersistedUiSession();
+    if (sanitizeStorage) safelyRemovePersistedUiSession();
     return null;
   }
 };
+
+/** Pure initialization read: React can repeat or abandon render initializers. */
+export const readPersistedUiSession = () => readUiSession(false);
+
+/** Read and scrub legacy private contents after React commits, or outside render. */
+export const loadPersistedUiSession = () => readUiSession(true);
 
 export const savePersistedUiSession = (state: PersistedUiSessionState) => {
   if (!isStorageAvailable()) {

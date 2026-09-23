@@ -52,6 +52,13 @@ describe('supabase mappers', () => {
     expect(() => mapTimelog(reportRow({ crew_confirmation_snapshot: snapshot }))).toThrow(/historii/);
   });
 
+  it('rejects a mixed legacy and raw snapshot instead of letting legacy parsing bypass identity checks', () => {
+    const legacy = { changedAt: '2026-09-23T11:00:00Z', before: { km: 999, note: 'Cizí poznámka', days: [] } };
+    const raw = { id: 'report', event_id: 'event', contractor_id: 'other', km: 5, note: 'Původní', days: [] };
+    expect(() => mapTimelog(reportRow({ crew_confirmation_snapshot: { ...legacy, ...raw } }))).toThrow(/historii/);
+    expect(() => mapTimelog(reportRow({ crew_confirmation_snapshot: { ...legacy, ...raw, contractor_id: 'person' } }))).toThrow(/historii/);
+  });
+
   it('retains raw job identity separately from a later project display fallback', () => {
     const base = { id: 'event', date_from: '2026-09-23', date_to: '2026-09-23' } as EventRow;
     expect(mapEvent({ ...base, job_number: null })).toHaveProperty('rawJobNumber', null);

@@ -13,7 +13,7 @@ const daySchema = z.object({
 const legacySchema = z.object({
   changedAt: timestamp,
   before: z.object({ days: z.array(daySchema), km: z.number().finite().nonnegative(), note: z.string() }),
-});
+}).strict();
 const storedSchema = z.object({
   id: z.string(), event_id: z.string(), contractor_id: z.string(),
   km: z.number().finite().nonnegative().nullable(), note: z.string().nullable(),
@@ -33,6 +33,10 @@ export function mapTimelogConfirmationSnapshot(value: unknown, current: {
   id: string; event_id: string; contractor_id: string; updated_at: string;
 }): TimelogChangeSnapshot | null {
   if (value == null) return null;
+  const invalid = () => new Error('Nepodařilo se ověřit historii úprav výkazu. Obnovte data.');
+  if (typeof value === 'object' && !Array.isArray(value)
+    && ('before' in value || 'changedAt' in value)
+    && ('id' in value || 'event_id' in value || 'contractor_id' in value)) throw invalid();
   const legacy = legacySchema.safeParse(value);
   if (legacy.success) return {
     changedAt: legacy.data.changedAt,
@@ -43,7 +47,7 @@ export function mapTimelogConfirmationSnapshot(value: unknown, current: {
   const stored = storedSchema.safeParse(value);
   if (!stored.success || stored.data.id !== current.id || stored.data.event_id !== current.event_id
     || stored.data.contractor_id !== current.contractor_id || !timestamp.safeParse(current.updated_at).success) {
-    throw new Error('Nepodařilo se ověřit historii úprav výkazu. Obnovte data.');
+    throw invalid();
   }
   return {
     // Compatibility value for the existing difference view, not an audit time.

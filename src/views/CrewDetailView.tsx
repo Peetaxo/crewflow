@@ -13,6 +13,8 @@ import { getCrewDetailData, subscribeToCrewChanges, updateCrew } from '../featur
 import { categorizeCrewTimelogs, resolveShiftProject } from '../features/crew/services/crew-shift-display';
 import { canEditTimelog } from '../features/timelogs/services/timelog-permissions';
 import type { Event } from '../types';
+import CrewShiftWorkflowManagement, { CrewShiftWorkflowActions } from '../features/shift-workflows/CrewShiftWorkflowManagement';
+import ShiftWorkflowSummary from '../features/shift-workflows/ShiftWorkflowSummary';
 
 const CrewDetailView = () => {
   const {
@@ -159,6 +161,7 @@ const CrewDetailView = () => {
   const ratingLabel = typeof c.rating === 'number' ? `${c.rating.toFixed(1).replace('.0', '')}/10` : 'Bez hodnoceni';
 
   return (
+    <CrewShiftWorkflowManagement profileId={c.profileId ?? null}>
     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
       <button
         onClick={() => setSelectedContractorProfileId(null)}
@@ -341,7 +344,10 @@ const CrewDetailView = () => {
 
         <div className="relative flex min-h-0 flex-col rounded-[24px] border border-[var(--nodu-border)] bg-white p-5 shadow-[0_18px_40px_rgba(var(--nodu-text-rgb),0.06)] lg:h-[41rem] lg:flex-1 lg:min-w-0">
           <div className="mb-4">
-            <h3 className="mb-3 text-sm font-semibold text-[var(--nodu-text)]">Smeny</h3>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-[var(--nodu-text)]">Směny</h3>
+              <CrewShiftWorkflowActions />
+            </div>
             <div className="flex w-fit flex-wrap items-center gap-2 rounded-xl border border-[var(--nodu-border)] bg-white p-1">
               {[
                 { id: 'upcoming' as const, lbl: 'Nadchazejici', count: categorized.upcoming.length },
@@ -382,7 +388,10 @@ const CrewDetailView = () => {
                     const ev = events.find((e) => e.id === t.eid);
                     const pr = resolveShiftProject(ev, projects);
                     if (!ev || !pr) return null;
-                    return <ShiftCard key={t.id} timelog={t} event={ev} project={pr} onClick={() => openEventDetail(ev)} />;
+                    return <div key={t.id} className="min-w-0">
+                      <ShiftCard timelog={t} event={ev} project={pr} onClick={() => openEventDetail(ev)} />
+                      <ShiftWorkflowSummary event={ev} />
+                    </div>;
                   })}
                   {categorized[activeTab].length === 0 && (
                     <div className="col-span-full rounded-2xl border border-dashed border-[var(--nodu-border)] bg-[var(--nodu-paper-strong)] py-12 text-center text-sm text-[var(--nodu-text-soft)]">
@@ -559,6 +568,7 @@ const CrewDetailView = () => {
         </AnimatePresence>
       </div>
     </motion.div>
+    </CrewShiftWorkflowManagement>
   );
 };
 

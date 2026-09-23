@@ -9,7 +9,7 @@ vi.mock('framer-motion', () => ({
 }));
 
 vi.mock('../features/billing-groups/EventBillingSection', () => ({
-  default: () => null,
+  default: () => <div data-testid="legacy-event-billing-editor" />,
 }));
 
 const authMockState = vi.hoisted(() => ({ currentProfileId: 'profile-1' as string | null }));
@@ -217,6 +217,7 @@ describe('EventDetailView', () => {
     const { default: EventDetailView } = await import('./EventDetailView');
 
     render(<EventDetailView />);
+    expect(screen.queryByTestId('legacy-event-billing-editor')).not.toBeInTheDocument();
 
     const initialLoadCount = getEventDetailData.mock.calls.length;
 
@@ -288,6 +289,7 @@ describe('EventDetailView', () => {
     const { default: EventDetailView } = await import('./EventDetailView');
 
     const { container } = render(<EventDetailView />);
+    expect(screen.queryByTestId('legacy-event-billing-editor')).not.toBeInTheDocument();
 
     expect(container.querySelector('.nodu-mobile-event-detail')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'TEST' })).toBeInTheDocument();

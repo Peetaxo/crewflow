@@ -4361,7 +4361,7 @@ describe('events.service v2 form boundary', () => {
       phaseSchedules: {
         instal: [{ id: 'bad', dates: ['2026-09-04'], from: '08:00', to: '' }],
       },
-    }))).rejects.toThrow('platné časy fáze pro 2026-09-04');
+    }))).rejects.toThrow('platné časy fáze Instalace (řádek 1) pro 2026-09-04');
     expect(harness.updateLocalAppState).not.toHaveBeenCalled();
   });
 

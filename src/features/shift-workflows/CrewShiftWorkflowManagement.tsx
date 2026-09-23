@@ -29,7 +29,7 @@ function ManagementSession({ workflows, profileId, children }: {
     const version = ++requestVersion.current;
     setLoading(true);
     try {
-      const fresh = await loadShiftWorkflowManagementData(workflows.scope, workflows.reload, controller.signal);
+      const fresh = await loadShiftWorkflowManagementData(workflows.scope, workflows.reload, controller.signal, profileId);
       if (controller.signal.aborted || version !== requestVersion.current) throw new ShiftWorkflowError('denied', 'Přístup se změnil.');
       setData(fresh); setError(false);
       return fresh;

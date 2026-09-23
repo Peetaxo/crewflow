@@ -72,6 +72,7 @@ const EventEditModal = ({ editingEvent, onClose, onChange, mode }: EventEditModa
   const formOpenerRef = useRef<HTMLElement | null>(null);
   const formFallbackRef = useRef<HTMLElement | null>(null);
   const mapButtonRef = useRef<HTMLButtonElement | null>(null);
+  const mapPickerOpenerRef = useRef<HTMLButtonElement | null>(null);
   const saveButtonRef = useRef<HTMLButtonElement | null>(null);
   const confirmationOpenerRef = useRef<HTMLElement | null>(null);
   const saveInFlightRef = useRef(false);
@@ -139,6 +140,11 @@ const EventEditModal = ({ editingEvent, onClose, onChange, mode }: EventEditModa
     if (!project) return;
     patchEvent({ job: project.id, name: editingEvent.name.trim() ? editingEvent.name : project.name, client: project.client || editingEvent.client });
     setIsProjectMenuOpen(false);
+  };
+  const openLocationPicker = (opener: HTMLButtonElement | null) => {
+    if (saveInFlightRef.current) return;
+    mapPickerOpenerRef.current = opener;
+    setIsLocationPickerOpen(true);
   };
   const handleSave = async (confirmedTrim = false) => {
     if (saveInFlightRef.current || isAddressResolving) return;
@@ -234,8 +240,8 @@ const EventEditModal = ({ editingEvent, onClose, onChange, mode }: EventEditModa
               </>}
             </section>
             <section className="event-form-section" aria-label="Místo akce">
-              <EventAddressField key={draftIdentity} value={editingEvent} mapButtonRef={mapButtonRef} onResolvingChange={setIsAddressResolving} onPickMap={() => setIsLocationPickerOpen(true)} onChange={(selection) => patchEvent({ ...selection, city: selection.address })} />
-              {hasMapCoordinates && <EventMapPreview address={editingEvent.address || editingEvent.city} locationLat={editingEvent.locationLat} locationLng={editingEvent.locationLng} editable onLocationChange={(coordinates) => patchEvent(coordinates)} />}
+              <EventAddressField key={draftIdentity} value={editingEvent} mapButtonRef={mapButtonRef} onResolvingChange={setIsAddressResolving} onPickMap={() => openLocationPicker(mapButtonRef.current)} onChange={(selection) => patchEvent({ ...selection, city: selection.address })} />
+              {hasMapCoordinates && <EventMapPreview address={editingEvent.address || editingEvent.city} locationLat={editingEvent.locationLat} locationLng={editingEvent.locationLng} onEdit={openLocationPicker} />}
             </section>
             <section className="event-form-section" aria-labelledby="event-contact-title">
               <h3 id="event-contact-title">Kontakt na akci</h3>
@@ -285,7 +291,7 @@ const EventEditModal = ({ editingEvent, onClose, onChange, mode }: EventEditModa
             </div>
           </footer>
         </form>
-        {isLocationPickerOpen && <EventLocationPickerModal address={editingEvent.address || editingEvent.city} initialLocationLat={editingEvent.locationLat} initialLocationLng={editingEvent.locationLng} onCancel={() => setIsLocationPickerOpen(false)} onConfirm={(coordinates) => { patchEvent(coordinates); setIsLocationPickerOpen(false); }} onCloseAutoFocus={() => restoreFocus(mapButtonRef.current, titleRef.current)} />}
+        {isLocationPickerOpen && <EventLocationPickerModal address={editingEvent.address || editingEvent.city} initialLocationLat={editingEvent.locationLat} initialLocationLng={editingEvent.locationLng} onCancel={() => setIsLocationPickerOpen(false)} onConfirm={(coordinates) => { patchEvent(coordinates); setIsLocationPickerOpen(false); }} onCloseAutoFocus={() => restoreFocus(mapPickerOpenerRef.current, mapButtonRef.current ?? titleRef.current)} />}
         <AlertDialog.Root open={confirmation !== null} onOpenChange={(open) => { if (!open) setConfirmation(null); }}>
           <AlertDialog.Portal container={portalContainer}>
             <AlertDialog.Overlay className="event-form-confirm-overlay" />

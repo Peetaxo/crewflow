@@ -42,12 +42,15 @@ create table public.shift_workflow_rounds (
   workflow_id uuid references public.shift_workflows(id) on delete restrict,
   contractor_id uuid not null references public.profiles(id) on delete restrict,
   contractor_user_id uuid not null references auth.users(id) on delete restrict,
+  expected_item_count integer not null check (expected_item_count > 0),
   status text not null check (status in ('pending_ch','pending_crew_confirmation','pending_coo','approved','rejected')),
   note text not null default '',
   created_by uuid not null references auth.users(id) on delete restrict,
   created_at timestamptz not null default clock_timestamp(),
   updated_at timestamptz not null default clock_timestamp()
 );
+comment on column public.shift_workflow_rounds.expected_item_count is
+  'Frozen item count set once on round creation; lifecycle transitions must never change it.';
 create index shift_workflow_rounds_workflow_id_idx on public.shift_workflow_rounds(workflow_id);
 create index shift_workflow_rounds_contractor_id_idx on public.shift_workflow_rounds(contractor_id);
 create index shift_workflow_rounds_contractor_user_id_idx on public.shift_workflow_rounds(contractor_user_id);
@@ -155,12 +158,13 @@ begin
   select coalesce(array_agg(a.event_id order by a.event_id),'{}'::uuid[]) into v_assigned
   from public.event_assignments a where a.profile_id=v_profile;
 
-  -- Fail closed for missing/foreign frozen items. Never reconstruct an old
-  -- round from today's assignments or silently filter a damaged frozen set.
+  -- Count is frozen at creation: a valid surviving item must not disguise a
+  -- partially deleted round. Never reconstruct an old round from assignments
+  -- or silently filter a damaged frozen set.
   if exists (
     select 1 from public.shift_workflow_rounds r
     where (v_manager or (r.contractor_id=v_profile and r.contractor_user_id=v_actor))
-      and (not exists(select 1 from public.shift_workflow_round_items i where i.round_id=r.id)
+      and ((select count(*) from public.shift_workflow_round_items i where i.round_id=r.id) <> r.expected_item_count
         or exists (
           select 1 from public.shift_workflow_round_items i
           left join public.timelogs t on t.id=i.timelog_id

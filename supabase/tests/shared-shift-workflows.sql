@@ -182,8 +182,8 @@ rollback to guard_test;
 
 savepoint guard_test;
 reset role;
-insert into public.shift_workflow_rounds(id,workflow_id,contractor_id,contractor_user_id,status,created_by)
-values(pg_temp.sid(500),(select (result->>'workflow_id')::uuid from saved where name='first'),pg_temp.sid(13),pg_temp.sid(3),'rejected',pg_temp.sid(1));
+insert into public.shift_workflow_rounds(id,workflow_id,contractor_id,contractor_user_id,expected_item_count,status,created_by)
+values(pg_temp.sid(500),(select (result->>'workflow_id')::uuid from saved where name='first'),pg_temp.sid(13),pg_temp.sid(3),1,'rejected',pg_temp.sid(1));
 insert into public.shift_workflow_round_items(round_id,timelog_id,event_id,position,released_at)
 values(pg_temp.sid(500),pg_temp.sid(201),pg_temp.sid(101),0,now());
 set local role authenticated;
@@ -228,9 +228,11 @@ select pg_temp.assert(not exists(select 1 from public.shift_workflows where id=(
 
 -- Frozen rounds have separate contractor ownership from current assignments.
 reset role;
-insert into public.shift_workflow_rounds(id,workflow_id,contractor_id,contractor_user_id,status,created_by,note) values
-  (pg_temp.sid(501),(select (result->>'workflow_id')::uuid from saved where name='first'),pg_temp.sid(13),pg_temp.sid(3),'pending_ch',pg_temp.sid(1),'own round'),
-  (pg_temp.sid(502),null,pg_temp.sid(14),pg_temp.sid(4),'pending_coo',pg_temp.sid(1),'foreign round');
+insert into public.shift_workflow_rounds(id,workflow_id,contractor_id,contractor_user_id,expected_item_count,status,created_by,note) values
+  (pg_temp.sid(501),(select (result->>'workflow_id')::uuid from saved where name='first'),pg_temp.sid(13),pg_temp.sid(3),2,'pending_ch',pg_temp.sid(1),'own round'),
+  (pg_temp.sid(502),null,pg_temp.sid(14),pg_temp.sid(4),1,'pending_coo',pg_temp.sid(1),'foreign round');
+select pg_temp.fails($q$insert into public.shift_workflow_rounds(contractor_id,contractor_user_id,expected_item_count,status,created_by) values(pg_temp.sid(13),pg_temp.sid(3),0,'pending_ch',pg_temp.sid(1))$q$,'23514');
+select pg_temp.fails($q$insert into public.shift_workflow_rounds(contractor_id,contractor_user_id,expected_item_count,status,created_by) values(pg_temp.sid(13),pg_temp.sid(3),null,'pending_ch',pg_temp.sid(1))$q$,'23502');
 insert into public.shift_workflow_round_items(round_id,timelog_id,event_id,position) values
   (pg_temp.sid(501),pg_temp.sid(201),pg_temp.sid(101),0),
   (pg_temp.sid(501),pg_temp.sid(204),pg_temp.sid(104),1),
@@ -240,6 +242,34 @@ insert into public.shift_workflow_round_actions(round_id,actor_id,action,from_st
   (pg_temp.sid(502),pg_temp.sid(2),'handoff','pending_ch','pending_coo');
 set local role authenticated;
 select pg_temp.assert(jsonb_array_length(public.read_shift_workflows()->'rounds')=2,'manager reads all rounds');
+select pg_temp.fails('update public.shift_workflow_rounds set expected_item_count=1','42501');
+savepoint truncated_frozen_round;
+reset role;
+-- Remove only the trailing item; the retained item still has valid event and
+-- contractor ownership, so validating surviving rows alone cannot detect loss.
+delete from public.shift_workflow_round_items where round_id=pg_temp.sid(501) and position=1;
+select pg_temp.assert((select count(*) from public.shift_workflow_round_items where round_id=pg_temp.sid(501))=1,
+  'truncated fixture retains one valid frozen item');
+set local role authenticated;
+do $$
+declare manager_denied boolean := false; owner_denied boolean := false;
+begin
+  perform set_config('request.jwt.claim.sub',pg_temp.sid(1)::text,true);
+  begin perform public.read_shift_workflows();
+  exception when sqlstate '22023' then
+    if sqlerrm <> 'shift_workflow_round_invalid' then raise; end if;
+    manager_denied := true;
+  end;
+  perform set_config('request.jwt.claim.sub',pg_temp.sid(3)::text,true);
+  begin perform public.read_shift_workflows();
+  exception when sqlstate '22023' then
+    if sqlerrm <> 'shift_workflow_round_invalid' then raise; end if;
+    owner_denied := true;
+  end;
+  perform pg_temp.assert(manager_denied and owner_denied,
+    format('partial frozen set denied: manager=%s owner=%s',manager_denied,owner_denied));
+end $$;
+rollback to truncated_frozen_round;
 set local request.jwt.claim.sub='91000000-0000-4000-8000-000000000003';
 select pg_temp.assert(public.read_shift_workflows()->'revision'='null','crew revision hidden');
 select pg_temp.assert(public.read_shift_workflows()->'assigned_event_ids'=to_jsonb(pg_temp.ids(array[101,102])),'crew assigned IDs');

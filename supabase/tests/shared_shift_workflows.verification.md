@@ -49,6 +49,11 @@ business rows, and automatic invoice trigger configuration are unchanged.
   to an event never grants access to another contractor's round. Own frozen item
   IDs remain present after assignment changes. Missing/empty/inconsistent frozen
   sets cause the read RPC to fail, rather than reconstructing or truncating them.
+  A positive, non-null `expected_item_count` is captured once when the round is
+  created and remains immutable through lifecycle transitions. Reads require the
+  actual frozen item count to match, including when only one trailing item is
+  missing and every surviving item is valid. This internal count does not change
+  the public JSON shape. Direct caller updates remain forbidden by existing ACLs.
 - New groups require at least two events. Existing groups can retain one event;
   singleton source remnants remain with their existing deterministic positions.
   Empty sources without history are removed. Delete requires an existing group
@@ -88,6 +93,11 @@ is trusted. Default PUBLIC and anon EXECUTE privileges are revoked.
   implementing either RPC.
 - A later edge-case RED caught null member IDs on an empty header; the read now
   returns `[]`, and the same assertion passed afterward.
+- Review regression RED: deleting only the trailing item of a valid two-item
+  round produced `partial frozen set denied: manager=f owner=f` (exit 3), proving
+  both manager and owner reads accepted a truncated set. After adding the frozen
+  expected count, both reads reject it with `22023 shift_workflow_round_invalid`.
+  Zero/null expected counts and direct caller changes are also rejected.
 - GREEN `shared-shift-workflows.schema.sql`: all seven RLS/ACL boundaries,
   private ledger, public invokers, private/public function EXECUTE grants and
   empty search paths verified.
@@ -109,7 +119,8 @@ is trusted. Default PUBLIC and anon EXECUTE privileges are revoked.
   business/workflow snapshots matched the originals afterward.
 - Final migration replay passed after removing only this foundation's verified
   empty tables/functions from the dedicated test DB, without CASCADE. Schema,
-  integration, and concurrency checks passed again against the final migration.
+  integration, and concurrency checks passed again against the final migration,
+  including after the reviewed partial-item-loss correction.
 - Existing `targeted-event-approval.sql` and `event-schedule-drafts.sql` passed
   against the final schema, rollback-only.
 - Final public/private function lint: no schema errors. Advisors: 137 findings

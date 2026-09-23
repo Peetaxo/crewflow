@@ -69,6 +69,7 @@ const round = (overrides: Partial<ShiftWorkflowRound> = {}): ShiftWorkflowRound 
   workflowId: uuid(300),
   contractorProfileId: crewId,
   status: 'pending_coo',
+  eventIds: [uuid(101), uuid(102)],
   timelogIds: [uuid(201), uuid(202)],
   note: 'Ke schválení',
   updatedAt,
@@ -194,18 +195,66 @@ describe('resolveShiftWorkflowContext', () => {
     input.rounds = [
       round({ status: 'approved' }), round({ id: uuid(401), status: 'rejected' }),
       round({ id: uuid(402), contractorProfileId: otherCrewId }),
-      round({ id: uuid(403), workflowId: null, timelogIds: [uuid(999)] }),
+      round({ id: uuid(403), workflowId: null, eventIds: [uuid(199)], timelogIds: [uuid(999)] }),
     ];
     expect(resolveShiftWorkflowContext(input)?.activeRound).toBeNull();
     expect(resolveShiftWorkflowContext(input)?.eventIds).toHaveLength(3);
   });
 
-  it('resolves a singleton round only by its exact canonical timelog membership', () => {
+  it('resolves a singleton round by matching its frozen event and canonical report membership', () => {
     const input = fixture();
     input.workflows = [];
-    input.rounds = [round({ workflowId: null, timelogIds: [uuid(201)] })];
+    input.rounds = [round({ workflowId: null, eventIds: [uuid(101)], timelogIds: [uuid(201)] })];
     expect(resolveShiftWorkflowContext(input)?.activeRound).toBe(input.rounds[0]);
     expect(resolveShiftWorkflowContext({ ...input, anchorEventId: uuid(102) })?.activeRound).toBeNull();
+  });
+
+  it.each([
+    ['missing canonical report', (input: ReturnType<typeof fixture>) => { input.timelogs.shift(); }],
+    ['replaced canonical report', (input: ReturnType<typeof fixture>) => { input.timelogs[0].supabaseId = uuid(299); }],
+    ['foreign canonical report', (input: ReturnType<typeof fixture>) => { input.timelogs[0].contractorProfileId = otherCrewId; }],
+    ['stale frozen report ID', (input: ReturnType<typeof fixture>) => { input.rounds[0].timelogIds = [uuid(299)]; }],
+  ])('fails closed for an active singleton round with a %s', (_name, corrupt) => {
+    const input = fixture();
+    input.workflows = [];
+    input.rounds = [round({ workflowId: null, eventIds: [uuid(101)], timelogIds: [uuid(201)] })];
+    corrupt(input);
+
+    expect(resolveShiftWorkflowContext(input)).toBeNull();
+  });
+
+  it('fails closed when a relevant singleton round contains a removed frozen event assignment', () => {
+    const input = fixture();
+    input.workflows = [];
+    input.assignments.splice(1, 1);
+    input.timelogs.splice(1, 1);
+    input.rounds = [round({ workflowId: null, timelogIds: [uuid(299), uuid(202)] })];
+
+    expect(resolveShiftWorkflowContext(input)).toBeNull();
+  });
+
+  it('ignores an unrelated singleton round even if its frozen report is unavailable', () => {
+    const input = fixture();
+    input.workflows = [];
+    input.rounds = [round({ workflowId: null, eventIds: [uuid(102)], timelogIds: [uuid(299)] })];
+
+    const resolved = resolveShiftWorkflowContext(input)!;
+    expect(resolved.activeRound).toBeNull();
+    expect(resolved.eventIds).toEqual([uuid(101)]);
+    expect(validateShiftWorkflowSubmission(resolved)).toEqual([]);
+  });
+
+  it.each([
+    ['empty frozen event set', []],
+    ['duplicate frozen event', [uuid(101), uuid(101)]],
+    ['invalid frozen event UUID', ['1', uuid(102)]],
+    ['missing frozen event', [uuid(101)]],
+    ['extra frozen event without a report', [uuid(101), uuid(102), uuid(103)]],
+    ['frozen event inconsistent with its canonical report', [uuid(101), uuid(103)]],
+  ])('fails closed on %s', (_name, eventIds) => {
+    const input = fixture();
+    input.rounds = [round({ eventIds })];
+    expect(resolveShiftWorkflowContext(input)).toBeNull();
   });
 
   it.each([

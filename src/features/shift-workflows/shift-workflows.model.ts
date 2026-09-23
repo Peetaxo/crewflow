@@ -14,6 +14,8 @@ export interface ShiftWorkflowRound {
   workflowId: string | null;
   contractorProfileId: string;
   status: 'pending_ch' | 'pending_crew_confirmation' | 'pending_coo' | 'approved' | 'rejected';
+  /** Frozen event IDs from round items, retained even when a canonical report is unavailable. */
+  eventIds: string[];
   /** Frozen submission membership, separate from each timelog's targeted approval round. */
   timelogIds: string[];
   note: string;
@@ -126,7 +128,11 @@ export const resolveShiftWorkflowContext = ({
   const activeRounds = rounds.filter((item) => (
     item.contractorProfileId === contractorProfileId
     && isActiveRound(item)
-    && ((workflowId !== null && item.workflowId === workflowId) || item.timelogIds.some((id) => ownTimelogIds.has(id)))
+    && (
+      (workflowId !== null && item.workflowId === workflowId)
+      || item.eventIds.some((id) => eventIdSet.has(id))
+      || item.timelogIds.some((id) => ownTimelogIds.has(id))
+    )
   ));
   if (activeRounds.length > 1) return null;
 
@@ -136,8 +142,14 @@ export const resolveShiftWorkflowContext = ({
     || activeRound.workflowId !== workflowId
     || rounds.filter((item) => item.id === activeRound.id).length !== 1
     || activeRound.timelogIds.length === 0
+    || activeRound.eventIds.length !== activeRound.timelogIds.length
+    || !hasUniqueUuids(activeRound.eventIds)
     || !hasUniqueUuids(activeRound.timelogIds)
     || activeRound.timelogIds.some((id) => !ownTimelogIds.has(id))
+    || activeRound.eventIds.some((id) => {
+      const report = timelogsByEvent.get(id);
+      return !eventIdSet.has(id) || !report?.supabaseId || !activeRound.timelogIds.includes(report.supabaseId);
+    })
   )) return null;
 
   return {

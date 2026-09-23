@@ -265,6 +265,94 @@ select public.submit_shift_workflow_round_atomic(pg_temp.sid(528),pg_temp.sid(60
    from public.timelogs t where event_id=pg_temp.sid(105) and contractor_id=pg_temp.sid(13)));
 select pg_temp.assert((select workflow_id is null and expected_item_count=1 from public.shift_workflow_rounds where id=pg_temp.sid(608)),'new single-anchor round preserves null workflow');
 select pg_temp.assert((select free_days=array['2099-09-02'::date] from public.events where id=pg_temp.sid(101)),'event free days remain unchanged');
+
+-- Historical request results contain complete hours and notes. Replay is a
+-- fresh read authorization decision even when the original write already won.
+reset role;
+insert into public.events(id,name) values(pg_temp.sid(106),'Replay membership A'),(pg_temp.sid(107),'Replay membership B');
+set local role authenticated;
+set local request.jwt.claim.sub='93000000-0000-4000-8000-000000000001';
+select public.save_shift_workflow_atomic(pg_temp.sid(529),null,array[pg_temp.sid(106),pg_temp.sid(107)],0,
+ (select jsonb_object_agg(id::text,updated_at) from public.events where id in(pg_temp.sid(106),pg_temp.sid(107))),false,false,false);
+reset role;
+create temporary table replay_cases as select request_id,kind,payload,result from public.shift_workflow_requests
+ where request_id in(pg_temp.sid(501),pg_temp.sid(503),pg_temp.sid(507),pg_temp.sid(508),pg_temp.sid(510),pg_temp.sid(529));
+create temporary table replay_access_checks(name text,denied boolean);
+grant select on replay_cases to authenticated;
+grant all on replay_access_checks to authenticated;
+create function pg_temp.replay(n integer) returns jsonb language plpgsql as $$
+declare r record; p jsonb;
+begin
+ select * into strict r from replay_cases where request_id=pg_temp.sid(n);p:=r.payload;
+ if r.kind='transition_round' then return public.transition_shift_workflow_round_atomic(r.request_id,
+  (p->>'round_id')::uuid,(p->>'expected_round_updated_at')::timestamptz,p->'targets',p->>'action',p->>'note',(p->>'affected_event_id')::uuid,p->'corrections');
+ elsif r.kind='save_drafts' then return public.save_shift_workflow_drafts_atomic(r.request_id,(p->>'workflow_id')::uuid,
+  (p->>'contractor_id')::uuid,(p->>'anchor_event_id')::uuid,p->'timelogs',(p->>'round_id')::uuid);
+ elsif r.kind='submit_round' then return public.submit_shift_workflow_round_atomic(r.request_id,(p->>'round_id')::uuid,
+  (p->>'workflow_id')::uuid,(p->>'contractor_id')::uuid,(p->>'anchor_event_id')::uuid,p->'timelogs');
+ else return public.save_shift_workflow_atomic(r.request_id,(p->>'workflow_id')::uuid,
+  array(select jsonb_array_elements_text(p->'event_ids'))::uuid[],(p->>'expected_revision')::integer,p->'event_versions',
+  (p->>'confirm_cross_project')::boolean,(p->>'confirm_moves')::boolean,(p->>'delete')::boolean);
+ end if;
+end $$;
+create function pg_temp.replay_denied(n integer) returns boolean language plpgsql as $$
+begin perform pg_temp.replay(n);return false;exception when insufficient_privilege then return true;end $$;
+set local role authenticated;
+select pg_temp.assert(pg_temp.replay(508)=(select result from replay_cases where request_id=pg_temp.sid(508)),
+ 'authorized CH gets original handoff result after round was returned');
+set local request.jwt.claim.sub='93000000-0000-4000-8000-000000000002';
+select pg_temp.assert(pg_temp.replay(510)=(select result from replay_cases where request_id=pg_temp.sid(510)),
+ 'authorized COO gets original historical return result');
+set local request.jwt.claim.sub='93000000-0000-4000-8000-000000000003';
+select pg_temp.assert(pg_temp.replay(507)=(select result from replay_cases where request_id=pg_temp.sid(507)),
+ 'authorized frozen owner gets original confirmation result after advancement');
+select pg_temp.assert(pg_temp.replay(501)=(select result from replay_cases where request_id=pg_temp.sid(501))
+ and pg_temp.replay(503)=(select result from replay_cases where request_id=pg_temp.sid(503)),
+ 'authorized draft and submission replay remain exact after advancement');
+reset role;
+delete from public.user_roles where user_id=pg_temp.sid(1) and role='crewhead';
+insert into public.user_roles(user_id,role) values(pg_temp.sid(1),'crew');
+set local role authenticated;
+set local request.jwt.claim.sub='93000000-0000-4000-8000-000000000001';
+select pg_temp.assert(not exists(select 1 from public.timelogs where contractor_id=pg_temp.sid(13)),
+ 'former CH has no ordinary access to another crew member hours');
+insert into replay_access_checks values('former CH replay',pg_temp.replay_denied(508)),('membership replay after role revocation',pg_temp.replay_denied(529));
+reset role;
+delete from public.user_roles where user_id=pg_temp.sid(1) and role='crew';
+insert into public.user_roles(user_id,role) values(pg_temp.sid(1),'coo');
+set local role authenticated;
+select pg_temp.assert(pg_temp.replay(508)=(select result from replay_cases where request_id=pg_temp.sid(508)),
+ 'CH to COO role switch retains current read scope independently of old write action');
+reset role;
+delete from public.user_roles where user_id=pg_temp.sid(1) and role='coo';
+insert into public.user_roles(user_id,role) values(pg_temp.sid(1),'crewhead');
+delete from public.user_roles where user_id=pg_temp.sid(2) and role='coo';
+insert into public.user_roles(user_id,role) values(pg_temp.sid(2),'crew');
+set local role authenticated;
+set local request.jwt.claim.sub='93000000-0000-4000-8000-000000000002';
+insert into replay_access_checks values('former COO replay',pg_temp.replay_denied(510));
+reset role;
+delete from public.user_roles where user_id=pg_temp.sid(2) and role='crew';
+insert into public.user_roles(user_id,role) values(pg_temp.sid(2),'coo');
+update public.profiles set user_id=null where id in(pg_temp.sid(13),pg_temp.sid(16));
+update public.profiles set user_id=pg_temp.sid(3) where id=pg_temp.sid(16);
+set local role authenticated;
+set local request.jwt.claim.sub='93000000-0000-4000-8000-000000000003';
+insert into replay_access_checks values('rebound crew confirmation replay',pg_temp.replay_denied(507)),
+ ('rebound crew draft replay',pg_temp.replay_denied(501)),('rebound crew submit replay',pg_temp.replay_denied(503));
+reset role;
+update public.profiles set user_id=pg_temp.sid(6) where id=pg_temp.sid(16);
+update public.profiles set user_id=pg_temp.sid(3) where id=pg_temp.sid(13);
+delete from public.user_roles where user_id=pg_temp.sid(3) and role='crew';
+set local role authenticated;
+insert into replay_access_checks values('revoked crew confirmation replay',pg_temp.replay_denied(507)),
+ ('revoked crew draft replay',pg_temp.replay_denied(501)),('revoked crew submit replay',pg_temp.replay_denied(503));
+reset role;
+insert into public.user_roles(user_id,role) values(pg_temp.sid(3),'crew');
+do $$ declare leaked text; begin
+ select string_agg(name,', ' order by name) into leaked from replay_access_checks where denied is distinct from true;
+ if leaked is not null then raise exception 'historical replay unauthorized disclosure: %',leaked; end if;
+end $$;
 set local role anon;
 select pg_temp.fails($q$select public.save_shift_workflow_drafts_atomic(pg_temp.sid(999),null,pg_temp.sid(13),pg_temp.sid(101),'[]')$q$,'42501');
 reset role;

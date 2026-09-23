@@ -335,3 +335,39 @@ This checkpoint does not claim app/client integration or remote rollout. The
 global singleton deliberately serializes shared writes for straightforward
 membership/request correctness; production throughput at larger scale has not
 been benchmarked.
+
+### Security review correction: current access on historical replay
+
+The initial lifecycle checkpoint's transition replay checked request actor and
+complete payload before returning its cached full timelogs, but omitted a fresh
+read-scope check. A new authenticated SQL regression reproduced four disclosures:
+`former CH replay`, `former COO replay`, `rebound crew confirmation replay`, and
+`revoked crew confirmation replay`. The RED run failed with
+`historical replay unauthorized disclosure` listing all four cases.
+
+Transition replay now requires exactly one current profile and an existing
+authoritative round, plus either a current CH/COO role or a current crew role
+with both the frozen contractor profile and frozen contractor auth user matching
+the caller. This combines the existing full-timelog read role requirement with
+the shared round's stronger frozen ownership rule. It does not require the
+original transition state or original manager role: a former CH who is now a COO
+still has current manager read scope. A caller who merely knows the old request
+cannot retain access after role removal or profile reassignment.
+
+Save/submit replay already checked current crew role, exact contractor profile,
+and unique auth/profile binding before looking up the ledger. Those checks now
+repeat immediately before replay return, after any singleton wait. The unchanged
+membership RPC already requires a current CH/COO role and a unique linked profile
+before ledger access; its revoked-role replay regression passes without changing
+the reviewed foundation. Nine negative replay checks cover these paths together.
+
+The same test verifies exact authorized CH, COO, owner-confirmation, draft, and
+submission replay after ordinary advancement, as well as a CH-to-COO role switch.
+The focused lifecycle test passes after a fresh empty-schema migration replay.
+All changes are limited to lifecycle SQL, its rollback-only authenticated tests,
+and this evidence log; no new write authority or status transition was added.
+The complete five-suite SQL runner, all four lifecycle races, and foundation
+concurrency proof also pass after the correction. Function lint remains clean;
+advisors remain 136 total / 10 existing security findings / zero additions.
+Revision, rounds, requests, both permit tables, and test sessions are all zero
+after cleanup.

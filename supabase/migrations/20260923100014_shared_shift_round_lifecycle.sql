@@ -334,6 +334,11 @@ begin
  if found then
   if v_previous.actor_id<>v_actor or v_previous.kind<>v_kind or v_previous.payload is distinct from v_payload then
    raise exception 'shift_workflow_request_conflict' using errcode='22023'; end if;
+  -- A retry is a new disclosure of complete hours. Refresh identity/role after
+  -- any singleton wait; the initial check is not a durable read capability.
+  if (select count(*) from public.profiles where user_id=v_actor)<>1
+   or public.current_profile_id() is distinct from p_contractor_id or not public.has_role(v_actor,'crew') then
+   raise exception 'shift_workflow_unauthorized' using errcode='42501'; end if;
   return v_previous.result;
  end if;
  perform private.validate_shift_timelog_payload(p_timelogs,p_submit);
@@ -449,6 +454,16 @@ begin
  if found then
   if v_previous.actor_id<>v_actor or v_previous.kind<>'transition_round' or v_previous.payload is distinct from v_payload then
    raise exception 'shift_workflow_request_conflict' using errcode='22023'; end if;
+  -- The original actor/request match proves idempotency, not present access.
+  -- Authorize the full historical result against current timelog read roles
+  -- and frozen round ownership, without requiring the old transition status.
+  if (select count(*) from public.profiles where user_id=v_actor)<>1 or not exists(
+   select 1 from public.shift_workflow_rounds r where r.id=p_round_id and (
+    public.has_role(v_actor,'crewhead') or public.has_role(v_actor,'coo')
+    or (public.has_role(v_actor,'crew') and r.contractor_user_id=v_actor
+      and exists(select 1 from public.profiles p where p.id=r.contractor_id and p.user_id=v_actor))
+   )
+  ) then raise exception 'shift_workflow_unauthorized' using errcode='42501'; end if;
   return v_previous.result;
  end if;
  select * into v_round from public.shift_workflow_rounds where id=p_round_id;

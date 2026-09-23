@@ -91,6 +91,7 @@ describe('shared workflow scope', () => {
     const oldKey = shiftWorkflowQueryKey(scope());
     const oldSave = view.current().save;
     const oldReload = view.current().reload;
+    const oldQueryRefetch = view.current().query.refetch;
     boundary.read.mockImplementation(() => new Promise(() => {}));
     view.observed.length = 0;
     Object.assign(boundary.auth, change);
@@ -99,6 +100,8 @@ describe('shared workflow scope', () => {
     expect(view.client.getQueryData(oldKey)).toBeUndefined();
     await expect(oldSave(command)).rejects.toMatchObject({ kind: 'denied' });
     await expect(oldReload()).rejects.toMatchObject({ kind: 'denied' });
+    boundary.read.mockResolvedValue(snapshot(99));
+    await act(async () => { await expect(oldQueryRefetch()).rejects.toMatchObject({ kind: 'denied' }); });
     expect(boundary.save).not.toHaveBeenCalled();
   });
 

@@ -84,14 +84,25 @@ export function useShiftWorkflows(enabled = true) {
     return mutateAsync({ activation, scope: { ...scope }, command: structuredClone(command) });
   }, [activation, isCurrent, mutateAsync, scope]);
   const refetch = query.refetch;
-  const reload = useCallback(() => {
-    if (!isCurrent(activation)) return Promise.reject(inactive());
-    return refetch();
+  const reload = useCallback(async () => {
+    if (!isCurrent(activation)) throw inactive();
+    const result = await refetch();
+    if (!isCurrent(activation)) throw inactive();
+    if (result.error) throw result.error;
+    // Do not return QueryObserverResult: it contains another unscoped refetch.
+    return result.data;
   }, [activation, isCurrent, refetch]);
 
   return {
     scope, scopeKey, ready, save, reload,
     saving: ready && mutation.isPending && mutation.variables?.activation === activation,
-    query: { ...query, data: ready ? query.data : undefined },
+    query: {
+      data: ready ? query.data : undefined,
+      error: ready ? query.error : null,
+      isPending: query.isPending,
+      isFetching: ready && query.isFetching,
+      isError: ready && query.isError,
+      refetch: reload,
+    },
   };
 }

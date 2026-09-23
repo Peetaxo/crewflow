@@ -122,6 +122,7 @@ export function mapEvent(row: EventRow): Event {
     projectId: row.project_id,
     name: row.name,
     job: row.job_number ?? '',
+    rawJobNumber: row.job_number ?? null,
     startDate: row.date_from ?? '',
     endDate: row.date_to ?? '',
     startTime: row.time_from ?? undefined,

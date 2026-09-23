@@ -13,6 +13,12 @@ export function shiftWorkflowEventId(event: Event, source: ShiftWorkflowScope['s
   return event.supabaseId!;
 }
 
+/** Match membership SQL's raw (project_id, job_number), not the display fallback. */
+export const shiftWorkflowProjectKey = (event: Event, source: ShiftWorkflowScope['source']) => JSON.stringify([
+  event.projectId ?? null,
+  source === 'supabase' && event.rawJobNumber !== undefined ? event.rawJobNumber : event.job,
+]);
+
 export function buildShiftWorkflowCommand(input: {
   scope: ShiftWorkflowScope; snapshot: ShiftWorkflowSnapshot; workflowId: string | null;
   eventIds: string[]; events: Event[]; requestId: string;
@@ -48,7 +54,7 @@ export function buildShiftWorkflowCommand(input: {
   }
   const projectKeys = new Set(eventIds.map((id) => {
     const event = events.get(id)!;
-    return JSON.stringify([event.projectId ?? null, event.job]);
+    return shiftWorkflowProjectKey(event, scope.source);
   }));
   if (projectKeys.size > 1 && !input.confirmCrossProject) invalid('Potvrďte propojení různých projektů nebo jobnumber.');
   const command: SaveShiftWorkflow = {

@@ -27,6 +27,8 @@ export interface Event {
   name: string;
   /** Job Number - propojeni s projektem */
   job: string;
+  /** Raw server job before project display fallback; null and an explicit job have distinct workflow identities. */
+  rawJobNumber?: string | null;
   startDate: string;
   endDate: string;
   startTime?: string;

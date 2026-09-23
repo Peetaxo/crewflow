@@ -1,7 +1,7 @@
 import type { Event, EventCrewAssignment, Invoice, Timelog } from '../../types';
 import type { ShiftWorkflowScope, ShiftWorkflowSnapshot } from './shift-workflows.contract';
 import { localShiftWorkflowId } from './shift-workflows.local';
-import { shiftWorkflowEventId } from './shift-workflows.selection';
+import { shiftWorkflowEventId, shiftWorkflowProjectKey } from './shift-workflows.selection';
 
 export interface ShiftWorkflowManagementData {
   snapshot: ShiftWorkflowSnapshot;
@@ -38,7 +38,10 @@ export function getWorkflowSelectionImpact(
   const sources = data.snapshot.workflows.filter((w) => w.id !== workflowId && w.eventIds.some((id) => selected.has(id)));
   const affected = new Set([...eventIds, ...(target?.eventIds ?? []), ...sources.flatMap((w) => w.eventIds)]);
   const events = new Map(identifiedEvents(data, scope).map(({ id, event }) => [id, event]));
-  const projectKeys = new Set(eventIds.map((id) => JSON.stringify([events.get(id)?.projectId ?? null, events.get(id)?.job])));
+  const projectKeys = new Set(eventIds.flatMap((id) => {
+    const event = events.get(id);
+    return event ? [shiftWorkflowProjectKey(event, scope.source)] : [];
+  }));
   let blockedReason: string | null = null;
   if ((workflowId && !target) || [...affected].some((id) => !events.has(id))) {
     blockedReason = 'Některá dotčená směna už není dostupná. Obnovte data a zkontrolujte výběr.';

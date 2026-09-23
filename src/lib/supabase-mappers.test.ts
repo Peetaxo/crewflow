@@ -14,6 +14,11 @@ type InvoiceRow = Database['public']['Tables']['invoices']['Row'];
 type ReceiptRow = Database['public']['Tables']['receipts']['Row'];
 
 describe('supabase mappers', () => {
+  it('retains raw job identity separately from a later project display fallback', () => {
+    const base = { id: 'event', date_from: '2026-09-23', date_to: '2026-09-23' } as EventRow;
+    expect(mapEvent({ ...base, job_number: null })).toHaveProperty('rawJobNumber', null);
+    expect(mapEvent({ ...base, job_number: 'JOB' })).toHaveProperty('rawJobNumber', 'JOB');
+  });
   it('hydrates scheduling metadata while defaulting legacy rows', () => {
     const row = { id: 'event-uuid', date_from: '2026-09-01', date_to: '2026-09-03' } as EventRow;
     expect(mapEvent(row)).toMatchObject({

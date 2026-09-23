@@ -56,4 +56,10 @@ describe('shared workflow command preparation', () => {
     expect(buildShiftWorkflowCommand({ ...input(), eventIds: selected }).eventIds).toEqual([id(21), id(23)]);
     expect(selected).toEqual([id(23), id(21)]);
   });
+
+  it('matches raw server job identities even when project fallback makes their display jobs equal', () => {
+    const candidates = events.map((event) => ({ ...event, rawJobNumber: event.id === 21 ? null : 'J001' }));
+    expect(() => buildShiftWorkflowCommand({ ...input(), events: candidates })).toThrow(/jobnumber/);
+    expect(buildShiftWorkflowCommand({ ...input(), events: candidates, confirmCrossProject: true }).confirmCrossProject).toBe(true);
+  });
 });

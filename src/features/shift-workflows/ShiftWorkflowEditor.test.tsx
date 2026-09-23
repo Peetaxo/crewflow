@@ -55,6 +55,17 @@ describe('ShiftWorkflowEditor', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
+  it('offers server-required confirmation for null and explicit raw jobs with the same project fallback', async () => {
+    const data = makeData();
+    data.events = data.events.map((e) => ({ ...e, job: 'JOB', rawJobNumber: e.id === 21 ? null : 'JOB' }));
+    const { props } = setup({ data });
+    fireEvent.click(screen.getByRole('checkbox', { name: /Přípravy · JOB/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Instalace · JOB/ }));
+    confirmCross(); save();
+    await waitFor(() => expect(props.onSave).toHaveBeenCalledOnce());
+    expect(vi.mocked(props.onSave).mock.calls[0][0].confirmCrossProject).toBe(true);
+  });
+
   it('retains members not assigned to the displayed person when editing', async () => {
     const data = makeData();
     data.snapshot.workflows = [{ id: id(10), eventIds: [id(21), id(23)], updatedAt: time }];

@@ -39,7 +39,7 @@ export async function loadShiftWorkflowManagementData(
           throw new ShiftWorkflowError('invalid', 'Aktuální přiřazení směn není jednoznačné. Obnovte data.');
         }
         seen.add(row.event_id);
-        rows.push(row);
+        rows.push({ event_id: row.event_id, profile_id: row.profile_id });
       }
       if (parsed.data.length < 500) return rows;
     }

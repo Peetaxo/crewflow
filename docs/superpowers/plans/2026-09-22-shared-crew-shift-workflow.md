@@ -10,6 +10,22 @@
 
 ---
 
+## Implementation checkpoint — 2026-09-23
+
+User selected variant 1 (subagent-driven implementation). Worktree now includes current `main` (`dd18900`) through merge `25a3353`. Preserve the unrelated dirty main-checkout files; they were not merged or edited.
+
+The following verified current-code adaptations override older illustrative code below:
+
+- Targeted approvals are already implemented by `20260914135908_targeted_event_approval.sql`: CH hands off to the event's configured single COO, whose profile **and auth-user identity** are frozen. Keep those rules and existing legacy-report compatibility. Do not reimplement a parallel approval system.
+- A shared submission round freezes the exact person's timelog set. It is separate from targeted `approval_round_id`, which must remain unique per timelog. Reuse existing batch handoff/resolution internals behind exact-set guards. All configured approvers in a shared handoff must be compatible; otherwise explain the conflict without choosing the anchor's approver or silently dropping members.
+- Guard old RPCs/direct writes as well as new wrappers, so a shared round cannot be advanced one member at a time. Do not rely on caller-writable session settings as authorization. Review lock ordering against existing event deletion and assignment mutations; current handoff deliberately locks timelogs without locking events afterward.
+- `trg_timelog_approved` is already removed by the targeted approval migration. Task 6 therefore verifies separation from invoicing; it must not create duplicate suppression or change explicit invoicing.
+- Preserve schedule-v2 blank times, free days, and multiple slots. Reuse `assertTimelogComplete` for submitted evidence, while allowing incomplete draft sections.
+- The old billing Docker context no longer exists. The verified local-only schema fixture is container `crewflow-event-form-db`, image `public.ecr.aws/supabase/postgres:17.6.1.104`, no mounts, bound only to `127.0.0.1:55439`. Its persistent schema-only pre-feature backup is `/Users/peetax/Projekty/crewflow-local-backups/mobile-event-form/schema-before-20260904.sql`. Inspect migration state before replaying anything.
+- Routine local implementation, tests, main integration, and development-device refresh remain within the approved workflow. New remote Staff schema rollout still requires the concrete scope approval specified by the accepted design, after local implementation and verification.
+
+Task 0: isolated worktree and previous baseline verified; fresh main incorporated. Task 1: implementation underway with independent spec and quality review to follow. No new remote schema change has been made.
+
 ## Rozsah a pevné hranice
 
 Tento plán implementuje pouze etapu 1 schváleného návrhu v `docs/superpowers/specs/2026-09-04-shared-crew-workflow-and-invoice-selection-design.md`:

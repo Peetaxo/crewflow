@@ -1,9 +1,10 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppProvider } from './AppContext';
 import { useAppContext } from './useAppContext';
-import type { Role } from '../types';
+import type { Role, Timelog } from '../types';
+import type { AppContextType } from './app-context';
 import {
   clearPersistedUiSession,
   loadPersistedUiSession,
@@ -14,6 +15,10 @@ const mockAuthState = {
   isAuthRequired: true,
   isLoading: false,
   role: 'coo' as Role | null,
+  isAuthenticated: true,
+  isRoleSwitching: false,
+  currentUserId: 'user-a' as string | null,
+  currentProfileId: 'profile-a' as string | null,
 };
 
 vi.mock('../app/providers/useAuth', () => ({
@@ -70,6 +75,12 @@ const editingReceipt = {
   status: 'draft',
 } as const;
 
+const editingTimelog: Timelog = {
+  id: 7, eid: 9, contractorProfileId: 'profile-a',
+  days: [{ d: '2026-09-23', f: '08:00', t: '17:00', type: 'instal' }],
+  km: 0, note: 'private evidence', status: 'draft',
+};
+
 function ContextProbe() {
   const context = useAppContext();
 
@@ -82,6 +93,7 @@ function ContextProbe() {
       <div data-testid="eventTab">{context.eventTab}</div>
       <div data-testid="eventsFilter">{context.eventsFilter}</div>
       <div data-testid="editingReceiptTitle">{context.editingReceipt?.title ?? 'null'}</div>
+      <div data-testid="editingTimelogNote">{context.editingTimelog?.note ?? 'null'}</div>
       <button onClick={() => context.setCurrentTab('events')}>set-events-tab</button>
       <button onClick={() => context.setCurrentTab('dashboard')}>set-dashboard-tab</button>
       <button onClick={() => context.setCurrentTab('my-shifts')}>set-my-shifts-tab</button>
@@ -93,6 +105,7 @@ function ContextProbe() {
       <button onClick={() => context.setSelectedEventId(55)}>set-event-id</button>
       <button onClick={() => context.setEventTab('crew')}>set-event-tab</button>
       <button onClick={() => context.setEditingReceipt({ ...editingReceipt })}>set-editing-receipt</button>
+      <button onClick={() => context.setEditingTimelog({ ...editingTimelog })}>set-editing-timelog</button>
       <button onClick={() => context.setDeleteConfirm({ type: 'receipt', id: 99, name: 'Nemazat snapshot' })}>set-delete-confirm</button>
     </div>
   );
@@ -124,9 +137,74 @@ describe('AppProvider UI session restore', () => {
     mockAuthState.isAuthRequired = true;
     mockAuthState.isLoading = false;
     mockAuthState.role = 'coo';
+    mockAuthState.isAuthenticated = true;
+    mockAuthState.isRoleSwitching = false;
+    mockAuthState.currentUserId = 'user-a';
+    mockAuthState.currentProfileId = 'profile-a';
     Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1024 });
     clearPersistedUiSession();
     window.sessionStorage.clear();
+  });
+
+  it.each([
+    ['user change', { currentUserId: 'user-b' }],
+    ['profile change', { currentProfileId: 'profile-b' }],
+    ['authenticated role change', { role: 'crew' as Role }],
+    ['role switching', { isRoleSwitching: true }],
+    ['session loading', { isLoading: true }],
+    ['sign out', { isAuthenticated: false, currentUserId: null, currentProfileId: null, role: null }],
+  ])('hides evidence on the first render after %s and ignores late old-scope callbacks', (_label, change) => {
+    const observed: Array<Timelog | null> = [];
+    let captured: AppContextType | null = null;
+    function EvidenceProbe() {
+      captured = useAppContext();
+      observed.push(captured.editingTimelog);
+      return <ContextProbe />;
+    }
+    const view = render(<AppProvider><EvidenceProbe /></AppProvider>);
+    fireEvent.click(screen.getByText('set-editing-timelog'));
+    expect(screen.getByTestId('editingTimelogNote')).toHaveTextContent('private evidence');
+    const oldSetter = captured!.setEditingTimelog;
+    observed.length = 0;
+
+    Object.assign(mockAuthState, change);
+    view.rerender(<AppProvider><EvidenceProbe /></AppProvider>);
+    expect(observed[0]).toBeNull();
+    expect(screen.getByTestId('editingTimelogNote')).toHaveTextContent('null');
+    act(() => oldSetter(editingTimelog));
+    expect(screen.getByTestId('editingTimelogNote')).toHaveTextContent('null');
+
+    Object.assign(mockAuthState, {
+      currentUserId: 'user-a', currentProfileId: 'profile-a', role: 'coo',
+      isAuthenticated: true, isRoleSwitching: false, isLoading: false,
+    });
+    view.rerender(<AppProvider><EvidenceProbe /></AppProvider>);
+    act(() => oldSetter(editingTimelog));
+    expect(screen.getByTestId('editingTimelogNote')).toHaveTextContent('null');
+  });
+
+  it('closes evidence when the local testing role changes', () => {
+    mockAuthState.isAuthRequired = false;
+    render(<AppProvider><ContextProbe /></AppProvider>);
+    fireEvent.click(screen.getByText('set-editing-timelog'));
+    fireEvent.click(screen.getByText('set-role-crew'));
+    expect(screen.getByTestId('editingTimelogNote')).toHaveTextContent('null');
+    fireEvent.click(screen.getByText('set-role-coo'));
+    expect(screen.getByTestId('editingTimelogNote')).toHaveTextContent('null');
+  });
+
+  it('supports ordinary draft updates in StrictMode without discarding the active editor', () => {
+    let context: AppContextType | null = null;
+    function EvidenceProbe() {
+      context = useAppContext();
+      return <ContextProbe />;
+    }
+    render(<React.StrictMode><AppProvider><EvidenceProbe /></AppProvider></React.StrictMode>);
+    fireEvent.click(screen.getByText('set-editing-timelog'));
+    act(() => context!.setEditingTimelog({ ...context!.editingTimelog!, note: 'edited in scope' }));
+    fireEvent.click(screen.getByText('set-search'));
+    expect(screen.getByTestId('editingTimelogNote')).toHaveTextContent('edited in scope');
+    expect(window.sessionStorage.getItem('crewflow.ui-session.v2')).not.toContain('edited in scope');
   });
 
   it('restores persisted UI snapshot on initial load', () => {

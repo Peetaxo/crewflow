@@ -25,7 +25,7 @@ export type PersistedUiSessionState = {
 
 type PersistedUiSessionPayload = {
   version: 2;
-  state: PersistedUiSessionState;
+  state: Omit<PersistedUiSessionState, 'editingTimelog'>;
 };
 
 const isStorageAvailable = () =>
@@ -44,24 +44,6 @@ const isNullableNumber = (value: unknown): value is number | null =>
 
 const isNullableEventId = (value: unknown): value is SelectedEventId | null =>
   value === null || isNumber(value) || isString(value);
-
-const isTimelogDay = (value: unknown): value is Timelog['days'][number] =>
-  isRecord(value) &&
-  isString(value.d) &&
-  isString(value.f) &&
-  isString(value.t) &&
-  isString(value.type);
-
-const isTimelog = (value: unknown): value is Timelog =>
-  isRecord(value) &&
-  isNumber(value.id) &&
-  isNumber(value.eid) &&
-  (value.contractorProfileId === undefined || isString(value.contractorProfileId)) &&
-  Array.isArray(value.days) &&
-  value.days.every(isTimelogDay) &&
-  isNumber(value.km) &&
-  isString(value.note) &&
-  isString(value.status);
 
 const isReceiptItem = (value: unknown): value is ReceiptItem =>
   isRecord(value) &&
@@ -96,7 +78,7 @@ const isClient = (value: unknown): value is Client =>
   (value.country === undefined || isString(value.country)) &&
   (value.note === undefined || isString(value.note));
 
-const isPersistedUiSessionState = (value: unknown): value is PersistedUiSessionState =>
+const isPersistedUiSessionState = (value: unknown): value is PersistedUiSessionPayload['state'] =>
   isRecord(value) &&
   isString(value.currentTab) &&
   isString(value.searchQuery) &&
@@ -111,7 +93,6 @@ const isPersistedUiSessionState = (value: unknown): value is PersistedUiSessionS
   (value.eventsCalendarMode === 'month' || value.eventsCalendarMode === 'week') &&
   (value.eventsFilter === 'upcoming' || value.eventsFilter === 'past' || value.eventsFilter === 'all') &&
   isString(value.eventsCalendarDate) &&
-  (value.editingTimelog === null || isTimelog(value.editingTimelog)) &&
   (value.editingReceipt === null || isReceiptItem(value.editingReceipt)) &&
   (value.editingProject === null || isProject(value.editingProject)) &&
   (value.editingClient === null || isClient(value.editingClient));
@@ -141,7 +122,14 @@ export const loadPersistedUiSession = (): PersistedUiSessionState | null => {
       return null;
     }
 
-    return parsed.state;
+    // Legacy v2 sessions may contain a full report. Preserve navigation, never
+    // reopen that report, and remove its contents from storage immediately.
+    const state = { ...parsed.state, editingTimelog: null };
+    if ('editingTimelog' in parsed.state) {
+      safelyRemovePersistedUiSession();
+      savePersistedUiSession(state);
+    }
+    return state;
   } catch {
     safelyRemovePersistedUiSession();
     return null;
@@ -153,9 +141,10 @@ export const savePersistedUiSession = (state: PersistedUiSessionState) => {
     return;
   }
 
+  const { editingTimelog: _privateEvidence, ...navigationState } = state;
   const payload: PersistedUiSessionPayload = {
     version: 2,
-    state,
+    state: navigationState,
   };
 
   try {

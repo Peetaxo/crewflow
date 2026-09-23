@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { Timelog } from '../types';
 import {
   clearPersistedUiSession,
   loadPersistedUiSession,
@@ -33,6 +34,41 @@ afterEach(() => {
 });
 
 describe('ui session storage', () => {
+  const privateTimelog: Timelog = {
+    id: 7, eid: 11, contractorProfileId: 'private-contractor',
+    days: [{ d: '2026-09-23', f: '08:00', t: '17:00', type: 'instal' }],
+    km: 12, note: 'private hours note', status: 'draft',
+  };
+
+  it('never serializes the open evidence or its contents', () => {
+    savePersistedUiSession({ ...snapshot, editingTimelog: privateTimelog });
+    const raw = window.sessionStorage.getItem(STORAGE_KEY)!;
+
+    expect(JSON.parse(raw).state).not.toHaveProperty('editingTimelog');
+    expect(raw).not.toContain('private-contractor');
+    expect(raw).not.toContain('private hours note');
+    expect(loadPersistedUiSession()?.editingTimelog).toBeNull();
+  });
+
+  it('discards and removes legacy evidence while retaining navigation', () => {
+    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+      version: 2, state: { ...snapshot, editingTimelog: privateTimelog },
+    }));
+
+    expect(loadPersistedUiSession()).toEqual(snapshot);
+    expect(window.sessionStorage.getItem(STORAGE_KEY)).not.toContain('private hours note');
+  });
+
+  it('removes legacy private content even if persisting the sanitized navigation fails', () => {
+    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+      version: 2, state: { ...snapshot, editingTimelog: privateTimelog },
+    }));
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota'); });
+
+    expect(loadPersistedUiSession()).toEqual(snapshot);
+    expect(window.sessionStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
   it('round-trips a valid UI snapshot', () => {
     savePersistedUiSession(snapshot);
 

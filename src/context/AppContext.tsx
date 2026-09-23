@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { useAuth } from '../app/providers/useAuth';
 import {
@@ -61,8 +61,41 @@ const normalizeUiSessionState = (
   return normalizedState;
 };
 
+type EvidenceActivation = { active: boolean; scopeKey: string; ready: boolean };
+
+/** Mask the old editor during render, then retire its state and async callbacks. */
+function useScopedTimelogEditor(scopeKey: string, ready: boolean) {
+  const activation = useMemo<EvidenceActivation>(() => ({ active: false, scopeKey, ready }), [scopeKey, ready]);
+  const activeRef = useRef<EvidenceActivation | null>(null);
+  const [state, setState] = useState<{ activation: EvidenceActivation; value: Timelog | null } | null>(null);
+
+  useLayoutEffect(() => {
+    activation.active = activation.ready;
+    activeRef.current = activation;
+    setState(null);
+    return () => {
+      activation.active = false;
+      if (activeRef.current === activation) activeRef.current = null;
+    };
+  }, [activation]);
+
+  const setTimelog = useCallback((next: Timelog | null) => {
+    if (!activation.active || activeRef.current !== activation) return;
+    setState((current) => {
+      if (!activation.active || activeRef.current !== activation) return current;
+      return { activation, value: next };
+    });
+  }, [activation]);
+
+  const timelog = ready && state?.activation === activation ? state.value : null;
+  return [timelog, setTimelog] as const;
+}
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const { isAuthRequired, isLoading: isAuthLoading, role: authRole } = useAuth();
+  const {
+    isAuthRequired, isLoading: isAuthLoading, role: authRole,
+    isAuthenticated, isRoleSwitching, currentUserId, currentProfileId,
+  } = useAuth();
   const isMobile = useIsMobile();
   const initialUiPreferences = useMemo(() => loadUiPreferences(), []);
   const persistedUiSession = useMemo(() => loadPersistedUiSession(), []);
@@ -95,7 +128,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [selectedProjectIdForStats, setSelectedProjectIdForStats] = useState<string | null>(initialUiSession?.selectedProjectIdForStats ?? null);
   const [selectedClientIdForStats, setSelectedClientIdForStats] = useState<number | null>(initialUiSession?.selectedClientIdForStats ?? null);
 
-  const [editingTimelog, setEditingTimelog] = useState<Timelog | null>(initialUiSession?.editingTimelog ?? null);
+  const evidenceScopeKey = JSON.stringify([isAuthRequired, currentUserId, currentProfileId, authRole, role]);
+  const evidenceReady = !isAuthRequired || (
+    isAuthenticated && !isAuthLoading && !isRoleSwitching
+    && Boolean(currentUserId && currentProfileId && authRole) && authRole === role
+  );
+  const [editingTimelog, setEditingTimelog] = useScopedTimelogEditor(evidenceScopeKey, evidenceReady);
   const [editingProject, setEditingProject] = useState<Project | null>(initialUiSession?.editingProject ?? null);
   const [editingReceipt, setEditingReceipt] = useState<ReceiptItem | null>(initialUiSession?.editingReceipt ?? null);
   const [editingClient, setEditingClient] = useState<Client | null>(initialUiSession?.editingClient ?? null);
@@ -172,7 +210,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setEventsCalendarMode(restoredState.eventsCalendarMode);
       setEventsFilter(restoredState.eventsFilter);
       setEventsCalendarDate(restoredState.eventsCalendarDate);
-      setEditingTimelog(restoredState.editingTimelog);
       setEditingReceipt(restoredState.editingReceipt);
       setEditingProject(restoredState.editingProject);
       setEditingClient(restoredState.editingClient);
@@ -207,7 +244,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       eventsCalendarMode,
       eventsFilter,
       eventsCalendarDate,
-      editingTimelog,
+      editingTimelog: null,
       editingReceipt,
       editingProject,
       editingClient,
@@ -227,7 +264,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     eventsCalendarMode,
     eventsFilter,
     eventsCalendarDate,
-    editingTimelog,
     editingReceipt,
     editingProject,
     editingClient,

@@ -13,7 +13,8 @@ do $$ declare proc regprocedure; begin
  foreach proc in array array[
   'public.save_shift_workflow_drafts_atomic(uuid,uuid,uuid,uuid,jsonb,uuid)'::regprocedure,
   'public.submit_shift_workflow_round_atomic(uuid,uuid,uuid,uuid,uuid,jsonb)'::regprocedure,
-  'public.transition_shift_workflow_round_atomic(uuid,uuid,timestamptz,jsonb,text,text,uuid,jsonb)'::regprocedure
+  'public.transition_shift_workflow_round_atomic(uuid,uuid,timestamptz,jsonb,text,text,uuid,jsonb)'::regprocedure,
+  'public.approve_event_withdrawal(uuid,uuid,uuid)'::regprocedure
  ] loop
   if (select prosecdef from pg_proc where oid=proc) or has_function_privilege('anon',proc,'execute')
     or not has_function_privilege('authenticated',proc,'execute')
@@ -100,6 +101,7 @@ select pg_temp.fails($q$select public.save_timelog_atomic(pg_temp.sid(201),pg_te
 select pg_temp.fails($q$insert into private.shift_workflow_write_permits values(pg_current_xact_id(),auth.uid(),pg_temp.sid(201),'save','draft','draft',true)$q$,'42501');
 select pg_temp.fails($q$select private.write_shift_timelog_payload(pg_temp.payload(array[201]))$q$,'42501');
 select pg_temp.fails($q$select private.assign_event_crew_before_shared_rounds(pg_temp.sid(104),pg_temp.sid(13),null,'[]')$q$,'42501');
+select pg_temp.fails($q$select private.approve_event_withdrawal_before_shared_rounds(pg_temp.sid(101),pg_temp.sid(13),pg_temp.sid(700))$q$,'42501');
 set local crewflow.approved_timelog_import='on';
 set local app.shift_workflow_write='atomic';
 set local request.jwt.claims='{"role":"authenticated","user_metadata":{"role":"coo","shared_shift_write":true}}';
@@ -124,6 +126,36 @@ select pg_temp.assert((select status='draft' from public.timelogs where id=pg_te
 select pg_temp.fails($q$select public.import_approved_timelog_atomic(pg_temp.sid(201),pg_temp.sid(101),pg_temp.sid(13),(select updated_at from public.timelogs where id=pg_temp.sid(201)),'draft',1,'Legacy import bypass','[{"date":"2099-09-01","time_from":"08:00","time_to":"09:00","day_type":"provoz"}]')$q$,'42501','shared_shift');
 set local crewflow.approved_timelog_import='off';
 set local request.jwt.claim.sub='93000000-0000-4000-8000-000000000003';
+savepoint linked_draft_withdrawal;
+insert into public.event_applications(id,event_id,profile_id,status) values
+ (pg_temp.sid(700),pg_temp.sid(101),pg_temp.sid(13),'withdrawal_requested'),
+ (pg_temp.sid(701),pg_temp.sid(102),pg_temp.sid(13),'pending');
+select pg_temp.fails($q$select public.approve_event_withdrawal(pg_temp.sid(101),pg_temp.sid(13),pg_temp.sid(700))$q$,'42501');
+set local request.jwt.claim.sub='93000000-0000-4000-8000-000000000001';
+select pg_temp.fails($q$select public.approve_event_withdrawal(pg_temp.sid(101),pg_temp.sid(13),pg_temp.sid(701))$q$,'P0002');
+select pg_temp.fails($q$select public.approve_event_withdrawal(pg_temp.sid(101),pg_temp.sid(14),pg_temp.sid(700))$q$,'P0002');
+select pg_temp.fails($q$select public.approve_event_withdrawal(pg_temp.sid(102),pg_temp.sid(13),pg_temp.sid(701))$q$,'P0001','withdrawal_conflict');
+select pg_temp.assert(public.approve_event_withdrawal(pg_temp.sid(101),pg_temp.sid(13),pg_temp.sid(700)) @>
+ '{"assignment_removed":true,"timelog_removed":true,"crew_filled":0}'::jsonb,'existing withdrawal RPC removes eligible linked draft');
+select pg_temp.assert(not exists(select 1 from public.timelogs where id=pg_temp.sid(201))
+ and not exists(select 1 from public.timelog_days where timelog_id=pg_temp.sid(201))
+ and not exists(select 1 from public.event_assignments where event_id=pg_temp.sid(101) and profile_id=pg_temp.sid(13))
+ and (select status='withdrawn' from public.event_applications where id=pg_temp.sid(700)),
+ 'linked draft withdrawal atomically removes canonical report/days/assignment and marks application withdrawn');
+select pg_temp.assert(public.approve_event_withdrawal(pg_temp.sid(101),pg_temp.sid(13),pg_temp.sid(700)) @>
+ '{"assignment_removed":false,"timelog_removed":false}'::jsonb,'existing withdrawn replay remains compatible');
+reset role;
+select pg_temp.assert(not exists(select 1 from private.shift_workflow_assignment_permits),'withdrawal clears its exact removal permit before return');
+rollback to linked_draft_withdrawal;
+savepoint coo_linked_draft_withdrawal;
+set local request.jwt.claim.sub='93000000-0000-4000-8000-000000000004';
+insert into public.event_applications(id,event_id,profile_id,status) values(pg_temp.sid(702),pg_temp.sid(102),pg_temp.sid(14),'withdrawal_requested');
+set local request.jwt.claim.sub='93000000-0000-4000-8000-000000000002';
+select pg_temp.assert(public.approve_event_withdrawal(pg_temp.sid(102),pg_temp.sid(14),pg_temp.sid(702)) @>
+ '{"assignment_removed":true,"timelog_removed":true,"crew_filled":1}'::jsonb,'COO preserves eligible linked withdrawal and other crew assignment');
+select pg_temp.assert(exists(select 1 from public.timelogs where id=pg_temp.sid(202))
+ and not exists(select 1 from public.timelogs where id=pg_temp.sid(250)),'COO withdrawal touches only requested contractor');
+rollback to coo_linked_draft_withdrawal;
 select pg_temp.assert((select jsonb_array_length(result->'timelogs')=3 and result->'round'='null' from saved where name='draft'),'exact draft response and no implicit round');
 select pg_temp.assert((select count(*)=6 from public.timelog_days where timelog_id in(pg_temp.sid(201),pg_temp.sid(202),pg_temp.sid(203))),'stable repeated-date days preserved');
 select pg_temp.assert((select meal='obed' and meals=array['obed','vecere'] and note='Preparation overnight' and time_from='' and day_type='pripravy'
@@ -160,6 +192,15 @@ insert into saved values('submit',pg_temp.payload(array[201,202,203]),null);
 update saved set result=public.submit_shift_workflow_round_atomic(pg_temp.sid(503),pg_temp.sid(600),pg_temp.sid(400),pg_temp.sid(13),pg_temp.sid(101),payload) where name='submit';
 select pg_temp.assert((select status='pending_ch' and expected_item_count=3 from public.shift_workflow_rounds where id=pg_temp.sid(600)),'submitted frozen count');
 select pg_temp.assert((select count(*)=3 from public.timelogs where id in(pg_temp.sid(201),pg_temp.sid(202),pg_temp.sid(203)) and status='pending_ch'),'whole submitted set');
+savepoint frozen_withdrawal;
+insert into public.event_applications(id,event_id,profile_id,status) values(pg_temp.sid(700),pg_temp.sid(101),pg_temp.sid(13),'withdrawal_requested');
+set local request.jwt.claim.sub='93000000-0000-4000-8000-000000000001';
+select pg_temp.fails($q$select public.approve_event_withdrawal(pg_temp.sid(101),pg_temp.sid(13),pg_temp.sid(700))$q$,'P0001','removal_blocked');
+select pg_temp.assert((select status='withdrawal_requested' from public.event_applications where id=pg_temp.sid(700))
+ and (select status='pending_ch' from public.timelogs where id=pg_temp.sid(201))
+ and exists(select 1 from public.event_assignments where event_id=pg_temp.sid(101) and profile_id=pg_temp.sid(13)),
+ 'frozen withdrawal leaves application/report/assignment unchanged');
+rollback to frozen_withdrawal;
 update public.timelogs set status='draft' where id=pg_temp.sid(201);
 select pg_temp.assert((select status='pending_ch' from public.timelogs where id=pg_temp.sid(201)),'crew raw update hidden by RLS');
 set local request.jwt.claim.sub='93000000-0000-4000-8000-000000000001';
@@ -354,6 +395,7 @@ do $$ declare leaked text; begin
  if leaked is not null then raise exception 'historical replay unauthorized disclosure: %',leaked; end if;
 end $$;
 set local role anon;
+select pg_temp.fails($q$select public.approve_event_withdrawal(pg_temp.sid(101),pg_temp.sid(13),pg_temp.sid(700))$q$,'42501');
 select pg_temp.fails($q$select public.save_shift_workflow_drafts_atomic(pg_temp.sid(999),null,pg_temp.sid(13),pg_temp.sid(101),'[]')$q$,'42501');
 reset role;
 select pg_temp.assert(not exists(select 1 from private.shift_workflow_write_permits),'no retained write permits');

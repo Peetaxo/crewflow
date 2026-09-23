@@ -25,6 +25,13 @@ alter function private.assign_event_crew_before_shared_rounds(uuid,uuid,uuid,jso
 alter function private.assign_event_crew(uuid,uuid,uuid,jsonb) set schema public;
 alter function private.remove_event_crew_before_shared_rounds(uuid,uuid) rename to remove_event_crew;
 alter function private.remove_event_crew(uuid,uuid) set schema public;
+do $$ begin
+ if to_regprocedure('private.approve_event_withdrawal_before_shared_rounds(uuid,uuid,uuid)') is not null then
+  drop function public.approve_event_withdrawal(uuid,uuid,uuid),private.approve_event_withdrawal_shared(uuid,uuid,uuid);
+  alter function private.approve_event_withdrawal_before_shared_rounds(uuid,uuid,uuid) rename to approve_event_withdrawal;
+  alter function private.approve_event_withdrawal(uuid,uuid,uuid) set schema public;
+ end if;
+end $$;
 drop table private.shift_workflow_write_permits,private.shift_workflow_assignment_permits;
 alter table public.shift_workflow_round_actions drop column before_snapshot;
 commit;

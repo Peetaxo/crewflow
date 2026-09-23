@@ -11,7 +11,7 @@ const list = values => values.map(q).join(',');
 const events = [101,102,103].map(id);
 const actors = [1,2,3].map(id);
 const profiles = [11,12,13].map(id);
-const requests = [501,502,503,504,505].map(id);
+const requests = [501,502,503,504,505,506].map(id);
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const auth = n => `set local role authenticated;set local request.jwt.claim.sub=${q(id(n))};`;
 
@@ -61,6 +61,11 @@ function payload() {
   return rows.map((t,n) => ({ id:t.id,event_id:t.event_id,expected_updated_at:t.updated_at,expected_status:t.status,km:1,note:'Concurrency actuals',
     days:[{id:id(800+n),date:'2099-10-01',time_from:'08:00',time_to:'16:00',day_type:'pripravy',note:null,meal:null,meals:[]}] }));
 }
+function sharedData() {
+  return JSON.parse(query(`select jsonb_build_object(
+    'timelogs',(select jsonb_agg(to_jsonb(t) order by id) from public.timelogs t where contractor_id=${q(id(13))}),
+    'days',(select coalesce(jsonb_agg(to_jsonb(d) order by d.id),'[]') from public.timelog_days d join public.timelogs t on t.id=d.timelog_id where t.contractor_id=${q(id(13))}));`));
+}
 function submit(request, rows) {
   return `select public.submit_shift_workflow_round_atomic(${q(id(request))},${q(id(600))},${q(id(400))},${q(id(13))},${q(id(101))},${q(JSON.stringify(rows))}::jsonb);`;
 }
@@ -75,7 +80,7 @@ const sessions=[];
 let created=false;
 try {
   assert.equal(query(`select count(*) from (select id from auth.users where id in(${list(actors)}) union all
-    select id from public.events where id in(${list(events)}) union all select id from public.shift_workflows where id=${q(id(400))}
+    select id from public.events where id in(${list([...events,id(104)])}) union all select id from public.shift_workflows where id=${q(id(400))}
     union all select request_id from public.shift_workflow_requests where request_id in(${list(requests)})) x;`),'0');
   query(`begin;insert into auth.users(id) values ${actors.map(a=>`(${q(a)})`).join(',')};
     delete from public.user_roles where user_id in(${list(actors)});delete from public.profiles where user_id in(${list(actors)});
@@ -83,6 +88,8 @@ try {
     insert into public.user_roles(user_id,role) values(${q(id(1))},'crewhead'),(${q(id(2))},'coo'),(${q(id(3))},'crew');
     insert into public.events(id,name,contact_profile_id,contact_approves_hours) values
       ${events.map(e=>`(${q(e)},'Round concurrency',${q(id(12))},true)`).join(',')};
+    insert into public.events(id,name) values(${q(id(104))},'Foreign unlinked day fixture');
+    insert into public.timelogs(id,event_id,contractor_id,status) values(${q(id(204))},${q(id(104))},${q(id(12))},'draft');
     insert into public.event_assignments(event_id,profile_id) values(${q(id(101))},${q(id(13))}),(${q(id(102))},${q(id(13))});
     insert into public.timelogs(id,event_id,contractor_id,status) values(${q(id(201))},${q(id(101))},${q(id(13))},'draft'),(${q(id(202))},${q(id(102))},${q(id(13))},'draft');
     insert into public.shift_workflows(id,created_by) values(${q(id(400))},${q(id(1))});
@@ -101,6 +108,28 @@ try {
   assert.equal(query(`select count(*) from public.shift_workflow_rounds where id=${q(id(600))};`),'0');
   assert.equal(query(`select count(*) from public.timelogs where contractor_id=${q(id(13))} and status='draft';`),'3');
   console.log('PASS: submission waited for assignment commit, rejected missing new member, no partial round/status/request.');
+
+  // A's foreign day UUID is invisible when B checks ownership. A then commits
+  // while B waits on the unique index, so the conflict action itself must check
+  // the parent and reject the whole batch without touching the foreign record.
+  const beforeCollision=sharedData();
+  const colliding=payload().map(t=>({...t,km:77,note:'Collision batch must roll back'}));
+  colliding.at(-1).days[0].id=id(900);
+  const foreignInsert=session('shared-round-foreign-day-a',`${auth(1)}insert into public.timelog_days(id,timelog_id,date,time_from,time_to,day_type,note,meal,meals)
+    values(${q(id(900))},${q(id(204))},'2099-11-11','11:00','13:00','provoz','Foreign immutable note','obed',array['obed','vecere']);
+    select 'A_FOREIGN_DAY_'||to_jsonb(d)::text from public.timelog_days d where id=${q(id(900))};`);
+  sessions.push(foreignInsert);await waitFor(foreignInsert,'A_FOREIGN_DAY_');
+  const expectedForeign=JSON.parse(foreignInsert.stdout.split('\n').find(line=>line.startsWith('A_FOREIGN_DAY_')).slice('A_FOREIGN_DAY_'.length));
+  const collisionSave=session('shared-round-collision-b',`${auth(3)}select public.save_shift_workflow_drafts_atomic(${q(id(506))},${q(id(400))},${q(id(13))},${q(id(101))},${q(JSON.stringify(colliding))}::jsonb);commit;`);
+  sessions.push(collisionSave);collisionSave.child.stdin.end();await blockedBy(collisionSave,foreignInsert);
+  foreignInsert.child.stdin.end('commit;');assert.equal(await foreignInsert.exited,0,foreignInsert.stderr);
+  const collisionExit=await collisionSave.exited;
+  assert.deepEqual(JSON.parse(query(`select to_jsonb(d) from public.timelog_days d where id=${q(id(900))};`)),expectedForeign,'foreign unlinked day must stay byte-for-byte unchanged');
+  assert.notEqual(collisionExit,0,'foreign day conflict must reject the entire shared save');
+  assert.match(collisionSave.stderr,/22023:.*shift_workflow_day_invalid/);
+  assert.deepEqual(sharedData(),beforeCollision,'collision must roll back every shared parent/day/version');
+  assert.equal(query(`select count(*) from public.shift_workflow_requests where request_id=${q(id(506))};`),'0');
+  console.log('PASS: invisible foreign day UUID conflict waited then failed closed; foreign data and complete shared batch unchanged.');
 
   // A row-level day write can hold a day tuple before its BEFORE trigger runs.
   // The shared guard must reject unauthorized DML before waiting on its parent,
@@ -163,8 +192,10 @@ try {
       delete from public.shift_workflow_events where workflow_id=${q(id(400))};delete from public.shift_workflows where id=${q(id(400))};
       delete from public.timelog_approvals where timelog_id in(${list(timelogs)});
       delete from public.timelogs where id in(${list(timelogs)}) and contractor_id=${q(id(13))};
+      delete from public.timelogs where id=${q(id(204))} and event_id=${q(id(104))} and contractor_id=${q(id(12))};
       delete from public.event_assignments where event_id in(${list(events)}) and profile_id=${q(id(13))};
       delete from public.events where id in(${list(events)});
+      delete from public.events where id=${q(id(104))} and name='Foreign unlinked day fixture';
       delete from public.user_roles where user_id in(${list(actors)});
       delete from public.profiles where id in(${list(profiles)}) and user_id in(${list(actors)});
       delete from auth.users where id in(${list(actors)});commit;`);

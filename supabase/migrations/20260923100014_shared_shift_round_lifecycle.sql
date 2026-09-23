@@ -133,14 +133,17 @@ end $$;
 create trigger guard_active_shift_assignment before update or delete on public.event_assignments
  for each row execute function private.guard_active_shift_assignment();
 
--- Preserve both canonical assignment implementations, but make their only API
+-- Preserve canonical assignment implementations, but make their only API
 -- entrances verify the exact operation before staging an initialization permit.
 alter function public.assign_event_crew(uuid,uuid,uuid,jsonb) set schema private;
 alter function private.assign_event_crew(uuid,uuid,uuid,jsonb) rename to assign_event_crew_before_shared_rounds;
 alter function public.remove_event_crew(uuid,uuid) set schema private;
 alter function private.remove_event_crew(uuid,uuid) rename to remove_event_crew_before_shared_rounds;
+alter function public.approve_event_withdrawal(uuid,uuid,uuid) set schema private;
+alter function private.approve_event_withdrawal(uuid,uuid,uuid) rename to approve_event_withdrawal_before_shared_rounds;
 revoke all on function private.assign_event_crew_before_shared_rounds(uuid,uuid,uuid,jsonb),
- private.remove_event_crew_before_shared_rounds(uuid,uuid) from public,anon,authenticated,service_role;
+ private.remove_event_crew_before_shared_rounds(uuid,uuid),private.approve_event_withdrawal_before_shared_rounds(uuid,uuid,uuid)
+ from public,anon,authenticated,service_role;
 create function private.shift_workflow_assignment(p_event_id uuid,p_profile_id uuid,p_application_id uuid,p_days jsonb,p_remove boolean)
 returns jsonb language plpgsql security definer set search_path='' as $$
 declare v_result jsonb; v_timelog uuid;
@@ -166,6 +169,49 @@ $$;
 create function public.remove_event_crew(p_event_id uuid,p_profile_id uuid)
 returns jsonb language sql security invoker set search_path='' as $$
  select private.shift_workflow_assignment(p_event_id,p_profile_id,null,null,true)
+$$;
+
+create function private.approve_event_withdrawal_shared(p_event_id uuid,p_profile_id uuid,p_application_id uuid)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare
+ v_result jsonb; v_application_status text; v_assignment uuid; v_timelog uuid; v_status public.timelog_status;
+begin
+ if auth.uid() is null or not(public.has_role(auth.uid(),'crewhead') or public.has_role(auth.uid(),'coo')) then
+  raise exception 'crew_lifecycle_unauthorized' using errcode='42501'; end if;
+ -- Match the original advisory -> event -> application -> assignment -> parent
+ -- lock order. The exact application/identity/state is checked before a permit.
+ perform pg_advisory_xact_lock(hashtextextended(p_event_id::text||':'||p_profile_id::text,0));
+ perform id from public.events where id=p_event_id for update;
+ if not found or not exists(select 1 from public.profiles where id=p_profile_id) then
+  raise exception 'crew_lifecycle_not_found' using errcode='P0002'; end if;
+ select status into v_application_status from public.event_applications
+  where id=p_application_id and event_id=p_event_id and profile_id=p_profile_id for update;
+ if not found then raise exception 'crew_lifecycle_not_found' using errcode='P0002'; end if;
+ select id into v_assignment from public.event_assignments where event_id=p_event_id and profile_id=p_profile_id for update;
+ select id,status into v_timelog,v_status from public.timelogs where event_id=p_event_id and contractor_id=p_profile_id for update;
+ if v_application_status='withdrawn' then
+  if v_assignment is not null or v_timelog is not null then raise exception 'crew_withdrawal_conflict' using errcode='P0001'; end if;
+ elsif v_application_status<>'withdrawal_requested' then
+  raise exception 'crew_withdrawal_conflict' using errcode='P0001';
+ elsif (v_timelog is not null and v_status not in('draft','rejected'))
+  or exists(select 1 from public.shift_workflow_round_items i join public.shift_workflow_rounds r on r.id=i.round_id
+   where i.event_id=p_event_id and r.contractor_id=p_profile_id and i.released_at is null) then
+  raise exception 'crew_removal_blocked' using errcode='P0001';
+ end if;
+ if v_timelog is not null then
+  insert into private.shift_workflow_assignment_permits(transaction_id,actor_id,event_id,contractor_id,operation,timelog_id)
+   values(pg_current_xact_id(),auth.uid(),p_event_id,p_profile_id,'remove',v_timelog);
+ end if;
+ -- Retain all original validation, application mutation, count refresh and retry
+ -- semantics. This revoked helper is callable only through the checked wrapper.
+ v_result:=private.approve_event_withdrawal_before_shared_rounds(p_event_id,p_profile_id,p_application_id);
+ delete from private.shift_workflow_assignment_permits where transaction_id=pg_current_xact_id() and actor_id=auth.uid()
+  and event_id=p_event_id and contractor_id=p_profile_id;
+ return v_result;
+end $$;
+create function public.approve_event_withdrawal(p_event_id uuid,p_profile_id uuid,p_application_id uuid)
+returns jsonb language sql security invoker set search_path='' as $$
+ select private.approve_event_withdrawal_shared(p_event_id,p_profile_id,p_application_id)
 $$;
 
 -- Retain the generic authorization rules. The only new exception is a verified
@@ -274,7 +320,7 @@ end $$;
 
 create function private.write_shift_timelog_payload(p_timelogs jsonb) returns void
 language plpgsql set search_path='' as $$
-declare v_row jsonb; v_id uuid;
+declare v_row jsonb; v_id uuid; v_written integer;
 begin
  for v_row in select value from jsonb_array_elements(p_timelogs) order by (value->>'id')::uuid loop
   v_id:=(v_row->>'id')::uuid;
@@ -283,12 +329,18 @@ begin
   update public.timelogs set km=(v_row->>'km')::numeric,note=v_row->>'note' where id=v_id;
   delete from public.timelog_days d where d.timelog_id=v_id
    and not exists(select 1 from jsonb_array_elements(v_row->'days') x where (x->>'id')::uuid=d.id);
-  insert into public.timelog_days(id,timelog_id,date,time_from,time_to,day_type,note,meal,meals)
+  insert into public.timelog_days as target_day(id,timelog_id,date,time_from,time_to,day_type,note,meal,meals)
   select (x->>'id')::uuid,v_id,(x->>'date')::date,x->>'time_from',x->>'time_to',
    (x->>'day_type')::public.timelog_type,x->>'note',x->>'meal',array(select jsonb_array_elements_text(x->'meals'))
   from jsonb_array_elements(v_row->'days') x
   on conflict(id) do update set date=excluded.date,time_from=excluded.time_from,time_to=excluded.time_to,
-   day_type=excluded.day_type,note=excluded.note,meal=excluded.meal,meals=excluded.meals;
+   day_type=excluded.day_type,note=excluded.note,meal=excluded.meal,meals=excluded.meals
+   where target_day.timelog_id=excluded.timelog_id;
+  -- A concurrent insertion may be invisible to the ownership precheck yet win
+  -- the unique-index wait. Check its parent atomically in ON CONFLICT and reject
+  -- any skipped row, rolling back every preceding parent/day write in the batch.
+  get diagnostics v_written=row_count;
+  if v_written<>jsonb_array_length(v_row->'days') then raise exception 'shift_workflow_day_invalid' using errcode='22023'; end if;
  end loop;
 end $$;
 
@@ -589,17 +641,19 @@ revoke all on function private.guard_shared_shift_timelog(),private.guard_shared
  private.version_shared_shift_timelog(),private.validate_shift_timelog_payload(jsonb,boolean),private.write_shift_timelog_payload(jsonb),
  private.shift_round_result(uuid,uuid,uuid,uuid[]) from public,anon,authenticated,service_role;
 revoke all on function private.shift_workflow_assignment(uuid,uuid,uuid,jsonb,boolean),
+ private.approve_event_withdrawal_shared(uuid,uuid,uuid),
  private.save_shift_drafts_or_submit(uuid,uuid,uuid,uuid,uuid,jsonb,boolean),
  private.transition_shift_workflow_round_atomic(uuid,uuid,timestamptz,jsonb,text,text,uuid,jsonb),
- public.assign_event_crew(uuid,uuid,uuid,jsonb),public.remove_event_crew(uuid,uuid),
+ public.assign_event_crew(uuid,uuid,uuid,jsonb),public.remove_event_crew(uuid,uuid),public.approve_event_withdrawal(uuid,uuid,uuid),
  public.save_shift_workflow_drafts_atomic(uuid,uuid,uuid,uuid,jsonb,uuid),
  public.submit_shift_workflow_round_atomic(uuid,uuid,uuid,uuid,uuid,jsonb),
  public.transition_shift_workflow_round_atomic(uuid,uuid,timestamptz,jsonb,text,text,uuid,jsonb)
  from public,anon,authenticated,service_role;
 grant execute on function private.shift_workflow_assignment(uuid,uuid,uuid,jsonb,boolean),
+ private.approve_event_withdrawal_shared(uuid,uuid,uuid),
  private.save_shift_drafts_or_submit(uuid,uuid,uuid,uuid,uuid,jsonb,boolean),
  private.transition_shift_workflow_round_atomic(uuid,uuid,timestamptz,jsonb,text,text,uuid,jsonb),
- public.assign_event_crew(uuid,uuid,uuid,jsonb),public.remove_event_crew(uuid,uuid),
+ public.assign_event_crew(uuid,uuid,uuid,jsonb),public.remove_event_crew(uuid,uuid),public.approve_event_withdrawal(uuid,uuid,uuid),
  public.save_shift_workflow_drafts_atomic(uuid,uuid,uuid,uuid,jsonb,uuid),
  public.submit_shift_workflow_round_atomic(uuid,uuid,uuid,uuid,uuid,jsonb),
  public.transition_shift_workflow_round_atomic(uuid,uuid,timestamptz,jsonb,text,text,uuid,jsonb) to authenticated;

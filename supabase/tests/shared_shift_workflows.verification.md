@@ -371,3 +371,47 @@ concurrency proof also pass after the correction. Function lint remains clean;
 advisors remain 136 total / 10 existing security findings / zero additions.
 Revision, rounds, requests, both permit tables, and test sessions are all zero
 after cleanup.
+
+### Quality review corrections: concurrent day IDs and withdrawal approval
+
+The previous ownership precheck in the day writer could not see a concurrently
+inserted foreign day UUID. A true two-session RED test inserted such a day under
+an unrelated unlinked report, observed the shared save waiting on its unique
+index conflict, committed the foreign insertion, and showed the shared save
+overwriting that foreign day's date, type, times, note, meal, and meals. The
+foreign `timelog_id` remained unchanged, so a precheck alone was insufficient.
+
+The `ON CONFLICT` update now atomically requires the existing day parent to equal
+the incoming parent. Its affected-row count must also equal the requested day
+count; a skipped conflict raises `22023 shift_workflow_day_invalid` and rolls back
+the complete operation. The same concurrency test is GREEN: the foreign row stays
+byte-for-byte identical, every shared parent/day/version matches its before
+snapshot, and no failed-request ledger row is retained. The initial ownership
+precheck remains for ordinary visible conflicts.
+
+The existing `approve_event_withdrawal` RPC also needed a scoped entrance to the
+new shared guards. Its RED test failed `shared_shift_write_required` while
+deleting an eligible linked draft. The public signature is unchanged and is now
+an invoker wrapper over a private authenticated implementation. The original
+implementation remains intact under a revoked private name. The new wrapper
+uses the original advisory, event, application, assignment, and timelog lock
+order; verifies CH/COO authority, the exact application/event/profile tuple, its
+withdrawal state, report status, and absence of active frozen membership; then
+stages an exact transaction/actor/event/contractor/timelog removal permit before
+calling the original implementation. It removes that permit before returning.
+No caller-controlled capability or broader write permission was introduced.
+
+GREEN authenticated tests cover eligible CH and COO linked-draft withdrawals,
+canonical day/report/assignment removal, application status and crew count,
+unchanged other contractors, already-withdrawn retries, wrong application
+identity/profile/state, crew and anon denial, denied access to the old private
+helper, cleared permits, and rejection of frozen-round withdrawal with all
+application/report/assignment state preserved. Fresh replay also restores and
+re-wraps the original withdrawal helper successfully.
+
+The complete five-suite SQL runner, now five lifecycle concurrency races, and
+foundation concurrency proof pass. Function lint has no warnings/errors;
+advisors remain 136 findings with the same 10 security findings and zero new
+findings. All concurrency fixture identities are removed and original business,
+workflow, and private-permit snapshots match exactly. These corrections changed
+only server migration/test/evidence files.

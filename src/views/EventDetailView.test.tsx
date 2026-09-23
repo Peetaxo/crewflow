@@ -1098,6 +1098,9 @@ describe('EventDetailView', () => {
   it.each([
     { snapshotPhone: '777 111 222', expectedPhone: '777 111 222', href: 'tel:777111222' },
     { snapshotPhone: undefined, expectedPhone: '721 250 034', href: 'tel:721250034' },
+    { snapshotPhone: null, expectedPhone: '721 250 034', href: 'tel:721250034' },
+    { snapshotPhone: '', expectedPhone: '', href: null },
+    { snapshotPhone: '   ', expectedPhone: '', href: null },
   ])('opens the contact call dialog using saved phone $snapshotPhone or the profile fallback', async ({ snapshotPhone, expectedPhone, href }) => {
     mobileMockState.isMobile = true;
     const contactContractor = {
@@ -1170,7 +1173,12 @@ describe('EventDetailView', () => {
     expect(contactDialog).toBeInTheDocument();
     expect(within(contactDialog).getByText(contactContractor.name)).toBeInTheDocument();
     expect(within(contactDialog).queryByText('Stary kontakt')).not.toBeInTheDocument();
-    expect(within(contactDialog).getByRole('link', { name: `Zavolat ${expectedPhone}` })).toHaveAttribute('href', href);
+    if (href) {
+      expect(within(contactDialog).getByRole('link', { name: `Zavolat ${expectedPhone}` })).toHaveAttribute('href', href);
+    } else {
+      expect(within(contactDialog).queryByRole('link', { name: /Zavolat/ })).not.toBeInTheDocument();
+      expect(within(contactDialog).getByText('Telefon k této kontaktní osobě zatím není vyplněný.')).toBeInTheDocument();
+    }
   });
 
   it('renders mobile management detail for CH and COO with edit, assignment, and approval actions', async () => {

@@ -425,7 +425,7 @@ const EventDetailView = () => {
     : null;
   const contactPersonProfile = contactProfileFromId ?? contactProfileFromName;
   const contactPersonName = contactPersonProfile?.name ?? rawContactPersonName;
-  const contactPhone = event.contactPhone?.trim() || contactPersonProfile?.phone.trim() || '';
+  const contactPhone = event.contactPhone?.trim() ?? contactPersonProfile?.phone.trim() ?? '';
   const contactPhoneHref = contactPhone ? buildPhoneHref(contactPhone) : null;
   const visibleEventCrew = isCrewRole && currentProfileId
     ? eventCrew.filter((contractor) => contractor.profileId === currentProfileId)

@@ -1,124 +1,22 @@
 import React from 'react';
-import { Check, ChevronLeft, ChevronRight, Plus, Save, Send, Trash2, X } from 'lucide-react';
+import { Save, Send, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppContext } from '../../context/useAppContext';
-import { MEAL_CONFIG, PHASE_CONFIG } from '../../constants';
 import { KM_RATE } from '../../data';
-import { calculateDayHours, calculateMealAllowance, calculateTotalHours, formatCurrency, isOvernightTimeRange, normalizeMealSelection } from '../../utils';
+import { calculateMealAllowance, calculateTotalHours, normalizeMealSelection } from '../../utils';
 import { getTimelogDependencies, saveTimelog } from '../../features/timelogs/services/timelogs.service';
-import { buildTimelogChangeSummary } from '../../features/timelogs/services/timelog-change-summary';
 import { canEditTimelog, canSubmitTimelog } from '../../features/timelogs/services/timelog-permissions';
-import {
-  buildTimelogCalendarDates,
-  createTimelogDayEntryId,
-  getTimelogDayEntryKey,
-  isDateInEventRange,
-  removeTimelogDayEntry,
-  resolveTimelogDayDefaults,
-  upsertTimelogDay,
-} from '../../features/timelogs/services/timelog-day-ui';
-import type { Event, Timelog, TimelogDay, TimelogMeal, TimelogType } from '../../types';
+import type { Contractor, Event, Role, Timelog } from '../../types';
 import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Textarea } from '../ui/textarea';
+import TimelogEvidenceSection from '../../features/shift-workflows/TimelogEvidenceSection';
+import { TimelogSubmitConfirmationDialog } from '../../features/shift-workflows/timelog-evidence-presentation';
 
-const formatDateLabel = (date: string) => {
-  const [year, month, day] = date.split('-');
-  return `${day}.${month}.${year}`;
-};
-
-const formatSummaryDateLabel = (date: string) => {
-  const [, month, day] = date.split('-');
-  return `${day}.${month}.`;
-};
-
-const calendarWeekdayLabels = ['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'];
-const calendarMonthLabels = [
-  'leden',
-  'únor',
-  'březen',
-  'duben',
-  'květen',
-  'červen',
-  'červenec',
-  'srpen',
-  'září',
-  'říjen',
-  'listopad',
-  'prosinec',
-];
-
-type AddDayCalendarDate = {
-  date: string;
-  isCurrentMonth: boolean;
-};
-
-const parseIsoDateParts = (date: string): { year: number; monthIndex: number; day: number } => {
-  const [year, month, day] = date.split('-').map(Number);
-
-  return {
-    year,
-    monthIndex: month - 1,
-    day,
-  };
-};
-
-const formatIsoDateFromUtc = (date: Date): string => (
-  [
-    date.getUTCFullYear(),
-    String(date.getUTCMonth() + 1).padStart(2, '0'),
-    String(date.getUTCDate()).padStart(2, '0'),
-  ].join('-')
-);
-
-const shiftCalendarMonth = (date: string, offset: number): string => {
-  const { year, monthIndex } = parseIsoDateParts(date);
-  const nextDate = new Date(Date.UTC(year, monthIndex + offset, 1));
-
-  return formatIsoDateFromUtc(nextDate);
-};
-
-const buildAddDayCalendarDates = (monthDate: string): AddDayCalendarDate[] => {
-  const { year, monthIndex } = parseIsoDateParts(monthDate);
-  const firstDayOfMonth = new Date(Date.UTC(year, monthIndex, 1));
-  const mondayOffset = (firstDayOfMonth.getUTCDay() + 6) % 7;
-  const daysInMonth = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
-  const cellCount = Math.ceil((mondayOffset + daysInMonth) / 7) * 7;
-  const gridStartTime = Date.UTC(year, monthIndex, 1 - mondayOffset);
-
-  return Array.from({ length: cellCount }, (_, index) => {
-    const date = new Date(gridStartTime + index * 24 * 60 * 60 * 1000);
-
-    return {
-      date: formatIsoDateFromUtc(date),
-      isCurrentMonth: date.getUTCMonth() === monthIndex,
-    };
-  });
-};
-
-const formatCalendarMonthLabel = (date: string): string => {
-  const { year, monthIndex } = parseIsoDateParts(date);
-
-  return `${calendarMonthLabels[monthIndex]} ${year}`;
-};
-
-const normalizeDay = (day: TimelogDay): TimelogDay => ({
-  ...day,
-  meals: normalizeMealSelection(day),
-  meal: normalizeMealSelection(day)[0] ?? null,
-  note: day.note ?? '',
-});
-
-const getDayValueSignature = (date: string, day: TimelogDay): string => (
-  [
-    date,
-    day.f,
-    day.t,
-    day.type,
-    normalizeMealSelection(day).join(','),
-    day.note?.trim() ?? '',
-  ].join('|')
-);
+type AutosaveState = 'idle' | 'pending' | 'saved' | 'error';
+const autosaveDelayMs = 800;
+const mobileTimelogSwipeStartMaxX = 96;
+const mobileTimelogSwipeMinDistance = 64;
+const mobileTimelogSwipeMaxVerticalDrift = 48;
+const mobileTimelogCloseAnimationMs = 180;
 
 const getTimelogDraftSignature = (timelog: Timelog): string => JSON.stringify({
   days: timelog.days.map((day) => ({
@@ -134,75 +32,6 @@ const getTimelogDraftSignature = (timelog: Timelog): string => JSON.stringify({
   km: timelog.km,
   note: timelog.note,
 });
-
-type TimelogDayEntry = {
-  day: TimelogDay;
-  entryKey: string;
-  index: number;
-};
-
-const getTimelogDayEntriesForDate = (
-  date: string | null,
-  days: TimelogDay[],
-): TimelogDayEntry[] => {
-  if (!date) return [];
-
-  return days
-    .map((day, index): TimelogDayEntry => ({
-      day: normalizeDay(day),
-      entryKey: getTimelogDayEntryKey(day, index),
-      index,
-    }))
-    .filter((entry) => entry.day.d === date);
-};
-
-const createDraftDay = (date: string, event: Event, preferredType?: TimelogType): TimelogDay => ({
-  ...resolveTimelogDayDefaults(date, event, preferredType),
-  id: createTimelogDayEntryId(),
-});
-
-const getSelectedDayDraft = (
-  date: string | null,
-  days: TimelogDay[],
-  event: Event | null,
-): TimelogDay | null => {
-  if (!date || !event) return null;
-
-  return getTimelogDayEntriesForDate(date, days)[0]?.day ?? createDraftDay(date, event);
-};
-
-const getEventDefaultsSignature = (event: Event | null): string => {
-  if (!event) return '';
-
-  return JSON.stringify({
-    id: event.id,
-    startDate: event.startDate,
-    endDate: event.endDate,
-    startTime: event.startTime,
-    endTime: event.endTime,
-    showDayTypes: event.showDayTypes,
-    scheduleVersion: event.scheduleVersion,
-    freeDays: event.freeDays ?? [],
-    dayTypes: event.dayTypes ?? null,
-    phaseTimes: event.phaseTimes ?? null,
-    phaseSchedules: event.phaseSchedules ?? null,
-  });
-};
-
-const phaseOptions: Array<{ value: TimelogType; label: string }> = PHASE_CONFIG.map((phase) => ({
-  value: phase.type,
-  label: phase.label,
-}));
-const mealOptions = MEAL_CONFIG.map((meal) => ({
-  value: meal.type,
-  label: meal.label,
-}));
-
-const formatMealLabels = (meals: TimelogMeal[]): string => (
-  meals
-    .map((meal) => mealOptions.find((option) => option.value === meal)?.label ?? meal)
-    .join(' + ')
-);
 
 const getReadOnlyTimelogCopy = (status: Timelog['status']) => {
   if (status === 'pending_ch') {
@@ -246,536 +75,162 @@ const getReadOnlyTimelogCopy = (status: Timelog['status']) => {
   };
 };
 
-type TimelogSummaryListProps = {
-  days: TimelogDay[];
-  mealAllowanceEnabled: boolean;
-  showMealBadges?: boolean;
+type MobileTimelogSessionProps = {
+  initialTimelog: Timelog;
+  event: Event;
+  contractor: Contractor;
+  role: Role;
+  setEditingTimelog: (next: Timelog | null) => void;
+  onContractorDetail: () => void;
 };
 
-const TimelogSummaryList: React.FC<TimelogSummaryListProps> = ({
-  days,
-  mealAllowanceEnabled,
-  showMealBadges = true,
-}) => {
-  if (days.length === 0) {
-    return (
-      <div className="nodu-mobile-timelog-summary-empty">
-        Zatím nejsou zadané žádné hodiny.
-      </div>
-    );
-  }
-
-  return (
-    <div className="nodu-mobile-timelog-summary-list">
-      {days.map((day, index) => {
-        const normalizedDay = normalizeDay(day);
-        const meals = mealAllowanceEnabled ? normalizeMealSelection(normalizedDay) : [];
-        const phaseLabel = phaseOptions.find((option) => option.value === normalizedDay.type)?.label ?? normalizedDay.type;
-
-        return (
-          <div
-            key={getTimelogDayEntryKey(day, index)}
-            className="nodu-mobile-timelog-summary-row"
-          >
-            <div className="nodu-mobile-timelog-summary-row-main">
-              <div className="nodu-mobile-timelog-summary-row-meta">
-                <span className="nodu-mobile-timelog-summary-row-date">
-                  {formatSummaryDateLabel(normalizedDay.d)}
-                </span>
-                <span className="nodu-mobile-timelog-summary-row-separator">
-                  ·
-                </span>
-                <span className="nodu-mobile-timelog-summary-row-time">
-                  {normalizedDay.f} - {normalizedDay.t}
-                </span>
-                <span className="nodu-mobile-timelog-summary-row-phase">
-                  {phaseLabel}
-                </span>
-              </div>
-              {showMealBadges && meals.length > 0 && (
-                <div className="nodu-mobile-timelog-summary-row-badges">
-                  <span className="nodu-mobile-timelog-summary-row-meal">
-                    {formatMealLabels(meals)}
-                  </span>
-                </div>
-              )}
-            </div>
-            <div className="nodu-mobile-timelog-summary-row-hours">
-              {calculateDayHours(normalizedDay.f, normalizedDay.t).toFixed(1)}h
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-};
-
-type TimelogReportSummaryProps = {
-  days: TimelogDay[];
-  totalHours: number;
-  totalCompensation: number;
-  km: number;
-  note: string;
-  mealAllowanceEnabled: boolean;
-  mealAllowanceTotal: number;
-};
-
-const TimelogReportSummary: React.FC<TimelogReportSummaryProps> = ({
-  days,
-  km,
-  note,
-  mealAllowanceEnabled,
-  mealAllowanceTotal,
-}) => {
-  const trimmedNote = note.trim();
-  const hasSupplementalTotals = km > 0 || (mealAllowanceEnabled && mealAllowanceTotal > 0);
-
-  return (
-    <section
-      className="nodu-mobile-timelog-readonly-summary"
-      role="region"
-      aria-label="Souhrn hodin"
-    >
-      <div className="nodu-mobile-timelog-readonly-summary-header">
-        <div>
-          <div className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--nodu-accent)]">
-            Souhrn hodin
-          </div>
-          <h4>Všechny záznamy</h4>
-        </div>
-        <span>{days.length} záznamů</span>
-      </div>
-
-      <TimelogSummaryList days={days} mealAllowanceEnabled={mealAllowanceEnabled} />
-
-      {hasSupplementalTotals && (
-        <div className="nodu-mobile-timelog-readonly-summary-totals">
-          {km > 0 && (
-            <div>
-              <span>Cestovné</span>
-              <strong>{km} km</strong>
-            </div>
-          )}
-          {mealAllowanceEnabled && mealAllowanceTotal > 0 && (
-            <div>
-              <span>Jídlo</span>
-              <strong>{formatCurrency(mealAllowanceTotal)}</strong>
-            </div>
-          )}
-        </div>
-      )}
-
-      {trimmedNote && (
-        <div className="nodu-mobile-timelog-readonly-summary-note">
-          <span>Poznámka</span>
-          <p>{trimmedNote}</p>
-        </div>
-      )}
-    </section>
-  );
-};
-
-type TimelogSubmitConfirmationDialogProps = TimelogReportSummaryProps & {
-  title: string;
-  confirmLabel: string;
-  onClose: () => void;
-  onConfirm: () => void;
-};
-
-const TimelogSubmitConfirmationDialog: React.FC<TimelogSubmitConfirmationDialogProps> = ({
-  title,
-  confirmLabel,
-  days,
-  totalHours,
-  totalCompensation,
-  km,
-  note,
-  mealAllowanceEnabled,
-  mealAllowanceTotal,
-  onClose,
-  onConfirm,
-}) => {
-  const trimmedNote = note.trim();
-
-  return (
-    <div className="nodu-mobile-timelog-submit-layer">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="mobile-timelog-submit-title"
-        className="nodu-mobile-timelog-submit-dialog"
-      >
-        <div className="nodu-mobile-timelog-submit-header">
-          <div>
-            <h4 id="mobile-timelog-submit-title">{title}</h4>
-            <p>Zkontroluj si ještě hodiny, cestovné a poznámku.</p>
-          </div>
-          <button
-            type="button"
-            aria-label="Zavřít potvrzení odeslání"
-            className="nodu-mobile-timelog-submit-close"
-            onClick={onClose}
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="nodu-mobile-timelog-submit-summary">
-          <TimelogSummaryList
-            days={days}
-            mealAllowanceEnabled={mealAllowanceEnabled}
-            showMealBadges={false}
-          />
-          <div className="nodu-mobile-timelog-readonly-summary-totals">
-            <div>
-              <span>Celkem</span>
-              <strong>{totalHours.toFixed(1)}h celkem</strong>
-            </div>
-            <div>
-              <span>Odměna</span>
-              <strong>{formatCurrency(totalCompensation)}</strong>
-            </div>
-            {km > 0 && (
-              <div>
-                <span>Cestovné</span>
-                <strong>{km} km</strong>
-              </div>
-            )}
-            {mealAllowanceEnabled && mealAllowanceTotal > 0 && (
-              <div>
-                <span>Jídlo</span>
-                <strong>{formatCurrency(mealAllowanceTotal)}</strong>
-              </div>
-            )}
-          </div>
-          {trimmedNote && (
-            <div className="nodu-mobile-timelog-readonly-summary-note">
-              <span>Poznámka</span>
-              <p>{trimmedNote}</p>
-            </div>
-          )}
-        </div>
-
-        <div className="nodu-mobile-timelog-submit-actions">
-          <Button type="button" variant="outline" onClick={onClose}>
-            Zpět
-          </Button>
-          <Button type="button" onClick={onConfirm}>
-            <Send size={16} /> {confirmLabel}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-type AutosaveState = 'idle' | 'pending' | 'saved' | 'error';
-
-const timeOptionHeight = 40;
-const autosaveDelayMs = 800;
-const mobileTimelogSwipeStartMaxX = 96;
-const mobileTimelogSwipeMinDistance = 64;
-const mobileTimelogSwipeMaxVerticalDrift = 48;
-const mobileTimelogCloseAnimationMs = 180;
-const hourOptions = Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, '0'));
-const minuteOptions = ['00', '15', '30', '45'];
-
-type ActiveTimePicker = 'from' | 'to';
-
-const splitTimeValue = (value: string): { hour: string; minute: string } => {
-  const [rawHour = '00', rawMinute = '00'] = value.split(':');
-  const paddedHour = rawHour.padStart(2, '0');
-  const hour = hourOptions.includes(paddedHour) ? paddedHour : '00';
-  const minute = minuteOptions.includes(rawMinute) ? rawMinute : '00';
-
-  return { hour, minute };
-};
-
-type TimeFieldProps = {
-  label: string;
-  value: string;
-  isActive: boolean;
-  disabled?: boolean;
-  onActivate: () => void;
-};
-
-const TimeField: React.FC<TimeFieldProps> = ({
-  label,
-  value,
-  isActive,
-  disabled = false,
-  onActivate,
-}) => (
-  <div
-    className={[
-      'nodu-mobile-timelog-time-picker',
-      isActive ? 'nodu-mobile-timelog-time-picker--active' : '',
-      disabled ? 'nodu-mobile-timelog-time-picker--disabled' : '',
-    ].filter(Boolean).join(' ')}
-    role="group"
-    aria-label={label}
-    data-active={isActive ? 'true' : 'false'}
-  >
-    <div className="nodu-mobile-timelog-time-label text-[10px] uppercase tracking-[0.2em] text-[color:var(--nodu-text-soft)]">
-      {label}
-    </div>
-    <button
-      type="button"
-      aria-label={`Otevřít výběr času ${label} ${value}`}
-      aria-expanded={isActive}
-      className="nodu-mobile-timelog-time-trigger"
-      disabled={disabled}
-      onClick={onActivate}
-    >
-      <span>{value ? value.replace(/^(\d):/, '0$1:') : '--:--'}</span>
-    </button>
-  </div>
-);
-
-type TimeWheelPickerProps = {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  onConfirm: () => void;
-};
-
-const TimeWheelPicker: React.FC<TimeWheelPickerProps> = ({
-  label,
-  value,
-  onChange,
-  onConfirm,
-}) => {
-  const hourColumnRef = React.useRef<HTMLDivElement | null>(null);
-  const minuteColumnRef = React.useRef<HTMLDivElement | null>(null);
-  const userScrollIntent = React.useRef({ hour: false, minute: false });
-  const { hour, minute } = splitTimeValue(value);
-
-  React.useEffect(() => {
-    if (hourColumnRef.current) {
-      hourColumnRef.current.scrollTop = hourOptions.indexOf(hour) * timeOptionHeight;
-    }
-
-    if (minuteColumnRef.current) {
-      minuteColumnRef.current.scrollTop = minuteOptions.indexOf(minute) * timeOptionHeight;
-    }
-  }, [hour, minute]);
-
-  const updateTime = (nextHour: string, nextMinute: string) => {
-    const nextValue = `${nextHour}:${nextMinute}`;
-
-    if (nextValue !== value) {
-      onChange(nextValue);
-    }
-  };
-
-  const handleColumnScroll = (
-    part: 'hour' | 'minute',
-    event: React.UIEvent<HTMLDivElement>,
-  ) => {
-    // Mount/value synchronization also dispatches scroll; it is not a user choice.
-    if (!userScrollIntent.current[part]) return;
-    const options = part === 'hour' ? hourOptions : minuteOptions;
-    const selectedIndex = Math.round(event.currentTarget.scrollTop / timeOptionHeight);
-    const nextPartValue = options[Math.max(0, Math.min(options.length - 1, selectedIndex))];
-
-    if (!nextPartValue) return;
-
-    if (part === 'hour') {
-      updateTime(nextPartValue, minute);
-      return;
-    }
-
-    updateTime(hour, nextPartValue);
-  };
-
-  const renderColumn = (
-    part: 'hour' | 'minute',
-    options: string[],
-    selectedValue: string,
-    columnRef: React.RefObject<HTMLDivElement | null>,
-  ) => (
-    <div
-      ref={columnRef}
-      className={[
-        'nodu-mobile-timelog-time-column',
-        `nodu-mobile-timelog-time-column--${part}`,
-      ].join(' ')}
-      data-time-part={part}
-      onPointerDown={() => { userScrollIntent.current[part] = true; }}
-      onTouchStart={() => { userScrollIntent.current[part] = true; }}
-      onWheel={() => { userScrollIntent.current[part] = true; }}
-      onKeyDown={(event) => {
-        if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key)) {
-          userScrollIntent.current[part] = true;
-        }
-      }}
-      onScroll={(event) => handleColumnScroll(part, event)}
-    >
-      {options.map((option) => {
-        const isSelected = option === selectedValue;
-        const partLabel = part === 'hour' ? 'hodina' : 'minuta';
-
-        return (
-          <button
-            key={option}
-            type="button"
-            aria-label={`${label} ${partLabel} ${option}`}
-            aria-pressed={isSelected}
-            onClick={() => {
-              if (part === 'hour') {
-                updateTime(option, minute);
-                return;
-              }
-
-              updateTime(hour, option);
-            }}
-            className={[
-              'nodu-mobile-timelog-time-option',
-              isSelected ? 'nodu-mobile-timelog-time-option--selected' : '',
-            ].filter(Boolean).join(' ')}
-          >
-            {option}
-          </button>
-        );
-      })}
-    </div>
-  );
-
-  return (
-    <div className="nodu-mobile-timelog-time-wheel" role="group" aria-label={`Výběr času ${label}`}>
-      <div className="nodu-mobile-timelog-time-wheel-selection" aria-hidden="true" />
-      <button
-        type="button"
-        aria-label={`Potvrdit čas ${label}`}
-        className="nodu-mobile-timelog-time-confirm"
-        onClick={() => {
-          if (!value) updateTime(hour, minute);
-          onConfirm();
-        }}
-      >
-        <Check size={16} aria-hidden="true" />
-      </button>
-      {renderColumn('hour', hourOptions, hour, hourColumnRef)}
-      {renderColumn('minute', minuteOptions, minute, minuteColumnRef)}
-    </div>
-  );
-};
-
-const MobileTimelogEditModal: React.FC = () => {
-  const {
-    editingTimelog,
-    setEditingTimelog,
-    setCurrentTab,
-    setSelectedContractorProfileId,
-    role,
-  } = useAppContext();
-  const { contractors, events } = getTimelogDependencies();
-  const contractor = editingTimelog
-    ? contractors.find((item) => item.profileId === editingTimelog.contractorProfileId) ?? null
-    : null;
-  const event = editingTimelog
-    ? events.find((item) => item.id === editingTimelog.eid || item.supabaseId === editingTimelog.eid) ?? null
-    : null;
-  const initialDate = editingTimelog?.days[0]?.d ?? event?.startDate ?? null;
-  const initialEntry = editingTimelog
-    ? getTimelogDayEntriesForDate(initialDate, editingTimelog.days)[0] ?? null
-    : null;
-  const [selectedDate, setSelectedDate] = React.useState<string | null>(initialDate);
-  const [activeEntryKey, setActiveEntryKey] = React.useState<string | null>(initialEntry?.entryKey ?? null);
-  const [draftDay, setDraftDay] = React.useState<TimelogDay | null>(() => (
-    editingTimelog ? getSelectedDayDraft(initialDate, editingTimelog.days, event) : null
-  ));
-  const [addedCalendarDates, setAddedCalendarDates] = React.useState<string[]>([]);
-  const [isAddDayCalendarOpen, setIsAddDayCalendarOpen] = React.useState(false);
-  const [addDayCandidateDate, setAddDayCandidateDate] = React.useState(initialDate ?? event?.startDate ?? '');
-  const [addDayMonthDate, setAddDayMonthDate] = React.useState(initialDate ?? event?.startDate ?? '');
-  const [draftKm, setDraftKm] = React.useState(editingTimelog?.km ?? 0);
-  const [draftNote, setDraftNote] = React.useState(editingTimelog?.note ?? '');
-  const [draftReviewNote, setDraftReviewNote] = React.useState(editingTimelog?.reviewNote ?? '');
-  const [activeTimePicker, setActiveTimePicker] = React.useState<ActiveTimePicker | null>(null);
+const MobileTimelogSession = ({ initialTimelog, event, contractor, role, setEditingTimelog, onContractorDetail }: MobileTimelogSessionProps) => {
+  const [editingTimelog, setDraft] = React.useState(initialTimelog);
+  const latestDraftRef = React.useRef(initialTimelog);
+  const [editorSessionKey] = React.useState(() => String(initialTimelog.supabaseId ?? initialTimelog.id));
   const [isSubmitReviewOpen, setIsSubmitReviewOpen] = React.useState(false);
   const [autosaveState, setAutosaveState] = React.useState<AutosaveState>('idle');
   const [isSaving, setIsSaving] = React.useState(false);
   const [timelogSwipeOffset, setTimelogSwipeOffset] = React.useState(0);
   const [timelogSwipePhase, setTimelogSwipePhase] = React.useState<'idle' | 'dragging' | 'closing'>('idle');
   const autosaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const autosavePromiseRef = React.useRef<Promise<Timelog> | null>(null);
-  const autosaveRequestRef = React.useRef(0);
+  const autosavePromiseRef = React.useRef<Promise<Timelog | undefined> | null>(null);
   const lastAutosavedSignatureRef = React.useRef<string | null>(null);
-  const isMountedRef = React.useRef(true);
+  const retiredRef = React.useRef(false);
   const saveInFlightRef = React.useRef(false);
   const timelogSwipeStartRef = React.useRef<{ x: number; y: number } | null>(null);
   const timelogCloseTimeoutRef = React.useRef<number | null>(null);
-  const calendarDates = React.useMemo(() => (
-    editingTimelog && event
-      ? buildTimelogCalendarDates(event, [
-        ...editingTimelog.days,
-        ...addedCalendarDates.map((date): TimelogDay => resolveTimelogDayDefaults(date, event)),
-      ])
-      : []
-  ), [addedCalendarDates, editingTimelog, event]);
-  const calendarDateSignature = calendarDates.join('|');
-  const eventDefaultsSignature = getEventDefaultsSignature(event);
-  const selectedDateEntries = React.useMemo(() => (
-    editingTimelog ? getTimelogDayEntriesForDate(selectedDate, editingTimelog.days) : []
-  ), [editingTimelog, selectedDate]);
-  const addDayPickerDates = React.useMemo(() => (
-    buildAddDayCalendarDates(addDayMonthDate || event?.startDate || selectedDate || '1970-01-01')
-  ), [addDayMonthDate, event?.startDate, selectedDate]);
 
-  React.useEffect(() => {
-    if (!editingTimelog || !event) {
-      setSelectedDate(null);
-      setActiveEntryKey(null);
-      setDraftDay(null);
-      return;
-    }
-
-    const nextDate = selectedDate && calendarDates.includes(selectedDate)
-      ? selectedDate
-      : editingTimelog.days[0]?.d ?? event.startDate;
-    const nextEntries = getTimelogDayEntriesForDate(nextDate, editingTimelog.days);
-    const activeEntry = activeEntryKey
-      ? nextEntries.find((entry) => entry.entryKey === activeEntryKey) ?? null
-      : null;
-    const nextEntry = activeEntry ?? (!activeEntryKey ? nextEntries[0] ?? null : null);
-
-    if (nextDate !== selectedDate) {
-      setSelectedDate(nextDate);
-      setActiveEntryKey(nextEntry?.entryKey ?? null);
-      setDraftDay(nextEntry?.day ?? createDraftDay(nextDate, event));
-      return;
-    }
-
-    if (nextEntry) {
-      setActiveEntryKey(nextEntry.entryKey);
-      setDraftDay(nextEntry.day);
-      return;
-    }
-
-    const nextDraft = createDraftDay(nextDate, event);
-    setActiveEntryKey(nextDraft.id ?? null);
-    setDraftDay((currentDay) => (
-      currentDay?.d === nextDate ? currentDay : nextDraft
-    ));
-  }, [calendarDateSignature, editingTimelog, eventDefaultsSignature, selectedDate]);
-
-  React.useEffect(() => {
-    setDraftKm(editingTimelog?.km ?? 0);
-    setDraftNote(editingTimelog?.note ?? '');
-  }, [editingTimelog?.id]);
-
-  React.useEffect(() => {
-    isMountedRef.current = true;
-
-    return () => {
-      isMountedRef.current = false;
-      if (autosaveTimerRef.current) {
-        clearTimeout(autosaveTimerRef.current);
-      }
-    };
+  const clearAutosaveTimer = React.useCallback(() => {
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = null;
   }, []);
+  const closeEditor = React.useCallback(() => {
+    retiredRef.current = true;
+    clearAutosaveTimer();
+    setEditingTimelog(null);
+  }, [clearAutosaveTimer, setEditingTimelog]);
 
+  React.useLayoutEffect(() => {
+    retiredRef.current = false;
+    return () => {
+      retiredRef.current = true;
+      clearAutosaveTimer();
+    };
+  }, [clearAutosaveTimer]);
+
+  const persistDraft = () => {
+    const previous = autosavePromiseRef.current;
+    const pending = (async () => {
+      if (previous) await previous;
+      if (retiredRef.current || saveInFlightRef.current) return;
+      const nextTimelog = latestDraftRef.current;
+      const signature = getTimelogDraftSignature(nextTimelog);
+      if (lastAutosavedSignatureRef.current === signature) return nextTimelog;
+      const savedTimelog = await saveTimelog(nextTimelog);
+      if (retiredRef.current) return savedTimelog;
+      lastAutosavedSignatureRef.current = signature;
+      if (savedTimelog) {
+        // Server identity/version may advance, but an old response never replaces newer input.
+        const latest = latestDraftRef.current;
+        const merged = {
+          ...latest,
+          id: savedTimelog.id,
+          supabaseId: savedTimelog.supabaseId ?? latest.supabaseId,
+          updatedAt: savedTimelog.updatedAt ?? latest.updatedAt,
+        };
+        latestDraftRef.current = merged;
+        setDraft(merged);
+        setEditingTimelog(merged);
+      }
+      setAutosaveState(getTimelogDraftSignature(latestDraftRef.current) === signature ? 'saved' : 'pending');
+      return savedTimelog;
+    })();
+    autosavePromiseRef.current = pending;
+    void pending.catch(() => {
+      if (!retiredRef.current) setAutosaveState('error');
+    }).finally(() => {
+      if (autosavePromiseRef.current === pending) autosavePromiseRef.current = null;
+    });
+  };
+
+  const handleChange = (next: Timelog) => {
+    if (retiredRef.current || saveInFlightRef.current || !canEditTimelog(next, role)) return;
+    latestDraftRef.current = next;
+    setDraft(next);
+    setEditingTimelog(next);
+    if (next.status !== 'draft') return;
+    clearAutosaveTimer();
+    if (lastAutosavedSignatureRef.current === getTimelogDraftSignature(next)) {
+      setAutosaveState('saved');
+      return;
+    }
+    setAutosaveState('pending');
+    autosaveTimerRef.current = setTimeout(() => {
+      autosaveTimerRef.current = null;
+      persistDraft();
+    }, autosaveDelayMs);
+  };
+
+  const saveCurrentTimelog = async (status?: Timelog['status']) => {
+    if (retiredRef.current || saveInFlightRef.current || !canEditTimelog(latestDraftRef.current, role)) return;
+    saveInFlightRef.current = true;
+    setIsSaving(true);
+    clearAutosaveTimer();
+    try {
+      const pending = autosavePromiseRef.current;
+      if (pending) await pending;
+      if (retiredRef.current) return;
+      const next = { ...latestDraftRef.current, ...(status ? { status } : {}) };
+      if (status || getTimelogDraftSignature(next) !== lastAutosavedSignatureRef.current) {
+        await saveTimelog(next);
+      }
+      if (!retiredRef.current) closeEditor();
+    } finally {
+      saveInFlightRef.current = false;
+      if (!retiredRef.current) setIsSaving(false);
+    }
+  };
+
+  const isReadOnly = !canEditTimelog(editingTimelog, role);
+  const readOnlyCopy = isReadOnly ? getReadOnlyTimelogCopy(editingTimelog.status) : null;
+  const isCrewWorkflow = role === 'crew';
+  const isCrewHeadCorrection = role === 'crewhead' && editingTimelog.status === 'pending_ch';
+  const canSubmitCurrentTimelog = canSubmitTimelog(editingTimelog, role);
+  const displayDays = editingTimelog.days;
+  const draftKm = editingTimelog.km;
+  const draftNote = editingTimelog.note;
+  const mealAllowanceEnabled = Boolean(event.mealAllowanceEnabled);
+  const totalHours = calculateTotalHours(displayDays);
+  const totalMealAllowance = calculateMealAllowance(displayDays, { enabled: mealAllowanceEnabled });
+  const totalCompensation = totalHours * contractor.rate + draftKm * KM_RATE + totalMealAllowance;
+  const saveButtonLabel = isCrewHeadCorrection ? 'Odeslat k potvrzení Crew' : isCrewWorkflow ? 'Uložit výkaz' : 'Uložit změny';
+  const submitButtonLabel = editingTimelog.status === 'pending_crew_confirmation' ? 'Potvrdit a odeslat'
+    : editingTimelog.status === 'rejected' ? 'Odeslat znovu' : 'Odeslat ke kontrole';
+  const submitDialogTitle = editingTimelog.status === 'pending_crew_confirmation' ? 'Potvrdit úpravy?'
+    : editingTimelog.status === 'rejected' ? 'Odeslat výkaz znovu?' : 'Odeslat výkaz ke kontrole?';
+  const handleSaveDraft = async () => {
+    try {
+      await saveCurrentTimelog(isCrewHeadCorrection ? 'pending_crew_confirmation' : editingTimelog.status === 'rejected' ? 'draft' : undefined);
+    } catch (error) {
+      if (!retiredRef.current) toast.error(error instanceof Error ? error.message : 'Nepodařilo se uložit výkaz.');
+    }
+  };
+  const confirmSubmitForReview = async () => {
+    try {
+      await saveCurrentTimelog('pending_ch');
+    } catch (error) {
+      if (!retiredRef.current) toast.error(error instanceof Error ? error.message : 'Nepodařilo se odeslat výkaz ke kontrole.');
+    }
+  };
+  const handleSubmitForReview = () => {
+    if (submitButtonLabel === 'Odeslat ke kontrole') setIsSubmitReviewOpen(true);
+    else void confirmSubmitForReview();
+  };
+  const openContractorDetail = () => {
+    closeEditor();
+    onContractorDetail();
+  };
   const resetTimelogSwipe = React.useCallback(() => {
     timelogSwipeStartRef.current = null;
     setTimelogSwipeOffset(0);
@@ -793,11 +248,11 @@ const MobileTimelogEditModal: React.FC = () => {
 
     timelogCloseTimeoutRef.current = window.setTimeout(() => {
       timelogCloseTimeoutRef.current = null;
-      setEditingTimelog(null);
+      closeEditor();
       setTimelogSwipeOffset(0);
       setTimelogSwipePhase('idle');
     }, mobileTimelogCloseAnimationMs);
-  }, [setEditingTimelog]);
+  }, [closeEditor]);
 
   const startTimelogSwipe = React.useCallback((clientX: number, clientY: number) => {
     if (clientX > mobileTimelogSwipeStartMaxX) {
@@ -908,385 +363,6 @@ const MobileTimelogEditModal: React.FC = () => {
     startTimelogSwipe,
   ]);
 
-  if (!editingTimelog || !contractor || !event || !selectedDate || !draftDay) return null;
-
-  const canEditCurrentTimelog = canEditTimelog(editingTimelog, role);
-  const isReadOnly = !canEditCurrentTimelog;
-  const readOnlyCopy = isReadOnly ? getReadOnlyTimelogCopy(editingTimelog.status) : null;
-  const mealAllowanceEnabled = Boolean(event.mealAllowanceEnabled);
-  const currentEntryKey = activeEntryKey ?? draftDay.id ?? null;
-  const selectedEntryIndex = currentEntryKey
-    ? selectedDateEntries.findIndex((entry) => entry.entryKey === currentEntryKey)
-    : -1;
-  const selectedEntryExists = selectedEntryIndex >= 0;
-  const selectedEntryNumber = selectedEntryExists ? selectedEntryIndex + 1 : null;
-  const isNewRecordDraft = !selectedEntryExists && selectedDateEntries.length > 0;
-  const isUnsavedAddedDay = addedCalendarDates.includes(selectedDate) && selectedDateEntries.length === 0;
-  const baselineSelectedDay = selectedEntryExists
-    ? normalizeDay(selectedDateEntries[selectedEntryIndex].day)
-    : normalizeDay(resolveTimelogDayDefaults(selectedDate, event));
-  const committedDraftDay = {
-    ...draftDay,
-    meals: mealAllowanceEnabled ? normalizeMealSelection(draftDay) : [],
-    meal: mealAllowanceEnabled ? normalizeMealSelection(draftDay)[0] ?? null : null,
-    note: draftDay.note?.trim() || '',
-  };
-  const hasDraftChanges = (
-    isUnsavedAddedDay
-    || isNewRecordDraft
-    || getDayValueSignature(selectedDate, committedDraftDay) !== getDayValueSignature(selectedDate, baselineSelectedDay)
-  );
-  const hasReportChanges = (
-    draftKm !== editingTimelog.km
-    || draftNote !== editingTimelog.note
-    || draftReviewNote !== (editingTimelog.reviewNote ?? '')
-  );
-  const displayDays = hasDraftChanges
-    ? upsertTimelogDay(editingTimelog.days, committedDraftDay, currentEntryKey ?? undefined, { appendIfMissing: isNewRecordDraft || isUnsavedAddedDay })
-    : editingTimelog.days;
-  const totalHours = calculateTotalHours(displayDays);
-  const totalMealAllowance = calculateMealAllowance(displayDays, { enabled: mealAllowanceEnabled });
-  const totalCompensation = totalHours * contractor.rate + draftKm * KM_RATE + totalMealAllowance;
-  const isCrewWorkflow = role === 'crew';
-  const isCrewHeadCorrection = (
-    (role === 'crewhead' && editingTimelog.status === 'pending_ch')
-    || (role === 'coo' && editingTimelog.status === 'pending_coo')
-  );
-  const shouldRequireCrewConfirmation = isCrewHeadCorrection;
-  const canSubmitCurrentTimelog = isCrewWorkflow && canSubmitTimelog(editingTimelog, role);
-  const changeSummary = buildTimelogChangeSummary(editingTimelog);
-  const showCrewConfirmationChanges = editingTimelog.status === 'pending_crew_confirmation' && changeSummary.length > 0;
-  const showReturnedNotice = editingTimelog.status === 'rejected';
-  const correctionNote = editingTimelog.reviewNote?.trim() || '';
-  const returnedNote = editingTimelog.reviewNote?.trim() || '';
-  const saveButtonLabel = isCrewHeadCorrection
-    ? 'Odeslat k potvrzení Crew'
-    : isCrewWorkflow ? 'Uložit výkaz' : 'Uložit změny';
-  const submitButtonLabel = (() => {
-    if (editingTimelog.status === 'pending_crew_confirmation') return 'Potvrdit a odeslat';
-    if (editingTimelog.status === 'rejected') return 'Odeslat znovu';
-    return 'Odeslat ke kontrole';
-  })();
-  const submitDialogTitle = (() => {
-    if (editingTimelog.status === 'pending_crew_confirmation') return 'Potvrdit úpravy?';
-    if (editingTimelog.status === 'rejected') return 'Odeslat výkaz znovu?';
-    return 'Odeslat výkaz ke kontrole?';
-  })();
-
-  const openContractorDetail = () => {
-    if (!contractor.profileId) return;
-    setEditingTimelog(null);
-    setSelectedContractorProfileId(contractor.profileId);
-    setCurrentTab('crew');
-  };
-
-  const buildTimelogWithCurrentDraft = () => {
-    if (!hasDraftChanges && !hasReportChanges) {
-      return editingTimelog;
-    }
-
-    return {
-      ...editingTimelog,
-      days: displayDays,
-      km: draftKm,
-      note: draftNote,
-      reviewNote: draftReviewNote,
-    };
-  };
-
-  const buildTimelogWithDraftValues = ({
-    day = committedDraftDay,
-    km = draftKm,
-    note = draftNote,
-    reviewNote = draftReviewNote,
-    days,
-  }: {
-    day?: TimelogDay;
-    km?: number;
-    note?: string;
-    reviewNote?: string;
-    days?: Timelog['days'];
-  } = {}): Timelog => ({
-    ...editingTimelog,
-    days: days ?? upsertTimelogDay(editingTimelog.days, day, currentEntryKey ?? undefined, { appendIfMissing: isNewRecordDraft || isUnsavedAddedDay }),
-    km,
-    note,
-    reviewNote,
-  });
-
-  const clearAutosaveTimer = () => {
-    if (!autosaveTimerRef.current) return;
-
-    clearTimeout(autosaveTimerRef.current);
-    autosaveTimerRef.current = null;
-  };
-
-  const saveCurrentTimelog = async (status?: Timelog['status']) => {
-    if (saveInFlightRef.current) return;
-
-    saveInFlightRef.current = true;
-    setIsSaving(true);
-
-    try {
-      clearAutosaveTimer();
-      const pendingAutosave = autosavePromiseRef.current;
-
-      if (pendingAutosave) {
-        const savedTimelog = await pendingAutosave;
-        const timelogToSave = {
-          ...buildTimelogWithCurrentDraft(),
-          ...(status ? { status } : {}),
-        };
-
-        if (
-          status
-          || getTimelogDraftSignature(timelogToSave) !== lastAutosavedSignatureRef.current
-        ) {
-          await saveTimelog({
-            ...timelogToSave,
-            id: savedTimelog?.id ?? timelogToSave.id,
-          });
-        }
-
-        if (isMountedRef.current) setEditingTimelog(null);
-        return;
-      }
-
-      await saveTimelog({
-        ...buildTimelogWithCurrentDraft(),
-        ...(status ? { status } : {}),
-      });
-      if (isMountedRef.current) setEditingTimelog(null);
-    } finally {
-      saveInFlightRef.current = false;
-      if (isMountedRef.current) setIsSaving(false);
-    }
-  };
-
-  const handleSaveDraft = async () => {
-    try {
-      const nextStatus = shouldRequireCrewConfirmation
-        ? 'pending_crew_confirmation'
-        : editingTimelog.status === 'rejected'
-          ? 'draft'
-          : undefined;
-
-      await saveCurrentTimelog(nextStatus);
-    } catch (error) {
-      if (isMountedRef.current) {
-        toast.error(error instanceof Error ? error.message : 'Nepodařilo se uložit výkaz.');
-      }
-    }
-  };
-
-  const handleSubmitForReview = async () => {
-    if (submitButtonLabel === 'Odeslat ke kontrole') {
-      setActiveTimePicker(null);
-      setIsAddDayCalendarOpen(false);
-      setIsSubmitReviewOpen(true);
-      return;
-    }
-
-    await confirmSubmitForReview();
-  };
-
-  const confirmSubmitForReview = async () => {
-    try {
-      await saveCurrentTimelog('pending_ch');
-    } catch (error) {
-      if (isMountedRef.current) {
-        toast.error(error instanceof Error ? error.message : 'Nepodařilo se odeslat výkaz ke kontrole.');
-      }
-    }
-  };
-
-  const scheduleAutosave = (nextTimelog: Timelog) => {
-    if (isReadOnly) {
-      return;
-    }
-
-    if (nextTimelog.status !== 'draft') {
-      return;
-    }
-
-    const nextSignature = getTimelogDraftSignature(nextTimelog);
-
-    if (lastAutosavedSignatureRef.current === nextSignature) {
-      setAutosaveState('saved');
-      return;
-    }
-
-    clearAutosaveTimer();
-    setAutosaveState('pending');
-
-    autosaveTimerRef.current = setTimeout(() => {
-      const requestId = autosaveRequestRef.current + 1;
-      autosaveRequestRef.current = requestId;
-      autosaveTimerRef.current = null;
-
-      const autosavePromise = saveTimelog(nextTimelog);
-      autosavePromiseRef.current = autosavePromise;
-
-      void autosavePromise
-        .then((savedTimelog) => {
-          if (autosaveRequestRef.current !== requestId) return;
-          lastAutosavedSignatureRef.current = nextSignature;
-          if (savedTimelog) {
-            setEditingTimelog(savedTimelog);
-          }
-          setAutosaveState('saved');
-        })
-        .catch(() => {
-          if (autosaveRequestRef.current !== requestId) return;
-          setAutosaveState('error');
-        })
-        .finally(() => {
-          if (autosaveRequestRef.current !== requestId) return;
-          autosavePromiseRef.current = null;
-        });
-    }, autosaveDelayMs);
-  };
-
-  const stageCurrentDraft = () => {
-    const nextTimelog = buildTimelogWithCurrentDraft();
-
-    if (nextTimelog !== editingTimelog) {
-      setEditingTimelog(nextTimelog);
-      setAddedCalendarDates((dates) => dates.filter((date) => date !== selectedDate));
-    }
-
-    return nextTimelog;
-  };
-
-  const selectCalendarDate = (date: string) => {
-    const stagedTimelog = stageCurrentDraft();
-    const entries = getTimelogDayEntriesForDate(date, stagedTimelog.days);
-    const nextEntry = entries[0] ?? null;
-    const nextDraft = nextEntry?.day ?? createDraftDay(date, event);
-
-    setSelectedDate(date);
-    setActiveEntryKey(nextEntry?.entryKey ?? nextDraft.id ?? null);
-    setDraftDay(nextDraft);
-    setActiveTimePicker(null);
-    setIsAddDayCalendarOpen(false);
-  };
-
-  const selectExistingEntry = (entry: TimelogDayEntry) => {
-    stageCurrentDraft();
-    setActiveEntryKey(entry.entryKey);
-    setDraftDay(entry.day);
-    setActiveTimePicker(null);
-    setIsAddDayCalendarOpen(false);
-  };
-
-  const addRecordForSelectedDate = () => {
-    if (isReadOnly) return;
-
-    const stagedTimelog = stageCurrentDraft();
-    const nextDraft = createDraftDay(selectedDate, event);
-    const nextTimelog = {
-      ...stagedTimelog,
-      days: upsertTimelogDay(stagedTimelog.days, nextDraft, nextDraft.id),
-    };
-
-    setEditingTimelog(nextTimelog);
-    scheduleAutosave(nextTimelog);
-    setActiveEntryKey(nextDraft.id ?? null);
-    setDraftDay(nextDraft);
-    setActiveTimePicker(null);
-  };
-
-  const updateDraftDay = (nextDay: TimelogDay) => {
-    if (isReadOnly) return;
-
-    setDraftDay(nextDay);
-    scheduleAutosave(buildTimelogWithDraftValues({ day: nextDay }));
-  };
-
-  const deleteSelectedDay = () => {
-    if (isReadOnly) return;
-
-    const remainingDays = selectedEntryExists && currentEntryKey
-      ? removeTimelogDayEntry(editingTimelog.days, currentEntryKey)
-      : editingTimelog.days;
-    const remainingEntriesForSelectedDate = getTimelogDayEntriesForDate(selectedDate, remainingDays);
-    const shouldKeepSelectedDate = isDateInEventRange(selectedDate, event) || remainingEntriesForSelectedDate.length > 0;
-    const fallbackDate = shouldKeepSelectedDate
-      ? selectedDate
-      : calendarDates.find((date) => date !== selectedDate) ?? event.startDate;
-    const nextEntry = fallbackDate === selectedDate && remainingEntriesForSelectedDate.length > 0
-      ? remainingEntriesForSelectedDate[Math.max(0, Math.min(selectedEntryIndex - 1, remainingEntriesForSelectedDate.length - 1))]
-      : getTimelogDayEntriesForDate(fallbackDate, remainingDays)[0] ?? null;
-    const nextDraft = nextEntry?.day ?? createDraftDay(fallbackDate, event);
-
-    const nextTimelog = {
-      ...editingTimelog,
-      days: remainingDays,
-      km: draftKm,
-      note: draftNote,
-      reviewNote: draftReviewNote,
-    };
-
-    setEditingTimelog(nextTimelog);
-    scheduleAutosave(nextTimelog);
-    setAddedCalendarDates((dates) => dates.filter((date) => date !== selectedDate));
-    setSelectedDate(fallbackDate);
-    setActiveEntryKey(nextEntry?.entryKey ?? nextDraft.id ?? null);
-    setDraftDay(nextDraft);
-  };
-
-  const addCalendarDay = (date: string) => {
-    if (isReadOnly) return;
-
-    if (!date) return;
-
-    stageCurrentDraft();
-    setAddedCalendarDates((dates) => (
-      dates.includes(date) ? dates : [...dates, date]
-    ));
-    const nextDraft = createDraftDay(date, event);
-
-    setSelectedDate(date);
-    setActiveEntryKey(nextDraft.id ?? null);
-    setDraftDay(nextDraft);
-    setIsAddDayCalendarOpen(false);
-  };
-
-  const openAddDayCalendar = () => {
-    if (isReadOnly) return;
-
-    const nextDate = selectedDate ?? event.startDate;
-
-    setActiveTimePicker(null);
-    setAddDayCandidateDate(nextDate);
-    setAddDayMonthDate(nextDate);
-    setIsAddDayCalendarOpen(true);
-  };
-
-  const selectAddDayCandidate = (date: string) => {
-    setAddDayCandidateDate(date);
-  };
-
-  const confirmAddDayCandidate = () => {
-    if (isReadOnly) return;
-
-    if (!addDayCandidateDate) return;
-
-    if (calendarDates.includes(addDayCandidateDate)) {
-      selectCalendarDate(addDayCandidateDate);
-      return;
-    }
-
-    addCalendarDay(addDayCandidateDate);
-  };
-
-  const moveAddDayCalendarMonth = (offset: number) => {
-    const nextMonthDate = shiftCalendarMonth(addDayMonthDate || event.startDate, offset);
-
-    setAddDayMonthDate(nextMonthDate);
-    setAddDayCandidateDate(nextMonthDate);
-  };
-
   const handleTimelogPointerDown = (pointerEvent: React.PointerEvent<HTMLDivElement>) => {
     if (pointerEvent.pointerType === 'touch') return;
 
@@ -1380,7 +456,7 @@ const MobileTimelogEditModal: React.FC = () => {
             )}
             <button
               type="button"
-              onClick={() => setEditingTimelog(null)}
+              onClick={closeEditor}
               disabled={isSaving}
               className="nodu-mobile-timelog-icon-button"
               aria-label="Zavřít"
@@ -1391,457 +467,25 @@ const MobileTimelogEditModal: React.FC = () => {
         </header>
 
         <fieldset disabled={isSaving} aria-busy={isSaving} className="contents">
-        <div className="nodu-mobile-timelog-body">
-          <div className="nodu-mobile-timelog-summary">
-            <div>
-              <div className="nodu-mobile-timelog-summary-primary-label text-[10px] uppercase tracking-[0.2em] text-[color:var(--nodu-accent)]">
-                Odměna
-              </div>
-              <div className="nodu-mobile-timelog-summary-secondary-label mt-1 text-sm text-[color:var(--nodu-text-soft)]">
-                Celkem hodin
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="nodu-mobile-timelog-summary-primary-value text-2xl font-bold text-[color:var(--nodu-text)]">
-                {formatCurrency(totalCompensation)}
-              </div>
-              <div className="nodu-mobile-timelog-summary-secondary-value mt-1 text-sm font-semibold text-[color:var(--nodu-text)]">
-                {totalHours.toFixed(1)}h
-              </div>
-            </div>
-          </div>
-
-          {showCrewConfirmationChanges && (
-            <div className="nodu-mobile-timelog-change-summary">
-              <div className="nodu-mobile-timelog-change-summary-header">
-                <span>Upraveno CH</span>
-                <span>Čeká na tvoje potvrzení</span>
-              </div>
-              <div className="nodu-mobile-timelog-change-summary-list">
-                {changeSummary.map((change) => (
-                  <div key={change} className="nodu-mobile-timelog-change-summary-row">
-                    {change}
-                  </div>
-                ))}
-                {correctionNote && (
-                  <div className="nodu-mobile-timelog-change-summary-row nodu-mobile-timelog-change-summary-row--note">
-                    {correctionNote}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {showReturnedNotice && (
-            <div className="nodu-mobile-timelog-change-summary nodu-mobile-timelog-change-summary--returned">
-              <div className="nodu-mobile-timelog-change-summary-header">
-                <span>Vráceno k opravě</span>
-                <span>Uprav výkaz a odešli ho znovu ke kontrole.</span>
-              </div>
-              {returnedNote && (
-                <div className="nodu-mobile-timelog-change-summary-list">
-                  <div className="nodu-mobile-timelog-change-summary-row">
-                    {returnedNote}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {readOnlyCopy ? (
-            <TimelogReportSummary
-              days={displayDays}
-              totalHours={totalHours}
-              totalCompensation={totalCompensation}
-              km={draftKm}
-              note={draftNote}
-              mealAllowanceEnabled={mealAllowanceEnabled}
-              mealAllowanceTotal={totalMealAllowance}
-            />
-          ) : (
-            <>
-              <div>
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <div className="text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">
-                Dny
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 rounded-full px-3 text-[11px]"
-                disabled={isReadOnly}
-                onClick={openAddDayCalendar}
-              >
-                <Plus size={14} /> Přidat den
-              </Button>
-            </div>
-            {isAddDayCalendarOpen && (
-              <div
-                role="dialog"
-                aria-label="Výběr nového dne"
-                className="nodu-mobile-timelog-add-day-picker"
-              >
-                <div className="nodu-mobile-timelog-add-day-picker-header">
-                  <div className="min-w-0">
-                    <div className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--nodu-text-soft)]">
-                      Vyber den
-                    </div>
-                    <div className="mt-1 text-sm font-semibold text-[color:var(--nodu-text)]">
-                      {addDayCandidateDate ? formatDateLabel(addDayCandidateDate) : 'Bez výběru'}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      aria-label="Zrušit výběr dne"
-                      className="nodu-mobile-timelog-add-day-icon"
-                      onClick={() => setIsAddDayCalendarOpen(false)}
-                    >
-                      <X size={15} />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label="Přidat vybraný den"
-                      className="nodu-mobile-timelog-add-day-confirm"
-                      onClick={confirmAddDayCandidate}
-                    >
-                      <Check size={16} />
-                    </button>
-                  </div>
-                </div>
-                <div className="nodu-mobile-timelog-add-day-month">
-                  <button
-                    type="button"
-                    aria-label="Předchozí měsíc"
-                    className="nodu-mobile-timelog-add-day-icon"
-                    onClick={() => moveAddDayCalendarMonth(-1)}
-                  >
-                    <ChevronLeft size={16} />
-                  </button>
-                  <div className="text-sm font-semibold capitalize text-[color:var(--nodu-text)]">
-                    {formatCalendarMonthLabel(addDayMonthDate)}
-                  </div>
-                  <button
-                    type="button"
-                    aria-label="Další měsíc"
-                    className="nodu-mobile-timelog-add-day-icon"
-                    onClick={() => moveAddDayCalendarMonth(1)}
-                  >
-                    <ChevronRight size={16} />
-                  </button>
-                </div>
-                <div className="nodu-mobile-timelog-add-day-weekdays" aria-hidden="true">
-                  {calendarWeekdayLabels.map((day) => (
-                    <span key={day}>{day}</span>
-                  ))}
-                </div>
-                <div className="nodu-mobile-timelog-add-day-picker-grid">
-                  {addDayPickerDates.map(({ date, isCurrentMonth }) => {
-                    const isCandidate = date === addDayCandidateDate;
-                    const isEventDate = isDateInEventRange(date, event);
-                    const entryCount = editingTimelog.days.filter((day) => day.d === date).length;
-                    const isReported = entryCount > 0;
-
-                    return (
-                      <button
-                        key={date}
-                        type="button"
-                        aria-label={`Vybrat ${formatDateLabel(date)}`}
-                        onClick={() => selectAddDayCandidate(date)}
-                        className={[
-                          'nodu-mobile-timelog-add-day-cell',
-                          isCurrentMonth ? '' : 'nodu-mobile-timelog-add-day-cell--muted',
-                          isEventDate ? 'nodu-mobile-timelog-add-day-cell--event' : '',
-                          isReported ? 'nodu-mobile-timelog-add-day-cell--reported' : '',
-                          isCandidate ? 'nodu-mobile-timelog-add-day-cell--selected' : '',
-                        ].filter(Boolean).join(' ')}
-                      >
-                        <span>{Number(date.slice(-2))}</span>
-                        {entryCount > 1 ? (
-                          <span className="nodu-mobile-timelog-add-day-cell-count" aria-hidden="true">
-                            {entryCount}
-                          </span>
-                        ) : (
-                          (isReported || isEventDate) && (
-                            <span className="nodu-mobile-timelog-add-day-cell-dot" aria-hidden="true" />
-                          )
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-            <div className="nodu-mobile-timelog-calendar">
-              {calendarDates.map((date) => {
-                const isEventDate = isDateInEventRange(date, event);
-                const isSelected = date === selectedDate;
-                const entryCount = editingTimelog.days.filter((day) => day.d === date).length;
-                const isReported = entryCount > 0;
-
-                return (
-                  <button
-                    key={date}
-                    type="button"
-                    aria-label={formatDateLabel(date)}
-                    onClick={() => selectCalendarDate(date)}
-                    className={[
-                      'nodu-mobile-timelog-day',
-                      isEventDate ? 'nodu-mobile-timelog-day--event' : 'nodu-mobile-timelog-day--outside',
-                      isSelected ? 'nodu-mobile-timelog-day--selected' : '',
-                      isReported ? 'nodu-mobile-timelog-day--reported' : '',
-                    ].filter(Boolean).join(' ')}
-                  >
-                    <span className="nodu-mobile-timelog-day-number">{date.slice(-2)}</span>
-                    <span className="nodu-mobile-timelog-day-month">{date.slice(5, 7)}</span>
-                    {entryCount > 1 ? (
-                      <span className="nodu-mobile-timelog-day-count" aria-hidden="true">{entryCount}</span>
-                    ) : (
-                      isReported && <span className="nodu-mobile-timelog-day-dot" aria-hidden="true" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="nodu-mobile-timelog-day-editor" role="group" aria-label="Záznam dne">
-            <div className="nodu-mobile-timelog-day-editor-header flex items-center justify-between gap-3">
-              <div>
-                <div className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--nodu-text-soft)]">
-                  Den
-                </div>
-                <div className="mt-1 text-lg font-semibold text-[color:var(--nodu-text)]">
-                  {formatDateLabel(selectedDate)}
-                </div>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 shrink-0 rounded-full px-3 text-[11px]"
-                onClick={addRecordForSelectedDate}
-                disabled={isReadOnly}
-              >
-                <Plus size={14} /> Přidat Záznam
-              </Button>
-            </div>
-            {selectedDateEntries.length > 0 && (
-              <div className="nodu-mobile-timelog-entry-list" aria-label="Záznamy ve dni">
-                {selectedDateEntries.map((entry, index) => {
-                  const isActive = entry.entryKey === currentEntryKey;
-                  const displayDay = isActive ? draftDay : entry.day;
-                  const selectedMeals = normalizeMealSelection(displayDay);
-                  const isOvernight = isOvernightTimeRange(displayDay.f, displayDay.t);
-
-                  return (
-                    <button
-                      key={entry.entryKey}
-                      type="button"
-                      aria-label={`Upravit záznam ${index + 1}`}
-                      onClick={() => selectExistingEntry(entry)}
-                      className={[
-                        'nodu-mobile-timelog-entry-card',
-                        isActive ? 'nodu-mobile-timelog-entry-card--active' : '',
-                      ].filter(Boolean).join(' ')}
-                    >
-                      <span className="nodu-mobile-timelog-entry-content">
-                        <span className="nodu-mobile-timelog-entry-heading">
-                          <span className="nodu-mobile-timelog-entry-title">Záznam {index + 1}</span>
-                          {isOvernight && (
-                            <span className="nodu-mobile-timelog-overnight-chip">přes půlnoc</span>
-                          )}
-                        </span>
-                        <span className="nodu-mobile-timelog-entry-meta">
-                          <span>{displayDay.f} - {displayDay.t}</span>
-                          <span className="nodu-mobile-timelog-entry-hours">
-                            {calculateDayHours(displayDay.f, displayDay.t).toFixed(1)}h
-                          </span>
-                        </span>
-                      </span>
-                      <span className="nodu-mobile-timelog-entry-badges">
-                        <span className="nodu-mobile-timelog-entry-phase">
-                          {phaseOptions.find((option) => option.value === displayDay.type)?.label ?? displayDay.type}
-                        </span>
-                        {mealAllowanceEnabled && selectedMeals.length > 0 && (
-                          <span className="nodu-mobile-timelog-entry-meal">
-                            {formatMealLabels(selectedMeals)}
-                          </span>
-                        )}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <TimeField
-                label="Od"
-                value={draftDay.f}
-                isActive={activeTimePicker === 'from'}
-                disabled={isReadOnly}
-                onActivate={() => setActiveTimePicker((currentPicker) => (
-                  currentPicker === 'from' ? null : 'from'
-                ))}
-              />
-              <TimeField
-                label="Do"
-                value={draftDay.t}
-                isActive={activeTimePicker === 'to'}
-                disabled={isReadOnly}
-                onActivate={() => setActiveTimePicker((currentPicker) => (
-                  currentPicker === 'to' ? null : 'to'
-                ))}
-              />
-            </div>
-            {activeTimePicker && (
-              <TimeWheelPicker
-                key={`${selectedDate}:${activeEntryKey}:${activeTimePicker}`}
-                label={activeTimePicker === 'from' ? 'Od' : 'Do'}
-                value={activeTimePicker === 'from' ? draftDay.f : draftDay.t}
-                onConfirm={() => setActiveTimePicker(null)}
-                onChange={(nextTime) => updateDraftDay(
-                  activeTimePicker === 'from'
-                    ? { ...draftDay, f: nextTime }
-                    : { ...draftDay, t: nextTime },
-                )}
-              />
-            )}
-
-            <div
-              className="mt-3"
-              role="group"
-              aria-label="Fáze"
-            >
-              <div className="mb-1 text-[10px] uppercase tracking-[0.2em] text-[color:var(--nodu-text-soft)]">Fáze</div>
-              <div className="nodu-mobile-timelog-phase-picker">
-                {phaseOptions.map((option) => {
-                  const isSelected = draftDay.type === option.value;
-
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      aria-pressed={isSelected}
-                      disabled={isReadOnly}
-                      className={`nodu-mobile-timelog-phase-option ${isSelected ? 'nodu-mobile-timelog-phase-option--active' : ''}`}
-                      onClick={() => {
-                        const meals = normalizeMealSelection(draftDay);
-
-                        updateDraftDay({
-                          ...draftDay,
-                          type: option.value,
-                          meals,
-                          meal: meals[0] ?? null,
-                          note: draftDay.note ?? '',
-                        });
-                      }}
-                    >
-                      {option.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {mealAllowanceEnabled && (
-              <div
-                className="mt-3"
-                role="group"
-                aria-label="Jídlo"
-              >
-                <div className="mb-1 text-[10px] uppercase tracking-[0.2em] text-[color:var(--nodu-text-soft)]">Jídlo</div>
-                <div className="nodu-mobile-timelog-meal-picker">
-                  {mealOptions.map((option) => {
-                    const selectedMeals = normalizeMealSelection(draftDay);
-                    const isSelected = selectedMeals.includes(option.value);
-                    const nextMeals = isSelected
-                      ? selectedMeals.filter((meal) => meal !== option.value)
-                      : [...selectedMeals, option.value];
-
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        aria-pressed={isSelected}
-                        disabled={isReadOnly}
-                        className={`nodu-mobile-timelog-meal-option ${isSelected ? 'nodu-mobile-timelog-meal-option--active' : ''}`}
-                        onClick={() => updateDraftDay({
-                          ...draftDay,
-                          meals: nextMeals,
-                          meal: nextMeals[0] ?? null,
-                        })}
-                      >
-                        {option.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {selectedEntryExists && (
-              <Button type="button" variant="outline" className="mt-4 w-full" onClick={deleteSelectedDay} disabled={isReadOnly}>
-                <Trash2 size={16} /> Odebrat Záznam {selectedEntryNumber}
-              </Button>
-            )}
-          </div>
-
-              <div className="nodu-mobile-timelog-report-editor" role="group" aria-label="Výkaz celkem">
-            <label className="block space-y-1 text-[10px] uppercase tracking-[0.2em] text-[color:var(--nodu-text-soft)]">
-              <span>Cestovné celkem (km)</span>
-              <Input
-                type="number"
-                value={draftKm}
-                disabled={isReadOnly}
-                onChange={(e) => {
-                  const nextKm = Number(e.target.value);
-
-                  setDraftKm(nextKm);
-                  scheduleAutosave(buildTimelogWithDraftValues({ km: nextKm }));
-                }}
-              />
-            </label>
-            {isCrewHeadCorrection && (
-              <div className="nodu-mobile-timelog-note-panel" aria-label="Poznámka Crew">
-                <span>Poznámka Crew</span>
-                <p>{draftNote.trim() || 'Crew nepřidala poznámku.'}</p>
-              </div>
-            )}
-
-            <label className="mt-3 block space-y-1 text-[10px] uppercase tracking-[0.2em] text-[color:var(--nodu-text-soft)]">
-              <span>{isCrewHeadCorrection ? 'Poznámka pro Crew' : 'Poznámka k výkazu'}</span>
-              <Textarea
-                aria-label={isCrewHeadCorrection ? 'Poznámka pro Crew' : 'Poznámka k výkazu'}
-                value={isCrewHeadCorrection ? draftReviewNote : draftNote}
-                disabled={isReadOnly}
-                onChange={(e) => {
-                  if (isCrewHeadCorrection) {
-                    setDraftReviewNote(e.target.value);
-                    scheduleAutosave(buildTimelogWithDraftValues({ reviewNote: e.target.value }));
-                    return;
-                  }
-
-                  setDraftNote(e.target.value);
-                  scheduleAutosave(buildTimelogWithDraftValues({ note: e.target.value }));
-                }}
-                className="min-h-[76px] resize-none"
-                placeholder={isCrewHeadCorrection ? 'Doplňte komentář k úpravě pro člena Crew...' : 'Volitelná poznámka...'}
-              />
-            </label>
-
-            {editingTimelog.status === 'draft' && autosaveState !== 'idle' && (
-              <div className="nodu-mobile-timelog-day-feedback" aria-live="polite">
-                {autosaveState === 'pending' && 'Ukládám návrh...'}
-                {autosaveState === 'saved' && 'Uloženo v návrhu'}
-                {autosaveState === 'error' && 'Návrh se nepodařilo uložit'}
-              </div>
-            )}
-              </div>
-            </>
-          )}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+        <TimelogEvidenceSection
+          timelog={editingTimelog}
+          event={event}
+          contractor={contractor}
+          role={role}
+          readOnly={isReadOnly}
+          busy={isSaving}
+          editorSessionKey={editorSessionKey}
+          onChange={handleChange}
+        />
         </div>
+        {editingTimelog.status === 'draft' && autosaveState !== 'idle' && (
+          <div className="nodu-mobile-timelog-day-feedback" aria-live="polite">
+            {autosaveState === 'pending' && 'Ukládám návrh...'}
+            {autosaveState === 'saved' && 'Uloženo v návrhu'}
+            {autosaveState === 'error' && 'Návrh se nepodařilo uložit'}
+          </div>
+        )}
 
         <footer
           className={`nodu-mobile-timelog-footer${canSubmitCurrentTimelog ? ' nodu-mobile-timelog-footer--split' : ''}`}
@@ -1890,6 +534,32 @@ const MobileTimelogEditModal: React.FC = () => {
       </section>
     </div>
   );
+};
+
+const MobileTimelogEditModal: React.FC = () => {
+  const { editingTimelog, setEditingTimelog, setCurrentTab, setSelectedContractorProfileId, role } = useAppContext();
+  const { contractors, events } = getTimelogDependencies();
+  if (!editingTimelog) return null;
+  const contractor = contractors.find((item) => item.profileId === editingTimelog.contractorProfileId);
+  const event = events.find((item) => item.id === editingTimelog.eid || item.supabaseId === editingTimelog.eid);
+  if (!contractor || !event) return null;
+  const identity = JSON.stringify([
+    role, contractor.profileId, event.supabaseId ?? event.id,
+    editingTimelog.status,
+  ]);
+  return <MobileTimelogSession
+    key={identity}
+    initialTimelog={editingTimelog}
+    event={event}
+    contractor={contractor}
+    role={role}
+    setEditingTimelog={setEditingTimelog}
+    onContractorDetail={() => {
+      if (!contractor.profileId) return;
+      setSelectedContractorProfileId(contractor.profileId);
+      setCurrentTab('crew');
+    }}
+  />;
 };
 
 export default MobileTimelogEditModal;

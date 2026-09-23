@@ -106,6 +106,63 @@ const syncEditingTimelogUpdates = () => {
 };
 
 describe('MobileTimelogEditModal', () => {
+  it('retires edits and pending callbacks when the same report becomes read-only externally', async () => {
+    vi.useFakeTimers();
+    let resolveSave!: (report: Timelog) => void;
+    testMocks.saveTimelog.mockImplementationOnce(() => new Promise<Timelog>((resolve) => { resolveSave = resolve; }));
+    const view = render(<MobileTimelogEditModal />);
+    fireEvent.change(screen.getByLabelText('Poznámka k výkazu'), { target: { value: 'Pending draft' } });
+    await act(async () => { await vi.advanceTimersByTimeAsync(800); });
+    const sent = testMocks.saveTimelog.mock.calls[0][0] as Timelog;
+    testState.editingTimelog = { ...testState.editingTimelog!, status: 'pending_ch' };
+    view.rerender(<MobileTimelogEditModal />);
+    expect(screen.queryByRole('textbox')).toBeNull();
+    testMocks.setEditingTimelog.mockClear();
+    await act(async () => { resolveSave(sent); await Promise.resolve(); });
+    expect(testMocks.setEditingTimelog).not.toHaveBeenCalled();
+  });
+
+  it('retires queued autosave as soon as the editor is closed', async () => {
+    vi.useFakeTimers();
+    render(<MobileTimelogEditModal />);
+    fireEvent.change(screen.getByLabelText('Poznámka k výkazu'), { target: { value: 'Not submitted' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Zavřít' }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(800); });
+    expect(testMocks.saveTimelog).not.toHaveBeenCalled();
+    expect(testMocks.setEditingTimelog).toHaveBeenLastCalledWith(null);
+  });
+
+  it('does not reopen a closed editor when an in-flight autosave resolves', async () => {
+    vi.useFakeTimers();
+    let resolveSave!: (report: Timelog) => void;
+    testMocks.saveTimelog.mockImplementationOnce(() => new Promise<Timelog>((resolve) => { resolveSave = resolve; }));
+    render(<MobileTimelogEditModal />);
+    fireEvent.change(screen.getByLabelText('Poznámka k výkazu'), { target: { value: 'In flight' } });
+    await act(async () => { await vi.advanceTimersByTimeAsync(800); });
+    const sent = testMocks.saveTimelog.mock.calls[0][0] as Timelog;
+    fireEvent.click(screen.getByRole('button', { name: 'Zavřít' }));
+    await act(async () => { resolveSave(sent); await Promise.resolve(); });
+    expect(testMocks.setEditingTimelog).toHaveBeenLastCalledWith(null);
+  });
+
+  it('retains newer unsaved edits when an older autosave responds and uses them in final save', async () => {
+    vi.useFakeTimers();
+    let resolveSave!: (report: Timelog) => void;
+    testMocks.saveTimelog.mockImplementationOnce(() => new Promise<Timelog>((resolve) => { resolveSave = resolve; }));
+    render(<MobileTimelogEditModal />);
+    fireEvent.change(screen.getByLabelText('Poznámka k výkazu'), { target: { value: 'First' } });
+    await act(async () => { await vi.advanceTimersByTimeAsync(800); });
+    const sent = testMocks.saveTimelog.mock.calls[0][0] as Timelog;
+    fireEvent.change(screen.getByLabelText('Poznámka k výkazu'), { target: { value: 'Latest' } });
+    fireEvent.change(screen.getByLabelText('Cestovné celkem (km)'), { target: { value: '42' } });
+    await act(async () => { resolveSave({ ...sent, updatedAt: '2026-09-23T12:00:00Z' }); await Promise.resolve(); });
+    expect(testMocks.setEditingTimelog).not.toHaveBeenLastCalledWith(expect.objectContaining({ note: 'First' }));
+    expect(screen.getByLabelText('Poznámka k výkazu')).toHaveValue('Latest');
+    fireEvent.click(screen.getByRole('button', { name: 'Uložit výkaz' }));
+    await act(async () => { await Promise.resolve(); });
+    expect(testMocks.saveTimelog).toHaveBeenLastCalledWith(expect.objectContaining({ note: 'Latest', km: 42, updatedAt: '2026-09-23T12:00:00Z' }));
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     testState.cloneDependencies = false;

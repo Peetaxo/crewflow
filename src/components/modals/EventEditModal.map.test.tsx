@@ -128,6 +128,6 @@ describe('event form map preview', () => {
     expect(edit).toBeDisabled();
     fireEvent.click(edit);
     expect(screen.queryByRole('dialog', { name: 'Vybrat polohu' })).not.toBeInTheDocument();
-    await act(async () => { completeSave?.(fixture); });
+    await act(async () => { completeSave?.(); });
   });
 });

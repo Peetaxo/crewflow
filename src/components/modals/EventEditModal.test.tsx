@@ -18,7 +18,7 @@ const event: Event = {
   name: 'Ploom PopUp - Metropole Zlicin',
   job: 'JTI001',
   startDate: '2026-04-20',
-  endDate: '2026-04-20',
+  endDate: '2026-04-21',
   startTime: '20:00',
   endTime: '01:00',
   city: 'Praha',
@@ -26,6 +26,7 @@ const event: Event = {
   filled: 2,
   status: 'upcoming',
   client: 'NextLevel s.r.o.',
+  contactPerson: 'Kontakt',
 };
 
 describe('EventEditModal', () => {
@@ -42,6 +43,7 @@ describe('EventEditModal', () => {
         provoz: { from, to },
         deinstal: { from, to },
       }),
+      getEventContactOptions: async () => [],
       getEventFormOptions: () => ({
         projects: [{ id: 'JTI001', name: 'JTI', client: 'NextLevel s.r.o.' }],
         clients: [],
@@ -52,15 +54,15 @@ describe('EventEditModal', () => {
 
     const { default: EventEditModal } = await import('./EventEditModal');
 
-    const { container } = render(
-      <EventEditModal
+    render(
+      <EventEditModal mode="edit"
         editingEvent={event}
         onClose={vi.fn()}
         onChange={vi.fn()}
       />,
     );
 
-    const clientSelect = container.querySelector('select') as HTMLSelectElement;
+    const clientSelect = screen.getByLabelText('Klient / Firma') as HTMLSelectElement;
 
     expect(clientSelect.value).toBe('NextLevel s.r.o.');
     expect(screen.getByRole('option', { name: 'NextLevel s.r.o.' })).toBeInTheDocument();
@@ -77,6 +79,7 @@ describe('EventEditModal', () => {
         provoz: { from, to },
         deinstal: { from, to },
       }),
+      getEventContactOptions: async () => [],
       getEventFormOptions: () => ({
         projects: [{ id: 'JTI001', name: 'JTI', client: 'NextLevel s.r.o.' }],
         clients: [{ id: 1, name: 'NextLevel s.r.o.' }],
@@ -89,7 +92,7 @@ describe('EventEditModal', () => {
     const { default: EventEditModal } = await import('./EventEditModal');
 
     render(
-      <EventEditModal
+      <EventEditModal mode="edit"
         editingEvent={{
           ...event,
           address: 'Rohanske nabrezi 678/23, Praha',
@@ -147,6 +150,7 @@ describe('EventEditModal', () => {
         provoz: { from, to },
         deinstal: { from, to },
       }),
+      getEventContactOptions: async () => [],
       getEventFormOptions: () => ({ projects: [], clients: [] }),
       normalizeEventSchedules: () => ({}),
       saveEvent: vi.fn(),
@@ -155,7 +159,7 @@ describe('EventEditModal', () => {
     const { default: EventEditModal } = await import('./EventEditModal');
 
     render(
-      <EventEditModal
+      <EventEditModal mode="edit"
         editingEvent={{ ...event, locationLat: 50.0929, locationLng: 14.4502 }}
         onClose={vi.fn()}
         onChange={onChange}
@@ -186,6 +190,7 @@ describe('EventEditModal', () => {
         provoz: { from, to },
         deinstal: { from, to },
       }),
+      getEventContactOptions: async () => [],
       getEventFormOptions: () => ({ projects: [], clients: [] }),
       normalizeEventSchedules: () => ({}),
       saveEvent,
@@ -193,15 +198,15 @@ describe('EventEditModal', () => {
     const { default: EventEditModal } = await import('./EventEditModal');
 
     render(
-      <EventEditModal
+      <EventEditModal mode="edit"
         editingEvent={{ ...event, supabaseId: 'event-client-uuid' }}
         onClose={onClose}
         onChange={vi.fn()}
       />,
     );
 
-    const saveButton = screen.getByRole('button', { name: 'Ulozit akci' });
-    const closeButton = screen.getByRole('button', { name: 'Zrusit' });
+    const saveButton = screen.getByRole('button', { name: /Uložit akci|Ukládám…/ });
+    const closeButton = screen.getByRole('button', { name: 'Zrušit' });
     act(() => {
       saveButton.click();
       saveButton.click();
@@ -222,8 +227,8 @@ describe('EventEditModal', () => {
 
     expect(toastError).toHaveBeenCalledWith('Akci se nepodařilo uložit.');
     expect(onClose).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Ulozit akci' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Zrusit' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Uložit akci|Ukládám…/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Zrušit' })).toBeEnabled();
   });
 
   it('locks every native draft control while saving the current UUID', async () => {
@@ -243,13 +248,14 @@ describe('EventEditModal', () => {
         provoz: { from, to },
         deinstal: { from, to },
       }),
+      getEventContactOptions: async () => [],
       getEventFormOptions: () => ({ projects: [], clients: [] }),
       normalizeEventSchedules: () => phaseSchedules,
       saveEvent,
     }));
     const { default: EventEditModal } = await import('./EventEditModal');
     const rendered = render(
-      <EventEditModal
+      <EventEditModal mode="edit"
         editingEvent={{
           ...event,
           supabaseId: 'event-client-uuid',
@@ -262,17 +268,17 @@ describe('EventEditModal', () => {
     );
 
     act(() => {
-      screen.getByRole('button', { name: 'Ulozit akci' }).click();
+      screen.getByRole('button', { name: /Uložit akci|Ukládám…/ }).click();
     });
     await waitFor(() => expect(saveEvent).toHaveBeenCalledOnce());
 
     act(() => {
-      (rendered.container.querySelector('#allowCrewTimeProposal') as HTMLInputElement).click();
-      screen.getAllByRole('button', { name: 'Pridat cas' })[0].click();
+      (document.querySelector('#allowCrewTimeProposal') as HTMLInputElement).click();
+      screen.getAllByRole('button', { name: 'Přidat další fázi' })[0].click();
     });
     expect(onChange).not.toHaveBeenCalled();
 
-    const nativeControls = Array.from(rendered.container.querySelectorAll(
+    const nativeControls = Array.from(document.querySelectorAll(
       'button, input, select, textarea',
     ));
     nativeControls.forEach((control) => expect(control).toBeDisabled());
@@ -326,6 +332,7 @@ describe('EventEditModal', () => {
         provoz: { from, to },
         deinstal: { from, to },
       }),
+      getEventContactOptions: async () => [],
       getEventFormOptions: () => ({ projects: [], clients: [] }),
       normalizeEventSchedules: () => ({}),
       saveEvent,
@@ -337,12 +344,12 @@ describe('EventEditModal', () => {
         supabaseId: 'event-client-uuid',
         address: 'Roh',
       });
-      return <EventEditModal editingEvent={draft} onClose={onClose} onChange={setDraft} />;
+      return <EventEditModal mode="edit" editingEvent={draft} onClose={onClose} onChange={setDraft} />;
     };
     render(<DraftHost />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Start address resolution' }));
-    const saveButton = screen.getByRole('button', { name: 'Ulozit akci' });
+    const saveButton = screen.getByRole('button', { name: /Uložit akci|Ukládám…/ });
     expect(saveButton).toBeDisabled();
     saveButton.click();
     expect(saveEvent).not.toHaveBeenCalled();
@@ -361,7 +368,7 @@ describe('EventEditModal', () => {
     }));
   });
 
-  it('reuses materialized phase schedule IDs across unchanged retries and recomputes after schedule edits', async () => {
+  it('reuses materialized phase IDs across retries and keeps phase clocks when global time changes', async () => {
     const firstSave = createDeferred<Event>();
     const saveEvent = vi.fn()
       .mockImplementationOnce(() => firstSave.promise)
@@ -374,7 +381,8 @@ describe('EventEditModal', () => {
       const actual = await importOriginal<typeof import('../../features/events/services/events.service')>();
       return {
         ...actual,
-        getEventFormOptions: () => ({ projects: [], clients: [] }),
+        getEventContactOptions: async () => [],
+      getEventFormOptions: () => ({ projects: [], clients: [] }),
         saveEvent,
       };
     });
@@ -385,20 +393,22 @@ describe('EventEditModal', () => {
         ...event,
         supabaseId: 'event-client-uuid',
         phaseSchedules: undefined,
+        showDayTypes: true,
+        dayTypes: { '2026-04-20': 'instal' },
       });
-      return <EventEditModal editingEvent={draft} onClose={vi.fn()} onChange={setDraft} />;
+      return <EventEditModal mode="edit" editingEvent={draft} onClose={vi.fn()} onChange={setDraft} />;
     };
     render(<DraftHost />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ulozit akci' }));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Ulozit akci' })).toBeDisabled());
+    fireEvent.click(screen.getByRole('button', { name: /Uložit akci|Ukládám…/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /Uložit akci|Ukládám…/ })).toBeDisabled());
     await act(async () => {
       firstSave.reject(new Error('Akci se nepodařilo uložit.'));
       await Promise.resolve();
     });
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Ulozit akci' })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: /Uložit akci|Ukládám…/ })).toBeEnabled());
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Ulozit akci' }));
+      fireEvent.click(screen.getByRole('button', { name: /Uložit akci|Ukládám…/ }));
       await Promise.resolve();
     });
 
@@ -406,16 +416,16 @@ describe('EventEditModal', () => {
     const secondSchedules = saveEvent.mock.calls[1][0].phaseSchedules;
     expect(secondSchedules).toEqual(firstSchedules);
 
-    fireEvent.change(screen.getByDisplayValue('20:00'), { target: { value: '21:00' } });
+    fireEvent.change(screen.getByLabelText('Začátek'), { target: { value: '21:00' } });
     await waitFor(() => expect(screen.getByDisplayValue('21:00')).toBeInTheDocument());
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Ulozit akci' }));
+      fireEvent.click(screen.getByRole('button', { name: /Uložit akci|Ukládám…/ }));
       await Promise.resolve();
     });
 
     const editedSchedules = saveEvent.mock.calls[2][0].phaseSchedules;
-    expect(editedSchedules).not.toEqual(secondSchedules);
-    expect(editedSchedules?.instal?.[0]).toMatchObject({ from: '21:00' });
+    expect(editedSchedules).toEqual(secondSchedules);
+    expect(editedSchedules?.instal?.[0]).toMatchObject({ from: '20:00' });
   });
 
   it('does not finish UI work after a pending event save is unmounted', async () => {
@@ -432,20 +442,21 @@ describe('EventEditModal', () => {
         provoz: { from, to },
         deinstal: { from, to },
       }),
+      getEventContactOptions: async () => [],
       getEventFormOptions: () => ({ projects: [], clients: [] }),
       normalizeEventSchedules: () => ({}),
       saveEvent,
     }));
     const { default: EventEditModal } = await import('./EventEditModal');
     const rendered = render(
-      <EventEditModal
+      <EventEditModal mode="edit"
         editingEvent={{ ...event, supabaseId: 'event-client-uuid' }}
         onClose={onClose}
         onChange={vi.fn()}
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ulozit akci' }));
+    fireEvent.click(screen.getByRole('button', { name: /Uložit akci|Ukládám…/ }));
     rendered.unmount();
     await act(async () => {
       pending.reject(new Error('Akci se nepodařilo uložit.'));
@@ -471,22 +482,23 @@ describe('EventEditModal', () => {
         provoz: { from, to },
         deinstal: { from, to },
       }),
+      getEventContactOptions: async () => [],
       getEventFormOptions: () => ({ projects: [], clients: [] }),
       normalizeEventSchedules: () => ({}),
       saveEvent,
     }));
     const { default: EventEditModal } = await import('./EventEditModal');
     const rendered = render(
-      <EventEditModal
+      <EventEditModal mode="edit"
         editingEvent={{ ...event, supabaseId: 'event-client-uuid-a' }}
         onClose={onClose}
         onChange={vi.fn()}
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ulozit akci' }));
+    fireEvent.click(screen.getByRole('button', { name: /Uložit akci|Ukládám…/ }));
     rendered.rerender(
-      <EventEditModal
+      <EventEditModal mode="edit"
         editingEvent={{ ...event, id: 2, supabaseId: 'event-client-uuid-b' }}
         onClose={onClose}
         onChange={vi.fn()}
@@ -499,7 +511,7 @@ describe('EventEditModal', () => {
 
     expect(onClose).not.toHaveBeenCalled();
     expect(toastError).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Ulozit akci' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Uložit akci|Ukládám…/ })).toBeEnabled();
   });
 
   it('keeps the committed draft request active when a different UUID render is suspended', async () => {
@@ -520,6 +532,7 @@ describe('EventEditModal', () => {
         provoz: { from, to },
         deinstal: { from, to },
       }),
+      getEventContactOptions: async () => [],
       getEventFormOptions: () => ({ projects: [], clients: [] }),
       normalizeEventSchedules: () => ({}),
       saveEvent,
@@ -528,16 +541,16 @@ describe('EventEditModal', () => {
     const draftA = { ...event, supabaseId: 'event-client-uuid-a', address: 'draft-a' };
     const rendered = render(
       <React.Suspense fallback={<div>Suspended draft</div>}>
-        <EventEditModal editingEvent={draftA} onClose={onClose} onChange={vi.fn()} />
+        <EventEditModal mode="edit" editingEvent={draftA} onClose={onClose} onChange={vi.fn()} />
       </React.Suspense>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ulozit akci' }));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Ulozit akci' })).toBeDisabled());
+    fireEvent.click(screen.getByRole('button', { name: /Uložit akci|Ukládám…/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /Uložit akci|Ukládám…/ })).toBeDisabled());
     await act(async () => {
       rendered.rerender(
         <React.Suspense fallback={<div>Suspended draft</div>}>
-          <EventEditModal
+          <EventEditModal mode="edit"
             editingEvent={{ ...event, id: 2, supabaseId: 'event-client-uuid-b', address: 'suspend-render' }}
             onClose={onClose}
             onChange={vi.fn()}
@@ -554,12 +567,12 @@ describe('EventEditModal', () => {
     });
     rendered.rerender(
       <React.Suspense fallback={<div>Suspended draft</div>}>
-        <EventEditModal editingEvent={draftA} onClose={onClose} onChange={vi.fn()} />
+        <EventEditModal mode="edit" editingEvent={draftA} onClose={onClose} onChange={vi.fn()} />
       </React.Suspense>,
     );
 
     expect(onClose).toHaveBeenCalledOnce();
-    expect(screen.getByRole('button', { name: 'Ulozit akci' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Uložit akci|Ukládám…/ })).toBeEnabled();
   });
 
   it('preserves committed schedule IDs when a different UUID render is suspended', async () => {
@@ -582,7 +595,8 @@ describe('EventEditModal', () => {
       const actual = await importOriginal<typeof import('../../features/events/services/events.service')>();
       return {
         ...actual,
-        getEventFormOptions: () => ({ projects: [], clients: [] }),
+        getEventContactOptions: async () => [],
+      getEventFormOptions: () => ({ projects: [], clients: [] }),
         saveEvent,
       };
     });
@@ -595,17 +609,17 @@ describe('EventEditModal', () => {
     };
     const rendered = render(
       <React.Suspense fallback={<div>Suspended draft</div>}>
-        <EventEditModal editingEvent={draftA} onClose={vi.fn()} onChange={vi.fn()} />
+        <EventEditModal mode="edit" editingEvent={draftA} onClose={vi.fn()} onChange={vi.fn()} />
       </React.Suspense>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ulozit akci' }));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Ulozit akci' })).toBeDisabled());
+    fireEvent.click(screen.getByRole('button', { name: /Uložit akci|Ukládám…/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /Uložit akci|Ukládám…/ })).toBeDisabled());
     const firstSchedules = saveEvent.mock.calls[0][0].phaseSchedules;
     await act(async () => {
       rendered.rerender(
         <React.Suspense fallback={<div>Suspended draft</div>}>
-          <EventEditModal
+          <EventEditModal mode="edit"
             editingEvent={{ ...draftA, id: 2, supabaseId: 'event-client-uuid-b', address: 'suspend-render' }}
             onClose={vi.fn()}
             onChange={vi.fn()}
@@ -622,12 +636,12 @@ describe('EventEditModal', () => {
     });
     rendered.rerender(
       <React.Suspense fallback={<div>Suspended draft</div>}>
-        <EventEditModal editingEvent={draftA} onClose={vi.fn()} onChange={vi.fn()} />
+        <EventEditModal mode="edit" editingEvent={draftA} onClose={vi.fn()} onChange={vi.fn()} />
       </React.Suspense>,
     );
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Ulozit akci' })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: /Uložit akci|Ukládám…/ })).toBeEnabled());
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Ulozit akci' }));
+      fireEvent.click(screen.getByRole('button', { name: /Uložit akci|Ukládám…/ }));
       await Promise.resolve();
     });
 

@@ -5,7 +5,7 @@ import { queryKeys } from '../../../lib/query-keys';
 import { mapClient, mapEvent } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import { getDatesBetween, getEventStatus } from '../../../utils';
-import { Client, Contractor, Event, EventApplication, EventApplicationStatus, EventCrewAssignment, EventPhaseSlot, GrasonEventConfirmation, Project, ReceiptItem, Timelog, TimelogType } from '../../../types';
+import { Client, Contractor, Event, EventApplication, EventApplicationStatus, EventContactOption, EventCrewAssignment, EventPhaseSlot, GrasonEventConfirmation, Project, ReceiptItem, Timelog, TimelogType } from '../../../types';
 import { advanceLifecycleSnapshotGeneration, getLifecycleSnapshotGeneration, runLifecycleDataMutation } from '../../event-lifecycle-generation';
 import { createStableDraftUuid } from '../../stable-draft-identity';
 import { EventAssignmentResult, EventConflictDetail, EventFilter, EventWithDerivedStatus } from '../types/events.types';
@@ -14,6 +14,7 @@ import { createEventFormPlan, validateEventForm } from './event-form-state';
 import { deleteEventAtomicRpc } from './event-mutation-rpc.service';
 import { buildEventScheduleDays } from './event-schedule';
 import { assertLocalEventNotGrouped } from '../../billing-groups/billing-groups.local';
+import { listEventContactOptionsRpc } from '../../timelogs/services/timelog-approval-rpc.service';
 
 const DEFAULT_TIME_FROM = '08:00';
 const DEFAULT_TIME_TO = '17:00';
@@ -1540,6 +1541,17 @@ export const getEventFormOptions = (): { projects: Project[]; clients: Client[] 
     projects: snapshot.projects ?? [],
     clients: snapshot.clients ?? [],
   };
+};
+
+export const getEventContactOptions = async (): Promise<EventContactOption[]> => {
+  if (appDataSource === 'supabase') return listEventContactOptionsRpc();
+  // Local contractor records have no authoritative COO membership information.
+  return (getLocalAppState().contractors ?? []).flatMap((contractor) => contractor.profileId ? [{
+    profileId: contractor.profileId,
+    name: contractor.name,
+    phone: contractor.phone,
+    canApproveHours: false,
+  }] : []);
 };
 
 export const createEmptyEvent = (): Event => {

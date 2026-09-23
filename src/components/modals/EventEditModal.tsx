@@ -1,685 +1,276 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Plus, Trash2, X } from 'lucide-react';
-import { AnimatePresence, motion } from 'framer-motion';
+import * as Dialog from '@radix-ui/react-dialog';
+import * as AlertDialog from '@radix-ui/react-alert-dialog';
+import { ChevronDown, X } from 'lucide-react';
+import { format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
-import { getDatesBetween } from '../../utils';
-import { Event, EventPhaseSlot, TimelogType } from '../../types';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Textarea } from '../ui/textarea';
-import {
-  applyEventDraft,
-  createDefaultPhaseTimes,
-  getEventFormOptions,
-  normalizeEventSchedules,
-  saveEvent,
-} from '../../features/events/services/events.service';
+import type { Event, EventContactOption } from '../../types';
+import { applyEventDraft, getEventById, getEventContactOptions, getEventFormOptions, normalizeEventSchedules, saveEvent } from '../../features/events/services/events.service';
+import { createEventFormPlan, getEventFormDates, serializeEventFormPlan, validateEventForm, type EventFormPlan } from '../../features/events/services/event-form-state';
 import EventAddressField from '../../features/events/components/EventAddressField';
+import EventDayPlanner from '../../features/events/components/EventDayPlanner';
 import EventLocationPickerModal from '../../features/events/components/EventLocationPickerModal';
 import EventMapPreview from '../../features/events/components/EventMapPreview';
+import '../../features/events/components/event-edit-form.css';
 
 interface EventEditModalProps {
   editingEvent: Event | null;
   onClose: () => void;
   onChange: (event: Event | null) => void;
+  mode?: 'create' | 'edit';
 }
 
-const PHASES = [
-  { id: 'I', type: 'instal' as const, color: 'bg-blue-500 border-blue-600', label: 'Instalace' },
-  { id: 'P', type: 'provoz' as const, color: 'bg-emerald-500 border-emerald-600', label: 'Provoz' },
-  { id: 'D', type: 'deinstal' as const, color: 'bg-orange-500 border-orange-600', label: 'Deinstalace' },
-];
+interface DraftCache {
+  identity: string | null;
+  plan: EventFormPlan;
+  multipleDays: boolean;
+  cachedEndDate: string;
+  dirty: boolean;
+  advancedOpen: boolean;
+}
 
-const fieldLabelClass = 'mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]';
-const nativeFieldClass = 'w-full rounded-xl border border-[color:var(--nodu-border)] bg-white px-3 py-2 text-sm text-[color:var(--nodu-text)] outline-none transition-all focus:border-[color:var(--nodu-accent)] focus:ring-2 focus:ring-[color:rgb(var(--nodu-accent-rgb)/0.14)]';
-const smallFieldLabelClass = 'mb-1 block text-[9px] uppercase text-[color:var(--nodu-text-soft)]';
-const smallNativeFieldClass = 'w-full rounded-lg border border-[color:var(--nodu-border)] bg-white px-2 py-1 text-[10px] text-[color:var(--nodu-text)] outline-none focus:border-[color:var(--nodu-accent)] focus:ring-2 focus:ring-[color:rgb(var(--nodu-accent-rgb)/0.12)]';
+const createDraftCache = (event: Event | null, identity: string | null): DraftCache => {
+  const schedules: NonNullable<Event['phaseSchedules']> = event ? { ...normalizeEventSchedules(event) } : {};
+  if (event && event.scheduleVersion !== 2) {
+    const materializedDates = new Set(Object.values(schedules).flatMap((slots) => slots.flatMap((slot) => slot.dates)));
+    const preparationDates = Object.keys(event.dayTypes ?? {}).filter((date) => event.dayTypes?.[date] === 'pripravy' && !materializedDates.has(date));
+    if (preparationDates.length) schedules.pripravy = [...(schedules.pripravy ?? []), {
+      id: crypto.randomUUID(), dates: preparationDates,
+      from: event.phaseTimes?.pripravy?.from ?? event.startTime ?? '',
+      to: event.phaseTimes?.pripravy?.to ?? event.endTime ?? '',
+    }];
+  }
+  return { identity, plan: event ? createEventFormPlan({ ...event, phaseSchedules: schedules }) : {},
+    multipleDays: Boolean(event?.endDate && event.endDate !== event.startDate), cachedEndDate: event?.endDate ?? '', dirty: false, advancedOpen: Boolean(event?.showDayTypes) };
+};
 
-const createSlotId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-
-const EventEditModal = ({
-  editingEvent,
-  onClose,
-  onChange,
-}: EventEditModalProps) => {
+const EventEditModal = ({ editingEvent, onClose, onChange, mode }: EventEditModalProps) => {
+  const draftIdentity = editingEvent ? editingEvent.supabaseId ?? `local:${editingEvent.id}` : null;
+  const [cacheState, setCache] = useState(() => createDraftCache(editingEvent, draftIdentity));
+  // A suspended render must not replace the committed draft cache or request identity.
+  const cache = cacheState.identity === draftIdentity ? cacheState : createDraftCache(editingEvent, draftIdentity);
   const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isAddressResolving, setIsAddressResolving] = useState(false);
   const [isLocationPickerOpen, setIsLocationPickerOpen] = useState(false);
-  const draftIdentity = editingEvent
-    ? editingEvent.supabaseId ?? `local:${editingEvent.id}`
-    : null;
+  const [confirmation, setConfirmation] = useState<'discard' | 'trim' | null>(null);
+  const [error, setError] = useState('');
+  const [contacts, setContacts] = useState<EventContactOption[]>([]);
+  const [contactsLoading, setContactsLoading] = useState(true);
+  const [contactsError, setContactsError] = useState('');
+  const [contactsRetry, setContactsRetry] = useState(0);
   const projectMenuRef = useRef<HTMLDivElement | null>(null);
+  const titleRef = useRef<HTMLHeadingElement | null>(null);
   const saveInFlightRef = useRef(false);
   const activeSaveRequestRef = useRef<symbol | null>(null);
   const mountedRef = useRef(false);
   const currentDraftIdentityRef = useRef<string | null>(draftIdentity);
-  const [phaseSchedulesCache, setPhaseSchedulesCache] = useState<{
-    key: string;
-    schedules: ReturnType<typeof normalizeEventSchedules>;
-  } | null>(null);
-  const phaseSchedulesKey = editingEvent ? JSON.stringify({
-    draftIdentity,
-    phaseSchedules: editingEvent.phaseSchedules ?? null,
-    startDate: editingEvent.startDate,
-    endDate: editingEvent.endDate,
-    startTime: editingEvent.startTime ?? null,
-    endTime: editingEvent.endTime ?? null,
-    phaseTimes: editingEvent.phaseTimes ?? null,
-    dayTypes: editingEvent.dayTypes ?? null,
-  }) : null;
-  const phaseSchedules = editingEvent
-    ? phaseSchedulesCache?.key === phaseSchedulesKey
-      ? phaseSchedulesCache.schedules
-      : normalizeEventSchedules(editingEvent)
-    : null;
+  const portalContainer = document.querySelector<HTMLElement>('.nodu-app-shell') ?? undefined;
   const { projects, clients } = useMemo(() => getEventFormOptions(), []);
-  const clientOptions = useMemo(() => {
-    if (!editingEvent?.client || clients.some((client) => client.name === editingEvent.client)) {
-      return clients;
-    }
-
-    return [
-      ...clients,
-      {
-        id: -1,
-        name: editingEvent.client,
-      },
-    ];
-  }, [clients, editingEvent?.client]);
-
+  const clientOptions = useMemo(() => editingEvent?.client && !clients.some((client) => client.name === editingEvent.client)
+    ? [...clients, { id: -1, name: editingEvent.client }] : clients, [clients, editingEvent?.client]);
   const filteredProjects = useMemo(() => {
     const query = editingEvent?.job.trim().toLowerCase() ?? '';
-    if (!query) return projects;
-
-    return projects.filter((project) => (
-      project.id.toLowerCase().includes(query)
-      || project.name.toLowerCase().includes(query)
-      || project.client.toLowerCase().includes(query)
-    ));
+    return query ? projects.filter((project) => `${project.id} ${project.name} ${project.client}`.toLowerCase().includes(query)) : projects;
   }, [editingEvent?.job, projects]);
 
-  const updateEventDraft = (nextEvent: Event) => {
-    onChange(applyEventDraft(nextEvent));
-  };
-
-  const selectProject = (projectId: string) => {
-    if (!editingEvent) return;
-
-    const project = projects.find((item) => item.id === projectId);
-    if (!project) return;
-
-    updateEventDraft({
-      ...editingEvent,
-      job: project.id,
-      name: editingEvent.name.trim() ? editingEvent.name : project.name,
-      client: project.client || editingEvent.client,
-    });
-    setIsProjectMenuOpen(false);
-  };
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
-
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
+  useLayoutEffect(() => { if (cacheState !== cache) setCache(cache); }, [cache, cacheState]);
   useLayoutEffect(() => {
     currentDraftIdentityRef.current = draftIdentity;
     activeSaveRequestRef.current = null;
     saveInFlightRef.current = false;
-    setIsSaving(false);
-    setIsAddressResolving(false);
-    setIsLocationPickerOpen(false);
+    setIsSaving(false); setIsAddressResolving(false); setIsLocationPickerOpen(false);
+    setIsProjectMenuOpen(false); setConfirmation(null); setError('');
   }, [draftIdentity]);
-
-  useLayoutEffect(() => {
-    if (!phaseSchedulesKey || !phaseSchedules) {
-      setPhaseSchedulesCache((current) => current === null ? current : null);
-      return;
-    }
-    setPhaseSchedulesCache((current) => current?.key === phaseSchedulesKey
-      ? current
-      : { key: phaseSchedulesKey, schedules: phaseSchedules });
-  }, [phaseSchedules, phaseSchedulesKey]);
-
   useEffect(() => {
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!projectMenuRef.current?.contains(event.target as Node)) {
-        setIsProjectMenuOpen(false);
-      }
-    };
-
+    if (!draftIdentity) return;
+    let active = true;
+    setContactsLoading(true); setContactsError(''); setContacts([]);
+    void getEventContactOptions().then((options) => { if (active) setContacts(options); })
+      .catch((cause) => { if (active) setContactsError(cause instanceof Error ? cause.message : 'Kontakty se nepodařilo načíst.'); })
+      .finally(() => { if (active) setContactsLoading(false); });
+    return () => { active = false; };
+  }, [draftIdentity, contactsRetry]);
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => { if (!projectMenuRef.current?.contains(event.target as Node)) setIsProjectMenuOpen(false); };
     document.addEventListener('mousedown', handlePointerDown);
     return () => document.removeEventListener('mousedown', handlePointerDown);
   }, []);
 
-  if (!editingEvent || !phaseSchedules) return null;
-
-  const allEventDates = editingEvent.startDate && editingEvent.endDate
-    ? getDatesBetween(editingEvent.startDate, editingEvent.endDate)
-    : [];
-  const globalFrom = editingEvent.startTime || '08:00';
-  const globalTo = editingEvent.endTime || '17:00';
-
-  const patchPhaseSlots = (phaseType: TimelogType, updater: (slots: EventPhaseSlot[]) => EventPhaseSlot[]) => {
-    const nextSlots = updater((phaseSchedules[phaseType] || []).map((slot) => ({ ...slot, dates: [...slot.dates] })));
-    updateEventDraft({
-      ...editingEvent,
-      phaseSchedules: {
-        ...phaseSchedules,
-        [phaseType]: nextSlots,
-      },
-      phaseTimes: {
-        ...(editingEvent.phaseTimes || createDefaultPhaseTimes(globalFrom, globalTo)),
-        [phaseType]: {
-          from: nextSlots[0]?.from || globalFrom,
-          to: nextSlots[0]?.to || globalTo,
-        },
-      },
-    });
+  if (!editingEvent) return null;
+  const isEdit = mode ? mode === 'edit' : Boolean(getEventById(editingEvent.supabaseId ?? editingEvent.id));
+  const dates = getEventFormDates(editingEvent.startDate, editingEvent.endDate);
+  const activeDates = new Set(dates);
+  const trimmedDates = Object.keys(cache.plan).filter((date) => !activeDates.has(date) && (cache.plan[date].free || cache.plan[date].phases.length)).sort();
+  const contactApprovesHours = editingEvent.contactApprovesHours ?? true;
+  const intendedApproverId = contactApprovesHours ? editingEvent.contactProfileId : editingEvent.timelogApproverProfileId;
+  const approvalUnavailable = !contactsLoading && !contactsError && !contacts.find((contact) => contact.profileId === intendedApproverId)?.canApproveHours;
+  const hasMapCoordinates = typeof editingEvent.locationLat === 'number' && Number.isFinite(editingEvent.locationLat)
+    && Math.abs(editingEvent.locationLat) <= 90 && typeof editingEvent.locationLng === 'number'
+    && Number.isFinite(editingEvent.locationLng) && Math.abs(editingEvent.locationLng) <= 180;
+  const patchEvent = (patch: Partial<Event>) => {
+    if (saveInFlightRef.current) return;
+    setCache((current) => ({ ...current, dirty: true })); setError('');
+    onChange(applyEventDraft({ ...editingEvent, ...patch }));
   };
-
-  const handleSave = async () => {
+  const requestClose = () => {
+    if (saveInFlightRef.current) return;
+    if (cache.dirty) setConfirmation('discard'); else onClose();
+  };
+  const selectProject = (projectId: string) => {
+    const project = projects.find((item) => item.id === projectId);
+    if (!project) return;
+    patchEvent({ job: project.id, name: editingEvent.name.trim() ? editingEvent.name : project.name, client: project.client || editingEvent.client });
+    setIsProjectMenuOpen(false);
+  };
+  const handleSave = async (confirmedTrim = false) => {
     if (saveInFlightRef.current || isAddressResolving) return;
+    const nextEvent = { ...editingEvent, scheduleVersion: 2 as const, contactApprovesHours, ...serializeEventFormPlan(editingEvent, cache.plan) };
+    try { validateEventForm(nextEvent, cache.plan); } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Zkontrolujte údaje akce.'); return;
+    }
+    if (!confirmedTrim && trimmedDates.length && editingEvent.showDayTypes) { setConfirmation('trim'); return; }
+    setConfirmation(null);
     const requestIdentity = draftIdentity;
     const requestToken = Symbol('event-save-request');
-    saveInFlightRef.current = true;
-    activeSaveRequestRef.current = requestToken;
-    setIsSaving(true);
-    const isCurrentRequest = () => (
-      mountedRef.current
-      && currentDraftIdentityRef.current === requestIdentity
-      && activeSaveRequestRef.current === requestToken
-    );
+    saveInFlightRef.current = true; activeSaveRequestRef.current = requestToken; setIsSaving(true); setError('');
+    const isCurrentRequest = () => mountedRef.current && currentDraftIdentityRef.current === requestIdentity && activeSaveRequestRef.current === requestToken;
     try {
-      await saveEvent({ ...editingEvent, phaseSchedules });
-      if (isCurrentRequest()) {
-        onClose();
-      }
-    } catch (error) {
-      if (isCurrentRequest()) {
-        toast.error(error instanceof Error ? error.message : 'Nepodarilo se ulozit akci.');
-      }
+      await saveEvent(nextEvent);
+      if (isCurrentRequest()) onClose();
+    } catch (cause) {
+      if (isCurrentRequest()) { const message = cause instanceof Error ? cause.message : 'Nepodařilo se uložit akci.'; setError(message); toast.error(message); }
     } finally {
-      if (isCurrentRequest()) {
-        activeSaveRequestRef.current = null;
-        saveInFlightRef.current = false;
-        setIsSaving(false);
-      }
+      if (isCurrentRequest()) { activeSaveRequestRef.current = null; saveInFlightRef.current = false; setIsSaving(false); }
     }
   };
 
-  return (
-    <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.95 }}
-          className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] shadow-[0_28px_80px_rgba(47,38,31,0.18)]"
-        >
-          <div className="flex items-center justify-between border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] p-5">
-            <h3 className="text-xl font-semibold tracking-[-0.03em] text-[color:var(--nodu-text)]">Upravit akci</h3>
-            <button disabled={isSaving} onClick={onClose} className="rounded-xl border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-2 text-[color:var(--nodu-text-soft)] transition-all hover:border-[color:rgb(var(--nodu-accent-rgb)/0.24)] hover:text-[color:var(--nodu-accent)] disabled:cursor-not-allowed disabled:opacity-60">
-              <X size={20} />
-            </button>
-          </div>
-
-          <fieldset
-            disabled={isSaving}
-            aria-busy={isSaving}
-            className="min-w-0 flex-1 space-y-4 overflow-y-auto p-5"
-          >
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">Job Number</label>
-                <div ref={projectMenuRef} className="relative">
-                  <div className="flex overflow-hidden rounded-xl border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.88)] focus-within:ring-2 focus-within:ring-[color:var(--nodu-accent-soft)]">
-                    <Input
-                      type="text"
-                      value={editingEvent.job}
-                      onChange={(e) => {
-                        updateEventDraft({ ...editingEvent, job: e.target.value.toUpperCase() });
-                        setIsProjectMenuOpen(true);
-                      }}
-                      onFocus={() => setIsProjectMenuOpen(true)}
-                      placeholder="Napr. NEX300"
-                      className="w-full border-0 bg-transparent shadow-none focus-visible:ring-0"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setIsProjectMenuOpen((prev) => !prev)}
-                      className="border-l border-[color:rgb(var(--nodu-text-rgb)/0.08)] px-3 text-[color:var(--nodu-text-soft)] transition-colors hover:bg-[color:rgb(var(--nodu-accent-rgb)/0.08)] hover:text-[color:var(--nodu-accent)]"
-                      aria-label="Rozbalit projekty"
-                    >
-                      <ChevronDown size={16} className={`transition-transform ${isProjectMenuOpen ? 'rotate-180' : ''}`} />
-                    </button>
+  return <Dialog.Root open onOpenChange={(open) => { if (!open) requestClose(); }}>
+    <Dialog.Portal container={portalContainer}>
+      <Dialog.Overlay className="event-form-overlay" />
+      <Dialog.Content className="event-form-dialog" aria-describedby={undefined}
+        onOpenAutoFocus={(event) => { event.preventDefault(); titleRef.current?.focus(); }}
+        onEscapeKeyDown={(event) => { event.preventDefault(); requestClose(); }}
+        onInteractOutside={(event) => event.preventDefault()}>
+        <header className="event-form-header">
+          <Dialog.Title ref={titleRef} tabIndex={-1}>{isEdit ? 'Upravit akci' : 'Nová akce'}</Dialog.Title>
+          <button type="button" disabled={isSaving} className="event-form-icon-button" aria-label="Zavřít formulář" onClick={requestClose}><X size={22} /></button>
+        </header>
+        <form className="event-form-layout" onSubmit={(event) => { event.preventDefault(); void handleSave(); }} noValidate>
+          <fieldset disabled={isSaving} aria-busy={isSaving} className="event-form-body">
+            <section className="event-form-section" aria-label="Základní údaje">
+              <label className="event-form-label">Název akce<input required value={editingEvent.name} onChange={(e) => patchEvent({ name: e.target.value })} /></label>
+              <div className="event-form-grid">
+                <div ref={projectMenuRef} className="event-form-project">
+                  <label className="event-form-label" htmlFor="event-job">Job Number</label>
+                  <div className="event-form-inline">
+                    <input id="event-job" required value={editingEvent.job} placeholder="Např. NEX300" onChange={(e) => { patchEvent({ job: e.target.value.toUpperCase() }); setIsProjectMenuOpen(true); }} onFocus={() => setIsProjectMenuOpen(true)} />
+                    <button type="button" className="event-form-icon-button" aria-label="Rozbalit projekty" aria-expanded={isProjectMenuOpen} onClick={() => setIsProjectMenuOpen(!isProjectMenuOpen)}><ChevronDown size={20} /></button>
                   </div>
-
-                  {isProjectMenuOpen && (
-                    <div className="absolute z-20 mt-2 max-h-56 w-full overflow-y-auto rounded-[22px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] p-1 shadow-[0_18px_42px_rgba(47,38,31,0.16)]">
-                      {filteredProjects.length > 0 ? (
-                        filteredProjects.map((project) => (
-                          <button
-                            key={project.id}
-                            type="button"
-                            onClick={() => selectProject(project.id)}
-                            className="flex w-full items-start justify-between rounded-[16px] px-3 py-2 text-left transition-colors hover:bg-[color:rgb(var(--nodu-accent-rgb)/0.08)]"
-                          >
-                            <div>
-                              <div className="text-sm font-semibold text-[color:var(--nodu-text)]">{project.id}</div>
-                              <div className="text-xs text-[color:var(--nodu-text-soft)]">{project.name}</div>
-                            </div>
-                            <div className="pl-3 text-[10px] font-medium uppercase tracking-wider text-[color:var(--nodu-text-soft)]">
-                              {project.client}
-                            </div>
-                          </button>
-                        ))
-                      ) : (
-                        <div className="px-3 py-2 text-xs text-[color:var(--nodu-text-soft)]">
-                          Zadny existujici projekt. Akce vytvori novy projekt automaticky.
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  {isProjectMenuOpen && <div className="event-form-project-options">
+                    {filteredProjects.length ? filteredProjects.map((project) => <button key={project.id} type="button" onClick={() => selectProject(project.id)}><strong>{project.id}</strong><span>{project.name} · {project.client}</span></button>) : <p>Akce vytvoří nový projekt automaticky.</p>}
+                  </div>}
                 </div>
+                <label className="event-form-label">Klient / Firma<select required value={editingEvent.client} onChange={(e) => patchEvent({ client: e.target.value })}>
+                  <option value="">Vyberte klienta</option>{clientOptions.map((client) => <option key={client.id} value={client.name}>{client.name}</option>)}
+                </select></label>
               </div>
-              <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">Nazev akce</label>
-                <Input
-                  type="text"
-                  value={editingEvent.name}
-                  onChange={(e) => updateEventDraft({ ...editingEvent, name: e.target.value })}
-                />
+            </section>
+            <section className="event-form-section" aria-labelledby="event-term-title">
+              <div className="event-form-section-heading"><h3 id="event-term-title">Termín akce</h3>
+                <label className="event-form-toggle"><input type="checkbox" checked={cache.multipleDays} onChange={(e) => {
+                  const multipleDays = e.target.checked;
+                  setCache({ ...cache, dirty: true, multipleDays, cachedEndDate: multipleDays ? cache.cachedEndDate : editingEvent.endDate });
+                  patchEvent({ endDate: multipleDays ? cache.cachedEndDate || editingEvent.startDate : editingEvent.startDate });
+                }} />Více dní</label>
               </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={fieldLabelClass}>Klient / Firma</label>
-                <select
-                  value={editingEvent.client}
-                  onChange={(e) => updateEventDraft({ ...editingEvent, client: e.target.value })}
-                  className={nativeFieldClass}
-                >
-                  <option value="">Vyberte klienta</option>
-                  {clientOptions.map((client) => (
-                    <option key={client.id} value={client.name}>{client.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <EventAddressField
-                  key={draftIdentity}
-                  value={editingEvent}
-                  onResolvingChange={setIsAddressResolving}
-                  onPickMap={() => setIsLocationPickerOpen(true)}
-                  onChange={(selection) => updateEventDraft({
-                    ...editingEvent,
-                    address: selection.address,
-                    city: selection.address,
-                    placeId: selection.placeId,
-                    locationLat: selection.locationLat,
-                    locationLng: selection.locationLng,
-                  })}
-                />
-                <div className="mt-3">
-                  <EventMapPreview
-                    address={editingEvent.address || editingEvent.city}
-                    locationLat={editingEvent.locationLat}
-                    locationLng={editingEvent.locationLng}
-                    editable
-                    onLocationChange={({ locationLat, locationLng }) => updateEventDraft({
-                      ...editingEvent,
-                      locationLat,
-                      locationLng,
-                    })}
-                  />
+              {cache.multipleDays ? <div className="event-form-grid">
+                <div className="event-form-term"><h4>Začátek akce</h4>
+                  <label className="event-form-label">Datum začátku<input required type="date" value={editingEvent.startDate} onChange={(e) => patchEvent({ startDate: e.target.value })} /></label>
+                  <label className="event-form-label">Začátek<input required type="time" value={editingEvent.startTime ?? ''} onChange={(e) => patchEvent({ startTime: e.target.value })} /></label>
                 </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={fieldLabelClass}>Datum zacatku</label>
-                <input
-                  type="date"
-                  value={editingEvent.startDate}
-                  onChange={(e) => updateEventDraft({ ...editingEvent, startDate: e.target.value })}
-                  className={nativeFieldClass}
-                />
-              </div>
-              <div>
-                <label className={fieldLabelClass}>Datum konce</label>
-                <input
-                  type="date"
-                  value={editingEvent.endDate}
-                  onChange={(e) => updateEventDraft({ ...editingEvent, endDate: e.target.value })}
-                  className={nativeFieldClass}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={fieldLabelClass}>Od</label>
-                <input
-                  type="time"
-                  value={globalFrom}
-                  onChange={(e) => updateEventDraft({
-                    ...editingEvent,
-                    startTime: e.target.value,
-                    phaseTimes: editingEvent.showDayTypes ? createDefaultPhaseTimes(e.target.value, globalTo) : editingEvent.phaseTimes,
-                    phaseSchedules: editingEvent.showDayTypes
-                      ? Object.fromEntries(
-                          Object.entries(phaseSchedules).map(([phaseType, slots]) => [
-                            phaseType,
-                            (slots || []).map((slot) => ({ ...slot, from: e.target.value })),
-                          ]),
-                        ) as Event['phaseSchedules']
-                      : editingEvent.phaseSchedules,
-                  })}
-                  className={nativeFieldClass}
-                />
-              </div>
-              <div>
-                <label className={fieldLabelClass}>Do</label>
-                <input
-                  type="time"
-                  value={globalTo}
-                  onChange={(e) => updateEventDraft({
-                    ...editingEvent,
-                    endTime: e.target.value,
-                    phaseTimes: editingEvent.showDayTypes ? createDefaultPhaseTimes(globalFrom, e.target.value) : editingEvent.phaseTimes,
-                    phaseSchedules: editingEvent.showDayTypes
-                      ? Object.fromEntries(
-                          Object.entries(phaseSchedules).map(([phaseType, slots]) => [
-                            phaseType,
-                            (slots || []).map((slot) => ({ ...slot, to: e.target.value })),
-                          ]),
-                        ) as Event['phaseSchedules']
-                      : editingEvent.phaseSchedules,
-                  })}
-                  className={nativeFieldClass}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">Popis akce</label>
-              <Textarea
-                value={editingEvent.description || ''}
-                onChange={(e) => updateEventDraft({ ...editingEvent, description: e.target.value })}
-                className="h-16 resize-none"
-              />
-            </div>
-
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <label className={fieldLabelClass}>Kontaktni osoba</label>
-                <input
-                  type="text"
-                  value={editingEvent.contactPerson || ''}
-                  onChange={(e) => updateEventDraft({ ...editingEvent, contactPerson: e.target.value })}
-                  className={nativeFieldClass}
-                />
-              </div>
-              <div>
-                <label className={fieldLabelClass}>Dresscode</label>
-                <input
-                  type="text"
-                  value={editingEvent.dresscode || ''}
-                  onChange={(e) => updateEventDraft({ ...editingEvent, dresscode: e.target.value })}
-                  className={nativeFieldClass}
-                />
-              </div>
-              <div>
-                <label className={fieldLabelClass}>Misto srazu</label>
-                <input
-                  type="text"
-                  value={editingEvent.meetingLocation || ''}
-                  onChange={(e) => updateEventDraft({ ...editingEvent, meetingLocation: e.target.value })}
-                  className={nativeFieldClass}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={fieldLabelClass}>Potreba crew</label>
-                <input
-                  type="number"
-                  value={editingEvent.needed}
-                  onChange={(e) => updateEventDraft({ ...editingEvent, needed: Number(e.target.value) })}
-                  className={nativeFieldClass}
-                />
-              </div>
-              <div>
-                <label className={fieldLabelClass}>Navrh casu prichodu/odchodu</label>
-                <label
-                  htmlFor="allowCrewTimeProposal"
-                  className="flex min-h-[44px] cursor-pointer select-none items-center justify-between gap-3 rounded-[16px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] px-3 py-2"
-                >
-                  <span className="text-xs font-semibold leading-snug text-[color:var(--nodu-text)]">
-                    {editingEvent.allowCrewTimeProposal ? 'Povolit' : 'Zamitnout'}
-                  </span>
-                  <input
-                    type="checkbox"
-                    id="allowCrewTimeProposal"
-                    checked={editingEvent.allowCrewTimeProposal || false}
-                    onChange={(e) => updateEventDraft({
-                      ...editingEvent,
-                      allowCrewTimeProposal: e.target.checked,
-                    })}
-                    className="peer sr-only"
-                  />
-                  <span className="relative h-6 w-11 shrink-0 rounded-full border border-[color:rgb(var(--nodu-text-rgb)/0.14)] bg-[color:rgb(var(--nodu-text-rgb)/0.08)] transition peer-checked:border-[color:var(--nodu-success-border)] peer-checked:bg-[color:var(--nodu-success-bg)]">
-                    <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-[0_2px_8px_rgba(47,38,31,0.16)] transition peer-checked:translate-x-5" />
-                  </span>
-                </label>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] p-3">
-              <input
-                type="checkbox"
-                id="showDayTypes"
-                checked={editingEvent.showDayTypes || false}
-                onChange={(e) => updateEventDraft({
-                  ...editingEvent,
-                  showDayTypes: e.target.checked,
-                  phaseTimes: e.target.checked
-                    ? (editingEvent.phaseTimes || createDefaultPhaseTimes(globalFrom, globalTo))
-                    : editingEvent.phaseTimes,
-                  phaseSchedules: e.target.checked
-                    ? (editingEvent.phaseSchedules || normalizeEventSchedules(editingEvent))
-                    : editingEvent.phaseSchedules,
-                })}
-                className="h-4 w-4 rounded border-[color:var(--nodu-border)] text-[color:var(--nodu-accent)] focus:ring-[color:var(--nodu-accent)]"
-              />
-              <label htmlFor="showDayTypes" className="cursor-pointer select-none text-xs font-bold text-[color:var(--nodu-text)]">
-                Zobrazovat typy dnu (I-P-D) na akci
-              </label>
-            </div>
-
-            {editingEvent.showDayTypes && editingEvent.startDate && editingEvent.endDate && (
-              <div className="space-y-4 rounded-[22px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] p-4">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-[10px] font-bold uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">Nastaveni typu dnu (I-P-D)</h4>
-                  <button
-                    type="button"
-                    onClick={() => updateEventDraft({
-                      ...editingEvent,
-                      phaseSchedules: Object.fromEntries(
-                        PHASES.map((phase) => [
-                          phase.type,
-                          (phaseSchedules[phase.type] || []).map((slot) => ({ ...slot, dates: [] })),
-                        ]),
-                      ) as Event['phaseSchedules'],
-                    })}
-                    className="text-[9px] font-bold uppercase text-[color:var(--nodu-error-text)] hover:opacity-80"
-                  >
-                    Vymazat vse
-                  </button>
+                <div className="event-form-term"><h4>Konec akce</h4>
+                  <label className="event-form-label">Datum konce<input required type="date" value={editingEvent.endDate} onChange={(e) => { setCache({ ...cache, cachedEndDate: e.target.value }); patchEvent({ endDate: e.target.value }); }} /></label>
+                  <label className="event-form-label">Konec<input required type="time" value={editingEvent.endTime ?? ''} onChange={(e) => patchEvent({ endTime: e.target.value })} /></label>
                 </div>
-
-                {PHASES.map((phase) => (
-                  <div key={phase.id} className="space-y-3 rounded-[18px] border border-[color:var(--nodu-border)] bg-white p-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className={`flex h-5 w-5 items-center justify-center rounded text-[9px] font-black text-white shadow-sm ${phase.color}`}>
-                          {phase.id}
-                        </div>
-                        <span className="text-xs font-bold text-[color:var(--nodu-text)]">{phase.label}</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => patchPhaseSlots(phase.type, (slots) => [
-                          ...slots,
-                          { id: createSlotId(), from: globalFrom, to: globalTo, dates: [] },
-                        ])}
-                        className="inline-flex items-center gap-1 text-[10px] font-bold uppercase text-[color:var(--nodu-accent)] hover:opacity-80"
-                      >
-                        <Plus size={12} /> Pridat cas
-                      </button>
-                    </div>
-
-                    {(phaseSchedules[phase.type] || []).map((slot, slotIndex) => (
-                      <div key={slot.id} className="space-y-3 rounded-xl border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] p-3">
-                        <div className="flex items-center justify-between">
-                          <div className="text-[10px] font-bold uppercase tracking-wider text-[color:var(--nodu-text-soft)]">
-                            Blok {slotIndex + 1}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => patchPhaseSlots(phase.type, (slots) => (
-                                slots.map((currentSlot) => currentSlot.id === slot.id ? { ...currentSlot, dates: [...allEventDates] } : currentSlot)
-                              ))}
-                              className="text-[9px] font-bold uppercase text-[color:var(--nodu-accent)] hover:opacity-80"
-                            >
-                              Vsechny dny
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => patchPhaseSlots(phase.type, (slots) => (
-                                slots.length > 1
-                                  ? slots.filter((currentSlot) => currentSlot.id !== slot.id)
-                                  : [{ ...slot, dates: [] }]
-                              ))}
-                              className="text-[9px] font-bold uppercase text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]"
-                            >
-                              {(phaseSchedules[phase.type] || []).length > 1 ? (
-                                <span className="inline-flex items-center gap-1"><Trash2 size={10} /> Smazat</span>
-                              ) : 'Vyčistit'}
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className={smallFieldLabelClass}>Od</label>
-                            <input
-                              type="time"
-                              value={slot.from}
-                              onChange={(e) => patchPhaseSlots(phase.type, (slots) => (
-                                slots.map((currentSlot) => currentSlot.id === slot.id ? { ...currentSlot, from: e.target.value } : currentSlot)
-                              ))}
-                              className={smallNativeFieldClass}
-                            />
-                          </div>
-                          <div>
-                            <label className={smallFieldLabelClass}>Do</label>
-                            <input
-                              type="time"
-                              value={slot.to}
-                              onChange={(e) => patchPhaseSlots(phase.type, (slots) => (
-                                slots.map((currentSlot) => currentSlot.id === slot.id ? { ...currentSlot, to: e.target.value } : currentSlot)
-                              ))}
-                              className={smallNativeFieldClass}
-                            />
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="mb-2 block text-[9px] uppercase text-[color:var(--nodu-text-soft)]">Dny</label>
-                          <div className="flex flex-wrap gap-1">
-                            {allEventDates.map((date) => {
-                              const isSelected = slot.dates.includes(date);
-                              return (
-                                <button
-                                  key={`${slot.id}-${date}`}
-                                  type="button"
-                                  onClick={() => patchPhaseSlots(phase.type, (slots) => (
-                                    slots.map((currentSlot) => {
-                                      if (currentSlot.id !== slot.id) return currentSlot;
-                                      return {
-                                        ...currentSlot,
-                                        dates: isSelected
-                                          ? currentSlot.dates.filter((currentDate) => currentDate !== date)
-                                          : [...currentSlot.dates, date].sort(),
-                                      };
-                                    })
-                                  ))}
-                                  className={`h-8 w-8 rounded border text-[9px] font-bold transition-all ${
-                                    isSelected
-                                      ? `${phase.color} text-white shadow-sm`
-                                      : 'border-[color:var(--nodu-border)] bg-white text-[color:var(--nodu-text-soft)] hover:border-[color:rgb(var(--nodu-accent-rgb)/0.28)] hover:text-[color:var(--nodu-accent)]'
-                                  }`}
-                                  title={`${new Date(date).toLocaleDateString('cs-CZ')} - ${phase.label}`}
-                                >
-                                  {new Date(date).getDate()}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ))}
+              </div> : <>
+                <label className="event-form-label">Datum akce<input required type="date" value={editingEvent.startDate} onChange={(e) => patchEvent({ startDate: e.target.value, endDate: e.target.value })} /></label>
+                <div className="event-form-grid event-form-clocks">
+                  <label className="event-form-label">Začátek<input required type="time" value={editingEvent.startTime ?? ''} onChange={(e) => patchEvent({ startTime: e.target.value })} /></label>
+                  <label className="event-form-label">Konec<input required type="time" value={editingEvent.endTime ?? ''} onChange={(e) => patchEvent({ endTime: e.target.value })} /></label>
+                </div>
+              </>}
+            </section>
+            <section className="event-form-section" aria-label="Místo akce">
+              <EventAddressField key={draftIdentity} value={editingEvent} onResolvingChange={setIsAddressResolving} onPickMap={() => setIsLocationPickerOpen(true)} onChange={(selection) => patchEvent({ ...selection, city: selection.address })} />
+              {hasMapCoordinates && <EventMapPreview address={editingEvent.address || editingEvent.city} locationLat={editingEvent.locationLat} locationLng={editingEvent.locationLng} editable onLocationChange={(coordinates) => patchEvent(coordinates)} />}
+            </section>
+            <section className="event-form-section" aria-labelledby="event-contact-title">
+              <h3 id="event-contact-title">Kontakt na akci</h3>
+              {contactsLoading && <p role="status" className="event-form-hint">Načítám kontakty…</p>}
+              {contactsError && <div role="alert" className="event-form-error">{contactsError} <button type="button" className="event-form-text-button" onClick={() => setContactsRetry((retry) => retry + 1)}>Zkusit znovu</button></div>}
+              <label className="event-form-label">Vybrat kontakt<select value={editingEvent.contactProfileId ?? ''} disabled={contactsLoading} onChange={(e) => {
+                const contact = contacts.find((item) => item.profileId === e.target.value);
+                patchEvent(contact ? { contactProfileId: contact.profileId, contactPerson: contact.name, contactPhone: contact.phone } : { contactProfileId: null });
+              }}>
+                <option value="">Zadat kontakt ručně</option>
+                {editingEvent.contactProfileId && !contacts.some((item) => item.profileId === editingEvent.contactProfileId) && <option value={editingEvent.contactProfileId}>{editingEvent.contactPerson || 'Uložený kontakt'}</option>}
+                {contacts.map((contact) => <option key={contact.profileId} value={contact.profileId}>{contact.name}</option>)}
+              </select></label>
+              <div className="event-form-grid">
+                <label className="event-form-label">Kontaktní osoba<input required value={editingEvent.contactPerson ?? ''} autoComplete="name" onChange={(e) => patchEvent({ contactPerson: e.target.value, contactProfileId: null })} /></label>
+                <label className="event-form-label">Telefon<input type="tel" value={editingEvent.contactPhone ?? ''} autoComplete="tel" onChange={(e) => patchEvent({ contactPhone: e.target.value })} /></label>
               </div>
-            )}
+              <label className="event-form-toggle"><input type="checkbox" checked={contactApprovesHours} onChange={(e) => patchEvent({ contactApprovesHours: e.target.checked })} />Schvaluje také hodiny</label>
+              {!contactApprovesHours && <label className="event-form-label">Schvalovatel hodin<select disabled={contactsLoading} value={editingEvent.timelogApproverProfileId ?? ''} onChange={(e) => patchEvent({ timelogApproverProfileId: e.target.value || null })}>
+                <option value="">Vyberte schvalovatele</option>
+                {editingEvent.timelogApproverProfileId && !contacts.some((item) => item.profileId === editingEvent.timelogApproverProfileId) && <option value={editingEvent.timelogApproverProfileId}>Uložený schvalovatel</option>}
+                {contacts.map((contact) => <option key={contact.profileId} value={contact.profileId}>{contact.name}</option>)}
+              </select></label>}
+              {approvalUnavailable && <p className="event-form-hint">Schvalování bude dostupné po připojení účtu COO.</p>}
+            </section>
+            <section className="event-form-section" aria-label="Další údaje">
+              <label className="event-form-label">Potřebný počet Crew<input required type="number" min="0" step="1" value={Number.isNaN(editingEvent.needed) ? '' : editingEvent.needed} onChange={(e) => patchEvent({ needed: e.target.value === '' ? NaN : Number(e.target.value) })} /></label>
+              <label className="event-form-label">Popis akce<textarea rows={3} value={editingEvent.description ?? ''} onChange={(e) => patchEvent({ description: e.target.value })} /></label>
+              <label className="event-form-label">Místo srazu<input value={editingEvent.meetingLocation ?? ''} onChange={(e) => patchEvent({ meetingLocation: e.target.value })} /></label>
+            </section>
+            <details className="event-form-advanced" open={cache.advancedOpen} onToggle={(e) => {
+              const advancedOpen = e.currentTarget.open;
+              setCache((current) => current.advancedOpen === advancedOpen ? current : { ...current, advancedOpen });
+            }}>
+              <summary>Pokročilé nastavení</summary><div className="event-form-section">
+                <label className="event-form-toggle"><input type="checkbox" checked={Boolean(editingEvent.showDayTypes)} onChange={(e) => patchEvent({ showDayTypes: e.target.checked })} />Rozdělit akci na fáze</label>
+                {editingEvent.showDayTypes && <EventDayPlanner dates={dates} plan={cache.plan} onChange={(plan) => setCache({ ...cache, plan, dirty: true })} />}
+                <label className="event-form-toggle"><input id="allowCrewTimeProposal" type="checkbox" checked={Boolean(editingEvent.allowCrewTimeProposal)} onChange={(e) => patchEvent({ allowCrewTimeProposal: e.target.checked })} />Povolit Crew navrhnout čas příchodu a odchodu</label>
+              </div>
+            </details>
           </fieldset>
-
-          <div className="flex gap-3 border-t border-[color:rgb(var(--nodu-text-rgb)/0.08)] bg-[color:var(--nodu-paper-strong)] p-4">
-            <button
-              disabled={isSaving}
-              onClick={onClose}
-              className="flex-1 rounded-xl border border-[color:var(--nodu-border)] bg-white py-2.5 text-sm font-medium text-[color:var(--nodu-text)] transition-all hover:bg-[color:var(--nodu-accent-soft)] hover:text-[color:var(--nodu-accent)] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Zrusit
-            </button>
-            <button
-              disabled={isSaving || isAddressResolving}
-              onClick={handleSave}
-              className="flex-1 rounded-xl border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] py-2.5 text-sm font-medium text-[color:var(--nodu-success-text)] shadow-[0_12px_30px_rgba(45,108,78,0.12)] transition-all hover:bg-[color:var(--nodu-success-bg-hover)] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Ulozit akci
-            </button>
-          </div>
-          {isLocationPickerOpen && (
-            <EventLocationPickerModal
-              address={editingEvent.address || editingEvent.city}
-              initialLocationLat={editingEvent.locationLat}
-              initialLocationLng={editingEvent.locationLng}
-              onCancel={() => setIsLocationPickerOpen(false)}
-              onConfirm={({ locationLat, locationLng }) => {
-                updateEventDraft({
-                  ...editingEvent,
-                  locationLat,
-                  locationLng,
-                });
-                setIsLocationPickerOpen(false);
-              }}
-            />
-          )}
-        </motion.div>
-      </div>
-    </AnimatePresence>
-  );
+          <footer className="event-form-footer">
+            {error && <p role="alert" className="event-form-error">{error}</p>}
+            <div className="event-form-footer-actions">
+              <button type="button" className="event-form-secondary" disabled={isSaving} onClick={requestClose}>Zrušit</button>
+              <button type="submit" className="event-form-primary" disabled={isSaving || isAddressResolving}>{isSaving ? 'Ukládám…' : isEdit ? 'Uložit akci' : 'Vytvořit akci'}</button>
+            </div>
+          </footer>
+        </form>
+        {isLocationPickerOpen && <EventLocationPickerModal address={editingEvent.address || editingEvent.city} initialLocationLat={editingEvent.locationLat} initialLocationLng={editingEvent.locationLng} onCancel={() => setIsLocationPickerOpen(false)} onConfirm={(coordinates) => { patchEvent(coordinates); setIsLocationPickerOpen(false); }} />}
+        <AlertDialog.Root open={confirmation !== null} onOpenChange={(open) => { if (!open) setConfirmation(null); }}>
+          <AlertDialog.Portal container={portalContainer}>
+            <AlertDialog.Overlay className="event-form-confirm-overlay" />
+            <AlertDialog.Content className="event-form-confirm">
+              <AlertDialog.Title>{confirmation === 'discard' ? 'Zahodit změny?' : 'Uložit zkrácený termín?'}</AlertDialog.Title>
+              <AlertDialog.Description>{confirmation === 'discard' ? 'Rozpracované změny se neuloží.' : `Plán pro tyto dny se odstraní: ${trimmedDates.map((date) => format(parseISO(date), 'd. M. yyyy')).join(', ')}.`}</AlertDialog.Description>
+              <div className="event-form-confirm-actions">
+                <AlertDialog.Cancel className="event-form-secondary">Pokračovat v úpravách</AlertDialog.Cancel>
+                <AlertDialog.Action className="event-form-primary" onClick={() => { if (confirmation === 'discard') onClose(); else void handleSave(true); }}>{confirmation === 'discard' ? 'Zahodit změny' : 'Uložit bez těchto dnů'}</AlertDialog.Action>
+              </div>
+            </AlertDialog.Content>
+          </AlertDialog.Portal>
+        </AlertDialog.Root>
+      </Dialog.Content>
+    </Dialog.Portal>
+  </Dialog.Root>;
 };
 
 export default EventEditModal;

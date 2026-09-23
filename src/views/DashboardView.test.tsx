@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { EventApplication } from '../types';
+import type { EventApplication, TimelogApproval } from '../types';
 
 const mockAppContext = {
   role: 'crewhead',
@@ -52,7 +52,9 @@ const defaultMockTimelogs = [
     days: [{ f: '08:00', t: '16:00' }],
   },
 ];
-const mockTimelogsState = { timelogs: [...defaultMockTimelogs] };
+const mockTimelogsState: { timelogs: (typeof defaultMockTimelogs[number] & {
+  approvals?: Pick<TimelogApproval, 'status' | 'supersededAt' | 'approverProfileId'>[];
+})[] } = { timelogs: [...defaultMockTimelogs] };
 
 const mockReceipts = [
   {

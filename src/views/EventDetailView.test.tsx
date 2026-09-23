@@ -1095,7 +1095,10 @@ describe('EventDetailView', () => {
     expect(otherCrewRow?.querySelector('.nodu-mobile-event-crew-meta')).not.toBeInTheDocument();
   });
 
-  it('opens a mobile contact call dialog from the event info contact row', async () => {
+  it.each([
+    { snapshotPhone: '777 111 222', expectedPhone: '777 111 222', href: 'tel:777111222' },
+    { snapshotPhone: undefined, expectedPhone: '721 250 034', href: 'tel:721250034' },
+  ])('opens the contact call dialog using saved phone $snapshotPhone or the profile fallback', async ({ snapshotPhone, expectedPhone, href }) => {
     mobileMockState.isMobile = true;
     const contactContractor = {
       ...contractor,
@@ -1106,7 +1109,7 @@ describe('EventDetailView', () => {
       status: 'upcoming' as const,
       contactProfileId: contactContractor.profileId,
       contactPerson: 'Stary kontakt',
-      contactPhone: '000 000 000',
+      contactPhone: snapshotPhone,
     };
 
     vi.doMock('../context/useAppContext', () => ({
@@ -1167,7 +1170,7 @@ describe('EventDetailView', () => {
     expect(contactDialog).toBeInTheDocument();
     expect(within(contactDialog).getByText(contactContractor.name)).toBeInTheDocument();
     expect(within(contactDialog).queryByText('Stary kontakt')).not.toBeInTheDocument();
-    expect(within(contactDialog).getByRole('link', { name: `Zavolat ${contactContractor.phone}` })).toHaveAttribute('href', 'tel:721250034');
+    expect(within(contactDialog).getByRole('link', { name: `Zavolat ${expectedPhone}` })).toHaveAttribute('href', href);
   });
 
   it('renders mobile management detail for CH and COO with edit, assignment, and approval actions', async () => {

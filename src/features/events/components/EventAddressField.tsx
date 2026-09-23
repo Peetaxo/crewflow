@@ -25,9 +25,9 @@ interface EventAddressFieldProps {
   onResolvingChange?: (isResolving: boolean) => void;
 }
 
-const fieldLabelClass = 'mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]';
-const nativeFieldClass = 'w-full rounded-xl border border-[color:var(--nodu-border)] bg-white px-3 py-2 text-sm text-[color:var(--nodu-text)] outline-none transition-all focus:border-[color:var(--nodu-accent)] focus:ring-2 focus:ring-[color:rgb(var(--nodu-accent-rgb)/0.14)]';
-const actionClass = 'inline-flex items-center justify-center gap-2 rounded-xl border border-[color:var(--nodu-border)] bg-white px-3 py-2 text-xs font-bold text-[color:var(--nodu-text)] transition-all hover:border-[color:rgb(var(--nodu-accent-rgb)/0.32)] hover:text-[color:var(--nodu-accent)] disabled:cursor-not-allowed disabled:opacity-60';
+const fieldLabelClass = 'mb-2 block text-sm font-medium text-[color:var(--nodu-text)]';
+const nativeFieldClass = 'min-h-11 w-full rounded-xl border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb))] px-3 py-2 text-base text-[color:var(--nodu-text)] outline-none transition-all focus:border-[color:var(--nodu-accent)] focus:ring-2 focus:ring-[color:rgb(var(--nodu-accent-rgb)/0.14)]';
+const actionClass = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb))] px-3 py-2 text-sm font-medium text-[color:var(--nodu-text)] transition-all hover:border-[color:rgb(var(--nodu-accent-rgb)/0.32)] hover:text-[color:var(--nodu-accent)] disabled:cursor-not-allowed disabled:opacity-60';
 const geocodingFailureStatus = 'Vyhledávání polohy se nepodařilo. Zkuste to prosím znovu.';
 const autocompleteDelayMs = 650;
 
@@ -167,7 +167,7 @@ const EventAddressField = ({
       </div>
 
       {candidates.length > 0 && (
-        <div className="mt-2 max-h-52 w-full overflow-y-auto rounded-[18px] border border-[color:var(--nodu-border)] bg-white p-1 shadow-[0_18px_42px_rgba(47,38,31,0.14)]">
+        <div className="mt-2 max-h-52 w-full overflow-y-auto rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb))] p-1 shadow-[0_18px_42px_rgba(47,38,31,0.14)]">
           {candidates.map((candidate) => (
             <button
               key={candidate.id}

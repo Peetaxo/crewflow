@@ -28,6 +28,8 @@ Task 0: isolated worktree and previous baseline verified; fresh main incorporate
 
 Fresh baseline evidence: the single-worker suite at the merged baseline passed all **117 pre-existing files / 1,314 pre-existing tests**. The run also picked up Task 1's intentionally RED tests (46 failures, 18 passes), so it is not a passing feature-suite result. Actual app typecheck (`tsc -p tsconfig.app.json --noEmit`) still reports pre-existing broad diagnostics; root reference-only `tsc --noEmit` is not valid verification. Isolated database `crewflow_shared_shift_tests` was cloned from the empty `crewflow_approval_green` schema in the local container; the current rollback-only `targeted-event-approval.sql` passed there. Never alter the source databases as part of shared-workflow tests.
 
+Implementation order adjustment: after Task 1 reviews, establish the schema/read/membership server contract (Tasks 3–4) before the client gateway in Task 2. This avoids designing the client against obsolete approval RPC assumptions. Public RPCs remain invoker wrappers; where an unforgeable private write capability is needed, follow the existing targeted-approval architecture (narrow private definer with authoritative actor/role/exact-set checks and revoked default ACL), not caller-writable session settings or broad table write grants.
+
 ## Rozsah a pevné hranice
 
 Tento plán implementuje pouze etapu 1 schváleného návrhu v `docs/superpowers/specs/2026-09-04-shared-crew-workflow-and-invoice-selection-design.md`:

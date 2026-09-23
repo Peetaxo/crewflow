@@ -184,4 +184,31 @@ describe('shared workflow scope', () => {
     expect(boundary.read).toHaveBeenCalledOnce();
     expect(client.getQueryData(shiftWorkflowQueryKey(scope()))).toEqual(snapshot(3));
   });
+
+  it('binds a new-scope layout-effect reload to the new key before observer options update', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    clients.push(client);
+    let latest!: HookValue;
+    let reloadResult: ShiftWorkflowSnapshot | undefined;
+    function Probe() {
+      latest = useShiftWorkflows();
+      const userId = latest.scope.userId;
+      const reload = latest.reload;
+      React.useLayoutEffect(() => {
+        if (userId === 'u2') void reload().then((data) => { reloadResult = data; });
+      }, [userId, reload]);
+      return null;
+    }
+    const tree = <QueryClientProvider client={client}><Probe /></QueryClientProvider>;
+    const view = render(tree);
+    await waitFor(() => expect(latest.query.data).toEqual(snapshot()));
+    boundary.read.mockClear().mockImplementation((captured: ShiftWorkflowScope) => Promise.resolve(snapshot(captured.userId === 'u2' ? 2 : 1)));
+    boundary.auth.currentUserId = 'u2';
+    view.rerender(<QueryClientProvider client={client}><Probe /></QueryClientProvider>);
+    await waitFor(() => expect(boundary.read).toHaveBeenCalled());
+    expect(boundary.read.mock.calls.map(([captured]) => (captured as ShiftWorkflowScope).userId))
+      .not.toContain('u1');
+    await waitFor(() => expect(reloadResult).toBeDefined());
+    expect(reloadResult?.revision).toBe(2);
+  });
 });

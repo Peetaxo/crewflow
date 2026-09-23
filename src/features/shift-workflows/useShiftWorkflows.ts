@@ -59,13 +59,13 @@ export function useShiftWorkflows(enabled = true) {
     };
   }, [activation, queryClient, ready, scope, scopeKey]);
 
+  const read = useCallback(async ({ signal }: { signal: AbortSignal }) => {
+    const snapshot = await readShiftWorkflowSnapshot(scope, signal);
+    if (signal.aborted) throw inactive();
+    return snapshot;
+  }, [scope]);
   const query = useQuery({
-    queryKey: shiftWorkflowQueryKey(scope), enabled: ready, retry: false, gcTime: 0,
-    queryFn: async ({ signal }) => {
-      const snapshot = await readShiftWorkflowSnapshot(scope, signal);
-      if (signal.aborted) throw inactive();
-      return snapshot;
-    },
+    queryKey: shiftWorkflowQueryKey(scope), enabled: ready, retry: false, gcTime: 0, queryFn: read,
   });
   const mutation = useMutation({
     mutationKey: shiftWorkflowQueryKey(scope), retry: false,
@@ -83,15 +83,17 @@ export function useShiftWorkflows(enabled = true) {
     if (!isCurrent(activation)) return Promise.reject(inactive());
     return mutateAsync({ activation, scope: { ...scope }, command: structuredClone(command) });
   }, [activation, isCurrent, mutateAsync, scope]);
-  const refetch = query.refetch;
   const reload = useCallback(async () => {
     if (!isCurrent(activation)) throw inactive();
-    const result = await refetch();
+    // The observer updates options in a passive effect. Fetch the captured key
+    // explicitly so even a layout-effect reload cannot dispatch the prior scope.
+    const result = await queryClient.fetchQuery({
+      queryKey: shiftWorkflowQueryKey(scope), queryFn: read, staleTime: 0, gcTime: 0, retry: false,
+    });
     if (!isCurrent(activation)) throw inactive();
-    if (result.error) throw result.error;
     // Do not return QueryObserverResult: it contains another unscoped refetch.
-    return result.data;
-  }, [activation, isCurrent, refetch]);
+    return result;
+  }, [activation, isCurrent, queryClient, read, scope]);
 
   return {
     scope, scopeKey, ready, save, reload,

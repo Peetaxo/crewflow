@@ -3,6 +3,7 @@ import type { Event, TimelogDay } from '../../../types';
 import {
   buildQuarterHourOptions,
   buildTimelogCalendarDates,
+  createTimelogDayEntryId,
   getTimelogDayEntryKey,
   isDateInEventRange,
   removeTimelogDayEntry,
@@ -38,6 +39,14 @@ const event: Event = {
 };
 
 describe('timelog day UI helpers', () => {
+  it('allocates canonical distinct day UUIDs that remain stable across edits', () => {
+    const id = createTimelogDayEntryId();
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(createTimelogDayEntryId()).not.toBe(id);
+    const original: TimelogDay = { id, d: '2026-09-23', f: '', t: '', type: 'pripravy' };
+    const saved = upsertTimelogDay([original], { ...original, f: '10:00', t: '12:00' }, id);
+    expect(saved).toHaveLength(1); expect(saved[0].id).toBe(id);
+  });
   it('builds 15-minute time options for mobile selectors', () => {
     const options = buildQuarterHourOptions();
 

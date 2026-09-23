@@ -1,6 +1,7 @@
 import { addDays, format, isAfter, parseISO } from 'date-fns';
 import type { Event, Timelog, TimelogDay, TimelogType } from '../../../types';
 import { resolveEventScheduleDay } from '../../events/services/event-schedule';
+import { createStableDraftUuid } from '../../stable-draft-identity';
 
 const defaultType: TimelogType = 'instal';
 const fallbackFrom = '08:00';
@@ -12,9 +13,7 @@ const sortDays = (days: Timelog['days']) => (
   ))
 );
 
-export const createTimelogDayEntryId = (): string => (
-  `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-);
+export const createTimelogDayEntryId = createStableDraftUuid;
 
 export const getTimelogDayEntryKey = (day: TimelogDay, index = 0): string => (
   day.id ?? `${day.d}|${index}`

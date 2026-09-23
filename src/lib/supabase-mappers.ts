@@ -1,5 +1,7 @@
 import type { BudgetItem, BudgetPackage, Candidate, Client, Contractor, Event, FleetReservation, FleetVehicle, Invoice, Project, ReceiptItem, Timelog, TimelogApproval, TimelogDay } from '@/types';
 import type { Database, Json } from './database.types';
+import { normalizeMealSelection } from '../utils';
+import { mapTimelogConfirmationSnapshot } from '../features/timelogs/services/timelog-confirmation-snapshot';
 
 type BudgetItemRow = Database['public']['Tables']['budget_items']['Row'];
 type BudgetPackageRow = Database['public']['Tables']['budget_packages']['Row'];
@@ -239,12 +241,15 @@ export function mapBudgetItem(
 }
 
 export function mapTimelogDay(row: TimelogDayRow): TimelogDay {
+  const meals = normalizeMealSelection(row);
   return {
     id: row.id,
     d: row.date,
     f: row.time_from ?? '',
     t: row.time_to ?? '',
     type: row.day_type,
+    meals,
+    meal: meals[0] ?? null,
     note: row.note ?? '',
   };
 }
@@ -259,6 +264,7 @@ export function mapTimelog(row: TimelogRow, days: TimelogDayRow[] = []): Timelog
     km: Number(row.km ?? 0),
     note: row.note ?? '',
     reviewNote: row.review_note ?? '',
+    crewConfirmationSnapshot: mapTimelogConfirmationSnapshot(row.crew_confirmation_snapshot, row),
     status: row.status,
   };
 }

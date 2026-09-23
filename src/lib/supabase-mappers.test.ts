@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Database } from './database.types';
-import { mapContractor, mapEvent, mapFleetReservation, mapFleetVehicle, mapInvoice, mapProject, mapReceipt, mapTimelog, mapTimelogApproval } from './supabase-mappers';
+import { mapContractor, mapEvent, mapFleetReservation, mapFleetVehicle, mapInvoice, mapProject, mapReceipt, mapTimelog, mapTimelogApproval, mapTimelogDay } from './supabase-mappers';
 
 type EventRow = Database['public']['Tables']['events']['Row'];
 type FleetReservationRow = Database['public']['Tables']['fleet_reservations']['Row'];
@@ -13,7 +13,45 @@ type TimelogApprovalRow = Database['public']['Tables']['timelog_approvals']['Row
 type InvoiceRow = Database['public']['Tables']['invoices']['Row'];
 type ReceiptRow = Database['public']['Tables']['receipts']['Row'];
 
+const reportRow = (overrides: Partial<TimelogRow> = {}): TimelogRow => ({
+  id: 'report', event_id: 'event', contractor_id: 'person', km: 0, note: '', review_note: '', status: 'draft',
+  crew_confirmation_snapshot: null, submitted_at: null, approved_at: null,
+  created_at: '2026-09-23T10:00:00Z', updated_at: '2026-09-23T12:00:00Z', ...overrides,
+});
+
 describe('supabase mappers', () => {
+  it('hydrates both meal fields, stable day ids and preparation types', () => {
+    const day = { id: 'day', date: '2026-09-23', time_from: '22:00', time_to: '02:00', day_type: 'pripravy',
+      note: 'Příprava', meal: 'obed', meals: ['obed', 'vecere'] } as TimelogDayRow;
+    expect(mapTimelogDay(day)).toMatchObject({ id: 'day', type: 'pripravy', f: '22:00', t: '02:00', meal: 'obed', meals: ['obed', 'vecere'], note: 'Příprava' });
+  });
+
+  it('hydrates the SQL shared correction snapshot without losing before values', () => {
+    const row = reportRow({ id: 'report', event_id: 'event', contractor_id: 'person', updated_at: '2026-09-23T12:00:00Z',
+      km: 25, note: 'Po opravě', review_note: 'Doplň čas', status: 'pending_crew_confirmation',
+      crew_confirmation_snapshot: { id: 'report', event_id: 'event', contractor_id: 'person', updated_at: '2026-09-23T11:00:00Z',
+        km: 12, note: 'Původní', days: [{ id: 'day', date: '2026-09-23', time_from: '08:00', time_to: '12:00',
+          day_type: 'pripravy', note: 'Původní den', meal: 'obed', meals: ['obed', 'vecere'] }] } });
+    expect(mapTimelog(row).crewConfirmationSnapshot).toEqual({ changedAt: row.updated_at, before: {
+      km: 12, note: 'Původní', days: [{ id: 'day', d: '2026-09-23', f: '08:00', t: '12:00', type: 'pripravy',
+        note: 'Původní den', meal: 'obed', meals: ['obed', 'vecere'] }],
+    } });
+  });
+
+  it('preserves the existing client-shaped correction snapshot', () => {
+    const snapshot = { changedAt: '2026-09-23T11:00:00Z', before: { km: 5, note: 'Poznámka',
+      days: [{ id: 'day', d: '2026-09-23', f: '08:00', t: '12:00', type: 'instal', meal: null, meals: [], note: '' }] } };
+    expect(mapTimelog(reportRow({ crew_confirmation_snapshot: snapshot })).crewConfirmationSnapshot).toEqual(snapshot);
+  });
+
+  it.each([
+    { id: 'someone-else', event_id: 'event', contractor_id: 'person', days: [], km: 0, note: '' },
+    { id: 'report', event_id: 'event', contractor_id: 'another-person', days: [], km: 0, note: '' },
+    { changedAt: '2026-09-23T11:00:00Z', before: { km: 0, note: '', days: [{ d: '2026-09-23' }] } },
+  ])('does not silently discard malformed or foreign correction history', (snapshot) => {
+    expect(() => mapTimelog(reportRow({ crew_confirmation_snapshot: snapshot }))).toThrow(/historii/);
+  });
+
   it('retains raw job identity separately from a later project display fallback', () => {
     const base = { id: 'event', date_from: '2026-09-23', date_to: '2026-09-23' } as EventRow;
     expect(mapEvent({ ...base, job_number: null })).toHaveProperty('rawJobNumber', null);
@@ -281,6 +319,7 @@ describe('supabase mappers', () => {
       id: 'timelog-uuid-1',
       event_id: 'event-uuid-1',
       contractor_id: 'profile-uuid-1',
+      crew_confirmation_snapshot: null,
       km: 0,
       note: null,
       review_note: null,
@@ -297,6 +336,8 @@ describe('supabase mappers', () => {
       time_from: '08:00',
       time_to: '17:00',
       day_type: 'instal',
+      meal: null,
+      meals: [],
       note: 'Příprava mimo standardní plán',
       created_at: '2026-04-28T00:00:00Z',
     };

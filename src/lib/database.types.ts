@@ -8,7 +8,7 @@ export type Json =
 
 export type AppRole = 'crew' | 'crewhead' | 'coo';
 export type EventStatus = 'planning' | 'upcoming' | 'full' | 'past';
-export type TimelogType = 'instal' | 'provoz' | 'deinstal';
+export type TimelogType = 'pripravy' | 'instal' | 'provoz' | 'deinstal';
 export type TimelogStatus = 'draft' | 'pending_crew_confirmation' | 'pending_ch' | 'pending_coo' | 'approved' | 'invoiced' | 'paid' | 'rejected';
 export type TimelogApprovalStatus = 'pending' | 'approved' | 'returned';
 export type InvoiceStatus = 'draft' | 'sent' | 'paid';
@@ -22,6 +22,256 @@ export type CrewRatingSource = 'initial' | 'event';
 export interface Database {
   public: {
     Tables: {
+      shift_workflow_events: {
+        Row: {
+          event_id: string
+          position: number
+          workflow_id: string
+        }
+        Insert: {
+          event_id: string
+          position: number
+          workflow_id: string
+        }
+        Update: {
+          event_id?: string
+          position?: number
+          workflow_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shift_workflow_events_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: true
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shift_workflow_events_workflow_id_fkey"
+            columns: ["workflow_id"]
+            isOneToOne: false
+            referencedRelation: "shift_workflows"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shift_workflow_requests: {
+        Row: {
+          actor_id: string
+          created_at: string
+          kind: string
+          payload: Json
+          request_id: string
+          result: Json
+        }
+        Insert: {
+          actor_id: string
+          created_at?: string
+          kind: string
+          payload: Json
+          request_id: string
+          result: Json
+        }
+        Update: {
+          actor_id?: string
+          created_at?: string
+          kind?: string
+          payload?: Json
+          request_id?: string
+          result?: Json
+        }
+        Relationships: []
+      }
+      shift_workflow_round_actions: {
+        Row: {
+          action: string
+          actor_id: string
+          before_snapshot: Json | null
+          created_at: string
+          event_id: string | null
+          from_status: string | null
+          id: string
+          note: string
+          round_id: string
+          to_status: string
+        }
+        Insert: {
+          action: string
+          actor_id: string
+          before_snapshot?: Json | null
+          created_at?: string
+          event_id?: string | null
+          from_status?: string | null
+          id?: string
+          note?: string
+          round_id: string
+          to_status: string
+        }
+        Update: {
+          action?: string
+          actor_id?: string
+          before_snapshot?: Json | null
+          created_at?: string
+          event_id?: string | null
+          from_status?: string | null
+          id?: string
+          note?: string
+          round_id?: string
+          to_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shift_workflow_round_actions_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shift_workflow_round_actions_round_id_fkey"
+            columns: ["round_id"]
+            isOneToOne: false
+            referencedRelation: "shift_workflow_rounds"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shift_workflow_round_items: {
+        Row: {
+          event_id: string
+          position: number
+          released_at: string | null
+          round_id: string
+          timelog_id: string
+        }
+        Insert: {
+          event_id: string
+          position: number
+          released_at?: string | null
+          round_id: string
+          timelog_id: string
+        }
+        Update: {
+          event_id?: string
+          position?: number
+          released_at?: string | null
+          round_id?: string
+          timelog_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shift_workflow_round_items_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shift_workflow_round_items_round_id_fkey"
+            columns: ["round_id"]
+            isOneToOne: false
+            referencedRelation: "shift_workflow_rounds"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shift_workflow_round_items_timelog_id_fkey"
+            columns: ["timelog_id"]
+            isOneToOne: false
+            referencedRelation: "timelogs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shift_workflow_rounds: {
+        Row: {
+          contractor_id: string
+          contractor_user_id: string
+          created_at: string
+          created_by: string
+          expected_item_count: number
+          id: string
+          note: string
+          status: string
+          updated_at: string
+          workflow_id: string | null
+        }
+        Insert: {
+          contractor_id: string
+          contractor_user_id: string
+          created_at?: string
+          created_by: string
+          expected_item_count: number
+          id?: string
+          note?: string
+          status: string
+          updated_at?: string
+          workflow_id?: string | null
+        }
+        Update: {
+          contractor_id?: string
+          contractor_user_id?: string
+          created_at?: string
+          created_by?: string
+          expected_item_count?: number
+          id?: string
+          note?: string
+          status?: string
+          updated_at?: string
+          workflow_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shift_workflow_rounds_contractor_id_fkey"
+            columns: ["contractor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shift_workflow_rounds_workflow_id_fkey"
+            columns: ["workflow_id"]
+            isOneToOne: false
+            referencedRelation: "shift_workflows"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shift_workflow_state: {
+        Row: {
+          revision: number
+          singleton: boolean
+        }
+        Insert: {
+          revision?: number
+          singleton?: boolean
+        }
+        Update: {
+          revision?: number
+          singleton?: boolean
+        }
+        Relationships: []
+      }
+      shift_workflows: {
+        Row: {
+          created_at: string
+          created_by: string
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       billing_group_members: {
         Row: {
           event_id: string
@@ -568,6 +818,8 @@ export interface Database {
           time_from: string | null;
           time_to: string | null;
           day_type: TimelogType;
+          meal: string | null;
+          meals: string[];
           note: string | null;
           created_at: string;
         };
@@ -597,6 +849,7 @@ export interface Database {
           id: string;
           event_id: string;
           contractor_id: string;
+          crew_confirmation_snapshot: Json | null;
           km: number | null;
           note: string | null;
           review_note: string | null;
@@ -616,6 +869,55 @@ export interface Database {
       };
     };
     Functions: {
+      read_shift_workflows: { Args: never; Returns: Json }
+      save_shift_workflow_atomic: {
+        Args: {
+          p_confirm_cross_project: boolean
+          p_confirm_moves: boolean
+          p_delete: boolean
+          p_event_ids: string[]
+          p_event_versions: Json
+          p_expected_revision: number
+          p_request_id: string
+          p_workflow_id: string
+        }
+        Returns: Json
+      }
+      save_shift_workflow_drafts_atomic: {
+        Args: {
+          p_anchor_event_id: string
+          p_contractor_id: string
+          p_request_id: string
+          p_round_id?: string
+          p_timelogs: Json
+          p_workflow_id: string
+        }
+        Returns: Json
+      }
+      submit_shift_workflow_round_atomic: {
+        Args: {
+          p_anchor_event_id: string
+          p_contractor_id: string
+          p_request_id: string
+          p_round_id: string
+          p_timelogs: Json
+          p_workflow_id: string
+        }
+        Returns: Json
+      }
+      transition_shift_workflow_round_atomic: {
+        Args: {
+          p_action: string
+          p_affected_event_id: string
+          p_corrections: Json
+          p_expected_round_updated_at: string
+          p_note: string
+          p_request_id: string
+          p_round_id: string
+          p_targets: Json
+        }
+        Returns: Json
+      }
       can_manage_billing_groups: { Args: never; Returns: boolean }
       read_billing_groups: { Args: never; Returns: Json }
       save_billing_group_atomic: {

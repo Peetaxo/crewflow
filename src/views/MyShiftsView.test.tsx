@@ -124,6 +124,15 @@ describe('MyShiftsView next shift', () => {
     expect(screen.getByRole('button', { name: 'Rozpracované1' })).toBeInTheDocument();
   });
 
+  it('renders without crashing when the only assigned future date is malformed', () => {
+    data.timelogs = [createTimelog(1, [day('2999-4-25 ')])];
+
+    expect(() => render(<MyShiftsView />)).not.toThrow();
+
+    expect(screen.getByRole('region', { name: 'Zatím žádná směna' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Rozpracované1' })).toBeInTheDocument();
+  });
+
   it('recognizes an assignment whose event reference is the exact UUID alias', () => {
     data.timelogs = [{ ...createTimelog(1, [day('2999-04-25')]), eid: 'event-uuid-1' as unknown as number }];
 

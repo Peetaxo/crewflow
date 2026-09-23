@@ -159,6 +159,16 @@ describe('next crew shift display', () => {
     drafts.forEach((draft) => expect(resolveNextShiftDisplay(draft, scheduledEvent, today)).toBeNull());
   });
 
+  it('excludes a malformed future date from upcoming while retaining its draft', () => {
+    const draft: Timelog = {
+      ...timelog,
+      days: [{ d: '2999-4-25 ', f: '09:00', t: '18:00', type: 'provoz' }],
+    };
+
+    expect(resolveNextShiftDisplay(draft, scheduledEvent, today)).toBeNull();
+    expect(categorizeCrewTimelogs([draft], [scheduledEvent])).toMatchObject({ drafts: [draft], upcoming: [] });
+  });
+
   it('recognizes the exact UUID alias without conflating unrelated IDs', () => {
     const draft: Timelog = {
       ...timelog,

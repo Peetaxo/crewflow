@@ -32,7 +32,7 @@ export const resolveNextShiftDisplay = (timelog: Timelog, event: Event, today = 
 
   let nextDay: TimelogDay | undefined;
   for (const day of timelog.days) {
-    if (day.d < today || day.d.length !== 10 || !isMatch(day.d, 'yyyy-MM-dd')) continue;
+    if (day.d < today || !/^\d{4}-\d{2}-\d{2}$/.test(day.d) || !isMatch(day.d, 'yyyy-MM-dd')) continue;
     if (!nextDay || day.d < nextDay.d || (
       day.d === nextDay.d
       && (parseTimeToMinutes(day.f) ?? 1440) < (parseTimeToMinutes(nextDay.f) ?? 1440)

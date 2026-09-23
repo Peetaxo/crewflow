@@ -238,7 +238,28 @@ describe('event form validation', () => {
     const plan: EventFormPlan = {
       '2026-09-04': { free: false, phases: [phase('bad', 'instal', from, to, true)] },
     };
-    expect(() => validateEventForm(formEvent(), plan)).toThrow('platné časy fáze pro 2026-09-04');
+    expect(() => validateEventForm(formEvent(), plan)).toThrow('platné časy fáze Instalace (řádek 1) pro 2026-09-04');
+  });
+
+  it.each([
+    ['provoz', 'pripravy', 'Přípravy'],
+    ['pripravy', 'instal', 'Instalace'],
+    ['instal', 'provoz', 'Provoz'],
+    ['provoz', 'provoz', 'Provoz'],
+    ['provoz', 'deinstal', 'Deinstalace'],
+  ] as const)('identifies the invalid second same-day phase after %s when its type is %s', (firstType, invalidType, label) => {
+    const plan: EventFormPlan = {
+      '2026-09-04': {
+        free: false,
+        phases: [
+          phase('first', firstType, '08:00', '10:00'),
+          phase('second', invalidType, '11:00', ''),
+        ],
+      },
+    };
+
+    expect(() => validateEventForm(formEvent(), plan))
+      .toThrow(`Doplňte platné časy fáze ${label} (řádek 2) pro 2026-09-04.`);
   });
 
   it('ignores hidden, out-of-range and free-day partial phase fields', () => {

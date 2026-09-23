@@ -18,6 +18,12 @@ export interface EventFormDay {
 export type EventFormPlan = Record<string, EventFormDay>;
 
 const PHASE_TYPES: TimelogType[] = ['pripravy', 'instal', 'provoz', 'deinstal'];
+const PHASE_LABELS: Record<TimelogType, string> = {
+  pripravy: 'Přípravy',
+  instal: 'Instalace',
+  provoz: 'Provoz',
+  deinstal: 'Deinstalace',
+};
 const CALENDAR_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 const parseCalendarDate = (value: string): Date | null => {
@@ -146,13 +152,13 @@ export const validateEventForm = (event: Event, plan: EventFormPlan): void => {
     const day = plan[date];
     if (!day || day.free) return;
 
-    day.phases.forEach((draftPhase) => {
+    day.phases.forEach((draftPhase, phaseIndex) => {
       if (!draftPhase.showTimes) return;
       const from = parseTimeToMinutes(draftPhase.from);
       const to = parseTimeToMinutes(draftPhase.to);
       const hasAnyTime = Boolean(draftPhase.from || draftPhase.to);
       if (hasAnyTime && (from === null || to === null || from === to)) {
-        throw new Error(`Doplňte platné časy fáze pro ${date}.`);
+        throw new Error(`Doplňte platné časy fáze ${PHASE_LABELS[draftPhase.type]} (řádek ${phaseIndex + 1}) pro ${date}.`);
       }
     });
   });

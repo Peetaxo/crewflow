@@ -1,7 +1,11 @@
 -- Integration proof against the schema-only local database. Never use real accounts.
 -- Run with psql -X -v ON_ERROR_STOP=1; all synthetic fixtures roll back.
 --
--- Two-session race regression (run separately in a disposable local database):
+-- Two-session race regression for the schedule-only migration (run separately
+-- before the targeted approval migration in a disposable local database).
+-- After targeted approval is installed, direct CH -> COO updates are forbidden;
+-- use targeted-event-approval.sql for guarded day/receipt invariants and
+-- targeted_event_approval.concurrency.mjs for the handoff/delete lock proof.
 -- 1. As its owner, create only these synthetic fixtures and COMMIT:
 --    BEGIN;
 --    INSERT INTO auth.users(id) VALUES ('00000000-0000-4000-8000-000000000101');

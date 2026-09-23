@@ -18,6 +18,7 @@ The following verified current-code adaptations override older illustrative code
 
 - Targeted approvals are already implemented by `20260914135908_targeted_event_approval.sql`: CH hands off to the event's configured single COO, whose profile **and auth-user identity** are frozen. Keep those rules and existing legacy-report compatibility. Do not reimplement a parallel approval system.
 - A shared submission round freezes the exact person's timelog set. It is separate from targeted `approval_round_id`, which must remain unique per timelog. Reuse existing batch handoff/resolution internals behind exact-set guards. All configured approvers in a shared handoff must be compatible; otherwise explain the conflict without choosing the anchor's approver or silently dropping members.
+- Current permissions keep COO read-only for hour contents. The shared correction path is CH at `pending_ch`; do not implement the obsolete illustrative COO correction row below. CH handoff action is named `handoff`, distinct from COO `approve`.
 - Guard old RPCs/direct writes as well as new wrappers, so a shared round cannot be advanced one member at a time. Do not rely on caller-writable session settings as authorization. Review lock ordering against existing event deletion and assignment mutations; current handoff deliberately locks timelogs without locking events afterward.
 - `trg_timelog_approved` is already removed by the targeted approval migration. Task 6 therefore verifies separation from invoicing; it must not create duplicate suppression or change explicit invoicing.
 - Preserve schedule-v2 blank times, free days, and multiple slots. Reuse `assertTimelogComplete` for submitted evidence, while allowing incomplete draft sections.
@@ -25,6 +26,12 @@ The following verified current-code adaptations override older illustrative code
 - Routine local implementation, tests, main integration, and development-device refresh remain within the approved workflow. New remote Staff schema rollout still requires the concrete scope approval specified by the accepted design, after local implementation and verification.
 
 Task 0: isolated worktree and previous baseline verified; fresh main incorporated. Task 1: implemented at `74d3322` + `657b74a`, independent spec and quality reviews approved; 76 model tests pass. Required frozen round `eventIds` were added alongside `timelogIds` so missing/replaced singleton reports cannot make an active round disappear. Tasks 3–4 database foundation are underway. No new remote schema change has been made.
+
+Checkpoint update: Tasks 3–4 database foundation is implemented in `e22e15b` + `da5bcfd` and independently approved by spec and quality reviews. A positive internal `expected_item_count` preserves the original round cardinality and rejects partial history loss. The actual role/ACL/transaction/concurrency evidence is in `supabase/tests/shared_shift_workflows.verification.md`. Public read/membership JSON is authoritative; new-workflow input ID is null and the server allocates the ID. Generated database types are deferred until lifecycle RPCs settle.
+
+Task 2 privacy slice `ef2a04b` + `0683d9e` is independently reviewed (40 tests). It removes evidence from session storage, masks/retire callbacks immediately on identity/role change, and scrubs legacy storage after commit rather than mutating a repeatable render initializer. The remaining client gateway/local adapter/selection/query-scope work is in `7e0a4ef` and is under independent review. Its latest focused combined run passed 196 tests in 8 files; app TypeScript diagnostics remained byte-for-byte equal to the 116-error pre-existing baseline. Task 5 server lifecycle now proceeds in a separate forward migration; no UI replacement is claimed yet.
+
+Local test-harness note: Vite 8/Rolldown configuration bundling intermittently stalled before Vitest's RUN banner. A process sample showed an idle event loop and waiting Rolldown workers; the same original configuration runs through Vite's supported runner loader. No repository configuration was changed. Reliable command from this worktree: `node --input-type=module -e 'globalThis.__dirname = process.cwd(); process.argv = ["node", "vitest", "run", "--maxWorkers=1", "--configLoader=runner"]; await import("./node_modules/vitest/vitest.mjs");'`. The temporary global supplies the existing config's `__dirname` under the runner. Two verified stalled test processes were stopped; neither app previews nor other tasks were stopped.
 
 Fresh baseline evidence: the single-worker suite at the merged baseline passed all **117 pre-existing files / 1,314 pre-existing tests**. The run also picked up Task 1's intentionally RED tests (46 failures, 18 passes), so it is not a passing feature-suite result. Actual app typecheck (`tsc -p tsconfig.app.json --noEmit`) still reports pre-existing broad diagnostics; root reference-only `tsc --noEmit` is not valid verification. Isolated database `crewflow_shared_shift_tests` was cloned from the empty `crewflow_approval_green` schema in the local container; the current rollback-only `targeted-event-approval.sql` passed there. Never alter the source databases as part of shared-workflow tests.
 
@@ -41,7 +48,7 @@ Tento plán implementuje pouze etapu 1 schváleného návrhu v `docs/superpowers
 - CrewHead a COO schvalují nebo vracejí vždy celé aktuální kolo jedním atomickým krokem;
 - schválení hodin nevystaví fakturu, nepřipojí účtenky a nic nepošle účetní.
 
-Mimo rozsah zůstávají individuální výběr podkladů pro fakturu, nahrání/vytěžení faktury, PowerApps integrace a změna určování schvalovatelů. Existující tabulky `billing_groups*` a jejich data se nemažou ani automaticky nepřevádějí. Produkční Supabase, `main`, simulátor a fyzický iPhone se mění až po samostatném schválení příslušného kroku.
+Mimo rozsah zůstávají individuální výběr podkladů pro fakturu, nahrání/vytěžení faktury, PowerApps integrace a změna určování schvalovatelů. Existující tabulky `billing_groups*` a jejich data se nemažou ani automaticky nepřevádějí. Nové vzdálené schéma vyžaduje konkrétní schválení rozsahu po lokálním ověření. Běžná integrace do `main` a aktualizace vývojových instalací se řídí schváleným pracovním postupem a `AGENTS.md`.
 
 ## Doménový kontrakt
 
@@ -68,6 +75,7 @@ export interface ShiftWorkflowRound {
   workflowId: ShiftWorkflowId | null;
   contractorProfileId: string;
   status: ShiftWorkflowRoundStatus;
+  eventIds: string[];
   timelogIds: string[];
   note: string;
   updatedAt: string;
@@ -93,7 +101,7 @@ Pravidla:
 6. Změna propojení je povolena jen pokud všechny výkazy všech lidí na dotčených akcích jsou stále `draft`, nemají žádnou historii kola a nejsou v `invoice_timelogs`.
 7. Každé uložení, odeslání a rozhodnutí porovnává očekávané `updated_at`; konflikt jediné části ruší celou transakci.
 8. `rejected` zachová hodnoty a důvod. Nové odeslání založí nové kolo; staré kolo a jeho akce zůstanou v historii.
-9. `pending_ch|pending_coo -> pending_crew_confirmation` je společná korekce produkce. Crew ji po případném doplnění potvrdí zpět do `pending_ch` v témže kole; action log zachová oba kroky a celý schvalovací řetězec začne znovu od CrewHead.
+9. `pending_ch -> pending_crew_confirmation` je společná korekce CrewHead. Crew ji po případném doplnění potvrdí zpět do `pending_ch` v témže kole; action log zachová oba kroky a celý schvalovací řetězec začne znovu od CrewHead. COO hodnoty hodin nemění.
 10. `pending_coo -> approved` ponechá každý výkaz ve stavu `approved`. Stav `invoiced` nastaví až existující explicitní vytvoření faktury.
 
 ## Task 0: Zajistit opakovatelný výchozí stav a bezpečné pracovní prostředí
@@ -674,12 +682,11 @@ Povolené přechody:
 
 | Actor | Current | Action | Next |
 |---|---|---|---|
-| CrewHead | `pending_ch` | `approve` | `pending_coo` |
+| CrewHead | `pending_ch` | `handoff` | `pending_coo` |
 | CrewHead | `pending_ch` | `correct` | `pending_crew_confirmation` |
 | CrewHead | `pending_ch` | `return` | `rejected` |
 | Crew | `pending_crew_confirmation` | `confirm` | stejné kolo `pending_ch` |
 | COO | `pending_coo` | `approve` | `approved` |
-| COO | `pending_coo` | `correct` | `pending_crew_confirmation` |
 | COO | `pending_coo` | `return` | `rejected` |
 
 `return` a `correct` vyžadují neprázdnou poznámku a `p_affected_event_id`, který musí patřit do kola. `correct` může v `p_corrections` změnit hodnoty přesné množiny částí a uloží before snapshot pro potvrzení crew; změna dat i stavu je jedna transakce. Crew může své `pending_crew_confirmation` hodnoty bezpečně doplnit přes batch save a `confirm` vrátí stejné kolo do `pending_ch`. Při `approved` nebo `rejected` nastav `released_at` na všech round items. Všechny cílové výkazy musí mít očekávaný stav i verzi a množina musí přesně odpovídat round items.

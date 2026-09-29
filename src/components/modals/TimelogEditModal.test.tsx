@@ -2,7 +2,9 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Event, Role, Timelog } from '../../types';
-import TimelogEditModal from './TimelogEditModal';
+import TimelogEntry, { LegacyTimelogEditModal as TimelogEditModal } from './TimelogEditModal';
+
+vi.mock('../../features/shift-workflows/SharedTimelogEntry', () => ({ default: () => <div data-testid="shared-evidence-entry" /> }));
 
 let mockIsMobile = false;
 let role: Role = 'crew';
@@ -80,6 +82,10 @@ vi.mock('../../features/timelogs/services/timelogs.service', () => ({
 }));
 
 describe('TimelogEditModal responsive switch', () => {
+  it('routes the global editor through shared evidence before choosing legacy layouts', () => {
+    render(<TimelogEntry />);
+    expect(screen.getByTestId('shared-evidence-entry')).toBeInTheDocument();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     testMocks.eventOverrides = {};

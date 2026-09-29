@@ -76,6 +76,16 @@ describe('TimelogEvidenceSection', () => {
     expect(screen.getByLabelText('Poznámka Crew')).toHaveTextContent('Crew 1');
   });
 
+  it('uses the shared review reason without hiding the editable day note', () => {
+    const changed = vi.fn();
+    render(<TimelogEvidenceSection timelog={{ ...report(), status: 'pending_ch' }} event={event} contractor={contractor}
+      role="crewhead" editorSessionKey="shared" showReviewNoteEditor={false} onChange={changed} />);
+    expect(screen.queryByLabelText('Poznámka pro Crew')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Poznámka k záznamu'), { target: { value: 'Opravená poznámka dne' } });
+    expect(changed.mock.calls.at(-1)?.[0].days[0].note).toBe('Opravená poznámka dne');
+    expect(screen.getByLabelText('Poznámka Crew')).toHaveTextContent('Crew 1');
+  });
+
   it.each(['coo', 'crew'] as const)('keeps read-only %s values uneditable', (role) => {
     const changed = vi.fn();
     render(<Controlled role={role} readOnly onChange={changed} />);

@@ -15,8 +15,9 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import MobileTimelogEditModal from './MobileTimelogEditModal';
+import SharedTimelogEntry from '../../features/shift-workflows/SharedTimelogEntry';
 
-const TimelogEditModal = () => {
+export const LegacyTimelogEditModal = () => {
   const {
     editingTimelog,
     setEditingTimelog,
@@ -422,4 +423,5 @@ const TimelogEditModal = () => {
   );
 };
 
+const TimelogEditModal = () => <SharedTimelogEntry legacy={<LegacyTimelogEditModal />} />;
 export default TimelogEditModal;

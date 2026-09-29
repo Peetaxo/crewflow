@@ -10,7 +10,7 @@
 
 ---
 
-## Implementation checkpoint — 2026-09-23
+## Implementation checkpoint — 2026-09-29
 
 User selected variant 1 (subagent-driven implementation). Worktree now includes current `main` (`dd18900`) through merge `25a3353`. Preserve the unrelated dirty main-checkout files; they were not merged or edited.
 
@@ -42,6 +42,14 @@ Local test-harness note: Vite 8/Rolldown configuration bundling intermittently s
 Fresh baseline evidence: the single-worker suite at the merged baseline passed all **117 pre-existing files / 1,314 pre-existing tests**. The run also picked up Task 1's intentionally RED tests (46 failures, 18 passes), so it is not a passing feature-suite result. Actual app typecheck (`tsc -p tsconfig.app.json --noEmit`) still reports pre-existing broad diagnostics; root reference-only `tsc --noEmit` is not valid verification. Isolated database `crewflow_shared_shift_tests` was cloned from the empty `crewflow_approval_green` schema in the local container; the current rollback-only `targeted-event-approval.sql` passed there. Never alter the source databases as part of shared-workflow tests.
 
 Implementation order adjustment: after Task 1 reviews, establish the schema/read/membership server contract (Tasks 3–4) before the client gateway in Task 2. This avoids designing the client against obsolete approval RPC assumptions. Public RPCs remain invoker wrappers; where an unforgeable private write capability is needed, follow the existing targeted-approval architecture (narrow private definer with authoritative actor/role/exact-set checks and revoked default ACL), not caller-writable session settings or broad table write grants.
+
+### September 29 continuation
+
+Hydration `9088688` + `a64dc7c` is independently spec/quality approved, including rejecting ambiguous mixed correction-snapshot formats. Controlled rich evidence section `9d2478f` + `caf9f6f` is approved; the legacy mobile wrapper preserves authoritative event identity during autosave. Client batch protocol `9ff0aa0` + `90325e1` + `fc0857f` + `76c699a` is approved: exact detached payloads and receipts, microsecond-aware versions, accepted timestamp/meal encodings, numeric storage precision, immutable ambiguous retry, no remote-to-local fallback. Loader/session `aa36403` + `cee21b6` is approved: actual assignments, identity-scoped reads and retirement, queued writes preserving newer edits, known committed writes separated from refresh errors. Atomic local mirror `8bba5b1` is independently spec/quality approved (148 tests in five files): same lifecycle, exact sets, paired actor identity, history and request ledger, no automatic invoice mutation.
+
+Task 8 global shared editor integration is implemented locally and under review. It creates a fresh session for each StrictMode activation; genuine legacy pending reports use the original editor only after authoritative classification. Draft/confirmation cohorts, role-specific whole-round decisions, dirty-close warning and immutable retry are integrated. Review regressions cover daily notes versus central CH reason, returning to later drafts after confirmation (including retry), static errors for unexpected loader failures, distinct current-round/draft totals, and marking an incomplete shift before submission. Mobile 390×844 and desktop 1280×900 layout inspected using an isolated local-only fixture; no Staff data were written. Task 9 shared approval cards/list routing/service guards are concurrently being completed by the sole implementation subagent.
+
+Fresh integrated build passed. First integrated full suite: 1,647 passed / two failed legacy-modal test harnesses; named legacy import correction then passed 24 targeted tests. Latest parent editor/session regression run: 37/37 in four files; focused lint and diff check clean. Full suite after Task 9, independent quality review, concrete remote Staff rollout approval, main integration and simulator/iPhone refresh are still outstanding. No complete-feature or deployed-app claim is justified yet. Actual app typecheck remains at 115 existing diagnostics (one previous diagnostic disappeared through the authoritative event-identity correction).
 
 ## Rozsah a pevné hranice
 

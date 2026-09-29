@@ -20,6 +20,8 @@ export interface TimelogEvidenceSectionProps {
   role: Role;
   readOnly?: boolean;
   busy?: boolean;
+  /** A shared round has one central reason/affected-section control. */
+  showReviewNoteEditor?: boolean;
   editorSessionKey: string;
   onChange: (next: Timelog) => void;
 }
@@ -339,7 +341,7 @@ const TimeWheelPicker: React.FC<TimeWheelPickerProps> = ({
   );
 };
 
-const EvidenceSectionFields = ({ timelog: editingTimelog, event, contractor, role, readOnly = false, busy = false, onChange }: TimelogEvidenceSectionProps) => {
+const EvidenceSectionFields = ({ timelog: editingTimelog, event, contractor, role, readOnly = false, busy = false, showReviewNoteEditor = true, onChange }: TimelogEvidenceSectionProps) => {
   const initialDate = editingTimelog.days[0]?.d ?? getEvidenceCalendarDates(event, [])[0] ?? event.startDate;
   const [selection, setSelection] = React.useState(() => ({
     date: initialDate,
@@ -861,7 +863,7 @@ const EvidenceSectionFields = ({ timelog: editingTimelog, event, contractor, rol
               </div>
             )}
 
-            <label className="mt-3 block space-y-1 text-[10px] uppercase tracking-[0.2em] text-[color:var(--nodu-text-soft)]">
+            {(!isCrewHeadCorrection || showReviewNoteEditor) && <label className="mt-3 block space-y-1 text-[10px] uppercase tracking-[0.2em] text-[color:var(--nodu-text-soft)]">
               <span>{isCrewHeadCorrection ? 'Poznámka pro Crew' : 'Poznámka k výkazu'}</span>
               <Textarea
                 aria-label={isCrewHeadCorrection ? 'Poznámka pro Crew' : 'Poznámka k výkazu'}
@@ -878,7 +880,7 @@ const EvidenceSectionFields = ({ timelog: editingTimelog, event, contractor, rol
                 className="min-h-[76px] resize-none"
                 placeholder={isCrewHeadCorrection ? 'Doplňte komentář k úpravě pro člena Crew...' : 'Volitelná poznámka...'}
               />
-            </label>
+            </label>}
 
               </div>
             </>

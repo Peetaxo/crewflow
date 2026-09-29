@@ -67,7 +67,9 @@ export function createShiftEvidenceSession(options: {
     });
     const round = result.round;
     const activeRound = round ? ['approved', 'rejected'].includes(round.status) ? null : round : state.context.activeRound;
-    publish({ context: { ...state.context, timelogs, activeRound }, error: null, canRetry: false });
+    publish({ context: { ...state.context, timelogs, activeRound },
+      cohort: activeRound?.status === 'pending_crew_confirmation' ? state.cohort : 'drafts',
+      error: null, canRetry: false });
   };
   const perform = (attempt: Attempt): Promise<ShiftBatchResult> => {
     assertCurrent();

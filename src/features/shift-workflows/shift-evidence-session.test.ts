@@ -28,6 +28,28 @@ const setup = (ctx = context(), role: 'crew' | 'crewhead' | 'coo' = 'crew') => {
 };
 
 describe('shared evidence editor session', () => {
+  it.each([false, true])('unlocks later drafts after confirming a round (retry=%s)', async (retry) => {
+    const ctx = context(); ctx.timelogs[0].status = 'pending_crew_confirmation';
+    ctx.activeRound = { id: id(40), workflowId: id(10), contractorProfileId: id(3), status: 'pending_crew_confirmation',
+      eventIds: [id(31)], timelogIds: [id(21)], note: '', updatedAt: time };
+    const { session, write } = setup(ctx);
+    const confirmed: ShiftBatchResult = {
+      requestId: id(50), workflowId: id(10), round: { ...ctx.activeRound, status: 'pending_ch', updatedAt: next },
+      timelogs: [{ id: id(21), event_id: id(31), contractor_id: id(3), status: 'pending_ch', updated_at: next,
+        km: 0, note: '', days: [{ id: id(121), date: '2026-09-29', time_from: '08:00', time_to: '10:00', day_type: 'pripravy', note: '', meal: null, meals: [] }],
+        review_note: null, crew_confirmation_snapshot: null, approval: null, submitted_at: time, approved_at: null }],
+    };
+    if (retry) write.mockRejectedValueOnce(new ShiftWorkflowError('ambiguous', 'retry'));
+    write.mockResolvedValueOnce(confirmed);
+    if (retry) { await expect(session.transition('confirm')).rejects.toThrow('retry'); await session.retry(); }
+    else await session.transition('confirm');
+    expect(session.getSnapshot().cohort).toBe('drafts');
+    const later = session.getSnapshot().context.timelogs[1];
+    expect(session.isEditable(later)).toBe(true);
+    session.edit({ ...later, note: 'Pozdější směna' });
+    await session.save();
+    expect(write.mock.calls.at(-1)?.[0]).toMatchObject({ kind: 'save', roundId: null, timelogs: [expect.objectContaining({ id: id(22), note: 'Pozdější směna' })] });
+  });
   it('unlocks editable data when an ambiguous retry receives a definitive validation error', async () => {
     const { session, write } = setup();
     write.mockRejectedValueOnce(new ShiftWorkflowError('ambiguous', 'unknown')).mockRejectedValueOnce(new ShiftWorkflowError('invalid', 'fix inputs'));

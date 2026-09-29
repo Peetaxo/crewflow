@@ -117,7 +117,7 @@ vi.mock('../../features/events/services/events.service', () => ({
   getEventDetailData: (...args: unknown[]) => getEventDetailData(...args),
 }));
 
-import TimelogEditModal from './TimelogEditModal';
+import { LegacyTimelogEditModal as TimelogEditModal } from './TimelogEditModal';
 import ReceiptEditModal from './ReceiptEditModal';
 import AssignCrewModal from './AssignCrewModal';
 

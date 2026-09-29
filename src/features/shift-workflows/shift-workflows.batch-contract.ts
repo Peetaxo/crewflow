@@ -100,9 +100,11 @@ export interface ShiftBatchResult {
 }
 
 function isLater(next: string, previous: string): boolean {
-  const fraction = /\.(\d+)(?=Z$|[+-]\d{2}:\d{2}$)/;
-  const parts = [next, previous].map((value) => ({
-    seconds: BigInt(Date.parse(value.replace(fraction, '')) / 1000), fraction: value.match(fraction)?.[1] ?? '',
+  const fraction = /\.(\d+)(?=Z$|[+-]\d{2}:?\d{2}$)/;
+  const seconds = [next, previous].map((value) => Date.parse(value.replace(fraction, '')) / 1000);
+  if (seconds.some((value) => !Number.isSafeInteger(value))) return false;
+  const parts = [next, previous].map((value, index) => ({
+    seconds: BigInt(seconds[index]), fraction: value.match(fraction)?.[1] ?? '',
   }));
   const precision = Math.max(...parts.map((part) => part.fraction.length));
   const values = parts.map((part) => part.seconds * (10n ** BigInt(precision)) + BigInt(part.fraction.padEnd(precision, '0') || '0'));
@@ -113,9 +115,10 @@ function matchesWrittenValues(saved: ShiftReceiptTimelog, input: { km: number; n
   if (saved.km !== input.km || saved.note !== input.note || saved.days.length !== input.days.length) return false;
   return input.days.every((d) => {
     const actual = saved.days.find((v) => v.id === d.id);
+    const meals = normalizeMealSelection(d);
     return actual && actual.date === d.date && actual.time_from === d.time_from && actual.time_to === d.time_to
-      && actual.day_type === d.day_type && actual.note === d.note && actual.meal === d.meal
-      && JSON.stringify(actual.meals) === JSON.stringify(d.meals);
+      && actual.day_type === d.day_type && actual.note === d.note && actual.meal === (meals[0] ?? null)
+      && JSON.stringify(actual.meals) === JSON.stringify(meals);
   });
 }
 

@@ -21,6 +21,16 @@ const transition = (action: ShiftTransitionCommand['action'] = 'handoff'): Shift
 });
 
 describe('shared evidence wire contract', () => {
+  it('supports every accepted timestamp offset and either meal-selection order', () => {
+    const cmd = command(); cmd.timelogs[0].expected_updated_at = '2026-09-23T11:00:00.123456+0000';
+    const raw = result(); raw.timelogs[0].updated_at = '2026-09-23T11:00:00.123457+0000';
+    expect(() => assertShiftBatchCommand(cmd)).not.toThrow();
+    expect(() => parseShiftBatchResult(raw, cmd)).not.toThrow();
+    cmd.timelogs[0].days[0].meal = 'vecere'; cmd.timelogs[0].days[0].meals = ['vecere', 'obed'];
+    raw.timelogs[0].days = structuredClone(cmd.timelogs[0].days);
+    expect(() => assertShiftBatchCommand(cmd)).not.toThrow();
+    expect(() => parseShiftBatchResult(raw, cmd)).not.toThrow();
+  });
   it('rejects partial or altered saved evidence even when the receipt headers match', () => {
     const omitted = result(); omitted.timelogs[0].days = [];
     const km = result(); km.timelogs[0].km = 999;

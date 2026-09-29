@@ -2,6 +2,15 @@
 
 Status: implementation in progress. This is not deployment or completion evidence.
 
+## Integrated local verification (2026-09-29)
+
+- Shared editor `ade3ab1` independently passed spec and quality review (68 tests in six files), including StrictMode lifecycle, identity retirement, exact retries, separate current-round/later-draft totals and central correction reason.
+- `SharedTimelogEditor.lifecycle.test.tsx` additionally exercises the real section, editor session, batch gateway and isolated local store end-to-end: open from the second assigned shift, exclude the unassigned third, crew submit, CH correction with reason, crew confirmation in the same round, CH handoff, targeted COO read-only approval. Both reports become approved, the unassigned report stays draft, and no invoice is created.
+- Fresh five-suite SQL regression, five lifecycle race scenarios and membership race passed using the fixed local container/database. Competing writes were observed waiting and then rejected without partial rows; exact fixture cleanup preserved all original snapshots.
+- `node supabase/tests/shared_shift_migration.regression.mjs` rehearses **both final migrations** with pre-existing synthetic business records, within a single outer transaction that always rolls back. It temporarily removes only the verified-empty feature schema without CASCADE, restores the pre-feature function layout, inserts mixed historical report statuses (`draft`, `pending_ch`, `pending_coo`, `approved`, `invoiced`, `paid`), two people's assignments, daily hours/meals/notes, a legacy cross-job billing group, single- and multi-event invoices, and approved/attached receipts. Full JSON snapshots of 14 existing business tables are equal before/after both migrations; new groups/rounds remain empty. No baseline business data or schema changes persist.
+- The old illustrative plan expected `handle_timelog_approved()` to be absent. Actual targeted-approval baseline retains that unused function and removes its trigger. The rehearsal checks there is **no attached trigger** invoking it (or named `trg_timelog_approved`); it does not remove unrelated dormant baseline code. Shared approval behavior is separately covered by SQL and the integrated UI test.
+- No new Staff schema change, main integration, simulator refresh or physical-device installation has occurred. Final Task 9 integration review/full-suite and remote scope approval remain required.
+
 ## Baseline (2026-09-23)
 
 - App worktree: `codex/shared-crew-workflow-plan`, current main incorporated at `25a3353` (main `dd18900`).

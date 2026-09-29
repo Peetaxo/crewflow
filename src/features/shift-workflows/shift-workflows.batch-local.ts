@@ -271,7 +271,7 @@ export function createLocalShiftBatchExecutor(deps: Dependencies) {
     });
     const history: LocalShiftAction | undefined = command.kind === 'save' ? undefined : {
       id: createStableDraftUuid(), roundId: nextRound!.id, actorId: scope.userId!,
-      action: command.kind === 'submit' ? selected.some((report) => report.status === 'rejected') ? 'resubmitted' : 'submitted' : command.action,
+      action: command.kind === 'transition' ? command.action : selected.some((report) => report.status === 'rejected') ? 'resubmitted' : 'submitted',
       note: command.kind === 'transition' ? command.note.trim() : '',
       eventId: command.kind === 'transition' ? command.affectedEventId : null,
       createdAt: now, fromStatus: currentRound?.status ?? null, toStatus: nextRound!.status, beforeSnapshot,

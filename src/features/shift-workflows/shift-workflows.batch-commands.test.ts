@@ -21,6 +21,10 @@ const frozen = (status: NonNullable<ShiftWorkflowContext['activeRound']>['status
 };
 
 describe('atomic shared evidence commands', () => {
+  it('explains unsupported kilometre precision before creating a write command', () => {
+    const value = context(); value.timelogs[0].km = 12.345;
+    expect(() => prepareShiftDraftSave(value, id(50))).toThrow(/desetinn/);
+  });
   it('validates identities before sorting and disallows empty non-draft sections', () => {
     const rows = reports(); rows[1].supabaseId = undefined;
     expect(() => serializeShiftReports(rows)).toThrow(/jednoznačné/);

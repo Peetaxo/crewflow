@@ -31,7 +31,8 @@ const receiptDay = dayFields.extend({
   return { ...d, meals, meal: meals[0] ?? null };
 });
 const report = z.object({ id: uuid, event_id: uuid, expected_updated_at: timestamp, expected_status: status,
-  km: z.number().finite().nonnegative(), note: z.string(), days: z.array(day).max(500) }).strict();
+  km: z.number().finite().nonnegative().max(99999999.99).refine((v) => Number(v.toFixed(2)) === v),
+  note: z.string(), days: z.array(day).max(500) }).strict();
 const targets = z.array(z.object({ id: uuid, expected_updated_at: timestamp, expected_status: status }).strict()).min(1).max(200);
 const common = { requestId: uuid, workflowId: uuid.nullable(), contractorProfileId: uuid };
 const commandSchema = z.union([

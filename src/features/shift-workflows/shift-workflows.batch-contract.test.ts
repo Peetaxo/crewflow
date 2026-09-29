@@ -21,6 +21,13 @@ const transition = (action: ShiftTransitionCommand['action'] = 'handoff'): Shift
 });
 
 describe('shared evidence wire contract', () => {
+  it('rejects kilometre precision and range that numeric(10,2) cannot store exactly', () => {
+    for (const km of [12.345, 100000000]) {
+      const cmd = command(); cmd.timelogs[0].km = km;
+      expect(() => assertShiftBatchCommand(cmd)).toThrow();
+    }
+    const cmd = command(); cmd.timelogs[0].km = 99999999.99; expect(() => assertShiftBatchCommand(cmd)).not.toThrow();
+  });
   it('supports every accepted timestamp offset and either meal-selection order', () => {
     const cmd = command(); cmd.timelogs[0].expected_updated_at = '2026-09-23T11:00:00.123456+0000';
     const raw = result(); raw.timelogs[0].updated_at = '2026-09-23T11:00:00.123457+0000';

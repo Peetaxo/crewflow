@@ -73,6 +73,7 @@ export function serializeShiftReports(reports: Timelog[], complete = false): Shi
   return [...reports].sort((a, b) => a.supabaseId!.localeCompare(b.supabaseId!)).map((t) => {
     if (!uuid(t.supabaseId) || !uuid(t.eventSupabaseId) || !shiftWorkflowTimestamp.safeParse(t.updatedAt).success
       || !Number.isFinite(t.km) || t.km < 0 || typeof t.note !== 'string') invalid();
+    if (t.km > 99999999.99 || Number(t.km.toFixed(2)) !== t.km) invalid('Cestovné zadejte nejvýše na dvě desetinná místa a do 99 999 999,99 km.');
     if (!t.days.length && t.status !== 'draft') invalid('Doplňte alespoň jeden záznam hodin.');
     if (complete) {
       try { assertTimelogComplete(t); } catch (error) { invalid((error as Error).message); }

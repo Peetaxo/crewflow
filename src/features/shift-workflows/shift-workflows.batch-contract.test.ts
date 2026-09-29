@@ -21,6 +21,28 @@ const transition = (action: ShiftTransitionCommand['action'] = 'handoff'): Shift
 });
 
 describe('shared evidence wire contract', () => {
+  it('rejects partial or altered saved evidence even when the receipt headers match', () => {
+    const omitted = result(); omitted.timelogs[0].days = [];
+    const km = result(); km.timelogs[0].km = 999;
+    const note = result(); note.timelogs[0].note = 'unexpected';
+    const changedDay = result(); changedDay.timelogs[0].days[0].time_to = '05:00';
+    for (const raw of [omitted, km, note, changedDay]) expect(() => parseShiftBatchResult(raw, command())).toThrow();
+  });
+  it('compares microseconds and timestamp instants rather than millisecond truncation or spelling', () => {
+    const cmd = command(); cmd.timelogs[0].expected_updated_at = '2026-09-23T11:00:00.123456Z';
+    for (const version of ['2026-09-23T11:00:00.123455Z', '2026-09-23T11:00:00.123456+00:00']) {
+      const raw = result(); raw.timelogs[0].updated_at = version;
+      expect(() => parseShiftBatchResult(raw, cmd)).toThrow();
+    }
+    const raw = result(); raw.timelogs[0].updated_at = '2026-09-23T13:00:00.123457+02:00';
+    expect(() => parseShiftBatchResult(raw, cmd)).not.toThrow();
+  });
+  it('accepts SQL nullable day notes in an unchanged return receipt', () => {
+    const cmd = transition('return'); cmd.note = 'Opravte'; cmd.affectedEventId = id(31);
+    const raw = result(); raw.round.status = 'rejected'; raw.round.note = cmd.note;
+    raw.timelogs.forEach((t) => { t.status = 'rejected'; t.review_note = cmd.note as never; t.days[0].note = null as never; });
+    expect(parseShiftBatchResult(raw, cmd).timelogs[0].days[0].note).toBe('');
+  });
   it('accepts detached complete receipt without inventing missing approval history', () => {
     const raw = result(); const parsed = parseShiftBatchResult(raw, command());
     expect(parsed.requestId).toBe(id(50)); expect(parsed.round?.timelogIds).toEqual([id(21), id(22)]);

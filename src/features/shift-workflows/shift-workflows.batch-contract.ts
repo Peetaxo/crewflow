@@ -1,7 +1,7 @@
 import { format, isValid, parseISO } from 'date-fns';
 import { z } from 'zod';
 import { mapTimelogConfirmationSnapshot } from '../timelogs/services/timelog-confirmation-snapshot';
-import { parseTimeToMinutes } from '../../utils';
+import { normalizeMealSelection, parseTimeToMinutes } from '../../utils';
 import { assertTimelogComplete } from '../timelogs/services/timelog-validation';
 import type { ShiftWorkflowRound } from './shift-workflows.model';
 import type { ShiftBatchCommand } from './shift-workflows.batch-commands';
@@ -10,7 +10,7 @@ import { canonicalUuid as uuid, shiftWorkflowTimestamp as timestamp, ShiftWorkfl
 const unique = (values: readonly string[]) => new Set(values).size === values.length;
 const status = z.enum(['draft', 'pending_ch', 'pending_crew_confirmation', 'pending_coo', 'approved', 'rejected', 'invoiced', 'paid']);
 const meal = z.enum(['obed', 'vecere']);
-const day = z.object({
+const dayFields = z.object({
   id: uuid, date: z.string().refine((value) => {
     const parsed = parseISO(value);
     return /^\d{4}-\d{2}-\d{2}$/.test(value) && isValid(parsed) && format(parsed, 'yyyy-MM-dd') === value;
@@ -19,7 +19,17 @@ const day = z.object({
   time_to: z.string().refine((v) => v === '' || parseTimeToMinutes(v) !== null),
   day_type: z.enum(['pripravy', 'instal', 'provoz', 'deinstal']), note: z.string(),
   meal: meal.nullable(), meals: z.array(meal).max(2).refine(unique),
-}).strict().refine((d) => d.meal === (d.meals[0] ?? null));
+}).strict();
+const day = dayFields.refine((d) => d.meal === (d.meals[0] ?? null));
+const receiptDay = dayFields.extend({
+  note: z.string().nullable().transform((v) => v ?? ''),
+  time_from: dayFields.shape.time_from.nullable().transform((v) => v ?? ''),
+  time_to: dayFields.shape.time_to.nullable().transform((v) => v ?? ''),
+  meals: z.array(meal),
+}).transform((d) => {
+  const meals = normalizeMealSelection(d);
+  return { ...d, meals, meal: meals[0] ?? null };
+});
 const report = z.object({ id: uuid, event_id: uuid, expected_updated_at: timestamp, expected_status: status,
   km: z.number().finite().nonnegative(), note: z.string(), days: z.array(day).max(500) }).strict();
 const targets = z.array(z.object({ id: uuid, expected_updated_at: timestamp, expected_status: status }).strict()).min(1).max(200);
@@ -74,7 +84,7 @@ const round = z.object({ id: uuid, workflow_id: uuid.nullable(), contractor_id: 
 const receiptReport = z.object({ id: uuid, event_id: uuid, contractor_id: uuid, status, updated_at: timestamp,
   km: z.number().finite().nonnegative(), note: z.string(), review_note: z.string().nullable(),
   crew_confirmation_snapshot: z.unknown().refine((v) => v !== undefined), submitted_at: timestamp.nullable(), approved_at: timestamp.nullable(),
-  days: z.array(day).max(500), approval: z.object({ id: uuid, approval_round_id: uuid, status: z.enum(['pending', 'approved', 'returned']),
+  days: z.array(receiptDay).max(500), approval: z.object({ id: uuid, approval_round_id: uuid, status: z.enum(['pending', 'approved', 'returned']),
     updated_at: timestamp, approver_profile_id: uuid, approver_user_id: uuid }).strict().nullable(),
 }).strict();
 const receipt = z.object({ request_id: uuid, workflow_id: uuid.nullable(), round: round.nullable(),
@@ -87,6 +97,26 @@ export type ShiftReceiptTimelog = Required<z.infer<typeof receiptReport>> & {
 };
 export interface ShiftBatchResult {
   requestId: string; workflowId: string | null; round: ShiftWorkflowRound | null; timelogs: ShiftReceiptTimelog[];
+}
+
+function isLater(next: string, previous: string): boolean {
+  const fraction = /\.(\d+)(?=Z$|[+-]\d{2}:\d{2}$)/;
+  const parts = [next, previous].map((value) => ({
+    seconds: BigInt(Date.parse(value.replace(fraction, '')) / 1000), fraction: value.match(fraction)?.[1] ?? '',
+  }));
+  const precision = Math.max(...parts.map((part) => part.fraction.length));
+  const values = parts.map((part) => part.seconds * (10n ** BigInt(precision)) + BigInt(part.fraction.padEnd(precision, '0') || '0'));
+  return values[0] > values[1];
+}
+
+function matchesWrittenValues(saved: ShiftReceiptTimelog, input: { km: number; note: string; days: z.infer<typeof day>[] }): boolean {
+  if (saved.km !== input.km || saved.note !== input.note || saved.days.length !== input.days.length) return false;
+  return input.days.every((d) => {
+    const actual = saved.days.find((v) => v.id === d.id);
+    return actual && actual.date === d.date && actual.time_from === d.time_from && actual.time_to === d.time_to
+      && actual.day_type === d.day_type && actual.note === d.note && actual.meal === d.meal
+      && JSON.stringify(actual.meals) === JSON.stringify(d.meals);
+  });
 }
 
 export function parseShiftBatchResult(value: unknown, command: ShiftBatchCommand): ShiftBatchResult {
@@ -107,7 +137,10 @@ export function parseShiftBatchResult(value: unknown, command: ShiftBatchCommand
     const input = inputs.find((v) => v.id === t.id);
     if (!input || t.contractor_id !== command.contractorProfileId || t.status !== (expectedStatus ?? input.expected_status)
       || ('event_id' in input && t.event_id !== input.event_id)
-      || t.updated_at === input.expected_updated_at || Date.parse(t.updated_at) < Date.parse(input.expected_updated_at)) throw shiftWorkflowAmbiguous();
+      || !isLater(t.updated_at, input.expected_updated_at)) throw shiftWorkflowAmbiguous();
+    const written = command.kind === 'transition' ? command.corrections?.find((v) => v.id === t.id)
+      : command.timelogs.find((v) => v.id === t.id);
+    if (written && !matchesWrittenValues(t, written)) throw shiftWorkflowAmbiguous();
     try { mapTimelogConfirmationSnapshot(t.crew_confirmation_snapshot, t); } catch { throw shiftWorkflowAmbiguous(); }
     if (command.kind === 'transition' && command.action === 'correct' && t.crew_confirmation_snapshot === null) throw shiftWorkflowAmbiguous();
   }
@@ -118,7 +151,7 @@ export function parseShiftBatchResult(value: unknown, command: ShiftBatchCommand
     if (!r || r.id !== command.roundId || r.workflow_id !== command.workflowId || r.contractor_id !== command.contractorProfileId
       || r.status !== (expectedStatus ?? 'pending_crew_confirmation') || r.timelog_ids.length !== inputIds.size || r.event_ids.length !== inputIds.size
       || r.timelog_ids.some((id, i) => !data.timelogs.some((t) => t.id === id && t.event_id === r.event_ids[i]))
-      || (command.kind === 'transition' && (r.updated_at === command.expectedRoundUpdatedAt || Date.parse(r.updated_at) < Date.parse(command.expectedRoundUpdatedAt)))) throw shiftWorkflowAmbiguous();
+      || (command.kind === 'transition' && !isLater(r.updated_at, command.expectedRoundUpdatedAt))) throw shiftWorkflowAmbiguous();
   }
   const approvals = data.timelogs.flatMap((t) => t.approval ? [t.approval] : []);
   if (!unique(approvals.map((a) => a.id)) || !unique(approvals.map((a) => a.approval_round_id))) throw shiftWorkflowAmbiguous();

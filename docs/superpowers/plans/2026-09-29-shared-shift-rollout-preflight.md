@@ -1,6 +1,6 @@
 # Shared shifts — rollout preflight
 
-Status: read-only preparation, **not approval to deploy**. Local Task 9 review fixes and final integration verification are still in progress. Ask for the specific remote scope only after those pass.
+Status: local implementation and verification complete at `277033b`, **not approval to deploy**. Independent spec and quality reviews approve the final checkpoint; the full suite passes 143 files / 1,703 tests, web build and focused lint pass, and the actual app typecheck retains 112 unchanged baseline diagnostics. The next step requires explicit user approval for the remote scope below. No new Staff schema has been applied and no main/device update has occurred.
 
 ## Staff state observed 2026-09-29
 
@@ -32,7 +32,7 @@ References: [RLS policy lint](https://supabase.com/docs/guides/database/database
 
 ## Required gate and follow-up
 
-- Finish Task 9 spec/quality fixes, full suite, build and baseline-delta static checks.
+- Local Task 9 spec/quality fixes, full suite, build and baseline-delta static checks are verified at `277033b`.
 - Confirm final migration contents and refresh read-only Staff preflight immediately before deployment.
 - Obtain the user's explicit approval for the new shared-hour approval mechanism and schema above. The earlier approval for billing groups does not cover this scope.
 - After approval, deploy only these reviewed migrations, verify remote objects/ACL/RLS/function bodies and no unexpected data conversion; compare advisors to this current baseline.

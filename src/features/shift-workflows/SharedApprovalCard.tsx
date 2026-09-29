@@ -23,7 +23,7 @@ export function SharedApprovalCard({ group, contractors, events, role, onOpen, h
     || (role === 'coo' && group.round.status === 'pending_coo')
     || (role === 'crew' && group.round.status === 'pending_crew_confirmation');
   const lastReturn = [...history].reverse().find((action) => action.action.includes('return'));
-  const reason = lastReturn?.note || group.round.note;
+  const reason = lastReturn?.note;
   return <section aria-label={`Společný výkaz ${contractor?.name ?? ''}`} className="mb-3 rounded-[24px] border border-[var(--nodu-border)] bg-white p-5">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <h3 className="font-semibold">{contractor?.name ?? 'Člen crew'}</h3>

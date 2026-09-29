@@ -33,18 +33,24 @@ const Harness = ({
   onSuccess,
   reviewSelection,
   profileId = 'profile-coo',
+  identityKey,
+  onActions,
 }: {
   timelogs: Timelog[];
   onSuccess?: () => void;
   reviewSelection?: (ids: number[]) => boolean;
   profileId?: string;
+  identityKey?: string;
+  onActions?: (actions: ReturnType<typeof useTimelogApprovalActions>) => void;
 }) => {
   const actions = useTimelogApprovalActions({
     currentProfileId: profileId,
     timelogs,
     onSuccess,
     reviewSelection,
+    identityKey,
   });
+  React.useLayoutEffect(() => { onActions?.(actions); }, [actions, onActions]);
 
   return (
     <>
@@ -83,6 +89,29 @@ describe('useTimelogApprovalActions', () => {
     view.rerender(<Harness timelogs={[pendingCooTimelog(4)]} profileId="A" />);
     expect(captured?.assertCurrent).toBeTypeOf('function');
     expect(() => captured?.assertCurrent?.()).toThrow(/Přístup/);
+  });
+
+  it.each([
+    ['A to B', [{ profileId: 'B', identityKey: 'B' }]],
+    ['A to B to A', [{ profileId: 'B', identityKey: 'B' }, { profileId: 'A', identityKey: 'A' }]],
+    ['same-profile activation change', [{ profileId: 'A', identityKey: 'A-renewed' }]],
+  ])('retires saved execute before any review, dialog or write after %s', async (_name, identities) => {
+    let retiredExecute: ReturnType<typeof useTimelogApprovalActions>['execute'] | undefined;
+    const reviewSelection = vi.fn().mockReturnValue(false);
+    const capture = (actions: ReturnType<typeof useTimelogApprovalActions>) => { retiredExecute ??= actions.execute; };
+    const view = render(<Harness timelogs={[pendingCooTimelog(4)]} profileId="A" identityKey="A"
+      reviewSelection={reviewSelection} onActions={capture} />);
+    for (const identity of identities) {
+      view.rerender(<Harness timelogs={[{ ...pendingCooTimelog(4), contractorProfileId: 'another-crew' }]}
+        {...identity} reviewSelection={reviewSelection} onActions={capture} />);
+    }
+
+    await act(async () => { retiredExecute?.([4], 'rej'); retiredExecute?.([4], 'coo'); });
+
+    expect(reviewSelection).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(updateTimelogStatuses).not.toHaveBeenCalled();
+    expect(screen.getByTestId('pending')).toHaveTextContent('false');
   });
 
   it('requires a trimmed note before returning one or more pending COO reports', async () => {

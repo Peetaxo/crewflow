@@ -79,7 +79,7 @@ export const useTimelogApprovalActions = ({
     note?: string,
     keepDialogOpenOnError = false,
   ) => {
-    if (pendingRef.current || ids.length === 0) return;
+    if (!activation.active || !mountedRef.current || pendingRef.current || ids.length === 0) return;
 
     pendingRef.current = true;
     if (mountedRef.current) {
@@ -117,7 +117,7 @@ export const useTimelogApprovalActions = ({
   }, [activation, currentProfileId, finishSuccessfully]);
 
   const execute = useCallback((ids: number[], action: TimelogAction) => {
-    if (pendingRef.current || ids.length === 0) return;
+    if (!activation.active || !mountedRef.current || pendingRef.current || ids.length === 0) return;
     try {
       if (reviewSelection?.(ids)) return;
     } catch (error) {
@@ -137,17 +137,17 @@ export const useTimelogApprovalActions = ({
     }
 
     void runMutation(ids, action);
-  }, [reviewSelection, runMutation, timelogsById]);
+  }, [activation, reviewSelection, runMutation, timelogsById]);
 
   const closeDialog = useCallback(() => {
-    if (pendingRef.current) return;
+    if (!activation.active || !mountedRef.current || pendingRef.current) return;
     setReturnRequest(null);
     setReturnNote('');
     setDialogError('');
-  }, []);
+  }, [activation]);
 
   const submitReturn = useCallback(() => {
-    if (!returnRequest || pendingRef.current) return;
+    if (!activation.active || !mountedRef.current || !returnRequest || pendingRef.current) return;
 
     const note = returnNote.trim();
     if (!note) {
@@ -156,7 +156,7 @@ export const useTimelogApprovalActions = ({
     }
 
     void runMutation(returnRequest.ids, 'rej', note, true);
-  }, [returnNote, returnRequest, runMutation]);
+  }, [activation, returnNote, returnRequest, runMutation]);
 
   const isBulkReturn = (returnRequest?.ids.length ?? 0) > 1;
   const dialogTitle = isBulkReturn ? 'Vrátit výkazy k opravě' : 'Vrátit výkaz k opravě';

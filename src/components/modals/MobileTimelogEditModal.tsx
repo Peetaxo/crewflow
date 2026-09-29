@@ -137,6 +137,9 @@ const MobileTimelogSession = ({ initialTimelog, event, contractor, role, setEdit
           ...latest,
           id: savedTimelog.id,
           supabaseId: savedTimelog.supabaseId ?? latest.supabaseId,
+          eid: savedTimelog.eid,
+          eventSupabaseId: savedTimelog.eventSupabaseId ?? latest.eventSupabaseId,
+          contractorProfileId: savedTimelog.contractorProfileId ?? latest.contractorProfileId,
           updatedAt: savedTimelog.updatedAt ?? latest.updatedAt,
         };
         latestDraftRef.current = merged;
@@ -541,7 +544,11 @@ const MobileTimelogEditModal: React.FC = () => {
   const { contractors, events } = getTimelogDependencies();
   if (!editingTimelog) return null;
   const contractor = contractors.find((item) => item.profileId === editingTimelog.contractorProfileId);
-  const event = events.find((item) => item.id === editingTimelog.eid || item.supabaseId === editingTimelog.eid);
+  const eventUuid = editingTimelog.eventSupabaseId
+    ?? (typeof editingTimelog.eid === 'string' ? editingTimelog.eid : undefined);
+  const event = eventUuid
+    ? events.find((item) => item.supabaseId === eventUuid)
+    : events.find((item) => item.id === editingTimelog.eid);
   if (!contractor || !event) return null;
   const identity = JSON.stringify([
     role, contractor.profileId, event.supabaseId ?? event.id,

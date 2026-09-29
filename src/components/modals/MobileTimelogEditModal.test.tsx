@@ -20,6 +20,7 @@ const testMocks = vi.hoisted(() => ({
 }));
 
 const testData = vi.hoisted(() => ({
+  extraEvents: [] as Event[],
   event: {
     id: 1,
     name: 'TEST',
@@ -77,7 +78,7 @@ vi.mock('../../features/timelogs/services/timelogs.service', () => ({
           rate: 300,
         },
       ],
-      events: [event],
+      events: [...testData.extraEvents, event],
     };
   },
   saveTimelog: testMocks.saveTimelog,
@@ -167,6 +168,8 @@ describe('MobileTimelogEditModal', () => {
     vi.clearAllMocks();
     testState.cloneDependencies = false;
     testState.role = 'crew';
+    testData.extraEvents = [];
+    testData.event.id = 1;
     testData.event.mealAllowanceEnabled = true;
     testData.event.supabaseId = undefined;
     testData.event.scheduleVersion = undefined;
@@ -295,6 +298,57 @@ describe('MobileTimelogEditModal', () => {
     expect(screen.getByRole('heading', { name: 'Upravit výkaz' })).toBeInTheDocument();
     expect(screen.getByText('Petr Heitzer · TEST')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '13.07.2026' })).toHaveClass('nodu-mobile-timelog-day--event');
+  });
+
+  it('resolves the stable event UUID before a reused numeric event index', () => {
+    testData.event = { ...testData.event, id: 7, supabaseId: 'event-uuid-1' };
+    testData.extraEvents = [{ ...testData.event, id: 1, supabaseId: 'event-uuid-other', name: 'OTHER' }];
+    testState.editingTimelog = { ...testState.editingTimelog!, eid: 1, eventSupabaseId: 'event-uuid-1' };
+
+    render(<MobileTimelogEditModal />);
+
+    expect(screen.getByText('Petr Heitzer · TEST')).toBeInTheDocument();
+    expect(screen.queryByText('Petr Heitzer · OTHER')).toBeNull();
+  });
+
+  it('does not use a numeric event match when the authoritative event UUID is missing', () => {
+    testState.editingTimelog = { ...testState.editingTimelog!, eventSupabaseId: 'missing-event-uuid' };
+
+    render(<MobileTimelogEditModal />);
+
+    expect(screen.queryByRole('heading', { name: 'Upravit výkaz' })).toBeNull();
+  });
+
+  it('adopts rehydrated report and event identity without replacing newer editable fields', async () => {
+    vi.useFakeTimers();
+    syncEditingTimelogUpdates();
+    testData.event.supabaseId = 'event-uuid-1';
+    let resolveSave!: (timelog: Timelog) => void;
+    testMocks.saveTimelog.mockImplementationOnce(() => new Promise<Timelog>((resolve) => { resolveSave = resolve; }));
+    const view = render(<MobileTimelogEditModal />);
+    fireEvent.change(screen.getByLabelText('Poznámka k výkazu'), { target: { value: 'Before save' } });
+    await act(async () => { await vi.advanceTimersByTimeAsync(800); });
+    const sent = testMocks.saveTimelog.mock.calls[0][0] as Timelog;
+    fireEvent.change(screen.getByLabelText('Poznámka k výkazu'), { target: { value: 'Latest note' } });
+    fireEvent.change(screen.getByLabelText('Cestovné celkem (km)'), { target: { value: '42' } });
+    fireEvent.change(screen.getByLabelText('Poznámka k záznamu'), { target: { value: 'Latest day note' } });
+    const latestDays = testState.editingTimelog!.days;
+    testData.event = { ...testData.event, id: 7 };
+    testData.extraEvents = [{ ...testData.event, id: 1, supabaseId: 'event-uuid-other', name: 'OTHER' }];
+    const identity = { id: 12, supabaseId: 'report-uuid-1', eid: 7, eventSupabaseId: 'event-uuid-1', updatedAt: '2026-09-29T12:00:00Z' };
+    await act(async () => { resolveSave({ ...sent, ...identity }); await Promise.resolve(); });
+
+    expect(testMocks.setEditingTimelog).toHaveBeenLastCalledWith(expect.objectContaining({
+      ...identity, contractorProfileId: 'profile-1', note: 'Latest note', km: 42, days: latestDays,
+    }));
+    view.rerender(<MobileTimelogEditModal />);
+    expect(screen.getByText('Petr Heitzer · TEST')).toBeInTheDocument();
+    expect(screen.queryByText('Petr Heitzer · OTHER')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Uložit výkaz' }));
+    await act(async () => { await Promise.resolve(); });
+    expect(testMocks.saveTimelog).toHaveBeenLastCalledWith(expect.objectContaining({
+      ...identity, note: 'Latest note', km: 42, days: latestDays,
+    }));
   });
 
   it('opens submitted Crew timelogs as read-only evidence', () => {

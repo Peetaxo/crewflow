@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+// This suite exercises the genuine legacy path. Shared membership refusal is
+// covered by timelog-shared-write-guard and the dedicated guard wiring test.
+vi.mock('./timelog-shared-write-guard', () => ({ assertLegacyTimelogWrite: vi.fn().mockResolvedValue(undefined) }));
 import type { Contractor, Event, Timelog, TimelogApproval } from '../../../types';
 
 const createSnapshot = (timelogs: Timelog[]) => ({
@@ -316,9 +319,44 @@ const setupStableUuidWriteHarness = async ({
 };
 
 describe('timelogs.service write flow', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetModules();
     vi.clearAllMocks();
+    const { assertLegacyTimelogWrite } = await import('./timelog-shared-write-guard');
+    vi.mocked(assertLegacyTimelogWrite).mockReset().mockResolvedValue(undefined);
+  });
+
+  it('refuses old status, save, create and delete APIs when shared membership requires the full editor', async () => {
+    const report: Timelog = { id: 1, eid: 1, supabaseId: 'report', eventSupabaseId: 'event', contractorProfileId: 'person', updatedAt: '2026-09-20T00:00:00Z',
+      status: 'draft', days: [{ d: '2026-09-20', f: '08:00', t: '16:00', type: 'provoz' }], km: 0, note: '' };
+    const harness = await setupStableUuidWriteHarness({ timelogs: [report], authoritativeTimelogs: [report], snapshotEventSupabaseId: 'event' });
+    const { assertLegacyTimelogWrite } = await import('./timelog-shared-write-guard');
+    const refuse = () => vi.mocked(assertLegacyTimelogWrite).mockRejectedValueOnce(new Error('Otevřete společný výkaz.'));
+    refuse(); await expect(harness.service.updateTimelogStatuses([1], 'sub')).rejects.toThrow(/společný/);
+    refuse(); await expect(harness.service.saveTimelog(report)).rejects.toThrow(/společný/);
+    refuse(); await expect(harness.service.createTimelog(report)).rejects.toThrow(/společný/);
+    refuse(); await expect(harness.service.deleteTimelog(1)).rejects.toThrow(/společný/);
+    expect(harness.rpc).not.toHaveBeenCalled();
+    expect(harness.timelogUpdate).not.toHaveBeenCalled();
+  });
+
+  it('retires an approval action waiting for the lifecycle lock before dispatch', async () => {
+    const report: Timelog = { id: 1, eid: 1, supabaseId: 'report', eventSupabaseId: 'event', contractorProfileId: 'person',
+      status: 'draft', days: [{ d: '2026-09-20', f: '08:00', t: '16:00', type: 'provoz' }], km: 0, note: '' };
+    const harness = await setupStableUuidWriteHarness({ timelogs: [report], authoritativeTimelogs: [report], snapshotEventSupabaseId: 'event' });
+    const { runLifecycleDataMutation } = await import('../../event-lifecycle-generation');
+    const release = createDeferred<void>();
+    const started = createDeferred<void>();
+    const lock = runLifecycleDataMutation(['test'], async () => { started.resolve(); await release.promise; });
+    await started.promise;
+    let active = true;
+    const mutation = harness.service.updateTimelogStatuses([1], 'sub', { assertCurrent: () => {
+      if (!active) throw new Error('Přístup se změnil.');
+    } });
+    await Promise.resolve(); await Promise.resolve();
+    active = false; release.resolve(); await lock;
+    await expect(mutation).rejects.toThrow(/Přístup/);
+    expect(harness.rpc).not.toHaveBeenCalled();
   });
 
   describe.each(['local', 'supabase'] as const)('complete hours in %s mode', (source) => {

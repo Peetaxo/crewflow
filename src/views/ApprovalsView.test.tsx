@@ -1,4 +1,8 @@
 import React from 'react';
+vi.mock('../features/shift-workflows/useSharedApprovals', () => ({ useSharedApprovals: () => ({
+  cards: () => null, legacyOnly: (reports: unknown[]) => reports, reviewSelection: () => false,
+  groupsFor: () => ({ rounds: [], legacy: [] }),
+}) }));
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -115,6 +119,7 @@ describe('ApprovalsView targeted approvals', () => {
 
     await waitFor(() => {
       expect(updateTimelogStatuses).toHaveBeenCalledWith([1], 'rej', {
+        assertCurrent: expect.any(Function),
         currentProfileId: 'profile-me',
         note: 'Doplň pauzu.',
       });
@@ -129,6 +134,7 @@ describe('ApprovalsView targeted approvals', () => {
 
     await waitFor(() => {
       expect(updateTimelogStatuses).toHaveBeenCalledWith([1, 3], 'coo', {
+        assertCurrent: expect.any(Function),
         currentProfileId: 'profile-me',
       });
     });

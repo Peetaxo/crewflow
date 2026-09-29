@@ -37,6 +37,7 @@ import { useInvoiceApprovalsQuery } from '../features/invoices/queries/useInvoic
 import { getEventApprovalDocuments } from '../features/invoices/services/invoice-approval-sync.service';
 import { subscribeToTimelogChanges, type TimelogAction } from '../features/timelogs/services/timelogs.service';
 import { useTimelogApprovalActions } from '../features/timelogs/hooks/useTimelogApprovalActions';
+import { useSharedApprovals } from '../features/shift-workflows/useSharedApprovals';
 import {
   getTimelogApprovalAssigneeName,
   isTimelogApprovalActionable,
@@ -188,9 +189,12 @@ const EventDetailView = () => {
   useEffect(() => subscribeToEventChanges(loadDetail), [loadDetail]);
   useEffect(() => subscribeToTimelogChanges(loadDetail), [loadDetail]);
 
+  const sharedApprovals = useSharedApprovals(detail.timelogs, detail.event ? [detail.event] : [], detail.contractors);
   const timelogActions = useTimelogApprovalActions({
     currentProfileId,
     timelogs: detail.timelogs,
+    reviewSelection: sharedApprovals.reviewSelection,
+    identityKey: sharedApprovals.identityKey,
     onSuccess: loadDetail,
   });
 
@@ -941,7 +945,8 @@ const EventDetailView = () => {
           </div>
           {eventApprovalTimelogs.length > 0 ? (
             <div className="nodu-mobile-event-management-list">
-              {eventApprovalTimelogs.map((timelog) => {
+              {sharedApprovals.cards(eventApprovalTimelogs)}
+              {sharedApprovals.legacyOnly(eventApprovalTimelogs).map((timelog) => {
                 const contractor = contractors.find((item) => item.profileId === timelog.contractorProfileId);
                 const totalTimelogHours = calculateTotalHours(timelog.days);
                 const isActionable = isTimelogApprovalActionable(timelog, role, currentProfileId);
@@ -1804,7 +1809,8 @@ const EventDetailView = () => {
                     <div className="rounded-[24px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] p-4">
                       {eventApprovalTimelogs.length > 0 ? (
                         <div className="space-y-3">
-                          {eventApprovalTimelogs.map((timelog) => {
+                          {sharedApprovals.cards(eventApprovalTimelogs)}
+                          {sharedApprovals.legacyOnly(eventApprovalTimelogs).map((timelog) => {
                             const contractor = contractors.find((item) => item.profileId === timelog.contractorProfileId);
                             const totalTimelogHours = calculateTotalHours(timelog.days);
                             const amount = contractor ? totalTimelogHours * contractor.rate + timelog.km * KM_RATE + calculateMealAllowance(timelog.days, { enabled: mealAllowanceEnabled }) : 0;

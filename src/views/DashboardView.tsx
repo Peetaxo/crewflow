@@ -3,6 +3,7 @@ import { CalendarDays, ChevronRight, ClipboardCheck, UserPlus, Users } from 'luc
 import { motion } from 'framer-motion';
 import { useAppContext } from '../context/useAppContext';
 import { useAuth } from '../app/providers/useAuth';
+import { useSharedApprovals } from '../features/shift-workflows/useSharedApprovals';
 import { Contractor, Event, EventApplication, ReceiptItem, Timelog } from '../types';
 import { calculateMealAllowance, calculateTotalHours, formatCurrency, formatDateRange, getDatesBetween, getEventStatus } from '../utils';
 import StatCard from '../components/shared/StatCard';
@@ -42,6 +43,7 @@ const DashboardView = () => {
     setCurrentTab,
     setSelectedEventId,
     setEventTab,
+    setEditingTimelog,
   } = useAppContext();
   const { currentProfileId } = useAuth();
   const eventsQuery = useEventsQuery();
@@ -149,13 +151,16 @@ const DashboardView = () => {
   const roleLabel = role === 'crewhead' ? 'Pohled CrewHead' : 'Pohled COO';
   const reviewLabel = role === 'crewhead' ? 'Ke kontrole (CH)' : 'Ke schvaleni (COO)';
 
-  const timelogQueue = useMemo(() => (
+  const sharedApprovals = useSharedApprovals(timelogsQuery.data ?? [], events, contractors);
+  const allTimelogQueue = useMemo(() => (
     timelogs.filter((timelog) => (
       timelog.status === approvalStatus
-      && isTimelogApprovalActionable(timelog, role, currentProfileId)
+      && (isTimelogApprovalActionable(timelog, role, currentProfileId)
+        || sharedApprovals.groupsFor([timelog]).rounds.length > 0)
     ))
-  ), [approvalStatus, currentProfileId, role, timelogs]);
-  const pendingForMe = timelogQueue.length;
+  ), [approvalStatus, currentProfileId, role, timelogs, sharedApprovals]);
+  const timelogQueue = sharedApprovals.legacyOnly(allTimelogQueue);
+  const pendingForMe = timelogQueue.length + sharedApprovals.groupsFor(allTimelogQueue).rounds.length;
   const pendingInvoices = filteredInvoices.filter((invoice) => invoice.status === 'sent').length;
   const pendingReceipts = receipts.filter((receipt) => receipt.status === 'submitted' || receipt.status === 'approved').length;
   const approvedHours = timelogs
@@ -210,7 +215,7 @@ const DashboardView = () => {
         id: `timelog-${timelog.id}`,
         title: event?.name ?? 'Výkaz práce',
         detail: contractor ? `${contractor.name} čeká na potvrzení` : 'Čeká na potvrzení crew',
-        onClick: () => (event ? openEventDetail(event, 'approval') : openTab('timelogs')),
+        onClick: () => setEditingTimelog(timelog),
       };
     }),
     ...incompleteCrewProfiles.slice(0, 2).map((contractor) => ({
@@ -347,6 +352,7 @@ const DashboardView = () => {
             <button type="button" onClick={() => openTab('timelogs')}>Otevřít schvalování</button>
           </div>
           <div className="nodu-management-overview-list">
+            {sharedApprovals.cards(allTimelogQueue)}
             {timelogQueue.slice(0, 3).map((timelog) => {
               const contractor = findContractor(timelog.contractorProfileId);
               const event = findEvent(timelog.eid);
@@ -355,7 +361,7 @@ const DashboardView = () => {
               const hours = calculateTotalHours(timelog.days);
 
               return (
-                <button key={timelog.id} type="button" className="nodu-management-overview-row" onClick={() => openEventDetail(event, 'approval')}>
+                <button key={timelog.id} type="button" className="nodu-management-overview-row" onClick={() => setEditingTimelog(timelog)}>
                   <div className="av h-9 w-9 text-[11px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>
                     {contractor.ii}
                   </div>
@@ -368,7 +374,7 @@ const DashboardView = () => {
               );
             })}
 
-            {timelogQueue.length === 0 && (
+            {sharedApprovals.ready !== false && pendingForMe === 0 && (
               <div className="nodu-dashboard-empty">Žádné výkazy k akci</div>
             )}
           </div>
@@ -477,6 +483,7 @@ const DashboardView = () => {
         <div className="nodu-dashboard-panel rounded-[28px] p-5 lg:col-span-3">
           <h2 className="nodu-dashboard-panel-title mb-3">Ke schválení</h2>
           <div className="space-y-1">
+            {sharedApprovals.cards(allTimelogQueue)}
             {timelogQueue
               .slice(0, 4)
               .map((timelog) => {
@@ -489,7 +496,7 @@ const DashboardView = () => {
                 return (
                   <button
                     key={timelog.id}
-                    onClick={() => openEventDetail(event, 'approval')}
+                    onClick={() => setEditingTimelog(timelog)}
                     className="nodu-dashboard-row flex w-full items-center gap-3 rounded-[20px] border-b px-3 py-3 text-left transition-colors last:border-0"
                   >
                     <div className="av h-8 w-8 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>
@@ -513,7 +520,7 @@ const DashboardView = () => {
                 );
               })}
 
-            {timelogQueue.length === 0 && (
+            {sharedApprovals.ready !== false && pendingForMe === 0 && (
               <div className="nodu-dashboard-empty">Zadne vykazy k akci</div>
             )}
           </div>

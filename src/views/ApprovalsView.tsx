@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../app/providers/useAuth';
+import { useSharedApprovals } from '../features/shift-workflows/useSharedApprovals';
 import { useAppContext } from '../context/useAppContext';
 import { KM_RATE } from '../data';
 import { Contractor, Event, Timelog } from '../types';
@@ -21,7 +22,6 @@ import {
 const ApprovalsView = () => {
   const {
     role,
-    filteredEvents,
     searchQuery,
     setEditingTimelog,
   } = useAppContext();
@@ -71,27 +71,32 @@ const ApprovalsView = () => {
   }, [events, findContractor, searchQuery, timelogsQuery.data]);
 
   const isCrewHead = role === 'crewhead';
+  const sharedApprovals = useSharedApprovals(timelogsQuery.data ?? [], events, contractors);
+  const sharedQueue = timelogs.filter((timelog) => timelog.status === (isCrewHead ? 'pending_ch' : 'pending_coo'));
   const approvalQueue = useMemo(() => (
-    timelogs.filter((timelog) => timelog.status === (isCrewHead ? 'pending_ch' : 'pending_coo'))
-  ), [isCrewHead, timelogs]);
+    sharedApprovals.legacyOnly(sharedQueue)
+  ), [sharedApprovals, sharedQueue]);
   const mine = useMemo(() => (
     approvalQueue.filter((timelog) => isTimelogApprovalActionable(timelog, role, currentProfileId))
   ), [approvalQueue, currentProfileId, role]);
   const hasVisibleApprovals = isCrewHead ? mine.length > 0 : approvalQueue.length > 0;
+  const waitingCount = mine.length + sharedApprovals.groupsFor(sharedQueue).rounds.length;
 
   const grouped = useMemo(() => {
     if (isCrewHead) return null;
 
-    return filteredEvents.reduce((acc, event) => {
+    return events.reduce((acc, event) => {
       const eventTimelogs = approvalQueue.filter((timelog) => timelog.eid === event.id);
       if (eventTimelogs.length) acc.push({ event, tls: eventTimelogs });
       return acc;
-    }, [] as { event: typeof filteredEvents[number]; tls: typeof mine }[]);
-  }, [approvalQueue, filteredEvents, isCrewHead]);
+    }, [] as { event: Event; tls: typeof mine }[]);
+  }, [approvalQueue, events, isCrewHead]);
 
   const timelogActions = useTimelogApprovalActions({
     currentProfileId,
     timelogs,
+    reviewSelection: sharedApprovals.reviewSelection,
+    identityKey: sharedApprovals.identityKey,
   });
   const { dialog: timelogActionDialog, execute: executeTimelogAction, isPending: isTimelogActionPending } = timelogActions;
 
@@ -112,10 +117,11 @@ const ApprovalsView = () => {
             {isCrewHead ? 'CrewHead - kontrola hodin a predani COO' : 'COO - finalni schvaleni hodin'}
           </p>
         </div>
-        <StatusBadge status={mine.length ? (isCrewHead ? 'pending_ch' : 'pending_coo') : 'approved'} label={`${mine.length} ceka`} />
+        <StatusBadge status={waitingCount ? (isCrewHead ? 'pending_ch' : 'pending_coo') : 'approved'} label={`${waitingCount} ceka`} />
       </div>
 
-      {!hasVisibleApprovals ? (
+      {sharedApprovals.cards(sharedQueue)}
+      {!hasVisibleApprovals && sharedApprovals.ready !== false && sharedApprovals.groupsFor(sharedQueue).rounds.length === 0 ? (
         <div className="rounded-[24px] border border-[var(--nodu-border)] bg-white p-12 text-center shadow-[0_18px_40px_rgba(var(--nodu-text-rgb),0.06)]">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full border border-[var(--nodu-success-border)] bg-[var(--nodu-success-bg)] text-xl font-semibold text-[var(--nodu-success-text)]">✓</div>
           <div className="text-sm font-medium text-[var(--nodu-text)]">Vse schvaleno</div>

@@ -12,6 +12,7 @@ import { calculateTotalHours, formatCurrency, formatShortDate } from '../utils';
 import { getCrewDetailData, subscribeToCrewChanges, updateCrew } from '../features/crew/services/crew.service';
 import { categorizeCrewTimelogs, resolveShiftProject } from '../features/crew/services/crew-shift-display';
 import { canEditTimelog } from '../features/timelogs/services/timelog-permissions';
+import { useSharedApprovals } from '../features/shift-workflows/useSharedApprovals';
 import type { Event } from '../types';
 import CrewShiftWorkflowManagement, { CrewShiftWorkflowActions } from '../features/shift-workflows/CrewShiftWorkflowManagement';
 import ShiftWorkflowSummary from '../features/shift-workflows/ShiftWorkflowSummary';
@@ -52,6 +53,7 @@ const CrewDetailView = () => {
   const events = detail.events;
   const projects = detail.projects;
   const cTls = detail.timelogs;
+  const sharedApprovals = useSharedApprovals(cTls, events, c ? [c] : []);
   const cInvoices = detail.invoices;
 
   useEffect(() => {
@@ -461,6 +463,7 @@ const CrewDetailView = () => {
 
       <div className="mb-6 overflow-hidden rounded-[24px] border border-[var(--nodu-border)] bg-white shadow-[0_18px_40px_rgba(var(--nodu-text-rgb),0.06)]">
         <div className="border-b border-[rgba(var(--nodu-text-rgb),0.06)] p-4 text-sm font-semibold text-[var(--nodu-text)]">Historie timelogu</div>
+        {sharedApprovals.cards(cTls)}
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -474,7 +477,7 @@ const CrewDetailView = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-[rgba(var(--nodu-text-rgb),0.06)]">
-              {cTls.map((t) => {
+              {sharedApprovals.legacyOnly(cTls).map((t) => {
                 const e = events.find((event) => event.id === t.eid);
                 if (!e) return null;
                 const hours = calculateTotalHours(t.days);

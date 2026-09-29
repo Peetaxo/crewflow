@@ -1,4 +1,8 @@
 import React from 'react';
+vi.mock('../features/shift-workflows/useSharedApprovals', () => ({ useSharedApprovals: () => ({
+  cards: () => null, legacyOnly: (reports: unknown[]) => reports, reviewSelection: () => false,
+  groupsFor: () => ({ rounds: [], legacy: [] }),
+}) }));
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -731,6 +735,7 @@ describe('TimelogsView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Potvrdit a odeslat' }));
 
     await waitFor(() => expect(updateTimelogStatuses).toHaveBeenCalledWith([1], 'sub', {
+        assertCurrent: expect.any(Function),
       currentProfileId: 'profile-1',
     }));
   });
@@ -1032,6 +1037,7 @@ describe('TimelogsView', () => {
 
     await waitFor(() => {
       expect(updateTimelogStatuses).toHaveBeenCalledWith([30], 'coo', {
+        assertCurrent: expect.any(Function),
         currentProfileId: 'profile-coo',
       });
     });

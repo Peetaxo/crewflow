@@ -1,4 +1,8 @@
 import React from 'react';
+vi.mock('../features/shift-workflows/useSharedApprovals', () => ({ useSharedApprovals: () => ({
+  cards: () => null, legacyOnly: (reports: unknown[]) => reports, reviewSelection: () => false,
+  groupsFor: () => ({ rounds: [], legacy: [] }),
+}) }));
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -1308,6 +1312,7 @@ describe('EventDetailView', () => {
 
     fireEvent.click(within(approvalDialog).getAllByRole('button', { name: 'Schválit výkaz Jana Nova' })[0]);
     await waitFor(() => expect(updateTimelogStatus).toHaveBeenCalledWith([pendingCrewheadTimelog.id], 'ch', {
+        assertCurrent: expect.any(Function),
       currentProfileId: 'profile-1',
     }));
   });
@@ -2514,6 +2519,7 @@ describe('EventDetailView', () => {
 
     await waitFor(() => {
       expect(updateTimelogStatus).toHaveBeenCalledWith([8], 'coo', {
+        assertCurrent: expect.any(Function),
         currentProfileId: 'profile-1',
       });
     });
@@ -2601,6 +2607,7 @@ describe('EventDetailView', () => {
 
     await waitFor(() => {
       expect(updateTimelogStatuses).toHaveBeenCalledWith([8], 'rej', {
+        assertCurrent: expect.any(Function),
         currentProfileId: 'profile-current',
         note: 'Doplň konec směny.',
       });

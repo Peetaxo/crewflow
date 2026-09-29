@@ -18,6 +18,7 @@ import {
   type TimelogAction,
 } from '../features/timelogs/services/timelogs.service';
 import { useTimelogApprovalActions } from '../features/timelogs/hooks/useTimelogApprovalActions';
+import { useSharedApprovals } from '../features/shift-workflows/useSharedApprovals';
 import {
   getTimelogApprovalAssigneeName,
   isTimelogApprovalActionable,
@@ -146,9 +147,11 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
       ? baseTimelogs.filter((timelog) => hasTimelogDayInRange(timelog, selectedTimelogMonthStart, selectedTimelogMonthEnd))
       : baseTimelogs
   ), [baseTimelogs, isMobileMineView, selectedTimelogMonthEnd, selectedTimelogMonthStart]);
-  const filtered = timelogFilter === 'all'
+  const sharedApprovals = useSharedApprovals(timelogsQuery.data ?? [], events, contractors);
+  const visibleTimelogs = timelogFilter === 'all'
     ? periodTimelogs
     : periodTimelogs.filter((timelog) => timelog.status === timelogFilter);
+  const filtered = sharedApprovals.legacyOnly(visibleTimelogs);
   const title = scope === 'mine' ? 'Schvalování' : 'Timelogy';
   const showTimelogNotes = canSeeTimelogNote(role);
   const getSubmitActionLabel = (timelog: typeof baseTimelogs[number]) => {
@@ -232,6 +235,8 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
   const timelogActions = useTimelogApprovalActions({
     currentProfileId,
     timelogs: baseTimelogs,
+    reviewSelection: sharedApprovals.reviewSelection,
+    identityKey: sharedApprovals.identityKey,
   });
   const { dialog: timelogActionDialog, execute: executeTimelogAction, isPending: isTimelogActionPending } = timelogActions;
 
@@ -453,6 +458,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
           )}
         </div>
 
+        {sharedApprovals.cards(visibleTimelogs)}
         {isMobile ? (
           <div className="space-y-3">
             {isMobileMineView && (
@@ -812,7 +818,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
             );
           })}
 
-          {filtered.length === 0 && (
+          {visibleTimelogs.length === 0 && (
             <div className="nodu-panel rounded-[24px] p-10 text-center text-sm text-[color:var(--nodu-text-soft)]">
               Žádné záznamy pro tento filtr
             </div>

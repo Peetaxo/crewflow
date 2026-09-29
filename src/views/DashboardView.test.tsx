@@ -1,4 +1,8 @@
 import React from 'react';
+vi.mock('../features/shift-workflows/useSharedApprovals', () => ({ useSharedApprovals: () => ({
+  cards: () => null, legacyOnly: (reports: unknown[]) => reports, reviewSelection: () => false,
+  groupsFor: () => ({ rounds: [], legacy: [] }),
+}) }));
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -13,6 +17,7 @@ const mockAppContext = {
   setTimelogFilter: vi.fn(),
   setSelectedEventId: vi.fn(),
   setEventTab: vi.fn(),
+  setEditingTimelog: vi.fn(),
 };
 
 const mobileMockState = vi.hoisted(() => ({ isMobile: false }));
@@ -220,7 +225,7 @@ describe('DashboardView', () => {
     expect(upcomingEventRow.className).not.toContain('border-[#f1e4d6]');
   });
 
-  it('opens the event detail approval tab from a dashboard approval row', async () => {
+  it('opens the same global timelog detail from a dashboard approval row', async () => {
     const { default: DashboardView } = await import('./DashboardView');
     const queryClient = new QueryClient();
     render(
@@ -235,9 +240,7 @@ describe('DashboardView', () => {
 
     fireEvent.click(timelogRow);
 
-    expect(mockAppContext.setCurrentTab).toHaveBeenCalledWith('events');
-    expect(mockAppContext.setSelectedEventId).toHaveBeenCalledWith(101);
-    expect(mockAppContext.setEventTab).toHaveBeenCalledWith('approval');
+    expect(mockAppContext.setEditingTimelog).toHaveBeenCalledWith(expect.objectContaining({ eid: 101 }));
     expect(mockAppContext.setTimelogFilter).not.toHaveBeenCalled();
   });
 

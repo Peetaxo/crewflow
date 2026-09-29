@@ -31,14 +31,19 @@ const pendingChTimelog = (id: number): Timelog => ({
 const Harness = ({
   timelogs,
   onSuccess,
+  reviewSelection,
+  profileId = 'profile-coo',
 }: {
   timelogs: Timelog[];
   onSuccess?: () => void;
+  reviewSelection?: (ids: number[]) => boolean;
+  profileId?: string;
 }) => {
   const actions = useTimelogApprovalActions({
-    currentProfileId: 'profile-coo',
+    currentProfileId: profileId,
     timelogs,
     onSuccess,
+    reviewSelection,
   });
 
   return (
@@ -57,6 +62,29 @@ describe('useTimelogApprovalActions', () => {
     updateTimelogStatuses.mockResolvedValue([]);
   });
 
+  it('opens the frozen round for review before any list mutation or return dialog', () => {
+    const reviewSelection = vi.fn().mockReturnValue(true);
+    render(<Harness timelogs={[pendingCooTimelog(4)]} reviewSelection={reviewSelection} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Vrátit' }));
+    expect(reviewSelection).toHaveBeenCalledWith([4]);
+    expect(updateTimelogStatuses).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('retires queued mutation callbacks across an A to B to A identity change', async () => {
+    let captured: { assertCurrent?: () => void } | undefined;
+    updateTimelogStatuses.mockImplementation((_ids, _action, options) => {
+      captured = options;
+      return new Promise(() => undefined);
+    });
+    const view = render(<Harness timelogs={[pendingCooTimelog(4)]} profileId="A" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Schválit' }));
+    view.rerender(<Harness timelogs={[pendingCooTimelog(4)]} profileId="B" />);
+    view.rerender(<Harness timelogs={[pendingCooTimelog(4)]} profileId="A" />);
+    expect(captured?.assertCurrent).toBeTypeOf('function');
+    expect(() => captured?.assertCurrent?.()).toThrow(/Přístup/);
+  });
+
   it('requires a trimmed note before returning one or more pending COO reports', async () => {
     render(<Harness timelogs={[pendingCooTimelog(4), pendingCooTimelog(7)]} />);
 
@@ -73,6 +101,7 @@ describe('useTimelogApprovalActions', () => {
 
     await waitFor(() => {
       expect(updateTimelogStatuses).toHaveBeenCalledWith([4, 7], 'rej', {
+        assertCurrent: expect.any(Function),
         currentProfileId: 'profile-coo',
         note: 'Opravit přestávku.',
       });
@@ -140,6 +169,7 @@ describe('useTimelogApprovalActions', () => {
 
     await waitFor(() => {
       expect(updateTimelogStatuses).toHaveBeenCalledWith([3], 'rej', {
+        assertCurrent: expect.any(Function),
         currentProfileId: 'profile-coo',
       });
     });
@@ -152,6 +182,7 @@ describe('useTimelogApprovalActions', () => {
 
     await waitFor(() => {
       expect(updateTimelogStatuses).toHaveBeenCalledWith([9], 'coo', {
+        assertCurrent: expect.any(Function),
         currentProfileId: 'profile-coo',
       });
     });

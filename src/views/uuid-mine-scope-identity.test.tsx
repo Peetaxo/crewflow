@@ -1,4 +1,8 @@
 import React from 'react';
+vi.mock('../features/shift-workflows/useSharedApprovals', () => ({ useSharedApprovals: () => ({
+  cards: () => null, legacyOnly: (reports: unknown[]) => reports, reviewSelection: () => false,
+  groupsFor: () => ({ rounds: [], legacy: [] }),
+}) }));
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Contractor, Event, Invoice, ReceiptItem, Timelog } from '../types';

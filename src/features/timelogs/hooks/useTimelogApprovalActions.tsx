@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '../../../components/ui/button';
 import {
@@ -19,6 +19,9 @@ interface UseTimelogApprovalActionsOptions {
   currentProfileId: string | null | undefined;
   timelogs: Timelog[];
   onSuccess?: () => void;
+  /** Opens the complete shared round and consumes the action before any write. */
+  reviewSelection?: (ids: number[]) => boolean;
+  identityKey?: string;
 }
 
 interface PendingReturnRequest {
@@ -39,6 +42,8 @@ export const useTimelogApprovalActions = ({
   currentProfileId,
   timelogs,
   onSuccess,
+  reviewSelection,
+  identityKey,
 }: UseTimelogApprovalActionsOptions): TimelogApprovalActions => {
   const [returnRequest, setReturnRequest] = useState<PendingReturnRequest | null>(null);
   const [returnNote, setReturnNote] = useState('');
@@ -47,6 +52,14 @@ export const useTimelogApprovalActions = ({
   const mountedRef = useRef(true);
   const pendingRef = useRef(false);
   const timelogsById = useMemo(() => new Map(timelogs.map((timelog) => [timelog.id, timelog])), [timelogs]);
+  const activation = useMemo(() => ({ active: false, profileId: currentProfileId, identityKey }), [currentProfileId, identityKey]);
+  useLayoutEffect(() => {
+    activation.active = true;
+    setReturnRequest(null);
+    setReturnNote('');
+    setDialogError('');
+    return () => { activation.active = false; };
+  }, [activation]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -76,18 +89,21 @@ export const useTimelogApprovalActions = ({
 
     try {
       await updateTimelogStatuses(ids, action, {
+        assertCurrent: () => {
+          if (!activation.active) throw new Error('Přístup k výkazu se změnil. Otevřete jej znovu.');
+        },
         ...(currentProfileId ? { currentProfileId } : {}),
         ...(note ? { note } : {}),
       });
 
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || !activation.active) return;
       if (keepDialogOpenOnError) {
         setReturnRequest(null);
         setReturnNote('');
       }
       finishSuccessfully();
     } catch (error) {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || !activation.active) return;
       const message = getMutationErrorMessage(error);
       if (keepDialogOpenOnError) {
         setDialogError(message);
@@ -98,10 +114,16 @@ export const useTimelogApprovalActions = ({
       pendingRef.current = false;
       if (mountedRef.current) setIsPending(false);
     }
-  }, [currentProfileId, finishSuccessfully]);
+  }, [activation, currentProfileId, finishSuccessfully]);
 
   const execute = useCallback((ids: number[], action: TimelogAction) => {
     if (pendingRef.current || ids.length === 0) return;
+    try {
+      if (reviewSelection?.(ids)) return;
+    } catch (error) {
+      toast.error(getMutationErrorMessage(error));
+      return;
+    }
 
     const requiresReturnNote = action === 'rej' && ids.some((id) => (
       timelogsById.get(id)?.status === 'pending_coo'
@@ -115,7 +137,7 @@ export const useTimelogApprovalActions = ({
     }
 
     void runMutation(ids, action);
-  }, [runMutation, timelogsById]);
+  }, [reviewSelection, runMutation, timelogsById]);
 
   const closeDialog = useCallback(() => {
     if (pendingRef.current) return;

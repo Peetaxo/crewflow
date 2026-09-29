@@ -19,9 +19,11 @@ import {
 } from './timelog-approval-rpc.service';
 import { getActiveTimelogApproval, isTimelogWaitingForProfile } from './timelog-approval-state';
 import { assertTimelogComplete } from './timelog-validation';
+import { assertLegacyTimelogWrite } from './timelog-shared-write-guard';
 
 export type TimelogAction = 'sub' | 'ch' | 'coo' | 'rej';
 export interface TimelogActionOptions {
+  assertCurrent?: () => void;
   note?: string;
   /** Local/demo identity only. Remote authority always comes from Supabase Auth. */
   currentProfileId?: string;
@@ -447,6 +449,7 @@ const resolvePersistedTimelog = async (
 const persistSupabaseTimelogStatus = async (
   localTimelogIds: number[],
   nextStatus: TimelogStatus,
+  options: TimelogActionOptions = {},
 ): Promise<Timelog[] | null> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
     return null;
@@ -493,6 +496,7 @@ const persistSupabaseTimelogStatus = async (
       return [];
     }
 
+    options.assertCurrent?.();
     const results = await transitionTimelogStatusesAtomicRpc({
       targets: targets
         .map(({ timelog }) => ({
@@ -768,6 +772,7 @@ const persistSupabaseApprovalAction = async (
       options,
     );
     const authenticatedProfileId = await getAuthenticatedSupabaseProfileId();
+    options.assertCurrent?.();
 
     if (mode === 'handoff') {
       const rpcTargets = targets.map((timelog) => ({
@@ -809,6 +814,8 @@ const updateLocalApprovalAction = async (
   options: TimelogActionOptions,
 ): Promise<Timelog[]> => runTimelogMutation(ids.map((id) => `local:${id}`), async () => {
   const targets = getRequestedTimelogs(ids);
+  await assertLegacyTimelogWrite(targets);
+  options.assertCurrent?.();
   assertApprovalActionShape(
     targets,
     mode === 'handoff' ? 'ch' : mode === 'resolve-approved' ? 'coo' : 'rej',
@@ -910,6 +917,8 @@ const updateLocalApprovalAction = async (
 const updateTimelogStatusesTo = async (
   ids: number[],
   nextStatus: TimelogStatus,
+  options: TimelogActionOptions = {},
+  requireLegacy = false,
 ): Promise<Timelog[]> => {
   if (ids.length === 0) return [];
 
@@ -918,13 +927,25 @@ const updateTimelogStatusesTo = async (
     const timelog = initialTimelogs.find((item) => item.id === id);
     if (timelog) assertCompleteForStatus(timelog, nextStatus);
   });
+  // Billing helpers may only bypass the shared editor after approval. A caller
+  // cannot disguise approval of a pending shared part as an invoice operation.
+  const nonBillingTargets = initialTimelogs.filter((timelog) => ids.includes(timelog.id)
+    && !( ['approved', 'invoiced'].includes(timelog.status)
+      && ['approved', 'invoiced', 'paid'].includes(nextStatus)));
+  if (nonBillingTargets.length) await assertLegacyTimelogWrite(nonBillingTargets);
 
-  const persistedTimelogs = await persistSupabaseTimelogStatus(ids, nextStatus);
+  const persistedTimelogs = await persistSupabaseTimelogStatus(ids, nextStatus, options);
   if (persistedTimelogs) {
     return persistedTimelogs;
   }
 
   return runTimelogMutation(ids.map((id) => `local:${id}`), async () => {
+    const targets = getRequestedTimelogs(ids);
+    const guardedTargets = requireLegacy ? targets : targets.filter((timelog) => !(
+      ['approved', 'invoiced'].includes(timelog.status) && ['approved', 'invoiced', 'paid'].includes(nextStatus)
+    ));
+    if (guardedTargets.length) await assertLegacyTimelogWrite(guardedTargets);
+    options.assertCurrent?.();
     const currentTimelogs = getLocalAppState().timelogs ?? [];
     ids.forEach((id) => {
       const timelog = currentTimelogs.find((item) => item.id === id);
@@ -957,9 +978,12 @@ export const updateTimelogStatuses = async (
   options: TimelogActionOptions = {},
 ): Promise<Timelog[]> => {
   if (ids.length === 0) return [];
+  options.assertCurrent?.();
+  await assertLegacyTimelogWrite(getRequestedTimelogs(ids));
+  options.assertCurrent?.();
   const mode = assertApprovalActionShape(getRequestedTimelogs(ids), action, options);
   if (mode === 'transition') {
-    return updateTimelogStatusesTo(ids, statusMap[action]);
+    return updateTimelogStatusesTo(ids, statusMap[action], options, true);
   }
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
     return persistSupabaseApprovalAction(ids, mode, options);
@@ -1022,6 +1046,7 @@ export const createTimelog = async (timelog: Omit<Timelog, 'id'>): Promise<Timel
     : 'local:create';
 
   return runTimelogMutation([mutationKey], async () => {
+    await assertLegacyTimelogWrite([timelog]);
     const normalizedTimelog: Timelog = {
       ...timelog,
       id: Math.max(0, ...(getLocalAppState().timelogs ?? []).map((item) => item.id)) + 1,
@@ -1156,6 +1181,7 @@ export const importApprovedTimelog = async (
       );
     }
 
+    await assertLegacyTimelogWrite([currentTimelog ?? { ...normalizedImport, id: undefined }]);
     const result = await importApprovedTimelogAtomicRpc({
       timelogId: currentTimelog?.supabaseId ?? null,
       eventId: imported.eventSupabaseId,
@@ -1251,6 +1277,8 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
     return createTimelog(timelogToCreate);
   }
 
+  await assertLegacyTimelogWrite([existingTimelog, normalizedTimelog]);
+
   if (normalizedTimelog.days.length === 0) {
     await deleteTimelog(existingTimelog.id);
     return normalizedTimelog;
@@ -1276,6 +1304,8 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
     if (!currentTimelog) {
       throw new Error('Výkaz už neexistuje nebo k němu nemáte přístup.');
     }
+
+    await assertLegacyTimelogWrite([currentTimelog, normalizedTimelog]);
 
     let persistedTimelog: Timelog = {
       ...normalizedTimelog,
@@ -1366,6 +1396,8 @@ export const deleteTimelog = async (id: number): Promise<{ id: number }> => {
     if (!currentTimelog) {
       throw new Error('Výkaz už neexistuje nebo k němu nemáte přístup.');
     }
+
+    await assertLegacyTimelogWrite([currentTimelog]);
 
     if (persistsToSupabase) {
       if (!currentTimelog.supabaseId || !currentTimelog.updatedAt) {

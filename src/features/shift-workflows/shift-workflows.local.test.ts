@@ -28,6 +28,29 @@ function fixture() {
 }
 
 describe('explicit local identity adapter', () => {
+  it('provides stable versions and day identities, advancing versions after external edits', () => {
+    const { data } = fixture();
+    data.timelogs[0].days = [{ d: '2026-09-23', f: '', t: '', type: 'pripravy' }];
+    const first = canonicalizeLocalShiftData(data).timelogs[0];
+    expect(first.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(first.days[0].id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(canonicalizeLocalShiftData(structuredClone(data)).timelogs[0]).toEqual(first);
+    data.timelogs[0].note = 'external edit';
+    const changed = canonicalizeLocalShiftData(data).timelogs[0];
+    expect(Date.parse(changed.updatedAt!)).toBeGreaterThan(Date.parse(first.updatedAt!));
+    expect(changed.days[0].id).toBe(first.days[0].id);
+    expect(data.timelogs[0].days[0].id).toBeUndefined();
+  });
+  it('keeps synthesized versions stable when local edits retain an older explicit timestamp', () => {
+    const { data } = fixture();
+    data.timelogs[0].updatedAt = '2026-09-23T10:00:00Z';
+    const first = canonicalizeLocalShiftData(data).timelogs[0].updatedAt;
+    expect(canonicalizeLocalShiftData(data).timelogs[0].updatedAt).toBe(first);
+    data.timelogs[0].note = 'edited outside the batch writer';
+    const changed = canonicalizeLocalShiftData(data).timelogs[0].updatedAt;
+    expect(Date.parse(changed!)).toBeGreaterThan(Date.parse(first!));
+    expect(canonicalizeLocalShiftData(data).timelogs[0].updatedAt).toBe(changed);
+  });
   it('maps local event, report and profile identities consistently without changing app state', () => {
     const { data } = fixture();
     const before = structuredClone(data);

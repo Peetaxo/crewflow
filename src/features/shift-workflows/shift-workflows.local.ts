@@ -1,5 +1,5 @@
-import { getLocalAppState, type AppDataSnapshot } from '../../lib/app-data';
-import type { Event } from '../../types';
+import { getLocalAppState, updateLocalAppState, type AppDataSnapshot } from '../../lib/app-data';
+import type { Event, Timelog } from '../../types';
 import { createStableDraftUuid } from '../stable-draft-identity';
 import {
   assertShiftWorkflowCommand, canManageShiftWorkflows, canonicalUuid, ShiftWorkflowError,
@@ -8,9 +8,39 @@ import {
   type ShiftWorkflowSnapshot,
 } from './shift-workflows.contract';
 import type { ShiftWorkflow, ShiftWorkflowRound } from './shift-workflows.model';
+import { createLocalShiftBatchExecutor, type LocalShiftBatchOptions, type LocalShiftRequest } from './shift-workflows.batch-local';
 
-type LocalData = Pick<AppDataSnapshot, 'events' | 'timelogs' | 'eventCrewAssignments' | 'invoices'>;
+export type LocalShiftData = Pick<AppDataSnapshot, 'events' | 'timelogs' | 'eventCrewAssignments' | 'invoices'>
+  & Partial<Pick<AppDataSnapshot, 'contractors'>>;
 const identities = new Map<string, string>();
+const localVersions = new Map<string, { fingerprint: string; timestamp: string; sourceVersion?: string }>();
+const localDayIds = new Map<string, string>();
+
+function canonicalLocalReport(report: Timelog): Timelog {
+  const id = localShiftWorkflowId('timelog', report.id);
+  const mapped = {
+    ...structuredClone(report), supabaseId: id,
+    eventSupabaseId: localShiftWorkflowId('event', report.eid),
+    contractorProfileId: report.contractorProfileId ? localShiftWorkflowId('profile', report.contractorProfileId) : undefined,
+    days: report.days.map((day, index) => {
+      if (canonicalUuid.safeParse(day.id).success) return structuredClone(day);
+      const key = stableJson([id, day.id ?? index]);
+      if (!localDayIds.has(key)) localDayIds.set(key, createStableDraftUuid());
+      return { ...structuredClone(day), id: localDayIds.get(key)! };
+    }),
+  };
+  const fingerprint = stableJson({ ...mapped, updatedAt: undefined });
+  const previous = localVersions.get(id);
+  if (previous?.fingerprint === fingerprint && report.updatedAt === previous.sourceVersion) {
+    return { ...mapped, updatedAt: previous.timestamp };
+  }
+  const supplied = Date.parse(report.updatedAt ?? '');
+  const timestamp = Number.isFinite(supplied) && (!previous || supplied > Date.parse(previous.timestamp))
+    ? new Date(supplied).toISOString()
+    : new Date(Math.max(Date.now(), previous ? Date.parse(previous.timestamp) + 1 : 0)).toISOString();
+  localVersions.set(id, { fingerprint, timestamp, sourceVersion: report.updatedAt });
+  return { ...mapped, updatedAt: timestamp };
+}
 
 /** Explicit demo-only identity map. These IDs must never reach a remote writer. */
 export function localShiftWorkflowId(kind: 'event' | 'timelog' | 'profile', value: string | number): string {
@@ -24,14 +54,10 @@ export function localShiftWorkflowId(kind: 'event' | 'timelog' | 'profile', valu
   return identity;
 }
 
-export function canonicalizeLocalShiftData(data: LocalData) {
+export function canonicalizeLocalShiftData(data: LocalShiftData) {
   return {
     events: data.events.map((event) => ({ ...structuredClone(event), supabaseId: localShiftWorkflowId('event', event.id) })),
-    timelogs: data.timelogs.map((report) => ({
-      ...structuredClone(report), supabaseId: localShiftWorkflowId('timelog', report.id),
-      eventSupabaseId: localShiftWorkflowId('event', report.eid),
-      contractorProfileId: report.contractorProfileId ? localShiftWorkflowId('profile', report.contractorProfileId) : undefined,
-    })),
+    timelogs: data.timelogs.map(canonicalLocalReport),
     eventCrewAssignments: data.eventCrewAssignments.map((assignment) => ({
       ...assignment, eventSupabaseId: localShiftWorkflowId('event', assignment.eventId),
       contractorProfileId: localShiftWorkflowId('profile', assignment.contractorProfileId),
@@ -51,17 +77,17 @@ function invalid(message = 'Výběr směn není platný. Obnovte data.'): never 
   throw new ShiftWorkflowError('invalid', message);
 }
 
-type LocalRound = ShiftWorkflowRound & { contractorUserId: string; expectedItemCount: number };
-type LocalLedgerEntry = { actor: string; payload: string; result: ShiftWorkflowMutationResult };
+export type LocalShiftRound = ShiftWorkflowRound & { contractorUserId: string; expectedItemCount: number };
 
 export function createLocalShiftWorkflowStore(
-  getData: () => LocalData,
-  initial: { workflows?: ShiftWorkflow[]; rounds?: LocalRound[]; revision?: number } = {},
+  getData: () => LocalShiftData,
+  initial: { workflows?: ShiftWorkflow[]; rounds?: LocalShiftRound[]; revision?: number } = {},
+  options: LocalShiftBatchOptions = {},
 ) {
   let revision = initial.revision ?? 0;
   let workflows = structuredClone(initial.workflows ?? []);
-  const rounds = structuredClone(initial.rounds ?? []);
-  const requests = new Map<string, LocalLedgerEntry>();
+  let rounds = structuredClone(initial.rounds ?? []);
+  const requests = new Map<string, LocalShiftRequest>();
 
   const assertLocal = (scope: ShiftWorkflowScope) => {
     if (scope.source !== 'local') throw new ShiftWorkflowError('denied', 'Lokální náhled nelze použít pro vzdálená data.');
@@ -112,7 +138,7 @@ export function createLocalShiftWorkflowStore(
     const previous = requests.get(command.requestId);
     if (previous) {
       if (previous.actor !== actor || previous.payload !== payload) invalid('Požadavek má jiné údaje. Obnovte výběr.');
-      return structuredClone(previous.result);
+      return structuredClone(previous.result) as ShiftWorkflowMutationResult;
     }
     if (command.expectedRevision !== revision) throw shiftWorkflowConflict();
     const target = workflows.find((w) => w.id === command.workflowId);
@@ -162,9 +188,16 @@ export function createLocalShiftWorkflowStore(
     requests.set(command.requestId, { actor, payload, result: structuredClone(result) });
     return result;
   };
-  return { read, save };
+  const executeBatch = createLocalShiftBatchExecutor({
+    getData, getWorkflows: () => workflows, getRounds: () => rounds,
+    setRounds: (next) => { rounds = next; }, requests, ...options,
+  });
+  return { read, save, executeBatch };
 }
 
-const localStore = createLocalShiftWorkflowStore(getLocalAppState);
+const localStore = createLocalShiftWorkflowStore(getLocalAppState, {}, {
+  commitTimelogs: (timelogs) => { updateLocalAppState((snapshot) => ({ ...snapshot, timelogs })); },
+});
 export const readLocalShiftWorkflows = localStore.read;
 export const saveLocalShiftWorkflow = localStore.save;
+export const executeLocalShiftBatch = localStore.executeBatch;

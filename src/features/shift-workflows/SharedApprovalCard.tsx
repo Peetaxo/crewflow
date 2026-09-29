@@ -1,13 +1,13 @@
 import React from 'react';
-import type { Contractor, Event, Role, Timelog } from '../../types';
+import type { Contractor, Event, Timelog } from '../../types';
 import { KM_RATE } from '../../data';
 import { calculateMealAllowance, calculateTotalHours, formatCurrency, formatShortDate } from '../../utils';
 import StatusBadge from '../../components/shared/StatusBadge';
 import type { ShiftApprovalGroup } from './shift-approval-groups';
 import type { ShiftRoundAction } from './shift-round-history';
 
-export function SharedApprovalCard({ group, contractors, events, role, onOpen, history = [] }: {
-  group: ShiftApprovalGroup; contractors: Contractor[]; events: Event[]; role: Role;
+export function SharedApprovalCard({ group, contractors, events, canAct, onOpen, history = [] }: {
+  group: ShiftApprovalGroup; contractors: Contractor[]; events: Event[]; canAct: boolean;
   onOpen: (timelog: Timelog) => void; history?: ShiftRoundAction[];
 }) {
   const contractor = contractors.find((person) => person.profileId === group.round.contractorProfileId);
@@ -19,9 +19,6 @@ export function SharedApprovalCard({ group, contractors, events, role, onOpen, h
     const meals = calculateMealAllowance(timelog.days, { enabled: Boolean(event?.mealAllowanceEnabled) });
     return { timelog, event, hours, meals, amount: hours * (contractor?.rate ?? 0) + timelog.km * KM_RATE + meals };
   });
-  const actionable = (role === 'crewhead' && group.round.status === 'pending_ch')
-    || (role === 'coo' && group.round.status === 'pending_coo')
-    || (role === 'crew' && group.round.status === 'pending_crew_confirmation');
   const lastReturn = [...history].reverse().find((action) => action.action.includes('return'));
   const reason = lastReturn?.note;
   return <section aria-label={`Společný výkaz ${contractor?.name ?? ''}`} className="mb-3 rounded-[24px] border border-[var(--nodu-border)] bg-white p-5">
@@ -48,7 +45,7 @@ export function SharedApprovalCard({ group, contractors, events, role, onOpen, h
     {!group.complete && <p role="alert" className="mt-2 text-sm">Chybí část společného výkazu. Obnovte data před rozhodnutím.</p>}
     <button type="button" disabled={!group.complete || !contractor || !parts.length}
       onClick={() => onOpen(group.timelogs[0])} className="mt-3 rounded-xl border border-[var(--nodu-border)] px-4 py-2 text-sm font-medium">
-      {actionable ? 'Zkontrolovat celý výkaz' : 'Otevřít celý výkaz'}
+      {canAct ? 'Zkontrolovat celý výkaz' : 'Otevřít celý výkaz'}
     </button>
   </section>;
 }

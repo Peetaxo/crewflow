@@ -5,7 +5,7 @@ import { useTimelogsQuery } from '../timelogs/queries/useTimelogsQuery';
 import { useEventsQuery } from '../events/queries/useEventsQuery';
 import { useShiftWorkflows } from './useShiftWorkflows';
 import { localShiftWorkflowId } from './shift-workflows.local';
-import { selectShiftApprovalGroups, selectShiftReviewTarget } from './shift-approval-groups';
+import { isShiftApprovalGroupActionable, selectShiftApprovalGroups, selectShiftReviewTarget } from './shift-approval-groups';
 import { SharedApprovalCard } from './SharedApprovalCard';
 import { readShiftRoundHistory, type ShiftRoundAction } from './shift-round-history';
 import { compareShiftWorkflowTimestamps } from './shift-workflow-time';
@@ -44,7 +44,12 @@ export function useSharedApprovals(timelogs: Timelog[], events: Event[], contrac
   }, [historyKey, snapshot, workflows.ready, workflows.scope]);
 
   const groupsFor = (visible: Timelog[]) => {
-    return selectShiftApprovalGroups(local ? visible.map(localCanonicalReport) : visible, canonical, snapshot?.rounds ?? []);
+    const selected = selectShiftApprovalGroups(local ? visible.map(localCanonicalReport) : visible, canonical, snapshot?.rounds ?? []);
+    const actor = { ...workflows.scope, role: local ? role : workflows.scope.role,
+      profileId: local && workflows.scope.profileId ? localShiftWorkflowId('profile', workflows.scope.profileId) : workflows.scope.profileId };
+    return { ...selected, rounds: selected.rounds.map((group) => ({ ...group,
+      canAct: isShiftApprovalGroupActionable(group, actor),
+    })) };
   };
   const legacyOnly = (visible: Timelog[]) => {
     if (!snapshot) return [];
@@ -62,7 +67,7 @@ export function useSharedApprovals(timelogs: Timelog[], events: Event[], contrac
           || round.timelogIds.some((id) => group.round.timelogIds.includes(id))
           || round.eventIds.some((id) => group.round.eventIds.includes(id)))).map((round) => round.id));
       return <SharedApprovalCard key={group.round.id} group={group} contractors={people}
-        events={canonicalEvents} role={local ? role : workflows.scope.role}
+        events={canonicalEvents} canAct={group.canAct}
         onOpen={(report) => setEditingTimelog(local ? allTimelogs.find((item) => item.id === report.id) ?? report : report)}
         history={history?.key === historyKey ? history.actions.filter((action) => relatedRoundIds.has(action.roundId)) : []} />;
     })}

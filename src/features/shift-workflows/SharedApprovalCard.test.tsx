@@ -14,7 +14,7 @@ describe('SharedApprovalCard', () => {
     const open = vi.fn();
     render(<SharedApprovalCard group={{ round: { id: 'round', workflowId: 'w', contractorProfileId: 'person', status: 'pending_ch',
       eventIds: ['e1', 'e2'], timelogIds: ['t1', 't2'], note: 'Opravte cestovné', updatedAt: '' }, timelogs: reports, complete: true }}
-      contractors={[{ profileId: 'person', name: 'Eva Crew', rate: 100 } as Contractor]} events={events} role="crewhead"
+      contractors={[{ profileId: 'person', name: 'Eva Crew', rate: 100 } as Contractor]} events={events} canAct
       history={[{ id: 'returned', roundId: 'old-round', action: 'return', label: 'Vráceno', note: 'Opravte cestovné', eventId: 'e1', createdAt: '2026-09-20T00:00:00Z' }]}
       onOpen={open} />);
     expect(screen.getByText('Eva Crew')).toBeInTheDocument();
@@ -30,7 +30,7 @@ describe('SharedApprovalCard', () => {
   it('does not mislabel a correction note as a return when the round was never returned', () => {
     render(<SharedApprovalCard group={{ round: { id: 'round', workflowId: null, contractorProfileId: 'person',
       status: 'pending_crew_confirmation', eventIds: ['e1'], timelogIds: ['t1'], note: 'Upřesněn čas směny', updatedAt: '2026-09-20T00:00:00Z' }, timelogs: [], complete: false }}
-      contractors={[]} events={[]} role="crew" onOpen={vi.fn()}
+      contractors={[]} events={[]} canAct={false} onOpen={vi.fn()}
       history={[
         { id: 'submitted', roundId: 'round', action: 'submitted', label: 'Odesláno', note: '', eventId: null, createdAt: '2026-09-19T00:00:00Z' },
         { id: 'corrected', roundId: 'round', action: 'correct', label: 'Opraveno CrewHead', note: 'Upřesněn čas směny', eventId: 'e1', createdAt: '2026-09-20T00:00:00Z' },

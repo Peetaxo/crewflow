@@ -1,7 +1,8 @@
 import React from 'react';
+const sharedMockState = vi.hoisted(() => ({ group: null as { canAct: boolean } | null }));
 vi.mock('../features/shift-workflows/useSharedApprovals', () => ({ useSharedApprovals: () => ({
-  cards: () => null, legacyOnly: (reports: unknown[]) => reports, reviewSelection: () => false,
-  groupsFor: () => ({ rounds: [], legacy: [] }),
+  cards: () => null, legacyOnly: (reports: unknown[]) => sharedMockState.group ? [] : reports, reviewSelection: () => false,
+  groupsFor: (reports: unknown[]) => ({ rounds: reports.length && sharedMockState.group ? [sharedMockState.group] : [], legacy: [] }),
 }) }));
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -156,6 +157,17 @@ describe('DashboardView', () => {
     eventApplicationMockState.applications = [];
     authMockState.currentProfileId = 'profile-current';
     mockTimelogsState.timelogs = [...defaultMockTimelogs];
+    sharedMockState.group = null;
+  });
+
+  it.each([false, true])('counts a shared COO round only when personally actionable: %s', async (canAct) => {
+    mockAppContext.role = 'coo'; mobileMockState.isMobile = true;
+    sharedMockState.group = { canAct };
+    mockTimelogsState.timelogs = [1, 2].map((id) => ({ ...defaultMockTimelogs[0], id: `shared-${id}`, status: 'pending_coo',
+      approvals: [{ status: 'pending', supersededAt: null, approverProfileId: canAct ? 'profile-current' : 'profile-other' }] }));
+    const { default: DashboardView } = await import('./DashboardView');
+    render(<DashboardView />);
+    expect(within(screen.getByRole('region', { name: 'Rychlý stav' })).getByText(canAct ? '1 výkaz' : '0 výkazů')).toBeInTheDocument();
   });
 
   it('shows a COO only reports assigned to the current profile plus legacy reports', async () => {

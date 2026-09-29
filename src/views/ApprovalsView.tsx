@@ -80,7 +80,7 @@ const ApprovalsView = () => {
     approvalQueue.filter((timelog) => isTimelogApprovalActionable(timelog, role, currentProfileId))
   ), [approvalQueue, currentProfileId, role]);
   const hasVisibleApprovals = isCrewHead ? mine.length > 0 : approvalQueue.length > 0;
-  const waitingCount = mine.length + sharedApprovals.groupsFor(sharedQueue).rounds.length;
+  const waitingCount = mine.length + sharedApprovals.groupsFor(sharedQueue).rounds.filter((group) => group.canAct).length;
 
   const grouped = useMemo(() => {
     if (isCrewHead) return null;

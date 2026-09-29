@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Timelog } from '../../types';
 import type { ShiftWorkflowRound } from './shift-workflows.model';
-import { selectShiftApprovalGroups, selectShiftReviewTarget } from './shift-approval-groups';
+import { isShiftApprovalGroupActionable, selectShiftApprovalGroups, selectShiftReviewTarget } from './shift-approval-groups';
 
 const report = (id: number): Timelog => ({ id, supabaseId: `t${id}`, eid: id,
   eventSupabaseId: `e${id}`, contractorProfileId: 'person', status: 'pending_ch',
@@ -29,6 +29,13 @@ describe('frozen approval group selection', () => {
   it('keeps incomplete rounds visible but prevents a decision', () => {
     const group = selectShiftApprovalGroups([report(1)], [report(1)], [round]).rounds[0];
     expect(group.complete).toBe(false);
+    expect(isShiftApprovalGroupActionable(group, { source: 'supabase', role: 'crewhead', profileId: 'CH', userId: 'CH-user' })).toBe(false);
+  });
+  it('does not advertise a decision when one frozen part has a different refreshed status', () => {
+    const reports = [report(1), { ...report(2), status: 'pending_coo' as const }];
+    const group = selectShiftApprovalGroups([reports[0]], reports, [round]).rounds[0];
+    expect(group.complete).toBe(true);
+    expect(isShiftApprovalGroupActionable(group, { source: 'supabase', role: 'crewhead', profileId: 'CH', userId: 'CH-user' })).toBe(false);
   });
   it('resolves either part to the same representative and rejects independent rounds before mutation', () => {
     const reports = [report(1), report(2), report(3)];

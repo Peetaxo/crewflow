@@ -1,7 +1,8 @@
 import React from 'react';
+const sharedMockState = vi.hoisted(() => ({ group: null as { canAct: boolean } | null }));
 vi.mock('../features/shift-workflows/useSharedApprovals', () => ({ useSharedApprovals: () => ({
-  cards: () => null, legacyOnly: (reports: unknown[]) => reports, reviewSelection: () => false,
-  groupsFor: () => ({ rounds: [], legacy: [] }),
+  cards: () => null, legacyOnly: (reports: unknown[]) => sharedMockState.group ? [] : reports, reviewSelection: () => false,
+  groupsFor: (reports: unknown[]) => ({ rounds: reports.length && sharedMockState.group ? [sharedMockState.group] : [], legacy: [] }),
 }) }));
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -98,6 +99,15 @@ describe('ApprovalsView targeted approvals', () => {
     vi.clearAllMocks();
     queriedTimelogs = timelogs;
     updateTimelogStatuses.mockResolvedValue([]);
+    sharedMockState.group = null;
+  });
+
+  it.each([false, true])('counts one shared COO round only for its current assignee: %s', async (canAct) => {
+    sharedMockState.group = { canAct };
+    queriedTimelogs = timelogs.slice(0, 2);
+    const { default: ApprovalsView } = await import('./ApprovalsView');
+    render(<ApprovalsView />);
+    expect(screen.getByText(`${canAct ? 1 : 0} ceka`)).toBeInTheDocument();
   });
 
   it('counts and approves only current-assignee plus legacy reports while showing the other COO readonly', async () => {

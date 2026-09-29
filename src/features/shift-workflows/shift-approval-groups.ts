@@ -1,12 +1,27 @@
 import type { Timelog } from '../../types';
-import type { ShiftWorkflowSnapshot } from './shift-workflows.contract';
+import type { ShiftWorkflowScope, ShiftWorkflowSnapshot } from './shift-workflows.contract';
 import type { ShiftWorkflowRound } from './shift-workflows.model';
 import { compareShiftWorkflowTimestamps } from './shift-workflow-time';
+import { getActiveTimelogApproval } from '../timelogs/services/timelog-approval-state';
 
 export interface ShiftApprovalGroup {
   round: ShiftWorkflowRound;
   timelogs: Timelog[];
   complete: boolean;
+}
+
+/** A shared decision belongs to the actor only when every frozen part does. */
+export function isShiftApprovalGroupActionable(group: ShiftApprovalGroup, scope: ShiftWorkflowScope): boolean {
+  if (!scope.profileId || !scope.userId || !group.complete || group.timelogs.length === 0
+    || group.timelogs.some((report) => report.status !== group.round.status)) return false;
+  if (scope.role === 'crewhead') return group.round.status === 'pending_ch';
+  if (scope.role === 'crew') return group.round.status === 'pending_crew_confirmation'
+    && group.round.contractorProfileId === scope.profileId;
+  return scope.role === 'coo' && group.round.status === 'pending_coo' && group.timelogs.every((report) => {
+    const approval = getActiveTimelogApproval(report);
+    return approval?.status === 'pending' && approval.timelogId === report.supabaseId
+      && approval.approverProfileId === scope.profileId && approval.approverUserId === scope.userId;
+  });
 }
 
 /** Only persisted membership identifies a round. Filtering one part never truncates it. */

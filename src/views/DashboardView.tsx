@@ -153,11 +153,12 @@ const DashboardView = () => {
 
   const sharedApprovals = useSharedApprovals(timelogsQuery.data ?? [], events, contractors);
   const allTimelogQueue = useMemo(() => (
-    timelogs.filter((timelog) => (
-      timelog.status === approvalStatus
-      && (isTimelogApprovalActionable(timelog, role, currentProfileId)
-        || sharedApprovals.groupsFor([timelog]).rounds.length > 0)
-    ))
+    timelogs.filter((timelog) => {
+      if (timelog.status !== approvalStatus) return false;
+      const rounds = sharedApprovals.groupsFor([timelog]).rounds;
+      return rounds.length > 0 ? rounds.some((group) => group.canAct)
+        : isTimelogApprovalActionable(timelog, role, currentProfileId);
+    })
   ), [approvalStatus, currentProfileId, role, timelogs, sharedApprovals]);
   const timelogQueue = sharedApprovals.legacyOnly(allTimelogQueue);
   const pendingForMe = timelogQueue.length + sharedApprovals.groupsFor(allTimelogQueue).rounds.length;

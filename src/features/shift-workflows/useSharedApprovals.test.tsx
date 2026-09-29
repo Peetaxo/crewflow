@@ -9,11 +9,13 @@ vi.mock('../../context/useAppContext', () => ({ useAppContext: () => ({ role: 'c
 vi.mock('../timelogs/queries/useTimelogsQuery', () => ({ useTimelogsQuery: () => ({ data: mocks.timelogs }) }));
 vi.mock('../events/queries/useEventsQuery', () => ({ useEventsQuery: () => ({ data: mocks.events }) }));
 import { useSharedApprovals } from './useSharedApprovals';
+import { localShiftWorkflowId } from './shift-workflows.local';
 const person = { profileId: 'person', name: 'Eva', rate: 100 } as Contractor;
 const snapshot = { revision: 1, assignedEventIds: [], workflows: [], rounds: [{ id: 'round', workflowId: null, contractorProfileId: 'person', status: 'pending_coo', eventIds: ['e1', 'e2'], timelogIds: ['t1', 't2'], note: '', updatedAt: '2026-09-20T00:00:00Z' }] };
 function Harness({ visible = mocks.timelogs[1] }: { visible?: Timelog }) {
   const shared = useSharedApprovals([visible], [mocks.events[1]], [person]);
-  return <>{shared.cards([visible])}<button onClick={() => shared.reviewSelection([visible.id])}>Review part</button><span>{shared.legacyOnly(mocks.timelogs).length} legacy</span></>;
+  return <>{shared.cards([visible])}<button onClick={() => shared.reviewSelection([visible.id])}>Review part</button><span>{shared.legacyOnly(mocks.timelogs).length} legacy</span>
+    <span>{shared.groupsFor([visible]).rounds.filter((group) => group.canAct).length} actionable rounds</span></>;
 }
 describe('shared approval surfaces', () => {
   beforeEach(() => {
@@ -67,5 +69,52 @@ describe('shared approval surfaces', () => {
     expect(screen.getAllByRole('region')).toHaveLength(1);
     expect(screen.getByText(/Poslední důvod vrácení: Opravit původní cestovné/)).toBeInTheDocument();
     expect(screen.getByText('Historie schvalování')).toBeInTheDocument();
+  });
+  it.each([
+    ['another COO', 'B', 'B', 0],
+    ['same profile but different auth user', 'A', 'B', 0],
+    ['current COO', 'A', 'A', 1],
+  ])('counts the frozen round only for its %s', async (_name, profileId, userId, count) => {
+    mocks.timelogs = mocks.timelogs.map((report) => ({ ...report, approvals: [{
+      id: `approval-${report.id}`, approvalRoundId: 'approval-round', timelogId: report.supabaseId!,
+      approverProfileId: profileId, approverUserId: userId, requestedByProfileId: 'CH', requestedByUserId: 'CH-user',
+      status: 'pending', note: '', requestedAt: '2026-09-20T00:00:00Z', updatedAt: '2026-09-20T00:00:00Z', resolvedAt: null, supersededAt: null,
+    }] }));
+    render(<Harness />);
+    expect(screen.getByText(`${count} actionable rounds`)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: count ? 'Zkontrolovat celý výkaz' : 'Otevřít celý výkaz' })).toBeInTheDocument();
+    expect(screen.getByText('Směna 1')).toBeInTheDocument();
+    expect(screen.getByText('Směna 2')).toBeInTheDocument();
+    await act(async () => undefined);
+  });
+  it('counts the complete CH round once without per-part COO approvals', async () => {
+    mocks.timelogs = mocks.timelogs.map((report) => ({ ...report, status: 'pending_ch' }));
+    mocks.hook.mockReturnValue({ scope: { source: 'supabase', userId: 'CH', profileId: 'CH', role: 'crewhead' }, scopeKey: 'CH', ready: true,
+      query: { data: { ...snapshot, rounds: [{ ...snapshot.rounds[0], status: 'pending_ch' }] } } });
+    render(<Harness />);
+    expect(screen.getByText('1 actionable rounds')).toBeInTheDocument();
+    await act(async () => undefined);
+  });
+  it('requires every frozen approval, never the legacy unassigned fallback, for COO actionability', async () => {
+    // A round with no pending per-part targets stays visible but not personal.
+    render(<Harness />);
+    expect(screen.getByText('0 actionable rounds')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Otevřít celý výkaz' })).toBeInTheDocument();
+    await act(async () => undefined);
+  });
+  it('uses the explicit local canonical actor profile with the same auth-user binding', async () => {
+    const actor = localShiftWorkflowId('profile', 'demo-coo');
+    mocks.timelogs = mocks.timelogs.map((report) => ({ ...report, approvals: [{
+      id: `approval-${report.id}`, approvalRoundId: 'approval-round', timelogId: localShiftWorkflowId('timelog', report.id),
+      approverProfileId: actor, approverUserId: 'demo-user', requestedByProfileId: 'CH', requestedByUserId: 'CH-user',
+      status: 'pending', note: '', requestedAt: '2026-09-20T00:00:00Z', updatedAt: '2026-09-20T00:00:00Z', resolvedAt: null, supersededAt: null,
+    }] }));
+    mocks.hook.mockReturnValue({ scope: { source: 'local', userId: 'demo-user', profileId: 'demo-coo', role: 'coo' }, scopeKey: 'local', ready: true,
+      query: { data: { ...snapshot, rounds: [{ ...snapshot.rounds[0], contractorProfileId: localShiftWorkflowId('profile', 'person'),
+        eventIds: [1, 2].map((id) => localShiftWorkflowId('event', id)), timelogIds: [1, 2].map((id) => localShiftWorkflowId('timelog', id)) }] } } });
+    render(<Harness />);
+    expect(screen.getByText('1 actionable rounds')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Zkontrolovat celý výkaz' })).toBeInTheDocument();
+    await act(async () => undefined);
   });
 });

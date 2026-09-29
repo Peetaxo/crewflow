@@ -13,8 +13,8 @@ const createDeferred = <T,>() => {
 
 const createSnapshot = (timelogs: Timelog[]) => ({
   events: [
-    { id: 1, supabaseId: 'event-uuid-1' },
-    { id: 2, supabaseId: 'event-uuid-2' },
+    { id: 1, supabaseId: '00000000-0000-4000-8000-000000000011' },
+    { id: 2, supabaseId: '00000000-0000-4000-8000-000000000012' },
   ],
   contractors: [],
   timelogs,
@@ -28,8 +28,8 @@ const createSnapshot = (timelogs: Timelog[]) => ({
 const makeTimelog = (overrides: Partial<Timelog> = {}): Timelog => ({
   id: 1,
   eid: 1,
-  supabaseId: 'timelog-uuid-1',
-  eventSupabaseId: 'event-uuid-1',
+  supabaseId: '00000000-0000-4000-8000-000000000021',
+  eventSupabaseId: '00000000-0000-4000-8000-000000000011',
   contractorProfileId: 'profile-uuid-1',
   updatedAt: '2026-08-17T10:00:00.000Z',
   days: [{ d: '2026-08-15', f: '08:00', t: '17:00', type: 'provoz' }],
@@ -42,7 +42,7 @@ const makeTimelog = (overrides: Partial<Timelog> = {}): Timelog => ({
 const makeApproval = (overrides: Partial<TimelogApproval> = {}): TimelogApproval => ({
   id: '11111111-1111-4111-8111-111111111111',
   approvalRoundId: '22222222-2222-4222-8222-222222222222',
-  timelogId: 'timelog-uuid-1',
+  timelogId: '00000000-0000-4000-8000-000000000021',
   approverProfileId: '33333333-3333-4333-8333-333333333333',
   approverUserId: '44444444-4444-4444-8444-444444444444',
   status: 'pending',
@@ -79,7 +79,7 @@ const setupAtomicHarness = async ({
   const saveTimelogAtomicRpc = vi.fn(saveImplementation ?? (async (input: unknown) => {
     const current = input as { timelogId: string | null; status: TimelogStatus };
     return {
-      id: current.timelogId ?? 'created-timelog-uuid',
+      id: current.timelogId ?? '00000000-0000-4000-8000-000000000023',
       updated_at: '2026-08-17T11:00:00.000Z',
       status: current.status,
     };
@@ -111,7 +111,7 @@ const setupAtomicHarness = async ({
     importImplementation ?? (async (input: unknown) => {
       const current = input as { timelogId: string | null };
       return {
-        id: current.timelogId ?? 'imported-timelog-uuid',
+        id: current.timelogId ?? '00000000-0000-4000-8000-000000000024',
         updated_at: '2026-08-17T13:00:00.000Z',
         status: 'approved' as const,
       };
@@ -166,7 +166,7 @@ const setupAtomicHarness = async ({
         return createOrderedQuery([{ id: 'profile-uuid-1' }, { id: 'profile-uuid-2' }]);
       }
       if (table === 'events') {
-        return createOrderedQuery([{ id: 'event-uuid-1' }, { id: 'event-uuid-2' }]);
+        return createOrderedQuery([{ id: '00000000-0000-4000-8000-000000000011' }, { id: '00000000-0000-4000-8000-000000000012' }]);
       }
       throw new Error(`Unexpected read table ${table}`);
     }),
@@ -175,7 +175,10 @@ const setupAtomicHarness = async ({
   vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
   vi.doMock('../../../lib/supabase', () => ({
     isSupabaseConfigured: true,
-    supabase: { from },
+    // These reports are genuine legacy records. Keep the existing `from`
+    // assertions focused on authoritative hydration, separately from refusal reads.
+    supabase: { from: (table: string) => table === 'shift_workflow_round_items' || table === 'shift_workflow_events'
+      ? { select: () => ({ in: async () => ({ data: [], error: null }) }) } : from(table) },
   }));
   vi.doMock('./timelog-mutation-rpc.service', () => ({
     saveTimelogAtomicRpc,
@@ -224,6 +227,7 @@ const setupAtomicHarness = async ({
     deleteTimelogAtomicRpc,
     importApprovedTimelogAtomicRpc,
     from,
+    setQueryData,
     getSnapshot: () => structuredClone(snapshot),
   };
 };
@@ -234,12 +238,38 @@ describe('timelog atomic write coordination', () => {
     vi.clearAllMocks();
   });
 
+  it('does not commit a legacy save RPC receipt after hydration identity retirement', async () => {
+    const rpc = createDeferred<unknown>();
+    const harness = await setupAtomicHarness({ timelogs: [makeTimelog()], saveImplementation: async () => rpc.promise });
+    const write = harness.service.saveTimelog({ ...makeTimelog(), note: 'Private actor A' });
+    await vi.waitFor(() => expect(harness.saveTimelogAtomicRpc).toHaveBeenCalledOnce());
+    harness.service.resetSupabaseTimelogsHydration();
+    rpc.resolve({ id: makeTimelog().supabaseId, updated_at: '2026-09-20T00:00:00Z', status: 'draft' });
+    await expect(write).rejects.toThrow(/Přístup/);
+    expect(harness.getSnapshot().timelogs[0].note).toBe('');
+    expect(harness.setQueryData).not.toHaveBeenCalled();
+    expect(harness.from).not.toHaveBeenCalled();
+  });
+
+  it('does not publish a recovery reload that completes after hydration identity retirement', async () => {
+    const read = createDeferred<void>();
+    const harness = await setupAtomicHarness({ timelogs: [makeTimelog()],
+      authoritativeTimelogs: [makeTimelog({ note: 'Private actor A' })], authoritativeReadGate: read.promise,
+      saveImplementation: async () => { throw new Error('conflict'); } });
+    const write = harness.service.saveTimelog(makeTimelog());
+    await vi.waitFor(() => expect(harness.from).toHaveBeenCalledTimes(5));
+    harness.service.resetSupabaseTimelogsHydration(); read.resolve();
+    await expect(write).rejects.toThrow(/Přístup/);
+    expect(harness.getSnapshot().timelogs[0].note).toBe('');
+    expect(harness.setQueryData).not.toHaveBeenCalled();
+  });
+
   it('creates parent and days through one RPC and stores the canonical version', async () => {
     const harness = await setupAtomicHarness({ timelogs: [] });
 
     const created = await harness.service.createTimelog({
       eid: 1,
-      eventSupabaseId: 'event-uuid-1',
+      eventSupabaseId: '00000000-0000-4000-8000-000000000011',
       contractorProfileId: 'profile-uuid-1',
       days: [{ d: '2026-08-15', f: '08:00', t: '17:00', type: 'provoz' }],
       km: 0,
@@ -250,13 +280,13 @@ describe('timelog atomic write coordination', () => {
     expect(harness.saveTimelogAtomicRpc).toHaveBeenCalledOnce();
     expect(harness.saveTimelogAtomicRpc).toHaveBeenCalledWith(expect.objectContaining({
       timelogId: null,
-      eventId: 'event-uuid-1',
+      eventId: '00000000-0000-4000-8000-000000000011',
       contractorId: 'profile-uuid-1',
       expectedUpdatedAt: null,
       expectedStatus: null,
     }));
     expect(created).toMatchObject({
-      supabaseId: 'created-timelog-uuid',
+      supabaseId: '00000000-0000-4000-8000-000000000023',
       updatedAt: '2026-08-17T11:00:00.000Z',
     });
     expect(harness.from).not.toHaveBeenCalled();
@@ -269,7 +299,7 @@ describe('timelog atomic write coordination', () => {
     await harness.service.saveTimelog({ ...timelog, km: 12, note: 'nová data' });
 
     expect(harness.saveTimelogAtomicRpc).toHaveBeenCalledWith(expect.objectContaining({
-      timelogId: 'timelog-uuid-1',
+      timelogId: '00000000-0000-4000-8000-000000000021',
       expectedUpdatedAt: '2026-08-17T10:00:00.000Z',
       expectedStatus: 'draft',
       km: 12,
@@ -286,7 +316,7 @@ describe('timelog atomic write coordination', () => {
     await harness.service.deleteTimelog(1);
 
     expect(harness.deleteTimelogAtomicRpc).toHaveBeenCalledWith({
-      id: 'timelog-uuid-1',
+      id: '00000000-0000-4000-8000-000000000021',
       expectedUpdatedAt: '2026-08-17T10:00:00.000Z',
       expectedStatus: 'draft',
     });
@@ -307,7 +337,7 @@ describe('timelog atomic write coordination', () => {
         call += 1;
         if (call === 1) return first.promise;
         return {
-          id: 'timelog-uuid-1',
+          id: '00000000-0000-4000-8000-000000000021',
           updated_at: '2026-08-17T12:00:00.000Z',
           status: 'draft' as const,
         };
@@ -319,7 +349,7 @@ describe('timelog atomic write coordination', () => {
     await vi.waitFor(() => expect(harness.saveTimelogAtomicRpc).toHaveBeenCalledTimes(1));
 
     first.resolve({
-      id: 'timelog-uuid-1',
+      id: '00000000-0000-4000-8000-000000000021',
       updated_at: '2026-08-17T11:00:00.000Z',
       status: 'draft',
     });
@@ -358,7 +388,7 @@ describe('timelog atomic write coordination', () => {
         call += 1;
         if (call === 1) return firstRpc.promise;
         return {
-          id: 'timelog-uuid-1',
+          id: '00000000-0000-4000-8000-000000000021',
           updated_at: '2026-08-17T12:00:00.000Z',
           status: 'draft' as const,
         };
@@ -380,7 +410,7 @@ describe('timelog atomic write coordination', () => {
     expect(harness.saveTimelogAtomicRpc).toHaveBeenCalledTimes(1);
 
     firstRpc.resolve({
-      id: 'timelog-uuid-1',
+      id: '00000000-0000-4000-8000-000000000021',
       updated_at: '2026-08-17T11:00:00.000Z',
       status: 'draft',
     });
@@ -393,6 +423,12 @@ describe('timelog atomic write coordination', () => {
       note: 'second',
     }));
   });
+  it('hydrates a missing canonical event identity before checking legacy membership', async () => {
+    const harness = await setupAtomicHarness({ timelogs: [makeTimelog({ eventSupabaseId: undefined })], authoritativeTimelogs: [makeTimelog()] });
+    await harness.service.updateTimelogStatuses([1], 'sub');
+    expect(harness.transitionTimelogStatusesAtomicRpc).toHaveBeenCalledOnce();
+    expect(harness.from).toHaveBeenCalledTimes(5);
+  });
 
   it('coordinates a batch and a same-row delete without Promise.all partial writes', async () => {
     const batch = createDeferred<Array<{
@@ -403,8 +439,8 @@ describe('timelog atomic write coordination', () => {
     const second = makeTimelog({
       id: 2,
       eid: 2,
-      supabaseId: 'timelog-uuid-2',
-      eventSupabaseId: 'event-uuid-2',
+      supabaseId: '00000000-0000-4000-8000-000000000022',
+      eventSupabaseId: '00000000-0000-4000-8000-000000000012',
       contractorProfileId: 'profile-uuid-2',
     });
     const harness = await setupAtomicHarness({
@@ -420,22 +456,22 @@ describe('timelog atomic write coordination', () => {
     expect(harness.deleteTimelogAtomicRpc).not.toHaveBeenCalled();
     expect(harness.transitionTimelogStatusesAtomicRpc).toHaveBeenCalledWith({
       targets: [
-        { id: 'timelog-uuid-1', expectedUpdatedAt: '2026-08-17T10:00:00.000Z' },
-        { id: 'timelog-uuid-2', expectedUpdatedAt: '2026-08-17T10:00:00.000Z' },
+        { id: '00000000-0000-4000-8000-000000000021', expectedUpdatedAt: '2026-08-17T10:00:00.000Z' },
+        { id: '00000000-0000-4000-8000-000000000022', expectedUpdatedAt: '2026-08-17T10:00:00.000Z' },
       ],
       expectedStatus: 'draft',
       nextStatus: 'pending_ch',
     });
 
     batch.resolve([
-      { id: 'timelog-uuid-1', updated_at: '2026-08-17T11:00:00.000Z', status: 'pending_ch' },
-      { id: 'timelog-uuid-2', updated_at: '2026-08-17T11:00:01.000Z', status: 'pending_ch' },
+      { id: '00000000-0000-4000-8000-000000000021', updated_at: '2026-08-17T11:00:00.000Z', status: 'pending_ch' },
+      { id: '00000000-0000-4000-8000-000000000022', updated_at: '2026-08-17T11:00:01.000Z', status: 'pending_ch' },
     ]);
     await statusPromise;
     await deletePromise.catch(() => undefined);
 
     expect(harness.deleteTimelogAtomicRpc).toHaveBeenCalledWith(expect.objectContaining({
-      id: 'timelog-uuid-1',
+      id: '00000000-0000-4000-8000-000000000021',
       expectedUpdatedAt: '2026-08-17T11:00:00.000Z',
       expectedStatus: 'pending_ch',
     }));
@@ -446,7 +482,7 @@ describe('timelog atomic write coordination', () => {
     const harness = await setupAtomicHarness({
       timelogs: [pendingCoo],
       importImplementation: async () => ({
-        id: 'timelog-uuid-1',
+        id: '00000000-0000-4000-8000-000000000021',
         updated_at: '2026-08-17T13:00:00.000Z',
         status: 'invoiced' as const,
       }),
@@ -460,8 +496,8 @@ describe('timelog atomic write coordination', () => {
     });
 
     expect(harness.importApprovedTimelogAtomicRpc).toHaveBeenCalledWith({
-      timelogId: 'timelog-uuid-1',
-      eventId: 'event-uuid-1',
+      timelogId: '00000000-0000-4000-8000-000000000021',
+      eventId: '00000000-0000-4000-8000-000000000011',
       contractorId: 'profile-uuid-1',
       expectedUpdatedAt: '2026-08-17T10:00:00.000Z',
       expectedStatus: 'pending_coo',

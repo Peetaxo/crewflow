@@ -246,10 +246,12 @@ const preserveStableLocalTimelogIds = (authoritativeTimelogs: Timelog[]): Timelo
   });
 };
 
-const reloadAuthoritativeTimelogsAfterMutationFailure = async (): Promise<void> => {
+const reloadAuthoritativeTimelogsAfterMutationFailure = async (assertCurrent: () => void): Promise<void> => {
   while (true) {
+    assertCurrent();
     const generationAtLoadStart = timelogSnapshotGeneration;
     const authoritativeTimelogs = await loadTimelogsSnapshot();
+    assertCurrent();
 
     if (generationAtLoadStart !== timelogSnapshotGeneration) {
       continue;
@@ -262,25 +264,36 @@ const reloadAuthoritativeTimelogsAfterMutationFailure = async (): Promise<void> 
 
 const runTimelogMutation = async <T,>(
   requestedKeys: string[],
-  mutation: () => Promise<T>,
-): Promise<T> => runLifecycleDataMutation(
-  requestedKeys.map((key) => `timelog:${key}`),
-  async () => {
-    timelogSnapshotGeneration += 1;
-    try {
-      return await mutation();
-    } catch (error) {
-      if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
-        try {
-          await reloadAuthoritativeTimelogsAfterMutationFailure();
-        } catch (reloadError) {
-          console.error('Authoritative timelog reload failed after mutation error', reloadError);
+  mutation: (assertCurrent: () => void) => Promise<T>,
+  assertActorCurrent?: () => void,
+): Promise<T> => {
+  const epoch = timelogsHydrationEpoch;
+  const assertCurrent = () => {
+    assertActorCurrent?.();
+    if (epoch !== timelogsHydrationEpoch) throw new Error('Přístup k výkazům se změnil. Otevřete výkaz znovu.');
+  };
+  return runLifecycleDataMutation(
+    requestedKeys.map((key) => `timelog:${key}`),
+    async () => {
+      assertCurrent();
+      timelogSnapshotGeneration += 1;
+      try {
+        return await mutation(assertCurrent);
+      } catch (error) {
+        assertCurrent();
+        if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+          try {
+            await reloadAuthoritativeTimelogsAfterMutationFailure(assertCurrent);
+          } catch (reloadError) {
+            assertCurrent();
+            console.error('Authoritative timelog reload failed after mutation error', reloadError);
+          }
         }
+        throw error;
       }
-      throw error;
-    }
-  },
-);
+    },
+  );
+};
 
 export const loadSupabaseTimelogs = (): Promise<void> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
@@ -425,14 +438,18 @@ const resolvePersistedTimelog = async (
   localId: number,
   preferredSupabaseId?: string,
   identityHint?: Pick<Timelog, 'eventSupabaseId' | 'contractorProfileId'>,
+  assertCurrent: () => void = () => undefined,
 ): Promise<Timelog> => {
   let timelog = findTimelogForIdentity(localId, preferredSupabaseId, identityHint);
-  if (timelog?.supabaseId && timelog.updatedAt) {
+  if (timelog?.supabaseId && timelog.updatedAt && timelog.eventSupabaseId) {
     return timelog;
   }
 
   try {
-    commitAuthoritativeTimelogSnapshot(await loadTimelogsSnapshot());
+    assertCurrent();
+    const authoritative = await loadTimelogsSnapshot();
+    assertCurrent();
+    commitAuthoritativeTimelogSnapshot(authoritative);
   } catch (error) {
     console.error('Unable to refresh timelog identity before mutation', error);
     throw new Error('Výkaz se nepodařilo načíst. Obnovte data a zkuste to znovu.');
@@ -450,6 +467,7 @@ const persistSupabaseTimelogStatus = async (
   localTimelogIds: number[],
   nextStatus: TimelogStatus,
   options: TimelogActionOptions = {},
+  requireLegacy = false,
 ): Promise<Timelog[] | null> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
     return null;
@@ -463,15 +481,16 @@ const persistSupabaseTimelogStatus = async (
     getTimelogMutationKeys(localId, timelog?.supabaseId)
   ));
 
-  return runTimelogMutation(keys, async () => {
+  return runTimelogMutation(keys, async (assertCurrent) => {
     const missingIdentity = initialTargets.find(({ timelog }) => (
-      !timelog?.supabaseId || !timelog.updatedAt
+      !timelog?.supabaseId || !timelog.updatedAt || !timelog.eventSupabaseId
     ));
     if (missingIdentity) {
       await resolvePersistedTimelog(
         missingIdentity.localId,
         missingIdentity.timelog?.supabaseId,
         missingIdentity.timelog,
+        assertCurrent,
       );
     }
 
@@ -496,7 +515,11 @@ const persistSupabaseTimelogStatus = async (
       return [];
     }
 
-    options.assertCurrent?.();
+    const guardedTargets = targets.map(({ timelog }) => timelog).filter((timelog) => requireLegacy || !(
+      ['approved', 'invoiced'].includes(timelog.status) && ['approved', 'invoiced', 'paid'].includes(nextStatus)
+    ));
+    if (guardedTargets.length) await assertLegacyTimelogWrite(guardedTargets);
+    assertCurrent();
     const results = await transitionTimelogStatusesAtomicRpc({
       targets: targets
         .map(({ timelog }) => ({
@@ -507,6 +530,7 @@ const persistSupabaseTimelogStatus = async (
       expectedStatus,
       nextStatus,
     });
+    assertCurrent();
     const resultsById = new Map(results.map((result) => [result.id, result]));
     if (resultsById.size !== targets.length) {
       throw new Error('Operaci s výkazy se nepodařilo dokončit.');
@@ -551,7 +575,7 @@ const persistSupabaseTimelogStatus = async (
 
     invalidateTimelogQueries();
     return updatedTimelogs;
-  });
+  }, options.assertCurrent);
 };
 
 export const getTimelogs = (search = ''): Timelog[] => {
@@ -675,10 +699,12 @@ type AuthenticatedProfileClient = {
   };
 };
 
-const getAuthenticatedSupabaseProfileId = async (): Promise<string> => {
+const getAuthenticatedSupabaseProfileId = async (assertCurrent: () => void = () => undefined): Promise<string> => {
   if (!supabase) throw new Error(TARGETED_PROFILE_MESSAGE);
+  assertCurrent();
   const client = supabase as unknown as AuthenticatedProfileClient;
   const userResult = await client.auth.getUser();
+  assertCurrent();
   if (userResult.error || !userResult.data.user) {
     throw new Error(TARGETED_PROFILE_MESSAGE);
   }
@@ -687,6 +713,7 @@ const getAuthenticatedSupabaseProfileId = async (): Promise<string> => {
     .select('id')
     .eq('user_id', userResult.data.user.id)
     .maybeSingle();
+  assertCurrent();
   if (profileResult.error || !profileResult.data?.id) {
     throw new Error(TARGETED_PROFILE_MESSAGE);
   }
@@ -724,8 +751,12 @@ const createApprovalUuid = (): string => {
 
 const reloadApprovalMutationResults = async (
   stableIds: string[],
+  assertCurrent: () => void,
 ): Promise<Timelog[]> => {
-  const reconciledTimelogs = commitAuthoritativeTimelogSnapshot(await loadTimelogsSnapshot());
+  assertCurrent();
+  const authoritative = await loadTimelogsSnapshot();
+  assertCurrent();
+  const reconciledTimelogs = commitAuthoritativeTimelogSnapshot(authoritative);
   return stableIds.map((stableId) => {
     const timelog = reconciledTimelogs.find((item) => item.supabaseId === stableId);
     if (!timelog) throw new Error('Výkaz už neexistuje nebo k němu nemáte přístup.');
@@ -747,15 +778,16 @@ const persistSupabaseApprovalAction = async (
     getTimelogMutationKeys(localId, supabaseId)
   ));
 
-  return runTimelogMutation(keys, async () => {
+  return runTimelogMutation(keys, async (assertCurrent) => {
     const missingIdentity = initialTargets.find(({ supabaseId, identityHint }) => (
-      !supabaseId || !identityHint.updatedAt
+      !supabaseId || !identityHint.updatedAt || !identityHint.eventSupabaseId
     ));
     if (missingIdentity) {
       await resolvePersistedTimelog(
         missingIdentity.localId,
         missingIdentity.supabaseId,
         missingIdentity.identityHint,
+        assertCurrent,
       );
     }
 
@@ -771,8 +803,10 @@ const persistSupabaseApprovalAction = async (
       mode === 'handoff' ? 'ch' : mode === 'resolve-approved' ? 'coo' : 'rej',
       options,
     );
-    const authenticatedProfileId = await getAuthenticatedSupabaseProfileId();
-    options.assertCurrent?.();
+    await assertLegacyTimelogWrite(targets);
+    assertCurrent();
+    const authenticatedProfileId = await getAuthenticatedSupabaseProfileId(assertCurrent);
+    assertCurrent();
 
     if (mode === 'handoff') {
       const rpcTargets = targets.map((timelog) => ({
@@ -795,8 +829,9 @@ const persistSupabaseApprovalAction = async (
       });
     }
 
-    return reloadApprovalMutationResults(targets.map((timelog) => timelog.supabaseId as string));
-  });
+    assertCurrent();
+    return reloadApprovalMutationResults(targets.map((timelog) => timelog.supabaseId as string), assertCurrent);
+  }, options.assertCurrent);
 };
 
 const getLocalActor = (profileId: string | undefined): Contractor => {
@@ -812,10 +847,10 @@ const updateLocalApprovalAction = async (
   ids: number[],
   mode: 'handoff' | 'resolve-approved' | 'resolve-returned',
   options: TimelogActionOptions,
-): Promise<Timelog[]> => runTimelogMutation(ids.map((id) => `local:${id}`), async () => {
+): Promise<Timelog[]> => runTimelogMutation(ids.map((id) => `local:${id}`), async (assertCurrent) => {
   const targets = getRequestedTimelogs(ids);
   await assertLegacyTimelogWrite(targets);
-  options.assertCurrent?.();
+  assertCurrent();
   assertApprovalActionShape(
     targets,
     mode === 'handoff' ? 'ch' : mode === 'resolve-approved' ? 'coo' : 'rej',
@@ -912,7 +947,7 @@ const updateLocalApprovalAction = async (
   }));
   invalidateTimelogQueries();
   return ids.map((id) => updatedById.get(id) as Timelog);
-});
+}, options.assertCurrent);
 
 const updateTimelogStatusesTo = async (
   ids: number[],
@@ -927,25 +962,18 @@ const updateTimelogStatusesTo = async (
     const timelog = initialTimelogs.find((item) => item.id === id);
     if (timelog) assertCompleteForStatus(timelog, nextStatus);
   });
-  // Billing helpers may only bypass the shared editor after approval. A caller
-  // cannot disguise approval of a pending shared part as an invoice operation.
-  const nonBillingTargets = initialTimelogs.filter((timelog) => ids.includes(timelog.id)
-    && !( ['approved', 'invoiced'].includes(timelog.status)
-      && ['approved', 'invoiced', 'paid'].includes(nextStatus)));
-  if (nonBillingTargets.length) await assertLegacyTimelogWrite(nonBillingTargets);
-
-  const persistedTimelogs = await persistSupabaseTimelogStatus(ids, nextStatus, options);
+  const persistedTimelogs = await persistSupabaseTimelogStatus(ids, nextStatus, options, requireLegacy);
   if (persistedTimelogs) {
     return persistedTimelogs;
   }
 
-  return runTimelogMutation(ids.map((id) => `local:${id}`), async () => {
+  return runTimelogMutation(ids.map((id) => `local:${id}`), async (assertCurrent) => {
     const targets = getRequestedTimelogs(ids);
     const guardedTargets = requireLegacy ? targets : targets.filter((timelog) => !(
       ['approved', 'invoiced'].includes(timelog.status) && ['approved', 'invoiced', 'paid'].includes(nextStatus)
     ));
     if (guardedTargets.length) await assertLegacyTimelogWrite(guardedTargets);
-    options.assertCurrent?.();
+    assertCurrent();
     const currentTimelogs = getLocalAppState().timelogs ?? [];
     ids.forEach((id) => {
       const timelog = currentTimelogs.find((item) => item.id === id);
@@ -969,7 +997,7 @@ const updateTimelogStatusesTo = async (
 
     invalidateTimelogQueries();
     return updatedTimelogs;
-  });
+  }, options.assertCurrent);
 };
 
 export const updateTimelogStatuses = async (
@@ -978,8 +1006,6 @@ export const updateTimelogStatuses = async (
   options: TimelogActionOptions = {},
 ): Promise<Timelog[]> => {
   if (ids.length === 0) return [];
-  options.assertCurrent?.();
-  await assertLegacyTimelogWrite(getRequestedTimelogs(ids));
   options.assertCurrent?.();
   const mode = assertApprovalActionShape(getRequestedTimelogs(ids), action, options);
   if (mode === 'transition') {
@@ -1045,8 +1071,9 @@ export const createTimelog = async (timelog: Omit<Timelog, 'id'>): Promise<Timel
     ? `create:${timelog.eventSupabaseId}:${timelog.contractorProfileId}`
     : 'local:create';
 
-  return runTimelogMutation([mutationKey], async () => {
+  return runTimelogMutation([mutationKey], async (assertCurrent) => {
     await assertLegacyTimelogWrite([timelog]);
+    assertCurrent();
     const normalizedTimelog: Timelog = {
       ...timelog,
       id: Math.max(0, ...(getLocalAppState().timelogs ?? []).map((item) => item.id)) + 1,
@@ -1089,6 +1116,7 @@ export const createTimelog = async (timelog: Omit<Timelog, 'id'>): Promise<Timel
       };
     }
 
+    assertCurrent();
     updateLocalAppState((snapshot) => {
       if (persistsToSupabase) {
         const reconciled = reconcilePersistedTimelog(
@@ -1162,7 +1190,7 @@ export const importApprovedTimelog = async (
     ? getTimelogMutationKeys(initialTimelog.id, initialTimelog.supabaseId)
     : [`create:${imported.eventSupabaseId}:${imported.contractorProfileId}`];
 
-  return runTimelogMutation(mutationKeys, async () => {
+  return runTimelogMutation(mutationKeys, async (assertCurrent) => {
     let currentTimelog = initialTimelog
       ? findTimelogForIdentity(
         initialTimelog.id,
@@ -1173,15 +1201,17 @@ export const importApprovedTimelog = async (
         timelog.eventSupabaseId === imported.eventSupabaseId
         && timelog.contractorProfileId === imported.contractorProfileId
       ));
-    if (currentTimelog && (!currentTimelog.supabaseId || !currentTimelog.updatedAt)) {
+    if (currentTimelog && (!currentTimelog.supabaseId || !currentTimelog.updatedAt || !currentTimelog.eventSupabaseId)) {
       currentTimelog = await resolvePersistedTimelog(
         currentTimelog.id,
         currentTimelog.supabaseId,
         currentTimelog,
+        assertCurrent,
       );
     }
 
     await assertLegacyTimelogWrite([currentTimelog ?? { ...normalizedImport, id: undefined }]);
+    assertCurrent();
     const result = await importApprovedTimelogAtomicRpc({
       timelogId: currentTimelog?.supabaseId ?? null,
       eventId: imported.eventSupabaseId,
@@ -1192,6 +1222,7 @@ export const importApprovedTimelog = async (
       note: normalizedImport.note,
       days: normalizedDays,
     });
+    assertCurrent();
     const currentEvent = (getLocalAppState().events ?? [])
       .find((event) => event.supabaseId === imported.eventSupabaseId);
     let persistedTimelog: Timelog = {
@@ -1223,6 +1254,7 @@ export const importApprovedTimelog = async (
 };
 
 export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
+  const hydrationEpoch = timelogsHydrationEpoch;
   // Submission must fail before the empty-draft deletion path or any identity refresh.
   assertCompleteForStatus(updated, updated.status);
   const persistsToSupabase = appDataSource === 'supabase' && Boolean(supabase) && isSupabaseConfigured;
@@ -1248,7 +1280,9 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
     && updated.contractorProfileId
   ) {
     try {
-      commitAuthoritativeTimelogSnapshot(await loadTimelogsSnapshot());
+      const authoritative = await loadTimelogsSnapshot();
+      if (hydrationEpoch !== timelogsHydrationEpoch) throw new Error('Přístup k výkazům se změnil.');
+      commitAuthoritativeTimelogSnapshot(authoritative);
     } catch (error) {
       console.error('Unable to refresh timelog identity before save', error);
       throw new Error('Výkaz se nepodařilo načíst. Obnovte data a zkuste to znovu.');
@@ -1277,8 +1311,6 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
     return createTimelog(timelogToCreate);
   }
 
-  await assertLegacyTimelogWrite([existingTimelog, normalizedTimelog]);
-
   if (normalizedTimelog.days.length === 0) {
     await deleteTimelog(existingTimelog.id);
     return normalizedTimelog;
@@ -1290,22 +1322,21 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
 
   const mutationKeys = getTimelogMutationKeys(existingTimelog.id, existingTimelog.supabaseId);
 
-  return runTimelogMutation(mutationKeys, async () => {
+  return runTimelogMutation(mutationKeys, async (assertCurrent) => {
     let currentTimelog = existingTimelog.supabaseId
       ? findTimelogForMutation(existingTimelog.id, existingTimelog.supabaseId)
       : findTimelogForMutation(existingTimelog.id);
-    if (persistsToSupabase && (!currentTimelog?.supabaseId || !currentTimelog.updatedAt)) {
+    if (persistsToSupabase && (!currentTimelog?.supabaseId || !currentTimelog.updatedAt || !currentTimelog.eventSupabaseId)) {
       currentTimelog = await resolvePersistedTimelog(
         existingTimelog.id,
         updated.supabaseId ?? existingTimelog.supabaseId,
         existingTimelog,
+        assertCurrent,
       );
     }
     if (!currentTimelog) {
       throw new Error('Výkaz už neexistuje nebo k němu nemáte přístup.');
     }
-
-    await assertLegacyTimelogWrite([currentTimelog, normalizedTimelog]);
 
     let persistedTimelog: Timelog = {
       ...normalizedTimelog,
@@ -1316,11 +1347,14 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
       contractorProfileId: normalizedTimelog.contractorProfileId
         ?? currentTimelog.contractorProfileId,
     };
+    await assertLegacyTimelogWrite([currentTimelog, persistedTimelog]);
+    assertCurrent();
 
     if (persistsToSupabase) {
       const timelogRowId = currentTimelog.supabaseId;
       const expectedUpdatedAt = currentTimelog.updatedAt;
       const eventRowId = await getSupabaseEventRowId(persistedTimelog);
+      assertCurrent();
       const contractorRowId = persistedTimelog.contractorProfileId;
       if (!timelogRowId || !expectedUpdatedAt || !contractorRowId || !eventRowId) {
         throw new Error('Nepodarilo se sparovat vykaz s databazovym zaznamem.');
@@ -1349,6 +1383,7 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
       };
     }
 
+    assertCurrent();
     updateLocalAppState((currentSnapshot) => {
       if (persistsToSupabase) {
         const reconciled = reconcilePersistedTimelog(
@@ -1382,15 +1417,16 @@ export const deleteTimelog = async (id: number): Promise<{ id: number }> => {
   }
   const mutationKeys = getTimelogMutationKeys(initialTimelog.id, initialTimelog.supabaseId);
 
-  return runTimelogMutation(mutationKeys, async () => {
+  return runTimelogMutation(mutationKeys, async (assertCurrent) => {
     let currentTimelog = initialTimelog.supabaseId
       ? findTimelogForMutation(initialTimelog.id, initialTimelog.supabaseId)
       : findTimelogForMutation(initialTimelog.id);
-    if (persistsToSupabase && (!currentTimelog?.supabaseId || !currentTimelog.updatedAt)) {
+    if (persistsToSupabase && (!currentTimelog?.supabaseId || !currentTimelog.updatedAt || !currentTimelog.eventSupabaseId)) {
       currentTimelog = await resolvePersistedTimelog(
         initialTimelog.id,
         initialTimelog.supabaseId,
         initialTimelog,
+        assertCurrent,
       );
     }
     if (!currentTimelog) {
@@ -1398,6 +1434,7 @@ export const deleteTimelog = async (id: number): Promise<{ id: number }> => {
     }
 
     await assertLegacyTimelogWrite([currentTimelog]);
+    assertCurrent();
 
     if (persistsToSupabase) {
       if (!currentTimelog.supabaseId || !currentTimelog.updatedAt) {
@@ -1410,6 +1447,7 @@ export const deleteTimelog = async (id: number): Promise<{ id: number }> => {
       });
     }
 
+    assertCurrent();
     updateLocalAppState((snapshot) => ({
       ...snapshot,
       timelogs: snapshot.timelogs.filter((timelog) => (

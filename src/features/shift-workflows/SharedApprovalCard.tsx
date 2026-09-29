@@ -12,7 +12,9 @@ export function SharedApprovalCard({ group, contractors, events, role, onOpen, h
 }) {
   const contractor = contractors.find((person) => person.profileId === group.round.contractorProfileId);
   const parts = group.timelogs.map((timelog) => {
-    const event = events.find((item) => item.supabaseId === timelog.eventSupabaseId || item.id === timelog.eid);
+    const event = timelog.eventSupabaseId
+      ? events.find((item) => item.supabaseId === timelog.eventSupabaseId)
+      : events.find((item) => item.id === timelog.eid);
     const hours = calculateTotalHours(timelog.days);
     const meals = calculateMealAllowance(timelog.days, { enabled: Boolean(event?.mealAllowanceEnabled) });
     return { timelog, event, hours, meals, amount: hours * (contractor?.rate ?? 0) + timelog.km * KM_RATE + meals };
@@ -27,7 +29,7 @@ export function SharedApprovalCard({ group, contractors, events, role, onOpen, h
       <h3 className="font-semibold">{contractor?.name ?? 'Člen crew'}</h3>
       <StatusBadge status={group.round.status} />
     </div>
-    <p className="mt-1 text-xs text-[var(--nodu-text-soft)]">Jeden společný výkaz · {group.round.eventIds.length} částí</p>
+    <p className="mt-1 text-xs text-[var(--nodu-text-soft)]">Jeden společný výkaz · {group.round.eventIds.length} {group.round.eventIds.length === 1 ? 'část' : group.round.eventIds.length < 5 ? 'části' : 'částí'}</p>
     <div className="my-3 space-y-3">
       {parts.map(({ timelog, event, hours, meals, amount }) => <div key={timelog.supabaseId ?? timelog.id} className="border-t border-[var(--nodu-border)] pt-2 text-sm">
         <div className="font-medium">{event?.name ?? 'Nedostupná směna'}</div>

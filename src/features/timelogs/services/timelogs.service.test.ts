@@ -898,8 +898,8 @@ describe('timelogs.service write flow', () => {
   });
 
   it('approves all matching event timelogs in Supabase and updates local state', async () => {
-    const first = { id: 1, eid: 7, supabaseId: '11111111-1111-4111-8111-111111111111', contractorProfileId: 'profile-uuid-1', days: [{ d: '2026-08-15', f: '08:00', t: '17:00', type: 'provoz' as const }], km: 0, note: '', status: 'pending_coo' as const, approvals: [] };
-    const second = { id: 2, eid: 7, supabaseId: '22222222-2222-4222-8222-222222222222', contractorProfileId: 'profile-uuid-2', days: [{ d: '2026-08-15', f: '08:00', t: '17:00', type: 'provoz' as const }], km: 0, note: '', status: 'pending_coo' as const, approvals: [] };
+    const first = { id: 1, eid: 7, eventSupabaseId: '77777777-7777-4777-8777-777777777777', supabaseId: '11111111-1111-4111-8111-111111111111', contractorProfileId: 'profile-uuid-1', days: [{ d: '2026-08-15', f: '08:00', t: '17:00', type: 'provoz' as const }], km: 0, note: '', status: 'pending_coo' as const, approvals: [] };
+    const second = { id: 2, eid: 7, eventSupabaseId: '77777777-7777-4777-8777-777777777777', supabaseId: '22222222-2222-4222-8222-222222222222', contractorProfileId: 'profile-uuid-2', days: [{ d: '2026-08-15', f: '08:00', t: '17:00', type: 'provoz' as const }], km: 0, note: '', status: 'pending_coo' as const, approvals: [] };
     const unrelated = { id: 3, eid: 8, supabaseId: '33333333-3333-4333-8333-333333333333', contractorProfileId: 'profile-uuid-3', days: [], km: 0, note: '', status: 'pending_coo' as const, approvals: [] };
     const harness = await setupStableUuidWriteHarness({
       timelogs: [first, second, unrelated],
@@ -1980,6 +1980,7 @@ const setupTargetedRemoteHarness = async ({
   authenticatedProfileId = TARGETED_IDS.requester,
   handoffImplementation,
   resolveImplementation,
+  authoritativeReadGate,
 }: {
   timelogs: Timelog[];
   authoritativeTimelogs?: Timelog[];
@@ -1988,6 +1989,7 @@ const setupTargetedRemoteHarness = async ({
   authenticatedProfileId?: string | null;
   handoffImplementation?: (targets: Array<Record<string, unknown>>) => Promise<Array<Record<string, unknown>>>;
   resolveImplementation?: (input: Record<string, unknown>) => Promise<Array<Record<string, unknown>>>;
+  authoritativeReadGate?: Promise<void>;
 }) => {
   let snapshot = {
     ...createSnapshot(timelogs),
@@ -2012,7 +2014,7 @@ const setupTargetedRemoteHarness = async ({
   let authoritativeReadCount = 0;
 
   const createOrderedQuery = <T,>(data: T[]) => {
-    const result = Promise.resolve({ data, error: null });
+    const result = (async () => { await authoritativeReadGate; return { data, error: null }; })();
     const order = vi.fn();
     const query = { order, then: result.then.bind(result) };
     order.mockReturnValue(query);
@@ -2146,6 +2148,7 @@ const setupTargetedRemoteHarness = async ({
     resolveTimelogApprovalsAtomicRpc,
     transitionTimelogStatusesAtomicRpc,
     getAuthoritativeReadCount: () => authoritativeReadCount,
+    setQueryData,
   };
 };
 
@@ -2203,6 +2206,29 @@ const setupTargetedLocalHarness = async ({
 };
 
 describe('targeted timelog approval action routing', () => {
+  it('never publishes a retired actor response or starts recovery after an in-flight RPC', async () => {
+    const rpc = createDeferred<Array<Record<string, unknown>>>();
+    const harness = await setupTargetedRemoteHarness({ timelogs: [targetedTimelog()], handoffImplementation: async () => rpc.promise });
+    let active = true;
+    const operation = harness.service.updateTimelogStatuses([47], 'ch', { assertCurrent: () => { if (!active) throw new Error('Retired actor'); } });
+    await vi.waitFor(() => expect(harness.handoffTimelogsForApprovalAtomicRpc).toHaveBeenCalledOnce());
+    active = false; rpc.resolve([]);
+    await expect(operation).rejects.toThrow('Retired actor');
+    expect(harness.getAuthoritativeReadCount()).toBe(0);
+    expect(harness.setQueryData).not.toHaveBeenCalled();
+  });
+
+  it('never commits an approval reload that completes after identity retirement', async () => {
+    const read = createDeferred<void>();
+    const harness = await setupTargetedRemoteHarness({ timelogs: [targetedTimelog()], authoritativeReadGate: read.promise });
+    let active = true;
+    const operation = harness.service.updateTimelogStatuses([47], 'ch', { assertCurrent: () => { if (!active) throw new Error('Retired actor'); } });
+    await vi.waitFor(() => expect(harness.getAuthoritativeReadCount()).toBeGreaterThan(0));
+    active = false; read.resolve();
+    await expect(operation).rejects.toThrow('Retired actor');
+    expect(harness.setQueryData).not.toHaveBeenCalled();
+    expect(harness.getSnapshot().timelogs[0].status).toBe('pending_ch');
+  });
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();

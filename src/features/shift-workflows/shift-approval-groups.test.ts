@@ -10,6 +10,11 @@ const round: ShiftWorkflowRound = { id: 'round', workflowId: 'workflow', contrac
   status: 'pending_ch', eventIds: ['e1', 'e2'], timelogIds: ['t1', 't2'], note: '', updatedAt: '2026-09-20T00:00:00Z' };
 
 describe('frozen approval group selection', () => {
+  it('selects the latest precise round instant, not the timestamp spelling', () => {
+    const earlier = { ...round, id: 'old', updatedAt: '2026-09-20T02:00:00.000001+02:00' };
+    const latest = { ...round, id: 'new', updatedAt: '2026-09-20T00:00:00.000002Z' };
+    expect(selectShiftApprovalGroups([report(1)], [report(1), report(2)], [latest, earlier]).rounds.map((group) => group.round.id)).toEqual(['new']);
+  });
   it('shows one exact round from any filtered part and excludes later drafts', () => {
     const reports = [report(1), report(2), { ...report(3), status: 'draft' as const }];
     const result = selectShiftApprovalGroups([reports[1]], reports, [round]);

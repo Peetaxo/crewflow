@@ -1,6 +1,7 @@
 import type { Timelog } from '../../types';
 import type { ShiftWorkflowSnapshot } from './shift-workflows.contract';
 import type { ShiftWorkflowRound } from './shift-workflows.model';
+import { compareShiftWorkflowTimestamps } from './shift-workflow-time';
 
 export interface ShiftApprovalGroup {
   round: ShiftWorkflowRound;
@@ -12,7 +13,7 @@ export interface ShiftApprovalGroup {
 export function selectShiftApprovalGroups(visible: Timelog[], all: Timelog[], rounds: ShiftWorkflowRound[]) {
   const visibleIds = new Set(visible.map((report) => report.supabaseId).filter(Boolean));
   const latestByTimelog = new Map<string, ShiftWorkflowRound>();
-  for (const round of [...rounds].sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))) {
+  for (const round of [...rounds].sort((a, b) => compareShiftWorkflowTimestamps(a.updatedAt, b.updatedAt))) {
     for (const id of round.timelogIds) latestByTimelog.set(id, round);
   }
   const selected = rounds.filter((round) => round.timelogIds.some((id) => visibleIds.has(id) && latestByTimelog.get(id) === round));

@@ -136,6 +136,9 @@ describe('UUID write flows integration', () => {
     const invoiceReceiptsInsert = vi.fn().mockResolvedValue({ error: null });
 
     const fromMock = vi.fn((table: string) => {
+      if (table === 'shift_workflow_round_items' || table === 'shift_workflow_events') {
+        return { select: () => ({ in: async () => ({ data: [], error: null }) }) };
+      }
       if (table === 'profiles') {
         profileSelectCalls += 1;
         const result = Promise.resolve({

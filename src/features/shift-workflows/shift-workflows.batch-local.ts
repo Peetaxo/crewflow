@@ -12,7 +12,11 @@ import { canonicalizeLocalShiftData, localShiftWorkflowId, type LocalShiftData, 
 // This re-export uses the same membership/round singleton, never another store.
 export { executeLocalShiftBatch } from './shift-workflows.local';
 
-export interface LocalShiftRequest { actor: string; payload: string; result: unknown }
+export interface LocalShiftAction {
+  id: string; roundId: string; actorId: string; action: string; note: string; eventId: string | null; createdAt: string;
+  fromStatus: TimelogStatus | null; toStatus: TimelogStatus; beforeSnapshot: unknown[] | null;
+}
+export interface LocalShiftRequest { actor: string; payload: string; result: unknown; history?: LocalShiftAction }
 export interface LocalShiftBatchOptions {
   now?: () => number;
   /** Atomically replace all hours. Synchronous subscribers may read the store. */
@@ -211,6 +215,7 @@ export function createLocalShiftBatchExecutor(deps: Dependencies) {
       }
       if (command.action === 'confirm' || command.action === 'approve') complete(selected);
     }
+    const beforeSnapshot = command.kind === 'transition' && command.action === 'correct' ? selected.map(receiptReport) : null;
     const updated = selected.map((report): Timelog => {
       const meta = { ...metadataFor(report) };
       let next = { ...applyWrite(report, writes?.find((t) => t.id === report.supabaseId)), updatedAt: now, status: nextStatus ?? report.status };
@@ -264,11 +269,19 @@ export function createLocalShiftBatchExecutor(deps: Dependencies) {
       return changed ? { ...changed, contractorProfileId: t.contractorProfileId,
         supabaseId: t.supabaseId, eventSupabaseId: t.eventSupabaseId } : t;
     });
+    const history: LocalShiftAction | undefined = command.kind === 'save' ? undefined : {
+      id: createStableDraftUuid(), roundId: nextRound!.id, actorId: scope.userId!,
+      action: command.kind === 'submit' ? selected.some((report) => report.status === 'rejected') ? 'resubmitted' : 'submitted' : command.action,
+      note: command.kind === 'transition' ? command.note.trim() : '',
+      eventId: command.kind === 'transition' ? command.affectedEventId : null,
+      createdAt: now, fromStatus: currentRound?.status ?? null, toStatus: nextRound!.status, beforeSnapshot,
+    };
+    const nextRequest = { actor, payload, result: structuredClone(result), history: structuredClone(history) };
     const oldMetadata = metadata;
     committing = true;
     metadata = nextMetadata;
     deps.setRounds(nextRounds);
-    deps.requests.set(command.requestId, { actor, payload, result: structuredClone(result) });
+    deps.requests.set(command.requestId, nextRequest);
     try {
       deps.commitTimelogs!(structuredClone(nextReports));
     } catch (error) {

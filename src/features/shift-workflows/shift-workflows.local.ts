@@ -8,7 +8,7 @@ import {
   type ShiftWorkflowSnapshot,
 } from './shift-workflows.contract';
 import type { ShiftWorkflow, ShiftWorkflowRound } from './shift-workflows.model';
-import { createLocalShiftBatchExecutor, type LocalShiftBatchOptions, type LocalShiftRequest } from './shift-workflows.batch-local';
+import { createLocalShiftBatchExecutor, type LocalShiftAction, type LocalShiftBatchOptions, type LocalShiftRequest } from './shift-workflows.batch-local';
 
 export type LocalShiftData = Pick<AppDataSnapshot, 'events' | 'timelogs' | 'eventCrewAssignments' | 'invoices'>
   & Partial<Pick<AppDataSnapshot, 'contractors'>>;
@@ -192,7 +192,24 @@ export function createLocalShiftWorkflowStore(
     getData, getWorkflows: () => workflows, getRounds: () => rounds,
     setRounds: (next) => { rounds = next; }, requests, ...options,
   });
-  return { read, save, executeBatch };
+  const readHistory = (scope: ShiftWorkflowScope, roundIds: string[]): LocalShiftAction[] => {
+    assertLocal(scope);
+    const profileId = scope.profileId ? localShiftWorkflowId('profile', scope.profileId) : null;
+    const profiles = (getData().contractors ?? []).filter((profile) => profile.profileId).map((profile) => ({
+      ...profile, profileId: localShiftWorkflowId('profile', profile.profileId!),
+    }));
+    if (!scope.userId || !profileId || (scope.role !== 'crew' && !canManageShiftWorkflows(scope.role))
+      || profiles.filter((profile) => profile.userId === scope.userId).length !== 1
+      || profiles.filter((profile) => profile.profileId === profileId).length !== 1
+      || !profiles.some((profile) => profile.userId === scope.userId && profile.profileId === profileId)) {
+      throw new ShiftWorkflowError('denied', 'Nepodařilo se ověřit oprávnění a profil přihlášeného uživatele.');
+    }
+    if (roundIds.some((id) => !canonicalUuid.safeParse(id).success)) invalid();
+    const visible = new Set(read(scope).rounds.filter((round) => roundIds.includes(round.id)).map((round) => round.id));
+    return structuredClone([...requests.values()].flatMap((request) => request.history && visible.has(request.history.roundId) ? [request.history] : [])
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)));
+  };
+  return { read, save, executeBatch, readHistory };
 }
 
 const localStore = createLocalShiftWorkflowStore(getLocalAppState, {}, {
@@ -201,3 +218,4 @@ const localStore = createLocalShiftWorkflowStore(getLocalAppState, {}, {
 export const readLocalShiftWorkflows = localStore.read;
 export const saveLocalShiftWorkflow = localStore.save;
 export const executeLocalShiftBatch = localStore.executeBatch;
+export const readLocalShiftRoundHistory = localStore.readHistory;

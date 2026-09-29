@@ -140,6 +140,47 @@ describe('atomic local shared shift drafts', () => {
 });
 
 describe('frozen local rounds and approval lifecycle', () => {
+  it('records immutable local audit actions atomically, not saves or duplicate retries, and restricts their readers', () => {
+    const f = fixture();
+    f.store.executeBatch(crew, f.draft());
+    const submit = f.draft('submit'); f.store.executeBatch(crew, submit);
+    const correction = f.transition('correct', { corrections: serializeShiftReports(canonicalizeLocalShiftData(f.data).timelogs.filter((report) => [1, 2].includes(report.id))) });
+    f.store.executeBatch(ch, correction);
+    const confirm = f.transition('confirm'); f.store.executeBatch(crew, confirm); f.store.executeBatch(crew, confirm);
+    const actions = f.store.readHistory(crew, [submit.roundId!]);
+    expect(actions.map((action) => action.action)).toEqual(['submitted', 'correct', 'confirm']);
+    expect(actions[1]).toMatchObject({ roundId: submit.roundId, actorId: ch.userId, note: 'Review reason', eventId: eventId(1), fromStatus: 'pending_ch', toStatus: 'pending_crew_confirmation' });
+    expect(actions[1].beforeSnapshot).toEqual(expect.arrayContaining([expect.objectContaining({ id: reportId(1), note: 'report note' })]));
+    expect(actions[2].createdAt).toBe(f.store.read(crew).rounds[0].updatedAt);
+    expect(new Set(actions.map((action) => action.id)).size).toBe(3);
+    expect(f.store.readHistory(ch, [submit.roundId!])).toEqual(actions);
+    expect(f.store.readHistory({ ...coo, role: 'crew' }, [submit.roundId!])).toEqual([]);
+    expect(() => f.store.readHistory({ ...crew, userId: coo.userId }, [submit.roundId!])).toThrow();
+    expect(() => f.store.readHistory({ ...ch, userId: null }, [submit.roundId!])).toThrow();
+    actions[1].note = 'caller mutation';
+    expect(f.store.readHistory(crew, [submit.roundId!])[1].note).toBe('Review reason');
+  });
+
+  it('rolls back local audit on storage failure but retains exactly one action after committed subscriber failure', () => {
+    const f = fixture(); const command = f.draft('submit'); f.failCommit(true);
+    expect(() => f.store.executeBatch(crew, command)).toThrow('storage failed');
+    expect(f.store.readHistory(ch, [command.roundId!])).toEqual([]);
+    f.failCommit(false); f.observe(() => { throw new Error('subscriber failed'); });
+    f.store.executeBatch(crew, command); f.store.executeBatch(crew, command);
+    expect(f.store.readHistory(ch, [command.roundId!])).toHaveLength(1);
+  });
+
+  it('retains a returned round audit and records resubmission under its new round identity', () => {
+    const f = fixture(); const first = f.draft('submit'); f.store.executeBatch(crew, first);
+    f.store.executeBatch(ch, f.transition('return', { note: 'Doplňte cestovné' }));
+    const second = f.draft('submit'); f.store.executeBatch(crew, second);
+    const actions = f.store.readHistory(crew, [first.roundId!, second.roundId!]);
+    expect(actions.map((action) => [action.roundId, action.action, action.note])).toEqual([
+      [first.roundId, 'submitted', ''], [first.roundId, 'return', 'Doplňte cestovné'], [second.roundId, 'resubmitted', ''],
+    ]);
+    f.data.contractors![0].userId = uuid(999);
+    expect(() => f.store.readHistory(crew, [first.roundId!, second.roundId!])).toThrow();
+  });
   it('freezes submission, permits later draft saves, and exposes coherent round/report state to subscribers', () => {
     const f = fixture();
     const input = f.draft('submit');

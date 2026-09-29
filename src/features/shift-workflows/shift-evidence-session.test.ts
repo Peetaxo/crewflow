@@ -28,6 +28,14 @@ const setup = (ctx = context(), role: 'crew' | 'crewhead' | 'coo' = 'crew') => {
 };
 
 describe('shared evidence editor session', () => {
+  it('unlocks editable data when an ambiguous retry receives a definitive validation error', async () => {
+    const { session, write } = setup();
+    write.mockRejectedValueOnce(new ShiftWorkflowError('ambiguous', 'unknown')).mockRejectedValueOnce(new ShiftWorkflowError('invalid', 'fix inputs'));
+    await expect(session.save()).rejects.toThrow('unknown'); await expect(session.retry()).rejects.toThrow('fix inputs');
+    expect(session.getSnapshot()).toMatchObject({ canRetry: false, needsReload: false });
+    expect(() => session.edit({ ...session.getSnapshot().context.timelogs[0], note: 'corrected' })).not.toThrow();
+    await session.save(); expect(write).toHaveBeenCalledTimes(3);
+  });
   it('serializes every queued save, including two callers waiting on the same predecessor', async () => {
     const { session, write } = setup(); const finishes: Array<() => void> = [];
     write.mockImplementation((cmd) => new Promise((resolve) => { finishes.push(() => resolve(receipt(cmd))); }));

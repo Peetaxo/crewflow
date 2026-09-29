@@ -90,7 +90,7 @@ export function createShiftEvidenceSession(options: {
       } catch (cause) {
         assertCurrent();
         const error = cause instanceof ShiftWorkflowError ? cause : new ShiftWorkflowError('ambiguous', 'Výsledek uložení není potvrzen. Opakujte stejný požadavek.');
-        if (error.kind === 'ambiguous') pending = attempt;
+        pending = error.kind === 'ambiguous' ? attempt : null;
         publish({ error, canRetry: error.kind === 'ambiguous', needsReload: ['conflict', 'denied', 'blocked'].includes(error.kind) });
         throw error;
       } finally {

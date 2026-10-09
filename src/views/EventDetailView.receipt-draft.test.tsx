@@ -1,4 +1,5 @@
 import React from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 vi.mock('../features/shift-workflows/useSharedApprovals', () => ({ useSharedApprovals: () => ({
   cards: () => null, legacyOnly: (reports: unknown[]) => reports, reviewSelection: () => false,
   groupsFor: () => ({ rounds: [], legacy: [] }),
@@ -113,6 +114,8 @@ vi.mock('../features/crew/components/EventCrewRatingPanel', () => ({ default: ()
 
 import EventDetailView from './EventDetailView';
 
+const renderDetail = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><EventDetailView /></QueryClientProvider>);
+
 const receiptDraft: ReceiptItem = {
   id: 77,
   supabaseId: 'receipt-client-uuid',
@@ -153,7 +156,7 @@ describe('EventDetailView receipt draft identity', () => {
   });
 
   it('opens a factory-created UUID draft with the selected stable event foreign key', () => {
-    render(<EventDetailView />);
+    renderDetail();
 
     fireEvent.click(screen.getByRole('button', { name: 'Pridat uctenku' }));
 
@@ -171,7 +174,7 @@ describe('EventDetailView receipt draft identity', () => {
   it('does not open a Supabase receipt draft when the selected event has no stable UUID', () => {
     state.event = { ...event, supabaseId: undefined };
 
-    render(<EventDetailView />);
+    renderDetail();
     fireEvent.click(screen.getByRole('button', { name: 'Pridat uctenku' }));
 
     expect(mocks.createEmptyReceipt).not.toHaveBeenCalled();
@@ -182,7 +185,7 @@ describe('EventDetailView receipt draft identity', () => {
     state.appDataSource = 'local';
     state.event = { ...event, supabaseId: undefined };
 
-    render(<EventDetailView />);
+    renderDetail();
     fireEvent.click(screen.getByRole('button', { name: 'Pridat uctenku' }));
 
     expect(mocks.createEmptyReceipt).toHaveBeenCalledWith('profile-1');

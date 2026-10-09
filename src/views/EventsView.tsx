@@ -43,6 +43,7 @@ import {
   withdrawEventApplication,
 } from '../features/events/services/events.service';
 import { EventFilter } from '../features/events/types/events.types';
+import { EventShiftWorkflowCreateAction } from '../features/shift-workflows/EventShiftWorkflowManagement';
 
 type EventsViewMode = 'list' | 'calendar';
 type CalendarMode = 'month' | 'week';
@@ -1013,6 +1014,7 @@ const EventsView = () => {
             </>
           )}
 
+          {!selectedEventId && <EventShiftWorkflowCreateAction />}
           {canManageEvents && (
             <Button
               onClick={() => setEditingEvent(createEmptyEvent())}

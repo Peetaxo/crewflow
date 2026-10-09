@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Event, Timelog } from '../../types';
 import type { ShiftWorkflowScope } from './shift-workflows.contract';
-import { getWorkflowCandidates, getWorkflowSelectionImpact, type ShiftWorkflowManagementData } from './shift-workflows.management';
+import { getCrewWorkflowMembers, getEventWorkflowCandidates, getWorkflowSelectionImpact, type ShiftWorkflowManagementData } from './shift-workflows.management';
+import { localShiftWorkflowId } from './shift-workflows.local';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const time = '2026-09-23T11:00:00Z';
@@ -21,15 +22,31 @@ const data = (): ShiftWorkflowManagementData => ({
 });
 
 describe('crew shift management presentation', () => {
-  it('offers only actual assignments plus every existing linked member, not unrelated advertised events', () => {
-    expect(getWorkflowCandidates(data(), scope, profile, null).map((e) => e.id)).toEqual([id(21), id(23)]);
-    expect(getWorkflowCandidates(data(), scope, profile, id(10)).map((e) => e.id)).toEqual([id(21), id(22), id(23)]);
+  it('offers all identified visible events even with no assignments, sorted by date, name and identity', () => {
+    const input = data(); input.eventCrewAssignments = [];
+    input.events.reverse(); input.events.push({ ...input.events[0], id: 99, supabaseId: undefined });
+    expect(getEventWorkflowCandidates(input, scope).map((e) => e.id)).toEqual([id(21), id(22), id(23), id(24), id(25)]);
   });
 
-  it('never infers assignment from someone else’s timelog or a numeric ID remotely', () => {
+  it('summarizes only the anchor person’s current assignments, never historic reports or another person', () => {
+    const input = data();
+    input.snapshot.workflows[0].eventIds.push(id(25));
+    input.eventCrewAssignments.push({ eventId: 22, eventSupabaseId: id(22), contractorProfileId: id(9), name: 'Jana' });
+    expect(getCrewWorkflowMembers(input, scope, profile, id(21)).map((e) => e.id)).toEqual([id(21)]);
+    expect(getCrewWorkflowMembers(input, scope, profile, id(22))).toEqual([]);
+    expect(getCrewWorkflowMembers(input, scope, id(9), id(22)).map((e) => e.id)).toEqual([id(22)]);
+  });
+
+  it('never infers assignment from a numeric ID remotely', () => {
     const input = data();
     input.eventCrewAssignments = [{ eventId: 25, contractorProfileId: profile, name: 'Petr' }];
-    expect(getWorkflowCandidates(input, scope, profile, null)).toEqual([]);
+    expect(getCrewWorkflowMembers(input, scope, profile, id(25))).toEqual([]);
+  });
+
+  it('translates local identities before intersecting current assignments', () => {
+    const input = data(); const local = { ...scope, source: 'local' as const };
+    input.snapshot.workflows[0].eventIds = [21, 22].map((n) => localShiftWorkflowId('event', n));
+    expect(getCrewWorkflowMembers(input, local, profile, localShiftWorkflowId('event', 21)).map((e) => e.event.id)).toEqual([21]);
   });
 
   it('includes removed target members and all remaining source members in the impact', () => {

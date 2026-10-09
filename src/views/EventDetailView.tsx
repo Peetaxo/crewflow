@@ -38,6 +38,7 @@ import { getEventApprovalDocuments } from '../features/invoices/services/invoice
 import { subscribeToTimelogChanges, type TimelogAction } from '../features/timelogs/services/timelogs.service';
 import { useTimelogApprovalActions } from '../features/timelogs/hooks/useTimelogApprovalActions';
 import { useSharedApprovals } from '../features/shift-workflows/useSharedApprovals';
+import { EventShiftWorkflowDetails } from '../features/shift-workflows/EventShiftWorkflowManagement';
 import {
   getTimelogApprovalAssigneeName,
   isTimelogApprovalActionable,
@@ -1120,6 +1121,8 @@ const EventDetailView = () => {
             </div>
           </section>
 
+          {(event.id === selectedEventId || event.supabaseId === selectedEventId) && <EventShiftWorkflowDetails event={event} />}
+
           <EventMapPreview
             address={mobileAddress}
             locationLat={event.locationLat}
@@ -1639,6 +1642,8 @@ const EventDetailView = () => {
             )}
           </div>
         </div>
+
+        {(event.id === selectedEventId || event.supabaseId === selectedEventId) && <EventShiftWorkflowDetails event={event} />}
 
         <div className="-mx-6 flex gap-1 border-b border-[color:var(--nodu-border)] px-6">
           <button

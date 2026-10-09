@@ -14,7 +14,7 @@ import { categorizeCrewTimelogs, resolveShiftProject } from '../features/crew/se
 import { canEditTimelog } from '../features/timelogs/services/timelog-permissions';
 import { useSharedApprovals } from '../features/shift-workflows/useSharedApprovals';
 import type { Event } from '../types';
-import CrewShiftWorkflowManagement, { CrewShiftWorkflowActions } from '../features/shift-workflows/CrewShiftWorkflowManagement';
+import CrewShiftWorkflowManagement from '../features/shift-workflows/CrewShiftWorkflowManagement';
 import ShiftWorkflowSummary from '../features/shift-workflows/ShiftWorkflowSummary';
 
 const CrewDetailView = () => {
@@ -348,7 +348,6 @@ const CrewDetailView = () => {
           <div className="mb-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-sm font-semibold text-[var(--nodu-text)]">Směny</h3>
-              <CrewShiftWorkflowActions />
             </div>
             <div className="flex w-fit flex-wrap items-center gap-2 rounded-xl border border-[var(--nodu-border)] bg-white p-1">
               {[

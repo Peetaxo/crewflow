@@ -1,5 +1,6 @@
 import type { Event, EventCrewAssignment, Invoice, Timelog } from '../../types';
 import type { ShiftWorkflowScope, ShiftWorkflowSnapshot } from './shift-workflows.contract';
+import { canonicalUuid } from './shift-workflows.contract';
 import { localShiftWorkflowId } from './shift-workflows.local';
 import { shiftWorkflowEventId, shiftWorkflowProjectKey } from './shift-workflows.selection';
 
@@ -19,14 +20,20 @@ const identifiedEvents = (data: ShiftWorkflowManagementData, scope: ShiftWorkflo
   .filter((event) => scope.source === 'local' || event.supabaseId)
   .map((event) => ({ id: shiftWorkflowEventId(event, scope.source), event }));
 
-export function getWorkflowCandidates(
-  data: ShiftWorkflowManagementData, scope: ShiftWorkflowScope, profileId: string, workflowId: string | null,
-) {
-  const assigned = new Set(data.eventCrewAssignments.filter((a) => a.contractorProfileId === profileId)
-    .map((a) => scope.source === 'local' ? localShiftWorkflowId('event', a.eventId) : a.eventSupabaseId));
-  const existing = new Set(data.snapshot.workflows.find((w) => w.id === workflowId)?.eventIds ?? []);
-  return identifiedEvents(data, scope).filter(({ id }) => assigned.has(id) || existing.has(id))
+export function getEventWorkflowCandidates(data: ShiftWorkflowManagementData, scope: ShiftWorkflowScope): { id: string; event: Event }[] {
+  return identifiedEvents(data, scope)
     .sort((a, b) => a.event.startDate.localeCompare(b.event.startDate) || a.event.name.localeCompare(b.event.name) || a.id.localeCompare(b.id));
+}
+
+export function getCrewWorkflowMembers(data: ShiftWorkflowManagementData, scope: ShiftWorkflowScope, profileId: string, eventId: string): { id: string; event: Event }[] {
+  const assigned = new Set(data.eventCrewAssignments.filter((a) => a.contractorProfileId === profileId)
+    .flatMap((a) => scope.source === 'local' ? [localShiftWorkflowId('event', a.eventId)]
+      : canonicalUuid.safeParse(a.eventSupabaseId).success ? [a.eventSupabaseId!] : []));
+  if (!assigned.has(eventId)) return [];
+  const workflow = data.snapshot.workflows.find((w) => w.eventIds.includes(eventId));
+  if (!workflow) return [];
+  const members = new Set(workflow.eventIds);
+  return getEventWorkflowCandidates(data, scope).filter(({ id }) => members.has(id) && assigned.has(id));
 }
 
 /** Advisory UI check only. The atomic server mutation repeats every check for all people. */

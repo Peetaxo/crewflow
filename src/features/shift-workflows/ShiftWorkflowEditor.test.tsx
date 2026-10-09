@@ -20,7 +20,7 @@ const makeData = (): ShiftWorkflowManagementData => ({
   timelogs: [], invoices: [],
 });
 function setup(overrides: Partial<React.ComponentProps<typeof ShiftWorkflowEditor>> = {}) {
-  const props = { scope, data: makeData(), profileId: profile, workflowId: null,
+  const props = { scope, data: makeData(), ownerContext: 'events-list', workflowId: null,
     onSave: vi.fn<(command: SaveShiftWorkflow) => Promise<unknown>>().mockResolvedValue(undefined),
     onClose: vi.fn(), onReload: vi.fn<() => Promise<ShiftWorkflowManagementData>>().mockResolvedValue(makeData()),
     ...overrides };
@@ -36,11 +36,34 @@ const save = () => fireEvent.click(screen.getByRole('button', { name: 'Uložit p
 describe('ShiftWorkflowEditor', () => {
   beforeEach(() => vi.restoreAllMocks());
 
+  it('offers unassigned visible events and starts with an empty selection', () => {
+    const data = makeData(); data.eventCrewAssignments = [];
+    setup({ data });
+    expect(screen.getByRole('checkbox', { name: /Jiná akce · JOB/ })).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Uložit propojení' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox', { name: /Přípravy · JOB/ }));
+    expect(screen.getByRole('button', { name: 'Uložit propojení' })).toBeDisabled();
+  });
+
+  it('searches names and jobnumbers while retaining all selected identities', async () => {
+    const { props } = setup();
+    fireEvent.click(screen.getByRole('checkbox', { name: /Přípravy · JOB/ }));
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Hledat směnu nebo jobnumber' }), { target: { value: 'other' } });
+    expect(screen.getByRole('checkbox', { name: /Přípravy · JOB/ })).toBeChecked();
+    expect(screen.queryByRole('checkbox', { name: /Deinstalace/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: /Instalace · OTHER/ }));
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Hledat směnu nebo jobnumber' }), { target: { value: 'Jiná' } });
+    expect(screen.getByRole('checkbox', { name: /Instalace · OTHER/ })).toBeChecked();
+    confirmCross(); save();
+    await waitFor(() => expect(props.onSave).toHaveBeenCalledOnce());
+    expect(vi.mocked(props.onSave).mock.calls[0][0].eventIds).toEqual([id(21), id(22)]);
+  });
+
   it.each(['crewhead', 'coo'] as const)('lets %s explicitly connect own assigned shifts without a group name', async (role) => {
     const { props } = setup({ scope: { ...scope, role } });
     expect(screen.getByText(/všechny přiřazené lidi/)).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: /Název/ })).not.toBeInTheDocument();
-    expect(screen.queryByText('Deinstalace · JOB')).not.toBeInTheDocument();
+    expect(screen.getByText('Deinstalace · JOB')).toBeInTheDocument();
     expect(screen.getByText('Přípravy · JOB')).toBeInTheDocument();
     selectBoth(); save();
     expect(props.onSave).not.toHaveBeenCalled();
@@ -53,6 +76,37 @@ describe('ShiftWorkflowEditor', () => {
   it('does not render management to crew', () => {
     setup({ scope: { ...scope, role: 'crew' } });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('disables save for a single remaining member while still allowing an explicit dissolve', () => {
+    const data = makeData(); data.snapshot.workflows = [{ id: id(10), eventIds: [id(21), id(23)], updatedAt: time }];
+    setup({ data, workflowId: id(10) });
+    fireEvent.click(screen.getByRole('checkbox', { name: /Deinstalace · JOB/ }));
+    expect(screen.getByRole('button', { name: 'Uložit propojení' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox', { name: /Přípravy · JOB/ }));
+    expect(screen.getByRole('button', { name: 'Zrušit propojení' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Potvrzuji zrušení propojení' }));
+    expect(screen.getByRole('button', { name: 'Zrušit propojení' })).toBeEnabled();
+  });
+
+  it.each(['account', 'role', 'event'] as const)('retires a pending save when the editor %s context changes', async (change) => {
+    let resolve!: (value: unknown) => void;
+    const { props, rerender } = setup({ onSave: vi.fn().mockReturnValue(new Promise((done) => { resolve = done; })) });
+    selectBoth(); confirmCross(); save();
+    const next = { ...props, scope: { ...scope, ...(change === 'account' ? { userId: id(9) } : change === 'role' ? { role: 'coo' as const } : {}) }, ownerContext: change === 'event' ? `event:${id(23)}` : props.ownerContext };
+    rerender(<ShiftWorkflowEditor {...next} />); expect(screen.getByRole('checkbox', { name: /Přípravy · JOB/ })).not.toBeChecked();
+    await act(async () => { resolve(undefined); }); expect(props.onClose).not.toHaveBeenCalled(); expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it.each(['account', 'role', 'event'] as const)('cannot publish an old refresh after the editor %s context changes', async (change) => {
+    let resolve!: (value: ShiftWorkflowManagementData) => void;
+    const { props, rerender } = setup({ onSave: vi.fn().mockRejectedValue(new ShiftWorkflowError('conflict', 'Změna')), onReload: vi.fn().mockReturnValue(new Promise((done) => { resolve = done; })) });
+    selectBoth(); confirmCross(); save(); fireEvent.click(await screen.findByRole('button', { name: 'Obnovit data a ponechat výběr' }));
+    const next = { ...props, scope: { ...scope, ...(change === 'account' ? { userId: id(9) } : change === 'role' ? { role: 'coo' as const } : {}) }, ownerContext: change === 'event' ? `event:${id(23)}` : props.ownerContext };
+    rerender(<ShiftWorkflowEditor {...next} />);
+    const obsolete = makeData(); obsolete.events[0].name = 'Starý výsledek'; await act(async () => { resolve(obsolete); });
+    expect(screen.queryByText(/Starý výsledek/)).not.toBeInTheDocument(); expect(screen.getByRole('checkbox', { name: /Přípravy · JOB/ })).not.toBeChecked();
+    expect(screen.queryByRole('checkbox', { name: 'Zkontroloval jsem výběr po obnovení dat' })).not.toBeInTheDocument();
   });
 
   it('offers server-required confirmation for null and explicit raw jobs with the same project fallback', async () => {
@@ -173,6 +227,7 @@ describe('ShiftWorkflowEditor', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: /Přípravy · JOB/ }));
     fireEvent.click(screen.getByRole('checkbox', { name: /Deinstalace · JOB/ }));
     expect(screen.getByText(/Samotné směny ani jejich evidence se nesmažou/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Potvrzuji zrušení propojení' }));
     fireEvent.click(screen.getByRole('button', { name: 'Zrušit propojení' }));
     await waitFor(() => expect(props.onSave).toHaveBeenCalledOnce());
     expect(vi.mocked(props.onSave).mock.calls[0][0]).toMatchObject({ workflowId: id(10), deleteWorkflow: true, eventIds: [] });

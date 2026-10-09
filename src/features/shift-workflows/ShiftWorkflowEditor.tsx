@@ -3,13 +3,13 @@ import { Button } from '../../components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../components/ui/dialog';
 import { createStableDraftUuid } from '../stable-draft-identity';
 import { canManageShiftWorkflows, ShiftWorkflowError, type SaveShiftWorkflow, type ShiftWorkflowScope } from './shift-workflows.contract';
-import { getWorkflowCandidates, getWorkflowSelectionImpact, workflowEventDates, workflowEventTitle, type ShiftWorkflowManagementData } from './shift-workflows.management';
+import { getEventWorkflowCandidates, getWorkflowSelectionImpact, workflowEventDates, workflowEventTitle, type ShiftWorkflowManagementData } from './shift-workflows.management';
 import { buildShiftWorkflowCommand, shiftWorkflowEventId } from './shift-workflows.selection';
 
 interface Props {
   scope: ShiftWorkflowScope;
   data: ShiftWorkflowManagementData;
-  profileId: string;
+  ownerContext: string;
   workflowId: string | null;
   onSave: (command: SaveShiftWorkflow) => Promise<unknown>;
   onReload: () => Promise<ShiftWorkflowManagementData>;
@@ -26,6 +26,8 @@ function EditorSession(props: Props) {
   const [eventIds, setEventIds] = useState(() => [...(data.snapshot.workflows.find((w) => w.id === props.workflowId)?.eventIds ?? [])]);
   const [cross, setCross] = useState(false);
   const [moves, setMoves] = useState(false);
+  const [dissolveConfirmed, setDissolveConfirmed] = useState(false);
+  const [search, setSearch] = useState('');
   const [reviewRequired, setReviewRequired] = useState(false);
   const [reviewed, setReviewed] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +44,7 @@ function EditorSession(props: Props) {
   const current = (captured: typeof activation.current) => captured?.active && activation.current === captured;
   const locked = busy || Boolean(pending) || conflict;
   const impact = getWorkflowSelectionImpact(data, props.scope, props.workflowId, eventIds);
-  const candidates = getWorkflowCandidates(data, props.scope, props.profileId, props.workflowId);
+  const candidates = getEventWorkflowCandidates(data, props.scope);
   const events = new Map(data.events.filter((e) => props.scope.source === 'local' || e.supabaseId)
     .map((e) => [shiftWorkflowEventId(e, props.scope.source), e]));
   const candidateIds = new Set(candidates.map((c) => c.id));
@@ -52,10 +54,13 @@ function EditorSession(props: Props) {
     if (event && !candidateIds.has(id)) candidates.push({ id, event });
   }
   const missing = eventIds.filter((id) => !events.has(id));
+  const query = search.trim().toLocaleLowerCase('cs-CZ');
+  const displayedCandidates = candidates.filter(({ id, event }) => eventIds.includes(id)
+    || workflowEventTitle(event).toLocaleLowerCase('cs-CZ').includes(query));
   const title = (id: string) => events.has(id) ? workflowEventTitle(events.get(id)!) : 'Nedostupná směna';
 
   const changeSelection = (next: string[]) => {
-    setEventIds(next); setCross(false); setMoves(false); setReviewed(false); setError(null);
+    setEventIds(next); setCross(false); setMoves(false); setDissolveConfirmed(false); setReviewed(false); setError(null);
   };
   const send = async (command: SaveShiftWorkflow) => {
     const captured = activation.current;
@@ -74,7 +79,7 @@ function EditorSession(props: Props) {
     }
   };
   const save = () => {
-    if (locked || impact.blockedReason) return;
+    if (locked || impact.blockedReason || (props.workflowId !== null && eventIds.length === 0 && !dissolveConfirmed)) return;
     if (reviewRequired && !reviewed) { setError('Zkontrolujte výběr po obnovení dat a potvrďte ho.'); return; }
     try {
       const command = buildShiftWorkflowCommand({
@@ -93,7 +98,7 @@ function EditorSession(props: Props) {
       const fresh = await props.onReload();
       if (!current(captured)) return;
       setData(structuredClone(fresh)); setConflict(false); setError(null); setPending(null);
-      setCross(false); setMoves(false); setReviewRequired(true); setReviewed(false);
+      setCross(false); setMoves(false); setDissolveConfirmed(false); setReviewRequired(true); setReviewed(false);
     } catch (cause) { if (current(captured)) setError(safeMessage(cause)); }
     finally { if (current(captured)) { inFlight.current = false; setBusy(false); } }
   };
@@ -111,7 +116,10 @@ function EditorSession(props: Props) {
         </DialogHeader>
         <fieldset disabled={locked} className="grid min-w-0 gap-2">
           <legend className="mb-2 text-sm font-semibold">Související směny</legend>
-          {candidates.map(({ id, event }) => {
+          <label className="grid gap-1 text-sm">Hledat směnu nebo jobnumber
+            <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} className="rounded-xl border border-[var(--nodu-border)] bg-transparent p-3" />
+          </label>
+          {displayedCandidates.map(({ id, event }) => {
             const selected = eventIds.includes(id);
             const next = selected ? eventIds.filter((candidate) => candidate !== id) : [...eventIds, id];
             const reason = getWorkflowSelectionImpact(data, props.scope, props.workflowId, next).blockedReason;
@@ -127,12 +135,16 @@ function EditorSession(props: Props) {
             );
           })}
           {missing.map((id) => <p key={id} className="text-sm text-[var(--nodu-text-soft)]">Nedostupná vybraná směna</p>)}
-          {candidates.length === 0 && !missing.length && <p className="text-sm">Tento člověk nemá přiřazené směny k propojení.</p>}
+          {candidates.length === 0 && !missing.length && <p className="text-sm">Nejsou dostupné směny k propojení.</p>}
+          {candidates.length > 0 && displayedCandidates.length === 0 && <p className="text-sm">Žádná směna neodpovídá hledání.</p>}
         </fieldset>
         <div className="space-y-2 text-sm">
           <p className="font-medium">Vybráno směn: {eventIds.length}</p>
           {impact.removedEventIds.length > 0 && <p>Odpojí se: {impact.removedEventIds.map(title).join(', ')}.</p>}
-          {dissolving && <p>Samotné směny ani jejich evidence se nesmažou. Zruší se pouze jejich propojení.</p>}
+          {dissolving && <>
+            <p>Samotné směny ani jejich evidence se nesmažou. Zruší se pouze jejich propojení.</p>
+            <label className="flex items-start gap-2"><input type="checkbox" className={checkClass} checked={dissolveConfirmed} disabled={locked} onChange={(e) => setDissolveConfirmed(e.target.checked)} />Potvrzuji zrušení propojení</label>
+          </>}
           {impact.sources.map((source) => (
             <div key={source.id} className="rounded-xl bg-[var(--nodu-paper-strong)] p-3">
               <p>Přesunou se: {source.eventIds.filter((id) => eventIds.includes(id)).map(title).join(', ')}.</p>
@@ -152,7 +164,7 @@ function EditorSession(props: Props) {
           <Button type="button" variant="outline" disabled={busy} onClick={close}>Zavřít</Button>
           {conflict ? <Button type="button" disabled={busy} onClick={() => { void reload(); }}>Obnovit data a ponechat výběr</Button>
             : pending ? <Button type="button" disabled={busy} onClick={() => { void send(pending); }}>Zopakovat stejný požadavek</Button>
-              : <Button type="button" disabled={busy || Boolean(impact.blockedReason) || (!props.workflowId && eventIds.length < 2)} onClick={save}>{dissolving ? 'Zrušit propojení' : 'Uložit propojení'}</Button>}
+              : <Button type="button" disabled={busy || Boolean(impact.blockedReason) || (dissolving ? !dissolveConfirmed : eventIds.length < 2)} onClick={save}>{dissolving ? 'Zrušit propojení' : 'Uložit propojení'}</Button>}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -161,5 +173,5 @@ function EditorSession(props: Props) {
 
 export default function ShiftWorkflowEditor(props: Props) {
   if (!canManageShiftWorkflows(props.scope.role)) return null;
-  return <EditorSession key={JSON.stringify([props.scope, props.profileId, props.workflowId])} {...props} />;
+  return <EditorSession key={JSON.stringify([props.scope, props.ownerContext, props.workflowId])} {...props} />;
 }

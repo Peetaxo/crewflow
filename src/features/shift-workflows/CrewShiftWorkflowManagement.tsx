@@ -1,12 +1,10 @@
-import { useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { Link2 } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '../../components/ui/button';
 import { canManageShiftWorkflows, ShiftWorkflowError } from './shift-workflows.contract';
 import { useShiftWorkflows } from './useShiftWorkflows';
 import { ShiftWorkflowManagementContext } from './ShiftWorkflowManagementContext';
 import { loadShiftWorkflowManagementData } from './shift-workflows.management-loader';
 import type { ShiftWorkflowManagementData } from './shift-workflows.management';
-import ShiftWorkflowEditor from './ShiftWorkflowEditor';
 
 function ManagementSession({ workflows, profileId, children }: {
   workflows: ReturnType<typeof useShiftWorkflows>; profileId: string; children: ReactNode;
@@ -14,7 +12,6 @@ function ManagementSession({ workflows, profileId, children }: {
   const [data, setData] = useState<ShiftWorkflowManagementData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [editor, setEditor] = useState<{ workflowId: string | null; data: ShiftWorkflowManagementData } | null>(null);
   const lifetime = useRef<AbortController | null>(null);
   const requestVersion = useRef(0);
   useLayoutEffect(() => {
@@ -45,35 +42,23 @@ function ManagementSession({ workflows, profileId, children }: {
   const initialLoad = useRef(load);
   useEffect(() => { void initialLoad.current().catch(() => undefined); }, []);
   const reloadQuietly = () => { void load().catch(() => undefined); };
-  const open = (workflowId: string | null) => {
-    if (data && !loading && !error && !lifetime.current?.signal.aborted) setEditor({ workflowId, data });
-  };
-  const close = () => { setEditor(null); reloadQuietly(); };
-
   return (
-    <ShiftWorkflowManagementContext.Provider value={{ scope: workflows.scope, data: error ? null : data, loading, error, open, reload: reloadQuietly }}>
+    <ShiftWorkflowManagementContext.Provider value={{ scope: workflows.scope, profileId, data: error ? null : data, loading, error, reload: reloadQuietly }}>
       {children}
-      {editor && <ShiftWorkflowEditor scope={workflows.scope} profileId={profileId} workflowId={editor.workflowId}
-        data={editor.data} onSave={workflows.save} onReload={load} onClose={close} />}
+      {error && <div className="text-xs text-[var(--nodu-text-soft)]">
+        <p role="alert">Propojené směny se nepodařilo načíst. Ostatní údaje zůstávají dostupné.</p>
+        <Button type="button" variant="outline" size="sm" onClick={reloadQuietly}>Zkusit načíst znovu</Button>
+      </div>}
     </ShiftWorkflowManagementContext.Provider>
   );
 }
 
+/** Read-only personal overview. Membership management belongs to event owners;
+ * this provider exposes no editor, save or open callback. */
 export default function CrewShiftWorkflowManagement({ profileId, children }: { profileId: string | null; children: ReactNode }) {
   const workflows = useShiftWorkflows(Boolean(profileId));
   if (!profileId || !workflows.ready || !canManageShiftWorkflows(workflows.scope.role)) {
     return <ShiftWorkflowManagementContext.Provider value={null}>{children}</ShiftWorkflowManagementContext.Provider>;
   }
   return <ManagementSession key={`${workflows.scopeKey}:${profileId}`} workflows={workflows} profileId={profileId}>{children}</ManagementSession>;
-}
-
-export function CrewShiftWorkflowActions() {
-  const context = useContext(ShiftWorkflowManagementContext);
-  if (!context) return null;
-  if (context.loading) return <span role="status" className="text-xs text-[var(--nodu-text-soft)]">Načítání propojení…</span>;
-  if (context.error) return <div className="text-xs text-[var(--nodu-text-soft)]">
-    <p role="alert">Propojené směny se nepodařilo načíst. Ostatní údaje zůstávají dostupné.</p>
-    <Button type="button" variant="outline" size="sm" onClick={context.reload}>Zkusit načíst znovu</Button>
-  </div>;
-  return <Button type="button" variant="outline" size="sm" onClick={() => context.open(null)}><Link2 size={14} />Propojit směny</Button>;
 }

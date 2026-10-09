@@ -3,7 +3,7 @@ vi.mock('../features/shift-workflows/useSharedApprovals', () => ({ useSharedAppr
   cards: () => null, legacyOnly: (reports: unknown[]) => reports, reviewSelection: () => false,
   groupsFor: () => ({ rounds: [], legacy: [] }),
 }) }));
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Contractor, Event, Role, Timelog } from '../types';
 import CrewDetailView from './CrewDetailView';
@@ -38,11 +38,12 @@ describe('workflow placement in crew detail', () => {
       eventCrewAssignments: [{ eventId: 21, eventSupabaseId: id(21), contractorProfileId: 'person', name: 'Petr' }],
     });
   });
-  it.each(['crewhead', 'coo'] as const)('places management in %s crew detail and preserves existing linked members', async (role) => {
+  it.each(['crewhead', 'coo'] as const)('shows %s a personal noninteractive summary of current assignments', async (role) => {
     mocks.role = role; render(<CrewDetailView />);
-    expect(await screen.findByRole('button', { name: 'Propojit směny' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Propojeno: 2 směny' }));
-    expect(await screen.findByRole('dialog')).toHaveTextContent('Instalace · JOB');
+    const summary = await screen.findByText('Společná evidence: Přípravy');
+    expect(summary.closest('button')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Propojit směny' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Společná evidence:.*Instalace/)).not.toBeInTheDocument();
     expect(screen.queryByText('Fakturační skupina')).not.toBeInTheDocument();
   });
   it('does not expose management controls to crew', () => {

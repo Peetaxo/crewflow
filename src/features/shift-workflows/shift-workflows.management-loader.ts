@@ -10,6 +10,22 @@ import type { ShiftWorkflowManagementData } from './shift-workflows.management';
 
 const assignmentPage = z.array(z.object({ event_id: canonicalUuid, profile_id: canonicalUuid }).strict());
 
+export async function loadEventShiftWorkflowManagementData(
+  scope: ShiftWorkflowScope, readSnapshot: () => Promise<ShiftWorkflowSnapshot>, signal: AbortSignal,
+): Promise<ShiftWorkflowManagementData> {
+  const assertAccess = () => {
+    if (signal.aborted || !canManageShiftWorkflows(scope.role)) {
+      throw new ShiftWorkflowError('denied', 'Přístup k propojeným směnám se změnil.');
+    }
+  };
+  assertAccess();
+  const [snapshot, events, timelogs, invoices] = await Promise.all([
+    readSnapshot(), fetchEventsSnapshot(), fetchTimelogsSnapshot(), fetchInvoicesSnapshot(),
+  ]);
+  assertAccess();
+  return { snapshot, events, timelogs, invoices, eventCrewAssignments: [] };
+}
+
 /** Authoritative assignments, shared by management and evidence reads. Never
  * substitute the display projection which also includes historic timelogs. */
 export async function readShiftWorkflowManagerAssignments(scope: ShiftWorkflowScope, signal: AbortSignal, profileId: string) {

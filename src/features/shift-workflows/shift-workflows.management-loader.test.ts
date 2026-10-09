@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadShiftWorkflowManagementData } from './shift-workflows.management-loader';
+import { loadEventShiftWorkflowManagementData, loadShiftWorkflowManagementData } from './shift-workflows.management-loader';
 import type { ShiftWorkflowScope } from './shift-workflows.contract';
 
 const mocks = vi.hoisted(() => ({ events: vi.fn(), reports: vi.fn(), invoices: vi.fn(), state: vi.fn(), assignments: vi.fn(), table: vi.fn(), filter: vi.fn(), page: vi.fn() }));
@@ -26,6 +26,28 @@ describe('workflow management read boundary', () => {
     vi.clearAllMocks(); mocks.events.mockResolvedValue([]); mocks.reports.mockResolvedValue([]); mocks.invoices.mockResolvedValue([]);
     mocks.state.mockReturnValue({ eventCrewAssignments: [] });
     mocks.assignments.mockResolvedValue({ data: [], error: null });
+  });
+  it('loads global management without a person or any assignment read', async () => {
+    const read = vi.fn().mockResolvedValue(snapshot);
+    const event = { id: 21, supabaseId: eventId };
+    mocks.events.mockResolvedValue([event]);
+    expect(await loadEventShiftWorkflowManagementData(scope, read, new AbortController().signal)).toEqual({ snapshot, events: [event], timelogs: [], invoices: [], eventCrewAssignments: [] });
+    expect(mocks.table).not.toHaveBeenCalled(); expect(mocks.state).not.toHaveBeenCalled();
+  });
+  it.each(['crew', 'admin', 'invalid'])('denies global management to %s before reading', async (role) => {
+    const read = vi.fn();
+    await expect(loadEventShiftWorkflowManagementData({ ...scope, role: role as ShiftWorkflowScope['role'] }, read, new AbortController().signal)).rejects.toMatchObject({ kind: 'denied' });
+    expect(read).not.toHaveBeenCalled(); expect(mocks.events).not.toHaveBeenCalled();
+  });
+  it('denies global management after retirement or a role change during the read', async () => {
+    let resolve!: (value: unknown[]) => void;
+    mocks.events.mockReturnValue(new Promise((done) => { resolve = done; }));
+    const mutableScope = { ...scope }; const controller = new AbortController();
+    const result = loadEventShiftWorkflowManagementData(mutableScope, vi.fn().mockResolvedValue(snapshot), controller.signal);
+    mutableScope.role = 'crew'; resolve([]);
+    await expect(result).rejects.toMatchObject({ kind: 'denied' });
+    controller.abort();
+    await expect(loadEventShiftWorkflowManagementData(scope, vi.fn(), controller.signal)).rejects.toMatchObject({ kind: 'denied' });
   });
   it('collects all manager-visible report and invoice evidence, not just this person’s rows', async () => {
     mocks.reports.mockResolvedValue([{ contractorProfileId: 'other' }]);

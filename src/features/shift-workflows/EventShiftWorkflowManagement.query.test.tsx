@@ -21,8 +21,9 @@ vi.mock('../invoices/services/invoices.service', () => ({ fetchInvoicesSnapshot:
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const time = '2026-10-09T11:00:00Z';
-const events = ['Přípravy', 'Instalace'].map((name, i) => ({ id: i + 21, supabaseId: id(i + 21), name, job: 'JOB', startDate: '2026-10-09', endDate: '2026-10-09', updatedAt: time } as Event));
+const events = ['Přípravy', 'Instalace', 'Deinstalace'].map((name, i) => ({ id: i + 21, supabaseId: id(i + 21), name, job: 'JOB', startDate: '2026-10-09', endDate: '2026-10-09', updatedAt: time } as Event));
 const snapshot = (linked = true): ShiftWorkflowSnapshot => ({ revision: linked ? 1 : 2, workflows: linked ? [{ id: id(10), eventIds: [id(21), id(22)], updatedAt: time }] : [], rounds: [], assignedEventIds: [] });
+const replacementGroup = (sameIdentity = false): ShiftWorkflowSnapshot => ({ ...snapshot(), revision: 3, workflows: [{ id: id(sameIdentity ? 10 : 11), eventIds: [id(21), id(23)], updatedAt: '2026-10-09T12:00:00Z' }] });
 const clients: QueryClient[] = [];
 function QueryPublicationProbe() {
   const workflows = useShiftWorkflows();
@@ -50,6 +51,112 @@ describe('event owner with real query publication', () => {
     boundary.events.mockResolvedValue(events); boundary.reports.mockResolvedValue([]); boundary.invoices.mockResolvedValue([]);
   });
   afterEach(() => clients.splice(0).forEach((client) => client.clear()));
+
+  it.each(['direct', 'via no group'] as const)('refreshes the closed overview from group A to group B (%s)', async (route) => {
+    const { client, key } = setup(); await screen.findByRole('button', { name: 'Upravit propojení' });
+    expect(screen.getByRole('region', { name: 'Propojené směny' })).toHaveTextContent('Instalace · JOB');
+    if (route === 'via no group') {
+      boundary.read.mockResolvedValue(snapshot(false)); await act(async () => { client.setQueryData(key, snapshot(false)); });
+      await waitFor(() => expect(screen.getByTestId('published-snapshot')).toHaveTextContent('2:ready'));
+      expect(screen.queryByRole('button', { name: 'Upravit propojení' })).not.toBeInTheDocument();
+      expect(boundary.events).toHaveBeenCalledOnce();
+    }
+    const next = replacementGroup(); boundary.read.mockResolvedValue(next);
+    await act(async () => { client.setQueryData(key, next); });
+    await waitFor(() => expect(screen.getByTestId('published-snapshot')).toHaveTextContent('3:ready'));
+    expect(await screen.findByRole('button', { name: 'Upravit propojení' })).toBeEnabled();
+    const overview = screen.getByRole('region', { name: 'Propojené směny' });
+    expect(overview).toHaveTextContent('Deinstalace · JOB'); expect(overview).not.toHaveTextContent('Instalace · JOB');
+    expect(boundary.events).toHaveBeenCalledTimes(2); expect(boundary.save).not.toHaveBeenCalled(); expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('refreshes a closed overview when membership changes under the same workflow identity', async () => {
+    const { client, key } = setup(); await screen.findByRole('button', { name: 'Upravit propojení' });
+    const next = replacementGroup(true); boundary.read.mockResolvedValue(next);
+    await act(async () => { client.setQueryData(key, next); });
+    await waitFor(() => expect(screen.getByTestId('published-snapshot')).toHaveTextContent('3:ready'));
+    expect(await screen.findByText('Deinstalace · JOB')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Propojené směny' })).not.toHaveTextContent('Instalace · JOB');
+    expect(boundary.events).toHaveBeenCalledTimes(2); expect(boundary.save).not.toHaveBeenCalled();
+  });
+
+  it('keeps an open editor on group A during group B publication and refreshes the overview after explicit close', async () => {
+    const { client, key } = setup(); fireEvent.click(await screen.findByRole('button', { name: 'Upravit propojení' })); await screen.findByRole('dialog');
+    const reads = boundary.events.mock.calls.length;
+    const next = replacementGroup(); boundary.read.mockResolvedValue(next); await act(async () => { client.setQueryData(key, next); });
+    await waitFor(() => expect(screen.getByTestId('published-snapshot')).toHaveTextContent('3:ready'));
+    expect(screen.getByRole('checkbox', { name: /Instalace · JOB/ })).toBeChecked(); expect(screen.getByRole('checkbox', { name: /Deinstalace · JOB/ })).not.toBeChecked();
+    expect(boundary.events).toHaveBeenCalledTimes(reads); expect(boundary.save).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Zavřít' }));
+    expect(await screen.findByRole('button', { name: 'Upravit propojení' })).toBeEnabled();
+    expect(screen.getByRole('region', { name: 'Propojené směny' })).toHaveTextContent('Deinstalace · JOB');
+    fireEvent.click(screen.getByRole('button', { name: 'Upravit propojení' })); await screen.findByRole('dialog');
+    expect(screen.getByRole('checkbox', { name: /Deinstalace · JOB/ })).toBeChecked(); expect(screen.getByRole('checkbox', { name: /Instalace · JOB/ })).not.toBeChecked();
+  });
+
+  it('does not supersede a manual open when its snapshot publishes replacement membership before other reads finish', async () => {
+    setup(); await screen.findByRole('button', { name: 'Upravit propojení' });
+    let resolve!: (events: Event[]) => void;
+    boundary.events.mockReturnValueOnce(new Promise((done) => { resolve = done; })); boundary.read.mockResolvedValue(replacementGroup());
+    fireEvent.click(screen.getByRole('button', { name: 'Upravit propojení' }));
+    await waitFor(() => expect(screen.getByTestId('published-snapshot')).toHaveTextContent('3:ready'));
+    expect(boundary.events).toHaveBeenCalledTimes(2);
+    await act(async () => { resolve(events); }); await screen.findByRole('dialog');
+    expect(screen.getByRole('checkbox', { name: /Deinstalace · JOB/ })).toBeChecked(); expect(screen.getByRole('checkbox', { name: /Instalace · JOB/ })).not.toBeChecked();
+    expect(boundary.events).toHaveBeenCalledTimes(2); expect(boundary.save).not.toHaveBeenCalled();
+  });
+
+  it('does not publish a late old overview after replacement membership has loaded', async () => {
+    let resolve!: (events: Event[]) => void;
+    boundary.events.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+    const { client, key } = setup(); await waitFor(() => expect(boundary.events).toHaveBeenCalledOnce());
+    const next = replacementGroup(); boundary.read.mockResolvedValue(next);
+    await act(async () => { client.setQueryData(key, next); });
+    await waitFor(() => expect(screen.getByTestId('published-snapshot')).toHaveTextContent('3:ready'));
+    await screen.findByRole('button', { name: 'Upravit propojení' });
+    expect(screen.getByRole('region', { name: 'Propojené směny' })).toHaveTextContent('Deinstalace · JOB');
+    await act(async () => { resolve(events.map((event) => ({ ...event, name: 'Starý přehled' }))); });
+    expect(screen.getByRole('region', { name: 'Propojené směny' })).toHaveTextContent('Deinstalace · JOB'); expect(screen.queryByText(/Starý přehled/)).not.toBeInTheDocument();
+    expect(boundary.events).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not supersede an explicit editor refresh when replacement membership publishes before its remaining reads', async () => {
+    setup(); await openEditorWithConflict();
+    let resolve!: (events: Event[]) => void;
+    boundary.events.mockReturnValueOnce(new Promise((done) => { resolve = done; })); boundary.read.mockResolvedValue(replacementGroup());
+    fireEvent.click(screen.getByRole('button', { name: 'Obnovit data a ponechat výběr' }));
+    await waitFor(() => expect(screen.getByTestId('published-snapshot')).toHaveTextContent('3:ready'));
+    expect(boundary.events).toHaveBeenCalledTimes(3); expect(selectedMembers()).toHaveLength(2);
+    await act(async () => { resolve(events); });
+    expect(await screen.findByRole('checkbox', { name: 'Zkontroloval jsem výběr po obnovení dat' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /Instalace · JOB/ })).toBeChecked(); expect(screen.getByRole('checkbox', { name: /Deinstalace · JOB/ })).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Uložit propojení' })).toBeDisabled(); expect(boundary.events).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not supersede an explicit closed-overview retry when its snapshot publishes new membership first', async () => {
+    boundary.events.mockRejectedValueOnce(new Error('Unavailable')); setup();
+    await screen.findByRole('alert');
+    let resolve!: (events: Event[]) => void;
+    boundary.events.mockReturnValueOnce(new Promise((done) => { resolve = done; })); boundary.read.mockResolvedValue(replacementGroup());
+    fireEvent.click(screen.getByRole('button', { name: 'Zkusit načíst znovu' }));
+    await waitFor(() => expect(screen.getByTestId('published-snapshot')).toHaveTextContent('3:ready'));
+    expect(boundary.events).toHaveBeenCalledTimes(2); expect(screen.queryByRole('region', { name: 'Propojené směny' })).not.toBeInTheDocument();
+    await act(async () => { resolve(events); });
+    expect(await screen.findByRole('button', { name: 'Upravit propojení' })).toBeEnabled();
+    expect(screen.getByRole('region', { name: 'Propojené směny' })).toHaveTextContent('Deinstalace · JOB'); expect(boundary.events).toHaveBeenCalledTimes(2);
+  });
+
+  it('retires a pending closed overview when the authoritative anchor becomes unlinked', async () => {
+    let resolve!: (events: Event[]) => void;
+    boundary.events.mockReturnValueOnce(new Promise((done) => { resolve = done; })); const { client, key } = setup();
+    await waitFor(() => expect(boundary.events).toHaveBeenCalledOnce());
+    boundary.read.mockResolvedValue(snapshot(false)); await act(async () => { client.setQueryData(key, snapshot(false)); });
+    await waitFor(() => expect(screen.getByTestId('published-snapshot')).toHaveTextContent('2:ready'));
+    await act(async () => { resolve(events.map((event) => ({ ...event, name: 'Starý přehled' }))); });
+    expect(screen.queryByRole('region', { name: 'Propojené směny' })).not.toBeInTheDocument(); expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.queryByText('Načítání propojení…')).not.toBeInTheDocument(); expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(boundary.events).toHaveBeenCalledOnce(); expect(boundary.save).not.toHaveBeenCalled();
+  });
 
   it('loads a cached linked overview through StrictMode activation replay', async () => {
     setup(true);

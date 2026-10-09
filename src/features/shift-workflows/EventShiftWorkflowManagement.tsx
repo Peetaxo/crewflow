@@ -3,7 +3,7 @@ import { Link2 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { appDataSource } from '../../lib/app-config';
 import type { Event } from '../../types';
-import { canManageShiftWorkflows, canonicalUuid, ShiftWorkflowError } from './shift-workflows.contract';
+import { canManageShiftWorkflows, canonicalUuid, ShiftWorkflowError, type ShiftWorkflowSnapshot } from './shift-workflows.contract';
 import { useShiftWorkflows } from './useShiftWorkflows';
 import { loadEventShiftWorkflowManagementData } from './shift-workflows.management-loader';
 import { getEventWorkflowCandidates, workflowEventDates, workflowEventTitle, type ShiftWorkflowManagementData } from './shift-workflows.management';
@@ -11,6 +11,8 @@ import { shiftWorkflowEventId } from './shift-workflows.selection';
 import ShiftWorkflowEditor from './ShiftWorkflowEditor';
 
 const retired = () => new ShiftWorkflowError('denied', 'Přístup k propojeným směnám se změnil.');
+const overviewKey = (workflow: ShiftWorkflowSnapshot['workflows'][number] | undefined) => workflow
+  ? JSON.stringify([workflow.id, workflow.updatedAt, [...workflow.eventIds].sort()]) : null;
 function ReadError({ retry, loading }: { retry: () => void; loading: boolean }) {
   return <div className="text-xs text-[var(--nodu-text-soft)]">
     <p role="alert">Propojené směny se nepodařilo načíst. Ostatní údaje zůstávají dostupné.</p>
@@ -18,35 +20,41 @@ function ReadError({ retry, loading }: { retry: () => void; loading: boolean }) 
   </div>;
 }
 
-function EventManagementSession({ workflows, context, eventId, workflowId }: {
-  workflows: ReturnType<typeof useShiftWorkflows>; context: string; eventId: string | null; workflowId: string | null;
+function EventManagementSession({ workflows, context, eventId, workflowId, workflowKey }: {
+  workflows: ReturnType<typeof useShiftWorkflows>; context: string; eventId: string | null; workflowId: string | null; workflowKey: string | null;
 }) {
   const [data, setData] = useState<ShiftWorkflowManagementData | null>(null);
+  const [dataOverviewKey, setDataOverviewKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [manualReading, setManualReading] = useState(false);
   const [error, setError] = useState(false);
   const [editor, setEditor] = useState<{ workflowId: string | null; data: ShiftWorkflowManagementData } | null>(null);
   const lifetime = useRef<AbortController | null>(null);
   const requestVersion = useRef(0);
   const openAfterRetry = useRef(false);
-  const initialReadStarted = useRef(false);
+  const lastOverviewRead = useRef<string | null>(null);
   useLayoutEffect(() => {
     const controller = new AbortController(); lifetime.current = controller;
-    initialReadStarted.current = false;
+    lastOverviewRead.current = null;
     return () => { controller.abort(); };
   }, []);
-  const load = async () => {
+  const load = async (isOverviewRead = false) => {
     const controller = lifetime.current;
     if (!controller || controller.signal.aborted) throw retired();
     const version = ++requestVersion.current; setLoading(true);
+    if (!isOverviewRead) setManualReading(true);
     try {
       const fresh = await loadEventShiftWorkflowManagementData(workflows.scope, workflows.reload, controller.signal);
       if (controller.signal.aborted || version !== requestVersion.current) throw retired();
-      setData(fresh); setError(false); return fresh;
+      const freshOverviewKey = overviewKey(eventId ? fresh.snapshot.workflows.find((w) => w.eventIds.includes(eventId)) : undefined);
+      lastOverviewRead.current = freshOverviewKey;
+      setData(fresh); setDataOverviewKey(freshOverviewKey);
+      setError(false); return fresh;
     } catch (cause) {
       if (!controller.signal.aborted && version === requestVersion.current) setError(true);
       throw cause;
     } finally {
-      if (!controller.signal.aborted && version === requestVersion.current) setLoading(false);
+      if (!controller.signal.aborted && version === requestVersion.current) { setLoading(false); setManualReading(false); }
     }
   };
   const open = async () => {
@@ -64,14 +72,23 @@ function EventManagementSession({ workflows, context, eventId, workflowId }: {
     } catch { /* ReadError provides the same read retry without opening stale data. */ }
   };
   const reloadQuietly = () => { void load().catch(() => undefined); };
-  const initialRead = useRef(reloadQuietly);
+  const readOverview = useRef(() => { void load(true).catch(() => undefined); });
   const queryError = Boolean(eventId && workflows.query.isError);
   useEffect(() => {
-    if (eventId && workflowId && !queryError && !initialReadStarted.current) {
-      initialReadStarted.current = true;
-      initialRead.current();
+    // Manual open/refresh owns its full read even if reload publishes a new
+    // membership before the other reads finish. Active editors stay frozen.
+    if (!eventId || editor || manualReading || openAfterRetry.current || queryError) return;
+    if (!workflowKey) {
+      lastOverviewRead.current = null;
+      ++requestVersion.current;
+      setData(null); setDataOverviewKey(null); setLoading(false); setError(false);
+      return;
     }
-  }, [eventId, workflowId, queryError]);
+    if (lastOverviewRead.current !== workflowKey) {
+      lastOverviewRead.current = workflowKey;
+      readOverview.current();
+    }
+  }, [eventId, workflowKey, queryError, editor, manualReading]);
   const retry = () => {
     if (openAfterRetry.current) void open();
     else if (error) reloadQuietly();
@@ -79,13 +96,14 @@ function EventManagementSession({ workflows, context, eventId, workflowId }: {
   };
   const close = () => {
     if (lifetime.current?.signal.aborted) return;
-    setEditor(null); if (eventId) reloadQuietly();
+    lastOverviewRead.current = null;
+    setEditor(null);
   };
   const target = data?.snapshot.workflows.find((w) => w.id === workflowId);
   const members = data && target ? getEventWorkflowCandidates(data, workflows.scope).filter(({ id }) => target.eventIds.includes(id)) : [];
   const missingMembers = target ? target.eventIds.length - members.length : 0;
   return <>
-    {eventId ? (data && target && !error && !queryError ? <section aria-label="Propojené směny" className="my-4 rounded-xl border border-[var(--nodu-border)] p-3 text-sm" data-mobile-event-swipe-ignore="true">
+    {eventId ? (data && target && dataOverviewKey === workflowKey && !error && !queryError ? <section aria-label="Propojené směny" className="my-4 rounded-xl border border-[var(--nodu-border)] p-3 text-sm" data-mobile-event-swipe-ignore="true">
       <h2 className="mb-2 flex items-center gap-2 font-semibold"><Link2 size={14} />Propojené směny</h2>
       <ul className="space-y-1">{members.map(({ id, event }) => <li key={id}><span className="font-medium">{workflowEventTitle(event)}</span><span className="ml-2 text-xs text-[var(--nodu-text-soft)]">{workflowEventDates(event)}</span></li>)}</ul>
       {missingMembers > 0 && <p>Některá propojená směna není dostupná. Obnovte data a zkontrolujte výběr.</p>}
@@ -101,12 +119,12 @@ function EventOwner({ event }: { event?: Event }) {
   const workflows = useShiftWorkflows();
   if (!workflows.ready || !canManageShiftWorkflows(workflows.scope.role)) return null;
   const eventId = event ? shiftWorkflowEventId(event, workflows.scope.source) : null;
-  const workflowId = eventId ? workflows.query.data?.workflows.find((w) => w.eventIds.includes(eventId))?.id ?? null : null;
+  const workflow = eventId ? workflows.query.data?.workflows.find((w) => w.eventIds.includes(eventId)) : undefined;
   // Query publication changes the overview, not this owner's lifetime. An open
   // editor keeps its captured workflow and selection through deletion/error;
   // only a scope/context change or explicit close retires that editor.
   const context = eventId ? `event:${eventId}` : 'events-list';
-  return <EventManagementSession key={JSON.stringify([workflows.scopeKey, context])} workflows={workflows} context={context} eventId={eventId} workflowId={workflowId} />;
+  return <EventManagementSession key={JSON.stringify([workflows.scopeKey, context])} workflows={workflows} context={context} eventId={eventId} workflowId={workflow?.id ?? null} workflowKey={overviewKey(workflow)} />;
 }
 
 export function EventShiftWorkflowCreateAction() { return <EventOwner />; }

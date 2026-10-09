@@ -1,6 +1,20 @@
 # Shared shifts — rollout preflight
 
-Status: local implementation and verification complete at `277033b`, **not approval to deploy**. Independent spec and quality reviews approve the final checkpoint; the full suite passes 143 files / 1,703 tests, web build and focused lint pass, and the actual app typecheck retains 112 unchanged baseline diagnostics. The next step requires explicit user approval for the remote scope below. No new Staff schema has been applied and no main/device update has occurred.
+Status (2026-10-09): the user authorized continuation of the concrete rollout below. Both exact reviewed migrations are deployed to Staff, the verified implementation is integrated into `main` at `e5de1af`, and the development simulator and paired iPhone have been built, installed and launched. Simulator inspection confirmed the styled dashboard and the real Staff-backed **Propojit směny** dialog. This is shared-shift development rollout completion, not production release or completion of the later per-person invoice-selection stage.
+
+## Completed rollout — 2026-10-09
+
+- Rechecked Staff migration history and the absence of shared-workflow objects before writing. The MCP migration request failed with an expired request state; read-only checks confirmed no write. The official CLI dry run offered only the two approved migrations; `supabase db push` then applied both successfully with their original version numbers. No migration-history repair, seed or unrelated migration was used. Both file hashes below still match.
+- Remote catalog checks confirm all nine new tables have RLS, no anonymous access and no authenticated direct DML. The five public shared-workflow RPCs are invokers with authenticated-only EXECUTE. All 22 created/replaced function bodies match the exact reviewed SQL; preserved assignment helpers retain their original hashes and are not callable by API roles. The four shared write/version/assignment triggers are attached; no automatic invoice trigger is attached.
+- Aggregate count plus ordered full-row JSON fingerprints of all 14 original business tables are identical before/after deployment. Workflow/round/request counts and the new revision remain zero. No existing records were converted or test business records created.
+- Rollback-only read smoke passed for the available CrewHead account and rejected missing auth. Staff currently has no uniquely bound authenticated crew/COO account to use for those remote read-smoke cases; those roles' lifecycle behavior was verified in the existing local SQL/UI suites, not asserted as a new full remote approval test.
+- The security advisor returns 30 findings across the same five pre-existing categories (1 / 3 / 9 / 16 / 1), with no shared-workflow finding. The three wrapped assignment APIs are now invokers, removing their old authenticated-definer findings. Remaining baseline warnings below are not remediated by this feature.
+- A separate clean checkout at `/Users/peetax/Projekty/crewflow-shared-rollout-20261008` preserves the original checkout's three unrelated dirty files unchanged. The merged suite passed 143 files / 1,703 tests; the clean `main` was pushed and verified equal to `origin/main`. Existing ignored `.env.local` configuration was preserved, and refresh preflight checks stayed intact.
+- `npm run ios:refresh:devices` built and installed the app on iPhone 17 Pro / iOS 26.5 simulator and paired iPhone 13 mini. The first restricted attempt could not access CoreSimulator; the same command succeeded through build/install with the required system access. iPhone launch initially required developer trust; after the user confirmed it on the phone, the explicit launch retry succeeded. Simulator UI inspection used only navigation and opening the picker, without saving membership or advancing real reports.
+
+Evidence and acceptance limitations: `supabase/tests/shared_shift_workflows.verification.md`; manual test guide: `docs/testing/shared-shifts-acceptance-cs.md`.
+
+The following sections retain the historical pre-deployment baseline and scope.
 
 ## Staff state observed 2026-09-29
 

@@ -1,6 +1,19 @@
 # Shared shift workflows — verification log
 
-Status: local implementation verified; remote approval and deployment/device acceptance are pending. This is not deployed-app completion evidence.
+Status (2026-10-09): reviewed shared-shift implementation deployed to Staff and integrated into synchronized `main`; development simulator and paired iPhone built, installed and launched. Device smoke confirmed the dashboard and Staff-backed membership picker; a full approval round on real Staff business records was deliberately not performed. Arbitrary per-person invoice selection remains a separate stage. Older checkpoints below describe their state at the time, not the current rollout state.
+
+## Remote and development-device rollout (2026-10-09)
+
+- Both exact reviewed migrations (`20260923092136_shared_shift_workflows` and `20260923100014_shared_shift_round_lifecycle`) applied successfully through the authenticated official CLI after a failed/expired MCP request was confirmed not to have written anything. Staff history now records both original version numbers. SHA-256: `baf2f2c6e494026c736d6c139e269ca7493e11b24f2254f61fd9bce3b9625128` and `d7fd8ed33612122d66635d4b2b74fde6f71b5076e8daf636170f9b2531565486`.
+- All nine new public/private tables have RLS, zero anonymous access and zero authenticated direct write grants. The private request/permit tables are unreadable to API callers. All five public shared-workflow RPCs are invokers, anonymous EXECUTE is revoked, and authenticated EXECUTE is granted. All 22 created/replaced bodies match the reviewed SQL exactly; assignment helpers preserve their baseline bodies and revoke API-role access. The four shared guards/version triggers are attached. There is still no attached automatic invoice trigger.
+- Before/after aggregate fingerprints match for all 14 original business tables: counts plus MD5 of ordered complete JSON rows. This includes 174 events, 29 projects, 322 assignments, 363 reports and 378 report days. No existing data was converted, edited or deleted. Shared workflows, rounds and requests remain empty, revision zero.
+- A rollback-only remote read smoke checked the available uniquely bound CrewHead account and denied a missing auth identity. No uniquely bound signed-in crew/COO account currently exists in Staff for the other two remote read-smoke cases; full multi-role lifecycle evidence remains the local suites described below. No production fixtures or role changes were introduced.
+- Remote security advisors retain the existing five finding categories, with counts 1 / 3 / 9 / 16 / 1 (30 total); no new shared-workflow warning. The former three assignment definer APIs became invokers. Remaining pre-existing warnings and remediation links are documented in the rollout preflight; this is not a blanket production-security claim.
+- Fresh merged-main suite: **143 files / 1,703 tests passed** in the clean rollout checkout. Web build passed during the actual device refresh. Feature code checkpoint remains `277033b`, integrated into `main` at `e5de1af`; documentation commits do not alter application code.
+- Original checkout's unrelated `Info.plist` and two `TimelogsView` changes were preserved byte-for-byte. The separate clean main checkout retained ignored `.env.local` and did not bypass branch/cleanliness/HEAD-origin refresh checks.
+- Simulator: iPhone 17 Pro, iOS 26.5, `B337323A-264B-4AAC-9236-BEAAB3701659`; build, install and launch passed. Screenshot inspection confirmed styled management dashboard, crew detail **Propojit směny**, and the actual Staff-loaded picker showing historical-round membership locks. Only navigation/opening was exercised remotely; no membership save or business approval was performed.
+- Physical iPhone 13 mini: build and installation passed; initial launch was denied by iOS developer trust. The user confirmed trust on the phone, then `devicectl device process launch --terminate-existing` succeeded for `cz.nodu.app`. This recovered launch is not mislabeled as the initial refresh passing.
+- Raw local logs: `/private/tmp/crewflow-shared-main-20261009-tests.txt`, `/private/tmp/crewflow-shared-20261009-migrations.txt`, `/private/tmp/crewflow-shared-20261009-devices-retry.txt`. Picker screenshot: `/var/folders/h5/tn4pvmkd0lg_vwzjngmxz3080000gn/T/screenshot_optimized_61b790a7-f4ea-46f3-9b98-528fb8a597da.jpg`. These temporary artifacts may expire; the verified outcomes and limits are recorded here.
 
 ## Integrated local verification (2026-09-29)
 
@@ -179,7 +192,7 @@ draft groups first. New submission/approval operations still need their own
 validation, write guards, and concurrent race proofs before the app can use them.
 No fake future RPCs are exposed by the foundation.
 
-## Remaining feature evidence (pending)
+## Remaining feature evidence (historical foundation checklist)
 
 - Authenticated role/ownership/RLS and ACL checks.
 - Atomic membership, progressive saves, immutable submission sets and current targeted approval integration.
@@ -190,7 +203,7 @@ No fake future RPCs are exposed by the foundation.
 - Fresh migration replay, advisor delta and function lint.
 - App integrations, mobile/desktop review, main integration and separate development-device results.
 
-No shared-workflow migration has been applied to Staff. New remote rollout remains a separate concrete approval after local verification.
+At the foundation checkpoint no shared-workflow migration had been applied to Staff. The subsequently authorized rollout is recorded above.
 
 ## Shared draft and round server checkpoint (2026-09-23)
 

@@ -1,17 +1,17 @@
-# Správa propojených směn v detailu akce
+# Správa propojených směn v sekci Akce
 
 Propojení příprav, instalace a deinstalace se nastavuje u akcí, protože platí pro všechny skutečně přiřazené členy crew. Detail člověka zůstává místem pro jeho vlastní přehled a budoucí individuální výběr akcí na fakturu. Tento přesun nemění společnou evidenci ani proces schvalování.
 
-Uživatel odsouhlasil toto rozdělení 9. října 2026. Před implementací zbývá jeho kontrola tohoto konkrétního rozsahu. Stávající nasazená verze zatím spravuje propojení z detailu crew.
+Uživatel po kontrole návrhu odsouhlasil 9. října 2026 hlavní vstup v sekci Akce a přehled s úpravou existujícího propojení v detailu akce. Stávající nasazená verze zatím spravuje propojení z detailu crew; následující rozsah je schválený pro implementaci.
 
 ## Zvolené umístění
 
-Správa bude v detailu akce na mobilu i desktopu. Umístění v detailu crew se ruší, protože neprávem naznačuje individuální nastavení. Samostatný nový přehled propojení není pro tento přesun potřeba; znamenal by další navigaci a není součástí změny.
+Hlavní tlačítko **Propojit směny** bude v existující sekci Akce na mobilu i desktopu. Detail akce nabídne přehled a úpravu jejího existujícího propojení ve stejném dialogu. Umístění správy v detailu crew se ruší, protože neprávem naznačuje individuální nastavení. Samostatná nová navigační sekce není součástí změny.
 
-## Detail akce
+## Sekce Akce a detail akce
 
-- CH a COO dostanou sekci **Propojené směny**. U nepropojené akce bude tlačítko **Propojit související směny**. U propojené akce se zobrazí její členové a tlačítko **Upravit propojení**.
-- Nový výběr předvybere aktuální akci. Nové propojení musí obsahovat aktuální akci a alespoň jednu další. Nestačí jen otevřít nebo zavřít dialog; nic se neuloží bez výslovného potvrzení.
+- CH a COO dostanou hlavní tlačítko **Propojit směny** v sekci Akce. V detailu propojené akce se zobrazí její členové a tlačítko **Upravit propojení**. Detail nepropojené akce nenabízí druhý hlavní vstup pro vytváření.
+- Nový výběr začíná prázdný a vyžaduje alespoň dvě výslovně označené směny. Není vázaný na aktuální akci, člověka, zobrazený měsíc ani filtr seznamu. Nestačí jen otevřít nebo zavřít dialog; nic se neuloží bez výslovného potvrzení.
 - Výběr vychází z akcí dostupných správci, nikoliv ze směn jednoho člověka. Není potřeba hledat člena crew společného všem směnám a lze propojit i směny bez přiřazených lidí. Pozdější přiřazení tím není automaticky vytvořeno.
 - Název, jobnumber a datum rozliší jednotlivé směny. Jednoduché vyhledávání podle názvu a jobnumber umožní najít další akci i ve větším seznamu. Jobnumber nezpůsobuje automatické propojení ani neomezuje výběr jen na stejný projekt.
 - Při otevření již propojené akce se načte právě její existující skupina a celý její aktuální výběr. Při úpravě lze členy výslovně přidat nebo odebrat, včetně odpojení aktuální akce; taková změna se před uložením vypíše. Zrušení celé skupiny nemaže akce ani jejich výkazy.
@@ -35,13 +35,13 @@ Databázové tabulky, existující propojení a schvalovací mechanismus se nem�
 
 ## Rozsah implementace
 
-Oddělit správu propojení podle aktuální akce od osobního informačního přehledu. Výběr pro správce nesmí záviset na `profileId`; osobní přehled naopak potřebuje autoritativní přiřazení konkrétního člověka. Znovu využít existující editor, výpočet dopadu, atomické příkazy a společnou evidenci, bez přepisování schvalování nebo nesouvisejících částí rozsáhlých detailů.
+Oddělit globální správu propojení od osobního informačního přehledu. Výběr pro správce nesmí záviset na `profileId`; osobní přehled naopak potřebuje autoritativní přiřazení konkrétního člověka. Znovu využít existující editor, výpočet dopadu, atomické příkazy a společnou evidenci, bez přepisování schvalování nebo nesouvisejících částí rozsáhlých detailů.
 
 ## Ověření
 
-- Správa funguje z detailu kterékoliv propojené akce, na mobilu i desktopu, pro CH i COO; crew nemá ovládání správy.
+- Vytváření funguje z přehledu Akce; úprava z detailu kterékoliv propojené akce. Obojí na mobilu i desktopu pro CH i COO; crew nemá ovládání správy.
 - Lze vytvořit propojení bez jediného společně přiřazeného člověka, včetně zatím neobsazených směn. Přiřazení lidí se nezmění.
-- Nové propojení začíná aktuální akcí a neuloží se bez ní nebo s jediným členem. Existující propojení zachová celý výběr i při hledání; odpojení aktuální akce se výslovně zobrazí.
+- Nové propojení začíná prázdné a neuloží se s jediným členem. Výběr není omezený filtrem přehledu. Existující propojení zachová celý výběr i při hledání; odpojení aktuální akce se výslovně zobrazí.
 - Různé jobnumber i přesuny mezi skupinami ponechají potvrzení; všechny historické a fakturační blokace zůstanou účinné.
 - Detail crew nabízí jen osobní informaci, bez vytvoření, úpravy nebo zrušení skupiny. Nepřiřazené části se nezobrazují.
 - Původní společný editor, odeslání a schvalování nadále fungují, včetně ochrany změny identity a konfliktů.

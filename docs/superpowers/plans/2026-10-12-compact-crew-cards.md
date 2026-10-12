@@ -12,16 +12,16 @@
 
 **Files:** Modify `src/views/CrewView.tsx` and `src/views/CrewView.test.tsx`.
 
-- [ ] Add tests for named contact actions, correct destinations, missing contacts, contact search and unknown rating/activity semantics. Observe a failure for missing action labels before implementation.
+- [x] Add tests for named contact actions, correct destinations, missing contacts, contact search and unknown rating/activity semantics. Observe a failure for missing action labels before implementation.
 
 ```tsx
-expect(screen.getByRole('link', { name: 'Zavolat: Petr Heitzer' })).toHaveAttribute('href', 'tel:+420777123456');
-expect(screen.getByRole('link', { name: 'Napsat e-mail: Petr Heitzer' })).toHaveAttribute('href', 'mailto:petr@example.cz');
+expect(screen.getByRole('link', { name: 'Zavolat: Petr Heitzer, +420777123456' })).toHaveAttribute('href', 'tel:+420777123456');
+expect(screen.getByRole('link', { name: 'Napsat e-mail: Petr Heitzer, petr@example.cz' })).toHaveAttribute('href', 'mailto:petr@example.cz');
 ```
 
-- [ ] Run `NODE_OPTIONS='--import=/private/tmp/crew-ux-runner-preload.mjs' npm test -- src/views/CrewView.test.tsx --configLoader=runner --maxWorkers=1`; new action expectations must fail against current markup.
-- [ ] Use a mobile three-column header (identity, rating, 44 px menu); smaller avatar, no redundant navigation chevron. Preserve the lg five-column row. Long identity text wraps naturally.
-- [ ] Use this footer structure, retaining the existing phone and email fields and desktop columns:
+- [x] Run `NODE_OPTIONS='--import=/private/tmp/crew-ux-runner-preload.mjs' npm test -- src/views/CrewView.test.tsx --configLoader=runner --maxWorkers=1`; new action expectations must fail against current markup.
+- [x] Use a mobile three-column header (identity, rating, 44 px menu); smaller avatar, no redundant navigation chevron. Preserve the lg five-column row. Long identity text wraps naturally.
+- [x] Use this footer structure, retaining the existing phone and email fields and desktop columns:
 
 ```tsx
 <div className="col-span-3 row-start-2 flex flex-wrap items-center justify-between gap-2 lg:contents">
@@ -37,15 +37,17 @@ expect(screen.getByRole('link', { name: 'Napsat e-mail: Petr Heitzer' })).toHave
 </div>
 ```
 
-- [ ] Keep the rating value `/ 10`. For unknown values show an aria-hidden dash on mobile and `Bez hodnocení` with `sr-only lg:not-sr-only`; Crew users receive no rating badge.
-- [ ] Run focused tests, ESLint for the two TSX files and `git diff --check`; commit only those files after self-review.
-- [ ] Independent spec review, then quality review; fix any findings and re-review before merge.
+- [x] Keep the rating value `/ 10`. For unknown values show an aria-hidden dash on mobile and `Bez hodnocení` with `sr-only lg:not-sr-only`; Crew users receive no rating badge.
+- [x] Run focused tests, ESLint for the two TSX files and `git diff --check`; commit only those files after self-review.
+- [x] Independent spec review, then quality review; fix any findings and re-review before merge.
 
 ## Task 2: Visual verification and development installation
 
 **Files:** Create `docs/testing/2026-10-12-compact-crew-cards.md`; update this plan.
 
-- [ ] Run synthetic preview with long names, contacts and populated/unknown metadata at 375, 390, 412, 768 and 1280 px; inspect light/dark, missing contacts and larger font. Measure old/new card height. Check mobile action sizes, desktop contact text and no overflow. Do not dial, send email or save test people.
+- [x] Run synthetic preview with long names, contacts and populated/unknown metadata at 375, 390, 412, 768 and 1280 px; inspect light/dark, missing contacts and larger font. Measure old/new card height. Check mobile action sizes, desktop contact text and no overflow. Do not dial, send email or save test people.
 - [ ] Verify focused tests and web build, inspect final diff. Preserve unrelated local work and ignored `.env.local`; integrate into clean current main and verify synchronized origin/main.
 - [ ] Push, then run `IOS_REFRESH_DERIVED_DATA_ROOT=/private/tmp/crewflow-compact-cards-device-refresh-20261012 NODE_OPTIONS='--import=/private/tmp/crewflow-card-selection-vite-runner-preload-20261012.mjs' npm run ios:refresh:devices` with intact preflight. Record simulator and physical phone results separately; inspect compact cards in running simulator and preserve input-focus fix.
 - [ ] Commit/push only the final verification documentation and retain the user-facing preview and screenshot.
+
+Quality follow-up: include the actual contact value in each accessible name and use 14 px mobile action labels; verified in final source.

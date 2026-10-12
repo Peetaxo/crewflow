@@ -39,9 +39,11 @@ Aktivita se začne sbírat až při skutečném použití nové verze přihláš
 
 Větev byla začleněná fast-forwardem do čistého lokálního main. Původní rozpracované `Info.plist`, `TimelogsView.tsx` a `TimelogsView.test.tsx` zůstaly podle kontrolních součtů beze změny. Ignorovaná `.env.local` zůstala zachovaná.
 
-Přímé odeslání do GitHub main automatická kontrola oprávnění zamítla: uvedla, že dosavadní souhlas nepokrývá tento konkrétní remote push. Odeslání se neprovedlo. Obnova zařízení vyžaduje čistý main shodný s origin/main; preflight se neobcházel.
+Po výslovném souhlasu uživatele „odešli a aktualizuj“ byl commit `642c06b` odeslaný do GitHub main. Před obnovou byl checkout čistý a HEAD shodný s origin/main. Předepsaný `npm run ios:refresh:devices` proběhl s nezměněným preflightem.
 
-- Simulátor: **nová verze zatím nebyla nainstalována**, čeká na schválení odeslání a předepsaný refresh.
-- Fyzický iPhone: **nová verze zatím nebyla nainstalována**, čeká na stejný krok. Dostupnost zařízení se prověří během refresh.
+První pokus odhalil neúplnou sdílenou mezipaměť Swift Package Manageru: evidované Capacitor/Cordova XCFramework soubory chyběly. Opakování použilo existující nastavení `IOS_REFRESH_DERIVED_DATA_ROOT=/private/tmp/crew-ux-ios-refresh-20261012` a novou samostatnou složku. Zdrojový kód, závislosti a nastavení podpisu se kvůli tomu neměnily. Druhý pokus skončil exit 0; log: `/private/tmp/crew-ux-ios-refresh-clean.log`.
 
-Úprava je připravená a ověřená, ale podle AGENTS.md není dokončená před odesláním a výsledkem obnovy vývojových instalací.
+- Simulátor **iPhone 17 Pro**: sestavení, instalace a spuštění nové verze úspěšné. Screenshot potvrdil běžící rozhraní aplikace.
+- Fyzický **iPhone 13 mini**: zařízení bylo dostupné; sestavení, podpis, instalace a spuštění nové verze úspěšné.
+
+Obě vývojové instalace obsahují aplikaci z `642c06b`. Následující záznam výsledků mění pouze dokumentaci. Kontrolní součty původních rozpracovaných souborů zůstaly shodné i po obnově. Úprava je dokončená včetně integrace a vývojových instalací; nejde o produkční webové nasazení.

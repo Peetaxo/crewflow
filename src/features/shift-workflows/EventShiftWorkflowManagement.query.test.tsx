@@ -2,20 +2,20 @@ import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Event, Role } from '../../types';
+import type { Event, Role, Timelog } from '../../types';
 import { ShiftWorkflowError, type ShiftWorkflowSnapshot } from './shift-workflows.contract';
-import { EventShiftWorkflowDetails } from './EventShiftWorkflowManagement';
+import { EventShiftWorkflowCreateAction, EventShiftWorkflowDetails } from './EventShiftWorkflowManagement';
 import { shiftWorkflowQueryKey, useShiftWorkflows } from './useShiftWorkflows';
 
 const boundary = vi.hoisted(() => ({
   auth: { currentUserId: '00000000-0000-4000-8000-000000000001', currentProfileId: '00000000-0000-4000-8000-000000000002', role: 'crewhead' as Role, isAuthenticated: true, isLoading: false, isRoleSwitching: false },
-  read: vi.fn(), save: vi.fn(), events: vi.fn(), reports: vi.fn(), invoices: vi.fn(),
+  read: vi.fn(), save: vi.fn(), events: vi.fn(), reports: vi.fn(), invoices: vi.fn(), detail: vi.fn(),
 }));
 vi.mock('../../app/providers/useAuth', () => ({ useAuth: () => boundary.auth }));
 vi.mock('../../context/useAppContext', () => ({ useAppContext: () => ({ role: boundary.auth.role }) }));
 vi.mock('../../lib/app-config', () => ({ appDataSource: 'supabase' }));
 vi.mock('./shift-workflows.gateway', () => ({ readShiftWorkflowSnapshot: (...args: unknown[]) => boundary.read(...args), saveShiftWorkflow: (...args: unknown[]) => boundary.save(...args) }));
-vi.mock('../events/services/events.service', () => ({ fetchEventsSnapshot: boundary.events }));
+vi.mock('../events/services/events.service', () => ({ fetchEventsSnapshot: boundary.events, getEventDetailData: boundary.detail }));
 vi.mock('../timelogs/services/timelogs.service', () => ({ fetchTimelogsSnapshot: boundary.reports }));
 vi.mock('../invoices/services/invoices.service', () => ({ fetchInvoicesSnapshot: boundary.invoices }));
 
@@ -29,13 +29,14 @@ function QueryPublicationProbe() {
   const workflows = useShiftWorkflows();
   return <output data-testid="published-snapshot">{workflows.query.data?.revision ?? 'pending'}:{workflows.query.isError ? 'error' : 'ready'}</output>;
 }
-function setup(strict = false) {
+function setup(strict = false, creation = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); clients.push(client);
   const scope = { source: 'supabase' as const, userId: boundary.auth.currentUserId, profileId: boundary.auth.currentProfileId, role: boundary.auth.role };
   if (strict) client.setQueryData(shiftWorkflowQueryKey(scope), snapshot());
-  const tree = <QueryClientProvider client={client}><EventShiftWorkflowDetails event={events[0]} /><QueryPublicationProbe /></QueryClientProvider>;
+  const renderTree = () => <QueryClientProvider client={client}>{creation ? <EventShiftWorkflowCreateAction /> : <EventShiftWorkflowDetails event={events[0]} />}<QueryPublicationProbe /></QueryClientProvider>;
+  const tree = renderTree();
   const view = render(strict ? <React.StrictMode>{tree}</React.StrictMode> : tree);
-  return { ...view, client, key: shiftWorkflowQueryKey(scope) };
+  return { ...view, client, key: shiftWorkflowQueryKey(scope), renderTree };
 }
 async function openEditorWithConflict() {
   fireEvent.click(await screen.findByRole('button', { name: 'Upravit propojení' }));
@@ -46,11 +47,47 @@ const selectedMembers = () => within(screen.getByRole('dialog')).getAllByRole('c
 
 describe('event owner with real query publication', () => {
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-12T12:00:00'));
     vi.clearAllMocks(); boundary.auth.role = 'crewhead'; boundary.auth.currentUserId = id(1);
     boundary.read.mockResolvedValue(snapshot()); boundary.save.mockRejectedValue(new ShiftWorkflowError('conflict', 'Data se změnila.'));
     boundary.events.mockResolvedValue(events); boundary.reports.mockResolvedValue([]); boundary.invoices.mockResolvedValue([]);
+    boundary.detail.mockReturnValue({ timelogs: [], crewAssignments: [], applications: [], contractors: [] });
   });
-  afterEach(() => clients.splice(0).forEach((client) => client.clear()));
+  afterEach(() => { clients.splice(0).forEach((client) => client.clear()); vi.useRealTimers(); });
+
+  it.each(['crewhead', 'coo'] as const)('captures display-only crew text through the real creation loader for %s and refreshes it with authoritative evidence', async (role) => {
+    boundary.auth.role = role;
+    const projectedReport: Timelog = { id: 100, eid: 21, eventSupabaseId: id(21), contractorProfileId: id(99), status: 'pending_coo',
+      days: [{ d: '2026-10-09', f: '10:00', t: '18:00', type: 'instal' }], km: 0, note: '', approvals: [] };
+    let crewName = 'Zachycený Petr';
+    boundary.detail.mockImplementation((eventId: string) => ({ timelogs: [projectedReport], crewAssignments: eventId === id(21) ? [
+      { eventId: 21, eventSupabaseId: id(21), contractorProfileId: id(99), name: crewName },
+      { eventId: 21, eventSupabaseId: id(900), contractorProfileId: id(98), name: 'Jiná směna' },
+    ] : [], applications: [], contractors: [] }));
+    const { client, key } = setup(false, true); fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' }));
+    await screen.findByRole('searchbox'); const card = screen.getByRole('checkbox', { name: /Přípravy · JOB/ });
+    expect(within(card).getByText('Zachycený Petr').tagName).toBe('SPAN'); expect(within(card).queryByRole('button')).not.toBeInTheDocument();
+    expect(within(card).queryByText('Jiná směna')).not.toBeInTheDocument(); expect(within(card).getByText('Casy nezadane')).toBeInTheDocument();
+    expect(card).toHaveAttribute('aria-disabled', 'false'); expect(within(card).queryByText(/10:00 - 18:00/)).not.toBeInTheDocument();
+    crewName = 'Živá Jana'; await act(async () => { client.setQueryData(key, snapshot(false)); });
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'Přípravy' } });
+    expect(within(card).getByText('Zachycený Petr')).toBeInTheDocument(); expect(within(card).queryByText('Živá Jana')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } });
+    fireEvent.click(card); fireEvent.click(screen.getByRole('checkbox', { name: /Instalace · JOB/ })); fireEvent.click(screen.getByRole('button', { name: 'Pokračovat' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Potvrzuji přesun z jiného propojení' })); fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' }));
+    await screen.findByRole('button', { name: 'Obnovit data a ponechat výběr' });
+    crewName = 'Obnovená Zuzana'; boundary.events.mockRejectedValueOnce(new Error('offline'));
+    boundary.reports.mockResolvedValue([{ ...projectedReport, status: 'pending_ch', days: [{ d: '2026-10-09', f: '08:00', t: '16:00', type: 'instal' }] }]);
+    fireEvent.click(screen.getByRole('button', { name: 'Obnovit data a ponechat výběr' })); await screen.findByText(/nepodařilo bezpečně ověřit/);
+    expect(within(card).getByText('Zachycený Petr')).toBeInTheDocument(); expect(within(card).getByText('Casy nezadane')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Obnovit data a ponechat výběr' }));
+    await screen.findByRole('checkbox', { name: 'Zkontroloval jsem výběr po obnovení dat' });
+    expect(screen.getByRole('button', { name: 'Propojit směny' })).toBeDisabled(); fireEvent.click(screen.getByRole('button', { name: 'Zpět k výběru' }));
+    expect(within(card).getByText('Obnovená Zuzana')).toBeInTheDocument(); expect(within(card).queryByText('Zachycený Petr')).not.toBeInTheDocument();
+    expect(within(card).getByText('Ceka CH')).toBeInTheDocument(); expect(within(card).getByText(/08:00 - 16:00/)).toBeInTheDocument();
+    expect(within(card).queryByText('Ceka COO')).not.toBeInTheDocument(); expect(screen.getByText('Vybráno: 2')).toBeInTheDocument(); expect(card).toBeChecked();
+    expect(boundary.save).toHaveBeenCalledOnce(); expect(boundary.reports).toHaveBeenCalledTimes(3);
+  });
 
   it.each(['direct', 'via no group'] as const)('refreshes the closed overview from group A to group B (%s)', async (route) => {
     const { client, key } = setup(); await screen.findByRole('button', { name: 'Upravit propojení' });
@@ -92,6 +129,45 @@ describe('event owner with real query publication', () => {
     expect(screen.getByRole('region', { name: 'Propojené směny' })).toHaveTextContent('Deinstalace · JOB');
     fireEvent.click(screen.getByRole('button', { name: 'Upravit propojení' })); await screen.findByRole('dialog');
     expect(screen.getByRole('checkbox', { name: /Deinstalace · JOB/ })).toBeChecked(); expect(screen.getByRole('checkbox', { name: /Instalace · JOB/ })).not.toBeChecked();
+  });
+
+  it.each(['deletion', 'error'] as const)('keeps a creation draft captured during %s query publication', async (publication) => {
+    const { client, key } = setup(false, true); fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' }));
+    await screen.findByRole('searchbox', { name: 'Hledat směnu nebo jobnumber' });
+    fireEvent.click(screen.getByRole('checkbox', { name: /Přípravy · JOB/ })); fireEvent.click(screen.getByRole('checkbox', { name: /Instalace · JOB/ }));
+    const reads = boundary.events.mock.calls.length;
+    if (publication === 'deletion') {
+      await act(async () => { client.setQueryData(key, snapshot(false)); });
+      await waitFor(() => expect(screen.getByTestId('published-snapshot')).toHaveTextContent('2:ready'));
+    } else {
+      await act(async () => { try { await client.fetchQuery({ queryKey: key, queryFn: () => Promise.reject(new Error('offline')), retry: false }); } catch { /* Published error is the case under test. */ } });
+      await waitFor(() => expect(screen.getByTestId('published-snapshot')).toHaveTextContent('1:error'));
+    }
+    expect(screen.getByText('Vybráno: 2')).toBeInTheDocument(); expect(screen.getByRole('checkbox', { name: /Instalace · JOB/ })).toBeChecked(); expect(boundary.events).toHaveBeenCalledTimes(reads);
+    fireEvent.click(screen.getByRole('button', { name: 'Pokračovat' })); expect(boundary.save).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Potvrzuji přesun z jiného propojení' })); fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' }));
+    await waitFor(() => expect(boundary.save).toHaveBeenCalledOnce());
+    expect(boundary.save.mock.calls[0][1]).toMatchObject({ eventIds: [id(21), id(22)], expectedRevision: 1, eventVersions: { [id(21)]: time, [id(22)]: time } });
+  });
+
+  it('waits for the full creation read even when its membership reload publishes first', async () => {
+    let resolve!: (value: Event[]) => void; boundary.events.mockReturnValue(new Promise((done) => { resolve = done; }));
+    const { client, key } = setup(false, true); fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' }));
+    await waitFor(() => expect(boundary.events).toHaveBeenCalledOnce());
+    await act(async () => { client.setQueryData(key, replacementGroup()); });
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
+    await act(async () => { resolve(events); }); await screen.findByRole('searchbox');
+    expect(screen.getByRole('checkbox', { name: /Přípravy · JOB/ })).not.toBeChecked(); expect(screen.getByRole('checkbox', { name: /Deinstalace · JOB/ })).not.toBeChecked(); expect(boundary.events).toHaveBeenCalledOnce();
+  });
+
+  it('cannot close a new creation session when an old account save completes', async () => {
+    let resolve!: (value: unknown) => void; boundary.save.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+    const { rerender, renderTree } = setup(false, true); fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' })); await screen.findByRole('searchbox');
+    fireEvent.click(screen.getByRole('checkbox', { name: /Přípravy · JOB/ })); fireEvent.click(screen.getByRole('checkbox', { name: /Instalace · JOB/ })); fireEvent.click(screen.getByRole('button', { name: 'Pokračovat' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Potvrzuji přesun z jiného propojení' })); fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' }));
+    await waitFor(() => expect(boundary.save).toHaveBeenCalledOnce()); boundary.auth.currentUserId = id(9); rerender(renderTree());
+    fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' })); await screen.findByRole('searchbox');
+    await act(async () => { resolve(undefined); }); expect(screen.getByText('Vybráno: 0')).toBeInTheDocument(); expect(screen.getByRole('searchbox')).toBeInTheDocument();
   });
 
   it('does not supersede a manual open when its snapshot publishes replacement membership before other reads finish', async () => {

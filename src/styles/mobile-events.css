@@ -1246,3 +1246,109 @@ button.nodu-mobile-event-info-row:focus-visible {
   padding: 0.85rem;
   line-height: 1.4;
 }
+
+.nodu-workflow-selection {
+  padding-bottom: calc(10rem + env(safe-area-inset-bottom));
+}
+
+.nodu-workflow-selection__toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 12;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(10rem, 0.6fr);
+  align-items: end;
+  gap: 1rem;
+  border-bottom: 1px solid var(--nodu-border);
+  background: rgb(var(--nodu-paper-rgb) / 0.98);
+  padding: 0.75rem 0;
+}
+
+.nodu-workflow-selection__toolbar::before {
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  left: 0;
+  height: 2rem;
+  background: rgb(var(--nodu-paper-rgb) / 0.98);
+  content: '';
+}
+
+.nodu-workflow-selection__empty {
+  min-height: calc(100dvh - 16rem);
+  padding: 1rem 0;
+}
+
+.nodu-workflow-selection__bar {
+  position: fixed;
+  z-index: 35;
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: max-content;
+  max-width: calc(100% - 2rem);
+  transform: translateX(-50%);
+  border: 1px solid var(--nodu-border);
+  border-radius: 20px;
+  background: rgb(var(--nodu-paper-rgb) / 0.98);
+  box-shadow: 0 14px 40px rgb(var(--nodu-text-rgb) / 0.16);
+  padding: 0.75rem 1rem;
+}
+
+.nodu-workflow-card__check {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  display: grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  place-items: center;
+  border: 2px solid var(--nodu-border);
+  border-radius: 50%;
+  color: white;
+}
+
+.nodu-workflow-card--checked {
+  border: 2px solid var(--nodu-accent);
+  box-shadow: 0 0 0 2px rgb(var(--nodu-accent-rgb) / 0.1);
+}
+
+.nodu-workflow-card--checked .nodu-workflow-card__check {
+  border-color: var(--nodu-accent);
+  background: var(--nodu-accent);
+}
+
+.nodu-workflow-card--disabled {
+  cursor: default;
+}
+
+@media (max-width: 767px) {
+  .nodu-workflow-selection__toolbar {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr);
+    gap: 0.5rem;
+    padding-top: 3rem;
+  }
+
+  .nodu-workflow-selection__toolbar > div {
+    grid-column: 1 / -1;
+  }
+
+  .nodu-workflow-selection__toolbar input {
+    width: 100%;
+    font-size: 16px;
+  }
+
+  .nodu-workflow-selection__bar {
+    bottom: calc(5.5rem + env(safe-area-inset-bottom));
+    gap: 0.5rem;
+    width: calc(100% - 1.5rem);
+    padding: 0.65rem;
+  }
+
+  .nodu-workflow-selection__bar > p {
+    margin-right: auto;
+    white-space: nowrap;
+  }
+}

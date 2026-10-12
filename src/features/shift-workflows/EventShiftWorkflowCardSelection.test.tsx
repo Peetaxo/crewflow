@@ -31,6 +31,26 @@ const deferred = <T,>() => { let resolve!: (value: T) => void; const promise = n
 beforeEach(() => { liveDetail.timelogs = []; liveDetail.crewAssignments = []; vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-12T12:00:00')); });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 describe('card selection shared draft', () => {
+  it('scopes the keyboard inset to the active card stage and preserves selection through summary back', () => {
+    const visible = Object.assign(new EventTarget(), { height: 532, offsetTop: 0 });
+    vi.stubGlobal('visualViewport', visible); vi.stubGlobal('innerHeight', 844);
+    const { props, unmount } = setup();
+    try {
+      const container = document.querySelector<HTMLElement>('.nodu-workflow-selection')!;
+      const inset = '--nodu-workflow-viewport-inset';
+      expect(container.style.getPropertyValue(inset)).toBe('312px');
+      selectBoth(); continueToSummary();
+      expect(container.style.getPropertyValue(inset)).toBe('');
+      Object.assign(visible, { height: 300 }); act(() => visible.dispatchEvent(new Event('resize')));
+      expect(container.style.getPropertyValue(inset)).toBe('');
+      fireEvent.click(screen.getByRole('button', { name: 'Zpět k výběru' }));
+      expect(container.style.getPropertyValue(inset)).toBe('544px');
+      expect(screen.getByText('Vybráno: 2')).toBeInTheDocument();
+      expect(screen.getByLabelText('Přejít na datum')).toHaveAttribute('type', 'date');
+      expect(props.onSave).not.toHaveBeenCalled();
+      unmount(); expect(container.style.getPropertyValue(inset)).toBe('');
+    } finally { unmount(); vi.unstubAllGlobals(); }
+  });
   it.each(['crewhead', 'coo'] as const)('lets %s recover from a locked source remnant by removing draft selections and reviewing an independent group', async (role) => {
     const data = makeData(); data.events = data.events.map((event) => ({ ...event, rawJobNumber: 'JOB', startDate: '2026-10-12', endDate: '2026-10-12' }));
     data.snapshot.workflows = [{ id: id(10), eventIds: [id(21), id(22), id(23)], updatedAt: time }];

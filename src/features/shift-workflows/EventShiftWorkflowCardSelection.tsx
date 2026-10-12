@@ -10,6 +10,7 @@ import { cardTimelineOccurrences, createCardTimeline, expandCardTimelineHistory 
 import { useShiftWorkflowDraft, type ShiftWorkflowDraftInput, type ShiftWorkflowCrewDisplay } from './useShiftWorkflowDraft';
 import { ShiftWorkflowConfirmation } from './ShiftWorkflowConfirmation';
 import { useShiftWorkflowCardScroll, type CardScrollPosition } from './useShiftWorkflowCardScroll';
+import { useShiftWorkflowVisualViewport } from './useShiftWorkflowVisualViewport';
 
 export interface EventCardSelectionState {
   data: ShiftWorkflowManagementData;
@@ -41,6 +42,7 @@ function CardSelectionSession(props: ShiftWorkflowDraftInput) {
   const [summary, setSummary] = useState(false);
   const [timeline, setTimeline] = useState(() => createCardTimeline(format(new Date(), 'yyyy-MM-dd')));
   const container = useRef<HTMLDivElement>(null);
+  useShiftWorkflowVisualViewport({ container, active: !summary });
   const summaryPosition = useRef<CardScrollPosition | null>(null);
   const candidates = useMemo(() => getEventWorkflowCandidates(draft.data, props.scope), [draft.data, props.scope]);
   const occurrences = useMemo(() => cardTimelineOccurrences(candidates, timeline), [candidates, timeline]);

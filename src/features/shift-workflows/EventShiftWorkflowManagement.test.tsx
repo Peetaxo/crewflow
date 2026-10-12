@@ -27,14 +27,18 @@ describe('event workflow owners', () => {
   it.each(['crewhead', 'coo'] as const)('lets %s create from all visible events after a fresh read, with no initial selection', async (role) => {
     mocks.role = role; render(<EventShiftWorkflowCreateAction />);
     expect(mocks.load).not.toHaveBeenCalled(); create();
-    const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByRole('checkbox', { name: /Směna 23/ })).not.toBeChecked();
-    expect(within(dialog).getByRole('button', { name: 'Uložit propojení' })).toBeDisabled();
-    selectTwo(); fireEvent.click(screen.getByRole('checkbox', { name: 'Potvrzuji přesun z jiného propojení' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Uložit propojení' }));
+    const search = await screen.findByRole('searchbox', { name: 'Hledat směnu nebo jobnumber' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.change(search, { target: { value: 'JOB' } });
+    expect(screen.getByRole('checkbox', { name: /Směna 23/ })).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Pokračovat' })).toBeDisabled();
+    selectTwo(); fireEvent.click(screen.getByRole('button', { name: 'Pokračovat' }));
+    expect(mocks.save).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Potvrzuji přesun z jiného propojení' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(mocks.save.mock.calls[0][0]).toMatchObject({ workflowId: null, eventIds: [id(21), id(22)], expectedRevision: 4, eventVersions: { [id(21)]: time, [id(22)]: time, [id(23)]: time } });
-    create(); await screen.findByRole('dialog'); expect(mocks.load).toHaveBeenCalledTimes(2);
+    create(); await screen.findByRole('searchbox', { name: 'Hledat směnu nebo jobnumber' }); expect(mocks.load).toHaveBeenCalledTimes(2);
   });
   it.each(['crew', 'admin'])('does not give %s access to either management owner', (role) => {
     mocks.role = role as Role; render(<><EventShiftWorkflowCreateAction /><EventShiftWorkflowDetails event={events[0]} /></>);
@@ -62,7 +66,7 @@ describe('event workflow owners', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('nepodařilo načíst');
     expect(screen.getByText('Ostatní údaje')).toBeInTheDocument(); expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Zkusit načíst znovu' }));
-    await screen.findByRole('dialog'); expect(mocks.save).not.toHaveBeenCalled();
+    await screen.findByRole('searchbox', { name: 'Hledat směnu nebo jobnumber' }); expect(mocks.save).not.toHaveBeenCalled();
   });
   it.each(['user', 'role', 'ready'] as const)('retires an in-progress open on %s changes and ignores late data after switching back', async (field) => {
     const old = deferred<ShiftWorkflowManagementData>(); mocks.load.mockReturnValueOnce(old.promise);
@@ -72,6 +76,7 @@ describe('event workflow owners', () => {
     mocks.user = 'user1'; mocks.role = 'crewhead'; mocks.ready = true; rerender(<EventShiftWorkflowCreateAction />);
     await act(async () => { old.resolve(makeData()); });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByRole('searchbox', { name: 'Hledat směnu nebo jobnumber' })).not.toBeInTheDocument();
     expect(mocks.load.mock.calls[0][2].aborted).toBe(true);
   });
   it('retires the old detail load on event-to-event navigation', async () => {

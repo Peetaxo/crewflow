@@ -16,7 +16,7 @@ export function useShiftWorkflowVisualViewport({ container, active }: Props): vo
     let live = true;
     const update = () => {
       if (!live) return;
-      const covered = viewport ? window.innerHeight - viewport.height - viewport.offsetTop : 0;
+      const covered = viewport ? window.innerHeight - viewport.height : 0;
       const offsetTop = viewport?.offsetTop ?? 0;
       content.style.setProperty(property, `${Number.isFinite(covered) ? Math.max(0, covered) : 0}px`);
       content.style.setProperty(topProperty, `${Number.isFinite(offsetTop) ? Math.max(0, offsetTop) : 0}px`);

@@ -31,20 +31,32 @@ describe('useShiftWorkflowVisualViewport', () => {
   it.each([
     [844, 844, 0, '0px', '0px'],
     [844, 532, 0, '312px', '0px'],
-    [844, 532, 48, '264px', '48px'],
+    [844, 532, 48, '312px', '48px'],
     [844, 844, 48, '0px', '48px'],
     [844, 900, 0, '0px', '0px'],
     [844, Number.NaN, 48, '0px', '48px'],
-    [844, 532, Number.POSITIVE_INFINITY, '0px', '0px'],
+    [844, 532, Number.POSITIVE_INFINITY, '312px', '0px'],
     [Number.NaN, 532, 0, '0px', '0px'],
     [Number.MAX_VALUE, -Number.MAX_VALUE, 0, '0px', '0px'],
-    [844, 532, -16, '328px', '0px'],
-    [844, 532, Number.NaN, '0px', '0px'],
+    [844, 532, -16, '312px', '0px'],
+    [844, 532, Number.NaN, '312px', '0px'],
   ])('measures finite bottom and top offsets for layout=%s visible=%s offset=%s', (layout, height, offset, expected, expectedTop) => {
     installViewport(viewport(height, offset), layout);
     render(<Fixture />);
     expect(screen.getByTestId('selection').style.getPropertyValue(inset)).toBe(expected);
     expect(screen.getByTestId('selection').style.getPropertyValue(viewportTop)).toBe(expectedTop);
+  });
+
+  it('preserves fixed-bar clearance through the measured iOS keyboard viewport pan', () => {
+    const visible = installViewport(viewport(471, 55.65625), 818)!;
+    render(<Fixture />);
+    const container = screen.getByTestId('selection');
+    expect(container.style.getPropertyValue(inset)).toBe('347px');
+    expect(container.style.getPropertyValue(viewportTop)).toBe('55.65625px');
+    Object.assign(visible, { offsetTop: 80 });
+    act(() => visible.dispatchEvent(new Event('scroll')));
+    expect(container.style.getPropertyValue(inset)).toBe('347px');
+    expect(container.style.getPropertyValue(viewportTop)).toBe('80px');
   });
 
   it('updates on viewport resize, viewport scroll and layout resize without rendering cards again', () => {
@@ -58,11 +70,11 @@ describe('useShiftWorkflowVisualViewport', () => {
     expect(container.style.getPropertyValue(viewportTop)).toBe('0px');
     Object.assign(visible, { offsetTop: 32 });
     act(() => visible.dispatchEvent(new Event('scroll')));
-    expect(container.style.getPropertyValue(inset)).toBe('312px');
+    expect(container.style.getPropertyValue(inset)).toBe('344px');
     expect(container.style.getPropertyValue(viewportTop)).toBe('32px');
     vi.stubGlobal('innerHeight', 800);
     act(() => window.dispatchEvent(new Event('resize')));
-    expect(container.style.getPropertyValue(inset)).toBe('268px');
+    expect(container.style.getPropertyValue(inset)).toBe('300px');
     expect(container.style.getPropertyValue(viewportTop)).toBe('32px');
     Object.assign(visible, { height: 800, offsetTop: 0 });
     act(() => visible.dispatchEvent(new Event('resize')));
@@ -115,10 +127,10 @@ describe('useShiftWorkflowVisualViewport', () => {
     act(() => oldListener(new Event('resize')));
     expect(oldContainer.style.getPropertyValue(inset)).toBe('');
     expect(oldContainer.style.getPropertyValue(viewportTop)).toBe('');
-    expect(newContainer.style.getPropertyValue(inset)).toBe('292px');
+    expect(newContainer.style.getPropertyValue(inset)).toBe('312px');
     expect(newContainer.style.getPropertyValue(viewportTop)).toBe('20px');
     act(() => visible.dispatchEvent(new Event('resize')));
-    expect(newContainer.style.getPropertyValue(inset)).toBe('480px');
+    expect(newContainer.style.getPropertyValue(inset)).toBe('544px');
     expect(newContainer.style.getPropertyValue(viewportTop)).toBe('64px');
     unmount();
     expect(newContainer.style.getPropertyValue(inset)).toBe('');

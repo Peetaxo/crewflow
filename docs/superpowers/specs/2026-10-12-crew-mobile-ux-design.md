@@ -8,15 +8,17 @@ Zlepšit rychlé hledání lidí pro obsazování akcí i kontrolu konkrétního
 
 ## Seznam
 
-Jedna sada položek: na mobilu karty, na desktopu řádky. Priorita je jméno, město, všechny uložené dovednosti, spolehlivost, sazba, počet akcí a přímý telefon/e-mail. IČO/DIČ patří do detailu. Lokální hledání bez ohledu na diakritiku zahrnuje jméno, město, dovednosti a kontakt a kombinuje se s existujícím globálním hledáním. Filtry Všichni/Řidiči/Spolehliví, počet výsledků, rozlišené prázdné stavy. Úprava a smazání v nabídce každého člověka; otevření detailu funguje klávesnicí. Hodnocení zůstává dostupné pouze managementu.
+Jedna sada položek: na mobilu karty, na desktopu řádky. Zobrazit jméno, město, hodnocení, přímý telefon/e-mail a poslední aktivitu. Sazba, dovednosti, spolehlivost, počet akcí i IČO/DIČ patří do detailu. Lokální hledání bez ohledu na diakritiku zahrnuje jméno, město a kontakt a kombinuje se s existujícím globálním hledáním. Počet výsledků a rozlišené prázdné stavy, bez dalších filtrů. Úprava a smazání v nabídce každého člověka; otevření detailu funguje klávesnicí. Hodnocení zůstává dostupné pouze managementu.
+
+Poslední aktivitu zaznamenat při otevření přihlášené aplikace v popředí, návratu do popředí a interakci; nejvýše jednou za minutu. Nezaznamenávat anonymní, lokální ani vývojové impersonované relace. Nová tabulka `profile_activity` uchovává jeden serverový čas na profil; RPC bez parametrů odvozuje vlastní profil z auth.uid(). Přímé zápisy zakázány, čtení managementu a vlastnímu uživateli přes RLS. Seznam obnovuje aktivity jednou za minutu pouze v popředí; nezjištěný čas má popisek „Zatím bez aktivity“, chyba načtení „Aktivita nedostupná“. Žádný historický backfill z přihlášení nebo aktualizace profilu.
 
 ## Detail
 
-Jméno, město, dovednosti, sazba a přímé kontakty nahoře. Čtyři kompaktní souhrny ve dvou sloupcích na telefonu: skutečně proplacené faktury, odeslané faktury k proplacení, pouze hodiny pending_ch/pending_coo ke schválení a schválené/vyúčtované/proplacené hodiny. Popisky odpovídají rozsahu výpočtu.
+Stejný detail a pořadí souhrnů pro CrewHead i COO; dostupné akce nadále podle oprávnění. Jméno, město, sazba a přímé kontakty nahoře. Aktuální přehled: nejbližší směna, počet a hodiny výkazů pending_ch/pending_coo ke schválení, samostatný počet vrácených/čekajících na potvrzení a odeslané faktury k proplacení. Proplacené faktury a schválené hodiny jsou v podružném souhrnu, popisky odpovídají rozsahu výpočtu.
 
 Hlavní obsah tvoří tři přepínače: Směny, Výkazy a Faktury. Směny obsahují nadcházející přiřazené výkazy, seřazené podle nejbližšího pracovního dne. Výkazy zahrnují i staré drafty a vrácené záznamy a zachovávají společné schvalovací karty a oprávnění editoru. Na telefonu se historie zobrazuje kartami, na desktopu tabulkou. Odhad odměny je označen jako odhad a obsahuje hodiny, cestovné a povolené stravné. Faktury mají zalamovatelný identifikátor, částku, stav a datum i prázdný stav. Chybějící profil zobrazí návrat do seznamu, nesmí shodit obrazovku.
 
-Sazba a poznámka jsou dostupné pod hlavním obsahem. Administrativní profil/fakturační údaje a fakturační graf jsou rozbalovací. Na mobilu se posouvá celá stránka, bez pevné výšky a skrytého vnořeného scrollu. Zachovat aktuální přiřazení a osobní read-only souhrn společné evidence, přesné UUID navigace a přístupová pravidla. Žádné změny schématu, produkčních dat nebo nových závislostí.
+Sazba a poznámka jsou dostupné pod hlavním obsahem. Administrativní profil/fakturační údaje a fakturační graf jsou rozbalovací. Na mobilu se posouvá celá stránka, bez pevné výšky a skrytého vnořeného scrollu. Zachovat aktuální přiřazení a osobní read-only souhrn společné evidence, přesné UUID navigace a přístupová pravidla. Schéma se mění pouze přidáním evidence aktivity; bez změn existujících obchodních dat nebo nových závislostí.
 
 ## Ověření a dokončení
 

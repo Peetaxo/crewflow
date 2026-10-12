@@ -11,6 +11,7 @@ import { appDataSource } from '../lib/app-config';
 import { isSupabaseConfigured } from '../lib/supabase';
 import LoginView from '../views/LoginView';
 import WelcomeView from '../views/WelcomeView';
+import AppActivityTracker from '../features/crew/components/AppActivityTracker';
 
 const MissingSupabaseConfigView = () => (
   <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
@@ -76,6 +77,7 @@ export const AppShell = () => {
 
   return (
     <AppDataBootstrap>
+      <AppActivityTracker />
       <AppProvider>
         <AppLayout />
       </AppProvider>

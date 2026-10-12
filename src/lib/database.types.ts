@@ -755,6 +755,9 @@ export interface Database {
           created_at: string;
         };
       };
+      profile_activity: {
+        Row: { profile_id: string; last_active_at: string };
+      };
       profiles: {
         Row: {
           id: string;
@@ -869,6 +872,7 @@ export interface Database {
       };
     };
     Functions: {
+      record_my_activity: { Args: Record<string, never>; Returns: undefined }
       read_shift_workflows: { Args: never; Returns: Json }
       save_shift_workflow_atomic: {
         Args: {

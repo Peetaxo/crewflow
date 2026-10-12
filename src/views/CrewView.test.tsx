@@ -131,8 +131,8 @@ describe('CrewView', () => {
   it('exposes named contact actions with their real destinations and a keyboard-accessible profile', () => {
     render(<CrewView />);
     expect(screen.queryByText(/250.*Kč\/h/)).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Zavolat: Petr Heitzer' })).toHaveAttribute('href', 'tel:+420777123456');
-    expect(screen.getByRole('link', { name: 'Napsat e-mail: Petr Heitzer' })).toHaveAttribute('href', 'mailto:petr@example.cz');
+    expect(screen.getByRole('link', { name: 'Zavolat: Petr Heitzer, +420 777 123 456' })).toHaveAttribute('href', 'tel:+420777123456');
+    expect(screen.getByRole('link', { name: 'Napsat e-mail: Petr Heitzer, petr@example.cz' })).toHaveAttribute('href', 'mailto:petr@example.cz');
     fireEvent.click(screen.getByRole('button', { name: 'Otevřít profil Petr Heitzer' }));
     expect(mocks.setSelectedContractorProfileId).toHaveBeenCalledWith('profile-uuid-1');
   });
@@ -142,8 +142,8 @@ describe('CrewView', () => {
 
     render(<CrewView />);
 
-    expect(screen.getByRole('link', { name: 'Zavolat: Petr Heitzer' })).toHaveAttribute('href', 'tel:+420777123456');
-    expect(screen.queryByRole('link', { name: 'Napsat e-mail: Petr Heitzer' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Zavolat: Petr Heitzer, +420 777 123 456' })).toHaveAttribute('href', 'tel:+420777123456');
+    expect(screen.queryByRole('link', { name: 'Napsat e-mail: Petr Heitzer, petr@example.cz' })).not.toBeInTheDocument();
   });
 
   it('shows an email action when only an email address is available', () => {
@@ -151,8 +151,8 @@ describe('CrewView', () => {
 
     render(<CrewView />);
 
-    expect(screen.getByRole('link', { name: 'Napsat e-mail: Petr Heitzer' })).toHaveAttribute('href', 'mailto:petr@example.cz');
-    expect(screen.queryByRole('link', { name: 'Zavolat: Petr Heitzer' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Napsat e-mail: Petr Heitzer, petr@example.cz' })).toHaveAttribute('href', 'mailto:petr@example.cz');
+    expect(screen.queryByRole('link', { name: 'Zavolat: Petr Heitzer, +420 777 123 456' })).not.toBeInTheDocument();
   });
 
   it('shows missing contact copy without fake action links', () => {
@@ -161,8 +161,8 @@ describe('CrewView', () => {
     render(<CrewView />);
 
     expect(screen.getByText('Kontakt neuveden')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Zavolat: Petr Heitzer' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Napsat e-mail: Petr Heitzer' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Zavolat: Petr Heitzer, +420 777 123 456' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Napsat e-mail: Petr Heitzer, petr@example.cz' })).not.toBeInTheDocument();
   });
 
   it('searches on the page and shows a resettable no-results state', () => {

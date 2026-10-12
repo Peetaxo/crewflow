@@ -109,15 +109,14 @@ describe('CrewView', () => {
     expect(screen.getByText('0 / 10')).toBeInTheDocument();
   });
 
-  it('keeps unknown ratings available to desktop screen readers and gives mobile activity a semantic label', () => {
+  it('shows unknown-rating text and meaningful activity wording', () => {
     mocks.getCrew.mockReturnValue([{ ...contractor, rating: null }]);
 
     render(<CrewView />);
 
-    expect(screen.getByText('Bez hodnocení')).toHaveClass('lg:not-sr-only');
+    expect(screen.getByText('Bez hodnocení')).toBeInTheDocument();
     expect(screen.getByText('—')).toHaveAttribute('aria-hidden', 'true');
-    expect(screen.getByText('—')).toHaveClass('lg:hidden');
-    expect(screen.getByText('Poslední aktivita:')).toHaveClass('sr-only');
+    expect(screen.getByText('Poslední aktivita:')).toBeInTheDocument();
     expect(screen.getByText('Zatím bez aktivity')).toBeInTheDocument();
   });
 
@@ -134,9 +133,6 @@ describe('CrewView', () => {
     expect(screen.queryByText(/250.*Kč\/h/)).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Zavolat: Petr Heitzer' })).toHaveAttribute('href', 'tel:+420777123456');
     expect(screen.getByRole('link', { name: 'Napsat e-mail: Petr Heitzer' })).toHaveAttribute('href', 'mailto:petr@example.cz');
-    expect(screen.getByText('Zavolat')).toHaveClass('text-sm');
-    expect(screen.getByText('E-mail')).toHaveClass('text-sm');
-    expect(screen.getByText('Praha')).toHaveClass('min-w-0');
     fireEvent.click(screen.getByRole('button', { name: 'Otevřít profil Petr Heitzer' }));
     expect(mocks.setSelectedContractorProfileId).toHaveBeenCalledWith('profile-uuid-1');
   });

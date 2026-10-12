@@ -42,7 +42,7 @@ Files: `supabase/functions/generate-invoice-pdf/index.ts`, focused handler tests
 - [x] Re-run the existing app tests, lint and build; preserve previously known type-check debt.
 - [x] Review the diff, merge into the current clean `main`, verify the merged code and synchronize `origin/main`.
 - [x] Deploy the verified Edge Function with bundled assets and JWT verification retained.
-- [ ] Run `npm run ios:refresh:devices` from clean synchronized `main`, preserving `.env.local`; report simulator and physical iPhone separately.
+- [x] Run `npm run ios:refresh:devices` from clean synchronized `main`, preserving `.env.local`; report simulator and physical iPhone separately.
 - [x] Repeat the UI generation/download flow in the isolated demo and keep a rendered sample PDF as evidence.
 
 ## Verification and rollout evidence (2026-10-12)
@@ -55,7 +55,7 @@ The PDF fix is commit `02865aa`, integrated and published on synchronized `main`
 - The actual app UI generated and downloaded the demo invoice for 2,056 CZK. Its downloaded PDF was checked with pypdf, rendered with Poppler and visually inspected. Czech supplier/customer text, the bank account, IBAN, dates, invoice number and total were verified. All demo accounts and invoice data are disposable local fixtures.
 - The Staff project generator was deployed successfully as active version 10 with JWT verification retained. The downloaded deployed package contained all four bundled assets, each byte-identical to the checked-in version. A hosted anonymous request returned 401. Authenticated generation and private Storage operations were tested against the isolated local backend; no live invoice was created or modified for this check.
 - The required device refresh ran from a clean clone of synchronized `main` with the existing ignored `.env.local`. The simulator build, installation and launch succeeded; the running app was visually inspected.
-- The available physical iPhone build, signing and installation succeeded. Launch failed with the device's `Locked` response, and a launch-only retry returned the same result. The phone is **not verified as updated** until it is unlocked and a launch succeeds; this is the only remaining rollout step.
+- The available physical iPhone build, signing and installation succeeded. Initial launch attempts failed with the device's `Locked` response. After the user unlocked the phone, the launch-only retry succeeded for `cz.nodu.app` (PID 5186); a subsequent device process query confirmed that the same application process was still running. The simulator and physical iPhone development installations are both verified as updated. The unlocked launch and running-process evidence is saved in `pdf-phone-unlocked-launch.json` and `pdf-phone-running.json` beside the device refresh log.
 
 Local evidence is retained outside Git in the disposable demo's `results` directory (downloaded PDF, rendered page, UI screenshot and integration JSON). Test, deployment and device logs are in `/private/tmp/crewflow-demo-20261012`. Credentials and signed download URLs were not committed.
 

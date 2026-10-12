@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarDays, ChevronRight, Mail, MapPin, MoreHorizontal, Pencil, Phone, Plus, Search, Star, Trash2, Users, X } from 'lucide-react';
+import { CalendarDays, Clock3, Mail, MapPin, MoreHorizontal, Pencil, Phone, Plus, Search, Star, Trash2, Users, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAppContext } from '../context/useAppContext';
 import CrewDetailView from './CrewDetailView';
@@ -103,32 +103,35 @@ const CrewView = () => {
         {filteredCrew.map((person) => {
           const timestamp = person.profileId ? activity.data[person.profileId] : undefined;
           const activityLabel = activity.status === 'loading' ? 'Načítám aktivitu…' : activity.status === 'error' ? 'Aktivita nedostupná' : formatCrewActivity(timestamp);
-          return <li key={getContractorDetailKey(person)} className="relative grid min-w-0 grid-cols-[minmax(0,1fr)_2.75rem] gap-x-3 gap-y-3 rounded-[22px] border border-[var(--nodu-border)] bg-white p-4 lg:grid-cols-[minmax(0,1.3fr)_6rem_minmax(0,1.3fr)_9rem_2.75rem] lg:items-center lg:gap-4 lg:rounded-none lg:border-0 lg:px-5 lg:py-4">
+          return <li key={getContractorDetailKey(person)} className="relative grid min-w-0 grid-cols-[minmax(0,1fr)_auto_2.75rem] gap-x-2 gap-y-2 rounded-2xl border border-[var(--nodu-border)] bg-white p-3 lg:grid-cols-[minmax(0,1.3fr)_6rem_minmax(0,1.3fr)_9rem_2.75rem] lg:items-center lg:gap-4 lg:rounded-none lg:border-0 lg:px-5 lg:py-4">
             <button type="button" aria-label={`Otevřít profil ${person.name}`} onClick={() => setSelectedContractorProfileId(getContractorDetailKey(person))}
-              className="group flex min-w-0 items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--nodu-accent)]">
-              <span className="av h-11 w-11 shrink-0 text-sm" style={{ backgroundColor: person.bg, color: person.fg }}>{person.ii}</span>
+              className="group col-start-1 row-start-1 flex min-h-11 min-w-0 items-center gap-2 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--nodu-accent)]">
+              <span className="av h-9 w-9 shrink-0 text-sm" style={{ backgroundColor: person.bg, color: person.fg }}>{person.ii}</span>
               <span className="min-w-0 flex-1"><span className="block break-words text-sm font-semibold text-[var(--nodu-text)] group-hover:text-[var(--nodu-accent)]">{person.name}</span>
-                <span className="mt-1 flex items-center gap-1 text-xs text-[var(--nodu-text-soft)]"><MapPin size={12} className="shrink-0" />{person.city || 'Město neuvedeno'}</span></span>
-              <ChevronRight size={16} className="shrink-0 text-[var(--nodu-text-soft)] lg:hidden" />
+                <span className="mt-0.5 flex min-w-0 items-start gap-1 text-xs text-[var(--nodu-text-soft)]"><MapPin size={12} className="mt-0.5 shrink-0" /><span className="break-words">{person.city || 'Město neuvedeno'}</span></span></span>
             </button>
-            <div className="col-start-1 row-start-2 flex items-center gap-1.5 text-xs lg:col-start-2 lg:row-start-1">
-              {canViewRatings && <><Star size={14} className="text-[var(--nodu-accent)]" /><span className="font-medium text-[var(--nodu-text)]">{typeof person.rating === 'number' ? `${person.rating.toLocaleString('cs-CZ', { maximumFractionDigits: 1 })} / 10` : 'Bez hodnocení'}</span></>}
+            <div className="col-start-2 row-start-1 flex items-center gap-1.5 text-xs lg:col-start-2 lg:row-start-1">
+              {canViewRatings && <><Star size={14} className="shrink-0 text-[var(--nodu-accent)]" />{typeof person.rating === 'number'
+                ? <span className="font-medium text-[var(--nodu-text)]">{`${person.rating.toLocaleString('cs-CZ', { maximumFractionDigits: 1 })} / 10`}</span>
+                : <><span aria-hidden="true" className="text-[var(--nodu-text-soft)]">—</span><span className="sr-only lg:not-sr-only font-medium text-[var(--nodu-text)]">Bez hodnocení</span></>}</>}
             </div>
-            <div className="col-span-2 min-w-0 space-y-0.5 border-t border-[var(--nodu-border)] pt-2 lg:col-span-1 lg:col-start-3 lg:row-start-1 lg:border-0 lg:pt-0">
-              {person.phone && <a href={`tel:${person.phone.replace(/[^+\d]/g, '')}`} className="flex min-h-11 items-center gap-2 rounded-lg text-sm text-[var(--nodu-text)] hover:text-[var(--nodu-accent)] lg:min-h-8"><Phone size={14} className="shrink-0 text-[var(--nodu-text-soft)]" /><span className="break-words">{person.phone}</span></a>}
-              {person.email && <a href={`mailto:${person.email}`} className="flex min-h-11 min-w-0 items-center gap-2 rounded-lg text-xs text-[var(--nodu-text-soft)] hover:text-[var(--nodu-accent)] lg:min-h-8"><Mail size={14} className="shrink-0" /><span className="min-w-0 break-all">{person.email}</span></a>}
-              {!person.phone && !person.email && <p className="py-2 text-xs text-[var(--nodu-text-soft)]">Kontakt neuveden</p>}
-            </div>
-            <div className="col-span-2 text-xs text-[var(--nodu-text-soft)] lg:col-span-1 lg:col-start-4 lg:row-start-1" title="Poslední zaznamenané používání aplikace">
-              <span className="lg:hidden">Poslední aktivita: </span><span>{activityLabel}</span>
-            </div>
-            <div className="col-start-2 row-start-1 lg:col-start-5">
+            <div className="col-start-3 row-start-1 lg:col-start-5">
               <DropdownMenu><DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="icon" className="h-11 w-11" aria-label={`Možnosti pro ${person.name}`}><MoreHorizontal size={18} /></Button></DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem className="min-h-11" onSelect={() => setEditingContractor(person)}><Pencil size={14} className="mr-2" />Upravit profil</DropdownMenuItem>
                   <DropdownMenuItem className="min-h-11 text-[var(--nodu-error-text)]" onSelect={() => setDeleteConfirm({ type: 'crew', id: person.id, name: person.name })}><Trash2 size={14} className="mr-2" />Smazat člena</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+            </div>
+            <div className="col-span-3 row-start-2 flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-[var(--nodu-border)] pt-2 lg:contents">
+              <div className="min-w-0 break-words text-xs text-[var(--nodu-text-soft)] lg:col-span-1 lg:col-start-4 lg:row-start-1" title="Poslední zaznamenané používání aplikace">
+                <span className="sr-only">Poslední aktivita:</span><Clock3 size={12} aria-hidden="true" className="mr-1 inline lg:hidden" /><span>{activityLabel}</span>
+              </div>
+              <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 lg:col-span-1 lg:col-start-3 lg:row-start-1 lg:flex-col lg:items-stretch lg:gap-0">
+                {person.phone && <a href={`tel:${person.phone.replace(/[^+\d]/g, '')}`} aria-label={`Zavolat: ${person.name}`} title={person.phone} className="flex min-h-11 items-center gap-1.5 rounded-lg border border-[var(--nodu-border)] px-2.5 text-xs text-[var(--nodu-text)] outline-none hover:border-[var(--nodu-accent)] hover:text-[var(--nodu-accent)] focus-visible:ring-2 focus-visible:ring-[var(--nodu-accent)] lg:min-h-8 lg:rounded-none lg:border-0 lg:px-0 lg:text-sm"><Phone size={14} className="shrink-0 text-[var(--nodu-text-soft)]" /><span className="lg:hidden">Zavolat</span><span className="hidden break-words lg:inline">{person.phone}</span></a>}
+                {person.email && <a href={`mailto:${person.email}`} aria-label={`Napsat e-mail: ${person.name}`} title={person.email} className="flex min-h-11 min-w-0 items-center gap-1.5 rounded-lg border border-[var(--nodu-border)] px-2.5 text-xs text-[var(--nodu-text-soft)] outline-none hover:border-[var(--nodu-accent)] hover:text-[var(--nodu-accent)] focus-visible:ring-2 focus-visible:ring-[var(--nodu-accent)] lg:min-h-8 lg:rounded-none lg:border-0 lg:px-0 lg:text-xs"><Mail size={14} className="shrink-0" /><span className="lg:hidden">E-mail</span><span className="hidden min-w-0 break-all lg:inline">{person.email}</span></a>}
+                {!person.phone && !person.email && <p className="py-2 text-xs text-[var(--nodu-text-soft)]">Kontakt neuveden</p>}
+              </div>
             </div>
           </li>;
         })}

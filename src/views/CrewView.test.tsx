@@ -101,6 +101,25 @@ describe('CrewView', () => {
     expect(screen.getByText('8,5 / 10')).toBeInTheDocument();
   });
 
+  it('shows a zero rating as a valid manager rating', () => {
+    mocks.getCrew.mockReturnValue([{ ...contractor, rating: 0 }]);
+
+    render(<CrewView />);
+
+    expect(screen.getByText('0 / 10')).toBeInTheDocument();
+  });
+
+  it('keeps unknown ratings available to desktop screen readers and gives mobile activity a semantic label', () => {
+    mocks.getCrew.mockReturnValue([{ ...contractor, rating: null }]);
+
+    render(<CrewView />);
+
+    expect(screen.getByText('Bez hodnocení')).toHaveClass('lg:not-sr-only');
+    expect(screen.getByText('—')).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByText('Poslední aktivita:')).toHaveClass('sr-only');
+    expect(screen.getByText('Zatím bez aktivity')).toBeInTheDocument();
+  });
+
   it('hides rating badges from crew users', () => {
     mocks.role = 'crew';
 
@@ -109,13 +128,41 @@ describe('CrewView', () => {
     expect(screen.queryByText('8,5 / 10')).not.toBeInTheDocument();
   });
 
-  it('keeps the list simple and exposes real contact links and a keyboard-accessible profile', () => {
+  it('exposes named contact actions with their real destinations and a keyboard-accessible profile', () => {
     render(<CrewView />);
     expect(screen.queryByText(/250.*Kč\/h/)).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /777 123 456/ })).toHaveAttribute('href', 'tel:+420777123456');
-    expect(screen.getByRole('link', { name: 'petr@example.cz' })).toHaveAttribute('href', 'mailto:petr@example.cz');
+    expect(screen.getByRole('link', { name: 'Zavolat: Petr Heitzer' })).toHaveAttribute('href', 'tel:+420777123456');
+    expect(screen.getByRole('link', { name: 'Napsat e-mail: Petr Heitzer' })).toHaveAttribute('href', 'mailto:petr@example.cz');
     fireEvent.click(screen.getByRole('button', { name: 'Otevřít profil Petr Heitzer' }));
     expect(mocks.setSelectedContractorProfileId).toHaveBeenCalledWith('profile-uuid-1');
+  });
+
+  it('shows a call action when only a phone number is available', () => {
+    mocks.getCrew.mockReturnValue([{ ...contractor, email: '' }]);
+
+    render(<CrewView />);
+
+    expect(screen.getByRole('link', { name: 'Zavolat: Petr Heitzer' })).toHaveAttribute('href', 'tel:+420777123456');
+    expect(screen.queryByRole('link', { name: 'Napsat e-mail: Petr Heitzer' })).not.toBeInTheDocument();
+  });
+
+  it('shows an email action when only an email address is available', () => {
+    mocks.getCrew.mockReturnValue([{ ...contractor, phone: '' }]);
+
+    render(<CrewView />);
+
+    expect(screen.getByRole('link', { name: 'Napsat e-mail: Petr Heitzer' })).toHaveAttribute('href', 'mailto:petr@example.cz');
+    expect(screen.queryByRole('link', { name: 'Zavolat: Petr Heitzer' })).not.toBeInTheDocument();
+  });
+
+  it('shows missing contact copy without fake action links', () => {
+    mocks.getCrew.mockReturnValue([{ ...contractor, phone: '', email: '' }]);
+
+    render(<CrewView />);
+
+    expect(screen.getByText('Kontakt neuveden')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Zavolat: Petr Heitzer' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Napsat e-mail: Petr Heitzer' })).not.toBeInTheDocument();
   });
 
   it('searches on the page and shows a resettable no-results state', () => {
@@ -126,6 +173,14 @@ describe('CrewView', () => {
     expect(screen.queryByText('Petr Heitzer')).not.toBeInTheDocument();
     expect(screen.getByText('Nikdo neodpovídá hledání')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Vymazat hledání' }));
+    expect(screen.getByText('Petr Heitzer')).toBeInTheDocument();
+  });
+
+  it('continues to search by a hidden email contact', () => {
+    render(<CrewView />);
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Hledat v crew' }), { target: { value: 'petr@example.cz' } });
+
     expect(screen.getByText('Petr Heitzer')).toBeInTheDocument();
   });
 });

@@ -34,6 +34,13 @@ function CardSelectionSession(props: ShiftWorkflowDraftInput) {
     .map((occurrence) => occurrence.date), [candidates]);
   const presentation = useMemo(() => new Map(candidates.map(({ id, event }) => [id, new Map(getListOccurrencesForEvent(event, true)
     .map((occurrence) => [occurrence.date, occurrence]))])), [candidates]);
+  const cardDetails = useMemo(() => new Map(candidates.map(({ id, event }) => [id, {
+    timelogs: draft.data.timelogs.filter((timelog) => props.scope.source === 'supabase'
+      ? timelog.eventSupabaseId === id : timelog.eid === event.id),
+    crewAssignments: draft.data.eventCrewAssignments.filter((assignment) => props.scope.source === 'supabase'
+      ? assignment.eventSupabaseId === id : assignment.eventId === event.id),
+    applications: [], contractors: [],
+  }])), [candidates, draft.data, props.scope.source]);
   const scroll = useShiftWorkflowCardScroll({ container, active: !summary, query: timeline.query,
     anchorDate: timeline.anchorDate, startDate: timeline.startDate, onExpand: () => {
       const expanded = expandCardTimelineHistory(timeline, allDates);
@@ -95,7 +102,7 @@ function CardSelectionSession(props: ShiftWorkflowDraftInput) {
             const occurrence = presentation.get(id)!.get(date)!;
             const reason = selection.blockedReason(id);
             return <EventListCard key={`${id}|${date}`} occurrenceKey={`${id}|${date}`} occurrence={occurrence}
-              canManageEvents role={props.scope.role} selection={{ checked: selection.eventIds.includes(id), disabled: selection.locked || Boolean(reason), reason, onToggle: () => selection.toggle(id) }} />;
+              canManageEvents role={props.scope.role} detail={cardDetails.get(id)} selection={{ checked: selection.eventIds.includes(id), disabled: selection.locked || Boolean(reason), reason, onToggle: () => selection.toggle(id) }} />;
           })}
           {!grouped.get(date)!.length && !hasFollowingOccurrences && <p className="nodu-workflow-selection__empty text-sm text-[var(--nodu-text-soft)]">Od zvoleného data tu zatím nejsou žádné směny.</p>}
         </div>

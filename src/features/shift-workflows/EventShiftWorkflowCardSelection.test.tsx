@@ -1,12 +1,13 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Event, Invoice, Timelog } from '../../types';
+import type { Event, EventCrewAssignment, Invoice, Timelog } from '../../types';
 import { ShiftWorkflowError, type ShiftWorkflowScope } from './shift-workflows.contract';
 import type { ShiftWorkflowManagementData } from './shift-workflows.management';
 import EventShiftWorkflowCardSelection from './EventShiftWorkflowCardSelection';
 
-vi.mock('../events/services/events.service', () => ({ getEventDetailData: () => ({ timelogs: [], crewAssignments: [], applications: [], contractors: [] }) }));
+const liveDetail = vi.hoisted(() => ({ timelogs: [] as Timelog[], crewAssignments: [] as EventCrewAssignment[] }));
+vi.mock('../events/services/events.service', () => ({ getEventDetailData: () => ({ ...liveDetail, applications: [], contractors: [] }) }));
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const time = '2026-10-12T11:00:00Z';
 const scope: ShiftWorkflowScope = { source: 'supabase', role: 'crewhead', userId: id(1), profileId: id(2) };
@@ -15,8 +16,10 @@ const makeData = (): ShiftWorkflowManagementData => ({ snapshot: { revision: 4, 
     job: 'JOB', rawJobNumber: i === 0 ? null : 'JOB', projectId: 'P', updatedAt: time,
     startDate: i === 3 ? '2026-09-20' : i === 4 ? '2026-09-01' : '2026-10-12', endDate: i === 3 ? '2026-09-20' : i === 4 ? '2026-09-01' : '2026-10-12', needed: 2, filled: 0, status: 'upcoming', client: 'Klient' } as Event)),
   timelogs: [], invoices: [], eventCrewAssignments: [] });
-function setup(data = makeData(), role: ShiftWorkflowScope['role'] = 'crewhead') {
-  const props = { scope: { ...scope, role }, workflowId: null, data, onSave: vi.fn().mockResolvedValue(undefined), onReload: vi.fn().mockResolvedValue(makeData()), onClose: vi.fn() };
+const report = (overrides: Partial<Timelog> = {}): Timelog => ({ id: 100, eid: 21, eventSupabaseId: id(21), contractorProfileId: id(99),
+  status: 'draft', days: [{ d: '2026-10-12', f: '08:00', t: '16:00', type: 'instal' }], km: 0, note: '', approvals: [], ...overrides });
+function setup(data = makeData(), role: ShiftWorkflowScope['role'] = 'crewhead', source: ShiftWorkflowScope['source'] = 'supabase') {
+  const props = { scope: { ...scope, role, source }, workflowId: null, data, onSave: vi.fn().mockResolvedValue(undefined), onReload: vi.fn().mockResolvedValue(makeData()), onClose: vi.fn() };
   const view = render(<main className="nodu-page-frame"><EventShiftWorkflowCardSelection {...props} /></main>);
   return { ...view, props };
 }
@@ -25,9 +28,58 @@ const continueToSummary = () => fireEvent.click(screen.getByRole('button', { nam
 const confirmCross = () => fireEvent.click(screen.getByRole('checkbox', { name: 'Potvrzuji propojení různých projektů nebo jobnumber' }));
 const save = () => fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' }));
 const deferred = <T,>() => { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { promise, resolve }; };
-beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-12T12:00:00')); });
+beforeEach(() => { liveDetail.timelogs = []; liveDetail.crewAssignments = []; vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-12T12:00:00')); });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 describe('card selection shared draft', () => {
+  it('keeps empty captured card evidence when another person publishes a live submitted report', () => {
+    setup(); const card = screen.getByRole('checkbox', { name: /Přípravy/ });
+    expect(within(card).getByText('Casy nezadane')).toBeInTheDocument();
+    liveDetail.timelogs = [report({ status: 'pending_ch' })];
+    liveDetail.crewAssignments = [{ eventId: 21, eventSupabaseId: id(21), contractorProfileId: id(99), name: 'Živý člověk' }];
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'Přípravy' } });
+    expect(card).toHaveAttribute('aria-disabled', 'false'); expect(within(card).getByText('Casy nezadane')).toBeInTheDocument();
+    expect(within(card).getByText(/Cas neurcen/)).toBeInTheDocument(); expect(within(card).queryByText('Živý člověk')).not.toBeInTheDocument();
+    expect(within(card).queryByText('Ceka CH')).not.toBeInTheDocument();
+  });
+  it.each(['supabase', 'local'] as const)('presents only captured report and crew identities for %s without leaking live data', (source) => {
+    const data = makeData();
+    const matchingReport = report({ eid: source === 'supabase' ? 900 : 21, eventSupabaseId: source === 'supabase' ? id(21) : id(900) });
+    const otherReport = report({ id: 101, eid: source === 'supabase' ? 21 : 900, eventSupabaseId: source === 'supabase' ? id(900) : id(21), status: 'pending_ch',
+      days: [{ d: '2026-10-12', f: '10:00', t: '18:00', type: 'instal' }] });
+    data.timelogs = [matchingReport, otherReport];
+    data.eventCrewAssignments = [
+      { eventId: matchingReport.eid, eventSupabaseId: matchingReport.eventSupabaseId, contractorProfileId: id(99), name: 'Zachycený člověk' },
+      { eventId: otherReport.eid, eventSupabaseId: otherReport.eventSupabaseId, contractorProfileId: id(98), name: 'Jiná směna' },
+    ];
+    const { props, rerender } = setup(data, 'crewhead', source);
+    const expectCaptured = () => {
+      const card = screen.getByRole('checkbox', { name: /Přípravy/ });
+      expect(card).toHaveAttribute('aria-disabled', 'false'); expect(within(card).getByText('Casy rozepsane')).toBeInTheDocument();
+      expect(within(card).getByText(/08:00 - 16:00/)).toBeInTheDocument(); expect(within(card).getByText('Zachycený člověk')).toBeInTheDocument();
+      expect(within(card).queryByText('Jiná směna')).not.toBeInTheDocument(); expect(within(card).queryByText('Ceka CH')).not.toBeInTheDocument();
+    };
+    expectCaptured();
+    liveDetail.timelogs = [report({ status: 'pending_ch' })]; liveDetail.crewAssignments = [{ eventId: 21, eventSupabaseId: id(21), contractorProfileId: id(99), name: 'Živý člověk' }];
+    const published = makeData(); published.timelogs = liveDetail.timelogs; published.eventCrewAssignments = liveDetail.crewAssignments;
+    rerender(<main className="nodu-page-frame"><EventShiftWorkflowCardSelection {...props} data={published} /></main>);
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'Přípravy' } }); expectCaptured();
+  });
+  it('replaces captured card evidence only after a successful explicit refresh and retains selected identities', async () => {
+    const { props } = setup(); props.onSave.mockRejectedValueOnce(new ShiftWorkflowError('conflict', 'Změna'));
+    const openingCard = screen.getByRole('checkbox', { name: /Přípravy/ });
+    props.onReload.mockRejectedValueOnce(new Error('offline'));
+    const fresh = makeData(); fresh.snapshot.revision = 8; fresh.timelogs = [report({ status: 'pending_ch' })];
+    fresh.eventCrewAssignments = [{ eventId: 21, eventSupabaseId: id(21), contractorProfileId: id(99), name: 'Obnovený člověk' }];
+    selectBoth(); continueToSummary(); confirmCross(); save();
+    fireEvent.click(await screen.findByRole('button', { name: 'Obnovit data a ponechat výběr' })); await screen.findByText(/nepodařilo bezpečně ověřit/);
+    expect(within(openingCard).getByText('Casy nezadane')).toBeInTheDocument();
+    props.onReload.mockResolvedValue(fresh); fireEvent.click(screen.getByRole('button', { name: 'Obnovit data a ponechat výběr' }));
+    await screen.findByRole('checkbox', { name: 'Zkontroloval jsem výběr po obnovení dat' });
+    expect(screen.getByRole('button', { name: 'Propojit směny' })).toBeDisabled(); fireEvent.click(screen.getByRole('button', { name: 'Zpět k výběru' }));
+    const card = screen.getByRole('checkbox', { name: /Přípravy/ }); expect(card).toBeChecked(); expect(card).toHaveAttribute('aria-disabled', 'false');
+    expect(within(card).getByText('Ceka CH')).toBeInTheDocument(); expect(within(card).getByText(/08:00 - 16:00/)).toBeInTheDocument();
+    expect(within(card).getByText('Obnovený člověk')).toBeInTheDocument(); expect(screen.getByText('Vybráno: 2')).toBeInTheDocument();
+  });
   it.each(['crewhead', 'coo'] as const)('requires raw cross-project and source-move confirmations for %s in the full summary', async (role) => {
     const data = makeData(); data.snapshot.workflows = [{ id: id(10), eventIds: [id(22), id(23)], updatedAt: time }];
     const { props } = setup(data, role); selectBoth();
@@ -43,10 +95,10 @@ describe('card selection shared draft', () => {
   it.each(['crew', 'admin'] as const)('gives no creation controls to %s', (role) => { setup(makeData(), role as ShiftWorkflowScope['role']); expect(screen.queryByRole('searchbox')).not.toBeInTheDocument(); });
   it.each(['other-person', 'source-remnant', 'round', 'invoice'] as const)('blocks a prospective whole group for %s evidence', (kind) => {
     const data = makeData();
-    if (kind === 'source-remnant') { data.snapshot.workflows = [{ id: id(10), eventIds: [id(22), id(23)], updatedAt: time }]; data.timelogs = [{ id: 100, eventSupabaseId: id(23), contractorProfileId: id(99), status: 'pending_ch' } as Timelog]; }
-    if (kind === 'other-person') data.timelogs = [{ id: 100, eventSupabaseId: id(22), contractorProfileId: id(99), status: 'pending_ch' } as Timelog];
+    if (kind === 'source-remnant') { data.snapshot.workflows = [{ id: id(10), eventIds: [id(22), id(23)], updatedAt: time }]; data.timelogs = [report({ eid: 23, eventSupabaseId: id(23), status: 'pending_ch' })]; }
+    if (kind === 'other-person') data.timelogs = [report({ eid: 22, eventSupabaseId: id(22), status: 'pending_ch' })];
     if (kind === 'round') data.snapshot.rounds = [{ id: id(50), eventIds: [id(22)], workflowId: null } as ShiftWorkflowManagementData['snapshot']['rounds'][number]];
-    if (kind === 'invoice') { data.timelogs = [{ id: 100, supabaseId: id(100), eventSupabaseId: id(22), status: 'draft' } as Timelog]; data.invoices = [{ id: 'invoice-1', timelogSupabaseIds: [id(100)] } as Invoice]; }
+    if (kind === 'invoice') { data.timelogs = [report({ eid: 22, supabaseId: id(100), eventSupabaseId: id(22) })]; data.invoices = [{ id: 'invoice-1', timelogSupabaseIds: [id(100)] } as Invoice]; }
     const { props } = setup(data); fireEvent.click(screen.getByRole('checkbox', { name: /Přípravy/ }));
     const blocked = screen.getByRole('checkbox', { name: /Instalace/ }); expect(blocked).toHaveAttribute('aria-disabled', 'true'); expect(blocked).toHaveAccessibleDescription();
     fireEvent.click(blocked); expect(screen.getByText('Vybráno: 1')).toBeInTheDocument(); expect(props.onSave).not.toHaveBeenCalled();

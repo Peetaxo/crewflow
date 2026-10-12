@@ -54,7 +54,7 @@ For a targeted run insert exact test paths after `"run"` in `process.argv`. Reco
 
 **Files:** Create the timeline module and its test, only. No route, UI, database or data-loading changes in this task.
 
-- [ ] Step 1: Write the initial failing tests for seven calendar-day ranges, chronology and a global search which ignores the date boundary. Use real Event identities and schedule helpers; each candidate is `{ id: string, event: Event }`.
+- [x] Step 1: Write the initial failing tests for seven calendar-day ranges, chronology and a global search which ignores the date boundary. Use real Event identities and schedule helpers; each candidate is `{ id: string, event: Event }`.
 
 ```ts
 import { describe, expect, it } from 'vitest';
@@ -85,8 +85,8 @@ it('searches beyond the window by name and jobnumber', () => {
 });
 ```
 
-- [ ] Step 2: Run this test file with the runner command; verify expected missing behavior, not fixture/import mistakes.
-- [ ] Step 3: Implement the pure model using date-fns `parseISO`, `subDays`, `format`, `isValid` and `listEventDates` for scheduleVersion 2; legacy dates use existing `getDatesBetween`. Export these exact contracts:
+- [x] Step 2: Run this test file with the runner command; verify expected missing behavior, not fixture/import mistakes.
+- [x] Step 3: Implement the pure model using date-fns `parseISO`, `subDays`, `format`, `isValid` and `listEventDates` for scheduleVersion 2; legacy dates use existing `getDatesBetween`. Export these exact contracts:
 
 ```ts
 import type { Event } from '../../types';
@@ -102,9 +102,9 @@ export const createCardTimeline = (anchorDate: string): CardTimeline => ({
 });
 ```
 
-`previousTimelineWeek(date)` returns the local ISO date seven days earlier; invalid input is rejected, never silently interpreted as UTC or NaN. `cardTimelineOccurrences(candidates, timeline)` returns actual schedule occurrences at/after startDate, sorted by date then name then stable ID. With nonempty trimmed Czech-lowercased query it searches name and jobnumber across all occurrences instead. Duplicate candidate identities/occurrences must not generate duplicate card keys. Include active multiday scheduled occurrences on today, not just their first day.
+`previousTimelineWeek(date)` returns the local ISO date seven days earlier; invalid input is rejected, never silently interpreted as UTC or NaN. `cardTimelineOccurrences(candidates, timeline)` preserves existing event-card occurrences at/after startDate, sorted by date then name then stable ID. In particular, `listEventDates` intentionally returns the inclusive v2 start/end range, even with free days or sparse phase schedules; this selection feature must not change ordinary card-day behavior. With nonempty trimmed Czech-lowercased query it searches name and jobnumber across all occurrences instead. Duplicate candidate identities/occurrences must not generate duplicate card keys. Include active multiday occurrences on today, not just their first day.
 
-- [ ] Step 4: Add behavioral RED tests for multiday cards sharing one identity, scheduleVersion 2 gaps, blank query, Czech name matching, invalid date and empty-history gaps. Implement `expandCardTimelineHistory(timeline, occurrenceDates)`: if older dates exist, lower startDate by seven-day increments until the next prior occurrence is reachable; otherwise return unchanged. This keeps week arithmetic while preventing empty weeks trapping the user. It never changes anchorDate or query.
+- [x] Step 4: Add behavioral RED tests for multiday cards sharing one identity, inclusive v2 ranges with sparse phases and gaps between separate events, blank query, Czech name matching, invalid date and empty-history gaps. Implement `expandCardTimelineHistory(timeline, occurrenceDates)`: if older dates exist, lower startDate by seven-day increments until the next prior occurrence is reachable; otherwise return unchanged. This keeps week arithmetic while preventing empty weeks trapping the user. It never changes anchorDate or query.
 
 ```ts
 it('crosses empty weeks without declaring history finished', () => {
@@ -121,7 +121,9 @@ it('stops when no earlier occurrence exists', () => {
 
 Use a bounded calculation from the nearest earlier date rather than an unbounded render-triggered loop. These functions are pure display logic; do not filter candidate eligibility or mutate selected IDs here.
 
-- [ ] Step 5: Run all timeline tests and existing `shift-workflows.management.test.ts`, `shift-workflows.selection.test.ts`, `src/views/EventsView.test.tsx`; verify GREEN, diff-check, self-review and commit only the two new files. Spec review then quality review must pass before Task 2.
+- [x] Step 5: Run all timeline tests and existing `shift-workflows.management.test.ts`, `shift-workflows.selection.test.ts`, `src/views/EventsView.test.tsx`; verify GREEN, diff-check, self-review and commit only the two new files. Spec review then quality review must pass before Task 2.
+
+Task 1 evidence: implementation `fb240b282076b8069edc90b07c7361252194cdcd`; 38 timeline tests and 95 tests across all four required files passed. Parent rerun: exit 0 in 2.98 s, `/private/tmp/crewflow-card-selection-20261012-task1-parent.txt`. Independent spec review and subsequent code-quality review approved without findings; each also ran the timeline tests in `TZ=Europe/Prague`. Only the two planned source/test files changed.
 
 ## Task 2 Shared safe draft and selection directly in Akce cards
 

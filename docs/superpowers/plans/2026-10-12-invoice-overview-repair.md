@@ -57,8 +57,8 @@ using (
 
 - [x] Repeat the real UI flow as COO and Crew, reload and sign in again, and retain screenshots of the number and 10 km / 56 CZK breakdown.
 - [x] Run the app tests, lint and build; obtain a code review and resolve material findings.
-- [ ] Merge into clean `main`, synchronize `origin/main` and deploy the verified policy to Staff. No live business fixture is created or edited.
-- [ ] Run `npm run ios:refresh:devices` from a clean synchronized checkout with the existing `.env.local`; verify and report simulator and physical iPhone separately.
+- [x] Merge into clean `main`, synchronize `origin/main` and deploy the verified policy to Staff. No live business fixture is created or edited.
+- [x] Run `npm run ios:refresh:devices` from a clean synchronized checkout with the existing `.env.local`; verify and report simulator and physical iPhone separately.
 
 ## Accepted design for the following increment
 
@@ -72,3 +72,6 @@ The user selected both own-invoice upload and self-billing. Self-billing require
 - COO reload and a complete Crew sign-out/sign-in showed SF-2026-CREW-D-0001 with 8 hours / 2,000 CZK, 10 km / 56 CZK and 2,056 CZK total. UI screenshots and integration JSON are saved in the disposable demo results directory outside Git.
 - Code review found no remaining new P0-P2 after the two calculation findings were repaired. The reviewer independently verified that a terminal item page returns an empty list with HTTP 200.
 - Staff migration invoice_items_owner_read was deployed successfully at version 20261012131746; the repository filename was aligned to that actual migration-history version. Metadata confirmed the existing management policy and the new SELECT-only owner policy. No live invoice or other business fixture was created or edited. Security advisor results were unchanged: 9 existing local findings and 5 existing hosted findings, with no new finding from this repair.
+- The merged main at 263649765f7595ad2ee3ec906285afb1da1b44a1 includes the already-published Crew card changes. Its final verification passed 158 files / 1,913 tests, lint and the production web build; the invoice repair was pushed to origin/main without a force push.
+- The clean synchronized installation checkout retained its existing ignored configuration. `npm run ios:refresh:devices` completed with exit 0 for main 2636497: simulator updated and physical iPhone updated, including both launches. A simulator screenshot showed the running app; a subsequent iPhone process query confirmed App.app/App running as PID 5573. No phone unlock retry was needed for this refresh.
+- The isolated demo server now serves the published main. Reloading the real Crew session again showed the stored invoice number and 10 km / 56 CZK breakdown. The final screenshot is saved as `invoice-overview-main-crew.png` in the disposable demo results directory. Unrelated working changes in the original checkout were preserved.

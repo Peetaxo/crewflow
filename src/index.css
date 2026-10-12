@@ -2,6 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
+/* iOS zooms into small writing controls on focus. Keep every control readable
+   before focus, including raw fields and dialogs rendered outside the app shell.
+   This guard overrides compact field typography without disabling user zoom. */
+@media (max-width: 1023px), (any-pointer: coarse) {
+  :root :is(
+    input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"],
+      [type="file"], [type="button"], [type="submit"], [type="reset"],
+      [type="image"], [type="hidden"]),
+    textarea,
+    select,
+    [contenteditable=""],
+    [contenteditable="true"],
+    [contenteditable="plaintext-only"]
+  ) {
+    font-size: max(16px, 1rem) !important;
+  }
+}
+
 .nodu-app-loading {
   display: grid;
   min-height: 100dvh;

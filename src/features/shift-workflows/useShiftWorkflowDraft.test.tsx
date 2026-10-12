@@ -17,6 +17,28 @@ function setup(data = makeData()) {
   return { ...view, props };
 }
 describe('useShiftWorkflowDraft', () => {
+  it('captures display-only metadata separately and replaces it atomically with evidence only on successful refresh', async () => {
+    const data = makeData(); const openingDisplay = { [id(21)]: [{ profileId: id(99), name: 'Petr' }] };
+    const captureCrewDisplay = vi.fn().mockReturnValue(openingDisplay);
+    const props = { scope, workflowId: null, data, captureCrewDisplay, onSave: vi.fn(), onReload: vi.fn().mockResolvedValue(makeData()), onClose: vi.fn() };
+    const { result, rerender } = renderHook((input) => useShiftWorkflowDraft(input), { initialProps: props });
+    openingDisplay[id(21)][0].name = 'Mutace'; rerender({ ...props, data: makeData() });
+    expect(result.current.crewDisplay).toEqual({ [id(21)]: [{ profileId: id(99), name: 'Petr' }] }); expect(captureCrewDisplay).toHaveBeenCalledOnce();
+    expect(result.current.data.eventCrewAssignments).toEqual([]);
+    const fresh = makeData(); fresh.snapshot.revision = 8; props.onReload.mockResolvedValue(fresh); captureCrewDisplay.mockImplementationOnce(() => { throw new Error('display unavailable'); });
+    await act(async () => result.current.reload());
+    expect(result.current.data.snapshot.revision).toBe(4); expect(result.current.crewDisplay).toEqual({ [id(21)]: [{ profileId: id(99), name: 'Petr' }] });
+    captureCrewDisplay.mockReturnValue({ [id(21)]: [{ profileId: id(98), name: 'Jana' }] }); await act(async () => result.current.reload());
+    expect(result.current.data.snapshot.revision).toBe(8); expect(result.current.crewDisplay).toEqual({ [id(21)]: [{ profileId: id(98), name: 'Jana' }] });
+    expect(result.current.data.eventCrewAssignments).toEqual([]);
+  });
+  it('does not recapture display metadata when an old refresh resolves after owner retirement', async () => {
+    let resolve!: (value: ShiftWorkflowManagementData) => void; const captureCrewDisplay = vi.fn().mockReturnValue({});
+    const props = { scope, workflowId: null, data: makeData(), captureCrewDisplay, onSave: vi.fn(), onReload: vi.fn().mockReturnValue(new Promise((done) => { resolve = done; })), onClose: vi.fn() };
+    const { result, unmount } = renderHook((input) => useShiftWorkflowDraft(input), { initialProps: props });
+    let refresh!: Promise<void>; act(() => { refresh = result.current.reload(); }); unmount();
+    await act(async () => { resolve(makeData()); await refresh; }); expect(captureCrewDisplay).toHaveBeenCalledOnce(); expect(props.onClose).not.toHaveBeenCalled();
+  });
   it('captures a clone and ignores live publication while preserving a full stored group', () => {
     const data = makeData(); data.snapshot.workflows = [{ id: id(10), eventIds: [id(21), id(23)], updatedAt: time }];
     const props = { scope, workflowId: id(10), data, onSave: vi.fn(), onReload: vi.fn(), onClose: vi.fn() };

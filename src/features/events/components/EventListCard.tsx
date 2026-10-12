@@ -33,6 +33,7 @@ interface Props {
   selection?: EventCardSelection;
   occurrenceKey?: string;
   detail?: CardDetail;
+  crewDisplay?: readonly { profileId: string; name: string }[];
   onOpen?: (event: Event) => void;
   onDelete?: (event: Event) => void;
   onCopy?: (event: Event) => void;
@@ -294,7 +295,7 @@ const getEventTimelogApprovalMeta = (timelogs: Timelog[]): EventTimelogApprovalM
 };
 
 
-export default function EventListCard({ occurrence, canManageEvents, role, currentProfileId, selection, occurrenceKey, detail,
+export default function EventListCard({ occurrence, canManageEvents, role, currentProfileId, selection, occurrenceKey, detail, crewDisplay,
   onOpen, onDelete, onCopy, onProfile, getApplicationDraftTimes = defaultTimes, updateApplicationDraftTime = ignoreDraftTime,
   handleApplyForEvent = ignoreApplication, handleWithdrawApplication = ignoreApplication, handleRequestEventWithdrawal = ignoreApplication,
 }: Props) {
@@ -302,11 +303,12 @@ export default function EventListCard({ occurrence, canManageEvents, role, curre
   const { event, date: occurrenceDate } = occurrence;
   const eventDetail = detail ?? getEventDetailData(event.supabaseId ?? event.id);
   const eventTimelogs: Timelog[] = eventDetail.timelogs;
-  const assignedCrew = eventDetail.crewAssignments.map((assignment) => ({
-    profileId: assignment.contractorProfileId,
-    name: assignment.name,
+  const assignedCrew = (crewDisplay ?? eventDetail.crewAssignments.map((assignment) => ({
+    profileId: assignment.contractorProfileId, name: assignment.name,
+  }))).map(({ profileId, name }) => ({
+    profileId, name,
     approvalMeta: getEventTimelogApprovalMeta(
-      eventTimelogs.filter((timelog) => timelog.contractorProfileId === assignment.contractorProfileId),
+      eventTimelogs.filter((timelog) => timelog.contractorProfileId === profileId),
     ),
   }));
   const pendingApplications = (eventDetail.applications ?? [])

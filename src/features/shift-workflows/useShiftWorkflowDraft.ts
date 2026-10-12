@@ -4,6 +4,9 @@ import { createStableDraftUuid } from '../stable-draft-identity';
 import { ShiftWorkflowError, type SaveShiftWorkflow, type ShiftWorkflowScope } from './shift-workflows.contract';
 import { getWorkflowSelectionImpact, type ShiftWorkflowManagementData } from './shift-workflows.management';
 
+/** Display-only names, never authoritative assignments or workflow evidence. */
+export type ShiftWorkflowCrewDisplay = Record<string, { profileId: string; name: string }[]>;
+
 export interface ShiftWorkflowDraftInput {
   scope: ShiftWorkflowScope;
   workflowId: string | null;
@@ -11,6 +14,7 @@ export interface ShiftWorkflowDraftInput {
   onSave: (command: SaveShiftWorkflow) => Promise<unknown>;
   onReload: () => Promise<ShiftWorkflowManagementData>;
   onClose: () => void;
+  captureCrewDisplay?: (data: ShiftWorkflowManagementData) => ShiftWorkflowCrewDisplay;
 }
 
 const safeMessage = (error: unknown) => error instanceof ShiftWorkflowError
@@ -18,7 +22,13 @@ const safeMessage = (error: unknown) => error instanceof ShiftWorkflowError
 
 /** One captured draft per mounted owner. Only an explicit refresh replaces versions. */
 export function useShiftWorkflowDraft(props: ShiftWorkflowDraftInput) {
-  const [data, setData] = useState(() => structuredClone(props.data));
+  const captureData = (input: ShiftWorkflowManagementData) => {
+    const data = structuredClone(input);
+    const crewDisplay = props.captureCrewDisplay ? structuredClone(props.captureCrewDisplay(data)) : null;
+    return { data, crewDisplay };
+  };
+  const [capturedData, setCapturedData] = useState(() => captureData(props.data));
+  const { data, crewDisplay } = capturedData;
   const [eventIds, setEventIds] = useState(() => [...(data.snapshot.workflows.find((w) => w.id === props.workflowId)?.eventIds ?? [])]);
   const [cross, setCross] = useState(false);
   const [moves, setMoves] = useState(false);
@@ -78,13 +88,13 @@ export function useShiftWorkflowDraft(props: ShiftWorkflowDraftInput) {
     try {
       const fresh = await props.onReload();
       if (!current(captured)) return;
-      setData(structuredClone(fresh)); setConflict(false); setError(null); setPending(null);
+      setCapturedData(captureData(fresh)); setConflict(false); setError(null); setPending(null);
       setCross(false); setMoves(false); setDissolveConfirmed(false); setReviewRequired(true); setReviewed(false);
     } catch (cause) { if (current(captured)) setError(safeMessage(cause)); }
     finally { if (current(captured)) { inFlight.current = false; setBusy(false); } }
   };
   const close = () => { if (!inFlight.current && current(activation.current)) props.onClose(); };
-  return { data, eventIds, impact, busy, locked, error, conflict, pending, reviewRequired, reviewed,
+  return { data, crewDisplay, eventIds, impact, busy, locked, error, conflict, pending, reviewRequired, reviewed,
     cross, moves, dissolveConfirmed, setCross, setMoves, setDissolveConfirmed, setReviewed,
     changeSelection, save, reload, send, close };
 }

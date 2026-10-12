@@ -3,10 +3,11 @@ import { format, parseISO } from 'date-fns';
 import { cs } from 'date-fns/locale';
 import { Button } from '../../components/ui/button';
 import EventListCard, { getListOccurrencesForEvent } from '../events/components/EventListCard';
+import { getEventDetailData } from '../events/services/events.service';
 import { canManageShiftWorkflows, type ShiftWorkflowScope } from './shift-workflows.contract';
 import { getEventWorkflowCandidates, getWorkflowSelectionImpact, type ShiftWorkflowManagementData } from './shift-workflows.management';
 import { cardTimelineOccurrences, createCardTimeline, expandCardTimelineHistory } from './shift-workflow-card-timeline';
-import { useShiftWorkflowDraft, type ShiftWorkflowDraftInput } from './useShiftWorkflowDraft';
+import { useShiftWorkflowDraft, type ShiftWorkflowDraftInput, type ShiftWorkflowCrewDisplay } from './useShiftWorkflowDraft';
 import { ShiftWorkflowConfirmation } from './ShiftWorkflowConfirmation';
 import { useShiftWorkflowCardScroll, type CardScrollPosition } from './useShiftWorkflowCardScroll';
 
@@ -22,8 +23,21 @@ export interface EventCardSelectionState {
   cancel: () => void;
 }
 
+function captureCrewDisplay(data: ShiftWorkflowManagementData, scope: ShiftWorkflowScope): ShiftWorkflowCrewDisplay {
+  return Object.fromEntries(getEventWorkflowCandidates(data, scope).map(({ id, event }) => {
+    const matches = (assignment: ShiftWorkflowManagementData['eventCrewAssignments'][number]) => scope.source === 'supabase'
+      ? assignment.eventSupabaseId === id : assignment.eventId === event.id;
+    // The historic display projection preserves normal card names, but never
+    // supplies authoritative assignments, times, approval state or eligibility.
+    const projected = getEventDetailData(scope.source === 'supabase' ? id : event.id).crewAssignments.filter(matches);
+    const names = new Map([...data.eventCrewAssignments.filter(matches), ...projected]
+      .map(({ contractorProfileId, name }) => [contractorProfileId, { profileId: contractorProfileId, name }]));
+    return [id, [...names.values()]];
+  }));
+}
+
 function CardSelectionSession(props: ShiftWorkflowDraftInput) {
-  const draft = useShiftWorkflowDraft(props);
+  const draft = useShiftWorkflowDraft({ ...props, captureCrewDisplay: (data) => captureCrewDisplay(data, props.scope) });
   const [summary, setSummary] = useState(false);
   const [timeline, setTimeline] = useState(() => createCardTimeline(format(new Date(), 'yyyy-MM-dd')));
   const container = useRef<HTMLDivElement>(null);
@@ -102,7 +116,7 @@ function CardSelectionSession(props: ShiftWorkflowDraftInput) {
             const occurrence = presentation.get(id)!.get(date)!;
             const reason = selection.blockedReason(id);
             return <EventListCard key={`${id}|${date}`} occurrenceKey={`${id}|${date}`} occurrence={occurrence}
-              canManageEvents role={props.scope.role} detail={cardDetails.get(id)} selection={{ checked: selection.eventIds.includes(id), disabled: selection.locked || Boolean(reason), reason, onToggle: () => selection.toggle(id) }} />;
+              canManageEvents role={props.scope.role} detail={cardDetails.get(id)} crewDisplay={draft.crewDisplay?.[id]} selection={{ checked: selection.eventIds.includes(id), disabled: selection.locked || Boolean(reason), reason, onToggle: () => selection.toggle(id) }} />;
           })}
           {!grouped.get(date)!.length && !hasFollowingOccurrences && <p className="nodu-workflow-selection__empty text-sm text-[var(--nodu-text-soft)]">Od zvoleného data tu zatím nejsou žádné směny.</p>}
         </div>

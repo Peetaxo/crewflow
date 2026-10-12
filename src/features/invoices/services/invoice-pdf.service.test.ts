@@ -39,4 +39,19 @@ describe('invoice PDF service', () => {
       download: true,
     });
   });
+
+  it('shows the actionable message returned by the PDF generator', async () => {
+    invoke.mockResolvedValue({
+      data: null,
+      error: { message: 'Edge Function returned a non-2xx status code', context: new Response(JSON.stringify({ error: 'Faktura není dostupná.' }), { status: 404 }) },
+    });
+    const { generateInvoicePdf } = await import('./invoice-pdf.service');
+    await expect(generateInvoicePdf('invoice-1')).rejects.toThrow('Faktura není dostupná.');
+  });
+
+  it('keeps the transport error if the response is not JSON', async () => {
+    invoke.mockResolvedValue({ data: null, error: { message: 'Network connection failed', context: new Response('Gateway unavailable', { status: 502 }) } });
+    const { generateInvoicePdf } = await import('./invoice-pdf.service');
+    await expect(generateInvoicePdf('invoice-1')).rejects.toThrow('Network connection failed');
+  });
 });

@@ -17,7 +17,17 @@ export const generateInvoicePdf = async (invoiceId: string): Promise<GenerateInv
   });
 
   if (result.error) {
-    throw new Error(result.error.message);
+    let message = result.error.message;
+    const context = (result.error as { context?: unknown }).context;
+    if (context instanceof Response) {
+      try {
+        const payload = await context.clone().json() as { error?: unknown };
+        if (typeof payload?.error === 'string' && payload.error.trim()) message = payload.error;
+      } catch {
+        // Keep the transport message when a gateway returns a non-JSON body.
+      }
+    }
+    throw new Error(message);
   }
 
   if (!result.data?.pdfPath) {

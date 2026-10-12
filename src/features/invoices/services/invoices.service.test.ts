@@ -136,6 +136,86 @@ describe('invoices.service billing batches', () => {
     vi.clearAllMocks();
   });
 
+  it.each([
+    { hasStaleCache: false, firstKm: 10.5, secondKm: 15, totalKm: 25.5, failsSecondPage: false },
+    { hasStaleCache: true, firstKm: 10.5, secondKm: 15, totalKm: 25.5, failsSecondPage: false },
+    { hasStaleCache: false, firstKm: 10.1, secondKm: 15.2, totalKm: 25.3, failsSecondPage: false },
+    { hasStaleCache: false, firstKm: 10.1, secondKm: 15.2, totalKm: 25.3, failsSecondPage: true },
+  ])('hydrates capped item pages: $totalKm km, stale cache=$hasStaleCache, page failure=$failsSecondPage', async ({ hasStaleCache, firstKm, secondKm, totalKm, failsSecondPage }) => {
+    const snapshot = createSnapshot({ invoices: hasStaleCache ? [{
+      id: 'invoice-uuid-1', contractorProfileId: 'profile-uuid-1', eid: 1,
+      hours: 8, hAmt: 9999, km: 999, kAmt: 9999, total: 19998,
+      job: 'AK001', status: 'paid', sentAt: null,
+    }] : [] });
+    const rows: Record<string, unknown[]> = {
+      invoices: [
+        { id: 'invoice-uuid-1', contractor_id: 'profile-uuid-1', event_id: null, job_number: null,
+          total_hours: 8, amount_hours: 2000, amount_km: 140, total_amount: 2140, status: 'paid',
+          invoice_number: 'SF-2026-NOVAK-T-0001', updated_at: '2026-10-12T10:00:00Z' },
+        { id: 'invoice-uuid-2', contractor_id: 'profile-uuid-2', total_hours: 1, amount_hours: 250,
+          amount_km: 400, total_amount: 650, status: 'draft' },
+      ],
+      profiles: [{ id: 'profile-uuid-1' }, { id: 'profile-uuid-2' }],
+      events: [{ id: 'event-uuid-1' }, { id: 'event-uuid-2' }],
+      invoice_items: [
+        { id: 'item-1', invoice_id: 'invoice-uuid-1', event_id: 'event-uuid-1', job_number: 'AK001', km: firstKm },
+        { id: 'item-2', invoice_id: 'invoice-uuid-1', event_id: 'event-uuid-2', job_number: 'AK002', km: secondKm },
+        { id: 'item-3', invoice_id: 'invoice-uuid-2', event_id: 'event-uuid-1', job_number: 'AK001', km: 777 },
+      ],
+    };
+    const from = vi.fn((table: string) => {
+      const data = rows[table] ?? [];
+      const result = Promise.resolve({ data: table === 'invoice_items' ? data.slice(0, 2) : data, error: null });
+      const query = {
+        order: vi.fn(),
+        range: vi.fn((offset: number, end: number) => Promise.resolve(
+          failsSecondPage && offset > 0
+            ? { data: null, error: { code: 'PGRST000', message: 'second page unavailable' } }
+            : { data: data.slice(offset, Math.min(end + 1, offset + 2)), error: null },
+        )),
+        then: result.then.bind(result),
+      };
+      query.order.mockReturnValue(query);
+      return { select: vi.fn(() => query) };
+    });
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({ isSupabaseConfigured: true, supabase: { from } }));
+    vi.doUnmock('../../../lib/supabase-mappers');
+    vi.doMock('../../../lib/app-data', () => ({
+      getLocalAppState: () => structuredClone(snapshot),
+      updateLocalAppState: vi.fn(),
+      subscribeToLocalAppState: vi.fn(() => () => undefined),
+    }));
+    vi.doMock('../../timelogs/services/timelogs.service', () => ({
+      getTimelogs: () => snapshot.timelogs, loadTimelogsSnapshot: vi.fn(),
+      markTimelogsAsInvoiced: vi.fn(), markTimelogsAsPaid: vi.fn(),
+      markTimelogsAsApproved: vi.fn(), markTimelogsAsPaidForInvoice: vi.fn(),
+    }));
+    vi.doMock('../../receipts/services/receipts.service', () => ({
+      getReceipts: () => snapshot.receipts, fetchReceiptsSnapshot: vi.fn(),
+      markReceiptsAsAttached: vi.fn(), markReceiptsAsReimbursed: vi.fn(),
+      markReceiptsAsReimbursedForInvoice: vi.fn(),
+    }));
+
+    const { fetchInvoicesSnapshot } = await import('./invoices.service');
+    if (failsSecondPage) {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        await expect(fetchInvoicesSnapshot()).rejects.toThrow('Faktury se nepodařilo načíst.');
+      } finally {
+        consoleError.mockRestore();
+      }
+      return;
+    }
+    const invoices = await fetchInvoicesSnapshot();
+    expect(invoices[0]).toMatchObject({
+      invoiceNumber: 'SF-2026-NOVAK-T-0001', km: totalKm,
+      hours: 8, hAmt: 2000, kAmt: 140, total: 2140,
+      jobNumbers: ['AK001', 'AK002'], eventIds: [1, 2],
+    });
+    expect(invoices[1]).toMatchObject({ km: 777, hAmt: 250, kAmt: 400, total: 650 });
+  });
+
   it('routes Supabase invoice lifecycle writes through atomic invoice RPCs', () => {
     const serviceSource = readFileSync(resolve(
       process.cwd(),
@@ -910,6 +990,11 @@ describe('invoices.service billing batches', () => {
         if (table === 'events') {
           return { order: vi.fn(() => orderResult([{ id: 'event-uuid-2' }])) };
         }
+        if (table === 'invoice_items') return {
+          order: vi.fn(() => ({ order: vi.fn(() => ({
+            range: vi.fn().mockResolvedValue({ data: [], error: null }),
+          })) })),
+        };
         if (table === 'invoice_timelogs') return orderResult([{
           id: 'link-t-1', invoice_id: 'invoice-uuid-1', timelog_id: 'timelog-uuid-2', created_at: '2026-04-27',
         }]);
@@ -1111,6 +1196,11 @@ describe('invoices.service billing batches', () => {
         if (table === 'invoices') return { order: invoicesOrder };
         if (table === 'profiles') return { order: vi.fn(() => settledOrder([{ id: 'profile-uuid-1' }])) };
         if (table === 'events') return { order: vi.fn(() => settledOrder([{ id: 'event-uuid-2' }])) };
+        if (table === 'invoice_items') return {
+          order: vi.fn(() => ({ order: vi.fn(() => ({
+            range: vi.fn().mockResolvedValue({ data: [], error: null }),
+          })) })),
+        };
         if (table === 'invoice_timelogs') return settledOrder([{
           id: 'link-t-1', invoice_id: 'invoice-uuid-1', timelog_id: 'timelog-uuid-2', created_at: '2026-04-27',
         }]);
@@ -1242,7 +1332,15 @@ describe('invoices.service billing batches', () => {
             };
           }
 
-          if (table === 'invoice_items' || table === 'invoice_timelogs' || table === 'invoice_receipts') {
+          if (table === 'invoice_items') {
+            return { select: vi.fn(() => ({
+              order: vi.fn(() => ({ order: vi.fn(() => ({
+                range: vi.fn().mockResolvedValue({ data: [], error: null }),
+              })) })),
+            })) };
+          }
+
+          if (table === 'invoice_timelogs' || table === 'invoice_receipts') {
             return {
               select: vi.fn(() => ({
                 order: vi.fn().mockResolvedValue({ data: [], error: null }),

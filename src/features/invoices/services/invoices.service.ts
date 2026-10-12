@@ -211,6 +211,24 @@ const getSupabaseIdRows = async (
   orderBy: string,
 ): Promise<Array<{ id: string }>> => safeSelect<{ id: string }>(table, 'id', orderBy);
 
+const fetchInvoiceItems = async (): Promise<InvoiceItemRow[]> => {
+  if (!supabase) throw new Error('Faktury se nepodařilo načíst.');
+  const items: InvoiceItemRow[] = [];
+  for (let offset = 0; ; ) {
+    const result = await supabase.from('invoice_items').select('*')
+      .order('created_at').order('id').range(offset, offset + 999);
+    if (result.error) {
+      console.error('Unexpected invoice hydration error for invoice_items', result.error);
+      throw new Error('Faktury se nepodařilo načíst.');
+    }
+    const page = (result.data ?? []) as InvoiceItemRow[];
+    if (page.length === 0) return items;
+    items.push(...page);
+    // Follow the actual returned size, including API caps smaller than the requested range.
+    offset += page.length;
+  }
+};
+
 const getNextInvoiceSequence = async (invoiceYear: number, contractorProfileId: string): Promise<number> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
     const existingCount = (getLocalAppState().invoices ?? []).filter((invoice) => (
@@ -642,6 +660,7 @@ const mapSupabaseInvoices = (
 
     return {
       ...mapInvoice(row),
+      km: round2(items.reduce((total, item) => total + Number(item.km ?? 0), 0)),
       contractorProfileId: row.contractor_id,
       eid: eventIds[0] ?? (row.event_id ? (eventIdMap.get(row.event_id) ?? Number.NaN) : 0),
       job: jobNumbers.join(', ') || localInvoice?.job || row.job_number || '',
@@ -673,7 +692,7 @@ const fetchInvoicesSnapshotUnsafe = async (): Promise<Invoice[]> => {
     supabase.from('invoices').select('*').order('created_at'),
     supabase.from('profiles').select('id').order('last_name').order('first_name'),
     supabase.from('events').select('id').order('date_from').order('name'),
-    safeSelect<InvoiceItemRow>('invoice_items', '*', 'created_at'),
+    fetchInvoiceItems(),
     safeSelect<InvoiceTimelogRow>('invoice_timelogs', '*', 'created_at'),
     safeSelect<InvoiceReceiptRow>('invoice_receipts', '*', 'created_at'),
     getSupabaseIdRows('timelogs', 'created_at'),

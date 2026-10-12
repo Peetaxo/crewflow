@@ -26,4 +26,13 @@ Chromium kontroluje skutečně vypočtené styly a jejich cascade; iOS automatic
 
 ## Vývojové instalace
 
-Výsledky integrace a obnovy simulátoru a fyzického iPhonu se doplní po předepsaném refresh.
+Ověřená oprava byla začleněná a odeslaná do main jako `1504d69`. Kvůli současné práci na opravě PDF faktur ve sdíleném rollout checkoutu proběhla instalace z oddělené čisté kopie `/Users/peetax/Projekty/.crewflow-input-zoom-rollout-20261012`; rozpracované změny a neodeslané commity druhého úkolu se nepřenášely ani neměnily. Před refresh byl HEAD shodný s origin/main. Ignorovaná `.env.local` byla zachovaná.
+
+Předepsaný `npm run ios:refresh:devices` s nezměněným preflightem a samostatným `IOS_REFRESH_DERIVED_DATA_ROOT=/private/tmp/crewflow-input-zoom-device-refresh-20261012` skončil exit 0. Log `/private/tmp/mobile-input-zoom-device-refresh.log`.
+
+- **Simulátor iPhone 17 Pro / iOS 26.5:** sestavení, instalace a spuštění úspěšné. Nativní kontrola hledání Crew před focus, při otevřené klávesnici a při psaní `petr` potvrdila stejné měřítko a celý pravý okraj. Stejně se ověřilo zaměření pole Jméno v dialogu nového člena; formulář se zavřel bez uložení.
+- **Fyzický iPhone 13 mini:** dostupný, sestavení, podpis, instalace a spuštění úspěšné. Interaktivní kontrola klávesnice byla provedena v simulátoru; instalace na telefonu obsahuje stejný webový bundle.
+
+Ukázka původního problému: `/Users/peetax/.codex/visualizations/2026/10/12/01a12f8f-6eab-7b83-abed-25b98572ac77/input-focus-before.png`. [Hledání s otevřenou klávesnicí po opravě](/Users/peetax/.codex/visualizations/2026/10/12/01a12f8f-6eab-7b83-abed-25b98572ac77/input-focus-after.jpg).
+
+Lokální náhled na portu 8094 se aktualizoval stejnou odeslanou verzí. Kontrolní součty původních rozpracovaných `Info.plist`, `TimelogsView.tsx` a `TimelogsView.test.tsx` zůstaly shodné. Závěrečný commit mění pouze tento záznam ověření; aplikace zůstává totožná s nainstalovaným `1504d69`. Jde o vývojové instalace, nikoli produkční webové nasazení.

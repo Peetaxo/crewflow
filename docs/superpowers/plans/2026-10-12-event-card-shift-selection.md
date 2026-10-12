@@ -129,7 +129,7 @@ Task 1 evidence: implementation `fb240b282076b8069edc90b07c7361252194cdcd`; 38 t
 
 **Files:** All named UI/draft/scroll/integration modules and their tests; no documentation except checkbox state after completed review, no gateway/schema/package/native project changes.
 
-- [ ] Step 1: Add failing actual-route tests before modifying production code. Reuse the current route's realistic fixture boundary, actual event cards, manager owner and atomic command builder. Mock I/O only, not the new picker/draft/card/confirmation. Freeze only Date, leaving real asynchronous timers available. Extend fixtures with today, future, yesterday, an older empty-week gap, an ongoing multiday event, a submitted event, an existing source group and differing raw jobs.
+- [x] Step 1: Add failing actual-route tests before modifying production code. Reuse the current route's realistic fixture boundary, actual event cards, manager owner and atomic command builder. Mock I/O only, not the new picker/draft/card/confirmation. Freeze only Date, leaving real asynchronous timers available. Extend fixtures with today, future, yesterday, an older empty-week gap, an ongoing multiday event, a submitted event, an existing source group and differing raw jobs.
 
 ```tsx
 vi.useFakeTimers({ toFake: ['Date'] });
@@ -144,8 +144,8 @@ expect(screen.getByRole('button', { name: 'Pokračovat' })).toBeDisabled();
 
 In tests select actual card checkboxes by full accessible name and assert all copies of a multiday identity agree. Click header/card Enter/Space and assert no detail/copy/delete/profile navigation occurs. Select two distinct IDs, change search/date and assert count is still two; **Pokračovat** opens a summary with both even if one is hidden. Assert no save before final confirmation. Tests must restore Date after each run.
 
-- [ ] Step 2: Run RED and record exact failures. Split tests into focused behavioral cases; do not reduce existing detail/query/approval coverage just to make the new tests pass.
-- [ ] Step 3: Extract EditorSession's existing draft behavior into a shared hook. Port the capture, activation, inFlight, send/save/reload logic from current `ShiftWorkflowEditor.tsx` without weakening any branch; keep safeMessage and current snapshot/version command behavior. The exact state contract is:
+- [x] Step 2: Run RED and record exact failures. Split tests into focused behavioral cases; do not reduce existing detail/query/approval coverage just to make the new tests pass.
+- [x] Step 3: Extract EditorSession's existing draft behavior into a shared hook. Port the capture, activation, inFlight, send/save/reload logic from current `ShiftWorkflowEditor.tsx` without weakening any branch; keep safeMessage and current snapshot/version command behavior. The exact state contract is:
 
 ```ts
 interface ShiftWorkflowDraftInput {
@@ -169,7 +169,7 @@ The hook also returns captured data, eventIds, impact from `getWorkflowSelection
 
 Extract complete existing impact/confirmation rendering into `ShiftWorkflowConfirmation`. Detail editor keeps its picker and original save/dissolve controls, using this hook. New create summary renders every selected title/job/date including missing-ID warning, no picker; its final button is **Propojit směny**, with **Zpět k výběru** separate from guarded close. Do not let back escape pending/conflict lock; explicit refresh/review works in the same session. All original editor tests, including exact retry object equality and source-remnant versions, must remain valid.
 
-- [ ] Step 4: Add the scope-owned create session. Use authoritative `useShiftWorkflows` ready/scopeKey and `loadEventShiftWorkflowManagementData`, not page role or a person's assignments. Preserve abort/request-version guards for initial reads, retries and scope reactivation. Render the new card stage only after full management data is available. Reuse the existing create action's toolbar placement; do not leave a second legacy create dialog entry behind.
+- [x] Step 4: Add the scope-owned create session. Use authoritative `useShiftWorkflows` ready/scopeKey and `loadEventShiftWorkflowManagementData`, not page role or a person's assignments. Preserve abort/request-version guards for initial reads, retries and scope reactivation. Render the new card stage only after full management data is available. Reuse the existing create action's toolbar placement; do not leave a second legacy create dialog entry behind.
 
 Provide a create-session provider/context or render-prop boundary with this explicit public UI contract; integrate within EventsView so selected-detail navigation unmounts/retires it:
 
@@ -189,7 +189,7 @@ interface EventCardSelectionState {
 
 The session computes prospective whole-group impact before toggling, permits no unauthorized role, and never drops IDs after a query publication or refresh. Share one draft across card and summary phases. On success or cancel restore normal content; if an old request finishes after unmount/scope change, it cannot close a new session.
 
-- [ ] Step 5: Extract only the existing card presentation required for reuse. Preserve its normal layout, multiday date labels/accent, staffing and ordinary handlers. Selection mode takes explicit controlled props:
+- [x] Step 5: Extract only the existing card presentation required for reuse. Preserve its normal layout, multiday date labels/accent, staffing and ordinary handlers. Selection mode takes explicit controlled props:
 
 ```ts
 interface EventCardSelection {
@@ -202,11 +202,11 @@ interface EventCardSelection {
 
 Use checkbox semantics and one event identity for all occurrences. In selection mode turn crew chips into noninteractive text, omit deletion/copy/application controls and have the card activate only the checkbox selection. No nested-button/checkbox double-toggle or propagation to detail. Retain the standard event-card visual identity; do not create a unrelated second card design.
 
-- [ ] Step 6: Compose a local timeline from Task 1 in the selection stage. Initial anchor is today's local date; prepare the preceding week above it, then scroll to today's marker or first following card without opening full history. Use a persistent toolbar with labelled search and date picker, and stable date/occurrence markers. Change date by `createCardTimeline(date)` preserving selected IDs; global search overrides the window without overwriting the prior date/window.
+- [x] Step 6: Compose a local timeline from Task 1 in the selection stage. Initial anchor is today's local date; prepare the preceding week above it, then scroll to today's marker or first following card without opening full history. Use a persistent toolbar with labelled search and date picker, and stable date/occurrence markers. Change date by `createCardTimeline(date)` preserving selected IDs; global search overrides the window without overwriting the prior date/window.
 
 Preserve AppContext's normal view mode, filter, calendar date and global search. The temporary selection does not call those setters. Return to the existing month/calendar/mobile feed on cancel/success, preserving the original scroll position.
 
-- [ ] Step 7: Implement actual scroll-root anchoring and RED geometry tests. Find the real `.nodu-page-frame` ancestor, not window; store the stable visible occurrence key and its offset. Measure before prepend, then compensate in a layout effect after commit. If measured top was `beforeTop`, resulting root adjustment is:
+- [x] Step 7: Implement actual scroll-root anchoring and RED geometry tests. Find the real `.nodu-page-frame` ancestor, not window; store the stable visible occurrence key and its offset. Measure before prepend, then compensate in a layout effect after commit. If measured top was `beforeTop`, resulting root adjustment is:
 
 ```ts
 root.scrollTop += afterTop - beforeTop;
@@ -216,20 +216,26 @@ Use the same offset capture/restore for first entry/date jump, leaving search, b
 
 Test a previous card moving from 100px to 350px adds 250px to root.scrollTop and keeps the key/offset; test repeated notifications, empty weeks, no earlier data, search suspend/resume and a new session ignoring old scheduled scroll work. A tiny DOM fixture is acceptable for geometry, but route/lifecycle tests must retain real components.
 
-- [ ] Step 8: Add scoped layout for the selection bar above mobile navigation, sufficient end padding, safe areas and keyboard visibility. Validate today anchor after keyboard focus changes; do not replace ordinary native scroll with a custom swipe gesture. Native date change must preserve existing selection. On desktop normal calendar changes restore correctly after selection.
+- [x] Step 8: Add scoped layout for the selection bar above mobile navigation, sufficient end padding, safe areas and keyboard visibility. Validate today anchor after keyboard focus changes; do not replace ordinary native scroll with a custom swipe gesture. Native date change must preserve existing selection. On desktop normal calendar changes restore correctly after selection.
 
-- [ ] Step 9: Run focused GREEN regressions including both CH and COO, crew/admin no management, actual query publication deletion/error and scope switches. Required error cases: initial read failure/retry, frozen opening versions despite live publication, blocked other-person/source remnant, missing selected member, conflict refresh failure and review, exact ambiguous retry, duplicate save, old load/save/refresh after identity/detail/tab changes. Record concrete test counts and all changed files; self-review/diff-check and commit. Spec review then quality review must pass.
+- [x] Step 9: Run focused GREEN regressions including both CH and COO, crew/admin no management, actual query publication deletion/error and scope switches. Required error cases: initial read failure/retry, frozen opening versions despite live publication, blocked other-person/source remnant, missing selected member, conflict refresh failure and review, exact ambiguous retry, duplicate save, old load/save/refresh after identity/detail/tab changes. Record concrete test counts and all changed files; self-review/diff-check and commit. Spec review then quality review must pass.
+
+Task 2 evidence: initial implementation `62fc559`, followed by captured-card-evidence fix `d26d8f2`, separate cloned display-only crew-name capture `b4a0110`, and creation-only draft-removal recovery `c9942ffefc6e3b46814748da98f4d991f69264db`. Independent spec review and subsequent quality review approved the final source without remaining findings. Reports, badges, eligibility and workflow versions stay authoritative and captured; UI-only names never supply assignments or approval data. Explicit refresh replaces both captures atomically after success. A refreshed creation draft may discard a locked-source selection, but pending/conflict/busy locks and addition/continue/save checks remain absolute; the old detail picker remains unchanged.
+
+Implementer-reported final GREEN: 153 files / 1,860 tests plus build, changed-file lint and diff-check. Parent independently verified approved `c9942ff`: full 153 files / 1,860 tests, exit 0 in 89.18 s, `/private/tmp/crewflow-card-selection-20261012-parent-approved-tests.txt`; build exit 0 in 1.38 s and lint exit 0 with no warnings/errors in the corresponding `-build.txt` and `-lint.txt` logs. The focused recovery regression also passed 10 files / 154 tests, exit 0 in 10.17 s, `/private/tmp/crewflow-card-selection-20261012-parent-recovery-tests.txt`. Actual tsc remains exit 2: 112 baseline diagnostics become 111 existing diagnostics after removal of the prior EventsView type-predicate error, with no additions after normalizing only line/column positions; final log `/private/tmp/crewflow-card-selection-20261012-parent-approved-types.txt`. Native keyboard/device evidence remains a Task 3 gate.
 
 ## Task 3 Verification documentation and development rollout
 
 **Files:** The testing guide, new verification report and plan checkboxes only. Parent handles integration, UI diagnostics and devices; documentation worker records actual evidence, never performs source/main/remote/device changes.
 
-- [ ] Step 1: Update the manual guide with new creation path: Akce card mode, today/yesterday weekly navigation and date jump, all-history search, retained multiday selection, summary/back/final confirmation. Keep existing edit, evidence, approval and invoice-limit scenarios. Use a two-person overlap fixture and independent source group.
-- [ ] Step 2: Parent independently runs all tests, web build, changed-file ESLint and actual tsc. Compare normalized file/message diagnostics to the fresh 112-error baseline; global typecheck remains non-green if unchanged. Write exact measured results and log paths, not expectations.
+- [x] Step 1: Update the manual guide with new creation path: Akce card mode, today/yesterday weekly navigation and date jump, all-history search, retained multiday selection, summary/back/final confirmation. Keep existing edit, evidence, approval and invoice-limit scenarios. Use a two-person overlap fixture and independent source group.
+- [x] Step 2: Parent independently runs all tests, web build, changed-file ESLint and actual tsc. Compare normalized file/message diagnostics to the fresh 112-error baseline; global typecheck remains non-green if unchanged. Write exact measured results and log paths, not expectations.
 - [ ] Step 3: Parent visually verifies real local UI at desktop and 390 × 844 mobile, with only runtime/local fixtures and no Staff business mutations. Check exact scroll offsets before/after prepend, initial today view, crossing empty weeks, date jump, global search, repeated multiday selection count, summary/back retention, cancelled normal-view position, bar versus keyboard/nav, locked-card reason and both roles.
 - [ ] Step 4: Review documentation and whole code range. FF integrate the reviewed app into the clean rollout checkout, reverify merged code and push/synchronize main. Check original three dirty file hashes remain untouched.
 - [ ] Step 5: Run mandatory `npm run ios:refresh:devices` with preserved config, intact preflight and required system access. Existing process-only Vite runner preload is allowed; no tracked build-config workaround. Inspect actual simulator UI after launch without saving Staff test data. Report physical build/sign/install/launch separately; unavailable phone waits, available-device failure blocks.
 - [ ] Step 6: Record installed app commit, actual simulator/iPhone results and limits. Review final docs-only evidence, commit, FF merge and push that documentation. Prove no app-code difference from installed commit before omitting an unnecessary second native build. Final answer explains actual new path and installation status, with a real screenshot.
+
+Task 3 recorded progress: manual guide updated and verification report created at `docs/testing/2026-10-12-event-card-shift-selection-verification.md`. Step 2 has completed parent independent full/build/lint/type evidence at approved `c9942ff`, recorded above. Step 3 has real local web evidence at 390 × 844 and 1280 × 720: today anchor, exact prepend compensation, empty-week progress, date jump, global search, shared multiday count, hidden selections in full summary, summary/back restoration, cancellation restoring the original calendar/search/scroll state, CH/COO creation and Crew exclusion. Desktop names remain noninteractive; mobile retains its original compact card presentation. Two local saves and the unchanged detail picker were verified without Staff mutations. Whole code range spec and quality reviews are approved; documentation review, native keyboard verification, integration, merged checks, synchronization, preserved-user-file hashes and both development-installation results remain unchecked.
 
 ## Review and completion gates
 

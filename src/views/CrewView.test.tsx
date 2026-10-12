@@ -14,8 +14,8 @@ const contractor = {
   tags: [],
   events: 3,
   rate: 250,
-  phone: '',
-  email: '',
+  phone: '+420 777 123 456',
+  email: 'petr@example.cz',
   ico: '',
   dic: '',
   bank: '',
@@ -47,6 +47,8 @@ vi.mock('../features/crew/services/crew.service', () => ({
   getCrew: mocks.getCrew,
   subscribeToCrewChanges: mocks.subscribeToCrewChanges,
 }));
+
+vi.mock('../features/crew/useCrewActivity', () => ({ useCrewActivity: () => ({ data: {}, status: 'ready' }) }));
 
 vi.mock('./CrewShiftCalendarView', () => ({
   default: ({ onBack }: { onBack: () => void }) => (
@@ -96,7 +98,7 @@ describe('CrewView', () => {
   it('shows rating badges to managers', () => {
     render(<CrewView />);
 
-    expect(screen.getByText('Hodnoceni: 8.5 / 10')).toBeInTheDocument();
+    expect(screen.getByText('8,5 / 10')).toBeInTheDocument();
   });
 
   it('hides rating badges from crew users', () => {
@@ -104,6 +106,26 @@ describe('CrewView', () => {
 
     render(<CrewView />);
 
-    expect(screen.queryByText('Hodnoceni: 8.5 / 10')).not.toBeInTheDocument();
+    expect(screen.queryByText('8,5 / 10')).not.toBeInTheDocument();
+  });
+
+  it('keeps the list simple and exposes real contact links and a keyboard-accessible profile', () => {
+    render(<CrewView />);
+    expect(screen.queryByText(/250.*Kč\/h/)).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /777 123 456/ })).toHaveAttribute('href', 'tel:+420777123456');
+    expect(screen.getByRole('link', { name: 'petr@example.cz' })).toHaveAttribute('href', 'mailto:petr@example.cz');
+    fireEvent.click(screen.getByRole('button', { name: 'Otevřít profil Petr Heitzer' }));
+    expect(mocks.setSelectedContractorProfileId).toHaveBeenCalledWith('profile-uuid-1');
+  });
+
+  it('searches on the page and shows a resettable no-results state', () => {
+    render(<CrewView />);
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Hledat v crew' }), { target: { value: '777123' } });
+    expect(screen.getByText('Petr Heitzer')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Hledat v crew' }), { target: { value: 'Brno' } });
+    expect(screen.queryByText('Petr Heitzer')).not.toBeInTheDocument();
+    expect(screen.getByText('Nikdo neodpovídá hledání')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Vymazat hledání' }));
+    expect(screen.getByText('Petr Heitzer')).toBeInTheDocument();
   });
 });

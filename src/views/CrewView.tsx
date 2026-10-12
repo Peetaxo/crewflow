@@ -1,14 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarDays, Trash2 } from 'lucide-react';
+import { CalendarDays, ChevronRight, Mail, MapPin, MoreHorizontal, Pencil, Phone, Plus, Search, Star, Trash2, Users, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAppContext } from '../context/useAppContext';
-import StatusBadge from '../components/shared/StatusBadge';
 import CrewDetailView from './CrewDetailView';
 import CrewShiftCalendarView from './CrewShiftCalendarView';
 import ContractorEditModal from '../components/modals/ContractorEditModal';
 import { Button } from '../components/ui/button';
-import { Contractor } from '../types';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
+import type { Contractor } from '../types';
 import { getCrew, subscribeToCrewChanges } from '../features/crew/services/crew.service';
+import { filterCrewMembers, formatCrewActivity } from '../features/crew/services/crew-presentation';
+import { useCrewActivity } from '../features/crew/useCrewActivity';
 
 const AVATAR_PALETTE = [
   { bg: '#E1F5EE', fg: '#0F6E56' },
@@ -53,155 +55,92 @@ const getContractorDetailKey = (contractor: Contractor) => (
 );
 
 const CrewView = () => {
-  const {
-    role,
-    selectedContractorProfileId,
-    setSelectedContractorProfileId,
-    searchQuery,
-    setDeleteConfirm,
-  } = useAppContext();
+  const { role, selectedContractorProfileId, setSelectedContractorProfileId, searchQuery, setSearchQuery, setDeleteConfirm } = useAppContext();
   const [editingContractor, setEditingContractor] = useState<Contractor | null>(null);
   const [crew, setCrew] = useState<Contractor[]>([]);
+  const [query, setQuery] = useState('');
   const [crewViewMode, setCrewViewMode] = useState<'list' | 'calendar'>('list');
-
-  const loadCrew = useCallback(() => {
-    setCrew(getCrew({ search: searchQuery }));
-  }, [searchQuery]);
-
-  useEffect(() => {
-    loadCrew();
-  }, [loadCrew]);
-
+  const loadCrew = useCallback(() => { setCrew(getCrew()); }, []);
+  useEffect(() => { loadCrew(); }, [loadCrew]);
   useEffect(() => subscribeToCrewChanges(loadCrew), [loadCrew]);
+  const nextContractorId = useMemo(() => Math.max(0, ...crew.map((person) => person.id)) + 1, [crew]);
+  const filteredCrew = useMemo(() => filterCrewMembers(crew, query, searchQuery), [crew, query, searchQuery]);
+  const canViewRatings = role !== 'crew';
+  const activity = useCrewActivity(canViewRatings && !selectedContractorProfileId && crewViewMode === 'list');
+  const clearSearch = () => { setQuery(''); setSearchQuery?.(''); };
 
-  const nextContractorId = useMemo(
-    () => Math.max(0, ...crew.map((contractor) => contractor.id)) + 1,
-    [crew],
-  );
-
-  if (selectedContractorProfileId) {
-    return <CrewDetailView />;
-  }
-
-  if (crewViewMode === 'calendar') {
-    return <CrewShiftCalendarView onBack={() => setCrewViewMode('list')} />;
-  }
-
-  const formatRating = (rating?: number | null) => (
-    typeof rating === 'number' ? rating.toFixed(1).replace('.0', '') : 'Bez hodnoceni'
-  );
-  const canViewCrewRatings = role !== 'crew';
+  if (selectedContractorProfileId) return <CrewDetailView key={selectedContractorProfileId} />;
+  if (crewViewMode === 'calendar') return <CrewShiftCalendarView onBack={() => setCrewViewMode('list')} />;
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="min-w-0">
+      <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-[var(--nodu-text)]">Crew</h1>
-          <p className="mt-1 text-xs text-[var(--nodu-text-soft)]">Lide, sazby a kontakty pro obsazovani akci.</p>
+          <h1 className="text-xl font-semibold text-[var(--nodu-text)]">Crew</h1>
+          <p className="mt-1 text-sm text-[var(--nodu-text-soft)]">Lidé a kontakty na jednom místě.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            onClick={() => setCrewViewMode('calendar')}
-            variant="outline"
-            size="sm"
-          >
-            <CalendarDays size={14} />
-            Kalendář směn
-          </Button>
-          <Button
-            type="button"
-            onClick={() => setEditingContractor(createEmptyContractor(nextContractorId))}
-            size="sm"
-          >
-            + Novy clen
-          </Button>
+        <div className="grid grid-cols-2 gap-2 sm:flex">
+          <Button type="button" variant="outline" className="min-h-11" onClick={() => setCrewViewMode('calendar')}><CalendarDays size={16} />Kalendář směn</Button>
+          <Button type="button" className="min-h-11" onClick={() => setEditingContractor(createEmptyContractor(nextContractorId))}><Plus size={16} />Nový člen</Button>
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-[24px] border border-[var(--nodu-border)] bg-white shadow-[0_18px_40px_rgba(var(--nodu-text-rgb),0.06)]">
-        <table className="w-full border-collapse text-left">
-          <thead>
-            <tr className="border-b border-[var(--nodu-border)] text-[10px] uppercase tracking-[0.16em] text-[var(--nodu-text-soft)]">
-              <th className="px-4 py-3 font-medium">Jmeno</th>
-              <th className="px-4 py-3 font-medium">Tagy</th>
-              <th className="px-4 py-3 font-medium">Akci</th>
-              <th className="px-4 py-3 font-medium">Sazba</th>
-              <th className="px-4 py-3 font-medium">ICO / DIC</th>
-              <th className="px-4 py-3 font-medium">Kontakt</th>
-              <th className="px-4 py-3 text-right font-medium">Akce</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[rgba(var(--nodu-text-rgb),0.06)]">
-            {crew.map((contractor) => (
-              <tr
-                key={contractor.id}
-                className="group cursor-pointer transition-colors"
-                onClick={() => setSelectedContractorProfileId(getContractorDetailKey(contractor))}
-              >
-                <td className="px-4 py-3 transition-colors group-hover:!bg-[var(--nodu-accent-soft)]">
-                  <div className="flex items-center gap-2">
-                    <div className="av w-7 h-7 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>
-                      {contractor.ii}
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold text-[var(--nodu-text)]">{contractor.name}</div>
-                      <div className="text-[10px] text-[var(--nodu-text-soft)]">{contractor.city}</div>
-                    </div>
-                  </div>
-                  {canViewCrewRatings && (
-                    <div className="mt-1 text-[10px] text-[var(--nodu-text-soft)]">
-                      Hodnoceni: {formatRating(contractor.rating)} / 10
-                    </div>
-                  )}
-                </td>
-                <td className="px-4 py-3 transition-colors group-hover:!bg-[var(--nodu-accent-soft)]">
-                  <div className="flex flex-wrap gap-1">
-                    {contractor.tags.includes('Ridic') && <StatusBadge status="bg" label="Ridic" />}
-                    {contractor.reliable ? <StatusBadge status="full" label="Spolehlivy" /> : <StatusBadge status="pending_ch" label="Overit" />}
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-xs font-semibold text-[var(--nodu-text)] transition-colors group-hover:!bg-[var(--nodu-accent-soft)]">{contractor.events}</td>
-                <td className="px-4 py-3 text-xs font-semibold text-[var(--nodu-text)] transition-colors group-hover:!bg-[var(--nodu-accent-soft)]">{contractor.rate} Kc/h</td>
-                <td className="px-4 py-3 transition-colors group-hover:!bg-[var(--nodu-accent-soft)]">
-                  <div className="text-xs text-[var(--nodu-text)]">{contractor.ico || '-'}</div>
-                  <div className="text-[10px] text-[var(--nodu-text-soft)]">{contractor.dic || '-'}</div>
-                </td>
-                <td className="px-4 py-3 transition-colors group-hover:!bg-[var(--nodu-accent-soft)]">
-                  <div className="text-xs text-[var(--nodu-text)]">{contractor.phone}</div>
-                  <div className="text-[10px] text-[var(--nodu-text-soft)]">{contractor.email}</div>
-                </td>
-                <td className="px-4 py-3 text-right transition-colors group-hover:!bg-[var(--nodu-accent-soft)]">
-                  <div className="flex items-center justify-end gap-1">
-                    <button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setDeleteConfirm({ type: 'crew', id: contractor.id, name: contractor.name });
-                      }}
-                      className="rounded-lg p-1.5 text-[var(--nodu-text-soft)] transition-all hover:bg-[var(--nodu-error-bg)] hover:text-[var(--nodu-error-text)]"
-                      title="Smazat"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        {crew.length === 0 && (
-          <div className="py-12 text-center text-sm text-[var(--nodu-text-soft)]">Zadni clenove crew</div>
-        )}
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full sm:max-w-md">
+          <Search size={17} className="pointer-events-none absolute left-3.5 top-3.5 text-[var(--nodu-text-soft)]" />
+          <input type="search" aria-label="Hledat v crew" placeholder="Jméno, město, telefon nebo e-mail" value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            className="h-11 w-full rounded-xl border border-[var(--nodu-border)] bg-white pl-10 pr-10 text-sm text-[var(--nodu-text)] outline-none focus:border-[var(--nodu-accent)] focus:ring-2 focus:ring-[var(--nodu-accent-soft)]" />
+          {query && <button type="button" onClick={() => setQuery('')} aria-label="Vymazat text hledání" className="absolute right-0 top-0 flex h-11 w-10 items-center justify-center text-[var(--nodu-text-soft)]"><X size={16} /></button>}
+        </div>
+        <p role="status" className="text-xs text-[var(--nodu-text-soft)]">{query || searchQuery ? `${filteredCrew.length} z ${crew.length} lidí` : `${crew.length} ${crew.length === 1 ? 'člověk' : crew.length < 5 && crew.length > 1 ? 'lidé' : 'lidí'} v crew`}</p>
       </div>
 
-      <ContractorEditModal
-        editingContractor={editingContractor}
-        onClose={() => setEditingContractor(null)}
-        onChange={setEditingContractor}
-      />
+      <div className="hidden grid-cols-[minmax(0,1.3fr)_6rem_minmax(0,1.3fr)_9rem_2.75rem] gap-4 px-5 pb-2 text-[11px] font-medium text-[var(--nodu-text-soft)] lg:grid">
+        <span>Jméno a město</span><span>Hodnocení</span><span>Kontakt</span><span>Poslední aktivita</span><span />
+      </div>
+      <ul aria-label="Členové crew" className="space-y-3 lg:space-y-0 lg:overflow-hidden lg:rounded-[24px] lg:border lg:border-[var(--nodu-border)] lg:bg-white lg:[&>li+li]:border-t">
+        {filteredCrew.map((person) => {
+          const timestamp = person.profileId ? activity.data[person.profileId] : undefined;
+          const activityLabel = activity.status === 'loading' ? 'Načítám aktivitu…' : activity.status === 'error' ? 'Aktivita nedostupná' : formatCrewActivity(timestamp);
+          return <li key={getContractorDetailKey(person)} className="relative grid min-w-0 grid-cols-[minmax(0,1fr)_2.75rem] gap-x-3 gap-y-3 rounded-[22px] border border-[var(--nodu-border)] bg-white p-4 lg:grid-cols-[minmax(0,1.3fr)_6rem_minmax(0,1.3fr)_9rem_2.75rem] lg:items-center lg:gap-4 lg:rounded-none lg:border-0 lg:px-5 lg:py-4">
+            <button type="button" aria-label={`Otevřít profil ${person.name}`} onClick={() => setSelectedContractorProfileId(getContractorDetailKey(person))}
+              className="group flex min-w-0 items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--nodu-accent)]">
+              <span className="av h-11 w-11 shrink-0 text-sm" style={{ backgroundColor: person.bg, color: person.fg }}>{person.ii}</span>
+              <span className="min-w-0 flex-1"><span className="block break-words text-sm font-semibold text-[var(--nodu-text)] group-hover:text-[var(--nodu-accent)]">{person.name}</span>
+                <span className="mt-1 flex items-center gap-1 text-xs text-[var(--nodu-text-soft)]"><MapPin size={12} className="shrink-0" />{person.city || 'Město neuvedeno'}</span></span>
+              <ChevronRight size={16} className="shrink-0 text-[var(--nodu-text-soft)] lg:hidden" />
+            </button>
+            <div className="col-start-1 row-start-2 flex items-center gap-1.5 text-xs lg:col-start-2 lg:row-start-1">
+              {canViewRatings && <><Star size={14} className="text-[var(--nodu-accent)]" /><span className="font-medium text-[var(--nodu-text)]">{typeof person.rating === 'number' ? `${person.rating.toLocaleString('cs-CZ', { maximumFractionDigits: 1 })} / 10` : 'Bez hodnocení'}</span></>}
+            </div>
+            <div className="col-span-2 min-w-0 space-y-0.5 border-t border-[var(--nodu-border)] pt-2 lg:col-span-1 lg:col-start-3 lg:row-start-1 lg:border-0 lg:pt-0">
+              {person.phone && <a href={`tel:${person.phone.replace(/[^+\d]/g, '')}`} className="flex min-h-11 items-center gap-2 rounded-lg text-sm text-[var(--nodu-text)] hover:text-[var(--nodu-accent)] lg:min-h-8"><Phone size={14} className="shrink-0 text-[var(--nodu-text-soft)]" /><span className="break-words">{person.phone}</span></a>}
+              {person.email && <a href={`mailto:${person.email}`} className="flex min-h-11 min-w-0 items-center gap-2 rounded-lg text-xs text-[var(--nodu-text-soft)] hover:text-[var(--nodu-accent)] lg:min-h-8"><Mail size={14} className="shrink-0" /><span className="min-w-0 break-all">{person.email}</span></a>}
+              {!person.phone && !person.email && <p className="py-2 text-xs text-[var(--nodu-text-soft)]">Kontakt neuveden</p>}
+            </div>
+            <div className="col-span-2 text-xs text-[var(--nodu-text-soft)] lg:col-span-1 lg:col-start-4 lg:row-start-1" title="Poslední zaznamenané používání aplikace">
+              <span className="lg:hidden">Poslední aktivita: </span><span>{activityLabel}</span>
+            </div>
+            <div className="col-start-2 row-start-1 lg:col-start-5">
+              <DropdownMenu><DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="icon" className="h-11 w-11" aria-label={`Možnosti pro ${person.name}`}><MoreHorizontal size={18} /></Button></DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem className="min-h-11" onSelect={() => setEditingContractor(person)}><Pencil size={14} className="mr-2" />Upravit profil</DropdownMenuItem>
+                  <DropdownMenuItem className="min-h-11 text-[var(--nodu-error-text)]" onSelect={() => setDeleteConfirm({ type: 'crew', id: person.id, name: person.name })}><Trash2 size={14} className="mr-2" />Smazat člena</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </li>;
+        })}
+      </ul>
+      {filteredCrew.length === 0 && <div className="rounded-[24px] border border-dashed border-[var(--nodu-border)] bg-white px-5 py-12 text-center">
+        <Users size={28} className="mx-auto mb-3 text-[var(--nodu-text-soft)]" />
+        <h2 className="text-sm font-semibold text-[var(--nodu-text)]">{crew.length ? 'Nikdo neodpovídá hledání' : 'Zatím žádní členové crew'}</h2>
+        <p className="mt-2 text-xs text-[var(--nodu-text-soft)]">{crew.length ? 'Zkus jiné jméno, město nebo kontakt.' : 'Přidej prvního člověka do svého týmu.'}</p>
+        {crew.length > 0 && <Button type="button" variant="outline" className="mt-4" onClick={clearSearch}>Vymazat hledání</Button>}
+      </div>}
+      <ContractorEditModal editingContractor={editingContractor} onClose={() => setEditingContractor(null)} onChange={setEditingContractor} />
     </motion.div>
   );
 };
-
 export default CrewView;

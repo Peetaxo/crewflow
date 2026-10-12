@@ -18,6 +18,9 @@ WebKit při zobrazení zaměřeného prvku používá jeho font a povolené mě�
 - Související Vitest kontroly CSS, Crew hledání, formuláře akce a mobilního výkazu: **4 soubory / 77 testů**, exit 0. Log `/private/tmp/mobile-form-zoom-tests.log`.
 - Webový build: exit 0. Log `/private/tmp/mobile-form-zoom-build.log`. Stávající upozornění na velké chunky, stáří Browserslist a neúčinné dynamické importy zůstávají.
 - `git diff --check`: exit 0.
+- Po spojení s aktuálním origin/main `a2b1a77` (výběr propojených směn na kartách akcí) prošla celá sada: **157 souborů / 1 877 testů**, exit 0. Log `/private/tmp/mobile-form-zoom-merged-tests.log`.
+- Společná verze prošla i webovým buildem a opakovanou kontrolou CSS (**573 kontrol / 0 chyb**). Logy `/private/tmp/mobile-form-zoom-merged-build.log` a `/private/tmp/mobile-form-controls-merged.log`.
+- Nezávislá kontrola diffu vůči aktuálnímu main nenašla zásadní problém v rozsahu, cascade nebo zachování desktopu a ručního zoomu.
 
 Chromium kontroluje skutečně vypočtené styly a jejich cascade; iOS automatické přiblížení vyžaduje samostatnou kontrolu v nativní aplikaci s klávesnicí.
 

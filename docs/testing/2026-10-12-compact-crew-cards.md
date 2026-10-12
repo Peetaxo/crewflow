@@ -31,4 +31,10 @@ Used local synthetic fixtures only; no people were saved, contacts called, email
 
 ## Main integration and installations
 
-Pending final main integration, synchronized push, simulator/phone refresh and native input-focus inspection. These are required before completion.
+- Fast-forwarded clean `main` to `85121d2` and pushed it. HEAD equaled `origin/main`; the 22 focused tests passed again on merged main.
+- Required `npm run ios:refresh:devices` completed successfully with its original preflight checks, existing `.env.local` and a separate DerivedData cache. The process-only Vite runner preload avoided the known config-bundling stall; no repository build or refresh settings were changed.
+- Simulator — iPhone 17 Pro, iOS 26.5: built, installed and launched successfully.
+- Physical iPhone — iPhone 13 mini: signed, built, installed and launched successfully.
+- Running simulator: Crew displayed 41 members using the compact layout. Focusing search and entering `petr` opened the keyboard and returned three matching people without increasing the page scale or breaking the layout. Dismissing the keyboard left all three compact cards visible. This preserves the earlier global input-focus fix.
+- Updated the existing localhost:8094 preview to the same application source and preserved the original checkout's three unrelated local edits unchanged.
+- The final follow-up commit changes verification documentation only; the installed application source is unchanged.

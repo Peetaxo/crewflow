@@ -108,6 +108,7 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
 
       return (
         invoice.id.toLowerCase().includes(query)
+        || invoice.invoiceNumber?.toLowerCase().includes(query)
         || invoice.job.toLowerCase().includes(query)
         || contractor?.name.toLowerCase().includes(query)
         || event?.name.toLowerCase().includes(query)
@@ -359,7 +360,7 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-xs font-semibold text-[color:var(--nodu-text)]">{invoice.id}</span>
+                    <span className="font-mono text-xs font-semibold text-[color:var(--nodu-text)]">{invoice.invoiceNumber || invoice.id}</span>
                     <span className="jn nodu-job-badge">{invoice.job}</span>
                     <StatusBadge status={invoice.status} />
                     <StatusBadge status={approvalIndicator.status} label={approvalIndicator.label} />

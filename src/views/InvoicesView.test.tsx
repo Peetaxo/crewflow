@@ -8,6 +8,7 @@ const setNavigationGuardMessage = vi.fn();
 const refetchInvoices = vi.fn();
 let mockInvoices: Invoice[] = [];
 let mockInvoiceApprovals: InvoiceApprovalDocument[] = [];
+let mockSearchQuery = '';
 const { approveInvoiceMock, deleteInvoiceMock, toastErrorMock } = vi.hoisted(() => ({
   approveInvoiceMock: vi.fn(),
   deleteInvoiceMock: vi.fn(),
@@ -69,7 +70,7 @@ vi.mock('../app/providers/useAuth', () => ({
 vi.mock('../context/useAppContext', () => ({
   useAppContext: () => ({
     role: 'coo',
-    searchQuery: '',
+    searchQuery: mockSearchQuery,
     setNavigationGuardMessage,
   }),
 }));
@@ -137,6 +138,7 @@ describe('InvoicesView', () => {
   beforeEach(() => {
     mockInvoices = [];
     mockInvoiceApprovals = [];
+    mockSearchQuery = '';
     refetchInvoices.mockReset();
     approveInvoiceMock.mockReset();
     deleteInvoiceMock.mockReset();
@@ -163,6 +165,30 @@ describe('InvoicesView', () => {
 
     expect(screen.getByRole('button', { name: /Vygenerovat PDF/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Stahnout PDF/i })).not.toBeInTheDocument();
+  });
+
+  it('shows the stored invoice number instead of the internal invoice ID', () => {
+    mockInvoices = [createInvoiceForPdfTest(null)];
+    render(<InvoicesView />);
+
+    expect(screen.getByText('SF-2026-NOVAK-T-0001')).toBeInTheDocument();
+    expect(screen.queryByText('invoice-uuid-1')).not.toBeInTheDocument();
+  });
+
+  it('finds an invoice by its displayed number without requiring its internal ID', () => {
+    mockInvoices = [createInvoiceForPdfTest(null)];
+    mockSearchQuery = 'sf-2026-novak-t-0001';
+    render(<InvoicesView />);
+
+    expect(screen.getByRole('button', { name: /Vygenerovat PDF/i })).toBeInTheDocument();
+    expect(screen.getByText('SF-2026-NOVAK-T-0001')).toBeInTheDocument();
+  });
+
+  it('retains the legacy identifier for invoices without a stored number', () => {
+    mockInvoices = [{ ...createInvoiceForPdfTest(null), id: 'FA-LEGACY-001', invoiceNumber: undefined }];
+    render(<InvoicesView />);
+
+    expect(screen.getByText('FA-LEGACY-001')).toBeInTheDocument();
   });
 
   it('shows download PDF button when invoice has pdfPath', () => {

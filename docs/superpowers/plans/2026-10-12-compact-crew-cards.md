@@ -46,8 +46,8 @@ expect(screen.getByRole('link', { name: 'Napsat e-mail: Petr Heitzer, petr@examp
 **Files:** Create `docs/testing/2026-10-12-compact-crew-cards.md`; update this plan.
 
 - [x] Run synthetic preview with long names, contacts and populated/unknown metadata at 375, 390, 412, 768 and 1280 px; inspect light/dark, missing contacts and larger font. Measure old/new card height. Check mobile action sizes, desktop contact text and no overflow. Do not dial, send email or save test people.
-- [ ] Verify focused tests and web build, inspect final diff. Preserve unrelated local work and ignored `.env.local`; integrate into clean current main and verify synchronized origin/main.
-- [ ] Push, then run `IOS_REFRESH_DERIVED_DATA_ROOT=/private/tmp/crewflow-compact-cards-device-refresh-20261012 NODE_OPTIONS='--import=/private/tmp/crewflow-card-selection-vite-runner-preload-20261012.mjs' npm run ios:refresh:devices` with intact preflight. Record simulator and physical phone results separately; inspect compact cards in running simulator and preserve input-focus fix.
-- [ ] Commit/push only the final verification documentation and retain the user-facing preview and screenshot.
+- [x] Verify focused tests and web build, inspect final diff. Preserve unrelated local work and ignored `.env.local`; integrate into clean current main and verify synchronized origin/main.
+- [x] Push, then run `IOS_REFRESH_DERIVED_DATA_ROOT=/private/tmp/crewflow-compact-cards-device-refresh-20261012 NODE_OPTIONS='--import=/private/tmp/crewflow-card-selection-vite-runner-preload-20261012.mjs' npm run ios:refresh:devices` with intact preflight. Record simulator and physical phone results separately; inspect compact cards in running simulator and preserve input-focus fix.
+- [x] Commit/push only the final verification documentation and retain the user-facing preview and screenshot.
 
 Quality follow-up: include the actual contact value in each accessible name and use 14 px mobile action labels; verified in final source.

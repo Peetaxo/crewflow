@@ -67,7 +67,10 @@ function CardSelectionSession(props: ShiftWorkflowDraftInput) {
     data: draft.data, scope: props.scope, eventIds: draft.eventIds, locked: draft.locked, busy: draft.busy,
     blockedReason: (id) => getWorkflowSelectionImpact(draft.data, props.scope, null, nextSelection(id)).blockedReason,
     toggle: (id) => {
-      if (!draft.locked && !getWorkflowSelectionImpact(draft.data, props.scope, null, nextSelection(id)).blockedReason) draft.changeSelection(nextSelection(id));
+      if (draft.locked) return;
+      // Removing a creation draft choice does not mutate its stored source.
+      // Additions and final submission still validate the whole affected group.
+      if (draft.eventIds.includes(id) || !getWorkflowSelectionImpact(draft.data, props.scope, null, nextSelection(id)).blockedReason) draft.changeSelection(nextSelection(id));
     },
     continueToSummary: () => {
       if (draft.locked || draft.eventIds.length < 2 || draft.impact.blockedReason) return;
@@ -115,8 +118,9 @@ function CardSelectionSession(props: ShiftWorkflowDraftInput) {
           {grouped.get(date)!.map(({ id }) => {
             const occurrence = presentation.get(id)!.get(date)!;
             const reason = selection.blockedReason(id);
+            const checked = selection.eventIds.includes(id);
             return <EventListCard key={`${id}|${date}`} occurrenceKey={`${id}|${date}`} occurrence={occurrence}
-              canManageEvents role={props.scope.role} detail={cardDetails.get(id)} crewDisplay={draft.crewDisplay?.[id]} selection={{ checked: selection.eventIds.includes(id), disabled: selection.locked || Boolean(reason), reason, onToggle: () => selection.toggle(id) }} />;
+              canManageEvents role={props.scope.role} detail={cardDetails.get(id)} crewDisplay={draft.crewDisplay?.[id]} selection={{ checked, disabled: selection.locked || (!checked && Boolean(reason)), reason, onToggle: () => selection.toggle(id) }} />;
           })}
           {!grouped.get(date)!.length && !hasFollowingOccurrences && <p className="nodu-workflow-selection__empty text-sm text-[var(--nodu-text-soft)]">Od zvoleného data tu zatím nejsou žádné směny.</p>}
         </div>

@@ -31,6 +31,48 @@ const deferred = <T,>() => { let resolve!: (value: T) => void; const promise = n
 beforeEach(() => { liveDetail.timelogs = []; liveDetail.crewAssignments = []; vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-12T12:00:00')); });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 describe('card selection shared draft', () => {
+  it.each(['crewhead', 'coo'] as const)('lets %s recover from a locked source remnant by removing draft selections and reviewing an independent group', async (role) => {
+    const data = makeData(); data.events = data.events.map((event) => ({ ...event, rawJobNumber: 'JOB', startDate: '2026-10-12', endDate: '2026-10-12' }));
+    data.snapshot.workflows = [{ id: id(10), eventIds: [id(21), id(22), id(23)], updatedAt: time }];
+    const fresh = structuredClone(data); fresh.snapshot.revision = 8;
+    fresh.events = fresh.events.map((event) => ({ ...event, updatedAt: '2026-10-12T12:00:00Z' }));
+    fresh.timelogs = [report({ eid: 23, eventSupabaseId: id(23), status: 'pending_ch' })];
+    const untouchedSource = structuredClone(fresh.snapshot.workflows); const untouchedOpening = structuredClone(data);
+    const { props } = setup(data, role); props.onSave.mockRejectedValueOnce(new ShiftWorkflowError('conflict', 'Změna')); props.onReload.mockResolvedValue(fresh);
+    selectBoth(); continueToSummary(); fireEvent.click(screen.getByRole('checkbox', { name: 'Potvrzuji přesun z jiného propojení' })); save();
+    fireEvent.click(await screen.findByRole('button', { name: 'Obnovit data a ponechat výběr' }));
+    await screen.findByRole('checkbox', { name: 'Zkontroloval jsem výběr po obnovení dat' }); expect(screen.getByRole('button', { name: 'Propojit směny' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Zpět k výběru' }));
+    const first = screen.getByRole('checkbox', { name: /Přípravy/ }); const second = screen.getByRole('checkbox', { name: /Instalace/ });
+    expect(first).toBeChecked(); expect(second).toBeChecked(); fireEvent.click(first);
+    expect(screen.getByText('Vybráno: 1')).toBeInTheDocument(); expect(first).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Pokračovat' })).toBeDisabled();
+    const independent = screen.getByRole('checkbox', { name: /Starší · JOB/ }); expect(independent).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(independent); expect(screen.getByText('Vybráno: 1')).toBeInTheDocument();
+    fireEvent.keyDown(second, { key: ' ' }); expect(screen.getByText('Vybráno: 0')).toBeInTheDocument(); expect(second).not.toBeChecked();
+    expect(first).toHaveAttribute('aria-disabled', 'true'); fireEvent.click(first); expect(screen.getByText('Vybráno: 0')).toBeInTheDocument();
+    expect(props.onSave).toHaveBeenCalledOnce(); expect(fresh.snapshot.workflows).toEqual(untouchedSource); expect(data).toEqual(untouchedOpening);
+    fireEvent.click(independent); fireEvent.click(screen.getByRole('checkbox', { name: /Nejstarší · JOB/ })); continueToSummary();
+    expect(screen.queryByRole('checkbox', { name: 'Potvrzuji přesun z jiného propojení' })).not.toBeInTheDocument();
+    const review = screen.getByRole('checkbox', { name: 'Zkontroloval jsem výběr po obnovení dat' }); expect(review).not.toBeChecked();
+    save(); expect(await screen.findByRole('alert')).toHaveTextContent('Zkontrolujte výběr po obnovení dat'); expect(props.onSave).toHaveBeenCalledOnce();
+    fireEvent.click(review); save(); await waitFor(() => expect(props.onSave).toHaveBeenCalledTimes(2));
+    expect(props.onSave.mock.calls[1][0]).toMatchObject({ workflowId: null, eventIds: [id(24), id(25)], expectedRevision: 8,
+      eventVersions: { [id(24)]: '2026-10-12T12:00:00Z', [id(25)]: '2026-10-12T12:00:00Z' }, confirmMoves: false, confirmCrossProject: false, deleteWorkflow: false });
+    expect(Object.keys(props.onSave.mock.calls[1][0].eventVersions)).toEqual([id(24), id(25)]); expect(fresh.snapshot.workflows).toEqual(untouchedSource);
+  });
+  it.each(['busy', 'conflict', 'pending'] as const)('keeps selected-card removals locked while the draft is %s', async (state) => {
+    const { props } = setup(); const request = deferred<unknown>();
+    if (state === 'busy') props.onSave.mockReturnValue(request.promise);
+    else props.onSave.mockRejectedValue(new ShiftWorkflowError(state === 'pending' ? 'ambiguous' : 'conflict', 'Neověřeno'));
+    selectBoth(); const first = screen.getByRole('checkbox', { name: /Přípravy/ }); const second = screen.getByRole('checkbox', { name: /Instalace/ });
+    continueToSummary(); confirmCross(); save();
+    if (state !== 'busy') await screen.findByRole('button', { name: state === 'pending' ? 'Zopakovat stejný požadavek' : 'Obnovit data a ponechat výběr' });
+    expect(first).toHaveAttribute('aria-disabled', 'true'); expect(second).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(first); fireEvent.keyDown(second, { key: 'Enter' }); expect(first).toBeChecked(); expect(second).toBeChecked();
+    expect(screen.getByText('Vybráno směn: 2')).toBeInTheDocument(); expect(props.onSave).toHaveBeenCalledOnce();
+    if (state === 'busy') await act(async () => request.resolve(undefined));
+  });
   it('keeps empty captured card evidence when another person publishes a live submitted report', () => {
     setup(); const card = screen.getByRole('checkbox', { name: /Přípravy/ });
     expect(within(card).getByText('Casy nezadane')).toBeInTheDocument();

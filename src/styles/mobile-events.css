@@ -1336,6 +1336,7 @@ button.nodu-mobile-event-info-row:focus-visible {
 
 @media (max-width: 767px) {
   .nodu-workflow-selection__toolbar {
+    top: calc(env(safe-area-inset-top) + var(--nodu-workflow-viewport-top, 0px));
     grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr);
     gap: 0.5rem;
     padding-top: 3rem;

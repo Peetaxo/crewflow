@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useShiftWorkflowVisualViewport } from './useShiftWorkflowVisualViewport';
 
 const inset = '--nodu-workflow-viewport-inset';
+const viewportTop = '--nodu-workflow-viewport-top';
 function viewport(height = 532, offsetTop = 0) {
   return Object.assign(new EventTarget(), { height, offsetTop }) as unknown as VisualViewport;
 }
@@ -28,19 +29,22 @@ afterEach(() => { renders = 0; vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('useShiftWorkflowVisualViewport', () => {
   it.each([
-    [844, 844, 0, '0px'],
-    [844, 532, 0, '312px'],
-    [844, 532, 48, '264px'],
-    [844, 844, 48, '0px'],
-    [844, 900, 0, '0px'],
-    [844, Number.NaN, 0, '0px'],
-    [844, 532, Number.POSITIVE_INFINITY, '0px'],
-    [Number.NaN, 532, 0, '0px'],
-    [Number.MAX_VALUE, -Number.MAX_VALUE, 0, '0px'],
-  ])('measures a finite bottom inset for layout=%s visible=%s offset=%s', (layout, height, offset, expected) => {
+    [844, 844, 0, '0px', '0px'],
+    [844, 532, 0, '312px', '0px'],
+    [844, 532, 48, '264px', '48px'],
+    [844, 844, 48, '0px', '48px'],
+    [844, 900, 0, '0px', '0px'],
+    [844, Number.NaN, 48, '0px', '48px'],
+    [844, 532, Number.POSITIVE_INFINITY, '0px', '0px'],
+    [Number.NaN, 532, 0, '0px', '0px'],
+    [Number.MAX_VALUE, -Number.MAX_VALUE, 0, '0px', '0px'],
+    [844, 532, -16, '328px', '0px'],
+    [844, 532, Number.NaN, '0px', '0px'],
+  ])('measures finite bottom and top offsets for layout=%s visible=%s offset=%s', (layout, height, offset, expected, expectedTop) => {
     installViewport(viewport(height, offset), layout);
     render(<Fixture />);
     expect(screen.getByTestId('selection').style.getPropertyValue(inset)).toBe(expected);
+    expect(screen.getByTestId('selection').style.getPropertyValue(viewportTop)).toBe(expectedTop);
   });
 
   it('updates on viewport resize, viewport scroll and layout resize without rendering cards again', () => {
@@ -51,15 +55,19 @@ describe('useShiftWorkflowVisualViewport', () => {
     Object.assign(visible, { height: 500 });
     act(() => visible.dispatchEvent(new Event('resize')));
     expect(container.style.getPropertyValue(inset)).toBe('344px');
+    expect(container.style.getPropertyValue(viewportTop)).toBe('0px');
     Object.assign(visible, { offsetTop: 32 });
     act(() => visible.dispatchEvent(new Event('scroll')));
     expect(container.style.getPropertyValue(inset)).toBe('312px');
+    expect(container.style.getPropertyValue(viewportTop)).toBe('32px');
     vi.stubGlobal('innerHeight', 800);
     act(() => window.dispatchEvent(new Event('resize')));
     expect(container.style.getPropertyValue(inset)).toBe('268px');
+    expect(container.style.getPropertyValue(viewportTop)).toBe('32px');
     Object.assign(visible, { height: 800, offsetTop: 0 });
     act(() => visible.dispatchEvent(new Event('resize')));
     expect(container.style.getPropertyValue(inset)).toBe('0px');
+    expect(container.style.getPropertyValue(viewportTop)).toBe('0px');
     expect(renders).toBe(initialRenders);
   });
 
@@ -79,18 +87,21 @@ describe('useShiftWorkflowVisualViewport', () => {
     expect(windowAdded).toHaveBeenCalledWith('resize', resizeListener, { passive: true });
     rerender(<Fixture active={false} />);
     expect(container.style.getPropertyValue(inset)).toBe('');
+    expect(container.style.getPropertyValue(viewportTop)).toBe('');
     expect(removed).toHaveBeenCalledWith('resize', resizeListener);
     expect(removed).toHaveBeenCalledWith('scroll', scrollListener);
     expect(windowRemoved).toHaveBeenCalledWith('resize', resizeListener);
     Object.assign(visible, { height: 300 });
     act(() => visible.dispatchEvent(new Event('resize')));
     expect(container.style.getPropertyValue(inset)).toBe('');
+    expect(container.style.getPropertyValue(viewportTop)).toBe('');
     rerender(<Fixture />);
     expect(container.style.getPropertyValue(inset)).toBe('544px');
+    expect(container.style.getPropertyValue(viewportTop)).toBe('0px');
   });
 
   it('retires captured listeners and inline styles with an old selection owner', () => {
-    const visible = installViewport()!;
+    const visible = installViewport(viewport(532, 20))!;
     const added = vi.spyOn(visible, 'addEventListener');
     const { rerender, unmount } = render(<Fixture />);
     const oldContainer = screen.getByTestId('selection');
@@ -99,14 +110,19 @@ describe('useShiftWorkflowVisualViewport', () => {
     rerender(<Fixture owner="two" />);
     const newContainer = screen.getByTestId('selection');
     expect(oldContainer.style.getPropertyValue(inset)).toBe('');
-    Object.assign(visible, { height: 300 });
+    expect(oldContainer.style.getPropertyValue(viewportTop)).toBe('');
+    Object.assign(visible, { height: 300, offsetTop: 64 });
     act(() => oldListener(new Event('resize')));
     expect(oldContainer.style.getPropertyValue(inset)).toBe('');
-    expect(newContainer.style.getPropertyValue(inset)).toBe('312px');
+    expect(oldContainer.style.getPropertyValue(viewportTop)).toBe('');
+    expect(newContainer.style.getPropertyValue(inset)).toBe('292px');
+    expect(newContainer.style.getPropertyValue(viewportTop)).toBe('20px');
     act(() => visible.dispatchEvent(new Event('resize')));
-    expect(newContainer.style.getPropertyValue(inset)).toBe('544px');
+    expect(newContainer.style.getPropertyValue(inset)).toBe('480px');
+    expect(newContainer.style.getPropertyValue(viewportTop)).toBe('64px');
     unmount();
     expect(newContainer.style.getPropertyValue(inset)).toBe('');
+    expect(newContainer.style.getPropertyValue(viewportTop)).toBe('');
   });
 
   it('falls back to the existing CSS position when VisualViewport is unavailable', () => {
@@ -115,19 +131,29 @@ describe('useShiftWorkflowVisualViewport', () => {
     const { unmount } = render(<Fixture />);
     const container = screen.getByTestId('selection');
     expect(container.style.getPropertyValue(inset)).toBe('0px');
+    expect(container.style.getPropertyValue(viewportTop)).toBe('0px');
     unmount();
     expect(container.style.getPropertyValue(inset)).toBe('');
+    expect(container.style.getPropertyValue(viewportTop)).toBe('');
   });
 
   it('does not measure an inactive card stage', () => {
     installViewport();
     render(<Fixture active={false} />);
     expect(screen.getByTestId('selection').style.getPropertyValue(inset)).toBe('');
+    expect(screen.getByTestId('selection').style.getPropertyValue(viewportTop)).toBe('');
   });
 });
 
 describe('scoped selection native layout', () => {
   const css = readFileSync(resolve('src/styles/mobile-events.css'), 'utf8');
+  it('keeps the mobile sticky toolbar below the native safe area and panned visual viewport', () => {
+    const mobileRule = css.match(/@media \(max-width: 767px\)[\s\S]*?\.nodu-workflow-selection__toolbar\s*\{[^}]*\}/)?.[0];
+    expect(mobileRule).toContain('top: calc(env(safe-area-inset-top) + var(--nodu-workflow-viewport-top, 0px));');
+    expect(mobileRule).toContain('padding-top: 3rem;');
+    const desktopRule = css.match(/\.nodu-workflow-selection__toolbar\s*\{[^}]*\}/)?.[0];
+    expect(desktopRule).toContain('top: 0;');
+  });
   it('keeps the native date control inside its grid cell without changing its input type', () => {
     const rule = css.match(/\.nodu-workflow-selection__toolbar input\[type="date"\]\s*\{[^}]*\}/)?.[0] ?? '';
     for (const declaration of ['display: block;', 'width: 100%;', 'max-width: 100%;', 'min-width: 0;', 'box-sizing: border-box;', '-webkit-appearance: none;', 'appearance: none;']) {

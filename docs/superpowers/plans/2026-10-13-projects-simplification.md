@@ -41,12 +41,15 @@ Files: `src/views/ProjectsView.tsx`, `ProjectsView.test.tsx`, `ProjectStatsView.
 - [x] Run full `npm test`, `npx tsc --noEmit -p tsconfig.app.json`, `npm run build`, and ESLint on changed TypeScript files. Fix regressions and rerun affected checks.
 - [x] Run isolated local preview with fabricated projects/events/expenses. Inspect desktop and mobile through cua_repl; verify date/client filter/reset, chronological event links, prefilled form, edit, shared allocation and document actions. Save a final screenshot for the user.
 - [x] Request final independent code review across the complete change.
-- [ ] Commit verification notes, fetch remote and integrate the reviewed change into origin/main from the clean checkout. Preserve the unrelated main working changes.
-- [ ] Verify synchronized main, run `npm run ios:refresh:devices`, inspect the simulator result and record simulator/iPhone outcomes separately. Deliver the screenshot and concise change report.
+- [x] Commit verification notes, fetch remote and integrate the reviewed change into origin/main from the clean checkout. Preserve the unrelated main working changes.
+- [x] Verify synchronized main, run `npm run ios:refresh:devices`, inspect the simulator result and record simulator/iPhone outcomes separately. Deliver the screenshot and concise change report.
 
 ## Verification record
 
 - 2026-10-13, implementation `4449fce`: full Vitest suite passed, 161 files / 1,993 tests. Production build, ESLint on every changed TypeScript file, and diff checks passed.
 - TypeScript still reports the existing baseline errors: 117 diagnostics at `4eff3dd`, 111 after this change, with zero new diagnostics after normalizing paths and line numbers.
 - Desktop and 390px browser review used fictional data. Verified three period cases, client/date filters and reset, table scrolling without page overflow, creation/edit controls, prefilled event form, nested event navigation/back, receipt record dialog, shared invoice project share, and empty project states. Screenshots saved outside the repository.
-- Data and UI spec/quality reviews passed. Final review of `4eff3dd..4449fce` found no Critical/Important issues. Integration with newer `origin/main` and iOS development refresh remain pending.
+- Data and UI spec/quality reviews passed. Final review of `4eff3dd..4449fce` and the bounded integration review of merged `e7b2c61` found no Critical/Important issues.
+- Merged `ef21148` from the newer main without conflicts. At `e7b2c61`, full verification passed again: 163 files / 2,070 tests and production build; TypeScript remained at 111 pre-existing diagnostics with no new diagnostics. Mobile project-origin event open/back was checked again in the browser.
+- Integrated `e7b2c61` into `origin/main`; clean main checkout matched the verified commit exactly before refresh. `npm run ios:refresh:devices` succeeded: simulator updated and launched, physical iPhone updated and launched. Simulator screenshot confirmed the running app. Projects interactions were verified in the desktop and 390px browser preview; the simulator WebView runtime snapshot did not expose tappable targets.
+- Original unrelated Info.plist and TimelogsView changes remained byte-for-byte unchanged. The final follow-up commit updates this verification record only.

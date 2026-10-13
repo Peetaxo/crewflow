@@ -6,7 +6,6 @@ import { useAppContext } from '../../context/useAppContext';
 import { getProjectDependencies, saveProject } from '../../features/projects/services/projects.service';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
-import { Textarea } from '../ui/textarea';
 
 const ProjectEditModal = () => {
   const { editingProject, setEditingProject } = useAppContext();
@@ -81,14 +80,6 @@ const ProjectEditModal = () => {
                     <option key={client.id} value={client.name}>{client.name}</option>
                   ))}
                 </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-[0.22em] text-[color:var(--nodu-text-soft)]">Poznamka</label>
-                <Textarea
-                  value={editingProject.note || ''}
-                  onChange={(e) => setEditingProject({ ...editingProject, note: e.target.value })}
-                  className="h-20 resize-none"
-                />
               </div>
             </div>
 

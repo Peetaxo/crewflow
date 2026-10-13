@@ -1,158 +1,107 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Filter, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
 import { useAppContext } from '../context/useAppContext';
-import { ProjectFilter, createEmptyProject, getProjectById, getProjectRows, subscribeToProjectChanges } from '../features/projects/services/projects.service';
+import { useAuth } from '../app/providers/useAuth';
+import { createEmptyProject, formatProjectPeriod, getProjectById, getProjectRows, type ProjectListFilters } from '../features/projects/services/projects.service';
+import { useProjectDependencies } from '../features/projects/hooks/useProjectDependencies';
+import { useEventsQuery } from '../features/events/queries/useEventsQuery';
+import { useTimelogsQuery } from '../features/timelogs/queries/useTimelogsQuery';
 import { formatCurrency } from '../utils';
 import ProjectStatsView from './ProjectStatsView';
 
-const ProjectsView = () => {
-  const {
-    selectedProjectIdForStats,
-    setSelectedProjectIdForStats,
-    setEditingProject,
-    setDeleteConfirm,
-    projectFilter,
-    setProjectFilter,
-    searchQuery,
-  } = useAppContext();
-
-  const [projectRows, setProjectRows] = useState<ReturnType<typeof getProjectRows>>([]);
-
-  const loadProjects = useCallback(() => {
-    setProjectRows(getProjectRows(searchQuery, projectFilter as ProjectFilter));
-  }, [searchQuery, projectFilter]);
-
-  useEffect(() => {
-    loadProjects();
-  }, [loadProjects]);
-
-  useEffect(() => subscribeToProjectChanges(loadProjects), [loadProjects]);
-
-  if (selectedProjectIdForStats) {
-    return <ProjectStatsView />;
-  }
+const ProjectList = () => {
+  const { setSelectedProjectIdForStats, setEditingProject, setDeleteConfirm, searchQuery, role } = useAppContext();
+  const dependencies = useProjectDependencies();
+  const eventsQuery = useEventsQuery();
+  const timelogsQuery = useTimelogsQuery();
+  const [filters, setFilters] = useState<ProjectListFilters>({});
+  const canManage = role !== 'crew';
+  const projectRows = getProjectRows(searchQuery, filters);
+  const loading = eventsQuery.isPending || timelogsQuery.isPending;
+  const failedQuery = [eventsQuery, timelogsQuery].find((query) => query.isError);
+  const hasFilters = Boolean(filters.client || filters.startDate || filters.endDate);
+  const setFilter = (key: keyof ProjectListFilters, value: string) => setFilters((previous) => ({ ...previous, [key]: value || undefined }));
+  const createProject = () => setEditingProject(createEmptyProject());
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="min-w-0 max-w-full">
+      <div className="mb-5 flex items-start justify-between gap-3">
+        <div className="min-w-0">
           <div className="nodu-dashboard-kicker">Project Ledger</div>
           <h1 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--nodu-text)]">Projekty</h1>
-          <p className="mt-1 text-sm text-[color:var(--nodu-text-soft)]">Job Number muze mit vice akci a tady je uvidite pohromade.</p>
+          <p className="mt-1 text-sm text-[color:var(--nodu-text-soft)]">Akce a náklady pod jedním Job Number.</p>
         </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
-            {[
-              { id: 'all', label: 'Vse' },
-              { id: 'upcoming', label: 'Nadchazejici' },
-              { id: 'past', label: 'Uplynule' },
-            ].map((item) => (
-              <button
-                key={item.id}
-                onClick={() => setProjectFilter(item.id)}
-                className={`rounded-md px-3 py-1.5 text-[11px] font-medium transition-all ${
-                  projectFilter === item.id
-                    ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)] shadow-[inset_0_0_0_1px_rgba(255,128,13,0.16)]'
-                    : 'text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-
-          <Button
-            onClick={() => setEditingProject(createEmptyProject())}
-            size="sm"
-            className="text-xs"
-          >
-            + Novy projekt
-          </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="icon" aria-label="Filtrovat projekty" title="Filtrovat projekty" className={hasFilters ? 'text-[color:var(--nodu-accent)]' : ''}>
+                <Filter size={16} />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" aria-label="Filtry projektů" className="w-72 space-y-4">
+              <h2 className="text-sm font-semibold">Filtry projektů</h2>
+              <div>
+                <label htmlFor="project-filter-client" className="mb-1 block text-xs">Klient</label>
+                <select id="project-filter-client" value={filters.client ?? ''} onChange={(event) => setFilter('client', event.target.value)} className="w-full rounded-xl border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] px-3 py-2 text-sm">
+                  <option value="">Všichni klienti</option>
+                  {Array.from(new Set([...dependencies.clients.map((client) => client.name), ...dependencies.projects.map((project) => project.client)].filter(Boolean))).sort((a, b) => a.localeCompare(b)).map((client) => <option key={client} value={client}>{client}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><label htmlFor="project-filter-start" className="mb-1 block text-xs">Od</label><Input id="project-filter-start" type="date" value={filters.startDate ?? ''} onChange={(event) => setFilter('startDate', event.target.value)} /></div>
+                <div><label htmlFor="project-filter-end" className="mb-1 block text-xs">Do</label><Input id="project-filter-end" type="date" value={filters.endDate ?? ''} onChange={(event) => setFilter('endDate', event.target.value)} /></div>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setFilters({})}>Resetovat filtry</Button>
+            </PopoverContent>
+          </Popover>
+          {canManage && <Button onClick={createProject} aria-label="Nový projekt" title="Nový projekt" size="icon" className="hidden h-10 w-10 text-2xl font-semibold md:inline-flex">+</Button>}
         </div>
       </div>
+      {canManage && <Button onClick={createProject} aria-label="Nový projekt" title="Nový projekt" size="icon" className="nodu-event-mobile-create-fab h-10 w-10 rounded-full text-2xl font-semibold shadow-[0_14px_32px_rgba(255,128,13,0.24)] md:hidden">+</Button>}
 
-      <div className="overflow-hidden rounded-[28px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] shadow-[0_18px_42px_rgba(47,38,31,0.08)]">
-        <table className="w-full border-collapse text-left">
-          <thead>
-            <tr className="border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] text-[10px] uppercase tracking-wider text-[color:var(--nodu-text-soft)]">
-              <th className="px-4 py-3 font-medium">Job Number</th>
-              <th className="px-4 py-3 font-medium">Nazev</th>
-              <th className="px-4 py-3 font-medium">Klient</th>
-              <th className="px-4 py-3 font-medium">Pocet akci</th>
-              <th className="px-4 py-3 font-medium">Naklady Crew</th>
-              <th className="px-4 py-3 font-medium text-right">Akce</th>
-            </tr>
-          </thead>
-
-          <tbody className="divide-y divide-[color:rgb(var(--nodu-text-rgb)/0.06)]">
-            {projectRows.map((project) => (
-              <tr
-                key={project.id}
-                className="cursor-pointer transition-colors hover:bg-[color:rgb(var(--nodu-accent-rgb)/0.04)]"
-                onClick={() => setSelectedProjectIdForStats(project.id)}
-              >
-                <td className="px-4 py-3">
-                  <div className="text-xs font-semibold text-[color:var(--nodu-accent)]">{project.id}</div>
-                  <div className="text-[10px] text-[color:var(--nodu-text-soft)]">{project.createdAt}</div>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="text-xs font-semibold text-[color:var(--nodu-text)]">{project.name}</div>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="text-xs text-[color:var(--nodu-text)]">{project.client || '—'}</div>
-                </td>
-                <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text)]">{project.eventCount}</td>
-                <td className="px-4 py-3">
-                  <div className="text-xs font-semibold text-[color:var(--nodu-text)]">{formatCurrency(project.crewCost)}</div>
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <div className="flex items-center justify-end gap-1">
-                    <Button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        const fullProject = getProjectById(project.id);
-                        setEditingProject(fullProject ?? {
-                          id: project.id,
-                          name: project.name,
-                          client: project.client,
-                          note: '',
-                          createdAt: project.createdAt,
-                        });
-                      }}
-                      variant="outline"
-                      size="sm"
-                      className="text-[11px]"
-                    >
-                      Upravit
-                    </Button>
-                    <button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setDeleteConfirm({ type: 'project', id: project.id, name: project.name });
-                      }}
-                      className="rounded-lg p-1.5 text-[color:var(--nodu-text-soft)] transition-all hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39]"
-                      title="Smazat projekt"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        {projectRows.length === 0 && (
-          <div className="px-6 py-12 text-center text-sm text-[color:var(--nodu-text-soft)]">
-            Pro zvoleny filtr tu zatim nejsou zadne projekty.
-          </div>
-        )}
-      </div>
+      {failedQuery ? (
+        <div role="alert" className="rounded-2xl border border-[color:var(--nodu-border)] p-5 text-sm">
+          <p>{failedQuery.error instanceof Error ? failedQuery.error.message : 'Projekty se nepodařilo načíst.'}</p>
+          <Button variant="outline" size="sm" className="mt-3" onClick={() => { void eventsQuery.refetch(); void timelogsQuery.refetch(); }}>Zkusit znovu</Button>
+        </div>
+      ) : loading ? <p role="status" className="py-10 text-center text-sm text-[color:var(--nodu-text-soft)]">Načítání projektů…</p> : (
+        <div role="region" aria-label="Seznam projektů" tabIndex={0} className="max-w-full overflow-x-auto rounded-[28px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] shadow-[0_18px_42px_rgba(47,38,31,0.08)]">
+          <table className="w-full min-w-[760px] border-collapse text-left">
+            <thead><tr className="border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] text-[10px] uppercase tracking-wider text-[color:var(--nodu-text-soft)]">
+              {['Job Number', 'Název', 'Období', 'Klient', 'Počet akcí', 'Náklady Crew', 'Akce'].map((label) => <th key={label} className="whitespace-nowrap px-4 py-3 font-medium">{label}</th>)}
+            </tr></thead>
+            <tbody className="divide-y divide-[color:rgb(var(--nodu-text-rgb)/0.06)]">
+              {projectRows.map((project) => (
+                <tr key={project.id} className="cursor-pointer transition-colors hover:bg-[color:rgb(var(--nodu-accent-rgb)/0.04)]" onClick={() => setSelectedProjectIdForStats(project.id)}>
+                  <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-accent)]"><button onClick={(event) => { event.stopPropagation(); setSelectedProjectIdForStats(project.id); }} className="text-left">{project.id}</button></td>
+                  <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text)]">{project.name}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-xs text-[color:var(--nodu-text-soft)]">{formatProjectPeriod(project.period)}</td>
+                  <td className="px-4 py-3 text-xs text-[color:var(--nodu-text)]">{project.client || '—'}</td>
+                  <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text)]">{project.eventCount}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text)]">{formatCurrency(project.crewCost)}</td>
+                  <td className="px-4 py-3 text-right">{canManage ? <div className="flex items-center justify-end gap-1">
+                    <Button onClick={(event) => { event.stopPropagation(); const fullProject = getProjectById(project.id); if (fullProject) setEditingProject(fullProject); }} variant="outline" size="sm" className="text-[11px]">Upravit</Button>
+                    <button onClick={(event) => { event.stopPropagation(); setDeleteConfirm({ type: 'project', id: project.id, name: project.name }); }} className="rounded-lg p-1.5 text-[color:var(--nodu-text-soft)] hover:text-[#c45c39]" aria-label="Smazat projekt" title="Smazat projekt"><Trash2 size={14} /></button>
+                  </div> : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {projectRows.length === 0 && <p className="px-6 py-12 text-center text-sm text-[color:var(--nodu-text-soft)]">Pro zvolené filtry tu zatím nejsou žádné projekty.</p>}
+        </div>
+      )}
     </motion.div>
   );
 };
 
+const ProjectsView = () => {
+  const { selectedProjectIdForStats, role } = useAppContext();
+  const { currentUserId, currentProfileId, role: authRole } = useAuth();
+  if (selectedProjectIdForStats) return <ProjectStatsView />;
+  return <ProjectList key={JSON.stringify([currentUserId, currentProfileId, authRole, role])} />;
+};
 export default ProjectsView;

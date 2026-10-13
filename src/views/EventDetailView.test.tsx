@@ -220,7 +220,12 @@ describe('EventDetailView', () => {
 
     const { default: EventDetailView } = await import('./EventDetailView');
 
-    render(<EventDetailView />);
+    const { rerender } = render(<EventDetailView />);
+    expect(screen.getByRole('button', { name: 'Zpet na Akce' })).toBeInTheDocument();
+    rerender(<EventDetailView backLabel="Zpět na projekt" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Zpět na projekt' }));
+    expect(setSelectedEventId).toHaveBeenCalledWith(null);
+    rerender(<EventDetailView />);
     expect(screen.queryByTestId('legacy-event-billing-editor')).not.toBeInTheDocument();
 
     const initialLoadCount = getEventDetailData.mock.calls.length;
@@ -620,7 +625,7 @@ describe('EventDetailView', () => {
 
     const { default: EventDetailView } = await import('./EventDetailView');
 
-    const { container } = render(<EventDetailView />);
+    const { container, rerender } = render(<EventDetailView />);
     const mobileSwipeSurface = container.querySelector('.nodu-mobile-event-swipe-surface');
     const backButton = screen.getByRole('button', { name: 'Zpět na akce' });
 
@@ -637,6 +642,9 @@ describe('EventDetailView', () => {
     fireEvent.click(backButton);
 
     await waitFor(() => expect(setSelectedEventId).toHaveBeenCalledWith(null));
+    rerender(<EventDetailView backLabel="Zpět na projekt" />);
+    expect(screen.getByRole('button', { name: 'Zpět na projekt' })).toBeInTheDocument();
+
   });
 
   it('returns from mobile event detail when the browser native back gesture pops history', async () => {

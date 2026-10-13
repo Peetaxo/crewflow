@@ -116,7 +116,7 @@ const prepareApprovalTimelogs = (timelogs: Timelog[]): Timelog[] => (
     ))
 );
 
-const EventDetailView = () => {
+const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
   const {
     role,
     selectedEventId,
@@ -1095,12 +1095,12 @@ const EventDetailView = () => {
               disabled={anyCrewActionPending}
               aria-busy={anyCrewActionPending || undefined}
               aria-label={anyCrewActionPending
-                ? 'Zpět na akce – čeká na dokončení akce Crew'
-                : 'Zpět na akce'}
+                ? `${backLabel ?? 'Zpět na akce'} – čeká na dokončení akce Crew`
+                : backLabel ?? 'Zpět na akce'}
               className="nodu-mobile-event-back"
             >
               <ArrowLeft size={18} />
-              <span className="sr-only">Zpět na akce</span>
+              <span className="sr-only">{backLabel ?? 'Zpět na akce'}</span>
             </button>
           </header>
 
@@ -1517,11 +1517,11 @@ const EventDetailView = () => {
         disabled={anyCrewActionPending}
         aria-busy={anyCrewActionPending || undefined}
         aria-label={anyCrewActionPending
-          ? 'Zpet na Akce – čeká na dokončení akce Crew'
-          : 'Zpet na Akce'}
+          ? `${backLabel ?? 'Zpet na Akce'} – čeká na dokončení akce Crew`
+          : backLabel ?? 'Zpet na Akce'}
         className="mb-4 flex items-center gap-1 text-xs text-[color:var(--nodu-text-soft)] transition-colors hover:text-[color:var(--nodu-accent)] disabled:cursor-not-allowed disabled:opacity-50"
       >
-        <ArrowLeft size={14} /> Zpet na Akce
+        <ArrowLeft size={14} /> {backLabel ?? 'Zpet na Akce'}
       </button>
 
       <div className="mb-6 rounded-[30px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] p-6 shadow-[0_22px_54px_rgba(47,38,31,0.1)]">

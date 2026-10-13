@@ -1251,10 +1251,14 @@ button.nodu-mobile-event-info-row:focus-visible {
   padding-bottom: calc(10rem + env(safe-area-inset-bottom) + var(--nodu-workflow-viewport-inset, 0px));
 }
 
-.nodu-workflow-selection__toolbar {
+.nodu-workflow-selection__toolbar-space {
   position: sticky;
   top: 0;
   z-index: 12;
+}
+
+.nodu-workflow-selection__toolbar {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(10rem, 0.6fr);
   align-items: end;
@@ -1335,8 +1339,23 @@ button.nodu-mobile-event-info-row:focus-visible {
 }
 
 @media (max-width: 767px) {
-  .nodu-workflow-selection__toolbar {
+  .nodu-workflow-selection__toolbar-space {
     top: calc(env(safe-area-inset-top) + var(--nodu-workflow-viewport-top, 0px));
+  }
+
+  .nodu-workflow-selection[data-workflow-keyboard-header] .nodu-workflow-selection__toolbar-space {
+    height: var(--nodu-workflow-toolbar-height);
+  }
+
+  .nodu-workflow-selection[data-workflow-keyboard-header] .nodu-workflow-selection__toolbar {
+    position: fixed;
+    top: calc(env(safe-area-inset-top) + var(--nodu-workflow-viewport-top, 0px));
+    left: var(--nodu-workflow-toolbar-left);
+    width: var(--nodu-workflow-toolbar-width);
+    box-sizing: border-box;
+  }
+
+  .nodu-workflow-selection__toolbar {
     grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr);
     gap: 0.5rem;
     padding-top: 3rem;

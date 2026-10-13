@@ -32,6 +32,8 @@ beforeEach(() => { liveDetail.timelogs = []; liveDetail.crewAssignments = []; vi
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 describe('card selection shared draft', () => {
   it('scopes the keyboard inset to the active card stage and preserves selection through summary back', () => {
+    mockGalleryGeometry();
+    vi.stubGlobal('matchMedia', () => Object.assign(new EventTarget(), { matches: true }));
     const visible = Object.assign(new EventTarget(), { height: 532, offsetTop: 0 });
     vi.stubGlobal('visualViewport', visible); vi.stubGlobal('innerHeight', 844);
     const { props, unmount } = setup();
@@ -39,16 +41,28 @@ describe('card selection shared draft', () => {
       const container = document.querySelector<HTMLElement>('.nodu-workflow-selection')!;
       const inset = '--nodu-workflow-viewport-inset';
       expect(container.style.getPropertyValue(inset)).toBe('312px');
+      act(() => screen.getByRole('searchbox').focus());
+      expect(container).toHaveAttribute('data-workflow-keyboard-header');
+      expect(container.style.getPropertyValue('--nodu-workflow-toolbar-height')).toBe('80px');
+      expect(container.style.getPropertyValue('--nodu-workflow-toolbar-width')).toBe('390px');
+      expect(container.querySelector('[data-workflow-toolbar-space]')?.firstElementChild).toHaveAttribute('data-workflow-toolbar');
       selectBoth(); continueToSummary();
       expect(container.style.getPropertyValue(inset)).toBe('');
+      expect(container).not.toHaveAttribute('data-workflow-keyboard-header');
+      expect(container.style.getPropertyValue('--nodu-workflow-toolbar-height')).toBe('');
       Object.assign(visible, { height: 300 }); act(() => visible.dispatchEvent(new Event('resize')));
       expect(container.style.getPropertyValue(inset)).toBe('');
       fireEvent.click(screen.getByRole('button', { name: 'Zpět k výběru' }));
       expect(container.style.getPropertyValue(inset)).toBe('544px');
+      act(() => screen.getByRole('searchbox').focus());
+      expect(container).toHaveAttribute('data-workflow-keyboard-header');
+      fireEvent.change(screen.getByLabelText('Přejít na datum'), { target: { value: '2026-10-10' } });
+      expect(container).toHaveAttribute('data-workflow-keyboard-header');
       expect(screen.getByText('Vybráno: 2')).toBeInTheDocument();
       expect(screen.getByLabelText('Přejít na datum')).toHaveAttribute('type', 'date');
       expect(props.onSave).not.toHaveBeenCalled();
       unmount(); expect(container.style.getPropertyValue(inset)).toBe('');
+      expect(container).not.toHaveAttribute('data-workflow-keyboard-header');
     } finally { unmount(); vi.unstubAllGlobals(); }
   });
   it.each(['crewhead', 'coo'] as const)('lets %s recover from a locked source remnant by removing draft selections and reviewing an independent group', async (role) => {
@@ -238,6 +252,7 @@ function mockGalleryGeometry() {
     const root = this.closest<HTMLElement>('.nodu-page-frame');
     if (!root) return rect(0, 0);
     if (this === root) return rect(0, 600);
+    if (this.hasAttribute('data-workflow-toolbar-space')) return rect(16, 80);
     if (this.hasAttribute('data-workflow-toolbar')) return rect(16, 80);
     if (this.classList.contains('nodu-workflow-selection')) return rect(-root.scrollTop, 2000);
     const dates = [...root.querySelectorAll<HTMLElement>('[data-workflow-date]')];

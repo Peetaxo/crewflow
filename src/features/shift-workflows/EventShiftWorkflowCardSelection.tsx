@@ -96,17 +96,19 @@ function CardSelectionSession(props: ShiftWorkflowDraftInput) {
     setTimeline((current) => ({ ...current, query }));
   };
   return <div ref={container} className="nodu-workflow-selection" data-workflow-start-date={timeline.startDate}>
-    <div className="nodu-workflow-selection__toolbar" data-workflow-toolbar>
-      <div><h1 className="text-xl font-semibold">Propojit směny</h1><p className="text-sm text-[var(--nodu-text-soft)]">Vyberte alespoň dvě směny.</p></div>
-      <label className="grid min-w-0 gap-1 text-sm">Hledat směnu nebo jobnumber
-        <input type="search" value={timeline.query} disabled={selection.locked} onChange={(event) => changeQuery(event.target.value)} className="min-w-0 rounded-xl border border-[var(--nodu-border)] bg-transparent p-3" />
-      </label>
-      <label className="grid min-w-0 gap-1 text-sm">Přejít na datum
-        <input type="date" value={timeline.anchorDate} disabled={selection.locked} onChange={(event) => {
-          if (!event.target.value) return;
-          scroll.jumpToAnchor(); setTimeline(createCardTimeline(event.target.value));
-        }} className="min-w-0 rounded-xl border border-[var(--nodu-border)] bg-transparent p-3" />
-      </label>
+    <div className="nodu-workflow-selection__toolbar-space" data-workflow-toolbar-space>
+      <div className="nodu-workflow-selection__toolbar" data-workflow-toolbar>
+        <div><h1 className="text-xl font-semibold">Propojit směny</h1><p className="text-sm text-[var(--nodu-text-soft)]">Vyberte alespoň dvě směny.</p></div>
+        <label className="grid min-w-0 gap-1 text-sm">Hledat směnu nebo jobnumber
+          <input type="search" value={timeline.query} disabled={selection.locked} onChange={(event) => changeQuery(event.target.value)} className="min-w-0 rounded-xl border border-[var(--nodu-border)] bg-transparent p-3" />
+        </label>
+        <label className="grid min-w-0 gap-1 text-sm">Přejít na datum
+          <input type="date" value={timeline.anchorDate} disabled={selection.locked} onChange={(event) => {
+            if (!event.target.value) return;
+            scroll.jumpToAnchor(); setTimeline(createCardTimeline(event.target.value));
+          }} className="min-w-0 rounded-xl border border-[var(--nodu-border)] bg-transparent p-3" />
+        </label>
+      </div>
     </div>
     {!searching && <p className="py-3 text-xs text-[var(--nodu-text-soft)]">{hasOlder ? 'Starší směny zobrazíte posunutím nahoru.' : 'Zobrazeny všechny dostupné starší směny.'}</p>}
     <div className="space-y-6">

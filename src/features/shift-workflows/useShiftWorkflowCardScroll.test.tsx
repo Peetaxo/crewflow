@@ -7,13 +7,13 @@ const rect = (top: number, height = 100) => ({ top, bottom: top + height, height
 let cardTop = 100;
 let dateTop = 500;
 let toolbarTop = 0;
-function Fixture({ active = true, query = '', owner = 'one', empty = false }: { active?: boolean; query?: string; owner?: string; empty?: boolean }) {
-  return <Session key={owner} active={active} query={query} empty={empty} />;
+function Fixture({ active = true, query = '', owner = 'one', empty = false, entryMode, preserveLayout = false }: { active?: boolean; query?: string; owner?: string; empty?: boolean; entryMode?: 'anchor' | 'preserve'; preserveLayout?: boolean }) {
+  return <Session key={owner} active={active} query={query} empty={empty} entryMode={entryMode} preserveLayout={preserveLayout} />;
 }
-function Session({ active, query, empty }: { active: boolean; query: string; empty: boolean }) {
+function Session({ active, query, empty, entryMode, preserveLayout }: { active: boolean; query: string; empty: boolean; entryMode?: 'anchor' | 'preserve'; preserveLayout: boolean }) {
   const container = useRef<HTMLDivElement>(null);
   const [startDate, setStartDate] = useState('2026-10-05');
-  const scroll = useShiftWorkflowCardScroll({ container, active, query, anchorDate: '2026-10-12', startDate,
+  const scroll = useShiftWorkflowCardScroll({ container, active, query, entryMode, preserveLayout, anchorDate: '2026-10-12', startDate,
     onExpand: () => { if (startDate !== '2026-10-05') return false; cardTop = 350; dateTop = 750; setStartDate('2026-09-21'); return true; } });
   return <div className="nodu-page-frame" data-testid="scroll-root" ref={(element) => {
     if (element) { element.getBoundingClientRect = () => rect(0, 600); Object.defineProperty(element, 'clientHeight', { value: 600, configurable: true }); }
@@ -29,11 +29,72 @@ function Session({ active, query, empty }: { active: boolean; query: string; emp
     </div>
   </div>;
 }
+function NativeSearchFixture({ query, active = true, onExpand }: { query: string; active?: boolean; onExpand: () => boolean }) {
+  const container = useRef<HTMLDivElement>(null);
+  const frame = useRef<HTMLDivElement | null>(null);
+  const [checked, setChecked] = useState(false);
+  const [reason, setReason] = useState(false);
+  useShiftWorkflowCardScroll({ container, active, query, anchorDate: '2026-10-12', startDate: '2026-10-12',
+    entryMode: 'preserve', preserveLayout: true, onExpand });
+  return <div className="nodu-page-frame" data-testid="native-root" ref={(element) => {
+    frame.current = element; if (element) element.getBoundingClientRect = () => rect(0, 818);
+  }}><div ref={container}>
+    <div data-workflow-toolbar ref={(element) => { if (element) element.getBoundingClientRect = () => rect(0, 80); }}>Toolbar</div>
+    <button role="checkbox" aria-checked={checked} data-workflow-occurrence="shift|2026-10-12" onClick={() => setChecked((value) => !value)}
+      ref={(element) => { if (element) element.getBoundingClientRect = () => rect(200 + (reason ? 48 : 0) - (frame.current?.scrollTop ?? 0), 200); }}>Visible card</button>
+    <button onClick={() => setReason(true)}>Show reason above card</button>
+  </div></div>;
+}
 afterEach(() => { cardTop = 100; dateTop = 500; toolbarTop = 0; vi.restoreAllMocks(); });
 describe('useShiftWorkflowCardScroll', () => {
+  it.each(['', 'JOB'])('preserves native user scrolling through toggle and layout changes for query=%s', (query) => {
+    const onExpand = vi.fn(() => false); render(<NativeSearchFixture query={query} onExpand={onExpand} />);
+    const root = screen.getByTestId('native-root'); const card = screen.getByRole('checkbox');
+    root.scrollTop = 100; fireEvent.scroll(root); expect(card.getBoundingClientRect().top).toBe(100);
+    fireEvent.click(card); expect(root.scrollTop).toBe(100); expect(card.getBoundingClientRect().top).toBe(100); expect(card).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Show reason above card' }));
+    expect(root.scrollTop).toBe(148); expect(card.getBoundingClientRect().top).toBe(100); expect(onExpand).not.toHaveBeenCalled();
+  });
+  it('tracks search scrolling passively while suppressing history gestures and retiring its listener', () => {
+    const onExpand = vi.fn(() => false); const added = vi.spyOn(HTMLElement.prototype, 'addEventListener');
+    const removed = vi.spyOn(HTMLElement.prototype, 'removeEventListener');
+    const { rerender } = render(<NativeSearchFixture query="JOB" onExpand={onExpand} />); const root = screen.getByTestId('native-root');
+    const scrollCall = added.mock.calls.find(([name], i) => name === 'scroll' && added.mock.contexts[i] === root); expect(scrollCall?.[2]).toEqual({ passive: true });
+    const listener = scrollCall?.[1] as EventListener;
+    root.scrollTop = 100; fireEvent.scroll(root); root.scrollTop = 0; fireEvent.scroll(root);
+    fireEvent.wheel(root, { deltaY: -20 }); fireEvent.touchStart(root, { touches: [{ clientY: 100 }] }); fireEvent.touchMove(root, { touches: [{ clientY: 150 }] });
+    expect(onExpand).not.toHaveBeenCalled();
+    rerender(<NativeSearchFixture query="JOB" active={false} onExpand={onExpand} />);
+    expect(removed).toHaveBeenCalledWith('scroll', listener);
+    root.scrollTop = 45; act(() => listener(new Event('scroll')));
+    fireEvent.click(screen.getByRole('button', { name: 'Show reason above card' })); expect(root.scrollTop).toBe(45); expect(onExpand).not.toHaveBeenCalled();
+  });
+  it('uses the latest passive user-scroll position when preserving a later card layout change', () => {
+    const { rerender } = render(<Fixture entryMode="preserve" preserveLayout />); const root = screen.getByTestId('scroll-root');
+    root.scrollTop = 50; fireEvent.scroll(root);
+    cardTop = 148; rerender(<Fixture entryMode="preserve" preserveLayout />); expect(root.scrollTop).toBe(98);
+    rerender(<Fixture entryMode="preserve" preserveLayout />); expect(root.scrollTop).toBe(98);
+    rerender(<Fixture entryMode="preserve" preserveLayout active={false} />);
+    root.scrollTop = 56; fireEvent.scroll(root); cardTop = 190;
+    rerender(<Fixture entryMode="preserve" preserveLayout active={false} />); expect(root.scrollTop).toBe(56);
+  });
+  it('preserves entry position on first mount and activation when explicitly requested', () => {
+    const { rerender } = render(<Fixture entryMode="preserve" />);
+    const root = screen.getByTestId('scroll-root'); expect(root.scrollTop).toBe(0);
+    root.scrollTop = 137; rerender(<Fixture entryMode="preserve" active={false} />);
+    rerender(<Fixture entryMode="preserve" query="Card" />); expect(root.scrollTop).toBe(137);
+    fireEvent.click(screen.getByRole('button', { name: 'Jump' })); rerender(<Fixture entryMode="preserve" query="Card" />); expect(root.scrollTop).toBe(145);
+  });
   it('aligns today below the sticky toolbar in the closest page frame', () => {
     render(<Fixture />);
     expect(screen.getByTestId('scroll-root').scrollTop).toBe(408);
+  });
+  it('expands history from scrollTop zero on an upward touch or wheel gesture without requiring scroll movement', () => {
+    render(<Fixture entryMode="preserve" />); const root = screen.getByTestId('scroll-root');
+    fireEvent.wheel(root, { deltaY: -20 }); expect(screen.getByText('2026-09-21')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Jump' })); root.scrollTop = 0; fireEvent.scroll(root);
+    fireEvent.touchStart(root, { touches: [{ clientY: 100 }] }); fireEvent.touchMove(root, { touches: [{ clientY: 135 }] });
+    expect(screen.getByText('2026-09-21')).toBeInTheDocument();
   });
   it('accounts for a nonzero sticky inset and keeps the date heading clear of the toolbar', () => {
     toolbarTop = 16; render(<Fixture />);

@@ -16,6 +16,9 @@ export function useShiftWorkflowVisualViewport({ container, active }: Props): vo
     const headerProperties = ['--nodu-workflow-toolbar-height', '--nodu-workflow-toolbar-left', '--nodu-workflow-toolbar-width'];
     const toolbar = content.querySelector<HTMLElement>('[data-workflow-toolbar]');
     const space = content.querySelector<HTMLElement>('[data-workflow-toolbar-space]');
+    const bar = content.querySelector<HTMLElement>('[data-workflow-bar]');
+    const barProperty = '--nodu-workflow-bar-height';
+    let barObserver: ResizeObserver | null = null;
     const mobile = viewport && toolbar && space ? window.matchMedia('(max-width: 767px)') : null;
     let live = true;
     let fixedHeader = false;
@@ -34,6 +37,11 @@ export function useShiftWorkflowVisualViewport({ container, active }: Props): vo
       write(headerProperties[2], width);
       return true;
     };
+    const measureBar = () => {
+      if (!live || !bar) return;
+      const height = bar.getBoundingClientRect().height;
+      if (Number.isFinite(height) && height > 0) write(barProperty, height);
+    };
     const releaseHeader = () => {
       fixedHeader = false;
       observer?.disconnect();
@@ -49,6 +57,7 @@ export function useShiftWorkflowVisualViewport({ container, active }: Props): vo
       const inset = Number.isFinite(covered) ? Math.max(0, covered) : 0;
       write(property, inset);
       write(topProperty, Number.isFinite(offsetTop) ? Math.max(0, offsetTop) : 0);
+      measureBar();
       if (!mobile?.matches || inset === 0) {
         if (fixedHeader) releaseHeader();
         return;
@@ -70,6 +79,9 @@ export function useShiftWorkflowVisualViewport({ container, active }: Props): vo
         current.observe(space);
       }
     };
+    if (bar && typeof ResizeObserver !== 'undefined') {
+      barObserver = new ResizeObserver(measureBar); barObserver.observe(bar);
+    }
     update();
     viewport?.addEventListener('resize', update, { passive: true });
     viewport?.addEventListener('scroll', update, { passive: true });
@@ -78,6 +90,7 @@ export function useShiftWorkflowVisualViewport({ container, active }: Props): vo
     mobile?.addEventListener('change', update);
     return () => {
       live = false;
+      barObserver?.disconnect();
       releaseHeader();
       viewport?.removeEventListener('resize', update);
       viewport?.removeEventListener('scroll', update);
@@ -86,6 +99,7 @@ export function useShiftWorkflowVisualViewport({ container, active }: Props): vo
       mobile?.removeEventListener('change', update);
       content.style.removeProperty(property);
       content.style.removeProperty(topProperty);
+      content.style.removeProperty(barProperty);
     };
   }, [active, container]);
 }

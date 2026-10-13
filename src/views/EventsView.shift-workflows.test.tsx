@@ -54,11 +54,18 @@ describe('shared workflow route in Akce', () => {
     state.role = role; state.scopeRole = role; state.mobile = mobile; render(<EventsView />);
     const button = screen.getByRole('button', { name: 'Propojit směny' }); expect(button).not.toHaveClass('nodu-event-mobile-create-fab');
     fireEvent.click(button); await screen.findByRole('searchbox', { name: 'Hledat směnu nebo jobnumber' });
+    if (mobile) {
+      expect(screen.getByRole('searchbox')).toHaveValue('Přípravy');
+      expect(screen.getByRole('checkbox', { name: /Přípravy · JOB/ })).not.toBeChecked();
+      expect(screen.queryByRole('checkbox', { name: /Bez přiřazení · JOB/ })).not.toBeInTheDocument();
+      fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } });
+    }
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByText('Vybráno: 0')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Pokračovat' })).toBeDisabled();
     expect(screen.getByRole('checkbox', { name: /Bez přiřazení · JOB/ })).not.toBeChecked();
     fireEvent.click(screen.getByRole('checkbox', { name: /Přípravy · JOB/ })); fireEvent.click(screen.getByRole('checkbox', { name: /Bez přiřazení · JOB/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Pokračovat' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Pokračovat' }));
     expect(state.save).not.toHaveBeenCalled();
     const summary = screen.getByRole('dialog');
@@ -72,7 +79,13 @@ describe('shared workflow route in Akce', () => {
   it.each([false, true])('retires the list dialog and its callbacks when detail opens (mobile=%s)', async (mobile) => {
     state.mobile = mobile; let resolve!: (value: unknown) => void; state.save.mockReturnValue(new Promise((done) => { resolve = done; }));
     const { rerender } = render(<EventsView />); fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' })); await screen.findByRole('searchbox', { name: 'Hledat směnu nebo jobnumber' });
-    fireEvent.click(screen.getByRole('checkbox', { name: /Přípravy · JOB/ })); fireEvent.click(screen.getByRole('checkbox', { name: /Instalace · JOB/ })); fireEvent.click(screen.getByRole('button', { name: 'Pokračovat' })); fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' }));
+    if (mobile) {
+      expect(screen.getByRole('searchbox')).toHaveValue('Přípravy');
+      fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } });
+    }
+    fireEvent.click(screen.getByRole('checkbox', { name: /Přípravy · JOB/ })); fireEvent.click(screen.getByRole('checkbox', { name: /Instalace · JOB/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Pokračovat' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Pokračovat' })); fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' }));
     state.selected = id(21); rerender(<EventsView />);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Propojit směny' })).not.toBeInTheDocument();
     await act(async () => { resolve(undefined); }); expect(screen.getByRole('heading', { name: 'Přípravy', level: 1 })).toBeInTheDocument();

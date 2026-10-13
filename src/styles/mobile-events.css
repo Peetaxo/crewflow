@@ -1311,6 +1311,50 @@ button.nodu-mobile-event-info-row:focus-visible {
   padding: 0.75rem 1rem;
 }
 
+.nodu-mobile-workflow-selection {
+  padding-bottom: calc(max(5.5rem + env(safe-area-inset-bottom), var(--nodu-workflow-viewport-inset, 0px) + 0.75rem) + var(--nodu-workflow-bar-height, 4rem) + 0.75rem);
+}
+
+.nodu-mobile-workflow-selection__toolbar {
+  position: relative;
+  border-bottom: 1px solid var(--nodu-border);
+  background: rgb(var(--nodu-paper-rgb) / 0.98);
+  padding: 0 0 0.65rem;
+}
+
+.nodu-mobile-workflow-selection__search {
+  display: grid;
+  gap: 0.3rem;
+  color: var(--nodu-text-soft);
+  font-size: 0.7rem;
+}
+
+.nodu-mobile-workflow-selection__search input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--nodu-border);
+  border-radius: 0.9rem;
+  background: rgb(var(--nodu-surface-rgb) / 0.96);
+  padding: 0.6rem 0.75rem;
+  color: var(--nodu-text);
+  font-size: 16px;
+}
+
+.nodu-mobile-workflow-selection__history-space {
+  min-height: 10rem;
+}
+
+.nodu-mobile-workflow-selection .nodu-workflow-selection__bar {
+  flex-wrap: wrap;
+}
+
+.nodu-mobile-workflow-selection__error {
+  display: grid;
+  flex-basis: 100%;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+}
+
 .nodu-workflow-card__check {
   position: absolute;
   top: 1rem;
@@ -1348,6 +1392,14 @@ button.nodu-mobile-event-info-row:focus-visible {
   }
 
   .nodu-workflow-selection[data-workflow-keyboard-header] .nodu-workflow-selection__toolbar {
+    position: fixed;
+    top: calc(env(safe-area-inset-top) + var(--nodu-workflow-viewport-top, 0px));
+    left: var(--nodu-workflow-toolbar-left);
+    width: var(--nodu-workflow-toolbar-width);
+    box-sizing: border-box;
+  }
+
+  .nodu-mobile-workflow-selection[data-workflow-keyboard-header] .nodu-mobile-workflow-selection__toolbar {
     position: fixed;
     top: calc(env(safe-area-inset-top) + var(--nodu-workflow-viewport-top, 0px));
     left: var(--nodu-workflow-toolbar-left);

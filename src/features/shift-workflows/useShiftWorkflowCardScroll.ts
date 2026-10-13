@@ -65,6 +65,9 @@ export function useShiftWorkflowCardScroll({ container, active, query, anchorDat
   const jumpToAnchor = () => { savedWindow.current = null; pending.current = { kind: 'anchor' }; };
   const rememberLayout = useCallback(() => {
     savedLayout.current = root.current && container.current ? captureCardScrollPosition(root.current, container.current) : null;
+    // The owner can restore entry/summary after this hook's layout effect.
+    // Its delayed browser scroll event must start from that committed position.
+    if (root.current) lastTop.current = root.current.scrollTop;
   }, [container]);
 
   useLayoutEffect(() => {

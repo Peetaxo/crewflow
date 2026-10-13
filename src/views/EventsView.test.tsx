@@ -89,7 +89,11 @@ describe('mobile workflow selection in the actual events overview', () => {
     frame.scrollTop = entryScroll;
     const before = cards(); const first = before[0]; const normalOffset = first.getBoundingClientRect().top;
     const selectedDate = first.dataset.workflowOccurrence!.slice(-10);
-    fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' })); sameCards(before);
+    fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' }));
+    const adjustedScroll = frame.scrollTop;
+    fireEvent.scroll(frame); fireEvent.scroll(frame); sameCards(before);
+    expect(frame.scrollTop).toBe(adjustedScroll);
+    expect(document.querySelector('[data-workflow-start-date]')).toHaveAttribute('data-workflow-start-date', '2026-05-12');
     const toolbar = document.querySelector<HTMLElement>('[data-workflow-toolbar]')!;
     expect(toolbar.getBoundingClientRect().bottom).toBe(292);
     expect(first.getBoundingClientRect().top).toBeGreaterThanOrEqual(toolbar.getBoundingClientRect().bottom);
@@ -104,7 +108,9 @@ describe('mobile workflow selection in the actual events overview', () => {
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'OLD' } }); fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } });
     const restored = cards()[0]; expect(restored.getBoundingClientRect().top).toBe(entryOffset);
     const summaryCards = cards(); fireEvent.click(screen.getByRole('button', { name: 'Pokračovat' })); fireEvent.click(screen.getByRole('button', { name: 'Zpět k výběru' }));
-    sameCards(summaryCards); expect(restored.getBoundingClientRect().top).toBe(entryOffset); expect(frame.getBoundingClientRect()).toMatchObject({ width: 368, height: 800 });
+    fireEvent.scroll(frame); sameCards(summaryCards);
+    expect(document.querySelector('[data-workflow-start-date]')).toHaveAttribute('data-workflow-start-date', '2026-05-12');
+    expect(restored.getBoundingClientRect().top).toBe(entryOffset); expect(frame.getBoundingClientRect()).toMatchObject({ width: 368, height: 800 });
     fireEvent.click(screen.getByRole('button', { name: 'Zrušit' })); expect(frame.scrollTop).toBe(entryScroll); expect(cards()[0].getBoundingClientRect().top).toBe(normalOffset);
     expect(workflowBoundary.save).not.toHaveBeenCalled();
   });

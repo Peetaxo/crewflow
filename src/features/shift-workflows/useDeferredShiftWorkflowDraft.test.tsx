@@ -1,4 +1,5 @@
 import { act, renderHook } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { Event } from '../../types';
 import { ShiftWorkflowError, type SaveShiftWorkflow, type ShiftWorkflowScope } from './shift-workflows.contract';
@@ -24,6 +25,106 @@ const command: SaveShiftWorkflow = {
 };
 
 describe('useDeferredShiftWorkflowDraft', () => {
+  it('rejects a retained ready send immediately after reset removes evidence', async () => {
+    const { result, props } = setup(makeData()); const oldSend = result.current.send;
+    act(() => result.current.reset());
+    expect(result.current.data).toBeNull(); expect(result.current.ready).toBe(false);
+    await act(async () => oldSend(command));
+    expect(props.onSave).not.toHaveBeenCalled(); expect(props.onClose).not.toHaveBeenCalled(); expect(result.current.busy).toBe(false);
+  });
+
+  it.each(['send', 'save', 'reload', 'close', 'changeSelection', 'setCross', 'setMoves', 'setDissolveConfirmed', 'setReviewed', 'reset'] as const)(
+    'retires the old %s callback before a fresh opening becomes ready', async (method) => {
+      const { result, props, rerender } = setup(makeData());
+      act(() => result.current.changeSelection([id(21), id(22)])); const old = result.current;
+      act(() => result.current.reset()); rerender({ ...props, data: null });
+      const fresh = makeData(); fresh.snapshot.revision = 8; rerender({ ...props, data: fresh });
+      act(() => result.current.changeSelection([id(22), id(23)]));
+      await act(async () => {
+        if (method === 'send') await old.send(command);
+        else if (method === 'reload') await old.reload();
+        else if (method === 'changeSelection') old.changeSelection([id(21)]);
+        else if (method === 'setCross' || method === 'setMoves' || method === 'setDissolveConfirmed' || method === 'setReviewed') old[method](true);
+        else old[method]();
+      });
+      expect(props.onSave).not.toHaveBeenCalled(); expect(props.onReload).not.toHaveBeenCalled(); expect(props.onClose).not.toHaveBeenCalled();
+      expect(result.current.data?.snapshot.revision).toBe(8); expect(result.current.ready).toBe(true); expect(result.current.eventIds).toEqual([id(22), id(23)]);
+      expect(result.current.cross).toBe(false); expect(result.current.moves).toBe(false); expect(result.current.dissolveConfirmed).toBe(false); expect(result.current.reviewed).toBe(false);
+    },
+  );
+
+  it.each(['send', 'save'] as const)('rejects a retained %s callback whose evidence was replaced by explicit refresh', async (method) => {
+    const { result, props } = setup(makeData());
+    act(() => result.current.changeSelection([id(21), id(22)])); const old = result.current;
+    const fresh = makeData(); fresh.snapshot.revision = 8; props.onReload.mockResolvedValue(fresh);
+    await act(async () => result.current.reload());
+    await act(async () => { if (method === 'send') await old.send(command); else old.save(); });
+    expect(props.onSave).not.toHaveBeenCalled(); expect(result.current.data?.snapshot.revision).toBe(8); expect(result.current.reviewRequired).toBe(true);
+  });
+
+  it.each([
+    ['setCross', 'cross'], ['setMoves', 'moves'], ['setDissolveConfirmed', 'dissolveConfirmed'], ['setReviewed', 'reviewed'],
+  ] as const)('requires a current-evidence %s callback to confirm refreshed data', async (setter, field) => {
+    const { result, props } = setup(makeData()); const oldConfirmation = result.current[setter];
+    const fresh = makeData(); fresh.snapshot.revision = 8; props.onReload.mockResolvedValue(fresh);
+    await act(async () => result.current.reload()); act(() => oldConfirmation(true));
+    expect(result.current[field]).toBe(false); expect(result.current.data?.snapshot.revision).toBe(8);
+    act(() => result.current[setter](true)); expect(result.current[field]).toBe(true);
+  });
+
+  it('keeps pending selection locked against retained callbacks from before an ambiguous save', async () => {
+    const { result, props } = setup(makeData()); props.onSave.mockRejectedValueOnce(new ShiftWorkflowError('ambiguous', 'Neověřeno'));
+    act(() => result.current.changeSelection([id(21), id(22)])); const old = result.current;
+    await act(async () => result.current.save()); const pending = result.current.pending;
+    await act(async () => { old.changeSelection([id(23)]); old.save(); });
+    expect(props.onSave).toHaveBeenCalledOnce(); expect(result.current.eventIds).toEqual([id(21), id(22)]); expect(result.current.pending).toBe(pending);
+  });
+
+  it('uses current published evidence when a retained initial reset acknowledges success', async () => {
+    const { result, props, rerender } = setup(); props.onClose.mockImplementation(result.current.reset);
+    act(() => result.current.changeSelection([id(21), id(22)])); rerender({ ...props, data: makeData() });
+    await act(async () => result.current.save());
+    expect(props.onClose).toHaveBeenCalledOnce(); expect(result.current.data).toBeNull(); expect(result.current.ready).toBe(false); expect(result.current.eventIds).toEqual([]);
+    const publication = makeData(); publication.snapshot.revision = 99; rerender({ ...props, data: publication }); expect(result.current.data).toBeNull();
+    rerender({ ...props, data: null }); const fresh = makeData(); fresh.snapshot.revision = 8; rerender({ ...props, data: fresh });
+    expect(result.current.data?.snapshot.revision).toBe(8); expect(result.current.ready).toBe(true);
+  });
+
+  it('keeps opening callbacks usable through StrictMode layout-effect replay', async () => {
+    const props = { scope, workflowId: null, data: null as ShiftWorkflowManagementData | null, onSave: vi.fn().mockResolvedValue(undefined), onReload: vi.fn(), onClose: vi.fn() };
+    const { result, rerender } = renderHook((input) => useDeferredShiftWorkflowDraft(input), { initialProps: props, wrapper: ({ children }) => <StrictMode>{children}</StrictMode> });
+    const openingSelection = result.current.changeSelection;
+    act(() => openingSelection([id(21), id(22)])); rerender({ ...props, data: makeData() });
+    await act(async () => result.current.save());
+    expect(result.current.ready).toBe(true); expect(props.onSave).toHaveBeenCalledOnce(); expect(props.onClose).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a failed display capture visible while provisional IDs are edited', () => {
+    const captureCrewDisplay = vi.fn().mockImplementationOnce(() => { throw new Error('display unavailable'); }).mockReturnValue({});
+    const props = { scope, workflowId: null, data: null as ShiftWorkflowManagementData | null, captureCrewDisplay, onSave: vi.fn(), onReload: vi.fn(), onClose: vi.fn() };
+    const { result, rerender } = renderHook((input) => useDeferredShiftWorkflowDraft(input), { initialProps: props });
+    const failed = makeData(); rerender({ ...props, data: failed }); const error = result.current.error;
+    expect(error).toMatch(/nepodařilo bezpečně ověřit/);
+    act(() => result.current.changeSelection([id(21), id(22)])); rerender({ ...props, data: failed });
+    expect(result.current.error).toBe(error); expect(result.current.ready).toBe(false); expect(result.current.eventIds).toEqual([id(21), id(22)]); expect(captureCrewDisplay).toHaveBeenCalledOnce();
+    const fresh = makeData(); fresh.snapshot.revision = 8; rerender({ ...props, data: fresh });
+    expect(result.current.error).toBeNull(); expect(result.current.ready).toBe(true); expect(result.current.eventIds).toEqual([id(21), id(22)]);
+  });
+
+  it.each([{ label: 'absent', data: null }, { label: 'present', data: makeData() }])('keeps reload failure visible while IDs are edited with initial evidence $label', async ({ data }) => {
+    const { result, props } = setup(data); props.onReload.mockRejectedValueOnce(new Error('offline'));
+    await act(async () => result.current.reload()); const error = result.current.error; expect(error).toMatch(/nepodařilo bezpečně ověřit/);
+    act(() => result.current.changeSelection([id(21), id(22)])); expect(result.current.error).toBe(error); expect(result.current.eventIds).toEqual([id(21), id(22)]);
+    const fresh = makeData(); fresh.snapshot.revision = 8; props.onReload.mockResolvedValue(fresh); await act(async () => result.current.reload());
+    expect(result.current.error).toBeNull(); expect(result.current.data?.snapshot.revision).toBe(8);
+  });
+
+  it('still clears an ordinary selection error after complete evidence exists', async () => {
+    const { result, props } = setup(makeData()); act(() => result.current.changeSelection([id(21)]));
+    await act(async () => result.current.save()); expect(result.current.error).not.toBeNull(); expect(props.onSave).not.toHaveBeenCalled();
+    act(() => result.current.changeSelection([id(21), id(22)])); expect(result.current.error).toBeNull();
+  });
+
   it('allows provisional selection without evidence and guards both mutation entry points', async () => {
     const { result, props } = setup();
     expect(result.current.data).toBeNull(); expect(result.current.impact).toBeNull(); expect(result.current.ready).toBe(false);

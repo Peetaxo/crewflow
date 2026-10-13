@@ -1,4 +1,5 @@
 import { act, renderHook } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { Event } from '../../types';
 import { ShiftWorkflowError, type ShiftWorkflowScope } from './shift-workflows.contract';
@@ -17,6 +18,13 @@ function setup(data = makeData()) {
   return { ...view, props };
 }
 describe('useShiftWorkflowDraft', () => {
+  it('keeps synchronous evidence and commands usable through StrictMode layout-effect replay', async () => {
+    const props = { scope, workflowId: null, data: makeData(), onSave: vi.fn().mockResolvedValue(undefined), onReload: vi.fn(), onClose: vi.fn() };
+    const { result } = renderHook((input) => useShiftWorkflowDraft(input), { initialProps: props, wrapper: ({ children }) => <StrictMode>{children}</StrictMode> });
+    expect(result.current.data.snapshot.revision).toBe(4); expect(result.current.impact.affectedEventIds).toEqual([]);
+    act(() => result.current.changeSelection([id(21), id(22)])); await act(async () => result.current.save());
+    expect(props.onSave).toHaveBeenCalledOnce(); expect(props.onClose).toHaveBeenCalledOnce();
+  });
   it('returns complete evidence and impact on the first synchronous-owner render', () => {
     const props = { scope, workflowId: null, data: makeData(), onSave: vi.fn(), onReload: vi.fn(), onClose: vi.fn() };
     const renders: { data: ShiftWorkflowManagementData; impact: ReturnType<typeof useShiftWorkflowDraft>['impact'] }[] = [];

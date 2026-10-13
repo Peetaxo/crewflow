@@ -87,7 +87,7 @@ export function useShiftWorkflowCardScroll({ container, active, query, anchorDat
   useLayoutEffect(() => {
     const frame = root.current;
     const content = container.current;
-    if (!active || searching || !frame || !content) return;
+    if (!active || (searching && !preserveLayout) || !frame || !content) return;
     let live = true;
     let touchStart: number | null = null;
     const expandNearStart = () => {
@@ -107,7 +107,7 @@ export function useShiftWorkflowCardScroll({ container, active, query, anchorDat
       const upward = top < lastTop.current;
       lastTop.current = top;
       if (preserveLayout) rememberLayout();
-      if (upward) expandNearStart();
+      if (upward && !searching) expandNearStart();
     };
     // At the native top boundary an upward gesture has no scroll delta. Keep
     // older weeks reachable without changing the browser's passive scrolling.
@@ -118,12 +118,17 @@ export function useShiftWorkflowCardScroll({ container, active, query, anchorDat
       touchStart = null; expandNearStart();
     };
     frame.addEventListener('scroll', onScroll, { passive: true });
-    frame.addEventListener('wheel', onWheel, { passive: true });
-    frame.addEventListener('touchstart', onTouchStart, { passive: true });
-    frame.addEventListener('touchmove', onTouchMove, { passive: true });
+    if (!searching) {
+      frame.addEventListener('wheel', onWheel, { passive: true });
+      frame.addEventListener('touchstart', onTouchStart, { passive: true });
+      frame.addEventListener('touchmove', onTouchMove, { passive: true });
+    }
     return () => {
-      live = false; frame.removeEventListener('scroll', onScroll); frame.removeEventListener('wheel', onWheel);
-      frame.removeEventListener('touchstart', onTouchStart); frame.removeEventListener('touchmove', onTouchMove);
+      live = false; frame.removeEventListener('scroll', onScroll);
+      if (!searching) {
+        frame.removeEventListener('wheel', onWheel);
+        frame.removeEventListener('touchstart', onTouchStart); frame.removeEventListener('touchmove', onTouchMove);
+      }
     };
   }, [active, searching, startDate, container, preserveLayout, rememberLayout]);
 

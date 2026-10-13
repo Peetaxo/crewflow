@@ -14,6 +14,48 @@ describe('projects.service write flow', () => {
     vi.clearAllMocks();
   });
 
+  it('filters by client and inclusive event-period overlap, excluding projects without events', async () => {
+    const snapshot = {
+      projects: [
+        { id: 'A', name: 'A', client: 'Klient A', createdAt: '2026-01-01' },
+        { id: 'B', name: 'B', client: 'Klient B', createdAt: '2026-01-01' },
+        { id: 'C', name: 'C', client: 'Klient A', createdAt: '2026-01-01' },
+      ],
+      events: [
+        { id: 1, job: 'A', startDate: '2026-04-01', endDate: '2026-04-10', needed: 1, filled: 0 },
+        { id: 2, job: 'B', startDate: '2026-04-10', endDate: '2026-04-20', needed: 1, filled: 0 },
+      ],
+      contractors: [], timelogs: [], receipts: [], invoices: [], clients: [],
+    };
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'local' }));
+    vi.doMock('../../../lib/supabase', () => ({ isSupabaseConfigured: false, supabase: null }));
+    vi.doMock('../../../lib/app-data', () => ({ getLocalAppState: () => snapshot, subscribeToLocalAppState: vi.fn(), updateLocalAppState: vi.fn() }));
+    const { getProjectRows } = await import('./projects.service');
+    expect(getProjectRows('', { client: 'Klient A' }).map((row) => row.id).sort()).toEqual(['A', 'C']);
+    expect(getProjectRows('', { startDate: '2026-04-10', endDate: '2026-04-10' }).map((row) => row.id)).toEqual(['A', 'B']);
+    expect(getProjectRows('', { client: 'Klient A', startDate: '2026-04-10', endDate: '2026-04-10' }).map((row) => row.id)).toEqual(['A']);
+    expect(getProjectRows('', { startDate: '2026-04-11' }).map((row) => row.id)).toEqual(['B']);
+    expect(getProjectRows('', { endDate: '2026-03-31' })).toEqual([]);
+    expect(getProjectRows('', 'all').find((row) => row.id === 'A')?.period).toEqual({ startDate: '2026-04-01', endDate: '2026-04-10' });
+  });
+
+  it('takes project row snapshot after dependency loading triggers', async () => {
+    let snapshot = { projects: [{ id: 'A', name: 'A', client: '', createdAt: '2026-01-01' }], events: [], timelogs: [], contractors: [], invoices: [] };
+    const ensureSupabaseEventsLoaded = vi.fn(() => {
+      snapshot = { ...snapshot, events: [{ id: 1, job: 'A', startDate: '2026-04-01', endDate: '2026-04-10', needed: 1, filled: 0 }] };
+    });
+    const order = vi.fn().mockResolvedValue({ data: [], error: null });
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({ isSupabaseConfigured: true, supabase: { from: () => ({ select: () => ({ order }) }) } }));
+    vi.doMock('../../../lib/app-data', () => ({ getLocalAppState: () => snapshot, subscribeToLocalAppState: vi.fn(), updateLocalAppState: vi.fn() }));
+    vi.doMock('../../events/services/events.service', () => ({ ensureSupabaseEventsLoaded }));
+    vi.doMock('../../timelogs/services/timelogs.service', () => ({ ensureSupabaseTimelogsLoaded: vi.fn() }));
+    vi.doMock('../../crew/services/crew.service', () => ({ ensureSupabaseCrewLoaded: vi.fn() }));
+    const { getProjectRows } = await import('./projects.service');
+    expect(getProjectRows()[0].eventCount).toBe(1);
+    expect(getProjectRows()[0].period).toEqual({ startDate: '2026-04-01', endDate: '2026-04-10' });
+  });
+
   it('persists a new project to Supabase with resolved client UUID', async () => {
     let snapshot = {
       projects: [],

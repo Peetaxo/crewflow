@@ -297,6 +297,7 @@ export function mapInvoice(row: InvoiceRow): Invoice {
     hAmt: Number(row.amount_hours ?? 0),
     km: 0,
     kAmt: Number(row.amount_km ?? 0),
+    mealAmt: Number(row.amount_meals ?? 0),
     receiptAmt: Number(row.amount_receipts ?? 0),
     total: Number(row.total_amount ?? 0),
     job: row.job_number ?? '',

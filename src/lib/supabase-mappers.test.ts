@@ -164,6 +164,13 @@ describe('supabase mappers', () => {
     });
   });
 
+  it('hydrates the existing invoice header meal amount', () => {
+    expect(mapInvoice({ id: 'invoice-meals', amount_hours: 1200, amount_km: 100, amount_meals: 250,
+      amount_receipts: 150, total_amount: 1700, status: 'paid' } as InvoiceRow)).toMatchObject({
+      hAmt: 1200, kAmt: 100, mealAmt: 250, receiptAmt: 150, total: 1700,
+    });
+  });
+
   it('maps contractor rating only from the aggregated profile rating', () => {
     const row: ProfileRow = {
       id: 'profile-uuid-1',

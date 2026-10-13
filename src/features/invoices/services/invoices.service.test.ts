@@ -149,8 +149,8 @@ describe('invoices.service billing batches', () => {
     }] : [] });
     const rows: Record<string, unknown[]> = {
       invoices: [
-        { id: 'invoice-uuid-1', contractor_id: 'profile-uuid-1', event_id: null, job_number: null,
-          total_hours: 8, amount_hours: 2000, amount_km: 140, total_amount: 2140, status: 'paid',
+        { id: 'invoice-uuid-1', contractor_id: 'profile-uuid-1', event_id: null, job_number: 'AK001, AK002',
+          total_hours: 8, amount_hours: 2000, amount_km: 140, amount_meals: 300, amount_receipts: 100, total_amount: 2540, status: 'paid',
           invoice_number: 'SF-2026-NOVAK-T-0001', updated_at: '2026-10-12T10:00:00Z' },
         { id: 'invoice-uuid-2', contractor_id: 'profile-uuid-2', total_hours: 1, amount_hours: 250,
           amount_km: 400, total_amount: 650, status: 'draft' },
@@ -158,8 +158,10 @@ describe('invoices.service billing batches', () => {
       profiles: [{ id: 'profile-uuid-1' }, { id: 'profile-uuid-2' }],
       events: [{ id: 'event-uuid-1' }, { id: 'event-uuid-2' }],
       invoice_items: [
-        { id: 'item-1', invoice_id: 'invoice-uuid-1', event_id: 'event-uuid-1', job_number: 'AK001', km: firstKm },
-        { id: 'item-2', invoice_id: 'invoice-uuid-1', event_id: 'event-uuid-2', job_number: 'AK002', km: secondKm },
+        { id: 'item-1', invoice_id: 'invoice-uuid-1', event_id: 'event-uuid-1', job_number: 'AK001', km: firstKm,
+          amount_hours: 1400, amount_km: 80, amount_meals: 100, amount_receipts: 50, total_amount: 1630 },
+        { id: 'item-2', invoice_id: 'invoice-uuid-1', event_id: 'event-uuid-2', job_number: 'AK002', km: secondKm,
+          amount_hours: 600, amount_km: 60, amount_meals: 200, amount_receipts: 50, total_amount: 910 },
         { id: 'item-3', invoice_id: 'invoice-uuid-2', event_id: 'event-uuid-1', job_number: 'AK001', km: 777 },
       ],
     };
@@ -210,8 +212,12 @@ describe('invoices.service billing batches', () => {
     const invoices = await fetchInvoicesSnapshot();
     expect(invoices[0]).toMatchObject({
       invoiceNumber: 'SF-2026-NOVAK-T-0001', km: totalKm,
-      hours: 8, hAmt: 2000, kAmt: 140, total: 2140,
+      hours: 8, hAmt: 2000, kAmt: 140, mealAmt: 300, receiptAmt: 100, total: 2540,
       jobNumbers: ['AK001', 'AK002'], eventIds: [1, 2],
+      items: [
+        { id: 'item-1', jobNumber: 'AK001', eventSupabaseId: 'event-uuid-1', work: 1400, travel: 80, meals: 100, receipts: 50, total: 1630 },
+        { id: 'item-2', jobNumber: 'AK002', eventSupabaseId: 'event-uuid-2', work: 600, travel: 60, meals: 200, receipts: 50, total: 910 },
+      ],
     });
     expect(invoices[1]).toMatchObject({ km: 777, hAmt: 250, kAmt: 400, total: 650 });
   });
@@ -239,8 +245,9 @@ describe('invoices.service billing batches', () => {
     expect(safeSelectSource).toContain("throw new Error('Faktury se nepodařilo načíst.')");
   });
 
-  it('creates one invoice batch for one contractor with multiple job numbers', async () => {
-    let snapshot = createSnapshot();
+  it.each([false, true])('creates one LOCAL invoice batch with exact project amounts, meals enabled=$withMeals', async (withMeals) => {
+    let snapshot = { ...createSnapshot(), events: createSnapshot().events.map((event) => ({ ...event, mealAllowanceEnabled: withMeals })) };
+    snapshot.timelogs.forEach((timelog) => { timelog.days[0].meals = ['obed']; });
     const markTimelogsAsInvoiced = vi.fn();
     const markReceiptsAsAttached = vi.fn();
 
@@ -282,9 +289,11 @@ describe('invoices.service billing batches', () => {
 
     vi.doMock('../../../data', () => ({
       KM_RATE: 5,
+      MEAL_RATE: 250,
     }));
 
-    vi.doMock('../../../utils', () => ({
+    vi.doMock('../../../utils', async (importOriginal) => ({
+      ...await importOriginal<typeof import('../../../utils')>(),
       calculateTotalHours: (days: Timelog['days']) => {
         const day = days[0];
         if (!day) return 0;
@@ -317,7 +326,12 @@ describe('invoices.service billing batches', () => {
     expect(created[0].hAmt).toBe(4250);
     expect(created[0].kAmt).toBe(50);
     expect(created[0].receiptAmt).toBe(300);
-    expect(created[0].total).toBe(4600);
+    expect(created[0].mealAmt).toBe(withMeals ? 600 : 0);
+    expect(created[0].total).toBe(withMeals ? 5200 : 4600);
+    expect(created[0].items).toEqual([
+      { id: expect.any(String), jobNumber: 'AK001', eventSupabaseId: 'event-uuid-1', work: 2500, travel: 50, meals: withMeals ? 350 : 0, receipts: 0, total: withMeals ? 2900 : 2550 },
+      { id: expect.any(String), jobNumber: 'AK002', eventSupabaseId: 'event-uuid-2', work: 1750, travel: 0, meals: withMeals ? 250 : 0, receipts: 300, total: withMeals ? 2300 : 2050 },
+    ]);
     expect(snapshot.invoices).toHaveLength(1);
     expect(markTimelogsAsInvoiced).toHaveBeenCalledWith([1, 2]);
     expect(markReceiptsAsAttached).toHaveBeenCalledWith([11]);
@@ -733,6 +747,7 @@ describe('invoices.service billing batches', () => {
 
     const { createInvoiceFromSelection } = await import('./invoices.service');
     await createInvoiceFromSelection('profile-uuid-1', [2], [11]);
+    expect(snapshot.invoices[0].items).toBeUndefined();
 
     expect(rpc).toHaveBeenCalledWith('next_self_billing_invoice_sequence', {
       p_invoice_year: 2026,

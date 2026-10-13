@@ -305,6 +305,18 @@ export interface InvoiceCustomerSnapshot {
   country: string;
 }
 
+/** Persisted monetary allocation; historical amounts must not be recalculated from current rates. */
+export interface InvoiceItem {
+  id: string;
+  jobNumber: string;
+  eventSupabaseId?: string;
+  work: number;
+  travel: number;
+  meals: number;
+  receipts: number;
+  total: number;
+}
+
 /** Faktura */
 export interface Invoice {
   id: string;
@@ -327,6 +339,8 @@ export interface Invoice {
   job: string;
   /** Vsechny job number zahrnute do billing batch faktury */
   jobNumbers?: string[];
+  /** Exact project allocations from persisted invoice items; absent on legacy invoices. */
+  items?: InvoiceItem[];
   /** Navazane timelogy zahrnute do faktury */
   timelogIds?: number[];
   /** Stabilni Supabase UUID navazanych timelogu */

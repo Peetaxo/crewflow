@@ -2,7 +2,7 @@
 
 Datum: 2026-10-13
 
-Produktový průchod, význam odeslání výkazu a určení odběratele uživatel schválil v této konverzaci. Tento dokument konkretizuje nové chování pro kontrolu před implementací. Nová fakturace ani souhlasy zatím nejsou implementované nebo nasazené.
+Produktový průchod, význam odeslání výkazu, určení odběratele a tento konkrétní návrh uživatel schválil v této konverzaci. Při závěrečné kontrole určil CH jako kontrolora vlastní nahrané faktury; tato změna je zapracovaná níže. Nová fakturace ani souhlasy zatím nejsou implementované nebo nasazené.
 
 ## Běžný průchod
 
@@ -42,7 +42,7 @@ Uchová se původní číslo faktury dodavatele. Stejné číslo u dvou různýc
 
 Nahrání provede server po ověření přihlášeného vlastníka a aktuálního podkladu. Ověří velikost, typ a hlavičku PDF a uloží soubor do soukromého úložiště. Název ani cesta od prohlížeče neslouží jako oprávnění nebo důkaz vlastnictví.
 
-Nahraná faktura přejde do **Ke kontrole dokumentu**. COO porovná dokument s podkladem, zejména dodavatele, odběratele, číslo a částku. Pro první verzi se nepředstírá automatické vytěžení nebo ověření všech údajů uvnitř PDF. Po přijetí se doklad objeví mezi skutečnými fakturami a přesné výkazy se propojí s touto fakturou. Nesoulad se vrátí s konkrétním důvodem; schválené hodiny se tím nezamítají.
+Nahraná faktura přejde do **Ke kontrole dokumentu**. CH porovná dokument s podkladem, zejména dodavatele, odběratele, číslo a částku. Pro první verzi se nepředstírá automatické vytěžení nebo ověření všech údajů uvnitř PDF. Po přijetí se doklad objeví mezi skutečnými fakturami a přesné výkazy se propojí s touto fakturou. Nesoulad se vrátí s konkrétním důvodem; schválené hodiny se tím nezamítají.
 
 Opravené PDF je nová verze dokumentu. Starší verze a rozhodnutí zůstanou dohledatelné. Po přijetí či úhradě nelze doklad potichu přepsat jiným souborem. Generátor self-billingu nesmí nahranou fakturu regenerovat nebo přepsat. Stahování vrací přijatý originál.
 
@@ -70,7 +70,7 @@ Přijaté vlastní faktury i vystavené self-billing faktury používají stejn�
 
 ## Oprávnění, obnova a zavedení
 
-Crew čte pouze vlastní podklady, souhlasy, dokumenty a faktury. CH a COO mají aktuální oprávněný přehled; rozhodnutí o přijetí dokumentu a úhradě zůstává COO. Anonymní přístup ani změna uživatelských metadat nepřidá přístup. Nové tabulky a soukromé soubory mají vlastní pravidla čtení a žádné obecné přímé klientské zápisy.
+Crew čte pouze vlastní podklady, souhlasy, dokumenty a faktury. CH a COO mají aktuální oprávněný přehled. Nahraný dokument přijímá nebo vrací CH, konečný výkaz schvaluje COO a označení úhrady zůstává COO. Anonymní přístup ani změna uživatelských metadat nepřidá přístup. Nové tabulky a soukromé soubory mají vlastní pravidla čtení a žádné obecné přímé klientské zápisy.
 
 Nové dotazy a načítání jsou svázané s přihlášenou identitou. Odhlášení, přepnutí profilu nebo změna role odstraní starý kontext a zastaví publikování opožděných odpovědí. Přehled se po změnách obnovuje mezi účty a po návratu do aplikace.
 
@@ -82,7 +82,7 @@ Migrace zachová historické faktury, čísla, částky, soubory, výkazy a schv
 - Nedokončené, vrácené nebo částečně schválené společné kolo nevystaví fakturu.
 - Jednotlivý souhlas vystaví jednu fakturu s přesně zobrazenými údaji; bez souhlasu nevznikne doklad.
 - Trvalý souhlas: nové schválení vystaví fakturu bez dalšího kliknutí crew; starší podklady se nevystaví. Odvolání zastaví další automatické vystavení.
-- Vlastní PDF: nahrání → kontrola → vrácení → opravená verze → přijetí → stažení původního souboru → označení úhrady.
+- Vlastní PDF: nahrání → kontrola CH → vrácení CH → opravená verze → přijetí CH → stažení původního souboru → označení úhrady COO. COO nemůže přijetí dokumentu provést místo CH.
 - Změna sazby po schválení nemění schválenou částku. Podklad a PDF zachovají cestovné i podporované stravné.
 - Stejná data při novém přihlášení a na druhém zařízení; skutečné povolení i odmítnutí přístupu pro čtyři oddělené testovací účty.
 - Souběžné potvrzení, nahrání a automatický běh; souběh se změnou podkladu nebo odvoláním souhlasu; žádná duplicitní faktura.

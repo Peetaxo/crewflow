@@ -64,19 +64,64 @@ describe('mobile workflow selection in the actual events overview', () => {
     const after = cards(); expect(after).toHaveLength(before.length);
     after.forEach((card, i) => expect(card).toBe(before[i]));
   };
-  function measureOverview(withReasonLayout = false) {
+  function measureOverview(withReasonLayout = false, nativeEntry = false) {
     const actual = HTMLElement.prototype.getBoundingClientRect;
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
       const frame = this.closest<HTMLElement>('.nodu-page-frame');
       const index = cards().indexOf(this);
       const selecting = Boolean(document.querySelector('.nodu-mobile-workflow-selection'));
       const reasonShift = withReasonLayout && index >= 0 ? cards().slice(0, index).reduce((sum, card) => sum + (card.hasAttribute('aria-describedby') ? 48 : 0), 0) : 0;
-      const top = this === frame ? 0 : index >= 0 ? 160 + (selecting ? 60 : 0) + index * 220 + reasonShift - (frame?.scrollTop ?? 0) : 0;
-      const height = this === frame ? 818 : index >= 0 ? 200 : this.hasAttribute('data-workflow-toolbar') ? 132 : 0;
-      if (this === frame || index >= 0 || this.hasAttribute('data-workflow-toolbar')) return { x: 0, y: top, top, bottom: top + height, left: 0, right: 393, width: 393, height, toJSON: () => ({}) };
+      const cardIndex = index >= 0 ? index : nativeEntry ? cards().indexOf(this.closest<HTMLElement>('[data-workflow-occurrence]')!) : -1;
+      const cardPosition = (nativeEntry ? 213 : 160) + (selecting ? (nativeEntry ? 128 : 60) : 0) + cardIndex * 220 + reasonShift - (frame?.scrollTop ?? 0);
+      const top = this === frame ? 0 : index >= 0 ? cardPosition : this.hasAttribute('data-workflow-toolbar') ? (nativeEntry ? 126 : 0)
+        : cardIndex >= 0 ? cardPosition + (this.matches('h3') ? 54 : this.matches('p') ? 74 : 16) : 0;
+      const height = this === frame ? (nativeEntry ? 800 : 818) : index >= 0 ? 200 : this.hasAttribute('data-workflow-toolbar') ? (nativeEntry ? 166 : 132) : 16;
+      const width = nativeEntry ? 368 : 393;
+      if (this === frame || index >= 0 || cardIndex >= 0 || this.hasAttribute('data-workflow-toolbar')) return { x: 0, y: top, top, bottom: top + height, left: 0, right: width, width, height, toJSON: () => ({}) };
       return actual.call(this);
     });
   }
+
+  it.each([0, 137])('clears the actual native entry toolbar at scrollTop=%s and restores the exact normal snapshot on cancel', async (entryScroll) => {
+    const read = held<typeof workflowEvents>(); workflowBoundary.events.mockReturnValue(read.promise);
+    await setup(); measureOverview(false, true); const frame = screen.getByTestId('frame');
+    let nativeTop = 0; Object.defineProperty(frame, 'scrollTop', { configurable: true, get: () => nativeTop, set: (value: number) => { nativeTop = Math.max(0, value); } });
+    frame.scrollTop = entryScroll;
+    const before = cards(); const first = before[0]; const normalOffset = first.getBoundingClientRect().top;
+    const selectedDate = first.dataset.workflowOccurrence!.slice(-10);
+    fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' })); sameCards(before);
+    const toolbar = document.querySelector<HTMLElement>('[data-workflow-toolbar]')!;
+    expect(toolbar.getBoundingClientRect().bottom).toBe(292);
+    expect(first.getBoundingClientRect().top).toBeGreaterThanOrEqual(toolbar.getBoundingClientRect().bottom);
+    expect(within(first).getByRole('heading').getBoundingClientRect().top).toBeGreaterThanOrEqual(toolbar.getBoundingClientRect().bottom);
+    expect(within(first).getByText('JOB').getBoundingClientRect().top).toBeGreaterThanOrEqual(toolbar.getBoundingClientRect().bottom);
+    within(first).getAllByText(/12\. 5\. 2026/).forEach((date) => expect(date.getBoundingClientRect().top).toBeGreaterThanOrEqual(toolbar.getBoundingClientRect().bottom));
+    expect(first.dataset.workflowOccurrence).toContain(selectedDate); expect(document.querySelector('[data-workflow-start-date]')).toHaveAttribute('data-workflow-start-date', '2026-05-12');
+    expect(screen.getByRole('searchbox')).toHaveValue(''); expect(screen.getByRole('button', { name: 'Vse' })).toHaveClass('text-[color:var(--nodu-accent)]');
+    const entryOffset = first.getBoundingClientRect().top; fireEvent.click(before[0]); fireEvent.click(before[1]);
+    await act(async () => read.resolve(workflowEvents)); await waitFor(() => expect(screen.getByRole('button', { name: 'Pokračovat' })).toBeEnabled());
+    sameCards(before); expect(first.getBoundingClientRect().top).toBe(entryOffset);
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'OLD' } }); fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } });
+    const restored = cards()[0]; expect(restored.getBoundingClientRect().top).toBe(entryOffset);
+    const summaryCards = cards(); fireEvent.click(screen.getByRole('button', { name: 'Pokračovat' })); fireEvent.click(screen.getByRole('button', { name: 'Zpět k výběru' }));
+    sameCards(summaryCards); expect(restored.getBoundingClientRect().top).toBe(entryOffset); expect(frame.getBoundingClientRect()).toMatchObject({ width: 368, height: 800 });
+    fireEvent.click(screen.getByRole('button', { name: 'Zrušit' })); expect(frame.scrollTop).toBe(entryScroll); expect(cards()[0].getBoundingClientRect().top).toBe(normalOffset);
+    expect(workflowBoundary.save).not.toHaveBeenCalled();
+  });
+  it.each([{ query: 'Přípravy', scroll: 0, count: 1 }, { query: 'JOB', scroll: 100, count: 4 }])('clears inherited query $query back to the current adjusted native window rather than its covered normal offset', async ({ query, scroll, count }) => {
+    context.searchQuery = query; await setup(); measureOverview(false, true);
+    const frame = screen.getByTestId('frame'); let nativeTop = 0;
+    Object.defineProperty(frame, 'scrollTop', { configurable: true, get: () => nativeTop, set: (value: number) => { nativeTop = Math.max(0, value); } });
+    const normalOffset = cards()[0].getBoundingClientRect().top;
+    fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' })); const entryOffset = cards()[0].getBoundingClientRect().top;
+    expect(entryOffset).toBeGreaterThanOrEqual(document.querySelector<HTMLElement>('[data-workflow-toolbar]')!.getBoundingClientRect().bottom);
+    const occurrenceKey = cards()[0].dataset.workflowOccurrence;
+    frame.scrollTop += scroll; fireEvent.scroll(frame); const localOffset = cards()[0].getBoundingClientRect().top;
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } });
+    const originalOccurrence = cards().find((card) => card.dataset.workflowOccurrence === occurrenceKey)!;
+    expect(originalOccurrence.getBoundingClientRect().top).toBe(localOffset); expect(cards()).toHaveLength(4);
+    fireEvent.click(screen.getByRole('button', { name: 'Zrušit' })); expect(cards()).toHaveLength(count); expect(frame.scrollTop).toBe(0); expect(cards()[0].getBoundingClientRect().top).toBe(normalOffset);
+  });
 
   it.each(['crewhead', 'coo'])('selects immediately for %s while preserving the real May 12 cards, date, filter, and position', async (role) => {
     vi.setSystemTime(new Date('2026-05-20T12:00:00'));
@@ -88,9 +133,10 @@ describe('mobile workflow selection in the actual events overview', () => {
     measureOverview();
     const frame = screen.getByTestId('frame'); frame.scrollTop = 137;
     const before = cards(); const keys = before.map((card) => card.dataset.workflowOccurrence);
-    const visiblePosition = before[0].getBoundingClientRect().top;
+    const normalVisiblePosition = before[0].getBoundingClientRect().top;
     expect(before).toHaveLength(4);
     fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' }));
+    const visiblePosition = Math.max(normalVisiblePosition, document.querySelector<HTMLElement>('[data-workflow-toolbar]')!.getBoundingClientRect().bottom + 12);
     sameCards(before); expect(cards().map((card) => card.dataset.workflowOccurrence)).toEqual(keys); expect(before[0].getBoundingClientRect().top).toBe(visiblePosition); expect(frame.getBoundingClientRect().height).toBe(818);
     expect(screen.queryByRole('heading', { name: 'Propojit směny' })).not.toBeInTheDocument();
     expect(screen.queryByText('Načítání propojení…')).not.toBeInTheDocument(); expect(screen.queryByText('Vyberte alespoň dvě směny.')).not.toBeInTheDocument();
@@ -179,8 +225,9 @@ describe('mobile workflow selection in the actual events overview', () => {
     workflowBoundary.reports.mockResolvedValue([{ id: 100, eid: 22, eventSupabaseId: workflowId(22), contractorProfileId: workflowId(99), status: 'pending_ch', days: [], km: 0, note: '' }]);
     await setup(); measureOverview(true); const frame = screen.getByTestId('frame'); frame.scrollTop = 370;
     const before = cards(); const visible = before.find((card) => card.dataset.workflowOccurrence?.startsWith(`${workflowId(21)}|`))!;
-    const offset = visible.getBoundingClientRect().top;
+    const normalOffset = visible.getBoundingClientRect().top;
     fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' })); fireEvent.click(before[0]); fireEvent.click(visible);
+    const offset = Math.max(normalOffset, document.querySelector<HTMLElement>('[data-workflow-toolbar]')!.getBoundingClientRect().bottom + 12);
     expect(visible.getBoundingClientRect().top).toBe(offset);
     await act(async () => read.resolve(workflowEvents)); await screen.findByRole('alert');
     expect(within(before[0]).getByText(/schvalování/)).toBeInTheDocument(); sameCards(before);
@@ -190,8 +237,10 @@ describe('mobile workflow selection in the actual events overview', () => {
   it('remembers the local window position on the first inline edit of an inherited nonempty query', async () => {
     context.searchQuery = 'Přípravy'; await setup(); measureOverview();
     const frame = screen.getByTestId('frame'); frame.scrollTop = 80;
-    const entry = cards()[0]; const offset = entry.getBoundingClientRect().top;
-    fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' })); expect(cards()).toHaveLength(1); expect(cards()[0]).toBe(entry); expect(entry.getBoundingClientRect().top).toBe(offset);
+    const entry = cards()[0]; const normalOffset = entry.getBoundingClientRect().top;
+    fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' }));
+    const offset = Math.max(normalOffset, document.querySelector<HTMLElement>('[data-workflow-toolbar]')!.getBoundingClientRect().bottom + 12);
+    expect(cards()).toHaveLength(1); expect(cards()[0]).toBe(entry); expect(entry.getBoundingClientRect().top).toBe(offset);
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'OLD' } }); expect(screen.getByText('Starší přípravy')).toBeInTheDocument();
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } });
     expect(cards()).toHaveLength(4); const restored = cards().find((card) => card.dataset.workflowOccurrence?.startsWith(`${workflowId(21)}|`))!;

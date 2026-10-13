@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarDays, ChevronLeft, ChevronRight, Filter, List } from 'lucide-react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { CalendarDays, ChevronLeft, ChevronRight, Filter, Link2, List } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import {
@@ -44,6 +44,11 @@ import {
 import { EventFilter } from '../features/events/types/events.types';
 import EventListCard, { getListOccurrencesForEvent, getStableEventColorTone, type EventListOccurrence } from '../features/events/components/EventListCard';
 import { EventShiftWorkflowCreateAction } from '../features/shift-workflows/EventShiftWorkflowManagement';
+import { MobileEventShiftWorkflowSelection, type MobileWorkflowSelectionState } from '../features/shift-workflows/MobileEventShiftWorkflowSelection';
+import { captureCardScrollPosition, restoreCardScrollPosition, useShiftWorkflowCardScroll, type CardScrollPosition } from '../features/shift-workflows/useShiftWorkflowCardScroll';
+import { useShiftWorkflowVisualViewport } from '../features/shift-workflows/useShiftWorkflowVisualViewport';
+import { cardTimelineOccurrences, previousTimelineWeek, type CardTimeline } from '../features/shift-workflows/shift-workflow-card-timeline';
+import { shiftWorkflowEventId } from '../features/shift-workflows/shift-workflows.selection';
 
 type EventsViewMode = 'list' | 'calendar';
 type CalendarMode = 'month' | 'week';
@@ -218,7 +223,12 @@ const matchesMobileCrewEventFilter = (
   return isFullyStaffed;
 };
 
-const EventsView = () => {
+type CapturedEventsPresentation = {
+  events: Event[];
+  details: Map<SelectedEventId, ReturnType<typeof getEventDetailData>>;
+};
+
+const EventsOverview = ({ selection = null }: { selection?: MobileWorkflowSelectionState | null }) => {
   const {
     role,
     setCurrentTab,
@@ -226,6 +236,7 @@ const EventsView = () => {
     setSelectedEventId,
     setSelectedContractorProfileId,
     searchQuery,
+    setSearchQuery,
     setDeleteConfirm,
     setEventTab,
     eventsViewMode,
@@ -247,18 +258,89 @@ const EventsView = () => {
   const [applicationDraftTimes, setApplicationDraftTimes] = useState<Record<string, { from: string; to: string }>>({});
   const canManageEvents = role !== 'crew';
   const viewMode = eventsViewMode as EventsViewMode;
-  const canUseCalendarView = canManageEvents || !isMobile;
-  const effectiveViewMode: EventsViewMode = canUseCalendarView ? viewMode : 'list';
+  const canUseCalendarView = !isMobile;
+  const effectiveViewMode: EventsViewMode = isMobile ? 'list' : viewMode;
   const isMobileEventFeed = isMobile && effectiveViewMode === 'list';
   const isMobileCrewEventFeed = isMobileEventFeed && role === 'crew';
   const calendarMode = eventsCalendarMode as CalendarMode;
-  const eventFilter = eventsFilter as EventFilter;
+  const selectionActive = Boolean(selection?.active);
+  const [selectionFilter, setSelectionFilter] = useState<EventFilter>('all');
+  const eventFilter = selectionActive ? selectionFilter : eventsFilter as EventFilter;
   const todayDateKey = getTodayDateKey();
   const [showMobileDatePicker, setShowMobileDatePicker] = useState(false);
   const [showMobileCrewFilters, setShowMobileCrewFilters] = useState(false);
   const [mobileListStartDate, setMobileListStartDate] = useState(() => getTodayDateKey());
   const [mobilePickerMonthDate, setMobilePickerMonthDate] = useState(() => getTodayDateKey());
   const [mobileCrewFilter, setMobileCrewFilter] = useState<MobileCrewEventFilter>('all');
+  const [presentation, setPresentation] = useState<CapturedEventsPresentation | null>(null);
+  const [selectionTimeline, setSelectionTimeline] = useState<CardTimeline>(() => ({ anchorDate: todayDateKey, startDate: todayDateKey, query: '' }));
+  const [searchAllPresentation, setSearchAllPresentation] = useState(false);
+  const mobileViewDate = selectionActive ? selectionTimeline.anchorDate : mobileListStartDate;
+  const overview = useRef<HTMLDivElement>(null);
+  const entryPosition = useRef<CardScrollPosition | null>(null);
+  const entryPreferences = useRef<{ date: string; filter: EventFilter; query: string; calendarDate: string } | null>(null);
+  const restoreEntry = useRef(false);
+  const summaryPosition = useRef<CardScrollPosition | null>(null);
+  const previousSelection = useRef({ active: false, summary: false });
+  const displayEvents = useMemo(() => selectionActive && presentation ? presentation.events : eventsQuery.data ?? [], [selectionActive, presentation, eventsQuery.data]);
+  const displayQuery = selectionActive ? selectionTimeline.query : searchQuery;
+  const allPresentationDates = useMemo(() => selectionActive ? cardTimelineOccurrences(displayEvents.map((event) => ({ id: String(getEventSelectionId(event)), event })),
+    { anchorDate: '', startDate: '0001-01-01', query: '' }).map(({ date }) => date) : [], [displayEvents, selectionActive]);
+  const cardScroll = useShiftWorkflowCardScroll({ container: overview, active: selectionActive && !selection?.summary, entryMode: 'preserve', preserveLayout: true,
+    query: selectionTimeline.query, anchorDate: selectionTimeline.anchorDate, startDate: selectionTimeline.startDate,
+    onExpand: () => {
+      if (!allPresentationDates.some((date) => date < selectionTimeline.startDate)) return false;
+      setSelectionTimeline((current) => ({ ...current, startDate: previousTimelineWeek(current.startDate) })); return true;
+    } });
+  useShiftWorkflowVisualViewport({ container: overview, active: selectionActive && !selection?.summary });
+  const { rememberLayout } = cardScroll;
+  useLayoutEffect(() => {
+    const before = previousSelection.current;
+    const frame = overview.current?.closest<HTMLElement>('.nodu-page-frame');
+    if (!before.active && selectionActive && frame && entryPosition.current && overview.current) {
+      restoreCardScrollPosition(frame, entryPosition.current, overview.current);
+      rememberLayout();
+    } else if (before.active && !selectionActive) {
+      restoreEntry.current = true;
+      const entry = entryPreferences.current;
+      if (entry) {
+        setMobileListStartDate(entry.date); setMobilePickerMonthDate(entry.date);
+        if (eventsFilter !== entry.filter) setEventsFilter(entry.filter);
+        if (searchQuery !== entry.query) setSearchQuery(entry.query);
+        if (eventsCalendarDate !== entry.calendarDate) setEventsCalendarDate(entry.calendarDate);
+      }
+      setPresentation(null); setShowMobileDatePicker(false);
+    } else if (before.summary && !selection?.summary && selectionActive && frame && summaryPosition.current && overview.current) {
+      restoreCardScrollPosition(frame, summaryPosition.current, overview.current);
+      rememberLayout();
+    }
+    const entry = entryPreferences.current;
+    if (!selectionActive && restoreEntry.current && entry && mobileListStartDate === entry.date
+      && eventsFilter === entry.filter && searchQuery === entry.query && eventsCalendarDate === entry.calendarDate) {
+      if (frame && entryPosition.current && overview.current) restoreCardScrollPosition(frame, entryPosition.current, overview.current);
+      restoreEntry.current = false;
+    }
+    previousSelection.current = { active: selectionActive, summary: Boolean(selection?.summary) };
+  }, [selectionActive, selection?.summary, mobileListStartDate, eventsFilter, searchQuery, eventsCalendarDate, setEventsFilter, setEventsCalendarDate, setSearchQuery, rememberLayout]);
+  const openSelection = () => {
+    if (!selection || selection.active) return;
+    const frame = overview.current?.closest<HTMLElement>('.nodu-page-frame');
+    entryPosition.current = frame && overview.current ? captureCardScrollPosition(frame, overview.current) : null;
+    entryPreferences.current = { date: mobileListStartDate, filter: eventsFilter as EventFilter, query: searchQuery, calendarDate: eventsCalendarDate };
+    const capturedEvents = structuredClone(eventsQuery.data ?? []);
+    const details = new Map(capturedEvents.map((event) => [getEventSelectionId(event), structuredClone(getEventDetailData(getEventSelectionId(event)))]));
+    setPresentation({ events: capturedEvents, details });
+    setSelectionFilter(eventsFilter as EventFilter);
+    setSelectionTimeline({ anchorDate: mobileListStartDate, startDate: mobileListStartDate, query: searchQuery });
+    setSearchAllPresentation(false); cardScroll.rememberWindow();
+    setShowMobileDatePicker(false); selection.open();
+  };
+  const changeSelectionQuery = (query: string) => {
+    if (!searchAllPresentation && query.trim()) cardScroll.rememberWindow();
+    if (selectionTimeline.query.trim() && !query.trim()) cardScroll.restoreWindow();
+    setSearchAllPresentation(Boolean(query.trim()));
+    setSelectionTimeline((current) => ({ ...current, query }));
+  };
   const selectedEvent = useMemo(
     () => (eventsQuery.data ?? []).find((event) => (
       selectedEventId == null
@@ -269,15 +351,15 @@ const EventsView = () => {
   );
   const isMobileEventDetailOpen = Boolean(isMobile && selectedEventId && selectedEvent);
   const events = useMemo(() => {
-    const safeEvents = eventsQuery.data ?? [];
-    const query = searchQuery.trim().toLowerCase();
+    const safeEvents = displayEvents;
+    const query = displayQuery.trim().toLowerCase();
 
     if (!query) return safeEvents;
 
     return safeEvents.filter((event) => (
       event.name.toLowerCase().includes(query) || event.job.toLowerCase().includes(query)
     ));
-  }, [eventsQuery.data, searchQuery]);
+  }, [displayEvents, displayQuery]);
 
   useEffect(() => {
     if (selectedEventId && !selectedEvent) {
@@ -326,7 +408,7 @@ const EventsView = () => {
     if (isMobileEventFeed) {
       return visibleEvents
         .filter((event) => (
-          isEventVisibleFromMobileDate(event, role, currentProfileId, mobileListStartDate)
+          isEventVisibleFromMobileDate(event, role, currentProfileId, selectionActive ? (searchAllPresentation ? '0001-01-01' : selectionTimeline.startDate) : mobileListStartDate)
           || (isMobileEventDetailOpen && selectedEventId != null && getEventSelectionId(event) === selectedEventId)
         ))
         .filter((event) => (
@@ -340,12 +422,12 @@ const EventsView = () => {
     }
 
     return monthVisibleEvents;
-  }, [currentProfileId, effectiveViewMode, isMobileCrewEventFeed, isMobileEventDetailOpen, isMobileEventFeed, mobileCrewFilter, mobileListStartDate, monthVisibleEvents, role, selectedEventId, visibleEvents]);
-  const listRangeStart = isMobileEventFeed ? mobileListStartDate : selectedMonthStart;
+  }, [currentProfileId, effectiveViewMode, isMobileCrewEventFeed, isMobileEventDetailOpen, isMobileEventFeed, mobileCrewFilter, mobileListStartDate, monthVisibleEvents, role, selectedEventId, visibleEvents, selectionActive, selectionTimeline, searchAllPresentation]);
+  const listRangeStart = isMobileEventFeed ? (selectionActive ? (searchAllPresentation ? '0001-01-01' : selectionTimeline.startDate) : mobileListStartDate) : selectedMonthStart;
   const listRangeEnd = isMobileEventFeed ? '9999-12-31' : selectedMonthEnd;
   const mobilePickerDate = useMemo(
-    () => getSafeDateFromKey(mobilePickerMonthDate, getSafeDateFromKey(mobileListStartDate, new Date())),
-    [mobileListStartDate, mobilePickerMonthDate],
+    () => getSafeDateFromKey(mobilePickerMonthDate, getSafeDateFromKey(mobileViewDate, new Date())),
+    [mobileViewDate, mobilePickerMonthDate],
   );
   const mobilePickerStart = startOfWeek(startOfMonth(mobilePickerDate), { weekStartsOn: 1 });
   const mobilePickerEnd = endOfWeek(endOfMonth(mobilePickerDate), { weekStartsOn: 1 });
@@ -382,6 +464,8 @@ const EventsView = () => {
   ), [canManageEvents, isMobileEventDetailOpen, isMobileEventFeed, listRangeEnd, listRangeStart, listVisibleEvents, mobileListStartDate, selectedEventId]);
 
   const sortedDates = Object.keys(groupedEventOccurrences).sort();
+  const historyStart = selectionActive && !selectionTimeline.query.trim() && selectionTimeline.startDate < selectionTimeline.anchorDate ? selectionTimeline.startDate : null;
+  if (historyStart && !sortedDates.includes(historyStart)) sortedDates.unshift(historyStart);
   const hasNoVisibleEventsForView = effectiveViewMode === 'list'
     ? sortedDates.length === 0
     : visibleEvents.length === 0;
@@ -493,13 +577,17 @@ const EventsView = () => {
 
   const toggleMobileDatePicker = () => {
     setShowMobileCrewFilters(false);
-    setMobilePickerMonthDate(mobileListStartDate);
+    setMobilePickerMonthDate(mobileViewDate);
     setShowMobileDatePicker((isOpen) => !isOpen);
   };
 
   const updateMobileStartDate = (value: string) => {
     if (!value) return;
 
+    if (selectionActive) {
+      cardScroll.jumpToAnchor(); setSelectionTimeline((current) => ({ ...current, anchorDate: value, startDate: value }));
+      setMobilePickerMonthDate(value); setShowMobileDatePicker(false); return;
+    }
     setMobileListStartDate(value);
     setMobilePickerMonthDate(value);
     setShowMobileDatePicker(false);
@@ -507,6 +595,7 @@ const EventsView = () => {
   };
 
   const resetMobileStartDate = () => {
+    if (selectionActive) { updateMobileStartDate(todayDateKey); return; }
     setMobileListStartDate(todayDateKey);
     setMobilePickerMonthDate(todayDateKey);
     setShowMobileDatePicker(false);
@@ -518,10 +607,11 @@ const EventsView = () => {
   }
 
   const normalView = (createAction: React.ReactNode) => (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      <div className={isMobileCrewEventFeed ? 'nodu-mobile-events-toolbar' : 'mb-5 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_auto_1fr] lg:items-start'}>
+    <motion.div ref={overview} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={selectionActive ? 'nodu-workflow-selection nodu-mobile-workflow-selection' : undefined} data-workflow-start-date={selectionActive ? selectionTimeline.startDate : undefined}>
+      <div data-workflow-toolbar-space={selectionActive ? '' : undefined} className={selectionActive ? 'nodu-workflow-selection__toolbar-space' : undefined}>
+      <div data-workflow-toolbar={selectionActive ? '' : undefined} className={isMobileEventFeed ? `nodu-mobile-events-toolbar${selectionActive ? ' nodu-mobile-workflow-selection__toolbar' : ''}` : 'mb-5 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_auto_1fr] lg:items-start'}>
         <div className="flex min-w-0 flex-1 flex-col gap-3">
-          {isMobileCrewEventFeed ? (
+          {isMobileEventFeed ? (
             <div className="nodu-mobile-events-header">
               <button
                 type="button"
@@ -533,7 +623,7 @@ const EventsView = () => {
                 <CalendarDays size={18} />
               </button>
               <h1 className="nodu-mobile-events-header__title">Akce</h1>
-              <button
+              {isMobileCrewEventFeed ? <button
                 type="button"
                 aria-label="Filtrovat akce"
                 aria-pressed={showMobileCrewFilters}
@@ -544,7 +634,9 @@ const EventsView = () => {
                 }}
               >
                 <Filter size={18} />
-              </button>
+              </button> : selection && !selectedEventId ? <button type="button" aria-label="Propojit směny" aria-pressed={selectionActive}
+                className={`nodu-mobile-events-header__action nodu-mobile-events-header__action--right ${selectionActive ? 'nodu-mobile-events-header__action--active' : ''}`}
+                disabled={selection.draft.busy} onClick={selectionActive ? selection.close : openSelection}><Link2 size={18} /></button> : <span className="nodu-mobile-events-header__action--right" />}
             </div>
           ) : (
             <div>
@@ -566,7 +658,7 @@ const EventsView = () => {
                   </button>
                 )}
                 <h1 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--nodu-text)]">Akce</h1>
-                <div className="flex items-center rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
+                {canUseCalendarView && <div className="flex items-center rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
                   {[
                     { id: 'list' as const, label: 'Seznam', icon: List },
                     ...(canUseCalendarView ? [{ id: 'calendar' as const, label: 'Kalendar', icon: CalendarDays }] : []),
@@ -580,7 +672,7 @@ const EventsView = () => {
                       {item.label}
                     </button>
                   ))}
-                </div>
+                </div>}
               </div>
             </div>
           )}
@@ -630,7 +722,7 @@ const EventsView = () => {
               <div className="nodu-mobile-events-date-panel__grid">
                 {mobilePickerDays.map((day) => {
                   const dayKey = format(day, 'yyyy-MM-dd');
-                  const isSelectedDay = Boolean(mobileListStartDate) && dayKey === mobileListStartDate;
+                  const isSelectedDay = Boolean(mobileViewDate) && dayKey === mobileViewDate;
                   const isToday = dayKey === todayDateKey;
 
                   return (
@@ -679,7 +771,7 @@ const EventsView = () => {
               {EVENT_FILTER_OPTIONS.map((item) => (
                 <button
                   key={item.id}
-                  onClick={() => setEventsFilter(item.id)}
+                  onClick={() => selectionActive ? setSelectionFilter(item.id) : setEventsFilter(item.id)}
                   className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-all ${
                     eventFilter === item.id
                       ? 'border-[color:rgb(var(--nodu-accent-rgb)/0.18)] bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)]'
@@ -694,6 +786,9 @@ const EventsView = () => {
               </span>
             </div>
           )}
+          {selectionActive && <label className="nodu-mobile-workflow-selection__search">Hledat směnu nebo jobnumber
+            <input type="search" value={selectionTimeline.query} disabled={selection?.draft.locked} onChange={(event) => changeSelectionQuery(event.target.value)} />
+          </label>}
         </div>
 
         <div className="justify-self-center lg:mt-[38px]">
@@ -753,8 +848,8 @@ const EventsView = () => {
             </>
           )}
 
-          {!selectedEventId && createAction}
-          {canManageEvents && (
+          {!isMobile && !selectedEventId && createAction}
+          {canManageEvents && !selectionActive && (
             <Button
               onClick={() => setEditingEvent(createEmptyEvent())}
               size="sm"
@@ -765,8 +860,9 @@ const EventsView = () => {
           )}
         </div>
       </div>
+      </div>
 
-      {canManageEvents && !isMobileEventDetailOpen && (
+      {canManageEvents && !isMobileEventDetailOpen && !selectionActive && (
         <Button
           aria-label="Nova akce"
           title="Nova akce"
@@ -797,7 +893,7 @@ const EventsView = () => {
         <div className="space-y-6">
           {sortedDates.map((date) => (
             <div key={date} className="space-y-3">
-              <div className="flex items-center gap-4 py-4">
+              <div className="flex items-center gap-4 py-4" data-workflow-date={date}>
                 <div className="h-px flex-1 bg-[color:rgb(var(--nodu-text-rgb)/0.1)]"></div>
                 <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-[color:var(--nodu-text-soft)]">
                   {new Date(date).toLocaleDateString('cs-CZ', { weekday: 'short', day: 'numeric', month: 'long' })}
@@ -806,13 +902,19 @@ const EventsView = () => {
               </div>
 
               <div className="grid grid-cols-1 gap-3">
-                {groupedEventOccurrences[date].map((occurrence) => {
+                {(groupedEventOccurrences[date] ?? []).map((occurrence) => {
+                  const workflowEventId = selectionActive && selection ? (selection.scope.source === 'local'
+                    ? shiftWorkflowEventId(occurrence.event, 'local') : occurrence.event.supabaseId ?? `missing:${occurrence.event.id}`) : '';
+                  const checked = selection?.draft.eventIds.includes(workflowEventId) ?? false;
+                  const reason = selectionActive ? selection?.blockedReason(workflowEventId) ?? null : null;
                   return <EventListCard
                     key={`${occurrence.event.supabaseId ?? occurrence.event.id}-${occurrence.date}`}
                     occurrence={occurrence}
                     canManageEvents={canManageEvents}
                     role={role}
                     currentProfileId={currentProfileId}
+                    detail={selectionActive ? presentation?.details.get(getEventSelectionId(occurrence.event)) : undefined}
+                    selection={selectionActive && selection ? { checked, disabled: selection.draft.locked || (!checked && Boolean(reason)), reason, onToggle: () => selection.toggle(workflowEventId) } : undefined}
                     onOpen={openEventDetail}
                     onDelete={(event) => setDeleteConfirm({ type: 'event', id: event.supabaseId ?? event.id, name: event.name })}
                     onCopy={(event) => setEditingEvent(createEventCopy(event))}
@@ -824,6 +926,7 @@ const EventsView = () => {
                     handleRequestEventWithdrawal={handleRequestEventWithdrawal}
                   />;
                 })}
+                {historyStart === date && !groupedEventOccurrences[date]?.length && <div className="nodu-mobile-workflow-selection__history-space" aria-hidden="true" />}
               </div>
             </div>
           ))}
@@ -927,6 +1030,20 @@ const EventsView = () => {
         </div>
       )}
 
+      {selectionActive && selection && <>
+        {!selection.summary && <div className="nodu-workflow-selection__bar" aria-label="Výběr směn" data-workflow-bar>
+          {selection.readError && <div className="nodu-mobile-workflow-selection__error"><p role="alert">{selection.draft.error ?? 'Propojené směny se nepodařilo načíst. Zkuste načíst data znovu.'}</p>
+            <Button type="button" variant="outline" size="sm" disabled={selection.opening || selection.draft.locked} onClick={selection.retry}>Zkusit načíst znovu</Button></div>}
+          {selection.draft.impact?.blockedReason && <div className="nodu-mobile-workflow-selection__error"><p role="alert">{selection.draft.impact.blockedReason}</p></div>}
+          <p className="font-semibold" aria-live="polite">Vybráno: {selection.draft.eventIds.length}</p>
+          <Button type="button" variant="outline" disabled={selection.draft.busy} onClick={selection.close}>Zrušit</Button>
+          <Button type="button" disabled={!selection.draft.ready || selection.draft.locked || selection.draft.eventIds.length < 2 || Boolean(selection.draft.impact?.blockedReason)} onClick={() => {
+            summaryPosition.current = cardScroll.capture(); selection.continueToSummary();
+          }}>Pokračovat</Button>
+        </div>}
+        {selection.confirmation}
+      </>}
+
       <EventEditModal
         editingEvent={editingEvent}
         onClose={() => setEditingEvent(null)}
@@ -935,8 +1052,14 @@ const EventsView = () => {
       {selectedEventId && selectedEvent && isMobile && <EventDetailView />}
     </motion.div>
   );
+  if (isMobile) return normalView(null);
   if (selectedEventId) return normalView(null);
   return <EventShiftWorkflowCreateAction>{({ action, selection }) => selection || normalView(action)}</EventShiftWorkflowCreateAction>;
+};
+
+const EventsView = () => {
+  const isMobile = useIsMobile();
+  return isMobile ? <MobileEventShiftWorkflowSelection>{(selection) => <EventsOverview selection={selection} />}</MobileEventShiftWorkflowSelection> : <EventsOverview />;
 };
 
 export default EventsView;

@@ -7,13 +7,13 @@ const rect = (top: number, height = 100) => ({ top, bottom: top + height, height
 let cardTop = 100;
 let dateTop = 500;
 let toolbarTop = 0;
-function Fixture({ active = true, query = '', owner = 'one', empty = false }: { active?: boolean; query?: string; owner?: string; empty?: boolean }) {
-  return <Session key={owner} active={active} query={query} empty={empty} />;
+function Fixture({ active = true, query = '', owner = 'one', empty = false, entryMode, preserveLayout = false }: { active?: boolean; query?: string; owner?: string; empty?: boolean; entryMode?: 'anchor' | 'preserve'; preserveLayout?: boolean }) {
+  return <Session key={owner} active={active} query={query} empty={empty} entryMode={entryMode} preserveLayout={preserveLayout} />;
 }
-function Session({ active, query, empty }: { active: boolean; query: string; empty: boolean }) {
+function Session({ active, query, empty, entryMode, preserveLayout }: { active: boolean; query: string; empty: boolean; entryMode?: 'anchor' | 'preserve'; preserveLayout: boolean }) {
   const container = useRef<HTMLDivElement>(null);
   const [startDate, setStartDate] = useState('2026-10-05');
-  const scroll = useShiftWorkflowCardScroll({ container, active, query, anchorDate: '2026-10-12', startDate,
+  const scroll = useShiftWorkflowCardScroll({ container, active, query, entryMode, preserveLayout, anchorDate: '2026-10-12', startDate,
     onExpand: () => { if (startDate !== '2026-10-05') return false; cardTop = 350; dateTop = 750; setStartDate('2026-09-21'); return true; } });
   return <div className="nodu-page-frame" data-testid="scroll-root" ref={(element) => {
     if (element) { element.getBoundingClientRect = () => rect(0, 600); Object.defineProperty(element, 'clientHeight', { value: 600, configurable: true }); }
@@ -31,9 +31,32 @@ function Session({ active, query, empty }: { active: boolean; query: string; emp
 }
 afterEach(() => { cardTop = 100; dateTop = 500; toolbarTop = 0; vi.restoreAllMocks(); });
 describe('useShiftWorkflowCardScroll', () => {
+  it('uses the latest passive user-scroll position when preserving a later card layout change', () => {
+    const { rerender } = render(<Fixture entryMode="preserve" preserveLayout />); const root = screen.getByTestId('scroll-root');
+    root.scrollTop = 50; fireEvent.scroll(root);
+    cardTop = 148; rerender(<Fixture entryMode="preserve" preserveLayout />); expect(root.scrollTop).toBe(98);
+    rerender(<Fixture entryMode="preserve" preserveLayout />); expect(root.scrollTop).toBe(98);
+    rerender(<Fixture entryMode="preserve" preserveLayout active={false} />);
+    root.scrollTop = 56; fireEvent.scroll(root); cardTop = 190;
+    rerender(<Fixture entryMode="preserve" preserveLayout active={false} />); expect(root.scrollTop).toBe(56);
+  });
+  it('preserves entry position on first mount and activation when explicitly requested', () => {
+    const { rerender } = render(<Fixture entryMode="preserve" />);
+    const root = screen.getByTestId('scroll-root'); expect(root.scrollTop).toBe(0);
+    root.scrollTop = 137; rerender(<Fixture entryMode="preserve" active={false} />);
+    rerender(<Fixture entryMode="preserve" query="Card" />); expect(root.scrollTop).toBe(137);
+    fireEvent.click(screen.getByRole('button', { name: 'Jump' })); rerender(<Fixture entryMode="preserve" query="Card" />); expect(root.scrollTop).toBe(145);
+  });
   it('aligns today below the sticky toolbar in the closest page frame', () => {
     render(<Fixture />);
     expect(screen.getByTestId('scroll-root').scrollTop).toBe(408);
+  });
+  it('expands history from scrollTop zero on an upward touch or wheel gesture without requiring scroll movement', () => {
+    render(<Fixture entryMode="preserve" />); const root = screen.getByTestId('scroll-root');
+    fireEvent.wheel(root, { deltaY: -20 }); expect(screen.getByText('2026-09-21')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Jump' })); root.scrollTop = 0; fireEvent.scroll(root);
+    fireEvent.touchStart(root, { touches: [{ clientY: 100 }] }); fireEvent.touchMove(root, { touches: [{ clientY: 135 }] });
+    expect(screen.getByText('2026-09-21')).toBeInTheDocument();
   });
   it('accounts for a nonzero sticky inset and keeps the date heading clear of the toolbar', () => {
     toolbarTop = 16; render(<Fixture />);

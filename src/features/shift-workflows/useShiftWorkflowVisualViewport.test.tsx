@@ -18,10 +18,11 @@ function viewport(height = 532, offsetTop = 0) {
   return Object.assign(new EventTarget(), { height, offsetTop }) as unknown as VisualViewport;
 }
 let renders = 0;
-function Fixture({ active = true, owner = 'one' }: { active?: boolean; owner?: string }) {
-  return <Session key={owner} active={active} />;
+let barHeight = 64;
+function Fixture({ active = true, owner = 'one', footer = false }: { active?: boolean; owner?: string; footer?: boolean }) {
+  return <Session key={owner} active={active} footer={footer} />;
 }
-function Session({ active }: { active: boolean }) {
+function Session({ active, footer }: { active: boolean; footer: boolean }) {
   const container = useRef<HTMLDivElement>(null);
   renders += 1;
   useShiftWorkflowVisualViewport({ container, active });
@@ -31,6 +32,7 @@ function Session({ active }: { active: boolean }) {
         <label>Search<input type="search" /></label><label>Date<input type="date" /></label>
       </div>
     </div>Cards
+    {footer && <div data-workflow-bar ref={(element) => { if (element) element.getBoundingClientRect = () => rect(barHeight); }}>Selection bar</div>}
   </div></main>;
 }
 function installViewport(visible: VisualViewport | undefined = viewport(), layoutHeight = 844) {
@@ -58,9 +60,21 @@ const expectReleasedHeader = (container: HTMLElement) => {
   expect(container).not.toHaveAttribute('data-workflow-keyboard-header');
   headerProperties.forEach((property) => expect(container.style.getPropertyValue(property)).toBe(''));
 };
-afterEach(() => { renders = 0; geometry = { height: 187, left: 16, width: 361 }; vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+afterEach(() => { renders = 0; barHeight = 64; geometry = { height: 187, left: 16, width: 361 }; vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('useShiftWorkflowVisualViewport', () => {
+  it('measures actual floating-bar clearance without changing the page viewport or rendering pixel state', () => {
+    installMobile(); installViewport(); const observations = installResizeObserver();
+    const { rerender } = render(<Fixture footer />); const container = screen.getByTestId('selection');
+    const root = screen.getByTestId('scroll-root'); root.scrollTop = 71;
+    expect(container.style.getPropertyValue('--nodu-workflow-bar-height')).toBe('64px');
+    const initialRenders = renders; barHeight = 96; act(() => observations[0].notify());
+    expect(container.style.getPropertyValue('--nodu-workflow-bar-height')).toBe('96px');
+    expect(renders).toBe(initialRenders); expect(root.scrollTop).toBe(71); expect(root.style.height).toBe('');
+    rerender(<Fixture footer active={false} />); expect(container.style.getPropertyValue('--nodu-workflow-bar-height')).toBe('');
+    expect(observations[0].disconnect).toHaveBeenCalledOnce();
+    barHeight = 120; act(() => observations[0].notify()); expect(container.style.getPropertyValue('--nodu-workflow-bar-height')).toBe('');
+  });
   it('fixes the mobile keyboard header using its measured flow space through native viewport pan and nested scroll', () => {
     installMobile();
     const visible = installViewport(viewport(818), 818)!;

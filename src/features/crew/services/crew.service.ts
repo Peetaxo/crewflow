@@ -65,6 +65,7 @@ const toProfilePayload = (member: CreateCrewInput | UpdateCrewInput) => {
 const normalizeCrewMember = <T extends CreateCrewInput | UpdateCrewInput>(member: T): T => {
   const name = normalizeText(member.name);
   const city = normalizeText(member.city);
+  const rate = Number(member.rate) || 0;
 
   return {
     ...member,
@@ -84,7 +85,8 @@ const normalizeCrewMember = <T extends CreateCrewInput | UpdateCrewInput>(member
     billingCountry: normalizeText(member.billingCountry) || DEFAULT_BILLING_COUNTRY,
     tags: member.tags.includes('Ridic') ? ['Ridic'] : normalizeTags(member.tags),
     note: normalizeText(member.note),
-    rate: Number(member.rate) || 0,
+    rate,
+    hasKnownRate: Number.isFinite(rate),
     rating: clampRating(member.rating),
   } as T;
 };

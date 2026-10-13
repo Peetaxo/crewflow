@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { Contractor, Event, Invoice, Project, ReceiptItem, Timelog } from '../../../types';
 import * as projects from './projects.service';
 import { KM_RATE, MEAL_RATE } from '../../../data';
+import { getLocalAppState, updateLocalAppState } from '../../../lib/app-data';
+import { mapContractor, mapInvoice } from '../../../lib/supabase-mappers';
+import type { Database } from '../../../lib/database.types';
 
 const project = (id = 'AK001', client = 'Klient A'): Project => ({ id, client, name: `Projekt ${id}`, createdAt: '2026-01-01' });
 const event = (overrides: Partial<Event> = {}): Event => ({
@@ -162,5 +165,60 @@ describe('project financial summary', () => {
     const summary = projects.getProjectSummary('AK001', snapshot({ contractors: [], timelogs: [timelog()], receipts: [receipt()] }))!;
     expect(summary.hasMissingRates).toBe(true);
     expect(summary.costs).toEqual(amount(0, 10 * KM_RATE, MEAL_RATE, 150));
+  });
+  it.each([null, 0])('preserves mapped missing-rate provenance through the real state clone: rate=%s', (hourlyRate) => {
+    const initialState = getLocalAppState();
+    try {
+      const mapped = mapContractor({ id: 'crew-1', hourly_rate: hourlyRate } as Database['public']['Tables']['profiles']['Row']);
+      updateLocalAppState((state) => ({ ...state, ...snapshot({ contractors: [mapped], timelogs: [timelog({ km: 0 })] }) }));
+      const summary = projects.getProjectSummary('AK001', getLocalAppState())!;
+      expect(summary.costs.work).toBe(0);
+      expect(summary.hasMissingRates).toBe(hourlyRate === null);
+    } finally {
+      updateLocalAppState(() => initialState);
+    }
+  });
+  it.each(['work', 'travel', 'meals', 'receipts', 'total'] as const)('keeps a missing persisted item %s unknown after the real state clone', (field) => {
+    const initialState = getLocalAppState();
+    try {
+      const billed = invoice({ job: 'AK001, AK002', jobNumbers: ['AK001', 'AK002'], hAmt: 100, kAmt: 0, mealAmt: 0, receiptAmt: 0, total: 100,
+        items: [{ id: 'item-a', jobNumber: 'AK001', ...amount(60), [field]: Number.NaN }, { id: 'item-b', jobNumber: 'AK002', ...amount(40) }] });
+      expect(projects.getProjectSummary('AK001', snapshot({ invoices: [billed] }))!.invoices[0].share).toBeNull();
+      updateLocalAppState((state) => ({ ...state, ...snapshot({ invoices: [billed], timelogs: [timelog()] }) }));
+      const cloned = getLocalAppState();
+      expect(cloned.invoices[0].items?.[0][field]).toBeNull();
+      const summary = projects.getProjectSummary('AK001', cloned)!;
+      expect(summary.invoices[0].share).toBeNull();
+      expect(summary.hasUnknownInvoiceAllocation).toBe(true);
+      expect(summary.costs.total).toBe(0);
+    } finally {
+      updateLocalAppState(() => initialState);
+    }
+  });
+  it.each(['amount_hours', 'amount_km', 'total_amount'] as const)('keeps a mapped missing required header %s unknown after the real state clone', (field) => {
+    const initialState = getLocalAppState();
+    try {
+      const mapped = mapInvoice({ id: 'invoice-1', job_number: 'AK001', status: 'paid', amount_hours: 0,
+        amount_km: 0, total_amount: 0, [field]: null } as Database['public']['Tables']['invoices']['Row']);
+      updateLocalAppState((state) => ({ ...state, ...snapshot({ invoices: [mapped] }) }));
+      const summary = projects.getProjectSummary('AK001', getLocalAppState())!;
+      expect(summary.invoices[0].share).toBeNull();
+      expect(summary.hasUnknownInvoiceAllocation).toBe(true);
+    } finally {
+      updateLocalAppState(() => initialState);
+    }
+  });
+  it('retains a genuine zero header allocation with absent legacy meal and receipt fields', () => {
+    const initialState = getLocalAppState();
+    try {
+      const mapped = mapInvoice({ id: 'invoice-1', job_number: 'AK001', status: 'paid', amount_hours: 0,
+        amount_km: 0, total_amount: 0 } as Database['public']['Tables']['invoices']['Row']);
+      updateLocalAppState((state) => ({ ...state, ...snapshot({ invoices: [mapped] }) }));
+      const summary = projects.getProjectSummary('AK001', getLocalAppState())!;
+      expect(summary.invoices[0].share).toEqual(amount());
+      expect(summary.hasUnknownInvoiceAllocation).toBe(false);
+    } finally {
+      updateLocalAppState(() => initialState);
+    }
   });
 });

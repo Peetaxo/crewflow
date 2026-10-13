@@ -109,6 +109,8 @@ export interface Contractor {
   events: number;
   /** Hodinova sazba v Kc */
   rate: number;
+  /** False when hydration used a numeric fallback for an absent or invalid hourly rate. */
+  hasKnownRate?: boolean;
   phone: string;
   email: string;
   ico: string;
@@ -320,6 +322,8 @@ export interface InvoiceItem {
 /** Faktura */
 export interface Invoice {
   id: string;
+  /** False when persisted header amounts were incomplete or invalid during hydration. */
+  hasKnownAmounts?: boolean;
   updatedAt?: string;
   contractorProfileId?: string;
   /** ID akce */

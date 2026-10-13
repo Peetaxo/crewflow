@@ -79,12 +79,20 @@ const uniqueExpenses = <T extends { id: number; supabaseId?: string }>(expenses:
 );
 
 const closeAmount = (a: number, b: number) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) < 0.011;
+const hasFiniteAmounts = (amounts: ProjectCostBreakdown): boolean => (
+  (['work', 'travel', 'meals', 'receipts', 'total'] as const)
+    .every((key) => typeof amounts[key] === 'number' && Number.isFinite(amounts[key]))
+);
 const invoiceHeaderCosts = (invoice: Invoice): ProjectCostBreakdown => ({
-  work: invoice.hAmt, travel: invoice.kAmt, meals: invoice.mealAmt ?? 0, receipts: invoice.receiptAmt ?? 0, total: invoice.total,
+  work: invoice.hAmt, travel: invoice.kAmt,
+  meals: invoice.mealAmt === undefined ? 0 : invoice.mealAmt,
+  receipts: invoice.receiptAmt === undefined ? 0 : invoice.receiptAmt,
+  total: invoice.total,
 });
 
 const getInvoiceShare = (invoice: Invoice, projectId: string, jobs: Set<string>): ProjectCostBreakdown | null => {
   const header = invoiceHeaderCosts(invoice);
+  if (invoice.hasKnownAmounts === false || !hasFiniteAmounts(header)) return null;
   const items = invoice.items;
   if (!items?.length) {
     return jobs.size === 1 && jobs.has(projectId)
@@ -98,7 +106,7 @@ const getInvoiceShare = (invoice: Invoice, projectId: string, jobs: Set<string>)
   let hasProjectItem = false;
   for (const item of items) {
     const job = normalizeJob(item.jobNumber);
-    if (!job || job.includes(',') || !item.id || itemIds.has(item.id)
+    if (!job || job.includes(',') || !item.id || itemIds.has(item.id) || !hasFiniteAmounts(item)
       || !closeAmount(item.total, item.work + item.travel + item.meals + item.receipts)) return null;
     itemIds.add(item.id);
     addCosts(total, item);
@@ -164,7 +172,7 @@ export const getProjectSummary = (projectId: string, snapshot: ProjectSummarySna
     const hours = calculateTotalHours(timelog.days);
     const contractor = timelog.contractorProfileId ? contractorsByProfile.get(timelog.contractorProfileId) : undefined;
     const rate = contractor?.rate;
-    const hasRate = typeof rate === 'number' && Number.isFinite(rate);
+    const hasRate = contractor?.hasKnownRate !== false && typeof rate === 'number' && Number.isFinite(rate);
     if (hours > 0 && !hasRate) hasMissingRates = true;
     addCosts(stages[expenseStage(timelog.status)], costs(
       hasRate ? hours * rate : 0,

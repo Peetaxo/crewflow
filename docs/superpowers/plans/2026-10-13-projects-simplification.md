@@ -12,7 +12,7 @@
 
 Files: `src/features/projects/services/project-summary.ts`, `project-summary.test.ts`, `projects.service.ts`, `projects.service.test.ts`, `src/types.ts`, `src/features/invoices/services/invoices.service.ts`, `invoices.service.test.ts`, `src/lib/supabase-mappers.ts` and its existing tests if needed.
 
-- [ ] Add failing pure tests for period and filtering:
+- [x] Add failing pure tests for period and filtering:
 
 ```ts
 expect(getProjectPeriod([])).toBeNull();
@@ -20,26 +20,33 @@ expect(getProjectPeriod([event('2026-10-13', '2026-10-13')])).toEqual({ startDat
 expect(getProjectPeriod([event('2026-10-20', '2026-10-23'), event('2026-10-10', '2026-10-12')])).toEqual({ startDate: '2026-10-10', endDate: '2026-10-23' });
 ```
 
-- [ ] Add failing financial tests with real input snapshots: shared invoice has different job item values; one project gets only its own 1250 CZK share, linked receipt/timelog is not added again; later crew rate changes do not change persisted billed work; rejected expense contributes zero; current travel and meals contribute existing configured amounts; invoice draft/sent/paid stages remain disjoint; absent shared allocation is unknown, never a guessed full or equal amount.
-- [ ] Run `npm test -- src/features/projects/services/project-summary.test.ts src/features/invoices/services/invoices.service.test.ts` and confirm new assertions fail for missing behavior.
-- [ ] Implement exported `getProjectPeriod(events)`, `formatProjectPeriod(period)`, `matchesProjectFilters(project, period, filters)`, `getProjectSummary(projectId, snapshot)` with typed costs `{work, travel, meals, receipts, total}`, typed four-stage amounts, receipt records and invoice records including allocated cost or null and completeness indicators. Add `period` to existing project rows without changing legacy callers. Read latest snapshot only after dependency-load triggers. Retain persisted item amounts including `amount_meals` in Invoice mapping and local draft creation.
-- [ ] Run the focused selector/service tests and TypeScript check; commit the data changes only after they pass.
-- [ ] Obtain spec review, address gaps, then code quality review before Task 2.
+- [x] Add failing financial tests with real input snapshots: shared invoice has different job item values; one project gets only its own 1250 CZK share, linked receipt/timelog is not added again; later crew rate changes do not change persisted billed work; rejected expense contributes zero; current travel and meals contribute existing configured amounts; invoice draft/sent/paid stages remain disjoint; absent shared allocation is unknown, never a guessed full or equal amount.
+- [x] Run `npm test -- src/features/projects/services/project-summary.test.ts src/features/invoices/services/invoices.service.test.ts` and confirm new assertions fail for missing behavior.
+- [x] Implement exported `getProjectPeriod(events)`, `formatProjectPeriod(period)`, `matchesProjectFilters(project, period, filters)`, `getProjectSummary(projectId, snapshot)` with typed costs `{work, travel, meals, receipts, total}`, typed four-stage amounts, receipt records and invoice records including allocated cost or null and completeness indicators. Add `period` to existing project rows without changing legacy callers. Read latest snapshot only after dependency-load triggers. Retain persisted item amounts including `amount_meals` in Invoice mapping and local draft creation.
+- [x] Run the focused selector/service tests and TypeScript check; commit the data changes only after they pass.
+- [x] Obtain spec review, address gaps, then code quality review before Task 2.
 
 ## Task 2: Simple list and four-part detail
 
-Files: `src/views/ProjectsView.tsx`, `ProjectsView.test.tsx`, `ProjectStatsView.tsx`, `ProjectStatsView.test.tsx`, `src/features/projects/components/ProjectDocuments.tsx` if separation helps, `src/components/modals/ProjectEditModal.tsx`.
+Files: `src/views/ProjectsView.tsx`, `ProjectsView.test.tsx`, `ProjectStatsView.tsx`, `ProjectStatsView.test.tsx`, `src/features/projects/components/ProjectDocuments.tsx` if separation helps, `src/components/modals/ProjectEditModal.tsx`, with small optional project-origin back-label support in `src/views/EventDetailView.tsx` and mobile event-detail navigation handling in `src/components/layout/AppLayout.tsx`.
 
-- [ ] Write failing user-behavior assertions before view changes: the creation date is absent, period is a separate header, old segmented controls are absent, filter by client/date works and resets; plus opens project creation; detail contains events and costs but no graphs/timelog/crew KPI; event opens existing event view; plus opens a prefilled form; edit works; shared invoice row contains only project allocation and its actual invoice number; document loading errors surface without showing false zero totals.
-- [ ] Run `npm test -- src/views/ProjectsView.test.tsx src/views/ProjectStatsView.test.tsx` and verify the assertions fail for missing new behavior.
-- [ ] Implement list with toolbar filter, responsive table overflow, empty states and Events-style plus. Ignore obsolete persisted all/upcoming/past filters. In detail derive all values from the summary selector; sort events by startDate, then name; preserve project selection when returning from event; reuse `EventEditModal` locally and createEmptyEvent with projectId/job/client prefilled. Use existing role guards. Display project identity/period/edit, events, cost breakdown/stages and documents only. Hide the project note field but preserve its stored value on save.
-- [ ] Use existing invoice PDF generation/download and receipt attachment download services for view actions. Guard asynchronous actions across project/scope changes and handle missing documents with clear empty states. Render 390px safely with no clipped cells or floating button overlap.
-- [ ] Run focused component tests and build, commit, obtain spec review then code quality review.
+- [x] Write failing user-behavior assertions before view changes: the creation date is absent, period is a separate header, old segmented controls are absent, filter by client/date works and resets; plus opens project creation; detail contains events and costs but no graphs/timelog/crew KPI; event opens existing event view; plus opens a prefilled form; edit works; shared invoice row contains only project allocation and its actual invoice number; document loading errors surface without showing false zero totals.
+- [x] Run `npm test -- src/views/ProjectsView.test.tsx src/views/ProjectStatsView.test.tsx` and verify the assertions fail for missing new behavior.
+- [x] Implement list with toolbar filter, responsive table overflow, empty states and Events-style plus. Ignore obsolete persisted all/upcoming/past filters. In detail derive all values from the summary selector; sort events by startDate, then name; render the existing EventDetailView inside the project route with an optional project-origin back label, preserve project selection when returning from event and hide mobile navigation during that nested detail; reuse `EventEditModal` locally and createEmptyEvent with projectId/job/client prefilled. Use existing role guards. Display project identity/period/edit, events, cost breakdown/stages and documents only. Hide the project note field but preserve its stored value on save.
+- [x] Use existing invoice PDF generation/download for view actions; receipts have no attachments in the current data model, so open their read-only record details in an accessible dialog without adding attachment storage or uploads. Guard asynchronous actions across project/scope changes and handle missing documents with clear empty states. Render 390px safely with no clipped cells or floating button overlap.
+- [x] Run focused component tests and build, commit, obtain spec review then code quality review.
 
 ## Task 3: Verify and integrate
 
-- [ ] Run full `npm test`, `npx tsc --noEmit -p tsconfig.app.json`, `npm run build`, and ESLint on changed TypeScript files. Fix regressions and rerun affected checks.
-- [ ] Run isolated local preview with fabricated projects/events/expenses. Inspect desktop and mobile through cua_repl; verify date/client filter/reset, chronological event links, prefilled form, edit, shared allocation and document actions. Save a final screenshot for the user.
-- [ ] Request final independent code review across the complete change.
+- [x] Run full `npm test`, `npx tsc --noEmit -p tsconfig.app.json`, `npm run build`, and ESLint on changed TypeScript files. Fix regressions and rerun affected checks.
+- [x] Run isolated local preview with fabricated projects/events/expenses. Inspect desktop and mobile through cua_repl; verify date/client filter/reset, chronological event links, prefilled form, edit, shared allocation and document actions. Save a final screenshot for the user.
+- [x] Request final independent code review across the complete change.
 - [ ] Commit verification notes, fetch remote and integrate the reviewed change into origin/main from the clean checkout. Preserve the unrelated main working changes.
 - [ ] Verify synchronized main, run `npm run ios:refresh:devices`, inspect the simulator result and record simulator/iPhone outcomes separately. Deliver the screenshot and concise change report.
+
+## Verification record
+
+- 2026-10-13, implementation `4449fce`: full Vitest suite passed, 161 files / 1,993 tests. Production build, ESLint on every changed TypeScript file, and diff checks passed.
+- TypeScript still reports the existing baseline errors: 117 diagnostics at `4eff3dd`, 111 after this change, with zero new diagnostics after normalizing paths and line numbers.
+- Desktop and 390px browser review used fictional data. Verified three period cases, client/date filters and reset, table scrolling without page overflow, creation/edit controls, prefilled event form, nested event navigation/back, receipt record dialog, shared invoice project share, and empty project states. Screenshots saved outside the repository.
+- Data and UI spec/quality reviews passed. Final review of `4eff3dd..4449fce` found no Critical/Important issues. Integration with newer `origin/main` and iOS development refresh remain pending.

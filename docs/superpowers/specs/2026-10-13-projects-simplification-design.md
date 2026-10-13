@@ -15,7 +15,7 @@ One page containing only four areas:
 1. Header: Job Number, name, client, derived period, edit action.
 2. Events: chronological list showing term, location, staffing and the event's existing responsible contact, linking to the existing Event detail. A plus action creates an event prefilled with this project and client. Keep a single-event project compact.
 3. Costs: work, travel, meals and receipts, with total and four non-overlapping monetary stages (in progress, approved, invoiced, paid). This is a cost summary, not an approval queue. Remove charts, standalone crew totals, hours/km KPI cards and detailed timelog cards.
-4. Documents: receipt and invoice lists showing statuses and amounts, invoice due date and actions to view receipt attachments/invoice PDFs. Show the project's share of a multi-project invoice and optionally the full document total as secondary context.
+4. Documents: receipt and invoice lists showing statuses and amounts, invoice due date and actions to open read-only receipt records/invoice PDFs. Show the project's share of a multi-project invoice and optionally the full document total as secondary context.
 
 Do not introduce budgets, revenue, a project manager field, project notes in the header/form, tasks, archive behavior, document upload, or an approval workflow. Retain stored notes for compatibility when an existing project is saved. Existing record actions and roles stay in place.
 
@@ -29,4 +29,4 @@ Loading/error states must distinguish incomplete data from zero costs; scope cha
 
 ## Verification and integration
 
-Focused regression tests cover empty/single/multiple-event periods, inclusive filters, status buckets, persisted shared-invoice allocation, no double counting and document/event navigation. Verify desktop and 390px mobile with seeded local preview data, including filter, edit, new event and PDF/receipt actions. Run type check, build, relevant tests and full suite. Independently review spec compliance then code quality. Integrate into main without touching unrelated main working changes, synchronize origin/main and run the repository's iOS refresh, reporting simulator and iPhone results separately.
+Focused regression tests cover empty/single/multiple-event periods, inclusive filters, status buckets, persisted shared-invoice allocation, no double counting and document/event navigation. Verify desktop and 390px mobile with seeded local preview data, including filter, edit, new event and PDF/read-only receipt actions. Run type check, build, relevant tests and full suite. Independently review spec compliance then code quality. Integrate into main without touching unrelated main working changes, synchronize origin/main and run the repository's iOS refresh, reporting simulator and iPhone results separately.

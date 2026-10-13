@@ -293,13 +293,13 @@ const EventsOverview = ({ selection = null }: { selection?: MobileWorkflowSelect
       setSelectionTimeline((current) => ({ ...current, startDate: previousTimelineWeek(current.startDate) })); return true;
     } });
   useShiftWorkflowVisualViewport({ container: overview, active: selectionActive && !selection?.summary });
-  const { rememberLayout } = cardScroll;
+  const { rememberLayout, rememberWindow } = cardScroll;
   useLayoutEffect(() => {
     const before = previousSelection.current;
     const frame = overview.current?.closest<HTMLElement>('.nodu-page-frame');
     if (!before.active && selectionActive && frame && entryPosition.current && overview.current) {
-      restoreCardScrollPosition(frame, entryPosition.current, overview.current);
-      rememberLayout();
+      restoreCardScrollPosition(frame, entryPosition.current, overview.current, { clearToolbar: true });
+      rememberLayout(); rememberWindow();
     } else if (before.active && !selectionActive) {
       restoreEntry.current = true;
       const entry = entryPreferences.current;
@@ -321,7 +321,7 @@ const EventsOverview = ({ selection = null }: { selection?: MobileWorkflowSelect
       restoreEntry.current = false;
     }
     previousSelection.current = { active: selectionActive, summary: Boolean(selection?.summary) };
-  }, [selectionActive, selection?.summary, mobileListStartDate, eventsFilter, searchQuery, eventsCalendarDate, setEventsFilter, setEventsCalendarDate, setSearchQuery, rememberLayout]);
+  }, [selectionActive, selection?.summary, mobileListStartDate, eventsFilter, searchQuery, eventsCalendarDate, setEventsFilter, setEventsCalendarDate, setSearchQuery, rememberLayout, rememberWindow]);
   const openSelection = () => {
     if (!selection || selection.active) return;
     const frame = overview.current?.closest<HTMLElement>('.nodu-page-frame');
@@ -336,7 +336,7 @@ const EventsOverview = ({ selection = null }: { selection?: MobileWorkflowSelect
     setShowMobileDatePicker(false); selection.open();
   };
   const changeSelectionQuery = (query: string) => {
-    if (!searchAllPresentation && query.trim()) cardScroll.rememberWindow();
+    if (!searchAllPresentation) cardScroll.rememberWindow();
     if (selectionTimeline.query.trim() && !query.trim()) cardScroll.restoreWindow();
     setSearchAllPresentation(Boolean(query.trim()));
     setSelectionTimeline((current) => ({ ...current, query }));

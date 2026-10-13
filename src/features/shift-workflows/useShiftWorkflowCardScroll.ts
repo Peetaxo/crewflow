@@ -15,12 +15,22 @@ export function captureCardScrollPosition(root: HTMLElement, container: HTMLElem
     ?? (visible?.dataset.workflowDate ? `date:${visible.dataset.workflowDate}` : null),
     offset: visible ? visible.getBoundingClientRect().top - top : 0 };
 }
-export function restoreCardScrollPosition(root: HTMLElement, position: CardScrollPosition, container: HTMLElement = root) {
+export function restoreCardScrollPosition(root: HTMLElement, position: CardScrollPosition, container: HTMLElement = root, options: { clearToolbar?: boolean } = {}) {
   const element = position.occurrenceKey?.startsWith('date:')
     ? Array.from(container.querySelectorAll<HTMLElement>('[data-workflow-date]')).find((candidate) => `date:${candidate.dataset.workflowDate}` === position.occurrenceKey)
     : position.occurrenceKey ? occurrences(container).find((candidate) => candidate.dataset.workflowOccurrence === position.occurrenceKey) : null;
   root.scrollTop = position.scrollTop;
-  if (element) root.scrollTop += element.getBoundingClientRect().top - root.getBoundingClientRect().top - position.offset;
+  if (element) {
+    // Entry can add a taller sticky toolbar. Preserve the same occurrence while
+    // letting that new control space move it below the measured visible edge.
+    const offset = options.clearToolbar ? Math.max(position.offset, toolbarBottom(root, container) - root.getBoundingClientRect().top + 12) : position.offset;
+    root.scrollTop += element.getBoundingClientRect().top - root.getBoundingClientRect().top - offset;
+    if (options.clearToolbar) {
+      // Moving the scrollport can change a sticky toolbar's actual position.
+      const covered = toolbarBottom(root, container) + 12 - element.getBoundingClientRect().top;
+      if (covered > 0) root.scrollTop -= covered;
+    }
+  }
 }
 
 interface Props {
@@ -48,11 +58,16 @@ export function useShiftWorkflowCardScroll({ container, active, query, anchorDat
 
   const capture = () => root.current && container.current ? captureCardScrollPosition(root.current, container.current) : null;
   const restore = (position: CardScrollPosition | null) => { if (position) pending.current = { kind: 'restore', position }; };
-  const rememberWindow = () => { savedWindow.current = capture(); };
+  const rememberWindow = useCallback(() => {
+    savedWindow.current = root.current && container.current ? captureCardScrollPosition(root.current, container.current) : null;
+  }, [container]);
   const restoreWindow = () => restore(savedWindow.current);
   const jumpToAnchor = () => { savedWindow.current = null; pending.current = { kind: 'anchor' }; };
   const rememberLayout = useCallback(() => {
     savedLayout.current = root.current && container.current ? captureCardScrollPosition(root.current, container.current) : null;
+    // The owner can restore entry/summary after this hook's layout effect.
+    // Its delayed browser scroll event must start from that committed position.
+    if (root.current) lastTop.current = root.current.scrollTop;
   }, [container]);
 
   useLayoutEffect(() => {

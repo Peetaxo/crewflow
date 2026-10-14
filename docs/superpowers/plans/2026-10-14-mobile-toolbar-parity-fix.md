@@ -20,7 +20,7 @@ Reuse `/Users/peetax/Projekty/crewflow/.worktrees/shared-crew-workflow`. Preserv
 
 **Files:** Modify `src/views/EventsView.tsx`, `src/views/EventsView.test.tsx`, `src/styles/mobile-events.css`. Existing viewport tests may receive a mobile-marker regression only if needed; no production viewport/scroll-hook changes without escalating a concrete requirement to the parent.
 
-- [ ] Add a regression inside the existing real mobile-overview test fixture for CH and COO. Reuse its `setup`, `cards`, `sameCards`, `workflowBoundary`, `held` and `workflowEvents` helpers and existing boundary mocks. Preserve the actual overview/card/draft implementation.
+- [x] Add a regression inside the existing real mobile-overview test fixture for CH and COO. Reuse its `setup`, `cards`, `sameCards`, `workflowBoundary`, `held` and `workflowEvents` helpers and existing boundary mocks. Preserve the actual overview/card/draft implementation.
 
 ```tsx
 it.each(['crewhead', 'coo'])('keeps ordinary toolbar presentation while selecting as %s', async role => {
@@ -59,13 +59,13 @@ it.each(['crewhead', 'coo'])('keeps ordinary toolbar presentation while selectin
 });
 ```
 
-- [ ] Run the regression before implementation using the established runner, and retain expected RED class mismatch. Do not fake geometry to make an appearance test pass. DOM/style contract tests must be complemented by actual parent native screenshots.
+- [x] Run the regression before implementation using the established runner, and retain expected RED class mismatch. Do not fake geometry to make an appearance test pass. DOM/style contract tests must be complemented by actual parent native screenshots.
 
 ```sh
 node --input-type=module -e 'globalThis.__dirname=process.cwd();process.argv=["node","vitest","run","src/views/EventsView.test.tsx","--maxWorkers=1","--configLoader=runner"];await import("./node_modules/vitest/vitest.mjs");'
 ```
 
-- [ ] Make the mobile overview keep its normal toolbar and wrapper classes while retaining active measurement attributes. The ordinary mobile wrapper is not sticky. Keep desktop/legacy selection unchanged:
+- [x] Make the mobile overview keep its normal toolbar and wrapper classes while retaining active measurement attributes. The ordinary mobile wrapper is not sticky. Keep desktop/legacy selection unchanged:
 
 ```tsx
 <div data-workflow-toolbar-space={selectionActive ? '' : undefined}
@@ -92,23 +92,23 @@ Remove the unused normal mobile-selection toolbar panel block. Replace its keybo
 
 Do not change search ordering, footer formula, card keys, capture/restore semantics, pending evidence, history/search, summary/back, cancellation, save guards or lifecycle ownership. Do not introduce pixel positions into React state or remount the overview.
 
-- [ ] Run EventsView, scroll, viewport, owner, management and workflow selection regressions serially; changed-file lint, diff-check, production build and full-output TypeScript comparison with the fresh task baseline. Baseline targeted run: 3 files / 101 tests, exit 0; baseline TypeScript is an actual failing check and must not be called green. Logs use `/private/tmp/crewflow-mobile-header-parity-20261014-`. Use the existing temporary Vite runner/preload, never tracked tooling fixes.
-- [ ] Self-review and commit only scoped source/test files. Return exact SHA, RED/GREEN evidence, lint/type/build statuses and concerns. Parent obtains independent spec review, then quality review; all important fixes are re-reviewed.
+- [x] Run EventsView, scroll, viewport, owner, management and workflow selection regressions serially; changed-file lint, diff-check, production build and full-output TypeScript comparison with the fresh task baseline. Baseline targeted run: 3 files / 101 tests, exit 0; baseline TypeScript is an actual failing check and must not be called green. Logs use `/private/tmp/crewflow-mobile-header-parity-20261014-`. Use the existing temporary Vite runner/preload, never tracked tooling fixes.
+- [x] Self-review and commit only scoped source/test files. Return exact SHA, RED/GREEN evidence, lint/type/build statuses and concerns. Parent obtains independent spec review, then quality review; all important fixes are re-reviewed.
 
 ## Task 2 Parent verification and development delivery
 
-- [ ] Independently inspect the complete delta and run complete tests on merged clean main, lint/build/diff checks and actual diagnostic comparison. Fetch/inspect/preserve upstream changes and synchronize main non-destructively.
-- [ ] Run the unchanged mandatory `npm run ios:refresh:devices` with the existing temporary preload and derived-data root. Report simulator and phone build/install/launch outcomes separately. An available-device failure blocks delivery; an unavailable phone is waiting. This is development only.
-- [ ] On the actual corrected simulator, compare normal and selected date button/title/filter coordinates at the same date and scroll position, including a chosen past date. Header appearance/position must match; only search/cards/footer change. Check keyboard and accessory clearance, real scrolling, cancellation and fixed screen height. Do not save test business records to Staff.
-- [ ] Update plan progress and the existing 13 October verification report with exact source identities, observations and genuine remaining limitations. Confirm protected hashes and ignored configuration remain unchanged, commit only new/current task documents, and synchronize documentation without implying a docs-only native rebuild.
+- [x] Independently inspect the complete delta and run complete tests on merged clean main, lint/build/diff checks and actual diagnostic comparison. Fetch/inspect/preserve upstream changes and synchronize main non-destructively.
+- [x] Run the unchanged mandatory `npm run ios:refresh:devices` with the existing temporary preload and derived-data root. Report simulator and phone build/install/launch outcomes separately. An available-device failure blocks delivery; an unavailable phone is waiting. This is development only.
+- [x] On the actual corrected simulator, compare normal and selected date button/title/filter coordinates at the same date and scroll position, including a chosen past date. Header appearance/position must match; only search/cards/footer change. Check keyboard and accessory clearance, real scrolling, cancellation and fixed screen height. Do not save test business records to Staff.
+- [x] Update plan progress and the existing 13 October verification report with exact source identities, observations and genuine remaining limitations. Confirm protected hashes and ignored configuration remain unchanged, commit only new/current task documents, and synchronize documentation without implying a docs-only native rebuild.
 
 ## Independent review correction before integration
 
 The fresh quality review of `d8f2ed4..af25c4b` identified two concrete consequences of removing the sticky mobile wrapper. Removing its `z-index: 12` leaves the keyboard-only fixed toolbar below later relatively positioned cards. Also, entry still uses `clearToolbar` occurrence restoration: with inline search height S and the normal toolbar/card gap g > 12, it adds positive scroll `min(S, g - 12)`, moving the now-flowing header upward. The old native-entry fixture holds toolbar position constant rather than modeling flow. Both must be corrected before merge, not hidden by passing class tests.
 
-- [ ] Add expected RED regressions for keyboard-only z-index and mobile entry at scroll positions 0 and 137 with realistic flowing-toolbar geometry. Model the toolbar and cards moving with the frame's scrollTop; search increases their flow height. Assert unchanged heading/date/filter positions and raw entry scroll, same cards/date, card clearance, and cancellation restoration. Keep non-entry scroll/history/search protections intact; label simulated geometry honestly, and retain actual native screenshots as the final gate.
-- [ ] Add `z-index: 12` only to the keyboard-occlusion mobile toolbar rule. For initial mobile selection entry only, restore the captured raw `frame.scrollTop` instead of legacy `clearToolbar` occurrence alignment. Preserve the latter for non-mobile/legacy paths and keep all later capture/restore bookkeeping, search/history, summary/back and cancellation logic unchanged. This authorizes a bounded entry correction in EventsView and its geometry regression; no production scroll or viewport hook rewrite is needed.
-- [ ] Verify the complete focused suite, changed-source lint, build and full ordered checked-config TypeScript diagnostic comparison. Obtain spec recheck followed by quality recheck before integration.
+- [x] Add expected RED regressions for keyboard-only z-index and mobile entry at scroll positions 0 and 137 with realistic flowing-toolbar geometry. Model the toolbar and cards moving with the frame's scrollTop; search increases their flow height. Assert unchanged heading/date/filter positions and raw entry scroll, same cards/date, card clearance, and cancellation restoration. Keep non-entry scroll/history/search protections intact; label simulated geometry honestly, and retain actual native screenshots as the final gate.
+- [x] Add `z-index: 12` only to the keyboard-occlusion mobile toolbar rule. For initial mobile selection entry only, restore the captured raw `frame.scrollTop` instead of legacy `clearToolbar` occurrence alignment. Preserve the latter for non-mobile/legacy paths and keep all later capture/restore bookkeeping, search/history, summary/back and cancellation logic unchanged. This authorizes a bounded entry correction in EventsView and its geometry regression; no production scroll or viewport hook rewrite is needed.
+- [x] Verify the complete focused suite, changed-source lint, build and full ordered checked-config TypeScript diagnostic comparison. Obtain spec recheck followed by quality recheck before integration.
 
 ## Plan self review
 
@@ -118,4 +118,4 @@ The correction removes activation-only mobile presentation while keeping measure
 
 Task 1 and both independent-review corrections are implemented and independently approved at `f9ff037`. Merged local main `e983a24` preserves upstream `f30795b`; 164 files / 2,094 tests, whole lint, build and diff checks pass. The actual failing global TypeScript check retains exactly the 111 upstream diagnostics, compared as complete ordered output with source coordinates only normalized. Final integrated source review approves development refresh.
 
-Task 2 is incomplete: automatic safety review rejected publishing to origin/main because explicit human authorization was missing. The user has been asked for that permission. No workaround push or refresh-preflight bypass was attempted. The new source is not installed and corrected native coordinate parity has not been verified. Phone availability was also `unavailable` at 14:35; reconnection was requested asynchronously. Preserve these pending gates rather than marking installation or native acceptance complete.
+Task 2 is complete for this correction. After the user's explicit publishing approval and reconnection confirmation, clean main/origin were synchronized at `bbb09e5`; the unchanged mandatory device refresh exited 0 with simulator and phone updated, including both installations and launches. Its app source is byte-identical to verified `e983a24`. Actual simulator captures for CH and COO at May 12 show the date/title row around y94 and filters around y140 before and after selection, with search added below them and no entry shift. Software keyboard/accessory and footer clearance, a visibly moving keyboard scroll gesture, complete last-card visibility, cancellation restoring the original May 12 view, and unchanged 368 × 800 capture size are verified. Phone visual interaction is not claimed. No Staff business records were saved. Historical hashes and ignored configuration remain unchanged; subsequent completion documentation does not imply another native rebuild.

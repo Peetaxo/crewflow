@@ -34,7 +34,7 @@ function NativeSearchFixture({ query, active = true, onExpand }: { query: string
   const frame = useRef<HTMLDivElement | null>(null);
   const [checked, setChecked] = useState(false);
   const [reason, setReason] = useState(false);
-  useShiftWorkflowCardScroll({ container, active, query, anchorDate: '2026-10-12', startDate: '2026-10-12',
+  const scroll = useShiftWorkflowCardScroll({ container, active, query, anchorDate: '2026-10-12', startDate: '2026-10-12',
     entryMode: 'preserve', preserveLayout: true, onExpand });
   return <div className="nodu-page-frame" data-testid="native-root" ref={(element) => {
     frame.current = element; if (element) element.getBoundingClientRect = () => rect(0, 818);
@@ -43,10 +43,23 @@ function NativeSearchFixture({ query, active = true, onExpand }: { query: string
     <button role="checkbox" aria-checked={checked} data-workflow-occurrence="shift|2026-10-12" onClick={() => setChecked((value) => !value)}
       ref={(element) => { if (element) element.getBoundingClientRect = () => rect(200 + (reason ? 48 : 0) - (frame.current?.scrollTop ?? 0), 200); }}>Visible card</button>
     <button onClick={() => setReason(true)}>Show reason above card</button>
+    <button onClick={() => { if (frame.current) frame.current.scrollTop = 37; scroll.rememberLayout(); }}>Restore committed native position</button>
   </div></div>;
 }
 afterEach(() => { cardTop = 100; dateTop = 500; toolbarTop = 0; vi.restoreAllMocks(); });
 describe('useShiftWorkflowCardScroll', () => {
+  it.each(['', 'JOB'])('commits externally restored native scroll before its browser event without suppressing later upward history for query=%s', (query) => {
+    const onExpand = vi.fn(() => true); render(<NativeSearchFixture query={query} onExpand={onExpand} />);
+    const root = screen.getByTestId('native-root'); const card = screen.getByRole('checkbox');
+    root.scrollTop = 137; fireEvent.scroll(root); expect(onExpand).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Restore committed native position' }));
+    expect(root.scrollTop).toBe(37); expect(card.getBoundingClientRect().top).toBe(163);
+    fireEvent.scroll(root); fireEvent.scroll(root);
+    expect(onExpand).not.toHaveBeenCalled(); expect(screen.getByRole('checkbox')).toBe(card);
+    root.scrollTop = 20; fireEvent.scroll(root);
+    expect(onExpand).toHaveBeenCalledTimes(query ? 0 : 1);
+    fireEvent.scroll(root); expect(onExpand).toHaveBeenCalledTimes(query ? 0 : 1);
+  });
   it.each(['', 'JOB'])('preserves native user scrolling through toggle and layout changes for query=%s', (query) => {
     const onExpand = vi.fn(() => false); render(<NativeSearchFixture query={query} onExpand={onExpand} />);
     const root = screen.getByTestId('native-root'); const card = screen.getByRole('checkbox');

@@ -151,15 +151,17 @@ const calculateProjectCrewCost = (
     }, 0);
 };
 
+const normalizeProjectSearch = (value: string): string => value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+
 const selectProjects = (snapshot: ProjectSummarySnapshot, search: string, filter: ProjectFilter | ProjectListFilters): Project[] => {
   let projects = snapshot.projects ?? [];
 
-  const query = search.trim().toLowerCase();
+  const query = normalizeProjectSearch(search.trim());
   if (query) {
     projects = projects.filter((project) => (
-      project.id.toLowerCase().includes(query)
-      || project.name.toLowerCase().includes(query)
-      || project.client.toLowerCase().includes(query)
+      normalizeProjectSearch(project.id).includes(query)
+      || normalizeProjectSearch(project.name).includes(query)
+      || normalizeProjectSearch(project.client).includes(query)
     ));
   }
 

@@ -6,7 +6,7 @@ import ProjectsView from './ProjectsView';
 
 const mocks = vi.hoisted(() => ({
   isMobile: false,
-  context: { selectedProjectIdForStats: null as string | null, setSelectedProjectIdForStats: vi.fn(), setEditingProject: vi.fn(), setDeleteConfirm: vi.fn(), projectFilter: 'past', searchQuery: '', role: 'coo' },
+  context: { selectedProjectIdForStats: null as string | null, setSelectedProjectIdForStats: vi.fn(), setEditingProject: vi.fn(), setDeleteConfirm: vi.fn(), projectFilter: 'past', searchQuery: '', setSearchQuery: vi.fn(), role: 'coo' },
   getProjectRows: vi.fn(),
   query: { data: [], isPending: false, isError: false, error: null, refetch: vi.fn() },
 }));
@@ -53,7 +53,7 @@ describe('ProjectsView', () => {
     fireEvent.change(within(popup).getByLabelText('Do'), { target: { value: '2026-05-10' } });
     const filters: ProjectListFilters = { client: project.client, startDate: '2026-05-02', endDate: '2026-05-10' };
     expect(mocks.getProjectRows).toHaveBeenLastCalledWith('JTI', filters);
-    fireEvent.click(within(popup).getByRole('button', { name: 'Resetovat filtry' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Resetovat filtry' }));
     expect(mocks.getProjectRows).toHaveBeenLastCalledWith('JTI', {});
   });
 

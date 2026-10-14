@@ -91,15 +91,30 @@ describe('mobile workflow selection in the actual events overview', () => {
     const dateButton = screen.getByRole('button', { name: 'Vybrat datum akci' });
     const allFilter = screen.getByRole('button', { name: 'Vse' });
     const normalToolbarClass = toolbar.className, normalSpaceClass = space.className, before = cards();
+    const normalDateButtonClass = dateButton.className, normalAllFilterClass = allFilter.className;
+    const assertNormalToolbar = () => {
+      const currentTitle = screen.getByRole('heading', { name: 'Akce' });
+      const currentToolbar = currentTitle.closest<HTMLElement>('.nodu-mobile-events-toolbar')!;
+      const currentSpace = currentToolbar.parentElement!;
+      const currentDateButton = screen.getByRole('button', { name: 'Vybrat datum akci' });
+      const currentAllFilter = screen.getByRole('button', { name: 'Vse' });
+      expect(currentTitle).toBe(title);
+      expect(currentToolbar).toBe(toolbar);
+      expect(currentSpace).toBe(space);
+      expect(currentDateButton).toBe(dateButton);
+      expect(currentAllFilter).toBe(allFilter);
+      expect(currentToolbar.className).toBe(normalToolbarClass);
+      expect(currentSpace.className).toBe(normalSpaceClass);
+      expect(currentDateButton.className).toBe(normalDateButtonClass);
+      expect(currentAllFilter.className).toBe(normalAllFilterClass);
+      [currentTitle, currentToolbar, currentSpace, currentDateButton, currentAllFilter].forEach((element) => {
+        expect(element.isConnected).toBe(true);
+        expect(document.contains(element)).toBe(true);
+      });
+    };
 
     fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' }));
-    expect(screen.getByRole('heading', { name: 'Akce' })).toBe(title);
-    expect(title.closest('.nodu-mobile-events-toolbar')).toBe(toolbar);
-    expect(toolbar.parentElement).toBe(space);
-    expect(screen.getByRole('button', { name: 'Vybrat datum akci' })).toBe(dateButton);
-    expect(screen.getByRole('button', { name: 'Vse' })).toBe(allFilter);
-    expect(toolbar.className).toBe(normalToolbarClass);
-    expect(space.className).toBe(normalSpaceClass);
+    assertNormalToolbar();
     expect(toolbar).toHaveAttribute('data-workflow-toolbar');
     expect(space).toHaveAttribute('data-workflow-toolbar-space');
     expect(toolbar).not.toHaveClass('nodu-mobile-workflow-selection__toolbar');
@@ -113,16 +128,16 @@ describe('mobile workflow selection in the actual events overview', () => {
 
     await act(async () => read.resolve(workflowEvents));
     await waitFor(() => expect(workflowBoundary.events).toHaveBeenCalledOnce());
-    expect(screen.getByRole('heading', { name: 'Akce' })).toBe(title);
-    expect(title.closest('.nodu-mobile-events-toolbar')).toBe(toolbar);
-    expect(toolbar.parentElement).toBe(space);
-    expect(toolbar.className).toBe(normalToolbarClass);
-    expect(space.className).toBe(normalSpaceClass);
+    assertNormalToolbar();
+    expect(toolbar).toHaveAttribute('data-workflow-toolbar');
+    expect(space).toHaveAttribute('data-workflow-toolbar-space');
     sameCards(before);
 
     fireEvent.click(screen.getByRole('button', { name: 'Zrušit' }));
-    expect(toolbar.className).toBe(normalToolbarClass);
-    expect(space.className).toBe(normalSpaceClass);
+    assertNormalToolbar();
+    expect(toolbar).not.toHaveAttribute('data-workflow-toolbar');
+    expect(space).not.toHaveAttribute('data-workflow-toolbar-space');
+    sameCards(before);
     expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
     expect(workflowBoundary.save).not.toHaveBeenCalled();
   });

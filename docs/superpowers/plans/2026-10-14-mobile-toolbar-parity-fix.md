@@ -113,3 +113,9 @@ The fresh quality review of `d8f2ed4..af25c4b` identified two concrete consequen
 ## Plan self review
 
 The correction removes activation-only mobile presentation while keeping measurement metadata, keyboard protection, footer geometry and immutable draft behavior. Existing desktop/calendar/editor contracts and approval/invoice locks are untouched. Native coordinate parity is an explicit final gate, not inferred from passing DOM tests or retained card identity. All previously dirty files remain outside staging.
+
+## Execution status 14 October
+
+Task 1 and both independent-review corrections are implemented and independently approved at `f9ff037`. Merged local main `e983a24` preserves upstream `f30795b`; 164 files / 2,094 tests, whole lint, build and diff checks pass. The actual failing global TypeScript check retains exactly the 111 upstream diagnostics, compared as complete ordered output with source coordinates only normalized. Final integrated source review approves development refresh.
+
+Task 2 is incomplete: automatic safety review rejected publishing to origin/main because explicit human authorization was missing. The user has been asked for that permission. No workaround push or refresh-preflight bypass was attempted. The new source is not installed and corrected native coordinate parity has not been verified. Phone availability was also `unavailable` at 14:35; reconnection was requested asynchronously. Preserve these pending gates rather than marking installation or native acceptance complete.

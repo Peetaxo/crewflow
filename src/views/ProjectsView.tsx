@@ -27,6 +27,8 @@ const ProjectList = () => {
   const failedQuery = [eventsQuery, timelogsQuery].find((query) => query.isError);
   const hasFilters = Boolean(filters.client || filters.startDate || filters.endDate);
   const invalidDates = Boolean(filters.startDate && filters.endDate && filters.startDate > filters.endDate);
+  const startDateLabel = filters.startDate ? formatProjectPeriod({ startDate: filters.startDate, endDate: filters.startDate }) : '';
+  const endDateLabel = filters.endDate ? formatProjectPeriod({ startDate: filters.endDate, endDate: filters.endDate }) : '';
   const clients = useMemo(() => Array.from(new Set(dependencies.projects.map((project) => project.client).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'cs')), [dependencies.projects]);
   const setFilter = (key: keyof ProjectListFilters, value: string) => setFilters((previous) => ({ ...previous, [key]: value || undefined }));
   const createProject = () => setEditingProject(createEmptyProject());
@@ -78,8 +80,8 @@ const ProjectList = () => {
       </div>
       {hasFilters && <div role="group" aria-label="Aktivní filtry" className="mb-3 flex flex-wrap items-center gap-2">
         {filters.client && <Button variant="outline" size="sm" aria-label={`Odebrat filtr klienta: ${filters.client}`} onClick={() => setFilter('client', '')} className="h-auto min-h-9 max-w-full whitespace-normal text-left"><span className="min-w-0 break-words">Klient: {filters.client}</span><X size={14} aria-hidden="true" /></Button>}
-        {filters.startDate && <Button variant="outline" size="sm" aria-label="Odebrat datum Od" onClick={() => setFilter('startDate', '')}>Od: {formatProjectPeriod({ startDate: filters.startDate, endDate: filters.startDate })}<X size={14} aria-hidden="true" /></Button>}
-        {filters.endDate && <Button variant="outline" size="sm" aria-label="Odebrat datum Do" onClick={() => setFilter('endDate', '')}>Do: {formatProjectPeriod({ startDate: filters.endDate, endDate: filters.endDate })}<X size={14} aria-hidden="true" /></Button>}
+        {filters.startDate && <Button variant="outline" size="sm" aria-label={`Odebrat datum Od: ${startDateLabel}`} onClick={() => setFilter('startDate', '')}>Od: {startDateLabel}<X size={14} aria-hidden="true" /></Button>}
+        {filters.endDate && <Button variant="outline" size="sm" aria-label={`Odebrat datum Do: ${endDateLabel}`} onClick={() => setFilter('endDate', '')}>Do: {endDateLabel}<X size={14} aria-hidden="true" /></Button>}
         <Button variant="ghost" size="sm" onClick={() => setFilters({})}>Resetovat filtry</Button>
       </div>}
       {!failedQuery && !loading && !invalidDates && <p role="status" className="mb-3 text-xs text-[color:var(--nodu-text-soft)]">Zobrazeno: {projectRows.length}</p>}

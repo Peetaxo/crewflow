@@ -111,13 +111,17 @@ describe('rendered project search with real filtering', () => {
     expect(visibleIds()).toEqual(['AK001']);
     closeFilters();
     expect(screen.getByRole('button', { name: 'Odebrat filtr klienta: Škoda Auto' })).toHaveTextContent('Klient: Škoda Auto');
-    expect(screen.getByRole('button', { name: 'Odebrat datum Od' })).toHaveTextContent('Od: 25. 4. 2026');
-    expect(screen.getByRole('button', { name: 'Odebrat datum Do' })).toHaveTextContent('Do: 1. 5. 2026');
+    const removeStartDate = screen.getByRole('button', { name: /^Odebrat datum Od/ });
+    const removeEndDate = screen.getByRole('button', { name: /^Odebrat datum Do/ });
+    expect(removeStartDate).toHaveTextContent('Od: 25. 4. 2026');
+    expect(removeStartDate).toHaveAccessibleName('Odebrat datum Od: 25. 4. 2026');
+    expect(removeEndDate).toHaveTextContent('Do: 1. 5. 2026');
+    expect(removeEndDate).toHaveAccessibleName('Odebrat datum Do: 1. 5. 2026');
     fireEvent.click(screen.getByRole('button', { name: 'Odebrat filtr klienta: Škoda Auto' }));
     expect(visibleIds()).toEqual(['AK001', 'BR003']);
-    fireEvent.click(screen.getByRole('button', { name: 'Odebrat datum Od' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Odebrat datum Od/ }));
     expect(visibleIds()).toEqual(['AK001', 'BR003']);
-    fireEvent.click(screen.getByRole('button', { name: 'Odebrat datum Do' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Odebrat datum Do/ }));
     expect(visibleIds()).toEqual(['AK001', 'BR003', 'NO004']);
     const reopened = openFilters();
     fireEvent.change(reopened.getByLabelText('Klient'), { target: { value: 'Škoda Auto' } });
@@ -138,7 +142,7 @@ describe('rendered project search with real filtering', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Vymazat hledání' }));
     expect(visibleIds()).toEqual(['AK001', 'AK002']);
     expect(screen.getByRole('button', { name: 'Odebrat filtr klienta: Škoda Auto' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Odebrat datum Do' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Odebrat datum Do/ })).toBeInTheDocument();
   });
 
   it('shows invalid dates outside the popup and restores results after correcting or removing the bound', () => {
@@ -157,7 +161,7 @@ describe('rendered project search with real filtering', () => {
     expect(visibleIds()).toEqual(['AK001', 'BR003']);
     fireEvent.change(reopened.getByLabelText('Do'), { target: { value: '2026-04-01' } });
     closeFilters();
-    fireEvent.click(screen.getByRole('button', { name: 'Odebrat datum Do' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Odebrat datum Do/ }));
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(visibleIds()).toEqual(['AK001', 'BR003']);
     expect(screen.getByText('Zobrazeno: 2')).toBeInTheDocument();

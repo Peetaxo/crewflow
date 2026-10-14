@@ -175,15 +175,15 @@ This is the existing mobile bar formula in `mobile-events.css`, preserving prove
 
 - [x] Run new owner/integration tests and all existing selection, management, scroll and viewport tests; changed-file lint, diff-check, build and actual TypeScript comparison. Self-review and commit only scoped task files, with no dirty historic documentation. Parent completes fresh spec then quality review; fix and re-review before proceeding.
 
-Task 2 independently approved by fresh spec and quality reviewers at `de11b561ccb6b8369c1c20910ed918cf935a035d`. The search-scroll review finding was reproduced before correction and independently rechecked afterward. Final focused evidence: 275 tests; parent pre-integration evidence: 160 suites / 2001 tests, lint, build and diff check pass; actual TypeScript still matches all 111 baseline diagnostics. Native QA is not yet complete.
+Task 2 initially approved at `de11b561ccb6b8369c1c20910ed918cf935a035d`. Actual native QA then found entry toolbar clearance; `1e6750c` corrects it, and `3745f22cfc514ac2672b4d2ded29eb90a0b15123` prevents its delayed programmatic scroll event from expanding history. Fresh spec and quality reviews approve the final correction. Final focused evidence: 281 tests across 12 files, independent entry/search-scroll probes, 160 branch suites / 2007 tests, lint, build and diff check pass; actual TypeScript retains 111 baseline diagnostics. Corrected native entry, keyboard, real scrolling, last-card clearance and cancellation were observed on 14 October; native eligible summary/back and the unavailable physical phone remain separately recorded acceptance checks.
 
 ## Task 3 Parent integration and actual device verification
 
 **Files:** new 13 October verification report; this plan's checkboxes only after the corresponding gate is truly passed.
 
-- [ ] Request final code review of the entire app delta against the approved specification. Re-run the complete test suite serially on integrated clean main; then build, lint changed source, diff-check and compare complete actual TypeScript baseline diagnostics. Record exact SHA and exit statuses. Do not claim global type checking passes when existing diagnostics remain.
-- [ ] Preserve ignored `.env.local` and its existing Apple team. Fetch origin, check for new changes, integrate reviewed commits into the dedicated clean main checkout, reverify merged code and synchronize local main and origin/main. No force-push, reset, stash, or dirty original checkout changes.
-- [ ] Run the required refresh with unchanged preflight checks:
+- [x] Request final code review of the entire app delta against the approved specification. Re-run the complete test suite serially on integrated clean main; then build, lint changed source, diff-check and compare complete actual TypeScript baseline diagnostics. Record exact SHA and exit statuses. Do not claim global type checking passes when existing diagnostics remain.
+- [x] Preserve ignored `.env.local` and its existing Apple team. Fetch origin, check for new changes, integrate reviewed commits into the dedicated clean main checkout, reverify merged code and synchronize local main and origin/main. No force-push, reset, stash, or dirty original checkout changes.
+- [x] Run the required refresh with unchanged preflight checks:
 
 ```sh
 NODE_OPTIONS='--import=file:///private/tmp/crewflow-card-selection-vite-runner-preload-20261012.mjs' IOS_REFRESH_DERIVED_DATA_ROOT=/private/tmp/crewflow-card-selection-ios-20261012 npm run ios:refresh:devices
@@ -192,8 +192,10 @@ NODE_OPTIONS='--import=file:///private/tmp/crewflow-card-selection-vite-runner-p
 Record simulator and physical-phone outcomes separately. For an available phone, any signing/install/launch failure blocks completion; an unavailable phone is waiting, not updated. This refresh is development-only, not an App Store or production release.
 
 - [ ] On the freshly refreshed simulator, visually verify CH/COO mobile header, no calendar-view switch, date picker, entry on a chosen past date, stable cards and scroll, immediate selection, search, keyboard and accessory bar, a real finger drag, summary/back/cancel, bottom clearance and unchanged screen height. Avoid test workflow saves to Staff. Use isolated local data for writable integration scenarios. Do not confuse installation on the physical phone with direct visual verification there.
-- [ ] Create the 13 October verification report with actual evidence and only observed claims. Confirm original dirty files and historic dirty documentation hashes are unchanged. Include any genuine remaining limitation in the handoff, plus concise test instructions for the user.
+- [x] Create the 13 October verification report with actual evidence and only observed claims. Confirm original dirty files and historic dirty documentation hashes are unchanged. Include any genuine remaining limitation in the handoff, plus concise test instructions for the user.
 - [ ] Self-review documentation, commit only the new report and this plan's verified progress, integrate documentation into main and synchronize it. A docs-only commit does not imply the phone contains a rebuilt app for that SHA; identify the actual installed source SHA separately. Do not delete or archive the existing shared worktree.
+
+Parent evidence on 14 October: synchronized main `fc3047a847d939e21249e129723d9775f66d26df`, fresh 163 suites / 2076 tests, lint of all 37 combined changed TypeScript files, build and diff checks pass. Actual TypeScript exits 2 with a full coordinate-only match to all 111 updated-origin diagnostics. Final integration review is approved. The required refresh installs and launches the simulator, then fails to resolve the unavailable phone destination; the phone is waiting, not updated. Native CH/COO/Crew headers, May 12 entry, real software keyboard and drag, last-card clearance and exact cancellation pass. The native checkbox remains open specifically for eligible summary/back: sampled Staff history is approval-locked, and no test business writes are authorized. See the dated verification report for separate observations and limits.
 
 ## Plan self review
 

@@ -10,11 +10,13 @@ import { createEmptyProject, formatProjectPeriod, getProjectById, getProjectRows
 import { useProjectDependencies } from '../features/projects/hooks/useProjectDependencies';
 import { useEventsQuery } from '../features/events/queries/useEventsQuery';
 import { useTimelogsQuery } from '../features/timelogs/queries/useTimelogsQuery';
+import { useIsMobile } from '../hooks/use-mobile';
 import { formatCurrency } from '../utils';
 import ProjectStatsView from './ProjectStatsView';
 
 const ProjectList = () => {
   const { setSelectedProjectIdForStats, setEditingProject, setDeleteConfirm, searchQuery, role } = useAppContext();
+  const isMobile = useIsMobile();
   const dependencies = useProjectDependencies();
   const eventsQuery = useEventsQuery();
   const timelogsQuery = useTimelogsQuery();
@@ -69,28 +71,44 @@ const ProjectList = () => {
           <Button variant="outline" size="sm" className="mt-3" onClick={() => { void eventsQuery.refetch(); void timelogsQuery.refetch(); }}>Zkusit znovu</Button>
         </div>
       ) : loading ? <p role="status" className="py-10 text-center text-sm text-[color:var(--nodu-text-soft)]">Načítání projektů…</p> : (
-        <div role="region" aria-label="Seznam projektů" tabIndex={0} className="max-w-full overflow-x-auto rounded-[28px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] shadow-[0_18px_42px_rgba(47,38,31,0.08)]">
-          <table className="w-full min-w-[760px] border-collapse text-left">
-            <thead><tr className="border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] text-[10px] uppercase tracking-wider text-[color:var(--nodu-text-soft)]">
-              {['Job Number', 'Název', 'Období', 'Klient', 'Počet akcí', 'Náklady Crew', 'Akce'].map((label) => <th key={label} className="whitespace-nowrap px-4 py-3 font-medium">{label}</th>)}
-            </tr></thead>
-            <tbody className="divide-y divide-[color:rgb(var(--nodu-text-rgb)/0.06)]">
+        <div role="region" aria-label="Seznam projektů" tabIndex={isMobile ? undefined : 0} className={`min-w-0 max-w-full ${isMobile ? 'overflow-hidden' : 'overflow-x-auto'} rounded-[28px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] shadow-[0_18px_42px_rgba(47,38,31,0.08)]`}>
+          {isMobile ? (
+            <ul className="min-w-0 divide-y divide-[color:rgb(var(--nodu-text-rgb)/0.06)]">
               {projectRows.map((project) => (
-                <tr key={project.id} className="cursor-pointer transition-colors hover:bg-[color:rgb(var(--nodu-accent-rgb)/0.04)]" onClick={() => setSelectedProjectIdForStats(project.id)}>
-                  <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-accent)]"><button onClick={(event) => { event.stopPropagation(); setSelectedProjectIdForStats(project.id); }} className="text-left">{project.id}</button></td>
-                  <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text)]">{project.name}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-xs text-[color:var(--nodu-text-soft)]">{formatProjectPeriod(project.period)}</td>
-                  <td className="px-4 py-3 text-xs text-[color:var(--nodu-text)]">{project.client || '—'}</td>
-                  <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text)]">{project.eventCount}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text)]">{formatCurrency(project.crewCost)}</td>
-                  <td className="px-4 py-3 text-right">{canManage ? <div className="flex items-center justify-end gap-1">
-                    <Button onClick={(event) => { event.stopPropagation(); const fullProject = getProjectById(project.id); if (fullProject) setEditingProject(fullProject); }} variant="outline" size="sm" className="text-[11px]">Upravit</Button>
-                    <button onClick={(event) => { event.stopPropagation(); setDeleteConfirm({ type: 'project', id: project.id, name: project.name }); }} className="rounded-lg p-1.5 text-[color:var(--nodu-text-soft)] hover:text-[#c45c39]" aria-label="Smazat projekt" title="Smazat projekt"><Trash2 size={14} /></button>
-                  </div> : '—'}</td>
-                </tr>
+                <li key={project.id} className="min-w-0">
+                  <button type="button" aria-label={`${project.id} ${project.name} ${project.client || '—'}`} onClick={() => setSelectedProjectIdForStats(project.id)} className="grid w-full min-w-0 grid-cols-[minmax(0,5rem)_minmax(0,1fr)] gap-3 px-4 py-3 text-left text-xs transition-colors hover:bg-[color:rgb(var(--nodu-accent-rgb)/0.04)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--nodu-accent)]">
+                    <span className="min-w-0 font-semibold text-[color:var(--nodu-accent)] [overflow-wrap:anywhere]">{project.id}</span>
+                    <span className="min-w-0">
+                      <span className="block min-w-0 font-semibold text-[color:var(--nodu-text)] [overflow-wrap:anywhere]">{project.name}</span>
+                      <span className="mt-1 block min-w-0 text-[color:var(--nodu-text-soft)] [overflow-wrap:anywhere]">{project.client || '—'}</span>
+                    </span>
+                  </button>
+                </li>
               ))}
-            </tbody>
-          </table>
+            </ul>
+          ) : (
+            <table className="w-full min-w-[760px] border-collapse text-left">
+              <thead><tr className="border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] text-[10px] uppercase tracking-wider text-[color:var(--nodu-text-soft)]">
+                {['Job Number', 'Název', 'Období', 'Klient', 'Počet akcí', 'Náklady Crew', 'Akce'].map((label) => <th key={label} className="whitespace-nowrap px-4 py-3 font-medium">{label}</th>)}
+              </tr></thead>
+              <tbody className="divide-y divide-[color:rgb(var(--nodu-text-rgb)/0.06)]">
+                {projectRows.map((project) => (
+                  <tr key={project.id} className="cursor-pointer transition-colors hover:bg-[color:rgb(var(--nodu-accent-rgb)/0.04)]" onClick={() => setSelectedProjectIdForStats(project.id)}>
+                    <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-accent)]"><button onClick={(event) => { event.stopPropagation(); setSelectedProjectIdForStats(project.id); }} className="text-left">{project.id}</button></td>
+                    <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text)]">{project.name}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-xs text-[color:var(--nodu-text-soft)]">{formatProjectPeriod(project.period)}</td>
+                    <td className="px-4 py-3 text-xs text-[color:var(--nodu-text)]">{project.client || '—'}</td>
+                    <td className="px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text)]">{project.eventCount}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-xs font-semibold text-[color:var(--nodu-text)]">{formatCurrency(project.crewCost)}</td>
+                    <td className="px-4 py-3 text-right">{canManage ? <div className="flex items-center justify-end gap-1">
+                      <Button onClick={(event) => { event.stopPropagation(); const fullProject = getProjectById(project.id); if (fullProject) setEditingProject(fullProject); }} variant="outline" size="sm" className="text-[11px]">Upravit</Button>
+                      <button onClick={(event) => { event.stopPropagation(); setDeleteConfirm({ type: 'project', id: project.id, name: project.name }); }} className="rounded-lg p-1.5 text-[color:var(--nodu-text-soft)] hover:text-[#c45c39]" aria-label="Smazat projekt" title="Smazat projekt"><Trash2 size={14} /></button>
+                    </div> : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
           {projectRows.length === 0 && <p className="px-6 py-12 text-center text-sm text-[color:var(--nodu-text-soft)]">Pro zvolené filtry tu zatím nejsou žádné projekty.</p>}
         </div>
       )}

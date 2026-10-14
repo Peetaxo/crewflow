@@ -4,9 +4,9 @@
 
 Implements the user-approved `2026-10-13-mobile-in-place-shift-selection-design.md`: mobile linking selects the current cards in the existing overview, uses the same date picker, adds only compact inline search and a floating footer, and removes the mobile list/calendar switch for every role. Desktop and the existing editor retain their previous behavior.
 
-Final combined source `76b94bc030cbe1b3164377d9acd9c8a943e4d380` is integrated into synchronized main, passes the complete test suite, and is installed and launched in the simulator. It preserves the subsequently added compact Projects list and the reviewed mobile selection source from `fc3047a847d939e21249e129723d9775f66d26df`. Actual simulator checks confirm that the corrected entry preserves the May 12 cards with their title, jobnumber and date visible below the controls. Detailed keyboard, scrolling, cancellation and role QA ran on `fc3047a`; its mobile-selection files are byte-identical in `76b94bc`, where May 12 entry was checked again after refresh.
+The latest development installation uses synchronized main `0a0dcae13c80f48557dd03b8d9197d8944e06d0b`, installed and launched successfully in both the simulator and physical iPhone at 13:41 Europe/Prague. Its application source is byte-identical to fully verified combined source `76b94bc030cbe1b3164377d9acd9c8a943e4d380`; subsequent commits were documentation only. It preserves the compact Projects list and reviewed mobile selection source from `fc3047a847d939e21249e129723d9775f66d26df`. Detailed keyboard, scrolling, cancellation and role QA ran on `fc3047a`; the same mobile-selection files were checked again for May 12 entry on `76b94bc`.
 
-The physical iPhone is currently unavailable and is waiting for installation. Native summary/back with a new eligible selection remains a separate acceptance check: the sampled Staff history is already locked by approval, and no test business records were created or changed. Summary/back and save protections pass automated tests with isolated fixtures. These limits are not reported as successful physical-phone or native-summary checks.
+Physical-phone installation and launch are now verified; direct physical-phone visual QA is not claimed. Native summary/back with a new eligible selection remains a separate acceptance check: sampled Staff history is already locked by approval, and no test business records were created or changed. Summary/back and save protections pass automated tests with isolated fixtures.
 
 The mobile-selection task performs no migrations, Staff workflow/event/hours/approval/invoice test writes, authentication/permission implementation changes, invoice edits, dependency updates or tracked tooling workarounds. The integrated source also preserves the separately reviewed Projects work. Native role checks use the existing user-authorized test-role control; its implementation is unchanged.
 
@@ -97,7 +97,7 @@ Simulator build, installation and launch succeeded on iPhone 17 Pro, iOS 26.5, `
 - Cancel restores the original May 12 normal view, empty normal search, 150 actions and first-card position. A later role change retires the selection without saving. The test role was returned to CH.
 - Every native capture remains 368 × 800. Neither the footer nor keyboard stretches the app frame.
 
-The mandatory refresh was repeated from clean synchronized `76b94bc` after preserving the compact Projects update. The simulator again built, installed and launched successfully; the phone destination was still unavailable. Log: `/private/tmp/crewflow-mobile-in-place-20261014-current-ios-refresh.log`. A fresh May 12 entry check on this installed source again keeps the same cards with visible title/job/date, no loading paragraph or autofocus, and the floating footer above navigation. The latest installed simulator source is **`76b94bc`**, not a subsequent documentation-only commit.
+The mandatory refresh was repeated from clean synchronized `76b94bc` after preserving the compact Projects update. The simulator again built, installed and launched successfully; the phone destination was still unavailable at that point. Log: `/private/tmp/crewflow-mobile-in-place-20261014-current-ios-refresh.log`. A fresh May 12 entry check on this installed source again keeps the same cards with visible title/job/date, no loading paragraph or autofocus, and the floating footer above navigation. A later successful refresh at 13:41 installs `0a0dcae` on both devices, as recorded below.
 
 Local screenshots are retained under `/Users/peetax/.codex/visualizations/2026/09/03/01a0664d-de93-7d91-b974-aa5eddd4eb23/crewflow-mobile-in-place-20261014/`: `before.jpg`, `entry-ch.jpg`, `entry-coo.jpg`, `keyboard.jpg`, `keyboard-drag.jpg`, `last-card.jpg`, `cancel.jpg` and `crew.jpg` show detailed `fc3047a` QA; `current-entry.jpg` shows the repeated entry check on `76b94bc`. They are local native evidence, not uploaded Staff screenshots.
 
@@ -105,15 +105,18 @@ The sampled May 12, installation and TEST cards are already locked by approval; 
 
 ## Physical iPhone status
 
-Both 14 October refreshes exited 1 after successful simulator stages: the phone build could not resolve destination `00008110-000C284E2299801E`. The command's availability probe returned cached paired-device information rather than a usable Xcode destination. Two separate reads confirmed `Device State: unavailable` and last connection on 13 October at 15:12; Xcode listed no available physical iPhone.
+The two earlier 14 October refreshes exited 1 after successful simulator stages: the phone build could not resolve destination `00008110-000C284E2299801E`. The command's availability probe returned cached paired-device information rather than a usable Xcode destination. Two separate reads confirmed `Device State: unavailable` and last connection on 13 October at 15:12; Xcode listed no available physical iPhone.
 
-Current status is **waiting for installation**, not updated. The user was asked to connect and unlock the iPhone 13 mini. Once it is available, rerun the mandatory refresh from clean synchronized main and record its build/install/launch outcome. The successful launch of yesterday's initial source is not evidence of today's corrected phone installation. No direct physical-phone visual QA is claimed.
+After the user confirmed reconnecting and unlocking the phone, a fresh read reported `Device State: connected` with last connection on 14 October at 13:41. The unchanged mandatory refresh then ran from clean synchronized main **`0a0dcae13c80f48557dd03b8d9197d8944e06d0b`**, preserving the ignored configuration and existing signing team. It exited **0** with `simulator: updated` and `phone: updated`.
+
+Simulator build, installation and launch succeeded again; a fresh 368 × 800 capture confirms the running CH overview. On iPhone 13 mini, build, signing, installation and launch all succeeded. Current physical-phone status is **updated**, not waiting. This is a local development installation, not an App Store or production release. It does not imply direct visual testing on the phone.
+
+Successful-refresh log: `/private/tmp/crewflow-mobile-in-place-20261014-phone-connected-ios-refresh.log`. Availability evidence: `/private/tmp/crewflow-mobile-in-place-20261014-phone-connected-availability.txt`. No application files changed in this phone-only continuation; a fresh complete non-documentation diff against verified `76b94bc` exited 0.
 
 ## Remaining acceptance checks
 
-- Complete installation and launch on the reconnected iPhone, reporting it separately from simulator visual verification.
 - With two eligible shifts, check native summary/back without saving; use isolated writable fixtures for save scenarios, not production Staff test writes.
-- The simulator contains app source `76b94bc`; later documentation-only commits do not imply another rebuilt native binary.
+- Both devices contain installed source `0a0dcae`; later documentation-only commits do not imply another rebuilt native binary.
 
 ## User testing
 

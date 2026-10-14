@@ -608,8 +608,8 @@ const EventsOverview = ({ selection = null }: { selection?: MobileWorkflowSelect
 
   const normalView = (createAction: React.ReactNode) => (
     <motion.div ref={overview} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={selectionActive ? 'nodu-workflow-selection nodu-mobile-workflow-selection' : undefined} data-workflow-start-date={selectionActive ? selectionTimeline.startDate : undefined}>
-      <div data-workflow-toolbar-space={selectionActive ? '' : undefined} className={selectionActive ? 'nodu-workflow-selection__toolbar-space' : undefined}>
-      <div data-workflow-toolbar={selectionActive ? '' : undefined} className={isMobileEventFeed ? `nodu-mobile-events-toolbar${selectionActive ? ' nodu-mobile-workflow-selection__toolbar' : ''}` : 'mb-5 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_auto_1fr] lg:items-start'}>
+      <div data-workflow-toolbar-space={selectionActive ? '' : undefined} className={selectionActive && !isMobileEventFeed ? 'nodu-workflow-selection__toolbar-space' : undefined}>
+      <div data-workflow-toolbar={selectionActive ? '' : undefined} className={isMobileEventFeed ? 'nodu-mobile-events-toolbar' : 'mb-5 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_auto_1fr] lg:items-start'}>
         <div className="flex min-w-0 flex-1 flex-col gap-3">
           {isMobileEventFeed ? (
             <div className="nodu-mobile-events-header">

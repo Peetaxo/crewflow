@@ -82,6 +82,51 @@ describe('mobile workflow selection in the actual events overview', () => {
     });
   }
 
+  it.each(['crewhead', 'coo'])('keeps ordinary toolbar presentation while selecting as %s', async (role) => {
+    const read = held<typeof workflowEvents>(); workflowBoundary.events.mockReturnValue(read.promise);
+    await setup(role);
+    const title = screen.getByRole('heading', { name: 'Akce' });
+    const toolbar = title.closest<HTMLElement>('.nodu-mobile-events-toolbar')!;
+    const space = toolbar.parentElement!;
+    const dateButton = screen.getByRole('button', { name: 'Vybrat datum akci' });
+    const allFilter = screen.getByRole('button', { name: 'Vse' });
+    const normalToolbarClass = toolbar.className, normalSpaceClass = space.className, before = cards();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' }));
+    expect(screen.getByRole('heading', { name: 'Akce' })).toBe(title);
+    expect(title.closest('.nodu-mobile-events-toolbar')).toBe(toolbar);
+    expect(toolbar.parentElement).toBe(space);
+    expect(screen.getByRole('button', { name: 'Vybrat datum akci' })).toBe(dateButton);
+    expect(screen.getByRole('button', { name: 'Vse' })).toBe(allFilter);
+    expect(toolbar.className).toBe(normalToolbarClass);
+    expect(space.className).toBe(normalSpaceClass);
+    expect(toolbar).toHaveAttribute('data-workflow-toolbar');
+    expect(space).toHaveAttribute('data-workflow-toolbar-space');
+    expect(toolbar).not.toHaveClass('nodu-mobile-workflow-selection__toolbar');
+    expect(space).not.toHaveClass('nodu-workflow-selection__toolbar-space');
+    const search = screen.getByRole('searchbox', { name: 'Hledat směnu nebo jobnumber' });
+    expect(search).not.toHaveFocus();
+    expect(allFilter.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Zrušit' }).closest('[data-workflow-bar]')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pokračovat' })).toBeInTheDocument();
+    sameCards(before);
+
+    await act(async () => read.resolve(workflowEvents));
+    await waitFor(() => expect(workflowBoundary.events).toHaveBeenCalledOnce());
+    expect(screen.getByRole('heading', { name: 'Akce' })).toBe(title);
+    expect(title.closest('.nodu-mobile-events-toolbar')).toBe(toolbar);
+    expect(toolbar.parentElement).toBe(space);
+    expect(toolbar.className).toBe(normalToolbarClass);
+    expect(space.className).toBe(normalSpaceClass);
+    sameCards(before);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Zrušit' }));
+    expect(toolbar.className).toBe(normalToolbarClass);
+    expect(space.className).toBe(normalSpaceClass);
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
+    expect(workflowBoundary.save).not.toHaveBeenCalled();
+  });
+
   it.each([0, 137])('clears the actual native entry toolbar at scrollTop=%s and restores the exact normal snapshot on cancel', async (entryScroll) => {
     const read = held<typeof workflowEvents>(); workflowBoundary.events.mockReturnValue(read.promise);
     await setup(); measureOverview(false, true); const frame = screen.getByTestId('frame');

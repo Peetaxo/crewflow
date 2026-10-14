@@ -351,6 +351,19 @@ describe('scoped selection native layout', () => {
     expect(reserve).toContain('height: var(--nodu-workflow-toolbar-height);');
     expect(mobile.match(/(?:^|\n) {2}\.nodu-workflow-selection__toolbar\s*\{[^}]*\}/)?.[0]).toContain('padding-top: 3rem;');
   });
+  it('uses mobile toolbar measurement markers only during keyboard occlusion', () => {
+    const mobile = css.slice(css.indexOf('@media (max-width: 767px)', css.indexOf('.nodu-workflow-selection {')));
+    const toolbar = mobile.match(/\.nodu-mobile-workflow-selection\[data-workflow-keyboard-header\] \[data-workflow-toolbar\]\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(toolbar).toContain('position: fixed;');
+    expect(toolbar).toContain('top: calc(env(safe-area-inset-top) + var(--nodu-workflow-viewport-top, 0px));');
+    expect(toolbar).toContain('left: var(--nodu-workflow-toolbar-left);');
+    expect(toolbar).toContain('width: var(--nodu-workflow-toolbar-width);');
+    expect(toolbar).toContain('box-sizing: border-box;');
+    expect(toolbar).toContain('background: rgb(var(--nodu-paper-rgb) / 0.98);');
+    const reserve = mobile.match(/\.nodu-mobile-workflow-selection\[data-workflow-keyboard-header\] \[data-workflow-toolbar-space\]\s*\{[^}]*\}/)?.[0];
+    expect(reserve).toContain('height: var(--nodu-workflow-toolbar-height);');
+    expect(css).not.toContain('.nodu-mobile-workflow-selection__toolbar');
+  });
   it('keeps the native date control inside its grid cell without changing its input type', () => {
     const rule = css.match(/\.nodu-workflow-selection__toolbar input\[type="date"\]\s*\{[^}]*\}/)?.[0] ?? '';
     for (const declaration of ['display: block;', 'width: 100%;', 'max-width: 100%;', 'min-width: 0;', 'box-sizing: border-box;', '-webkit-appearance: none;', 'appearance: none;']) {

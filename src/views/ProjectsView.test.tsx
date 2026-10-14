@@ -5,6 +5,7 @@ import type { ProjectListFilters } from '../features/projects/services/projects.
 import ProjectsView from './ProjectsView';
 
 const mocks = vi.hoisted(() => ({
+  isMobile: false,
   context: { selectedProjectIdForStats: null as string | null, setSelectedProjectIdForStats: vi.fn(), setEditingProject: vi.fn(), setDeleteConfirm: vi.fn(), projectFilter: 'past', searchQuery: '', role: 'coo' },
   getProjectRows: vi.fn(),
   query: { data: [], isPending: false, isError: false, error: null, refetch: vi.fn() },
@@ -12,6 +13,7 @@ const mocks = vi.hoisted(() => ({
 const project = { id: 'JTI001', name: 'JTI', client: 'NextLevel s.r.o.', note: 'Stored note', createdAt: '2026-04-29' };
 const projectRows = [{ ...project, status: 'full', eventCount: 2, crewCost: 1500, period: { startDate: '2026-05-01', endDate: '2026-05-03' } }];
 vi.mock('../context/useAppContext', () => ({ useAppContext: () => mocks.context }));
+vi.mock('../hooks/use-mobile', () => ({ useIsMobile: () => mocks.isMobile }));
 vi.mock('../app/providers/useAuth', () => ({ useAuth: () => ({ currentUserId: 'user-a', currentProfileId: 'profile-a', role: 'coo' }) }));
 vi.mock('../features/events/queries/useEventsQuery', () => ({ useEventsQuery: () => mocks.query }));
 vi.mock('../features/timelogs/queries/useTimelogsQuery', () => ({ useTimelogsQuery: () => mocks.query }));
@@ -25,6 +27,7 @@ vi.mock('./ProjectStatsView', () => ({ default: () => <div>project detail</div> 
 describe('ProjectsView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.isMobile = false;
     Object.assign(mocks.context, { role: 'coo', selectedProjectIdForStats: null, projectFilter: 'past', searchQuery: '' });
     Object.assign(mocks.query, { isPending: false, isError: false, error: null });
     mocks.getProjectRows.mockReturnValue(projectRows);
@@ -88,5 +91,27 @@ describe('ProjectsView', () => {
     render(<ProjectsView />);
     expect(screen.getByRole('region', { name: 'Seznam projektů' })).toHaveClass('overflow-x-auto', 'max-w-full');
     expect(screen.getByRole('table')).toHaveClass('min-w-[760px]');
+  });
+
+  it('opens a project from its compact mobile row with only its number, name and client', () => {
+    mocks.isMobile = true;
+    render(<ProjectsView />);
+    const ledger = within(screen.getByRole('region', { name: 'Seznam projektů' }));
+    const row = ledger.getByRole('button', { name: `${project.id} ${project.name} ${project.client}` });
+
+    expect(row.tagName).toBe('BUTTON');
+    expect(ledger.getByRole('listitem')).toContainElement(row);
+    expect(within(row).getByText(project.id)).toBeInTheDocument();
+    expect(within(row).getByText(project.name)).toBeInTheDocument();
+    expect(within(row).getByText(project.client)).toBeInTheDocument();
+    expect(ledger.queryByRole('table')).not.toBeInTheDocument();
+    expect(ledger.queryByText('1. 5. 2026 – 3. 5. 2026')).not.toBeInTheDocument();
+    expect(ledger.queryByText('2')).not.toBeInTheDocument();
+    expect(ledger.queryByText('1 500 Kc')).not.toBeInTheDocument();
+    expect(ledger.queryByRole('button', { name: 'Upravit' })).not.toBeInTheDocument();
+    expect(ledger.queryByRole('button', { name: 'Smazat projekt' })).not.toBeInTheDocument();
+
+    fireEvent.click(row);
+    expect(mocks.context.setSelectedProjectIdForStats).toHaveBeenCalledWith(project.id);
   });
 });

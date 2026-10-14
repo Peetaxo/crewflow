@@ -431,7 +431,7 @@ begin
   begin
     perform public.resolve_timelog_approvals_atomic(v_changed_payload, 'approved');
     raise exception 'changed parent retry token succeeded';
-  exception when sqlstate '40001' then
+  exception when sqlstate 'PT409' then
     if sqlerrm <> 'timelog_approval_conflict' then raise; end if;
   end;
 
@@ -443,7 +443,7 @@ begin
   begin
     perform public.resolve_timelog_approvals_atomic(v_changed_payload, 'approved');
     raise exception 'changed approval retry token succeeded';
-  exception when sqlstate '40001' then
+  exception when sqlstate 'PT409' then
     if sqlerrm <> 'timelog_approval_conflict' then raise; end if;
   end;
 
@@ -456,7 +456,7 @@ begin
   begin
     perform public.resolve_timelog_approvals_atomic(v_payload, 'returned', 'different');
     raise exception 'different resolution retry succeeded';
-  exception when sqlstate '40001' then null;
+  exception when sqlstate 'PT409' then null;
   end;
 end
 $$;
@@ -677,7 +677,7 @@ begin
       'approval_id', v_a.id, 'approval_updated_at', v_a.updated_at
     )), 'returned', 'Fix hours');
     raise exception 'superseded resolution retry succeeded';
-  exception when sqlstate '40001' then
+  exception when sqlstate 'PT409' then
     if sqlerrm <> 'timelog_approval_conflict' then raise; end if;
   end;
 end
@@ -720,7 +720,7 @@ begin
   begin
     perform public.resolve_timelog_approvals_atomic(v_payload, 'approved');
     raise exception 'stale mixed resolution succeeded';
-  exception when sqlstate '40001' then null;
+  exception when sqlstate 'PT409' then null;
   end;
   if (select status from public.timelog_approvals where id = v_a.id) <> 'pending'
     or (select status from public.timelogs where id = v_t.id) <> 'pending_coo' then
@@ -760,7 +760,7 @@ begin
       'approval_id', null, 'approval_updated_at', null
     )), 'approved');
     raise exception 'targeted report fell back to legacy';
-  exception when sqlstate '40001' then null;
+  exception when sqlstate 'PT409' then null;
   end;
 end
 $$;
@@ -815,7 +815,7 @@ do $$
 begin
   if has_function_privilege('anon', 'public.list_event_contact_options()', 'EXECUTE')
     or has_function_privilege('anon', 'public.handoff_timelogs_for_approval_atomic(jsonb)', 'EXECUTE')
-    or has_function_privilege('anon', 'public.resolve_timelog_approvals_atomic(jsonb,text,text)', 'EXECUTE')
+    or has_function_privilege('anon', 'public.resolve_timelog_approvals_atomic(jsonb,text,text,uuid)', 'EXECUTE')
     or has_function_privilege('public', 'public.list_event_contact_options()', 'EXECUTE')
     or has_table_privilege('anon', 'public.timelog_approvals', 'INSERT')
     or has_table_privilege('anon', 'public.timelog_approvals', 'UPDATE')

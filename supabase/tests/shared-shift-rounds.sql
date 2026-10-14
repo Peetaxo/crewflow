@@ -5,7 +5,7 @@ set local row_security=on;
 do $$ begin
   if to_regprocedure('public.save_shift_workflow_drafts_atomic(uuid,uuid,uuid,uuid,jsonb,uuid)') is null
     or to_regprocedure('public.submit_shift_workflow_round_atomic(uuid,uuid,uuid,uuid,uuid,jsonb)') is null
-    or to_regprocedure('public.transition_shift_workflow_round_atomic(uuid,uuid,timestamptz,jsonb,text,text,uuid,jsonb)') is null then
+    or to_regprocedure('public.transition_shift_workflow_round_atomic(uuid,uuid,timestamptz,jsonb,text,text,uuid,jsonb,uuid)') is null then
     raise exception 'shared shift lifecycle RPCs missing';
   end if;
 end $$;
@@ -13,7 +13,7 @@ do $$ declare proc regprocedure; begin
  foreach proc in array array[
   'public.save_shift_workflow_drafts_atomic(uuid,uuid,uuid,uuid,jsonb,uuid)'::regprocedure,
   'public.submit_shift_workflow_round_atomic(uuid,uuid,uuid,uuid,uuid,jsonb)'::regprocedure,
-  'public.transition_shift_workflow_round_atomic(uuid,uuid,timestamptz,jsonb,text,text,uuid,jsonb)'::regprocedure,
+  'public.transition_shift_workflow_round_atomic(uuid,uuid,timestamptz,jsonb,text,text,uuid,jsonb,uuid)'::regprocedure,
   'public.approve_event_withdrawal(uuid,uuid,uuid)'::regprocedure
  ] loop
   if (select prosecdef from pg_proc where oid=proc) or has_function_privilege('anon',proc,'execute')
@@ -280,16 +280,15 @@ select pg_temp.transition(513,601,'approve');
 select pg_temp.assert((select count(*)=3 from public.timelogs where id in(pg_temp.sid(201),pg_temp.sid(202),pg_temp.sid(203)) and status='approved'),'all approved');
 select pg_temp.assert(not exists(select 1 from public.invoice_timelogs where timelog_id in(pg_temp.sid(201),pg_temp.sid(202),pg_temp.sid(203))),'approval never creates invoice');
 insert into saved values('billing_before',null,(select to_jsonb(t) from public.timelogs t where id=pg_temp.sid(201)));
-update public.timelogs set status='invoiced' where id=pg_temp.sid(201);
-select pg_temp.assert((select status='invoiced' from public.timelogs where id=pg_temp.sid(201)),'explicit billing transitions preserved');
-select pg_temp.assert((select updated_at>(select (result->>'updated_at')::timestamptz from saved where name='billing_before')
- from public.timelogs where id=pg_temp.sid(201)),'explicit billing version advances after shared approval');
+select pg_temp.fails($q$update public.timelogs set status='invoiced' where id=pg_temp.sid(201)$q$,'42501','invoice_billing_statement_confirmation_required');
+select pg_temp.assert((select count(distinct statement_id)=1 from public.invoice_billing_sources where timelog_id in(pg_temp.sid(201),pg_temp.sid(202),pg_temp.sid(203))),'complete shared round reserves one statement');
+select pg_temp.assert((select status='blocked' and not financial_verified from public.invoice_billing_statements where round_id=pg_temp.sid(601)),'legacy approval without financial quote blocks billing without changing hours');
 set local request.jwt.claim.sub='93000000-0000-4000-8000-000000000001';
 select public.assign_event_crew(pg_temp.sid(104),pg_temp.sid(13),null,'[{"date":"2099-09-04","time_from":"","time_to":"","day_type":"deinstal"}]');
 set local request.jwt.claim.sub='93000000-0000-4000-8000-000000000003';
 select public.submit_shift_workflow_round_atomic(pg_temp.sid(514),pg_temp.sid(602),pg_temp.sid(400),pg_temp.sid(13),pg_temp.sid(101),pg_temp.later_payload());
 select pg_temp.assert((select expected_item_count=1 from public.shift_workflow_rounds where id=pg_temp.sid(602))
- and (select count(*)=2 from public.timelogs where contractor_id=pg_temp.sid(13) and status='approved'),'later draft creates next round excluding completed history');
+ and (select count(*)=3 from public.timelogs where contractor_id=pg_temp.sid(13) and status='approved'),'later draft creates next round excluding completed history');
 set local request.jwt.claim.sub='93000000-0000-4000-8000-000000000001';
 select pg_temp.transition(515,602,'return','CH return',104);
 select pg_temp.assert((select status='rejected' and note='CH return' from public.shift_workflow_rounds where id=pg_temp.sid(602)),'CH return whole next round');

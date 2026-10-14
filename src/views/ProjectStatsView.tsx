@@ -63,6 +63,16 @@ const ProjectDetail = () => {
           </div>
         </section>
 
+        <section className={sectionClass} aria-labelledby="project-costs-title">
+          <h2 id="project-costs-title" className="mb-5 text-lg font-semibold">Náklady projektu</h2>
+          {costsQuery ? <ProjectQueryMessage query={costsQuery} loadingLabel="Načítání nákladů" /> : <>
+            <dl className="grid grid-cols-2 gap-4 md:grid-cols-5">{costLabels.map(([key, label]) => <div key={key} className={key === 'total' ? 'font-semibold' : ''}><dt className="mb-1 text-xs text-[color:var(--nodu-text-soft)]">{label}</dt><dd className="text-base font-semibold">{formatCurrency(summary.costs[key])}</dd></div>)}</dl>
+            <dl className="mt-6 grid grid-cols-2 gap-4 border-t border-[color:var(--nodu-border)] pt-5 md:grid-cols-4">{stageLabels.map(([key, label]) => <div key={key}><dt className="mb-1 text-xs text-[color:var(--nodu-text-soft)]">{label}</dt><dd className="text-base font-semibold">{formatCurrency(summary.stages[key].total)}</dd></div>)}</dl>
+            {summary.hasUnknownInvoiceAllocation && <p className="mt-4 text-sm text-[color:var(--nodu-text-soft)]">Některé podíly faktur nejsou známé. Uvedené součty zahrnují pouze známé částky.</p>}
+            {summary.hasMissingRates && <p className="mt-4 text-sm text-[color:var(--nodu-text-soft)]">U některých členů Crew chybí sazba. Náklady na práci jsou neúplné.</p>}
+          </>}
+        </section>
+
         <section className={sectionClass} aria-labelledby="project-events-title">
           <div className="mb-4 flex items-center justify-between gap-3">
             <h2 id="project-events-title" className="text-lg font-semibold">Akce projektu</h2>
@@ -81,15 +91,6 @@ const ProjectDetail = () => {
           ) : <p className="py-4 text-sm text-[color:var(--nodu-text-soft)]">Projekt zatím nemá žádné akce.</p>)}
         </section>
 
-        <section className={sectionClass} aria-labelledby="project-costs-title">
-          <h2 id="project-costs-title" className="mb-5 text-lg font-semibold">Náklady projektu</h2>
-          {costsQuery ? <ProjectQueryMessage query={costsQuery} loadingLabel="Načítání nákladů" /> : <>
-            <dl className="grid grid-cols-2 gap-4 md:grid-cols-5">{costLabels.map(([key, label]) => <div key={key} className={key === 'total' ? 'font-semibold' : ''}><dt className="mb-1 text-xs text-[color:var(--nodu-text-soft)]">{label}</dt><dd className="text-base font-semibold">{formatCurrency(summary.costs[key])}</dd></div>)}</dl>
-            <dl className="mt-6 grid grid-cols-2 gap-4 border-t border-[color:var(--nodu-border)] pt-5 md:grid-cols-4">{stageLabels.map(([key, label]) => <div key={key}><dt className="mb-1 text-xs text-[color:var(--nodu-text-soft)]">{label}</dt><dd className="text-base font-semibold">{formatCurrency(summary.stages[key].total)}</dd></div>)}</dl>
-            {summary.hasUnknownInvoiceAllocation && <p className="mt-4 text-sm text-[color:var(--nodu-text-soft)]">Některé podíly faktur nejsou známé. Uvedené součty zahrnují pouze známé částky.</p>}
-            {summary.hasMissingRates && <p className="mt-4 text-sm text-[color:var(--nodu-text-soft)]">U některých členů Crew chybí sazba. Náklady na práci jsou neúplné.</p>}
-          </>}
-        </section>
         <ProjectDocuments invoices={summary.invoices} receipts={summary.receipts} events={summary.events} contractors={dependencies.contractors} invoicesQuery={invoicesQuery} receiptsQuery={receiptsQuery} />
       </div>
       {editingEvent && canManage && <EventEditModal key={project.id} editingEvent={editingEvent} onChange={setEditingEvent} onClose={() => setEditingEvent(null)} mode="create" />}

@@ -4,13 +4,28 @@
 
 Implements the user-approved `2026-10-13-mobile-in-place-shift-selection-design.md`: mobile linking selects the current cards in the existing overview, uses the same date picker, adds only compact inline search and a floating footer, and removes the mobile list/calendar switch for every role. Desktop and the existing editor retain their previous behavior.
 
-The latest development installation uses synchronized main `0a0dcae13c80f48557dd03b8d9197d8944e06d0b`, installed and launched successfully in both the simulator and physical iPhone at 13:41 Europe/Prague. Its application source is byte-identical to fully verified combined source `76b94bc030cbe1b3164377d9acd9c8a943e4d380`; subsequent commits were documentation only. It preserves the compact Projects list and reviewed mobile selection source from `fc3047a847d939e21249e129723d9775f66d26df`. Detailed keyboard, scrolling, cancellation and role QA ran on `fc3047a`; the same mobile-selection files were checked again for May 12 entry on `76b94bc`.
+The new toolbar-parity correction is verified in local merged main `e983a247b5ffd79c1230466b9e4b0b9f09c21097`, but is **not yet installed or natively accepted**. Publishing to origin/main was rejected by automatic safety review pending explicit human authorization. The required synchronized-main refresh therefore has not run for this correction; its preflight was not bypassed. The user has been asked for permission to publish. The phone was also reported unavailable at 14:35 Europe/Prague, last connection 14:32, and the user has been asked to reconnect it.
 
-Physical-phone installation and launch are now verified; direct physical-phone visual QA is not claimed. Native summary/back with a new eligible selection remains a separate acceptance check: sampled Staff history is already locked by approval, and no test business records were created or changed. Summary/back and save protections pass automated tests with isolated fixtures.
+The earlier development installation in this selection task used synchronized main `0a0dcae13c80f48557dd03b8d9197d8944e06d0b`, installed and launched on both devices at 13:41 Europe/Prague. Its application source is byte-identical to fully verified combined source `76b94bc030cbe1b3164377d9acd9c8a943e4d380`. Detailed keyboard, scrolling, cancellation and role QA ran on `fc3047a`; May 12 entry was checked again on `76b94bc`. Later separately recorded Projects installations do not contain the new toolbar correction. The previous QA established card clearance, not exact normal-versus-selected header parity.
+
+Earlier physical-phone installation and launch are verified; neither a phone installation of the new toolbar correction nor direct physical-phone visual QA is claimed. Native summary/back with a new eligible selection remains a separate acceptance check: sampled Staff history is already locked by approval, and no test business records were created or changed. Summary/back and save protections pass automated tests with isolated fixtures.
 
 The mobile-selection task performs no migrations, Staff workflow/event/hours/approval/invoice test writes, authentication/permission implementation changes, invoice edits, dependency updates or tracked tooling workarounds. The integrated source also preserves the separately reviewed Projects work. Native role checks use the existing user-authorized test-role control; its implementation is unchanged.
 
 ## Reviewed implementation
+
+### Toolbar parity correction on 14 October
+
+- Actual rejected simulator behavior at May 12: the ordinary date/title row is around y94 and the selected row around y150; filters move from around y140 to y197 in the 368 × 800 capture. Local evidence is under `crewflow-mobile-header-parity-20261014/` in this task's visualization folder: `rejected-normal.jpg` and `rejected-selected.jpg`. These are reproductions, not proof of the fix.
+- Source `894ab8d` removes activation-only mobile wrapper/panel classes and retains keyboard measurement markers. Test-only `af25c4b` strengthens current connected-DOM identity checks after pending open, read resolution and cancellation.
+- Fresh quality review rejected that intermediate source: legacy clearToolbar restoration would move the now-flowing header upward, and removing the wrapper lost keyboard stacking. Plan `4980d0b` records both requirements; final source `f9ff037` restores raw scroll on initial mobile entry, retains nonmobile alignment and bookkeeping, and restores z-index 12 exclusively for the keyboard header. No production scroll/viewport hook or business-rule changes were made.
+- Regression RED had 9 expected failures, including raw scroll 0→37 and 137→174 and absent keyboard z-index. Final focused GREEN passed 14 files / 282 tests. Flow geometry is explicitly simulated; it is not native proof.
+- Fresh spec and quality rechecks approve `f9ff037`. A separate final integrated review approves `e983a24` for synchronized development refresh, not for native completion. Its four source/test blobs match `f9ff037`; incoming Projects search and costs-before-events changes match preserved upstream `f30795b`.
+- Merged main complete suite: **164 files / 2,094 tests**, actual exit 0, start 14:51:50 Europe/Prague, duration 156.56s. Whole-repository lint, production build and diff check exit 0. Actual checked-config TypeScript exits 2 with 111 diagnostics; complete ordered output equals the fresh upstream baseline after replacing only source diagnostic line/column coordinates. No sorting, filtering or dropped diagnostics; global TypeScript remains failing.
+- Logs use `/private/tmp/crewflow-mobile-header-parity-20261014-`: `quality-fix-red.txt`, `quality-fix-green-commit.txt`, `quality-fix-build.txt`, `quality-fix-config-types-commit.txt`, `quality-fix-config-type-compare-commit.txt`, `main-tests.log`, `main-lint.log`, `main-build.log`, `main-types.txt`, `main-type-compare.log`. The checked compiler command is `node node_modules/typescript/bin/tsc --project tsconfig.app.json --noEmit`. Earlier attempted strict-null recovery logs are investigative failures, superseded by this verified command and baseline equivalence.
+- Pending gates: explicit publishing authorization, clean main/origin synchronization, unchanged `npm run ios:refresh:devices`, and actual corrected simulator header/date/filter coordinate parity, keyboard/real scrolling/cancel/frame-height proof. Do not call this correction installed or visually fixed until those checks succeed.
+
+### Earlier selection implementation
 
 - Deferred immutable draft and non-null compatibility wrapper: `5ca65c3dc952e5cfeae0afa1320880a5f04beec7`, independently approved by spec and quality reviewers after correcting stale callbacks, reset/publication boundaries and persistent capture errors.
 - Stable mobile overview and owner: `de11b561ccb6b8369c1c20910ed918cf935a035d`, independently approved by spec and quality reviewers. A separately reproduced search-scroll snapback was corrected and its independent reproducer passed for both searched and unsearched views.
@@ -103,24 +118,24 @@ Local screenshots are retained under `/Users/peetax/.codex/visualizations/2026/0
 
 The sampled May 12, installation and TEST cards are already locked by approval; the UI explains the reason and keeps Continue disabled. Native summary/back was therefore not exercised with two eligible cards in this run. Automated real-component tests cover that behavior with isolated fixtures. No workflow save, hours submission, approval, invoice mutation or test-record creation was performed in Staff.
 
-## Physical iPhone status
+## Earlier physical iPhone status at 13:41
 
 The two earlier 14 October refreshes exited 1 after successful simulator stages: the phone build could not resolve destination `00008110-000C284E2299801E`. The command's availability probe returned cached paired-device information rather than a usable Xcode destination. Two separate reads confirmed `Device State: unavailable` and last connection on 13 October at 15:12; Xcode listed no available physical iPhone.
 
 After the user confirmed reconnecting and unlocking the phone, a fresh read reported `Device State: connected` with last connection on 14 October at 13:41. The unchanged mandatory refresh then ran from clean synchronized main **`0a0dcae13c80f48557dd03b8d9197d8944e06d0b`**, preserving the ignored configuration and existing signing team. It exited **0** with `simulator: updated` and `phone: updated`.
 
-Simulator build, installation and launch succeeded again; a fresh 368 × 800 capture confirms the running CH overview. On iPhone 13 mini, build, signing, installation and launch all succeeded. Current physical-phone status is **updated**, not waiting. This is a local development installation, not an App Store or production release. It does not imply direct visual testing on the phone.
+Simulator build, installation and launch succeeded again; a fresh 368 × 800 capture confirms the running CH overview. On iPhone 13 mini, build, signing, installation and launch all succeeded at 13:41. That earlier installation was updated; it does not contain the subsequent toolbar-parity correction. This was a local development installation, not an App Store or production release, and does not imply direct visual testing on the phone.
 
 Successful-refresh log: `/private/tmp/crewflow-mobile-in-place-20261014-phone-connected-ios-refresh.log`. Availability evidence: `/private/tmp/crewflow-mobile-in-place-20261014-phone-connected-availability.txt`. No application files changed in this phone-only continuation; a fresh complete non-documentation diff against verified `76b94bc` exited 0.
 
 ## Remaining acceptance checks
 
 - With two eligible shifts, check native summary/back without saving; use isolated writable fixtures for save scenarios, not production Staff test writes.
-- Both devices contain installed source `0a0dcae`; later documentation-only commits do not imply another rebuilt native binary.
+- Complete the new toolbar-parity correction's publishing, refresh and actual native gates recorded above. Later documentation commits do not imply a rebuilt binary.
 
 ## User testing
 
-In CH or COO, open Akce, select a date such as May 12 with the left calendar icon, then press the right linking icon. The same cards should remain visible with search and selection circles. Try searching, scrolling and cancelling; cancellation should restore the original view. To reach the summary, choose at least two different unlocked shifts. Historical shifts where approval has already started intentionally cannot be newly linked.
+After the new correction has been installed, in CH or COO open Akce, select a date such as May 12 with the left calendar icon, then press the right linking icon. The same header/date/filter position should remain, with only search below the filters, marking circles and the existing floating bar added. Try searching, scrolling and cancelling; cancellation should restore the original view. To reach the summary, choose at least two different unlocked shifts. Historical shifts where approval has already started intentionally cannot be newly linked. Combining approved, uninvoiced reports for one contractor and one invoice customer across events/jobnumbers is a separate existing invoice-selection path; no invoice guards were loosened and no new crew-detail invoice control was added by this correction.
 
 ## Preservation baseline
 

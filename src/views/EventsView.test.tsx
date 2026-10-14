@@ -64,20 +64,31 @@ describe('mobile workflow selection in the actual events overview', () => {
     const after = cards(); expect(after).toHaveLength(before.length);
     after.forEach((card, i) => expect(card).toBe(before[i]));
   };
-  function measureOverview(withReasonLayout = false, nativeEntry = false) {
+  const simulatedSearchHeight = 60;
+  // Simulated normal flow: inline search adds height; toolbar, controls and cards move with frame scroll.
+  function measureOverview(withReasonLayout = false, compactFrame = false) {
     const actual = HTMLElement.prototype.getBoundingClientRect;
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
       const frame = this.closest<HTMLElement>('.nodu-page-frame');
       const index = cards().indexOf(this);
       const selecting = Boolean(document.querySelector('.nodu-mobile-workflow-selection'));
-      const reasonShift = withReasonLayout && index >= 0 ? cards().slice(0, index).reduce((sum, card) => sum + (card.hasAttribute('aria-describedby') ? 48 : 0), 0) : 0;
-      const cardIndex = index >= 0 ? index : nativeEntry ? cards().indexOf(this.closest<HTMLElement>('[data-workflow-occurrence]')!) : -1;
-      const cardPosition = (nativeEntry ? 213 : 160) + (selecting ? (nativeEntry ? 128 : 60) : 0) + cardIndex * 220 + reasonShift - (frame?.scrollTop ?? 0);
-      const top = this === frame ? 0 : index >= 0 ? cardPosition : this.hasAttribute('data-workflow-toolbar') ? (nativeEntry ? 126 : 0)
-        : cardIndex >= 0 ? cardPosition + (this.matches('h3') ? 54 : this.matches('p') ? 74 : 16) : 0;
-      const height = this === frame ? (nativeEntry ? 800 : 818) : index >= 0 ? 200 : this.hasAttribute('data-workflow-toolbar') ? (nativeEntry ? 166 : 132) : 16;
-      const width = nativeEntry ? 368 : 393;
-      if (this === frame || index >= 0 || cardIndex >= 0 || this.hasAttribute('data-workflow-toolbar')) return { x: 0, y: top, top, bottom: top + height, left: 0, right: width, width, height, toJSON: () => ({}) };
+      const cardIndex = index >= 0 ? index : cards().indexOf(this.closest<HTMLElement>('[data-workflow-occurrence]')!);
+      const reasonShift = withReasonLayout && cardIndex >= 0 ? cards().slice(0, cardIndex).reduce((sum, card) => sum + (card.hasAttribute('aria-describedby') ? 48 : 0), 0) : 0;
+      const addedSearchHeight = selecting ? simulatedSearchHeight : 0;
+      const scrollTop = frame?.scrollTop ?? 0;
+      const cardPosition = (compactFrame ? 213 : 160) + addedSearchHeight + cardIndex * 220 + reasonShift - scrollTop;
+      const toolbar = this.closest<HTMLElement>('.nodu-mobile-events-toolbar');
+      const isToolbar = this === toolbar || this.hasAttribute('data-workflow-toolbar-space');
+      const isTitle = this.matches('.nodu-mobile-events-header__title');
+      const isHeaderControl = Boolean(this.closest('.nodu-mobile-events-header'));
+      const top = this === frame ? 0 : cardIndex >= 0 ? cardPosition + (index >= 0 ? 0 : this.matches('h3') ? 54 : this.matches('p') ? 74 : 16)
+        : (compactFrame ? 72 : 0) - scrollTop + (isToolbar ? 0 : isTitle ? 9 : isHeaderControl ? 0 : 52);
+      const height = this === frame ? (compactFrame ? 800 : 818) : index >= 0 ? 200
+        : isToolbar ? (compactFrame ? 92 : 72) + addedSearchHeight : isTitle ? 26 : isHeaderControl ? 44 : toolbar ? 32 : 16;
+      const frameWidth = compactFrame ? 368 : 393;
+      const width = isTitle ? 72 : toolbar && !isToolbar ? (isHeaderControl ? 44 : 56) : frameWidth;
+      const left = isTitle ? (frameWidth - width) / 2 : this.matches('.nodu-mobile-events-header__action--right') ? frameWidth - width : 0;
+      if (this === frame || cardIndex >= 0 || toolbar || isToolbar) return { x: left, y: top, top, bottom: top + height, left, right: left + width, width, height, toJSON: () => ({}) };
       return actual.call(this);
     });
   }
@@ -142,28 +153,47 @@ describe('mobile workflow selection in the actual events overview', () => {
     expect(workflowBoundary.save).not.toHaveBeenCalled();
   });
 
-  it.each([0, 137])('clears the actual native entry toolbar at scrollTop=%s and restores the exact normal snapshot on cancel', async (entryScroll) => {
+  it.each([
+    { role: 'crewhead', entryScroll: 0 }, { role: 'crewhead', entryScroll: 137 },
+    { role: 'coo', entryScroll: 0 }, { role: 'coo', entryScroll: 137 },
+  ])('keeps the simulated flow header as $role at scrollTop=$entryScroll and restores the normal snapshot on cancel', async ({ role, entryScroll }) => {
     const read = held<typeof workflowEvents>(); workflowBoundary.events.mockReturnValue(read.promise);
-    await setup(); measureOverview(false, true); const frame = screen.getByTestId('frame');
-    let nativeTop = 0; Object.defineProperty(frame, 'scrollTop', { configurable: true, get: () => nativeTop, set: (value: number) => { nativeTop = Math.max(0, value); } });
+    await setup(role); measureOverview(false, true); const frame = screen.getByTestId('frame');
+    let flowTop = 0; Object.defineProperty(frame, 'scrollTop', { configurable: true, get: () => flowTop, set: (value: number) => { flowTop = Math.max(0, value); } });
     frame.scrollTop = entryScroll;
     const before = cards(); const first = before[0]; const normalOffset = first.getBoundingClientRect().top;
+    const toolbar = screen.getByRole('heading', { name: 'Akce' }).closest<HTMLElement>('.nodu-mobile-events-toolbar')!;
+    const controls = [screen.getByRole('heading', { name: 'Akce' }), screen.getByRole('button', { name: 'Vybrat datum akci' }), screen.getByRole('button', { name: 'Vse' })];
+    const controlRects = () => controls.map((element) => {
+      const { top, bottom, left, right, width, height } = element.getBoundingClientRect();
+      return { top, bottom, left, right, width, height };
+    });
+    const normalControls = controlRects(), normalToolbar = toolbar.getBoundingClientRect();
+    const normalGap = normalOffset - normalToolbar.bottom;
+    const assertFlowHeader = () => {
+      expect(frame.scrollTop).toBe(entryScroll);
+      expect(toolbar.getBoundingClientRect().top).toBe(normalToolbar.top);
+      expect(controlRects()).toEqual(normalControls);
+    };
     const selectedDate = first.dataset.workflowOccurrence!.slice(-10);
     fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' }));
-    const adjustedScroll = frame.scrollTop;
+    assertFlowHeader();
     fireEvent.scroll(frame); fireEvent.scroll(frame); sameCards(before);
-    expect(frame.scrollTop).toBe(adjustedScroll);
+    assertFlowHeader();
     expect(document.querySelector('[data-workflow-start-date]')).toHaveAttribute('data-workflow-start-date', '2026-05-12');
-    const toolbar = document.querySelector<HTMLElement>('[data-workflow-toolbar]')!;
-    expect(toolbar.getBoundingClientRect().bottom).toBe(292);
+    expect(toolbar.getBoundingClientRect().height).toBe(normalToolbar.height + simulatedSearchHeight);
+    expect(first.getBoundingClientRect().top).toBe(normalOffset + simulatedSearchHeight);
+    expect(first.getBoundingClientRect().top - toolbar.getBoundingClientRect().bottom).toBe(normalGap);
     expect(first.getBoundingClientRect().top).toBeGreaterThanOrEqual(toolbar.getBoundingClientRect().bottom);
     expect(within(first).getByRole('heading').getBoundingClientRect().top).toBeGreaterThanOrEqual(toolbar.getBoundingClientRect().bottom);
     expect(within(first).getByText('JOB').getBoundingClientRect().top).toBeGreaterThanOrEqual(toolbar.getBoundingClientRect().bottom);
     within(first).getAllByText(/12\. 5\. 2026/).forEach((date) => expect(date.getBoundingClientRect().top).toBeGreaterThanOrEqual(toolbar.getBoundingClientRect().bottom));
     expect(first.dataset.workflowOccurrence).toContain(selectedDate); expect(document.querySelector('[data-workflow-start-date]')).toHaveAttribute('data-workflow-start-date', '2026-05-12');
+    expect(screen.getByRole('searchbox')).not.toHaveFocus();
     expect(screen.getByRole('searchbox')).toHaveValue(''); expect(screen.getByRole('button', { name: 'Vse' })).toHaveClass('text-[color:var(--nodu-accent)]');
     const entryOffset = first.getBoundingClientRect().top; fireEvent.click(before[0]); fireEvent.click(before[1]);
     await act(async () => read.resolve(workflowEvents)); await waitFor(() => expect(screen.getByRole('button', { name: 'Pokračovat' })).toBeEnabled());
+    assertFlowHeader();
     sameCards(before); expect(first.getBoundingClientRect().top).toBe(entryOffset);
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'OLD' } }); fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } });
     const restored = cards()[0]; expect(restored.getBoundingClientRect().top).toBe(entryOffset);
@@ -172,9 +202,10 @@ describe('mobile workflow selection in the actual events overview', () => {
     expect(document.querySelector('[data-workflow-start-date]')).toHaveAttribute('data-workflow-start-date', '2026-05-12');
     expect(restored.getBoundingClientRect().top).toBe(entryOffset); expect(frame.getBoundingClientRect()).toMatchObject({ width: 368, height: 800 });
     fireEvent.click(screen.getByRole('button', { name: 'Zrušit' })); expect(frame.scrollTop).toBe(entryScroll); expect(cards()[0].getBoundingClientRect().top).toBe(normalOffset);
+    assertFlowHeader(); expect(toolbar.getBoundingClientRect().height).toBe(normalToolbar.height); sameCards(summaryCards);
     expect(workflowBoundary.save).not.toHaveBeenCalled();
   });
-  it.each([{ query: 'Přípravy', scroll: 0, count: 1 }, { query: 'JOB', scroll: 100, count: 4 }])('clears inherited query $query back to the current adjusted native window rather than its covered normal offset', async ({ query, scroll, count }) => {
+  it.each([{ query: 'Přípravy', scroll: 0, count: 1 }, { query: 'JOB', scroll: 100, count: 4 }])('clears inherited query $query back to the current selected flow window', async ({ query, scroll, count }) => {
     context.searchQuery = query; await setup(); measureOverview(false, true);
     const frame = screen.getByTestId('frame'); let nativeTop = 0;
     Object.defineProperty(frame, 'scrollTop', { configurable: true, get: () => nativeTop, set: (value: number) => { nativeTop = Math.max(0, value); } });
@@ -202,7 +233,8 @@ describe('mobile workflow selection in the actual events overview', () => {
     const normalVisiblePosition = before[0].getBoundingClientRect().top;
     expect(before).toHaveLength(4);
     fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' }));
-    const visiblePosition = Math.max(normalVisiblePosition, document.querySelector<HTMLElement>('[data-workflow-toolbar]')!.getBoundingClientRect().bottom + 12);
+    const visiblePosition = normalVisiblePosition + simulatedSearchHeight;
+    expect(frame.scrollTop).toBe(137);
     sameCards(before); expect(cards().map((card) => card.dataset.workflowOccurrence)).toEqual(keys); expect(before[0].getBoundingClientRect().top).toBe(visiblePosition); expect(frame.getBoundingClientRect().height).toBe(818);
     expect(screen.queryByRole('heading', { name: 'Propojit směny' })).not.toBeInTheDocument();
     expect(screen.queryByText('Načítání propojení…')).not.toBeInTheDocument(); expect(screen.queryByText('Vyberte alespoň dvě směny.')).not.toBeInTheDocument();
@@ -293,8 +325,13 @@ describe('mobile workflow selection in the actual events overview', () => {
     const before = cards(); const visible = before.find((card) => card.dataset.workflowOccurrence?.startsWith(`${workflowId(21)}|`))!;
     const normalOffset = visible.getBoundingClientRect().top;
     fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' })); fireEvent.click(before[0]); fireEvent.click(visible);
-    const offset = Math.max(normalOffset, document.querySelector<HTMLElement>('[data-workflow-toolbar]')!.getBoundingClientRect().bottom + 12);
-    expect(visible.getBoundingClientRect().top).toBe(offset);
+    expect(frame.scrollTop).toBe(370);
+    expect(visible.getBoundingClientRect().top).toBe(normalOffset + simulatedSearchHeight);
+    frame.scrollTop += simulatedSearchHeight; fireEvent.scroll(frame);
+    expect(before[0].getBoundingClientRect().bottom).toBeLessThanOrEqual(frame.getBoundingClientRect().top);
+    expect(visible.getBoundingClientRect().top).toBeGreaterThanOrEqual(frame.getBoundingClientRect().top);
+    expect(visible.getBoundingClientRect().bottom).toBeLessThanOrEqual(frame.getBoundingClientRect().bottom);
+    const offset = visible.getBoundingClientRect().top;
     await act(async () => read.resolve(workflowEvents)); await screen.findByRole('alert');
     expect(within(before[0]).getByText(/schvalování/)).toBeInTheDocument(); sameCards(before);
     expect(visible.getBoundingClientRect().top).toBe(offset); expect(frame.getBoundingClientRect().height).toBe(818);
@@ -305,7 +342,8 @@ describe('mobile workflow selection in the actual events overview', () => {
     const frame = screen.getByTestId('frame'); frame.scrollTop = 80;
     const entry = cards()[0]; const normalOffset = entry.getBoundingClientRect().top;
     fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' }));
-    const offset = Math.max(normalOffset, document.querySelector<HTMLElement>('[data-workflow-toolbar]')!.getBoundingClientRect().bottom + 12);
+    const offset = normalOffset + simulatedSearchHeight;
+    expect(frame.scrollTop).toBe(80);
     expect(cards()).toHaveLength(1); expect(cards()[0]).toBe(entry); expect(entry.getBoundingClientRect().top).toBe(offset);
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'OLD' } }); expect(screen.getByText('Starší přípravy')).toBeInTheDocument();
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } });

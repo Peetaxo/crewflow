@@ -1398,6 +1398,7 @@ button.nodu-mobile-event-info-row:focus-visible {
 
   .nodu-mobile-workflow-selection[data-workflow-keyboard-header] [data-workflow-toolbar] {
     position: fixed;
+    z-index: 12;
     top: calc(env(safe-area-inset-top) + var(--nodu-workflow-viewport-top, 0px));
     left: var(--nodu-workflow-toolbar-left);
     width: var(--nodu-workflow-toolbar-width);

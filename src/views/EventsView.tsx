@@ -298,7 +298,8 @@ const EventsOverview = ({ selection = null }: { selection?: MobileWorkflowSelect
     const before = previousSelection.current;
     const frame = overview.current?.closest<HTMLElement>('.nodu-page-frame');
     if (!before.active && selectionActive && frame && entryPosition.current && overview.current) {
-      restoreCardScrollPosition(frame, entryPosition.current, overview.current, { clearToolbar: true });
+      if (isMobileEventFeed) frame.scrollTop = entryPosition.current.scrollTop;
+      else restoreCardScrollPosition(frame, entryPosition.current, overview.current, { clearToolbar: true });
       rememberLayout(); rememberWindow();
     } else if (before.active && !selectionActive) {
       restoreEntry.current = true;
@@ -321,7 +322,7 @@ const EventsOverview = ({ selection = null }: { selection?: MobileWorkflowSelect
       restoreEntry.current = false;
     }
     previousSelection.current = { active: selectionActive, summary: Boolean(selection?.summary) };
-  }, [selectionActive, selection?.summary, mobileListStartDate, eventsFilter, searchQuery, eventsCalendarDate, setEventsFilter, setEventsCalendarDate, setSearchQuery, rememberLayout, rememberWindow]);
+  }, [selectionActive, selection?.summary, isMobileEventFeed, mobileListStartDate, eventsFilter, searchQuery, eventsCalendarDate, setEventsFilter, setEventsCalendarDate, setSearchQuery, rememberLayout, rememberWindow]);
   const openSelection = () => {
     if (!selection || selection.active) return;
     const frame = overview.current?.closest<HTMLElement>('.nodu-page-frame');

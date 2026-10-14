@@ -355,6 +355,7 @@ describe('scoped selection native layout', () => {
     const mobile = css.slice(css.indexOf('@media (max-width: 767px)', css.indexOf('.nodu-workflow-selection {')));
     const toolbar = mobile.match(/\.nodu-mobile-workflow-selection\[data-workflow-keyboard-header\] \[data-workflow-toolbar\]\s*\{[^}]*\}/)?.[0] ?? '';
     expect(toolbar).toContain('position: fixed;');
+    expect(toolbar).toContain('z-index: 12;');
     expect(toolbar).toContain('top: calc(env(safe-area-inset-top) + var(--nodu-workflow-viewport-top, 0px));');
     expect(toolbar).toContain('left: var(--nodu-workflow-toolbar-left);');
     expect(toolbar).toContain('width: var(--nodu-workflow-toolbar-width);');

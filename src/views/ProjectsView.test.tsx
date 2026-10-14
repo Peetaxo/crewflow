@@ -1,7 +1,6 @@
 import React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ProjectListFilters } from '../features/projects/services/projects.service';
 import ProjectsView from './ProjectsView';
 
 const mocks = vi.hoisted(() => ({
@@ -39,22 +38,8 @@ describe('ProjectsView', () => {
     expect(screen.getByText('1. 5. 2026 – 3. 5. 2026')).toBeInTheDocument();
     expect(screen.queryByText(project.createdAt)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Vse|Nadchazejici|Uplynule/ })).not.toBeInTheDocument();
-    expect(mocks.getProjectRows).toHaveBeenLastCalledWith('', {});
+    expect(mocks.getProjectRows).toHaveBeenLastCalledWith('');
     expect(screen.queryByRole('columnheader', { name: 'Stav' })).not.toBeInTheDocument();
-  });
-
-  it('passes the search and client/date filters and resets them', () => {
-    mocks.context.searchQuery = 'JTI';
-    render(<ProjectsView />);
-    fireEvent.click(screen.getByRole('button', { name: 'Filtrovat projekty' }));
-    const popup = screen.getByRole('dialog', { name: 'Filtry projektů' });
-    fireEvent.change(within(popup).getByLabelText('Klient'), { target: { value: project.client } });
-    fireEvent.change(within(popup).getByLabelText('Od'), { target: { value: '2026-05-02' } });
-    fireEvent.change(within(popup).getByLabelText('Do'), { target: { value: '2026-05-10' } });
-    const filters: ProjectListFilters = { client: project.client, startDate: '2026-05-02', endDate: '2026-05-10' };
-    expect(mocks.getProjectRows).toHaveBeenLastCalledWith('JTI', filters);
-    fireEvent.click(screen.getByRole('button', { name: 'Resetovat filtry' }));
-    expect(mocks.getProjectRows).toHaveBeenLastCalledWith('JTI', {});
   });
 
   it('uses compact plus creation controls and opens the existing project for editing', () => {

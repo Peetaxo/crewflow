@@ -280,9 +280,78 @@ const repairedInvoices = await coo.from('invoices').select('id,invoice_number,to
 assert.equal(repairedInvoices.data.length, 1);
 assert.equal(repairedInvoices.data[0].id, repairIssued.data.statement.invoice_id);
 assert.equal(repairedInvoices.data[0].pdf_path, render.data.pdf_path);
+// Exact consolidation and safe old-request replay through the real user API.
+const selectionIds = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()];
+const selectionEvents = selectionIds.map(() => crypto.randomUUID());
+const legacyReport = crypto.randomUUID(), legacyEvent = crypto.randomUUID(), legacyInvoice = crypto.randomUUID();
+await query(`DO $$ BEGIN
+ ${selectionIds.map((id, index) => `insert into public.events(id,name,project_id,job_number,date_from,date_to,meal_allowance_enabled) values('${selectionEvents[index]}','DISPOSABLE consolidation ${token}','${fixtures.projectId}','BILL-CONSOLIDATE','2026-10-10','2026-10-10',false);
+ insert into public.timelogs(id,event_id,contractor_id,status,km,approved_at) values('${id}','${selectionEvents[index]}','${profile.data}','approved',0,clock_timestamp());
+ insert into public.timelog_days(timelog_id,date,time_from,time_to,day_type) values('${id}','2026-10-10','08:00','16:00','provoz');`).join('\n')}
+ insert into public.events(id,name) values('${legacyEvent}','DISPOSABLE legacy deletion ${token}');
+ insert into public.timelogs(id,event_id,contractor_id,status,km,approved_at) values('${legacyReport}','${legacyEvent}','${profile.data}','invoiced',0,clock_timestamp());
+ insert into public.timelog_days(timelog_id,date,time_from,time_to,day_type) values('${legacyReport}','2026-10-10','08:00','16:00','provoz');
+ insert into public.invoices(id,contractor_id,event_id,timelog_id,status,invoice_number,total_amount) values('${legacyInvoice}','${profile.data}','${legacyEvent}','${legacyReport}','draft','DISPOSABLE-LEGACY-${token}',2000);
+ insert into public.invoice_timelogs(invoice_id,timelog_id) values('${legacyInvoice}','${legacyReport}');
+ END $$;`);
+const firstSelection = await bounded(coo.rpc('prepare_invoice_billing_selection', { p_request_id: crypto.randomUUID(), p_timelog_ids: [selectionIds[0]] }));
+assert.equal(firstSelection.error, null);
+assert.equal(firstSelection.data.statement.total_amount, 7992);
+const oldPreviewArgs = { p_request_id: crypto.randomUUID(), p_statement_id: firstSelection.data.statement.id, p_expected_updated_at: firstSelection.data.statement.updated_at };
+const oldPreview = await bounded(deviceA.rpc('refresh_invoice_billing_preview', oldPreviewArgs));
+assert.equal(oldPreview.error, null);
+const secondSelection = await bounded(coo.rpc('prepare_invoice_billing_selection', { p_request_id: crypto.randomUUID(), p_timelog_ids: [selectionIds[1]] }));
+assert.equal(secondSelection.error, null);
+const combined = await bounded(coo.rpc('prepare_invoice_billing_selection', { p_request_id: crypto.randomUUID(), p_timelog_ids: selectionIds.slice(0, 2) }));
+assert.equal(combined.error, null);
+assert.equal(combined.data.statement.total_amount, 15984);
+const consolidatedSnapshot = await deviceA.rpc('get_invoice_billing_snapshot');
+const superseded = consolidatedSnapshot.data.superseded_statements.find(row => row.id === oldPreview.data.statement.id);
+assert.ok(superseded);
+assert.equal(superseded.superseded_by_statement_id, combined.data.statement.id);
+assert.ok(!consolidatedSnapshot.data.statements.some(row => row.id === superseded.id));
+assert.deepEqual((await bounded(deviceA.rpc('refresh_invoice_billing_preview', oldPreviewArgs))).data, oldPreview.data, 'Superseded safe request replay is unchanged');
+for (const request of [
+ deviceA.rpc('refresh_invoice_billing_preview', { p_request_id: crypto.randomUUID(), p_statement_id: superseded.id, p_expected_updated_at: superseded.updated_at }),
+ deviceA.rpc('confirm_invoice_billing', { p_request_id: crypto.randomUUID(), p_statement_id: superseded.id, p_expected_updated_at: superseded.updated_at, p_non_vat_confirmed: true }),
+ ch.rpc('review_invoice_billing_document', { p_request_id: crypto.randomUUID(), p_statement_id: superseded.id, p_document_id: crypto.randomUUID(), p_expected_updated_at: superseded.updated_at, p_decision: 'return', p_note: 'DISPOSABLE denied review' }),
+]) {
+ const response = await bounded(request);
+ assert.equal(response.error?.code, '22023');
+ assert.equal(response.error?.message, 'invoice_billing_statement_superseded');
+}
+const legacySnapshot = await deviceA.rpc('get_invoice_billing_snapshot');
+const legacyVersion = await coo.from('invoices').select('updated_at').eq('id', legacyInvoice).single();
+const legacyDeleteStarted = performance.now();
+const legacyDelete = await bounded(coo.rpc('delete_invoice_atomic', { p_invoice_id: legacyInvoice, p_expected_status: 'draft', p_expected_updated_at: legacyVersion.data.updated_at }));
+const legacyDeleteElapsedMs = Math.round(performance.now() - legacyDeleteStarted);
+assert.equal(legacyDelete.error, null);
+assert.equal((await coo.from('timelogs').select('status').eq('id', legacyReport).single()).data.status, 'approved');
+assert.equal((await coo.from('invoice_timelogs').select('id').eq('invoice_id', legacyInvoice)).data.length, 0);
+const afterLegacy = await deviceA.rpc('get_invoice_billing_snapshot');
+assert.equal(afterLegacy.data.statements.length, legacySnapshot.data.statements.length);
+assert.equal(afterLegacy.data.jobs.length, legacySnapshot.data.jobs.length);
+await query(`DO $$ BEGIN update public.invoice_number_sequences set last_number=9999 where supplier_profile_id='${profile.data}' and invoice_year=extract(year from (transaction_timestamp() at time zone 'Europe/Prague')); END $$;`);
+const combinedIssue = await bounded(deviceA.rpc('confirm_invoice_billing', { p_request_id: crypto.randomUUID(), p_statement_id: combined.data.statement.id, p_expected_updated_at: combined.data.statement.updated_at, p_non_vat_confirmed: true }));
+assert.equal(combinedIssue.error, null);
+const combinedInvoice = await coo.from('invoices').select('invoice_number,total_amount').eq('id', combinedIssue.data.statement.invoice_id).single();
+assert.ok(combinedInvoice.data.invoice_number.endsWith('-10000'));
+assert.equal(combinedInvoice.data.total_amount, 15984);
+const combinedLinks = await coo.from('invoice_timelogs').select('timelog_id').eq('invoice_id', combinedIssue.data.statement.invoice_id);
+assert.deepEqual(combinedLinks.data.map(row => row.timelog_id).sort(), selectionIds.slice(0, 2).sort());
+const oldInvoices = await coo.from('invoices').select('id').in('billing_statement_id', [superseded.id, secondSelection.data.statement.id]);
+assert.equal(oldInvoices.data.length, 0, 'No superseded parent owns a second invoice');
+const occupiedNumber = combinedInvoice.data.invoice_number.replace(/10000$/, '10001');
+await query(`DO $$ BEGIN insert into public.invoices(contractor_id,invoice_number,total_amount) values('${profile.data}','${occupiedNumber}',1); END $$;`);
+const thirdSelection = await bounded(coo.rpc('prepare_invoice_billing_selection', { p_request_id: crypto.randomUUID(), p_timelog_ids: [selectionIds[2]] }));
+assert.equal(thirdSelection.error, null);
+const thirdIssue = await bounded(deviceA.rpc('confirm_invoice_billing', { p_request_id: crypto.randomUUID(), p_statement_id: thirdSelection.data.statement.id, p_expected_updated_at: thirdSelection.data.statement.updated_at, p_non_vat_confirmed: true }));
+assert.equal(thirdIssue.error, null);
+const thirdInvoice = await coo.from('invoices').select('invoice_number').eq('id', thirdIssue.data.statement.invoice_id).single();
+assert.ok(thirdInvoice.data.invoice_number.endsWith('-10002'), 'Occupied candidate is skipped without truncation');
 const historical = await coo.from('invoices').select('total_amount,status').eq('invoice_number', 'SF-2026-CREW-D-0001').single();
 assert.equal(historical.error, null);
 assert.deepEqual(historical.data, { total_amount: 2056, status: 'paid' });
-const result = { result: 'passed', raceElapsedMs, paymentElapsedMs, repairElapsedMs, recoveryElapsedMs, losingRaceHttpStatus: 409, losingRaceCode: 'PT409', simultaneousOperations: ['owner device A', 'owner device B', 'verified upload', 'service issue worker', 'COO preparation', 'another report approval', 'supplier identity edit'], invoiceCount: 1, sourceLinkCount: 1, totalCZK: 7030, fixtureStatementId: statement.id, invoiceKind: invoices.data[0].billing_kind, repairedInvoiceTotalCZK: 2278, actualSdkDistanceRepair: true, queuedTransientWakePreservesBudget: true, boundedPdfRetryRecoverySameInvoice: true, sanitizedTerminalAndCompletedJobState: true, paymentReplayAuditIntact: true, protectedHistoricalPaidInvoiceIntact: true };
+const result = { result: 'passed', raceElapsedMs, paymentElapsedMs, repairElapsedMs, recoveryElapsedMs, legacyDeleteElapsedMs, supersededConsolidationSafe: true, supplierSequenceRolloverSafe: true, losingRaceHttpStatus: 409, losingRaceCode: 'PT409', simultaneousOperations: ['owner device A', 'owner device B', 'verified upload', 'service issue worker', 'COO preparation', 'another report approval', 'supplier identity edit'], invoiceCount: 1, sourceLinkCount: 1, totalCZK: 7030, fixtureStatementId: statement.id, invoiceKind: invoices.data[0].billing_kind, repairedInvoiceTotalCZK: 2278, actualSdkDistanceRepair: true, queuedTransientWakePreservesBudget: true, boundedPdfRetryRecoverySameInvoice: true, sanitizedTerminalAndCompletedJobState: true, paymentReplayAuditIntact: true, protectedHistoricalPaidInvoiceIntact: true };
 await writeFile(`${dir}/invoice-billing-concurrency.json`, JSON.stringify(result, null, 2));
 console.log(JSON.stringify(result, null, 2));

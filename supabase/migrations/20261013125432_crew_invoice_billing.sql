@@ -375,8 +375,8 @@ begin
  select q.preview into v_quote from private.invoice_billing_quotes q join private.invoice_billing_quote_permits p on p.quote_id=q.id
   where p.transaction_id=pg_current_xact_id() and p.actor_id=auth.uid() and p.consumed;
  if v_quote is not null and not p_force then
-  select jsonb_build_object('currency','CZK','reports',jsonb_agg(r order by r->>'timelog_id'),'total_amount',sum((r->>'total_amount')::numeric)) into v_preview
-   from jsonb_array_elements(v_quote->'reports')r where (r->>'timelog_id')::uuid=any(p_ids);
+  select jsonb_build_object('currency','CZK','reports',jsonb_agg(r||jsonb_build_object('quoted_report_updated_at',r->'report_updated_at','report_updated_at',t.updated_at,'status',t.status) order by r->>'timelog_id'),'total_amount',sum((r->>'total_amount')::numeric)) into v_preview
+   from jsonb_array_elements(v_quote->'reports')r join public.timelogs t on t.id=(r->>'timelog_id')::uuid where t.id=any(p_ids);
  else v_preview:=private.invoice_billing_preview(p_ids); end if;
  v_reason:=private.invoice_billing_reason(v_preview);
  if not p_force and v_quote is null and v_reason is null then v_reason:='approval_quote_required'; end if;
@@ -404,11 +404,11 @@ declare v_ids uuid[];
 begin
  if current_setting('crewflow.approved_timelog_import',true)='on' then return new; end if;
  if tg_table_name='timelogs' then
-  if old.status='approved' or new.status<>'approved' or exists(select 1 from public.shift_workflow_round_items i where i.timelog_id=new.id)
+  if old.status<>'pending_coo' or new.status<>'approved' or exists(select 1 from public.shift_workflow_round_items i where i.timelog_id=new.id)
    or exists(select 1 from public.shift_workflow_events e where e.event_id=new.event_id) then return new; end if;
   perform private.invoice_billing_capture(array[new.id],null,'approval');
  else
-  if old.status='approved' or new.status<>'approved' then return new; end if;
+  if old.status<>'pending_coo' or new.status<>'approved' then return new; end if;
   select array_agg(i.timelog_id order by i.timelog_id) into v_ids from public.shift_workflow_round_items i where i.round_id=new.id;
   if cardinality(v_ids)<>new.expected_item_count then raise exception 'invoice_billing_complete_round_required' using errcode='22023'; end if;
   perform private.invoice_billing_capture(v_ids,new.id,'approval');
@@ -420,14 +420,29 @@ create trigger zz_invoice_billing_round_capture after update of status on public
 
 create function private.invoice_billing_issue(p_statement uuid,p_document uuid default null) returns uuid language plpgsql set search_path='' as $$
 declare s public.invoice_billing_statements%rowtype; d public.invoice_billing_documents%rowtype;
- v_ids uuid[];v_invoice uuid:=gen_random_uuid();v_number text;v_sequence integer;v_year integer;v_date date;v_due date;v_path text;
+ v_ids uuid[];v_frozen_ids uuid[];v_invoice uuid:=gen_random_uuid();v_number text;v_sequence integer;v_year integer;v_date date;v_due date;v_path text;
 begin
  select * into strict s from public.invoice_billing_statements where id=p_statement for update;
+ if s.superseded_by_statement_id is not null then raise exception 'invoice_billing_statement_superseded' using errcode='22023'; end if;
  if s.invoice_id is not null then return s.invoice_id; end if;
  if s.status not in('ready','document_returned','document_pending') or s.blocked_reason is not null then raise exception 'invoice_billing_not_ready' using errcode='22023'; end if;
  if (p_document is null and s.status='document_pending') or (p_document is not null and (s.status<>'document_pending' or s.active_document_id is distinct from p_document)) then
   raise exception 'invoice_billing_document_conflict' using errcode='PT409'; end if;
  select array_agg(timelog_id order by timelog_id) into v_ids from public.invoice_billing_sources where statement_id=s.id;
+ -- Financial reports and current reservations must describe the same nonempty,
+ -- unique, correctly bound set. Validate before identity reads or number allocation.
+ if jsonb_typeof(s.financial_snapshot->'reports') is distinct from 'array' then raise exception 'invoice_billing_source_conflict' using errcode='PT409'; end if;
+ if not s.financial_verified or jsonb_array_length(s.financial_snapshot->'reports')=0 or coalesce(cardinality(v_ids),0)=0
+  or exists(select 1 from jsonb_array_elements(s.financial_snapshot->'reports')r where jsonb_typeof(r) is distinct from 'object'
+   or jsonb_typeof(r->'timelog_id') is distinct from 'string') then raise exception 'invoice_billing_source_conflict' using errcode='PT409'; end if;
+ begin
+  select array_agg((r->>'timelog_id')::uuid order by (r->>'timelog_id')::uuid) into v_frozen_ids from jsonb_array_elements(s.financial_snapshot->'reports')r;
+  if v_frozen_ids is distinct from v_ids or cardinality(v_frozen_ids)<>(select count(distinct id) from unnest(v_frozen_ids)id)
+   or exists(select 1 from jsonb_array_elements(s.financial_snapshot->'reports')r join public.invoice_billing_sources x on x.timelog_id=(r->>'timelog_id')::uuid
+    where x.statement_id=s.id and ((r->>'contractor_id')::uuid is distinct from s.contractor_id or (r->>'contractor_user_id')::uuid is distinct from s.contractor_user_id
+     or (r->>'event_id')::uuid is distinct from x.event_id or (r->>'report_updated_at')::timestamptz is distinct from x.report_updated_at)) then
+   raise exception 'invoice_billing_source_conflict' using errcode='PT409'; end if;
+ exception when invalid_text_representation or invalid_datetime_format or datetime_field_overflow then raise exception 'invoice_billing_source_conflict' using errcode='PT409'; end;
  perform private.invoice_billing_lock_statement_sources(s.id);
  if not private.invoice_billing_identity_matches(s.id) then raise exception 'invoice_billing_identity_refresh_required' using errcode='PT409'; end if;
  if p_document is null and not private.invoice_billing_preview_is_current(s.id) then raise exception 'invoice_billing_preview_expired' using errcode='PT409'; end if;
@@ -442,12 +457,13 @@ begin
  else
   v_date:=s.preview_issue_date;v_due:=s.preview_due_date;
   v_year:=extract(year from v_date)::integer;
-  loop
+  for v_allocation_attempt in 1..32 loop
    insert into public.invoice_number_sequences(invoice_year,supplier_profile_id,last_number) values(v_year,s.contractor_id,1)
    on conflict(invoice_year,supplier_profile_id) do update set last_number=public.invoice_number_sequences.last_number+1,updated_at=clock_timestamp()
    returning last_number into v_sequence;
-   v_number:='SF-'||v_year||'-'||upper(substr(replace(s.contractor_id::text,'-',''),1,8))||'-'||lpad(v_sequence::text,4,'0');
+   v_number:='SF-'||v_year||'-'||upper(substr(replace(s.contractor_id::text,'-',''),1,8))||'-'||lpad(v_sequence::text,greatest(4,length(v_sequence::text)),'0');
    exit when not exists(select 1 from public.invoices where contractor_id=s.contractor_id and invoice_number=v_number);
+   if v_allocation_attempt=32 then raise exception 'invoice_billing_number_allocation_conflict' using errcode='PT409'; end if;
   end loop;
  end if;
  if exists(select 1 from public.invoices where contractor_id=s.contractor_id and invoice_number=v_number) then raise exception 'invoice_billing_supplier_number_duplicate' using errcode='23505'; end if;
@@ -479,6 +495,7 @@ begin
  v_result:=private.invoice_billing_replay(p_request_id,auth.uid(),'confirm',v_payload);if v_result is not null then return v_result; end if;
  if p_non_vat_confirmed is distinct from true then raise exception 'invoice_billing_non_vat_required' using errcode='22023'; end if;
  select * into s from public.invoice_billing_statements where id=p_statement_id for update;
+ if s.superseded_by_statement_id is not null then raise exception 'invoice_billing_statement_superseded' using errcode='22023'; end if;
  if s.updated_at is distinct from p_expected_updated_at then raise exception 'invoice_billing_conflict' using errcode='PT409'; end if;
  if s.status not in('ready','document_returned') then raise exception 'invoice_billing_not_ready' using errcode='22023'; end if;
  perform private.invoice_billing_issue(s.id);
@@ -597,6 +614,7 @@ begin
  v_payload:=jsonb_build_object('statement_id',p_statement_id,'expected_updated_at',p_expected_updated_at);
  v_result:=private.invoice_billing_replay(p_request_id,auth.uid(),'refresh_identity',v_payload);if v_result is not null then return v_result; end if;
  select * into s from public.invoice_billing_statements where id=p_statement_id for update;
+ if s.superseded_by_statement_id is not null then raise exception 'invoice_billing_statement_superseded' using errcode='22023'; end if;
  if s.updated_at is distinct from p_expected_updated_at then raise exception 'invoice_billing_conflict' using errcode='PT409'; end if;
  if s.status in('issued','document_pending') then raise exception 'invoice_billing_not_ready' using errcode='22023'; end if;
  perform private.invoice_billing_lock_statement_sources(s.id);
@@ -623,6 +641,7 @@ begin
  v_payload:=jsonb_build_object('statement_id',p_statement_id,'expected_updated_at',p_expected_updated_at,'path',p_storage_path,'sha256',p_sha256,'byte_size',p_byte_size,'invoice_number',p_invoice_number,'issue_date',p_issue_date,'due_date',p_due_date,'total_amount',p_total_amount);
  v_result:=private.invoice_billing_replay(p_request_id,p_uploader_user_id,'upload',v_payload);if v_result is not null then return v_result; end if;
  select * into s from public.invoice_billing_statements where id=p_statement_id for update;
+ if s.superseded_by_statement_id is not null then raise exception 'invoice_billing_statement_superseded' using errcode='22023'; end if;
  if s.updated_at is distinct from p_expected_updated_at then raise exception 'invoice_billing_conflict' using errcode='PT409'; end if;
  if s.status not in('ready','document_returned') then raise exception 'invoice_billing_not_ready' using errcode='22023'; end if;
  perform private.invoice_billing_lock_statement_sources(s.id);
@@ -651,6 +670,7 @@ begin
  v_result:=private.invoice_billing_replay(p_request_id,auth.uid(),'review',v_payload);if v_result is not null then return v_result; end if;
  if p_decision is null or p_decision not in('accept','return') or (p_decision='return' and btrim(coalesce(p_note,''))='') then raise exception 'invoice_billing_document_decision_invalid' using errcode='22023'; end if;
  select * into s from public.invoice_billing_statements where id=p_statement_id for update;
+ if s.superseded_by_statement_id is not null then raise exception 'invoice_billing_statement_superseded' using errcode='22023'; end if;
  if not found then raise exception 'invoice_billing_not_found' using errcode='P0002'; end if;
  if s.updated_at is distinct from p_expected_updated_at or s.status<>'document_pending' or s.active_document_id is distinct from p_document_id then raise exception 'invoice_billing_document_conflict' using errcode='PT409'; end if;
  if p_decision='accept' then perform private.invoice_billing_issue(s.id,p_document_id);
@@ -786,6 +806,7 @@ begin
  select * into j from private.invoice_billing_jobs where id=p_job_id for update;
  if not found or j.statement_id is distinct from p_statement_id then raise exception 'invoice_billing_unauthorized' using errcode='42501'; end if;
  select * into strict s from public.invoice_billing_statements where id=p_statement_id for update;
+ if s.superseded_by_statement_id is not null then raise exception 'invoice_billing_statement_superseded' using errcode='22023'; end if;
  if s.updated_at is distinct from p_expected_updated_at or j.updated_at is distinct from p_expected_job_updated_at or j.status not in('failed','queued') then raise exception 'invoice_billing_job_conflict' using errcode='PT409'; end if;
  perform private.invoice_billing_lock_statement_sources(s.id);
  if not private.invoice_billing_job_can_retry(j.id) then raise exception 'invoice_billing_job_recovery_inactive' using errcode='22023'; end if;
@@ -828,6 +849,7 @@ begin
    or (x->>'km')::numeric<0 or (x->>'km')::numeric>99999999.99 or round((x->>'km')::numeric,2)<>(x->>'km')::numeric) then raise exception 'invoice_billing_distance_invalid' using errcode='22023'; end if;
  exception when invalid_text_representation or invalid_datetime_format or datetime_field_overflow then raise exception 'invoice_billing_source_invalid' using errcode='22023'; end;
  select * into strict s from public.invoice_billing_statements where id=p_statement_id for update;
+ if s.superseded_by_statement_id is not null then raise exception 'invoice_billing_statement_superseded' using errcode='22023'; end if;
  if s.updated_at is distinct from p_expected_updated_at then raise exception 'invoice_billing_conflict' using errcode='PT409'; end if;
  if s.financial_verified or s.invoice_id is not null or s.status<>'blocked' or s.superseded_by_statement_id is not null then raise exception 'invoice_billing_distance_not_repairable' using errcode='22023'; end if;
  select array_agg(timelog_id order by timelog_id) into v_expected from public.invoice_billing_sources where statement_id=s.id;

@@ -98,13 +98,17 @@ create table private.invoice_billing_write_permits (
  transaction_id xid8 not null, timelog_id uuid not null, invoice_id uuid not null, actor_id uuid,
  primary key(transaction_id,timelog_id)
 );
+create table private.invoice_billing_repair_permits (
+ transaction_id xid8 not null,timelog_id uuid not null,statement_id uuid not null,actor_id uuid not null,actor_profile_id uuid not null,
+ report_updated_at timestamptz not null,new_km numeric(10,2) not null check(new_km>=0),primary key(transaction_id,timelog_id)
+);
 create table private.invoice_billing_jobs (
  id uuid primary key default gen_random_uuid(), kind text not null check(kind in('issue','pdf')),
  statement_id uuid not null references public.invoice_billing_statements(id) on delete restrict,
  invoice_id uuid references public.invoices(id) on delete restrict, consent_grant_id uuid references public.invoice_billing_consent_history(id) on delete restrict,
- status text not null default 'queued' check(status in('queued','running','completed','cancelled')),
+ status text not null default 'queued' check(status in('queued','running','completed','cancelled','failed')),
  attempts integer not null default 0, available_at timestamptz not null default clock_timestamp(), lease_token uuid, locked_until timestamptz,
- last_error text, result jsonb, created_at timestamptz not null default clock_timestamp(), updated_at timestamptz not null default clock_timestamp(),
+ last_error text, result jsonb, retry_generation integer not null default 0,failed_at timestamptz,failure_code text check(failure_code in('transient_failure','retry_budget_exhausted','lease_expired_budget')), created_at timestamptz not null default clock_timestamp(), updated_at timestamptz not null default clock_timestamp(),
  unique(statement_id,kind), check((kind='pdf')=(invoice_id is not null))
 );
 create index invoice_billing_jobs_claim_idx on private.invoice_billing_jobs(available_at,id) where status in('queued','running');
@@ -211,8 +215,8 @@ begin
   'customer_snapshot',jsonb_build_object('clientId',c.id,'name',coalesce(c.name,''),'ico',coalesce(c.ico,''),'dic',nullif(c.dic,''),
    'street',coalesce(c.street,''),'zip',coalesce(c.zip,''),'city',coalesce(c.city,''),'country',coalesce(nullif(c.country,''),'CZ'))
  ) order by t.id) into v_reports
- from (select original.*,case when original.km::text='NaN' or original.km<0 then null else coalesce(original.km,0) end billing_km from public.timelogs original)t
- join (select id,user_id,case when hourly_rate::text='NaN' or hourly_rate<=0 then null else hourly_rate end hourly_rate from public.profiles)p on p.id=t.contractor_id join public.events e on e.id=t.event_id
+ from (select original.*,case when original.km::text in('NaN','Infinity','-Infinity') or original.km<0 then null else original.km end billing_km from public.timelogs original)t
+ join (select id,user_id,case when hourly_rate::text in('NaN','Infinity','-Infinity') or hourly_rate<=0 then null else hourly_rate end hourly_rate from public.profiles)p on p.id=t.contractor_id join public.events e on e.id=t.event_id
  left join public.projects pr on pr.id=e.project_id left join public.clients c on c.id=pr.client_id
  cross join lateral (
   select coalesce(sum(x.hours),0) hours,coalesce(sum(x.amount_meals),0) meals,
@@ -290,6 +294,8 @@ begin
    where s.superseded_by_statement_id is null and (v_manager or (s.contractor_id=v_profile and s.contractor_user_id=auth.uid() and public.has_role(auth.uid(),'crew')))),'[]'::jsonb),
   'superseded_statements',coalesce((select jsonb_agg(private.invoice_billing_result(s.id) order by s.created_at desc,s.id) from public.invoice_billing_statements s
    where s.superseded_by_statement_id is not null and (v_manager or (s.contractor_id=v_profile and s.contractor_user_id=auth.uid() and public.has_role(auth.uid(),'crew')))),'[]'::jsonb),
+  'jobs',coalesce((select jsonb_agg(private.invoice_billing_job_result(j.id) order by j.created_at,j.id) from private.invoice_billing_jobs j join public.invoice_billing_statements s on s.id=j.statement_id
+   where v_manager or (s.contractor_id=v_profile and s.contractor_user_id=auth.uid() and public.has_role(auth.uid(),'crew'))),'[]'::jsonb),
   'documents',coalesce((select jsonb_agg(to_jsonb(d)||jsonb_build_object('decision',(select to_jsonb(x) from public.invoice_billing_document_decisions x where document_id=d.id)) order by d.created_at,d.id)
    from public.invoice_billing_documents d join public.invoice_billing_statements s on s.id=d.statement_id
    where v_manager or (s.contractor_id=v_profile and s.contractor_user_id=auth.uid() and public.has_role(auth.uid(),'crew'))),'[]'::jsonb));
@@ -375,7 +381,7 @@ begin
  v_reason:=private.invoice_billing_reason(v_preview);
  if not p_force and v_quote is null and v_reason is null then v_reason:='approval_quote_required'; end if;
  v_approved:=coalesce(v_approved,clock_timestamp());
- if p_kind='approval' and v_reason is null then
+ if p_kind='approval' and v_quote is not null then
   select c.active_grant_id into v_grant from public.invoice_billing_consents c join public.invoice_billing_consent_history h on h.id=c.active_grant_id
    where c.contractor_id=v_profile and c.enabled and h.actor_id=v_user and h.created_at<v_approved;
  end if;
@@ -532,7 +538,7 @@ begin
    update public.invoice_billing_statements set financial_snapshot=v_preview,supplier_snapshot=v_preview->'reports'->0->'supplier_snapshot',customer_snapshot=v_preview->'reports'->0->'customer_snapshot',
     total_amount=(v_preview->>'total_amount')::numeric,financial_verified=v_reason is distinct from 'financial_data_incomplete',financial_version=financial_version+case when v_statement.financial_verified then 0 else 1 end,
     identity_version=identity_version+1,status=case when v_reason is null then 'ready' else 'blocked' end,blocked_reason=v_reason,
-    capture_kind='selection',consent_grant_id=null,updated_at=greatest(clock_timestamp(),updated_at+interval '1 microsecond') where id=v_statement.id;
+    capture_kind=v_statement.capture_kind,consent_grant_id=v_statement.consent_grant_id,updated_at=greatest(clock_timestamp(),updated_at+interval '1 microsecond') where id=v_statement.id;
    update public.invoice_billing_sources x set report_updated_at=case when v_statement.financial_verified then x.report_updated_at else (r->>'report_updated_at')::timestamptz end,
     source_snapshot=x.source_snapshot||r||jsonb_build_object('status',x.source_snapshot->'status','report_updated_at',case when v_statement.financial_verified then x.source_snapshot->'report_updated_at' else r->'report_updated_at' end)
     from jsonb_array_elements(v_preview->'reports')r where x.statement_id=v_statement.id and x.timelog_id=(r->>'timelog_id')::uuid;
@@ -658,9 +664,15 @@ create function public.review_invoice_billing_document(p_request_id uuid,p_state
 create function private.claim_invoice_billing_jobs(p_limit integer default 10) returns jsonb language plpgsql security definer set search_path='' as $$
 declare v_result jsonb;
 begin
+ -- Eight delivery attempts per explicit recovery generation. Abandoned eighth
+ -- leases become reviewable terminal failures, never an automatic ninth claim.
+ with exhausted as (
+  select id,status from private.invoice_billing_jobs where attempts>=8 and ((status='queued' and available_at<=clock_timestamp()) or (status='running' and locked_until<clock_timestamp())) for update skip locked
+ ) update private.invoice_billing_jobs j set status='failed',failed_at=clock_timestamp(),failure_code=case when e.status='running' then 'lease_expired_budget' else 'retry_budget_exhausted' end,
+  locked_until=null,lease_token=null,updated_at=clock_timestamp() from exhausted e where j.id=e.id;
  if p_limit is null or p_limit<1 or p_limit>100 then raise exception 'invoice_billing_job_limit_invalid' using errcode='22023'; end if;
  with selected as (
-  select id from private.invoice_billing_jobs where (status='queued' and available_at<=clock_timestamp()) or (status='running' and locked_until<clock_timestamp())
+  select id from private.invoice_billing_jobs where attempts<8 and ((status='queued' and available_at<=clock_timestamp()) or (status='running' and locked_until<clock_timestamp()))
   order by available_at,id limit p_limit for update skip locked
  ), claimed as (
   update private.invoice_billing_jobs j set status='running',attempts=attempts+1,lease_token=gen_random_uuid(),locked_until=clock_timestamp()+interval '5 minutes',updated_at=clock_timestamp()
@@ -681,16 +693,16 @@ begin
   -- or statements, so revocation cannot deadlock a worker holding this job.
   perform private.invoice_billing_lock_statement_sources(s.id);
   if s.invoice_id is not null then v_invoice:=s.invoice_id;
-  elsif (s.status<>'ready' and not (s.status='blocked' and s.blocked_reason in('invoice_billing_identity_refresh_required','customer_identity_refresh_required','invoice_billing_preview_expired')))
+  elsif (s.status<>'ready' and not (s.status='blocked' and s.blocked_reason in('financial_data_incomplete','supplier_data_incomplete','customer_data_incomplete','customer_missing','mixed_customer','invoice_billing_identity_refresh_required','customer_identity_refresh_required','invoice_billing_preview_expired')))
    or not exists(select 1 from public.invoice_billing_consents c join public.invoice_billing_consent_history h on h.id=c.active_grant_id
     join public.profiles p on p.id=c.contractor_id where c.contractor_id=s.contractor_id and c.enabled and c.active_grant_id=j.consent_grant_id
     and s.consent_grant_id=j.consent_grant_id and h.created_at<s.approved_at and h.actor_id=s.contractor_user_id and p.user_id=s.contractor_user_id
     and public.has_role(p.user_id,'crew')) then
    v_result:=jsonb_build_object('status','cancelled','job_id',j.id);
-   update private.invoice_billing_jobs set status='cancelled',locked_until=null,last_error='consent_or_statement_inactive',result=v_result,updated_at=clock_timestamp() where id=j.id;
+   update private.invoice_billing_jobs set status='cancelled',attempts=greatest(0,attempts-1),locked_until=null,last_error='consent_or_statement_inactive',result=v_result,updated_at=clock_timestamp() where id=j.id;
    return v_result;
   elsif (s.status='ready' and not private.invoice_billing_identity_matches(s.id))
-   or (s.status='blocked' and s.blocked_reason in('invoice_billing_identity_refresh_required','customer_identity_refresh_required')) then
+   or (s.status='blocked' and s.blocked_reason in('financial_data_incomplete','supplier_data_incomplete','customer_data_incomplete','customer_missing','mixed_customer','invoice_billing_identity_refresh_required','customer_identity_refresh_required')) then
    v_block_reason:=coalesce(s.blocked_reason,'invoice_billing_identity_refresh_required');
    update public.invoice_billing_statements set status='blocked',blocked_reason=v_block_reason,updated_at=greatest(clock_timestamp(),updated_at+interval '1 microsecond') where id=s.id and status<>'blocked';
    -- Waiting for an owner/customer preview is a known dependency, not a failed
@@ -708,7 +720,7 @@ begin
    v_invoice:=private.invoice_billing_issue(s.id);
   end if;
   v_result:=jsonb_build_object('status','completed','job_id',j.id,'invoice_id',v_invoice,'statement',private.invoice_billing_result(s.id));
-  update private.invoice_billing_jobs set status='completed',locked_until=null,last_error=null,result=v_result,updated_at=clock_timestamp() where id=j.id;
+  update private.invoice_billing_jobs set status='completed',locked_until=null,last_error=null,failure_code=null,failed_at=null,result=v_result,updated_at=clock_timestamp() where id=j.id;
   return v_result;
  end if;
  if not exists(select 1 from public.invoices where id=j.invoice_id and billing_kind='self_billing' and billing_statement_id=s.id) then raise exception 'invoice_billing_job_invalid' using errcode='22023'; end if;
@@ -721,22 +733,142 @@ create function private.complete_invoice_billing_job(p_job_id uuid,p_lease_token
 declare j private.invoice_billing_jobs%rowtype;v_result jsonb;
 begin
  select * into j from private.invoice_billing_jobs where id=p_job_id for update;
+ if found and j.status='failed' and j.lease_token=p_lease_token and j.last_error=left(p_error,2000) and j.result is not null then return j.result; end if;
  if found and j.status='completed' and j.lease_token=p_lease_token and j.result->>'pdf_path'=p_pdf_path and p_error is null then return j.result; end if;
  if not found or j.status<>'running' or j.lease_token is distinct from p_lease_token or j.locked_until<clock_timestamp() then raise exception 'invoice_billing_job_conflict' using errcode='PT409'; end if;
  if nullif(btrim(p_error),'') is not null then
-  update private.invoice_billing_jobs set status='queued',available_at=clock_timestamp()+make_interval(secs=>least(3600,30*power(2,least(j.attempts,7)))::integer),
-   last_error=left(p_error,2000),lease_token=null,locked_until=null,updated_at=clock_timestamp() where id=j.id;
-  return jsonb_build_object('status','queued','job_id',j.id,'attempts',j.attempts);
+  v_result:=jsonb_build_object('status',case when j.attempts>=8 then 'failed' else 'queued' end,'job_id',j.id,'attempts',j.attempts,'failure_code',case when j.attempts>=8 then 'retry_budget_exhausted' else 'transient_failure' end);
+  update private.invoice_billing_jobs set status=case when j.attempts>=8 then 'failed' else 'queued' end,
+   available_at=clock_timestamp()+make_interval(secs=>least(3600,30*power(2,least(j.attempts,7)))::integer),failed_at=case when j.attempts>=8 then clock_timestamp() end,
+   failure_code=case when j.attempts>=8 then 'retry_budget_exhausted' else 'transient_failure' end,
+   last_error=left(p_error,2000),lease_token=case when j.attempts>=8 then j.lease_token end,locked_until=null,result=case when j.attempts>=8 then v_result end,updated_at=clock_timestamp() where id=j.id;
+  return v_result;
  end if;
  if j.kind<>'pdf' or p_pdf_path is distinct from 'invoices/'||j.invoice_id||'.pdf'
   or not exists(select 1 from storage.objects where bucket_id='invoice-pdfs' and name=p_pdf_path and metadata->>'mimetype'='application/pdf') then raise exception 'invoice_billing_pdf_unverified' using errcode='22023'; end if;
  update public.invoices set pdf_path=p_pdf_path,pdf_generated_at=clock_timestamp() where id=j.invoice_id and billing_kind='self_billing';
  if not found then raise exception 'invoice_billing_job_invalid' using errcode='22023'; end if;
  v_result:=jsonb_build_object('status','completed','job_id',j.id,'invoice_id',j.invoice_id,'pdf_path',p_pdf_path);
- update private.invoice_billing_jobs set status='completed',locked_until=null,last_error=null,result=v_result,updated_at=clock_timestamp() where id=j.id;
+ update private.invoice_billing_jobs set status='completed',locked_until=null,last_error=null,failure_code=null,failed_at=null,result=v_result,updated_at=clock_timestamp() where id=j.id;
  return v_result;
 end $$;
 create function public.complete_invoice_billing_job(p_job_id uuid,p_lease_token uuid,p_pdf_path text default null,p_error text default null) returns jsonb language sql set search_path='' as $$select private.complete_invoice_billing_job(p_job_id,p_lease_token,p_pdf_path,p_error)$$;
+
+create function private.invoice_billing_job_can_retry(p_id uuid) returns boolean language sql stable set search_path='' as $$
+ select (j.status='failed' or (j.status='queued' and j.failure_code='transient_failure' and j.last_error is not null and j.attempts>0 and j.attempts<8)) and s.superseded_by_statement_id is null
+  and (public.has_role(auth.uid(),'coo') or (public.has_role(auth.uid(),'crew') and s.contractor_id=public.current_profile_id() and s.contractor_user_id=auth.uid()
+   and exists(select 1 from public.profiles p where p.id=s.contractor_id and p.user_id=auth.uid())))
+  and (case when j.kind='pdf' then s.status='issued' and s.invoice_id=j.invoice_id and exists(select 1 from public.invoices i where i.id=j.invoice_id and i.billing_statement_id=s.id and i.billing_kind='self_billing')
+   else s.invoice_id is null and s.status in('ready','blocked') and s.consent_grant_id=j.consent_grant_id
+    and exists(select 1 from public.invoice_billing_consents c join public.invoice_billing_consent_history h on h.id=c.active_grant_id join public.profiles p on p.id=c.contractor_id
+     where c.contractor_id=s.contractor_id and c.enabled and c.active_grant_id=j.consent_grant_id and h.actor_id=s.contractor_user_id and h.created_at<s.approved_at
+      and p.user_id=s.contractor_user_id and public.has_role(p.user_id,'crew'))
+    and not exists(select 1 from public.invoice_billing_sources x join public.timelogs t on t.id=x.timelog_id where x.statement_id=s.id and
+     (t.status<>'approved' or t.contractor_id<>s.contractor_id or t.event_id<>x.event_id or t.updated_at is distinct from x.report_updated_at))
+    and not exists(select 1 from public.invoice_timelogs l join public.invoice_billing_sources x on x.timelog_id=l.timelog_id where x.statement_id=s.id)
+   end)
+ from private.invoice_billing_jobs j join public.invoice_billing_statements s on s.id=j.statement_id where j.id=p_id
+$$;
+create function private.invoice_billing_job_result(p_id uuid) returns jsonb language sql stable set search_path='' as $$
+ select jsonb_build_object('id',j.id,'kind',j.kind,'statement_id',j.statement_id,'invoice_id',j.invoice_id,'status',j.status,'attempts',j.attempts,
+  'max_attempts',8,'retry_generation',j.retry_generation,'available_at',j.available_at,'updated_at',j.updated_at,'failed_at',j.failed_at,
+  'failure_code',j.failure_code,'can_retry',coalesce(private.invoice_billing_job_can_retry(j.id),false)) from private.invoice_billing_jobs j where j.id=p_id
+$$;
+create function private.retry_invoice_billing_job(p_request_id uuid,p_statement_id uuid,p_job_id uuid,p_expected_updated_at timestamptz,p_expected_job_updated_at timestamptz) returns jsonb language plpgsql security definer set search_path='' as $$
+declare v_profile uuid;v_payload jsonb;v_result jsonb;j private.invoice_billing_jobs%rowtype;s public.invoice_billing_statements%rowtype;
+begin
+ v_profile:=private.invoice_billing_actor();
+ if not (public.has_role(auth.uid(),'coo') or public.has_role(auth.uid(),'crew')) or not exists(select 1 from public.invoice_billing_statements owned
+  where owned.id=p_statement_id and (public.has_role(auth.uid(),'coo') or (owned.contractor_id=v_profile and owned.contractor_user_id=auth.uid()))) then raise exception 'invoice_billing_unauthorized' using errcode='42501'; end if;
+ v_payload:=jsonb_build_object('statement_id',p_statement_id,'job_id',p_job_id,'expected_updated_at',p_expected_updated_at,'expected_job_updated_at',p_expected_job_updated_at);
+ v_result:=private.invoice_billing_replay(p_request_id,auth.uid(),'job_retry',v_payload);if v_result is not null then return v_result; end if;
+ -- Never invert the worker's job→statement→dependencies/profile lock order.
+ select * into j from private.invoice_billing_jobs where id=p_job_id for update;
+ if not found or j.statement_id is distinct from p_statement_id then raise exception 'invoice_billing_unauthorized' using errcode='42501'; end if;
+ select * into strict s from public.invoice_billing_statements where id=p_statement_id for update;
+ if s.updated_at is distinct from p_expected_updated_at or j.updated_at is distinct from p_expected_job_updated_at or j.status not in('failed','queued') then raise exception 'invoice_billing_job_conflict' using errcode='PT409'; end if;
+ perform private.invoice_billing_lock_statement_sources(s.id);
+ if not private.invoice_billing_job_can_retry(j.id) then raise exception 'invoice_billing_job_recovery_inactive' using errcode='22023'; end if;
+ update private.invoice_billing_jobs set status='queued',attempts=case when j.status='failed' then 0 else attempts end,retry_generation=retry_generation+case when j.status='failed' then 1 else 0 end,available_at=clock_timestamp(),lease_token=null,locked_until=null,
+  failed_at=null,failure_code=null,last_error=null,result=null,updated_at=greatest(clock_timestamp(),updated_at+interval '1 microsecond') where id=j.id;
+ update public.invoice_billing_statements set updated_at=greatest(clock_timestamp(),updated_at+interval '1 microsecond') where id=s.id;
+ v_result:=jsonb_build_object('statement',private.invoice_billing_result(s.id),'job',private.invoice_billing_job_result(j.id),'previous_attempts',j.attempts,'previous_retry_generation',j.retry_generation);
+ insert into private.invoice_billing_requests values(p_request_id,auth.uid(),'job_retry',v_payload,v_result,clock_timestamp());return v_result;
+end $$;
+create function public.retry_invoice_billing_job(p_request_id uuid,p_statement_id uuid,p_job_id uuid,p_expected_updated_at timestamptz,p_expected_job_updated_at timestamptz) returns jsonb language sql set search_path='' as $$select private.retry_invoice_billing_job(p_request_id,p_statement_id,p_job_id,p_expected_updated_at,p_expected_job_updated_at)$$;
+
+create function private.invoice_billing_allow_distance_repair(p_old public.timelogs,p_new public.timelogs) returns boolean language sql stable set search_path='' as $$
+ select p_old.status='approved' and p_new.status='approved' and (p_old.km is null or p_old.km::text in('NaN','Infinity','-Infinity') or p_old.km<0)
+  and (to_jsonb(p_new)-array['km','updated_at'])=(to_jsonb(p_old)-array['km','updated_at']) and public.has_role(auth.uid(),'coo')
+  and exists(select 1 from private.invoice_billing_repair_permits p join public.invoice_billing_sources x on x.timelog_id=p.timelog_id and x.statement_id=p.statement_id
+   join public.invoice_billing_statements s on s.id=x.statement_id where p.transaction_id=pg_current_xact_id() and p.actor_id=auth.uid()
+    and p.actor_profile_id=public.current_profile_id() and p.timelog_id=p_old.id and p.report_updated_at=p_old.updated_at and p.new_km=p_new.km
+    and not s.financial_verified and s.invoice_id is null and s.contractor_id=p_old.contractor_id and x.report_updated_at=p_old.updated_at)
+$$;
+create function private.invoice_billing_distance_version() returns trigger language plpgsql security definer set search_path='' as $$
+begin
+ if private.invoice_billing_allow_distance_repair(old,new) then new.updated_at:=greatest(clock_timestamp(),old.updated_at+interval '1 microsecond'); end if;
+ return new;
+end $$;
+-- Runs after the established now() timestamp trigger, only on exact repairs.
+create trigger zz_invoice_billing_distance_version before update of km on public.timelogs for each row execute function private.invoice_billing_distance_version();
+
+create function private.repair_invoice_billing_distance(p_request_id uuid,p_statement_id uuid,p_contractor_id uuid,p_expected_updated_at timestamptz,p_sources jsonb) returns jsonb language plpgsql security definer set search_path='' as $$
+declare v_profile uuid;v_payload jsonb;v_result jsonb;s public.invoice_billing_statements%rowtype;v_ids uuid[];v_expected uuid[];v_reports jsonb;v_preview jsonb;v_reason text;v_source record;v_km numeric;v_changed integer:=0;
+begin
+ v_profile:=private.invoice_billing_actor('coo');
+ v_payload:=jsonb_build_object('statement_id',p_statement_id,'contractor_id',p_contractor_id,'expected_updated_at',p_expected_updated_at,'sources',p_sources);
+ if not exists(select 1 from public.invoice_billing_statements where id=p_statement_id and contractor_id=p_contractor_id) then raise exception 'invoice_billing_unauthorized' using errcode='42501'; end if;
+ v_result:=private.invoice_billing_replay(p_request_id,auth.uid(),'distance_repair',v_payload);if v_result is not null then return v_result; end if;
+ if p_sources is null or jsonb_typeof(p_sources)<>'array' or jsonb_array_length(p_sources)=0 then raise exception 'invoice_billing_source_invalid' using errcode='22023'; end if;
+ if exists(select 1 from jsonb_array_elements(p_sources)x where jsonb_typeof(x)<>'object' or (select array_agg(k order by k) from jsonb_object_keys(x)k) is distinct from array['expected_updated_at','km','timelog_id']::text[] or jsonb_typeof(x->'km')<>'number') then raise exception 'invoice_billing_distance_invalid' using errcode='22023'; end if;
+ begin
+  select array_agg((x->>'timelog_id')::uuid order by (x->>'timelog_id')::uuid) into v_ids from jsonb_array_elements(p_sources)x;
+  if exists(select 1 from jsonb_array_elements(p_sources)x where (x->>'expected_updated_at')::timestamptz is null or not isfinite((x->>'expected_updated_at')::timestamptz)
+   or (x->>'km')::numeric<0 or (x->>'km')::numeric>99999999.99 or round((x->>'km')::numeric,2)<>(x->>'km')::numeric) then raise exception 'invoice_billing_distance_invalid' using errcode='22023'; end if;
+ exception when invalid_text_representation or invalid_datetime_format or datetime_field_overflow then raise exception 'invoice_billing_source_invalid' using errcode='22023'; end;
+ select * into strict s from public.invoice_billing_statements where id=p_statement_id for update;
+ if s.updated_at is distinct from p_expected_updated_at then raise exception 'invoice_billing_conflict' using errcode='PT409'; end if;
+ if s.financial_verified or s.invoice_id is not null or s.status<>'blocked' or s.superseded_by_statement_id is not null then raise exception 'invoice_billing_distance_not_repairable' using errcode='22023'; end if;
+ select array_agg(timelog_id order by timelog_id) into v_expected from public.invoice_billing_sources where statement_id=s.id;
+ if v_ids is distinct from v_expected then raise exception 'invoice_billing_complete_statement_required' using errcode='22023'; end if;
+ perform private.invoice_billing_lock_statement_sources(s.id);
+ if not exists(select 1 from public.profiles p where p.id=s.contractor_id and p.user_id=s.contractor_user_id)
+  or exists(select 1 from public.timelogs t join public.invoice_billing_sources x on x.timelog_id=t.id join jsonb_array_elements(p_sources)r on (r->>'timelog_id')::uuid=t.id
+   where x.statement_id=s.id and (t.status<>'approved' or t.contractor_id<>p_contractor_id or t.event_id<>x.event_id or t.updated_at is distinct from x.report_updated_at or t.updated_at is distinct from (r->>'expected_updated_at')::timestamptz))
+  or exists(select 1 from public.invoice_timelogs where timelog_id=any(v_ids)) then raise exception 'invoice_billing_source_conflict' using errcode='PT409'; end if;
+ if exists(select 1 from public.invoice_billing_sources x join public.shift_workflow_rounds r on r.id=x.round_id where x.statement_id=s.id and
+  (r.status<>'approved' or exists(select 1 from public.shift_workflow_round_items i where i.round_id=r.id and not i.timelog_id=any(v_ids)))) then raise exception 'invoice_billing_complete_round_required' using errcode='22023'; end if;
+ for v_source in select t.*,r->>'km' proposed from public.timelogs t join jsonb_array_elements(p_sources)r on (r->>'timelog_id')::uuid=t.id order by t.id loop
+  v_km:=v_source.proposed::numeric;
+  if v_source.km is not null and v_source.km::text not in('NaN','Infinity','-Infinity') and v_source.km>=0 then
+   if v_km is distinct from v_source.km then raise exception 'invoice_billing_verified_distance_immutable' using errcode='22023'; end if;
+  else
+   insert into private.invoice_billing_repair_permits(transaction_id,timelog_id,statement_id,actor_id,actor_profile_id,report_updated_at,new_km)
+    values(pg_current_xact_id(),v_source.id,s.id,auth.uid(),v_profile,v_source.updated_at,v_km);
+   update public.timelogs set km=v_km where id=v_source.id;
+   v_changed:=v_changed+1;
+  end if;
+ end loop;
+ if v_changed=0 then raise exception 'invoice_billing_distance_not_repairable' using errcode='22023'; end if;
+ delete from private.invoice_billing_repair_permits where transaction_id=pg_current_xact_id();
+ -- Only the invalid input and its monetary subtotal change. Approved days,
+ -- hours/rates/meals, approval identity, and every old version remain frozen.
+ select jsonb_agg(r||jsonb_build_object('km',t.km,'report_updated_at',t.updated_at,'status',t.status,
+  'amount_km',round(t.km*(r->>'km_rate')::numeric,2),'total_amount',(r->>'amount_hours')::numeric+round(t.km*(r->>'km_rate')::numeric,2)+(r->>'amount_meals')::numeric+(r->>'amount_receipts')::numeric) order by t.id)
+  into v_reports from jsonb_array_elements(s.financial_snapshot->'reports')r join public.timelogs t on t.id=(r->>'timelog_id')::uuid;
+ v_preview:=jsonb_build_object('currency',s.currency,'reports',v_reports,'total_amount',(select sum((r->>'total_amount')::numeric) from jsonb_array_elements(v_reports)r));
+ v_reason:=private.invoice_billing_reason(v_preview);
+ update public.invoice_billing_statements set financial_snapshot=v_preview,total_amount=(v_preview->>'total_amount')::numeric,financial_version=financial_version+1,
+  financial_verified=v_reason is distinct from 'financial_data_incomplete',status=case when v_reason is null then 'ready' else 'blocked' end,blocked_reason=v_reason,
+  updated_at=greatest(clock_timestamp(),updated_at+interval '1 microsecond') where id=s.id;
+ update public.invoice_billing_sources x set report_updated_at=t.updated_at,source_snapshot=x.source_snapshot||r
+  from public.timelogs t join jsonb_array_elements(v_reports)r on (r->>'timelog_id')::uuid=t.id where x.statement_id=s.id and x.timelog_id=t.id;
+ perform private.invoice_billing_record_version(s.id,'invalid_distance_repair');
+ v_result:=jsonb_build_object('statement',private.invoice_billing_result(s.id));
+ insert into private.invoice_billing_requests values(p_request_id,auth.uid(),'distance_repair',v_payload,v_result,clock_timestamp());return v_result;
+end $$;
+create function public.repair_invoice_billing_distance(p_request_id uuid,p_statement_id uuid,p_contractor_id uuid,p_expected_updated_at timestamptz,p_sources jsonb) returns jsonb language sql set search_path='' as $$select private.repair_invoice_billing_distance(p_request_id,p_statement_id,p_contractor_id,p_expected_updated_at,p_sources)$$;
 
 -- Preserve the installed payment implementation and return contract, translating
 -- only optimistic conflicts at its public API boundary (PostgREST14 compatibility).
@@ -778,7 +910,7 @@ do $$ declare v_table text; begin
   execute format('revoke all on public.%I from public,anon,authenticated,service_role',v_table);
   execute format('grant select on public.%I to authenticated',v_table);
  end loop;
- foreach v_table in array array['invoice_billing_requests','invoice_billing_quotes','invoice_billing_quote_permits','invoice_billing_write_permits','invoice_billing_jobs'] loop
+ foreach v_table in array array['invoice_billing_requests','invoice_billing_quotes','invoice_billing_quote_permits','invoice_billing_write_permits','invoice_billing_repair_permits','invoice_billing_jobs'] loop
   execute format('alter table private.%I enable row level security',v_table);
   execute format('revoke all on private.%I from public,anon,authenticated,service_role',v_table);
   execute format('create policy billing_private_deny on private.%I as restrictive for all to public using(false) with check(false)',v_table);
@@ -811,6 +943,7 @@ CREATE OR REPLACE FUNCTION public.enforce_timelog_update_permissions()
  SET search_path TO ''
 AS $function$
 begin
+ if private.invoice_billing_allow_distance_repair(old,new) then return new; end if;
  if old.status='approved' and new.status='invoiced'
   and (to_jsonb(new)-array['status','updated_at'])=(to_jsonb(old)-array['status','updated_at'])
   and exists(select 1 from private.invoice_billing_write_permits p
@@ -1208,13 +1341,61 @@ create function public.transition_shift_workflow_round_atomic(p_request_id uuid,
 
 grant usage on schema private to service_role;
 
+CREATE OR REPLACE FUNCTION private.guard_shared_shift_timelog()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+ v_id uuid; v_event uuid; v_contractor uuid; v_has_history boolean;
+ v_permit private.shift_workflow_write_permits%rowtype;
+begin
+ if tg_op='UPDATE' and private.invoice_billing_allow_distance_repair(old,new) then return new; end if;
+ if tg_op='INSERT' then v_id:=new.id; v_event:=new.event_id; v_contractor:=new.contractor_id;
+ else v_id:=old.id; v_event:=old.event_id; v_contractor:=old.contractor_id; end if;
+ select exists(select 1 from public.shift_workflow_round_items i where i.timelog_id=v_id) into v_has_history;
+ if not v_has_history and not exists(select 1 from public.shift_workflow_events e where e.event_id=v_event) then
+  if tg_op='DELETE' then return old; else return new; end if;
+ end if;
+ if tg_op='UPDATE' then
+  select * into v_permit from private.shift_workflow_write_permits p
+   where p.transaction_id=pg_current_xact_id() and p.actor_id=auth.uid() and p.timelog_id=old.id;
+  if found and old.status=v_permit.from_status and new.status in(v_permit.from_status,v_permit.to_status)
+    and new.id=old.id and new.event_id=old.event_id and new.contractor_id=old.contractor_id
+    and new.created_at=old.created_at then return new; end if;
+  -- Keep explicit billing transitions after a completed approval. Data remains
+  -- immutable, and the existing role guard still authorizes the transition.
+  if old.status in('approved','invoiced') and new.status in('approved','invoiced','paid')
+    and (to_jsonb(new)-array['status','updated_at'])=(to_jsonb(old)-array['status','updated_at']) then return new; end if;
+ elsif not v_has_history and exists(
+  select 1 from private.shift_workflow_assignment_permits p
+   where p.transaction_id=pg_current_xact_id() and p.actor_id=auth.uid()
+    and p.event_id=v_event and p.contractor_id=v_contractor
+    and ((tg_op='INSERT' and p.operation='assign' and p.timelog_id is null)
+      or (tg_op='DELETE' and p.operation='remove' and p.timelog_id=old.id))
+ ) then
+  if tg_op='INSERT' then
+   if new.status<>'draft' or coalesce(new.km,0)<>0 or coalesce(new.note,'')<>'' then
+    raise exception 'shared_shift_write_required' using errcode='42501';
+   end if;
+   update private.shift_workflow_assignment_permits set timelog_id=new.id
+    where transaction_id=pg_current_xact_id() and actor_id=auth.uid()
+     and event_id=v_event and contractor_id=v_contractor and operation='assign';
+   return new;
+  elsif old.status='draft' then return old;
+  end if;
+ end if;
+ raise exception 'shared_shift_write_required' using errcode='42501';
+end $function$;
+
 -- Default function grants are explicitly removed. Only narrow authenticated or
 -- service-only entry points can call the private helpers; no generic bypass.
 do $$ declare f record; v_name text; begin
  for f in select p.oid::regprocedure proc,n.nspname,p.proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace
   where n.nspname in('public','private') and (p.proname like '%invoice_billing%' or p.proname='set_self_billing_consent') loop
   execute format('revoke all on function %s from public,anon,authenticated,service_role',f.proc);
-  if f.proname in('get_invoice_billing_snapshot','set_self_billing_consent','confirm_invoice_billing','review_invoice_billing_document','prepare_invoice_billing_selection','refresh_invoice_billing_preview','get_invoice_billing_quote','invoice_billing_resolve_approvals','invoice_billing_transition_round') then
+  if f.proname in('get_invoice_billing_snapshot','set_self_billing_consent','confirm_invoice_billing','review_invoice_billing_document','prepare_invoice_billing_selection','refresh_invoice_billing_preview','get_invoice_billing_quote','retry_invoice_billing_job','repair_invoice_billing_distance','invoice_billing_resolve_approvals','invoice_billing_transition_round') then
    execute format('grant execute on function %s to authenticated',f.proc);
   elsif f.proname in('register_invoice_billing_document','claim_invoice_billing_jobs','process_invoice_billing_job','complete_invoice_billing_job') then
    execute format('grant execute on function %s to service_role',f.proc);

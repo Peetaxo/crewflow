@@ -378,15 +378,12 @@ select ok(not (select financial_verified from public.invoice_billing_statements 
 select public.prepare_invoice_billing_selection(pg_temp.bid(670),array[pg_temp.bid(214)]);
 select is((select total_amount from public.invoice_billing_statements where id=(select statement_id from public.invoice_billing_sources where timelog_id=pg_temp.bid(214))),8606::numeric,'explicit COO preparation establishes corrected finite rate financial version');
 select is((select status from public.invoice_billing_statements where id=(select statement_id from public.invoice_billing_sources where timelog_id=pg_temp.bid(214))),'ready','corrected financial data recovers to ready');
-reset role;
--- Simulate a privileged repair of only this disposable invalid source. Public
--- Crew/CH status/financial edits remain denied; original source history stays.
-set local session_replication_role=replica;
-update public.timelogs set km=10,updated_at=clock_timestamp() where id=pg_temp.bid(215);
-set local session_replication_role=origin;
-set local role authenticated;
-select set_config('request.jwt.claims',jsonb_build_object('sub',pg_temp.bid(4),'role','authenticated')::text,true);
-select public.prepare_invoice_billing_selection(pg_temp.bid(674),array[pg_temp.bid(215)]);
+-- The invalid approved source is repaired only through the authenticated COO RPC.
+insert into saved values('distance_before',(select to_jsonb(t) from public.timelogs t where id=pg_temp.bid(215)));
+select public.repair_invoice_billing_distance(pg_temp.bid(674),(select statement_id from public.invoice_billing_sources where timelog_id=pg_temp.bid(215)),pg_temp.bid(11),
+ (select updated_at from public.invoice_billing_statements where id=(select statement_id from public.invoice_billing_sources where timelog_id=pg_temp.bid(215))),
+ jsonb_build_array(jsonb_build_object('timelog_id',pg_temp.bid(215),'expected_updated_at',(select updated_at from public.timelogs where id=pg_temp.bid(215)),'km',10)));
+select is((select to_jsonb(t)-array['km','updated_at'] from public.timelogs t where id=pg_temp.bid(215)),(select v-array['km','updated_at'] from saved where k='distance_before'),'repair preserves status/hours/approval provenance fields');
 select is((select total_amount from public.invoice_billing_statements where id=(select statement_id from public.invoice_billing_sources where timelog_id=pg_temp.bid(215))),8606::numeric,'explicit COO preparation recovers corrected invalid distance');
 select ok((select t.updated_at=x.report_updated_at from public.timelogs t join public.invoice_billing_sources x on x.timelog_id=t.id where t.id=pg_temp.bid(215)),'unverified repair reserves exact checked source version');
 select set_config('request.jwt.claims',jsonb_build_object('sub',pg_temp.bid(1),'role','authenticated')::text,true);

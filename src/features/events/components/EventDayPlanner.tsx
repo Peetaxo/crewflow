@@ -14,7 +14,6 @@ const newPhase = (type: TimelogType): EventFormPhase => ({
 });
 
 export default function EventDayPlanner({ dates, plan, onChange }: EventDayPlannerProps) {
-  const hasPreparation = Object.values(plan).some((day) => day.phases.some((phase) => phase.type === 'pripravy'));
   const updateDay = (date: string, day: EventFormDay) => onChange({ ...plan, [date]: day });
 
   return <div className="event-day-planner">
@@ -42,7 +41,7 @@ export default function EventDayPlanner({ dates, plan, onChange }: EventDayPlann
               else updateDay(date, { free: false, phases: [newPhase(value as TimelogType)] });
             }}>
               <option value="">Zatím neurčeno</option>
-              {hasPreparation && <option value="pripravy">Přípravy</option>}
+              <option value="pripravy">Přípravy</option>
               <option value="instal">Instalace</option>
               <option value="provoz">Provoz</option>
               <option value="deinstal">Deinstalace</option>

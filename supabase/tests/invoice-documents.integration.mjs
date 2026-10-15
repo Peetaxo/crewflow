@@ -9,6 +9,11 @@ import {
   restoreJobTimers,
   snapshotJobTimers,
 } from "./invoice-job-test-state.mjs";
+import {
+  createInvoiceTestLifecycle,
+  InvoiceTestInterrupted,
+} from "./invoice-worker-test-lifecycle.mjs";
+import { createInvoiceCronTracker } from "./invoice-cron-test-tracker.mjs";
 assert.ok(
   process.argv[2] && process.argv[3],
   "Pass private local demo directory and private worker env file",
@@ -26,19 +31,12 @@ const workerSecret = (await readFile(workerEnv, "utf8")).match(
   /^INVOICE_PDF_WORKER_SECRET=(.+)$/m,
 )?.[1];
 assert.ok(workerSecret);
-const options = { auth: { persistSession: false, autoRefreshToken: false } };
-const service = createClient(
-  credentials.API_URL,
-  credentials.SERVICE_ROLE_KEY,
-  options,
-);
-const anon = createClient(credentials.API_URL, credentials.ANON_KEY, options);
 const run = randomUUID();
 const output = `${dir}/results/invoice-billing/task2-${run}`;
 await import("node:fs/promises").then((fs) =>
   fs.mkdir(output, { recursive: true })
 );
-async function query(sql, privateFile = false) {
+async function rawQuery(sql, privateFile = false) {
   const file = `${output}/query.sql`;
   await writeFile(file, sql, { mode: 0o600 });
   await chmod(file, 0o600);
@@ -58,6 +56,80 @@ async function query(sql, privateFile = false) {
   }
   return raw.trim().startsWith("{") ? JSON.parse(raw).rows : [];
 }
+let beforeJobTimers = null;
+let bucketRestore = null;
+let cronTracker = null;
+const rawFetch = globalThis.fetch.bind(globalThis);
+let cleanupService;
+const lifecycle = createInvoiceTestLifecycle({
+  fetch: rawFetch,
+  stopSchedule: async () => {
+    if (cronTracker) await cronTracker.stop();
+  },
+  drainCron: async () =>
+    cronTracker
+      ? await cronTracker.drain()
+      : { fenced: true, activeCronCommands: 0, requests: [] },
+  record: async (evidence) => {
+    const body = { ...evidence, snapshotFile: beforeJobTimers };
+    await writeFile(
+      `${output}/${
+        evidence.stage === "drained"
+          ? "worker-drain.private.json"
+          : evidence.stage === "blocked"
+          ? "cleanup-blocked.private.json"
+          : evidence.stage === "stopped"
+          ? "worker-stop.private.json"
+          : "cleanup.json"
+      }`,
+      JSON.stringify(body, null, 2),
+      { mode: 0o600 },
+    );
+  },
+  restore: async (proof) => {
+    if (bucketRestore) {
+      assert.equal(
+        (await cleanupService.storage.updateBucket("invoice-pdfs", {
+          public: bucketRestore.public,
+          allowedMimeTypes: bucketRestore.allowed_mime_types,
+        })).error,
+        null,
+      );
+      bucketRestore = null;
+    }
+    await cronTracker.drop();
+    const restored = await restoreJobTimers(beforeJobTimers, {
+      ...proof,
+      snapshotFile: beforeJobTimers,
+    });
+    return restored;
+  },
+});
+const fetch = lifecycle.fetch.bind(lifecycle);
+async function query(sql, privateFile = false) {
+  lifecycle.check();
+  const result = await rawQuery(sql, privateFile);
+  lifecycle.check();
+  return result;
+}
+const options = {
+  global: { fetch },
+  auth: { persistSession: false, autoRefreshToken: false },
+};
+const service = createClient(
+  credentials.API_URL,
+  credentials.SERVICE_ROLE_KEY,
+  options,
+);
+const anon = createClient(credentials.API_URL, credentials.ANON_KEY, options);
+cleanupService = createClient(
+  credentials.API_URL,
+  credentials.SERVICE_ROLE_KEY,
+  {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { fetch: rawFetch },
+  },
+);
 const rpc = async (client, name, args) => {
   const r = await client.rpc(name, args);
   assert.equal(r.error, null, `${name}: ${r.error?.message}`);
@@ -128,36 +200,19 @@ const [ch, coo, other] = await Promise.all(
   ),
 );
 const profile = await rpc(owner.client, "current_profile_id");
-const beforeJobTimers = await snapshotJobTimers(output);
-let scheduleCreated = false;
-let bucketRestore = null;
-let cleanupPromise;
-const cleanup = () =>
-  cleanupPromise ??= (async () => {
-    if (scheduleCreated) {
-      await query("select cron.unschedule('crewflow-invoice-pdfs')");
-      scheduleCreated = false;
-    }
-    if (bucketRestore) {
-      assert.equal(
-        (await service.storage.updateBucket("invoice-pdfs", {
-          public: bucketRestore.public,
-          allowedMimeTypes: bucketRestore.allowed_mime_types,
-        })).error,
-        null,
-      );
-      bucketRestore = null;
-    }
-    const restored = await restoreJobTimers(beforeJobTimers);
-    await writeFile(
-      `${output}/cleanup.json`,
-      JSON.stringify({ restored, verifiedExactCapturedRows: true }),
-    );
-  })();
+beforeJobTimers = await snapshotJobTimers(output);
+cronTracker = createInvoiceCronTracker({
+  query: rawQuery,
+  run,
+  record: async (manifest) =>
+    writeFile(
+      `${output}/cron-manifest.private.json`,
+      JSON.stringify({ ...manifest, snapshotFile: beforeJobTimers }),
+      { mode: 0o600 },
+    ),
+});
 for (const signal of ["SIGINT", "SIGTERM"]) {
-  process.once(signal, () => {
-    void cleanup().then(() => process.exit(130));
-  });
+  process.on(signal, () => lifecycle.stop(signal));
 }
 try {
   await delayJobTimers(beforeJobTimers);
@@ -595,8 +650,10 @@ try {
     `DO $setup$ BEGIN perform vault.update_secret(id,'http://supabase_kong_crewflow-demo-20261012:8000/functions/v1/process-invoice-pdfs') from vault.secrets where name='invoice_pdf_worker_url'; if not found then perform vault.create_secret('http://supabase_kong_crewflow-demo-20261012:8000/functions/v1/process-invoice-pdfs','invoice_pdf_worker_url'); end if; perform vault.update_secret(id,'${workerSecret}') from vault.secrets where name='invoice_pdf_worker_secret'; if not found then perform vault.create_secret('${workerSecret}','invoice_pdf_worker_secret'); end if; END $setup$;`,
     true,
   );
-  await query(schedule);
-  scheduleCreated = true;
+  await cronTracker.initialize();
+  lifecycle.check();
+  await cronTracker.schedule(schedule);
+  lifecycle.check();
   const scheduledAt = new Date().toISOString();
   await writeFile(
     `${output}/schedule-pending.json`,
@@ -628,7 +685,7 @@ try {
   );
   assert.equal(cron[0]?.status, "succeeded");
   const net = await query(
-    "select status_code,content from net._http_response where created > now()-interval '3 minutes' order by created desc limit 1",
+    `select r.id::text,r.status_code,r.content from net._http_response r join private.${cronTracker.table} t on t.request_id=r.id order by r.id desc limit 1`,
   );
   assert.equal(net[0]?.status_code, 200);
   assert.equal(JSON.parse(net[0].content).rendered, 1);
@@ -658,8 +715,12 @@ try {
   await writeFile(`${output}/evidence.json`, JSON.stringify(summary, null, 2));
   console.log(JSON.stringify(summary, null, 2));
 } catch (error) {
-  console.error(error);
-  throw error;
+  if (error instanceof InvoiceTestInterrupted || lifecycle.interrupted) {
+    process.exitCode = 130;
+  } else {
+    console.error(error);
+    throw error;
+  }
 } finally {
-  await cleanup();
+  await lifecycle.cleanup();
 }

@@ -45,7 +45,9 @@ export async function snapshotJobTimers(directory) {
     resolve(directory, "RESTORE.txt"),
     `node ${
       new URL(import.meta.url).pathname
-    } restore ${file} /private/tmp/crewflow-demo-20261012\n`,
+    } restore ${file} /private/tmp/crewflow-demo-20261012 ${
+      resolve(directory, "worker-drain.private.json")
+    }\nDo not restore without a successful drain receipt. If missing/blocked, leave timers delayed and stop/drain queued and in-flight workers first; see the worker README.\n`,
     { mode: 0o600 },
   );
   return file;
@@ -104,7 +106,29 @@ async function mutateTimers(file, restore) {
   return jobs.length;
 }
 export const delayJobTimers = (file) => mutateTimers(file, false);
-export const restoreJobTimers = (file) => mutateTimers(file, true);
+export const restoreJobTimers = async (file, proof) => {
+  assert.equal(
+    proof?.snapshotFile,
+    file,
+    "A drain receipt for this exact snapshot is required",
+  );
+  assert.equal(
+    proof?.quiescenceConfirmed,
+    true,
+    "Stop and drain workers before restoring timers",
+  );
+  assert.equal(proof?.stopped, true);
+  assert.ok(proof.directWorkers.every((worker) => worker.definitive));
+  assert.equal(proof.cron?.fenced, true);
+  assert.equal(proof.cron?.activeCronCommands, 0);
+  assert.ok(proof.cron.requests.every((request) => request.definitive));
+  const active = await localQuery(
+    "select count(*)::integer active from cron.job where jobname='crewflow-invoice-pdfs'",
+    resolve(file, "../verify-cron-stopped.private.sql"),
+  );
+  assert.equal(active[0].active, 0, "Stop the schedule before restoration");
+  return mutateTimers(file, true);
+};
 if (
   process.argv[1] &&
   resolve(process.argv[1]) === new URL(import.meta.url).pathname
@@ -117,6 +141,7 @@ if (
   console.log(
     `Restored ${await restoreJobTimers(
       resolve(process.argv[3]),
+      JSON.parse(await readFile(process.argv[5], "utf8")),
     )} exact captured local job rows.`,
   );
 }

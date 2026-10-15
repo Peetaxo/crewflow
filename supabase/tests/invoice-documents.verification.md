@@ -131,3 +131,68 @@ teardown are in the worker README and `schedule.sql`/`teardown-schedule.sql`. No
 hosted write was performed for Task2. Live browser UI evidence remains
 unavailable under the previously recorded browser policy; no alternate
 browser/surface was used.
+
+## Spec-review cleanup correction
+
+Review of `3c6efbe` found the old interruption proof was idle-only: unscheduling
+did not drain a queued pg_net request or an executing Edge handler, and the
+signal callback could race the main test. That proof is superseded by the
+following active-worker evidence. Product upload/worker/RLS code is unchanged by
+this correction.
+
+`invoice-worker-test-lifecycle.mjs` owns cleanup once. SIGINT/SIGTERM set a stop
+flag and wake the current guarded action without aborting the underlying HTTP
+operation. Later test actions are rejected; the main `finally` owns cleanup. It
+stops the test schedule, then waits for all directly dispatched requests and
+every durably captured pg_net request. Only a complete, recognized worker
+response confirms completion. Timeout, transport failure, malformed response or
+worker503 produces a private blocked record and leaves timers delayed; an HTTP
+timeout is never treated as server termination.
+
+`invoice-cron-test-tracker.mjs` wraps the _test schedule only_ with a private
+request-ID ledger and an enabled row. Each Cron command locks that row before
+enqueuing. Cleanup unschedules and sets enabled=false under the same row lock,
+fencing an already-dispatched command even before its run log exists. It waits
+for nonterminal run records and checks every exact ledger ID against
+`net.http_request_queue` and `net._http_response`. The local ledger/control
+tables are dropped only after draining; a successful private drain receipt is
+persisted before guarded restoration. The restore helper now rejects a
+missing/wrong drain receipt and checks that the schedule remains stopped.
+Independent recovery instructions are in the worker README; the raw restore
+helper is not evidence of worker safety.
+
+Reproduce the controlled active proof with
+`node supabase/tests/invoice-worker-interruption.integration.mjs <private-local-credentials-dir> <private-worker-env-file>`.
+It requires localhost, no existing named schedule and an empty initial net
+queue. It temporarily pauses only local pg_net and holds a local jobs-table
+lock, with both released in the parent `finally`; private control recovery
+instructions are saved before either action. It sends SIGTERM while one request
+is visibly queued and another Edge claim waits on the lock, verifies no
+restoration, resumes pg_net and observes both claims in flight, then releases
+the lock. Both HTTP200 bodies must finish before all20 captured job rows are
+restored. A saved Cron command deliberately executed after stopping must enqueue
+nothing; the main continuation marker must remain absent.
+
+Evidence directory remains `/private/tmp/crewflow-invoice-workflow-20261013/`:
+
+- `task2-red-cleanup-race.log`: two failing tests reproduce early
+  restore/timeout behavior. `task2-green-cleanup-race.log` and
+  `task2-cleanup-pure-green.log`: corrected race checks,40 focused tests total.
+- `task2-red-late-cron-fence.log`: real late-dispatched command enqueues a
+  second request before the enabled-row fence (2 vs expected1). Its parent
+  finally drained and restored all20 rows; no prior fixture was claimed.
+- `task2-active-interruption-final.log` and
+  `/private/tmp/crewflow-demo-20261012/results/invoice-billing/interruption-72d903aa-d973-40f1-b175-941d5f922dc5/evidence.json`:
+  real queued request9, one then two real lock-waiting Edge claims, SIGTERM,
+  late-command fence, definitive responses, no later main action and exact20-row
+  restoration.
+- `task2-cleanup-full-integration.log` and
+  `/private/tmp/crewflow-demo-20261012/results/invoice-billing/task2-43f749fa-fca0-4d1e-996f-a8995dcbe2de/evidence.json`:
+  actual normal upload/replacement/accept/retry/schedule integration with this
+  lifecycle. Cron `2026-10-15T07:06:00.019952Z`, exact pg_net request8 returned
+  HTTP200 `{processed:2,rendered:1}`; `worker-drain.private.json` precedes
+  `cleanup.json` and all20 full captured rows were restored. Historic
+  paid2056CZK remains intact.
+
+No hosted mutation, production fault bypass, ACL/lease weakening, or root plan
+edit was included.

@@ -82,8 +82,46 @@ equivalents always use
 absolute SQL path. Stop the schedule before restoring a fixture snapshot; wait
 for any current request to finish. A private `RESTORE.txt` and independently
 runnable
-`invoice-job-test-state.mjs restore <before-job-timers.private.json> <private-local-credentials-dir>`
+`invoice-job-test-state.mjs restore <before-job-timers.private.json> <private-local-credentials-dir> <worker-drain.private.json>`
 command are saved before test delays. The helper locks and verifies exact
 captured IDs and every non-timer field, atomically restores, then compares
-complete rows; SIGINT/SIGTERM use the same cleanup. A forced process kill can
-use the persisted command.
+complete rows; SIGINT/SIGTERM use the same cleanup. After a forced process kill,
+use the saved command only with a successful drain receipt; otherwise leave
+timers delayed.
+
+Test interruption and independent recovery:
+
+- The integration harness captures each Cron request ID in a private local
+  ledger and serializes enqueue/stop through a private enabled row. This wrapper
+  exists only in tests; the deployed schedule stays `schedule.sql`. Stopping
+  also fences a late-dispatched command, then drains every queued/in-flight
+  request. Signals stop later main actions; only the main `finally` restores
+  fixtures after recognized complete handler responses.
+- `worker-drain.private.json` is written before restoration. The independent
+  command is
+  `node supabase/tests/invoice-job-test-state.mjs restore <before-job-timers.private.json> <private-local-credentials-dir> <worker-drain.private.json>`.
+  It requires a successful receipt for that exact snapshot and a stopped
+  schedule; it does not manufacture a receipt or claim that a timeout stopped
+  the server. Use it only for the same halted test run, with no new worker
+  dispatches after its receipt.
+- If the receipt is missing or `cleanup-blocked.private.json` exists, leave
+  timers delayed. Read the saved `cron-manifest.private.json` for the exact
+  ledger/control table and inspect only its request IDs, queue entries and
+  response status. Stop the named schedule; set its test control row
+  enabled=false under its row lock and wait for pending Cron commands. Wait for
+  each actual recognized worker response. A timeout/network error/503 is
+  ambiguous: do not create a successful receipt from elapsed time or retry raw
+  restoration.
+- If definitive responses are irretrievable, root must first stop the exact
+  local Edge runtime and verify that it is stopped, prevent/delete only the
+  tracked queued test invocations before any runtime restart, and record an
+  independently verified quiescent state before authorizing guarded fixture
+  recovery. No hosted operation is part of that procedure. Preserve the private
+  full snapshot and blocked evidence; do not invent historical state or bypass
+  the drain requirement.
+- The controlled proof also saves `CONTROL-RECOVERY.txt` before pausing local
+  pg_net or locking the local jobs table. If its parent is forcibly killed,
+  signal the recorded child to stop, resume only the recorded local pg_net PID,
+  release only the recorded local lock connection, then complete the drain
+  before restoration. Normal finally cleanup performs those steps automatically.
+  The raw timer helper alone is never an in-flight worker safety check.

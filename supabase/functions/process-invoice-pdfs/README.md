@@ -26,6 +26,23 @@ failure callback. Recovery uses the existing owner/COO
 `retry_invoice_billing_job` API and the same invoice; manual generation of every
 new statement invoice is blocked.
 
+Queue writes persist the durable job before a private database trigger enqueues
+an asynchronous `pg_net` request. HTTP starts only after the business transaction
+commits; PDFs never render inside approval/issuance transactions. Due inserts,
+explicit retry, and worker release/completion wake eligible remaining jobs. Claims,
+terminal metadata and future backoff alone stay quiet. A transaction coalesces its
+wakes only after a successful enqueue. Lost notifications, missing server config,
+and enqueue failures retain the durable job for the hourly safety check or an
+explicit retry. The existing eight-attempt budget also retires expired final
+leases without allowing a ninth claim.
+
+`private.invoice_worker_dispatch_control` is a private, RLS-protected singleton.
+Its `enabled` flag starts **false** on migration; applying a migration or installing
+the Cron schedule cannot silently start existing work. Only server administration
+can change it. The private dispatcher and trigger helper have pinned empty search
+paths and no browser/service-role EXECUTE grant. `last_request_id` records the most
+recent successfully enqueued request, without credentials or request headers.
+
 Generated canonical destination: `invoices/{invoiceId}.pdf`. The process RPC
 only returns render work for self-billing sources; uploaded originals never
 enter the renderer. Private uploads use service credentials with `upsert:true`
@@ -46,13 +63,19 @@ Deployment/setup after all feature review:
    Management API; no permanent bootstrap RPC is needed. Capture CLI
    stdout/stderr in private files and only report sanitized status. Never
    echo/decode the credential.
-4. Apply `schedule.sql` once. The named `crewflow-invoice-pdfs` Cron job runs
-   every minute via `pg_cron` + `pg_net`, obtains the credential from Vault at
-   invocation, and survives browser/app closure. Reapplying the named schedule
-   updates it instead of creating duplicate schedules. Inspect `cron.job`,
-   `cron.job_run_details`, and `net._http_response` without selecting/decrypting
-   secrets.
-5. Verify an actual scheduled invocation and a persisted completed PDF job. Root
+4. Inspect existing due jobs before activation. Apply `schedule.sql` once. The
+   named `crewflow-invoice-pdfs` Cron job runs at `0 * * * *` and calls the same
+   private eligibility helper as queue events. An idle/disabled queue sends no
+   HTTP request. Reapplying the named schedule updates it instead of creating
+   duplicates. This step leaves the enabled flag unchanged.
+5. Apply `activate-dispatch.sql` deliberately after the worker and both Vault
+   entries are ready. It enables event dispatch and requests eligible existing
+   work in one transaction. This can process pre-existing due jobs. Do not use it
+   on local fixtures before snapshot/protection and request tracking are ready.
+6. Verify actual committed event processing for multiple PDFs, recovery, the
+   hourly schedule and a persisted completed PDF job. Inspect `cron.job`,
+   `cron.job_run_details`, the private request ID and `net._http_response` without
+   selecting/decrypting secrets. Root
    performs hosted provisioning only after all feature gates; Task2 tests use
    localhost only.
 
@@ -72,15 +95,20 @@ ownership-rebind regression is
 `supabase/tests/invoice-document-owner-binding.test.sql` and rolls back
 entirely.
 
-The exact setup invocation is
+The exact schedule installation invocation is
 `supabase db query --linked --file <absolute-path-to-schedule.sql>` after Vault
-provisioning. Teardown uses the same command with `teardown-schedule.sql`
-(`select cron.unschedule('crewflow-invoice-pdfs')`); this stops future
-invocations and retains queued work and both credential stores. Local
+provisioning. Deliberate activation uses the same command with
+`activate-dispatch.sql`. Maintenance uses `teardown-schedule.sql`: it first sets
+the private enabled flag false under the same singleton lock used by every
+dispatcher, then removes the named Cron job, atomically. This fences future event
+and late Cron invocations and retains queued work and both credential stores.
+Reapplying teardown is safe. It **does not drain already enqueued/running HTTP
+workers**. Local
 equivalents always use
 `--local --workdir /Users/peetax/Projekty/.crewflow-demo-20261012` and an
-absolute SQL path. Stop the schedule before restoring a fixture snapshot; wait
-for any current request to finish. A private `RESTORE.txt` and independently
+absolute SQL path. Disable event dispatch and stop/fence the schedule before
+restoring a fixture snapshot; track and wait for every current request to finish.
+A private `RESTORE.txt` and independently
 runnable
 `invoice-job-test-state.mjs restore <before-job-timers.private.json> <private-local-credentials-dir> <worker-drain.private.json>`
 command are saved before test delays. The helper locks and verifies exact
@@ -112,6 +140,15 @@ Test interruption and independent recovery:
   each actual recognized worker response. A timeout/network error/503 is
   ambiguous: do not create a successful receipt from elapsed time or retry raw
   restoration.
+- The event-dispatch proof additionally requires a test-only recorder on updates
+  of `private.invoice_worker_dispatch_control.last_request_id`, so it captures
+  trigger, continuation and Cron requests. The earlier Cron-only tracker cannot
+  prove event-worker quiescence by itself. Snapshot original rows/timers before
+  protection; keep events disabled until this all-request recorder is installed.
+  Cleanup disables the production flag under its row lock, stops/fences Cron,
+  drains every captured request with definitive responses, then drops the test
+  recorder and restores exact timers. Never restore timers while dispatch remains
+  enabled or while any captured response is ambiguous.
 - If definitive responses are irretrievable, root must first stop the exact
   local Edge runtime and verify that it is stopped, prevent/delete only the
   tracked queued test invocations before any runtime restart, and record an

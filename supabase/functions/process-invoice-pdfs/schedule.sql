@@ -1,18 +1,10 @@
--- Apply only after Vault contains invoice_pdf_worker_url (full function URL)
--- and invoice_pdf_worker_secret (same independently generated secret as Edge Secrets).
+-- Install the hourly safety check; it cannot enable event dispatch by itself.
+-- Provision server config and apply activate-dispatch.sql deliberately afterward.
 -- cron.schedule(name,...) updates the existing named schedule on repeat setup.
 select cron.schedule(
   'crewflow-invoice-pdfs',
-  '* * * * *',
+  '0 * * * *',
   $schedule$
-    select net.http_post(
-      url := (select decrypted_secret from vault.decrypted_secrets where name = 'invoice_pdf_worker_url'),
-      headers := jsonb_build_object(
-        'Content-Type', 'application/json',
-        'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'invoice_pdf_worker_secret')
-      ),
-      body := '{}'::jsonb,
-      timeout_milliseconds := 10000
-    );
+    select private.dispatch_invoice_billing_jobs();
   $schedule$
 );

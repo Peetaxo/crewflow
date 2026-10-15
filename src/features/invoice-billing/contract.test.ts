@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseBillingSnapshot, parseBillingQuote, formatBillingMoney, formatBillingHours } from './contract';
-import { billingSnapshotFixture, billingStatementFixture, id } from './test-fixtures';
+import { billingSnapshotFixture, billingStatementFixture, billingDocumentFixture, id } from './test-fixtures';
 const scope = { source: 'supabase' as const, userId: id(2), profileId: id(1), role: 'crew' as const };
 describe('billing contract', () => {
   it('preserves exact versions, frozen decimals and nested identities', () => {
@@ -45,4 +45,50 @@ describe('billing contract', () => {
     expect(() => parseBillingSnapshot(value, scope)).toThrow();
   });
 
+});
+
+describe('canonical billing integrity', () => {
+  const fresh = () => JSON.parse(JSON.stringify(billingSnapshotFixture())) as ReturnType<typeof billingSnapshotFixture>;
+  it.each([
+    ['source work amount', (v: ReturnType<typeof fresh>) => { v.statements[0].sources[0].source_snapshot.amount_hours = 1; }],
+    ['source frozen day', (v: ReturnType<typeof fresh>) => { v.statements[0].sources[0].source_snapshot.days[0].time_to = '17:00'; }],
+    ['source supplier', (v: ReturnType<typeof fresh>) => { v.statements[0].sources[0].source_snapshot.supplier_snapshot.bankAccount = 'foreign account'; }],
+    ['fractional currency beyond cents', (v: ReturnType<typeof fresh>) => { v.statements[0].total_amount += 0.001; }],
+    ['daily meal sum', (v: ReturnType<typeof fresh>) => { v.statements[0].financial_snapshot.reports[0].days[0].amount_meals = 0; v.statements[0].sources[0].source_snapshot.days[0].amount_meals = 0; }],
+    ['header total', (v: ReturnType<typeof fresh>) => { v.statements[0].total_amount = 1; }],
+    ['finance total', (v: ReturnType<typeof fresh>) => { v.statements[0].financial_snapshot.total_amount = 1; }],
+    ['report total', (v: ReturnType<typeof fresh>) => { v.statements[0].financial_snapshot.reports[0].total_amount = 1; v.statements[0].sources[0].source_snapshot.total_amount = 1; }],
+    ['statement customer', (v: ReturnType<typeof fresh>) => { v.statements[0].customer_snapshot.name = 'Another buyer'; }],
+    ['statement supplier', (v: ReturnType<typeof fresh>) => { v.statements[0].supplier_snapshot.bankAccount = 'Another account'; }],
+  ])('rejects a canonical mismatch in %s', (_name, change) => {
+    const v = fresh(); change(v); expect(() => parseBillingSnapshot(v, scope)).toThrow();
+  });
+  it('rejects an original path owned by a different statement or request, while using request UUID rather than document UUID', () => {
+    const value = { ...fresh(), documents: [billingDocumentFixture()] };
+    expect(parseBillingSnapshot(value, scope).documents).toHaveLength(1);
+    value.documents[0].storage_path = `billing-statements/${id(99)}/documents/${value.documents[0].request_id}.pdf`;
+    expect(() => parseBillingSnapshot(value, scope)).toThrow();
+    value.documents[0].storage_path = `billing-statements/${id(8)}/documents/${value.documents[0].id}.pdf`;
+    expect(() => parseBillingSnapshot(value, scope)).toThrow();
+  });
+  it('accepts a blocked mixed-customer statement with nullable unknown money and matching source bindings', () => {
+    const value = fresh(); const s = value.statements[0];
+    s.status = 'blocked'; s.blocked_reason = 'mixed_customer'; s.financial_verified = false;
+    const other = structuredClone(s.financial_snapshot.reports[0]);
+    other.timelog_id = id(30); other.customer_snapshot = { ...other.customer_snapshot, clientId: id(31), name: 'Other customer' };
+    other.km = null;
+    s.financial_snapshot.reports.push(other); s.financial_snapshot.total_amount = s.total_amount = 4666.66;
+    s.sources.push({ ...s.sources[0], timelog_id: other.timelog_id, source_snapshot: structuredClone(other) });
+    expect(parseBillingSnapshot(value, scope).statements[0].financialSnapshot.reports[1].km).toBeNull();
+    // The server checks incomplete money before it checks mixed buyers.
+    s.blocked_reason = 'financial_data_incomplete';
+    expect(parseBillingSnapshot(value, scope).statements[0].financialSnapshot.reports[1].customerSnapshot.clientId).toBe(id(31));
+  });
+  it('accepts an explicit supplier refresh when both frozen source and finance identities were refreshed together', () => {
+    const value = fresh(); const s = value.statements[0];
+    s.supplier_snapshot.bankAccount = 'new reviewed account'; s.identity_version = 2;
+    s.financial_snapshot.reports[0].supplier_snapshot.bankAccount = s.supplier_snapshot.bankAccount;
+    s.sources[0].source_snapshot.supplier_snapshot.bankAccount = s.supplier_snapshot.bankAccount;
+    expect(parseBillingSnapshot(value, scope).statements[0].supplierSnapshot.bankAccount).toBe('new reviewed account');
+  });
 });

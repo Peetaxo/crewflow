@@ -7,7 +7,7 @@ export function BillingPrepareModal({ onClose, onDirtyChange, onSubmitSuccess }:
   if (!billing.ready || billing.scope.role !== 'coo') return <p>Podklady připravuje COO po přihlášení.</p>;
   return <div key={billing.scopeKey} className="space-y-4"><BillingOperationFeedback billing={billing} />
     <BillingPrepareSelection busy={billing.saving || billing.canRetry} onDirtyChange={onDirtyChange}
-      excludedIds={billing.query.data?.statements.filter((s) => s.needsSourceVerification).flatMap((s) => s.sources.map((x) => x.timelogId)) ?? []}
-      onCommand={(command) => { const isCurrent = billing.capture(); void billing.execute(command).then(() => { if (isCurrent()) onSubmitSuccess?.(); }).catch(() => {}); }} />
+      snapshot={billing.query.data} available={billing.ready && !billing.query.error}
+      onCommand={(command) => { const isCurrent = billing.capture(); if (!isCurrent() || !billing.query.data || billing.query.error) return; void billing.execute(command).then(() => { if (isCurrent()) onSubmitSuccess?.(); }).catch(() => {}); }} />
     <Button variant="outline" onClick={onClose}>Zpět na faktury</Button></div>;
 }

@@ -28,7 +28,7 @@ export const resetSupabaseDataScope = async (): Promise<void> => {
   retireBillingDataScope();
   resetHydrationGuards();
   await queryClient.cancelQueries();
-  for (const prefix of ['shift-workflows', 'invoice-billing', 'invoices', 'invoice-approvals']) {
+  for (const prefix of ['shift-workflows', 'invoice-billing', 'invoice-billing-actors', 'invoices', 'invoice-approvals']) {
     queryClient.removeQueries({ queryKey: [prefix] });
   }
   await queryClient.invalidateQueries();

@@ -311,11 +311,16 @@ describe('invoices.service billing batches', () => {
     }));
 
     const { generateInvoices, getPendingInvoiceBatchCount } = await import('./invoices.service');
+    const { queryClient } = await import('../../../lib/query-client');
+    const localKey = ['invoices', 'local', null, null, 'coo'];
+    queryClient.setQueryData(localKey, []);
 
     expect(getPendingInvoiceBatchCount()).toBe(1);
 
     const created = await generateInvoices();
 
+    expect(queryClient.getQueryData(localKey)).toEqual(created);
+    queryClient.clear();
     expect(created).toHaveLength(1);
     expect(created[0].contractorProfileId).toBe('profile-uuid-1');
     expect(created[0].jobNumbers).toEqual(['AK001', 'AK002']);

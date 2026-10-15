@@ -70,7 +70,10 @@ type BillingBatch = {
 
 const syncInvoiceQueryData = () => {
   const snapshot = getLocalAppState();
-  if (appDataSource === 'local') queryClient.setQueryData(queryKeys.invoices.all, snapshot.invoices ?? []);
+  if (appDataSource === 'local') {
+    queryClient.setQueryData(queryKeys.invoices.all, snapshot.invoices ?? []);
+    queryClient.setQueriesData({ queryKey: queryKeys.invoices.all, predicate: (query) => query.queryKey[1] === 'local' }, snapshot.invoices ?? []);
+  }
   else void queryClient.invalidateQueries({ queryKey: queryKeys.invoices.all });
   queryClient.setQueryData(queryKeys.timelogs.all, snapshot.timelogs ?? []);
   queryClient.setQueryData(queryKeys.receipts.all, snapshot.receipts ?? []);
@@ -1239,9 +1242,12 @@ export const createInvoiceFromSelection = (
   ),
 );
 
-const approveInvoiceUncoordinated = async (id: string): Promise<Invoice | null> => {
+const approveInvoiceUncoordinated = async (id: string, authoritativeInvoice?: Invoice): Promise<Invoice | null> => {
   const snapshot = getLocalAppState();
-  const invoice = (snapshot.invoices ?? []).find((item) => item.id === id);
+  const invoice = appDataSource === 'supabase' && authoritativeInvoice
+    ? authoritativeInvoice
+    : (snapshot.invoices ?? []).find((item) => item.id === id);
+  if (invoice && invoice.id !== id) throw new Error(INVALID_INVOICE_SELECTION_MESSAGE);
 
   if (!invoice) {
     return null;
@@ -1304,9 +1310,14 @@ const approveInvoiceUncoordinated = async (id: string): Promise<Invoice | null> 
   };
 };
 
-export const approveInvoice = (id: string): Promise<Invoice | null> => (
-  runInvoiceLifecycleMutation([`paid:${id}`], () => approveInvoiceUncoordinated(id))
-);
+export const approveInvoice = (id: string, authoritativeInvoice?: Invoice): Promise<Invoice | null> => {
+  const epoch = invoicesScopeEpoch;
+  const expected = authoritativeInvoice ? structuredClone(authoritativeInvoice) : undefined;
+  return runInvoiceLifecycleMutation([`paid:${id}`], () => {
+    assertInvoiceScope(epoch);
+    return approveInvoiceUncoordinated(id, expected);
+  });
+};
 
 const sendInvoiceUncoordinated = async (id: string): Promise<Invoice | null> => {
   const snapshot = getLocalAppState();

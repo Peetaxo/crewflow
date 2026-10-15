@@ -1,0 +1,21 @@
+import { beforeEach, expect, it, vi } from 'vitest';
+import type { Invoice } from '../../../types';
+import { queryClient } from '../../../lib/query-client';
+const io = vi.hoisted(() => ({ snapshot: { invoices: [] as Invoice[], timelogs: [], receipts: [], events: [], contractors: [] } }));
+vi.mock('../../../lib/app-config', () => ({ appDataSource: 'local' }));
+vi.mock('../../../lib/supabase', () => ({ isSupabaseConfigured: false, supabase: null }));
+vi.mock('../../../lib/app-data', () => ({ getLocalAppState: () => structuredClone(io.snapshot), updateLocalAppState: (change: (state: typeof io.snapshot) => typeof io.snapshot) => { io.snapshot = change(io.snapshot); }, subscribeToLocalAppState: () => () => {} }));
+vi.mock('../../timelogs/services/timelogs.service', () => ({ getTimelogs: () => [], markTimelogsAsApproved: vi.fn(), markTimelogsAsInvoiced: vi.fn(), markTimelogsAsPaid: vi.fn(), markTimelogsAsPaidForInvoice: vi.fn() }));
+vi.mock('../../receipts/services/receipts.service', () => ({ getReceipts: () => [], markReceiptsAsAttached: vi.fn(), markReceiptsAsReimbursed: vi.fn(), markReceiptsAsReimbursedForInvoice: vi.fn() }));
+beforeEach(() => { queryClient.clear(); io.snapshot.invoices = [{ id: 'local-1', eid: 0, hours: 1, hAmt: 250, km: 0, kAmt: 0, total: 250, job: 'J1', status: 'sent', sentAt: null }]; });
+it('publishes local payment and deletion to scoped invoice caches without overwriting Supabase data', async () => {
+  const localKey = ['invoices', 'local', null, null, 'coo']; const otherRole = ['invoices', 'local', null, null, 'crew']; const privateKey = ['invoices', 'supabase', 'user', 'profile', 'coo'];
+  queryClient.setQueryData(localKey, io.snapshot.invoices); queryClient.setQueryData(otherRole, io.snapshot.invoices); queryClient.setQueryData(privateKey, [{ id: 'private' }]);
+  const { approveInvoice, deleteInvoice } = await import('./invoices.service');
+  await approveInvoice('local-1');
+  expect(queryClient.getQueryData<Invoice[]>(localKey)?.[0].status).toBe('paid');
+  expect(queryClient.getQueryData<Invoice[]>(otherRole)?.[0].status).toBe('paid');
+  io.snapshot.invoices[0].status = 'draft'; await deleteInvoice('local-1');
+  expect(queryClient.getQueryData(localKey)).toEqual([]); expect(queryClient.getQueryData(otherRole)).toEqual([]);
+  expect(queryClient.getQueryData(privateKey)).toEqual([{ id: 'private' }]);
+});

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useBillingActors } from './useBillingActors';
 import { toast } from 'sonner';
 import { Button } from '../../components/ui/button';
 import { useAppContext } from '../../context/useAppContext';
@@ -14,6 +15,8 @@ import { BillingPrepareSelection } from './BillingPrepareSelection';
 import { makeBillingCommand, type BillingCommand } from './service';
 function BillingContents({ billing, scope }: { billing: BillingController; scope: 'all' | 'mine' }) {
   const actual = useInvoicesQuery(); const context = useAppContext(); const [busy, setBusy] = useState(false);
+  const actorQuery = useBillingActors();
+  const actors = actorQuery.error ? [] : actorQuery.data ?? [];
   const data = billing.query.data; const query = context.searchQuery.trim().toLowerCase();
   const owned = (profileId?: string) => scope !== 'mine' || profileId === billing.scope.profileId;
   const matches = (texts: (string | undefined | null)[]) => !query || texts.some((v) => v?.toLowerCase().includes(query));
@@ -29,7 +32,10 @@ function BillingContents({ billing, scope }: { billing: BillingController; scope
     const isCurrent = billing.capture();
     void run(async () => { const url = await getInvoicePdfDownloadUrl(path); if (isCurrent()) openInvoicePdfUrl(url); });
   };
-  const command = (c: BillingCommand) => { void billing.execute(c).catch(() => {}); };
+  const command = (c: BillingCommand) => {
+    if (!billing.capture()() || !billing.query.data || billing.query.error) return;
+    void billing.execute(c).catch(() => {});
+  };
   const locked = busy || billing.saving || billing.canRetry;
   return <div className="space-y-5">
     <header><h1 className="text-2xl font-semibold">{scope === 'mine' ? 'Moje faktury' : 'Faktury'}</h1><p>Schválené podklady, originály a vystavené faktury.</p></header>
@@ -37,21 +43,27 @@ function BillingContents({ billing, scope }: { billing: BillingController; scope
     <BillingOperationFeedback billing={billing} />
     {billing.query.error && <p role="alert">Podklady se nepodařilo načíst. <Button onClick={() => { void billing.reload().catch(() => {}); }}>Obnovit podklady</Button></p>}
     {actual.error && <p role="alert">Faktury se nepodařilo načíst.</p>}
-    {billing.scope.role === 'coo' && <BillingPrepareSelection excludedIds={data?.statements.filter((s) => s.needsSourceVerification).flatMap((s) => s.sources.map((x) => x.timelogId)) ?? []} busy={locked} onCommand={command} />}
+    {billing.scope.role === 'coo' && <BillingPrepareSelection snapshot={data} available={billing.ready && !billing.query.error} busy={locked} onCommand={command} />}
     <section className="space-y-3" aria-label="Podklady k fakturaci"><h2 className="text-lg font-semibold">K fakturaci ({pending.length})</h2>
       {!data ? <p>Načítám podklady…</p> : pending.length === 0 && <p>Žádné podklady k fakturaci.</p>}
-      {pending.map((s) => <BillingStatementCard key={`${billing.scopeKey}:${s.id}:${s.updatedAt}`} statement={s} scope={billing.scope} documents={data!.documents} jobs={data!.jobs} busy={locked} onCommand={command} onDownload={download} onBillingSettings={onSettings} />)}
+      {pending.map((s) => <BillingStatementCard actors={actors} key={`${billing.scopeKey}:${s.id}:${s.updatedAt}`} statement={s} scope={billing.scope} documents={data!.documents} jobs={data!.jobs} busy={locked} onCommand={command} onDownload={download} onBillingSettings={onSettings} />)}
     </section>
     <section className="space-y-3" aria-label="Skutečné faktury"><h2 className="text-lg font-semibold">Vystavené a přijaté faktury ({invoices.length})</h2>
-      {invoices.map((invoice) => <div key={invoice.id}><BillingInvoiceCard invoice={invoice} role={billing.scope.role} busy={locked} jobs={(data?.jobs ?? []).filter((j) => !data?.statements.find((s) => s.id === j.statementId)?.needsSourceVerification)} onDownload={download}
+      {invoices.map((invoice) => <div key={invoice.id}><BillingInvoiceCard actors={actors} invoice={invoice} role={billing.scope.role} busy={locked} jobs={(data?.jobs ?? []).filter((j) => !data?.statements.find((s) => s.id === j.statementId)?.needsSourceVerification)} onDownload={download}
         onLegacyPdf={(id) => { void run(async () => { await generateInvoicePdf(id); await actual.refetch(); }); }}
-        onPaid={(id) => { void run(async () => { const isCurrent = billing.capture(); await approveInvoice(id); if (isCurrent()) { await actual.refetch(); toast.success('Úhrada byla zaznamenána.'); } }); }}
+        onPaid={(id) => { void run(async () => {
+          const isCurrent = billing.capture();
+          let result;
+          try { result = await approveInvoice(id, invoice); } finally { if (isCurrent()) await actual.refetch(); }
+          if (!result) throw new Error('Úhradu se nepodařilo potvrdit. Zkontrolujte obnovený stav faktury.');
+          if (isCurrent()) toast.success('Úhrada byla zaznamenána.');
+        }); }}
         onRetry={(job) => { const s = data?.statements.find((s) => s.id === job.statementId); if (s) command(makeBillingCommand({ kind: 'retry', statementId: s.id, jobId: job.id, expectedUpdatedAt: s.updatedAt, expectedJobUpdatedAt: job.updatedAt })); }} />
-        {data?.statements.filter((s) => s.invoiceId === invoice.id).map((s) => <details key={s.id}><summary className="p-2 text-sm">Schválený podklad a historie</summary><BillingStatementCard readOnly statement={s} scope={billing.scope} documents={data.documents} jobs={[]} busy={locked} onCommand={command} onDownload={download} onBillingSettings={onSettings} /></details>)}
+        {data?.statements.filter((s) => s.invoiceId === invoice.id).map((s) => <details key={s.id}><summary className="p-2 text-sm">Schválený podklad a historie</summary><BillingStatementCard actors={actors} readOnly statement={s} scope={billing.scope} documents={data.documents} jobs={[]} busy={locked} onCommand={command} onDownload={download} onBillingSettings={onSettings} /></details>)}
       </div>)}
       {invoices.length === 0 && <p>Zatím žádné faktury.</p>}
     </section>
-    {Boolean(data?.supersededStatements.length) && <details><summary>Historie nahrazených podkladů</summary><div className="space-y-3">{data!.supersededStatements.filter((s) => owned(s.contractorId)).map((s) => <BillingStatementCard key={s.id} readOnly statement={s} scope={billing.scope} documents={data!.documents} jobs={[]} busy={false} onCommand={command} onDownload={download} onBillingSettings={onSettings} />)}</div></details>}
+    {Boolean(data?.supersededStatements.length) && <details><summary>Historie nahrazených podkladů</summary><div className="space-y-3">{data!.supersededStatements.filter((s) => owned(s.contractorId)).map((s) => <BillingStatementCard actors={actors} key={s.id} readOnly statement={s} scope={billing.scope} documents={data!.documents} jobs={[]} busy={false} onCommand={command} onDownload={download} onBillingSettings={onSettings} />)}</div></details>}
   </div>;
 }
 export default function InvoiceBillingView({ scope = 'all' }: { scope?: 'all' | 'mine' }) {

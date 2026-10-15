@@ -2,7 +2,7 @@
 
 Datum: 2026-10-13
 
-Produktový průchod, význam odeslání výkazu, určení odběratele a tento konkrétní návrh uživatel schválil v této konverzaci. Při závěrečné kontrole určil CH jako kontrolora vlastní nahrané faktury; tato změna je zapracovaná níže. Nová fakturace ani souhlasy zatím nejsou implementované nebo nasazené.
+Produktový průchod, význam odeslání výkazu, určení odběratele a tento konkrétní návrh uživatel schválil v této konverzaci. Při závěrečné kontrole určil CH jako kontrolora vlastní nahrané faktury; tato změna je zapracovaná níže. Původní produktový rozsah je implementovaný; skutečný stav ověření a nasazení uvádí testovací report. Níže je doplněná uživatelem schválená úprava spouštění z 2026-10-15.
 
 ## Běžný průchod
 
@@ -98,3 +98,13 @@ Konkrétní implementační plán musí řešit současné omezení `create_invo
 Izolovaná větev vychází z main `4eff3dd9b097e6bc2b1de5321924ad554658421e`. Základ bez této funkce prošel 158 soubory / 1 924 testy. Nebyl změněn živý server, obchodní údaje ani instalace zařízení.
 
 Oficiální technické zdroje pro další implementaci: [soukromé Supabase buckety](https://supabase.com/docs/guides/storage/buckets/fundamentals), [omezení souborů](https://supabase.com/docs/guides/storage/uploads/file-limits), [Supabase changelog](https://supabase.com/changelog). Před serverovými změnami ověřit konkrétní aktuální kontrakty a provést lokální kontrolu oprávnění a advisors.
+
+## Doplnění 2026-10-15: spouštění při události a hodinová pojistka
+
+Uživatel po porovnání pravidelného volání s triggerem schválil pokračování varianty: nová práce vyvolá zpracování na serveru, záložní kontrola proběhne **jednou za hodinu**. Zpoždění při výpadku je v této první verzi přijatelné. Původní bezpodmínečné minutové volání se nepoužije.
+
+Požadavek na automatické vystavení nebo PDF se nejprve trvale uloží do existující fronty. Databázový trigger pouze asynchronně požádá chráněný worker o zpracování; samotné PDF nevzniká uvnitř schvalovací transakce. Událost nezmění pravidla souhlasu, přesné podklady ani limit jednoho PDF na jeden běh. Dokončení jednoho běhu musí umožnit pokračovat další připravenou prací, aby více čekajících faktur neznamenalo jednu fakturu za hodinu.
+
+Hodinová pojistka kontroluje pouze frontu. Worker zavolá jen pro práci připravenou k provedení nebo pro obnovitelnou expirovanou lease. Odložené opakování a vyčerpaný rozpočet pokusů zachovají dosavadní pravidla; nevzniká nekonečná smyčka okamžitých opakování. Chyba samotného oznámení nezruší schválení či vystavení: požadavek zůstane uložený pro pojistku.
+
+Spouštěcí pomocné funkce zůstanou neveřejné a nesdělí tajný klíč prohlížeči. Nastavení tajného klíče do serverových Secrets a Vault zůstává samostatným dosud neschváleným krokem po dřívějším zamítnutí automatickou schvalovací kontrolou; obecné pokračování není použito k jeho obejití.

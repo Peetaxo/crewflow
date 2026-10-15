@@ -92,3 +92,49 @@ describe('canonical billing integrity', () => {
     expect(parseBillingSnapshot(value, scope).statements[0].supplierSnapshot.bankAccount).toBe('new reviewed account');
   });
 });
+
+describe('verified billing finance completeness', () => {
+  const fresh = () => JSON.parse(JSON.stringify(billingSnapshotFixture())) as ReturnType<typeof billingSnapshotFixture>;
+  const editBoth = (value: ReturnType<typeof fresh>, change: (r: ReturnType<typeof billingStatementFixture>['financial_snapshot']['reports'][number]) => void) => {
+    change(value.statements[0].financial_snapshot.reports[0]); change(value.statements[0].sources[0].source_snapshot);
+  };
+  it.each(['amount_hours', 'amount_km', 'amount_meals', 'amount_receipts', 'total_amount', 'hourly_rate', 'km_rate', 'meal_rate', 'km', 'hours'] as const)(
+    'rejects a verified ready statement with matching unknown %s in source and finance', (key) => {
+      const value = fresh(); editBoth(value, (r) => { r[key] = null; });
+      if (key === 'total_amount') value.statements[0].financial_snapshot.total_amount = null;
+      expect(() => parseBillingSnapshot(value, scope)).toThrow();
+    });
+  it.each(['hours', 'amount_meals', 'time_from', 'time_to'] as const)('rejects a verified day with matching unknown %s', (key) => {
+    const value = fresh(); editBoth(value, (r) => { (r.days[0] as Record<string, unknown>)[key] = null; });
+    expect(() => parseBillingSnapshot(value, scope)).toThrow();
+  });
+  it('rejects an empty verified day set even when all stored monetary totals agree', () => {
+    const value = fresh(); editBoth(value, (r) => { r.days = []; r.amount_meals = 0; r.total_amount = r.amount_hours + r.amount_km + r.amount_receipts; });
+    value.statements[0].total_amount = value.statements[0].financial_snapshot.total_amount = value.statements[0].financial_snapshot.reports[0].total_amount;
+    expect(() => parseBillingSnapshot(value, scope)).toThrow();
+  });
+  it.each(['ready', 'document_pending', 'document_returned', 'issued'])('rejects a non-blocked %s statement marked financially unverified', (status) => {
+    const value = fresh(); value.statements[0].status = status; value.statements[0].financial_verified = false;
+    if (status === 'issued') value.statements[0].invoice_id = id(80);
+    expect(() => parseBillingSnapshot(value, scope)).toThrow();
+  });
+  it('preserves an unverified blocked statement with matching unknown money and days, without replacing null by zero', () => {
+    const value = fresh(); const s = value.statements[0]; s.status = 'blocked'; s.blocked_reason = 'financial_data_incomplete'; s.financial_verified = false;
+    editBoth(value, (r) => { r.amount_hours = r.hours = r.hourly_rate = r.km = r.total_amount = null; r.days = []; r.amount_meals = 0; });
+    s.financial_snapshot.total_amount = null;
+    const result = parseBillingSnapshot(value, scope).statements[0];
+    expect(result.status).toBe('blocked'); expect(result.financialSnapshot.totalAmount).toBeNull();
+    expect(result.financialSnapshot.reports[0].amountHours).toBeNull(); expect(result.financialSnapshot.reports[0].days).toEqual([]);
+  });
+  it('keeps complete verified finance when legal identities block the statement', () => {
+    const value = fresh(); value.statements[0].status = 'blocked'; value.statements[0].blocked_reason = 'supplier_data_incomplete';
+    value.statements[0].supplier_snapshot.bankAccount = '';
+    editBoth(value, (r) => { r.supplier_snapshot.bankAccount = ''; });
+    expect(parseBillingSnapshot(value, scope).statements[0].financialVerified).toBe(true);
+  });
+  it('retains incomplete pending approval quote previews separately from verified statements', () => {
+    const r = fresh().statements[0].financial_snapshot.reports[0]; r.status = 'pending_coo'; r.amount_hours = r.hourly_rate = r.km = r.total_amount = null; r.days = []; r.amount_meals = 0;
+    const result = parseBillingQuote({ id: id(80), fingerprint: 'incomplete-preview', timelog_ids: [r.timelog_id], preview: { currency: 'CZK', reports: [r], total_amount: null }, created_at: r.report_updated_at });
+    expect(result.preview.reports[0].amountHours).toBeNull(); expect(result.preview.reports[0].days).toEqual([]);
+  });
+});

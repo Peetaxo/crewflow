@@ -95,13 +95,24 @@ function validFinance(value: z.infer<typeof financial>) {
     && value.reports.every((r) => totalsMatch(r.total_amount, [r.amount_hours, r.amount_km, r.amount_meals, r.amount_receipts])
       && totalsMatch(r.amount_meals, r.days.map((d) => d.amount_meals)));
 }
+// Nulls remain readable in unverified blocked data and quote previews. A
+// verified financial capture must instead contain every stored operand and day.
+function completeFinance(value: z.infer<typeof financial>) {
+  const time = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
+  return value.total_amount != null && value.reports.every((r) => r.contractor_user_id != null
+    && r.hourly_rate != null && r.hourly_rate > 0
+    && [r.km_rate, r.meal_rate, r.km, r.hours, r.amount_hours, r.amount_km, r.amount_meals, r.amount_receipts, r.total_amount].every((v) => v != null)
+    && r.days.length > 0 && r.days.every((d) => d.hours != null && d.amount_meals != null
+      && d.time_from != null && time.test(d.time_from) && d.time_to != null && time.test(d.time_to)));
+}
 const validDocumentPath = (d: Pick<z.infer<typeof document>, 'statement_id' | 'request_id' | 'storage_path'>) =>
   d.storage_path === `billing-statements/${d.statement_id}/documents/${d.request_id}.pdf`;
 export function parseBillingStatement(value: unknown): BillingStatement {
   const parsed = statement.safeParse(value); if (!parsed.success) return invalid();
   const s = parsed.data;
   let needsSourceVerification = false;
-  if (!validFinance(s.financial_snapshot) || (s.financial_snapshot.total_amount !== null && cents(s.total_amount) !== cents(s.financial_snapshot.total_amount))
+  if ((!s.financial_verified && s.status !== 'blocked') || (s.financial_verified && !completeFinance(s.financial_snapshot))
+    || !validFinance(s.financial_snapshot) || (s.financial_snapshot.total_amount !== null && cents(s.total_amount) !== cents(s.financial_snapshot.total_amount))
     || !same(s.customer_snapshot, s.financial_snapshot.reports[0].customer_snapshot)
     // A blocked statement may have several buyers even when an earlier
     // financial-data check supplied its reason; issuance still requires one.

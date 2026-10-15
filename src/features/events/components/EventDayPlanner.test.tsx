@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import EventDayPlanner from './EventDayPlanner';
-import type { EventFormPlan } from '../services/event-form-state';
+import { createEventFormPlan, serializeEventFormPlan, type EventFormPlan } from '../services/event-form-state';
+import type { Event } from '../../../types';
 
 const dates = ['2026-09-24', '2026-09-23'];
 const Host = ({ initial = {} }: { initial?: EventFormPlan }) => {
@@ -36,6 +37,26 @@ describe('EventDayPlanner', () => {
       { type: 'instal', from: '22:00', to: '02:00' },
       { type: 'instal', from: '', to: '', showTimes: false },
     ]);
+  });
+
+  it('offers preparation for a new plan and retains its clocks alongside another phase through serialization', () => {
+    render(<Host />);
+    const day = within(screen.getAllByRole('group')[0]);
+    expect(day.getByRole('option', { name: 'Přípravy' })).toBeInTheDocument();
+    fireEvent.change(day.getByRole('combobox'), { target: { value: 'pripravy' } });
+    fireEvent.click(day.getByRole('button', { name: 'Doplnit časy' }));
+    fireEvent.change(day.getByLabelText('Od'), { target: { value: '22:00' } });
+    fireEvent.change(day.getByLabelText('Do'), { target: { value: '02:00' } });
+    fireEvent.click(day.getByRole('button', { name: 'Přidat další fázi' }));
+    fireEvent.change(day.getAllByRole('combobox')[1], { target: { value: 'provoz' } });
+    const plan = JSON.parse(screen.getByTestId('plan').textContent!) as EventFormPlan;
+    const event = { showDayTypes: true, startDate: '2026-09-23', endDate: '2026-09-24' } as Event;
+    const restored = createEventFormPlan({ ...event, ...serializeEventFormPlan(event, plan) });
+    expect(restored['2026-09-23'].phases).toMatchObject([
+      { type: 'pripravy', from: '22:00', to: '02:00' },
+      { type: 'provoz', from: '', to: '' },
+    ]);
+    expect(restored['2026-09-24']).toBeUndefined();
   });
 
   it('retains phases while a day is free and restores them when choosing a phase again', () => {

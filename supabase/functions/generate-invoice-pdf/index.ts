@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.103.0';
 import { renderInvoicePdf } from './invoice-pdf.ts';
+import { assertManualPdfAllowed, loadAllInvoiceItems, PdfSourceError } from './request.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -64,6 +65,7 @@ Deno.serve(async (request) => {
     }
 
     const invoice = invoiceResult.data;
+    assertManualPdfAllowed(invoice);
     if (!invoice.invoice_number) {
       return json({ error: 'Faktuře chybí číslo. Zkontrolujte její vystavení.' }, 400);
     }
@@ -71,11 +73,14 @@ Deno.serve(async (request) => {
     const supabase = createClient(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
-    const itemsResult = await supabase.from('invoice_items').select('*').eq('invoice_id', invoice.id).order('created_at');
-    if (itemsResult.error) throw itemsResult.error;
+    const items = await loadAllInvoiceItems(async (from, to) => {
+      const result = await supabase.from('invoice_items').select('*').eq('invoice_id', invoice.id).order('created_at').order('id').range(from, to);
+      if (result.error) throw result.error;
+      return result.data ?? [];
+    });
     const pdfBytes = await renderInvoicePdf({
       invoice,
-      items: itemsResult.data ?? [],
+      items,
     });
     const pdfPath = `invoices/${invoice.id}/${invoice.invoice_number}.pdf`;
 
@@ -105,7 +110,8 @@ Deno.serve(async (request) => {
 
     return json({ pdfPath });
   } catch (error) {
-    console.error('Invoice PDF generation failed:', error);
+    if (error instanceof PdfSourceError) return json({ error: error.code }, 409);
+    console.error('Invoice PDF generation failed');
     return json({ error: 'PDF faktury se nepodařilo vytvořit. Zkuste to znovu.' }, 500);
   }
 });

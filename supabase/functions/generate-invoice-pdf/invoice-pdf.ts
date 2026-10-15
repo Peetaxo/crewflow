@@ -1,16 +1,17 @@
 import { PDFDocument, rgb } from 'https://esm.sh/pdf-lib@1.17.1';
 import fontkit from 'https://esm.sh/@pdf-lib/fontkit@1.1.1';
 import QRCode from 'https://esm.sh/qrcode@1.5.4';
-import { buildInvoicePdfLayout } from './invoice-pdf-layout.ts';
+import { buildInvoicePdfLayout, buildInvoicePdfPages, formatInvoiceDuration, invoiceCostSubtotal, wrapInvoiceText } from './invoice-pdf-layout.ts';
 import { buildQrPaymentPayload, getVariableSymbol } from './payment-qr.ts';
 
-type InvoiceItem = {
+export type InvoiceItem = {
   job_number: string;
   hours: number;
   amount_hours: number;
   km: number;
   amount_km: number;
   amount_receipts: number;
+  amount_meals?: number;
   total_amount: number;
 };
 
@@ -120,7 +121,7 @@ export const renderInvoicePdf = async ({
 
   const layout = buildInvoicePdfLayout(items.length);
   const pdfDoc = await PDFDocument.create();
-  const page = pdfDoc.addPage([layout.page.width, layout.page.height]);
+  let page = pdfDoc.addPage([layout.page.width, layout.page.height]);
   pdfDoc.registerFontkit(fontkit);
   const [regularBytes, boldBytes, logoBytes] = await Promise.all([
     Deno.readFile(new URL('./assets/NotoSans-Regular.ttf', import.meta.url)),
@@ -146,33 +147,59 @@ export const renderInvoicePdf = async ({
   drawRightAlignedText(page, invoiceNumber, bold, layout.header.invoiceNumberX, 748, 10, layout.header.invoiceNumberWidth);
   drawRule(page, 728);
 
-  drawLabel(page, 'Dodavatel', bold, 48, 686);
-  drawText(page, fitText(text(supplier.name), 34), bold, 48, 671, 10);
-  drawText(page, fitText(`${text(supplier.billingStreet)}, ${text(supplier.billingZip)} ${text(supplier.billingCity)}`, 44), font, 48, 658, 9, noduSoft);
-  drawText(page, `IČ: ${text(supplier.ico)}`, font, 48, 645, 9, noduSoft);
-  drawText(page, 'Není plátcem DPH', font, 48, 632, 9, noduSoft);
-
-  drawLabel(page, 'Odběratel', bold, 300, 686);
-  drawText(page, fitText(text(customer.name), 34), bold, 300, 671, 10);
-  drawText(page, fitText(`${text(customer.street)}, ${text(customer.zip)} ${text(customer.city)}`, 44), font, 300, 658, 9, noduSoft);
-  drawText(page, `IČ: ${text(customer.ico)}`, font, 300, 645, 9, noduSoft);
-  drawText(page, `DIČ: ${text(customer.dic || 'není')}`, font, 300, 632, 9, noduSoft);
-
-  drawRule(page, 612);
-  drawLabel(page, 'Vystavení', bold, 48, 586);
-  drawText(page, text(invoice.issue_date), bold, 48, 574, 8.5);
-  drawLabel(page, 'Datum plnění', bold, 175, 586);
-  drawText(page, text(invoice.taxable_supply_date), bold, 175, 574, 8.5);
-  drawLabel(page, 'Splatnost', bold, 312, 586);
-  drawText(page, text(invoice.due_date), bold, 312, 574, 8.5);
-  drawLabel(page, 'Měna', bold, 445, 586);
-  drawText(page, text(invoice.currency || 'CZK'), bold, 445, 574, 8.5);
-  drawRule(page, 552);
-
-  drawRule(page, layout.items.headerY + 18);
-  drawLabel(page, 'Položka', bold, 48, layout.items.headerY);
-  drawLabel(page, 'Rozsah', bold, 300, layout.items.headerY);
-  drawLabel(page, 'Celkem', bold, 505, layout.items.headerY);
+  type LegalLine = { value: string; bold: boolean; size: number };
+  const legalLines = (snapshot: Snapshot, isSupplier: boolean): LegalLine[] => {
+    const values = [
+      { value: text(snapshot.name), bold: true, size: 10 },
+      { value: [isSupplier ? snapshot.billingStreet : snapshot.street, `${text(isSupplier ? snapshot.billingZip : snapshot.zip)} ${text(isSupplier ? snapshot.billingCity : snapshot.city)}`, isSupplier ? snapshot.billingCountry : snapshot.country].filter(Boolean).join(', '), bold: false, size: 9 },
+      { value: `IČ: ${text(snapshot.ico)}`, bold: false, size: 9 },
+      { value: isSupplier ? 'Není plátcem DPH' : `DIČ: ${text(snapshot.dic || 'není')}`, bold: false, size: 9 },
+    ];
+    return values.flatMap(entry => wrapInvoiceText(entry.value, 235, value => (entry.bold ? bold : font).widthOfTextAtSize(value, entry.size)).map(value => ({ ...entry, value })));
+  };
+  const supplierLines = legalLines(supplier, true);
+  const customerLines = legalLines(customer, false);
+  const legalCount = Math.max(supplierLines.length, customerLines.length);
+  let legalBottom = 632;
+  // Extremely long legal identities continue on further pages, retaining every character.
+  for (let offset = 0; offset < legalCount; offset += 25) {
+    if (offset > 0) page = pdfDoc.addPage([layout.page.width, layout.page.height]);
+    const top = offset === 0 ? 686 : 770;
+    drawLabel(page, offset ? 'Dodavatel - pokračování' : 'Dodavatel', bold, 48, top);
+    drawLabel(page, offset ? 'Odběratel - pokračování' : 'Odběratel', bold, 300, top);
+    for (const [column, entries] of [[48, supplierLines], [300, customerLines]] as const) {
+      entries.slice(offset, offset + 25).forEach((entry, index) => drawText(page, entry.value, entry.bold ? bold : font, column, top - 15 - index * 13, entry.size, entry.bold ? noduText : noduSoft));
+    }
+    legalBottom = top - 15 - (Math.min(25, legalCount - offset) - 1) * 13;
+  }
+  const datesRule = Math.min(612, legalBottom - 20);
+  drawRule(page, datesRule);
+  for (const [label, value, x] of [['Vystavení', invoice.issue_date, 48], ['Datum plnění', invoice.taxable_supply_date, 175], ['Splatnost', invoice.due_date, 312], ['Měna', invoice.currency || 'CZK', 445]] as const) {
+    drawLabel(page, label, bold, x, datesRule - 26);
+    drawText(page, text(value), bold, x, datesRule - 38, 8.5);
+  }
+  drawRule(page, datesRule - 60);
+  const firstStart = Math.min(350, datesRule - 116);
+  const itemPages = buildInvoicePdfPages(items.length, firstStart);
+  itemPages.forEach((itemPage, pageIndex) => {
+    if (pageIndex > 0) {
+      page = pdfDoc.addPage([layout.page.width, layout.page.height]);
+      drawText(page, `Faktura ${invoiceNumber} - pokračování`, bold, 48, 790, 10);
+    }
+    const headerY = itemPage.startY + 28;
+    drawRule(page, headerY + 18);
+    drawLabel(page, 'Položka', bold, 48, headerY);
+    drawLabel(page, 'Rozsah', bold, 300, headerY);
+    drawLabel(page, 'Celkem', bold, 505, headerY);
+    items.slice(itemPage.offset, itemPage.offset + itemPage.count).forEach((item, index) => {
+      const rowY = itemPage.startY - index * layout.items.rowHeight;
+      page.drawRectangle({ x: 42, y: rowY - 7, width: 511, height: 15, color: index % 2 === 0 ? softRow : white });
+      drawText(page, fitText(text(item.job_number), 48), index === 0 ? bold : font, 48, rowY - 1, layout.items.fontSize);
+      drawText(page, formatInvoiceDuration(numberValue(item.hours)), font, 300, rowY - 1, layout.items.fontSize);
+      drawRightAlignedText(page, money(item.total_amount), bold, 455, rowY - 1, layout.items.fontSize, 92);
+    });
+    if (itemPage.summary) layout.summary.y = Math.max(170, Math.min(430, itemPage.startY - Math.max(0, itemPage.count - 1) * 18 - 90));
+  });
 
   if (supplier.iban) {
     const qrPayload = buildQrPaymentPayload({
@@ -195,17 +222,8 @@ export const renderInvoicePdf = async ({
     drawText(page, 'Dodavateli chybí IBAN.', font, 420, layout.payment.y + 30, 7, noduSoft);
   }
 
-  let rowY = layout.items.startY;
-  items.forEach((item) => {
-    page.drawRectangle({ x: 42, y: rowY - 7, width: 511, height: 15, color: rowY === layout.items.startY ? softRow : rgb(1, 1, 1) });
-    drawText(page, fitText(text(item.job_number), 48), rowY === layout.items.startY ? bold : font, 48, rowY - 1, layout.items.fontSize);
-    drawText(page, `${numberValue(item.hours).toLocaleString('cs-CZ')} h`, font, 300, rowY - 1, layout.items.fontSize);
-    drawText(page, money(item.total_amount), bold, 493, rowY - 1, layout.items.fontSize);
-    rowY -= layout.items.rowHeight;
-  });
-
   const workAmount = items.reduce((sum, item) => sum + numberValue(item.amount_hours), 0);
-  const expenseAmount = items.reduce((sum, item) => sum + numberValue(item.amount_km) + numberValue(item.amount_receipts), 0);
+  const expenseAmount = invoiceCostSubtotal(items);
   page.drawSvgPath(roundedRectPath(layout.summary.x, layout.summary.y, layout.summary.width, layout.summary.height, 10), {
     color: summaryFill,
     borderColor: summaryBorder,
@@ -231,8 +249,11 @@ export const renderInvoicePdf = async ({
   drawText(page, `IBAN ${text(supplier.iban || 'není vyplněn')}`, font, 48, layout.payment.y + 26, 7.5, noduSoft);
   drawText(page, `VS ${variableSymbol || 'není'}`, font, 48, layout.payment.y + 12, 7.5, noduSoft);
   drawText(page, 'Automaticky vystaveno v NODU', font, 48, layout.payment.y, 6.8, noduSoft);
-  drawRule(page, 34);
-  drawText(page, 'Strana 1/1', font, 508, 20, 6.5, noduSoft);
+  const allPages = pdfDoc.getPages();
+  allPages.forEach((footerPage, index) => {
+    drawRule(footerPage, 34);
+    drawText(footerPage, `Strana ${index + 1}/${allPages.length}`, font, 508, 20, 6.5, noduSoft);
+  });
 
   return pdfDoc.save();
 };

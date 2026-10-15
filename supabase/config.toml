@@ -1,3 +1,11 @@
 [functions.generate-invoice-pdf]
 verify_jwt = true
 static_files = ["./functions/generate-invoice-pdf/assets/*"]
+
+[functions.upload-invoice-document]
+verify_jwt = true
+
+[functions.process-invoice-pdfs]
+# Custom server-only secret; this is the only function with gateway JWT verification disabled.
+verify_jwt = false
+static_files = ["./functions/generate-invoice-pdf/assets/*"]

@@ -75,3 +75,40 @@ export const buildInvoicePdfLayout = (itemCount: number): InvoicePdfLayout => {
     minimumSectionGap,
   };
 };
+export type InvoicePdfPage = { offset: number; count: number; startY: number; summary: boolean };
+export const buildInvoicePdfPages = (itemCount: number, firstStartY = 350): InvoicePdfPage[] => {
+  const pages: InvoicePdfPage[] = [];
+  let offset = 0;
+  let remaining = itemCount;
+  let startY = firstStartY;
+  do {
+    const lastCapacity = Math.max(0, Math.floor((startY - 270) / 18) + 1);
+    const capacity = Math.max(0, Math.floor((startY - 64) / 18) + 1);
+    if (remaining <= lastCapacity) { pages.push({ offset, count: remaining, startY, summary: true }); break; }
+    const count = Math.min(capacity, Math.max(0, remaining - 1));
+    pages.push({ offset, count, startY, summary: false });
+    remaining -= count; offset += count; startY = 730;
+  } while (remaining >= 0);
+  return pages;
+};
+export const formatInvoiceDuration = (hours: number): string => {
+  const minutes = Math.round(Number(hours || 0) * 60);
+  return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+};
+export const invoiceCostSubtotal = (items: { amount_km?: unknown; amount_meals?: unknown; amount_receipts?: unknown }[]): number => items.reduce((sum, item) => sum + Number(item.amount_km ?? 0) + Number(item.amount_meals ?? 0) + Number(item.amount_receipts ?? 0), 0);
+export const wrapInvoiceText = (value: string, width: number, measure: (s: string) => number): string[] => {
+  const lines: string[] = [];
+  for (const paragraph of value.split(/\r?\n/)) {
+    let line = '';
+    for (const word of paragraph.split(/\s+/).filter(Boolean)) {
+      if (line && measure(`${line} ${word}`) <= width) { line += ` ${word}`; continue; }
+      if (line) { lines.push(line); line = ''; }
+      for (const char of word) {
+        if (line && measure(line + char) > width) { lines.push(line); line = ''; }
+        line += char;
+      }
+    }
+    lines.push(line);
+  }
+  return lines;
+};

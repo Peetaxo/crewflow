@@ -36,3 +36,7 @@ python3 supabase/tests/invoice-pdf-content.py /absolute/path/to/demo-directory/d
 ```
 
 The directory must contain local CLI credentials in `local-credentials.json` and disposable account fixtures in `demo-accounts.json`. Never commit either file. The tests verify generation, persisted metadata, owner signed download, unauthorized rejection and the actual downloaded PDF content. The Python content check requires `pypdf`.
+
+Statement-backed invoices must use their persisted durable PDF job. This manual endpoint now rejects every `billing_statement_id != null` with `409 invoice_billing_durable_job_required`, and rejects uploaded originals with `409 invoice_billing_uploaded_original_immutable`, before file reads/writes or metadata changes. Only legacy invoices with no billing statement may use this path. Legacy item reads are paginated by stable `created_at,id`, preserving all rows beyond the Data API default cap.
+
+The shared renderer includes meals in costs, displays exact whole hours/minutes, wraps complete legal names/addresses, paginates all explicit items, and draws accurate footer counts. `invoice-pdf-examples.ts` writes normal, boundary, 31-row and long Czech identity proofs for text extraction and visual rendering.

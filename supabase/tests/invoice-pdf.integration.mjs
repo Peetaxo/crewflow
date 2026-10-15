@@ -21,7 +21,7 @@ async function login(key) {
 }
 
 const [coo, crew, crewhead, other] = await Promise.all(['coo', 'crew', 'crewhead', 'other'].map(login));
-const invoiceResult = await coo.client.from('invoices').select('*').eq('contractor_id', crew.account.profileId).single();
+const invoiceResult = await coo.client.from('invoices').select('*').eq('id', 'a87b8597-cd3e-4f71-afe4-9d899cfc2bd6').single();
 if (invoiceResult.error) throw invoiceResult.error;
 const invoice = invoiceResult.data;
 assert.equal(invoice.total_amount, 2056, 'Use the existing fake billing demo');

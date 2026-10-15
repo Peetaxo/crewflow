@@ -67,7 +67,7 @@ const ProjectDetail = () => {
 
         <section className={sectionClass} aria-labelledby="project-costs-title">
           <div className="project-overview-section-heading"><Wallet aria-hidden="true" /><h2 id="project-costs-title">Náklady projektu</h2></div>
-          {costsQuery ? <ProjectQueryMessage query={costsQuery} loadingLabel="Načítání nákladů" /> : <ProjectCosts costs={summary.costs} stages={summary.stages} hasMissingRates={summary.hasMissingRates} hasUnknownInvoiceAllocation={summary.hasUnknownInvoiceAllocation} />}
+          {costsQuery ? <ProjectQueryMessage query={costsQuery} loadingLabel="Načítání nákladů" /> : <ProjectCosts workPhases={summary.workPhases} costs={summary.costs} stages={summary.stages} hasMissingRates={summary.hasMissingRates} hasUnknownInvoiceAllocation={summary.hasUnknownInvoiceAllocation} />}
         </section>
 
         <ProjectEventsSection events={summary.events} query={eventsQuery} canManage={canManage} onOpen={setSelectedEventId} onCreate={() => setEditingEvent({ ...createEmptyEvent(), job: project.id, client: project.client, projectId: project.supabaseId ?? null })} />

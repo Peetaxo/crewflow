@@ -2,6 +2,7 @@ import { KM_RATE } from '../../../data';
 import type { AppDataSnapshot } from '../../../lib/app-data';
 import type { Event, Invoice, Project, ReceiptItem, Timelog } from '../../../types';
 import { calculateMealAllowance, calculateTotalHours } from '../../../utils';
+import { getProjectWorkPhases, type ProjectWorkPhases } from './project-work-phases';
 
 export type ProjectPeriod = { startDate: string; endDate: string };
 export type ProjectCostBreakdown = { work: number; travel: number; meals: number; receipts: number; total: number };
@@ -18,6 +19,7 @@ export type ProjectSummary = {
   invoices: ProjectInvoiceRecord[];
   hasUnknownInvoiceAllocation: boolean;
   hasMissingRates: boolean;
+  workPhases: ProjectWorkPhases;
 };
 
 export const getProjectPeriod = (events: readonly Event[]): ProjectPeriod | null => {
@@ -166,6 +168,7 @@ export const getProjectSummary = (projectId: string, snapshot: ProjectSummarySna
   }
 
   let hasMissingRates = false;
+  const unlinkedWork: { timelog: Timelog; amount: number }[] = [];
   const contractorsByProfile = new Map((snapshot.contractors ?? []).map((contractor) => [contractor.profileId, contractor]));
   for (const timelog of timelogs) {
     if (timelog.status === 'rejected' || invoices.some(({ invoice }) => linksTimelog(invoice, timelog))) continue;
@@ -174,11 +177,13 @@ export const getProjectSummary = (projectId: string, snapshot: ProjectSummarySna
     const rate = contractor?.rate;
     const hasRate = contractor?.hasKnownRate !== false && typeof rate === 'number' && Number.isFinite(rate);
     if (hours > 0 && !hasRate) hasMissingRates = true;
-    addCosts(stages[expenseStage(timelog.status)], costs(
+    const timelogCosts = costs(
       hasRate ? hours * rate : 0,
       timelog.km * KM_RATE,
       calculateMealAllowance(timelog.days, { enabled: Boolean(expenseEvent(timelog)?.mealAllowanceEnabled) }),
-    ));
+    );
+    unlinkedWork.push({ timelog, amount: timelogCosts.work });
+    addCosts(stages[expenseStage(timelog.status)], timelogCosts);
   }
   for (const receipt of receipts) {
     if (receipt.status === 'rejected' || invoices.some(({ invoice }) => linksReceipt(invoice, receipt))) continue;
@@ -186,6 +191,8 @@ export const getProjectSummary = (projectId: string, snapshot: ProjectSummarySna
   }
   const totalCosts = emptyCosts();
   Object.values(stages).forEach((stage) => addCosts(totalCosts, stage));
-  return { project, period: getProjectPeriod(events), events, costs: totalCosts, stages, receipts, invoices,
+  const workPhases = getProjectWorkPhases({ timelogs, allTimelogs, allEvents, allInvoices: snapshot.invoices ?? [], invoices,
+    projectIds: new Set(snapshot.projects.map((item) => normalizeJob(item.id))), projectId: job, unlinkedWork, expenseEvent, linksTimelog });
+  return { project, workPhases, period: getProjectPeriod(events), events, costs: totalCosts, stages, receipts, invoices,
     hasUnknownInvoiceAllocation: invoices.some(({ share }) => share === null), hasMissingRates };
 };

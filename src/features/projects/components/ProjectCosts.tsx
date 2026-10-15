@@ -2,8 +2,9 @@ import React from 'react';
 import { CarFront, CheckCheck, CircleCheck, Coins, FileText, HardHat, PencilLine, Receipt, Utensils } from 'lucide-react';
 import { formatCurrency } from '../../../utils';
 import type { ProjectSummary } from '../services/project-summary';
+import ProjectWorkPhases from './ProjectWorkPhases';
 
-type Props = Pick<ProjectSummary, 'costs' | 'stages' | 'hasMissingRates' | 'hasUnknownInvoiceAllocation'>;
+type Props = Pick<ProjectSummary, 'costs' | 'stages' | 'hasMissingRates' | 'hasUnknownInvoiceAllocation'> & Partial<Pick<ProjectSummary, 'workPhases'>>;
 const categories = [
   { key: 'work', label: 'Práce', Icon: HardHat },
   { key: 'travel', label: 'Doprava', Icon: CarFront },
@@ -18,7 +19,7 @@ const costStages = [
 ] as const;
 const amountLabel = (amount: number) => Number.isFinite(amount) ? formatCurrency(amount) : 'Částka není dostupná';
 
-const ProjectCosts = ({ costs, stages, hasMissingRates, hasUnknownInvoiceAllocation }: Props) => {
+const ProjectCosts = ({ costs, stages, hasMissingRates, hasUnknownInvoiceAllocation, workPhases }: Props) => {
   const amounts = categories.map(({ key }) => costs[key]);
   const categoryTotal = amounts.reduce((sum, amount) => sum + amount, 0);
   const isEmpty = costs.total === 0 && amounts.every((amount) => amount === 0);
@@ -39,6 +40,7 @@ const ProjectCosts = ({ costs, stages, hasMissingRates, hasUnknownInvoiceAllocat
         ))}
       </div>
     </div>
+    {workPhases && <ProjectWorkPhases workPhases={workPhases} total={costs.work} isPriceIncomplete={hasMissingRates || hasUnknownInvoiceAllocation} />}
     <dl className="project-cost-categories">
       {categories.map(({ key, label, Icon }) => <div className={`project-cost-category project-cost-category-${key}`} key={key}>
         <Icon aria-hidden="true" /><dt>{label}</dt><dd>{amountLabel(costs[key])}</dd>

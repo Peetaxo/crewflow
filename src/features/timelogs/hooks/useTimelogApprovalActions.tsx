@@ -1,3 +1,8 @@
+import { appDataSource } from '../../../lib/app-config';
+import { BillingApprovalPreview } from '../../invoice-billing/BillingApprovalPreview';
+import { billingUuid, type BillingQuote } from '../../invoice-billing/contract';
+import { getActiveTimelogApproval } from '../services/timelog-approval-state';
+import type { TimelogApprovalResolutionTarget } from '../services/timelog-approval-rpc.service';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '../../../components/ui/button';
@@ -12,6 +17,7 @@ import {
 import type { Timelog } from '../../../types';
 import {
   updateTimelogStatuses,
+  fetchTimelogsSnapshot,
   type TimelogAction,
 } from '../services/timelogs.service';
 
@@ -45,6 +51,7 @@ export const useTimelogApprovalActions = ({
   reviewSelection,
   identityKey,
 }: UseTimelogApprovalActionsOptions): TimelogApprovalActions => {
+  const [quoteRequest, setQuoteRequest] = useState<{ ids: number[]; targets: TimelogApprovalResolutionTarget[] } | null>(null);
   const [returnRequest, setReturnRequest] = useState<PendingReturnRequest | null>(null);
   const [returnNote, setReturnNote] = useState('');
   const [dialogError, setDialogError] = useState('');
@@ -55,6 +62,7 @@ export const useTimelogApprovalActions = ({
   const activation = useMemo(() => ({ active: false, profileId: currentProfileId, identityKey }), [currentProfileId, identityKey]);
   useLayoutEffect(() => {
     activation.active = true;
+    setQuoteRequest(null);
     setReturnRequest(null);
     setReturnNote('');
     setDialogError('');
@@ -125,6 +133,18 @@ export const useTimelogApprovalActions = ({
       return;
     }
 
+    if (action === 'coo' && appDataSource === 'supabase') {
+      const reports = ids.map((id) => timelogsById.get(id));
+      if (reports.some((r) => !r || !billingUuid.safeParse(r.supabaseId).success || !r.updatedAt || r.status !== 'pending_coo')) {
+        toast.error('Výběru chybí aktuální schválení. Obnovte data.'); return;
+      }
+      setQuoteRequest({ ids: [...ids], targets: reports.map((r) => {
+        const a = getActiveTimelogApproval(r!);
+        return { id: r!.supabaseId!, expectedUpdatedAt: r!.updatedAt!, approvalId: a?.id ?? null, approvalUpdatedAt: a?.updatedAt ?? null };
+      }) });
+      return;
+    }
+
     const requiresReturnNote = action === 'rej' && ids.some((id) => (
       timelogsById.get(id)?.status === 'pending_coo'
     ));
@@ -158,11 +178,30 @@ export const useTimelogApprovalActions = ({
     void runMutation(returnRequest.ids, 'rej', note, true);
   }, [activation, returnNote, returnRequest, runMutation]);
 
+  const approveQuote = useCallback(async (quote: BillingQuote) => {
+    if (!activation.active || !quoteRequest || pendingRef.current) throw new Error('Přístup k výkazu se změnil.');
+    pendingRef.current = true; setIsPending(true);
+    try {
+      await updateTimelogStatuses(quoteRequest.ids, 'coo', {
+        ...(currentProfileId ? { currentProfileId } : {}),
+        billingApproval: { quoteId: quote.id, targets: structuredClone(quoteRequest.targets) },
+        assertCurrent: () => { if (!activation.active) throw new Error('Přístup k výkazu se změnil.'); },
+      });
+      if (activation.active && mountedRef.current) { setQuoteRequest(null); finishSuccessfully(); }
+    } finally { pendingRef.current = false; if (activation.active && mountedRef.current) setIsPending(false); }
+  }, [activation, currentProfileId, finishSuccessfully, quoteRequest]);
+
   const isBulkReturn = (returnRequest?.ids.length ?? 0) > 1;
   const dialogTitle = isBulkReturn ? 'Vrátit výkazy k opravě' : 'Vrátit výkaz k opravě';
   const confirmLabel = isBulkReturn ? 'Vrátit výkazy' : 'Vrátit výkaz';
 
-  const dialog = (
+  const dialog = (<>
+    {quoteRequest && activation.active && <Dialog open onOpenChange={(open) => { if (!open && !isPending) setQuoteRequest(null); }}>
+      <DialogContent overlayClassName="z-[100]" className="z-[101] max-h-[90dvh] max-w-3xl overflow-y-auto">
+        <DialogHeader><DialogTitle>Schválení výkazů a fakturačního podkladu</DialogTitle><DialogDescription>Finální serverový náhled.</DialogDescription></DialogHeader>
+        <BillingApprovalPreview timelogIds={quoteRequest.targets.map((t) => t.id)} onApprove={approveQuote} onCancel={() => setQuoteRequest(null)} onStale={() => { setQuoteRequest(null); void fetchTimelogsSnapshot().catch(() => {}); }} />
+      </DialogContent>
+    </Dialog>}
     <Dialog
       open={Boolean(returnRequest)}
       onOpenChange={(open) => {
@@ -214,7 +253,7 @@ export const useTimelogApprovalActions = ({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
+  </>);
 
   return { execute, dialog, isPending };
 };

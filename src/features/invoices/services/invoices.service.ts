@@ -70,7 +70,8 @@ type BillingBatch = {
 
 const syncInvoiceQueryData = () => {
   const snapshot = getLocalAppState();
-  queryClient.setQueryData(queryKeys.invoices.all, snapshot.invoices ?? []);
+  if (appDataSource === 'local') queryClient.setQueryData(queryKeys.invoices.all, snapshot.invoices ?? []);
+  else void queryClient.invalidateQueries({ queryKey: queryKeys.invoices.all });
   queryClient.setQueryData(queryKeys.timelogs.all, snapshot.timelogs ?? []);
   queryClient.setQueryData(queryKeys.receipts.all, snapshot.receipts ?? []);
 };
@@ -165,6 +166,10 @@ type InvoiceReceiptRow = {
 
 let invoicesHydrationPromise: Promise<void> | null = null;
 let invoicesLoaded = false;
+let invoicesScopeEpoch = 0;
+const assertInvoiceScope = (epoch: number) => {
+  if (epoch !== invoicesScopeEpoch) throw new Error('Přístup k fakturám se změnil. Obnovte data.');
+};
 
 const findContractorByIdentity = (
   contractors: Contractor[],
@@ -758,9 +763,11 @@ const fetchInvoicesSnapshotUnsafe = async (): Promise<Invoice[]> => {
 };
 
 export const fetchInvoicesSnapshot = async (): Promise<Invoice[]> => {
+  const epoch = invoicesScopeEpoch;
   const lifecycleGeneration = getLifecycleSnapshotGeneration();
   try {
     const invoices = await fetchInvoicesSnapshotUnsafe();
+    assertInvoiceScope(epoch);
     if (
       appDataSource === 'supabase'
       && supabase
@@ -780,12 +787,14 @@ export const fetchInvoicesSnapshot = async (): Promise<Invoice[]> => {
 };
 
 const reloadAuthoritativeInvoiceSlices = async (): Promise<void> => {
+  const epoch = invoicesScopeEpoch;
   const [invoices, timelogs, receipts] = await Promise.all([
     fetchInvoicesSnapshot(),
     loadTimelogsSnapshot(),
     fetchReceiptsSnapshot(),
   ]);
 
+  assertInvoiceScope(epoch);
   advanceLifecycleSnapshotGeneration();
   updateLocalAppState((snapshot) => ({
     ...snapshot,
@@ -799,9 +808,13 @@ const reloadAuthoritativeInvoiceSlices = async (): Promise<void> => {
 const runAtomicInvoiceMutationWithRecovery = async <T>(
   mutation: () => Promise<T>,
 ): Promise<T> => {
+  const epoch = invoicesScopeEpoch;
   try {
-    return await mutation();
+    const result = await mutation();
+    assertInvoiceScope(epoch);
+    return result;
   } catch (error) {
+    assertInvoiceScope(epoch);
     try {
       await reloadAuthoritativeInvoiceSlices();
     } catch (reloadError) {
@@ -812,7 +825,9 @@ const runAtomicInvoiceMutationWithRecovery = async <T>(
 };
 
 const hydrateInvoicesFromSupabase = async (): Promise<void> => {
+  const epoch = invoicesScopeEpoch;
   const supabaseInvoices = await fetchInvoicesSnapshot();
+  assertInvoiceScope(epoch);
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     invoices: supabaseInvoices,
@@ -832,14 +847,17 @@ const ensureSupabaseInvoicesLoaded = () => {
     return;
   }
 
+  const epoch = invoicesScopeEpoch;
   invoicesHydrationPromise = hydrateInvoicesFromSupabase()
     .then(() => {
+      if (epoch !== invoicesScopeEpoch) return;
       invoicesLoaded = true;
     })
     .catch((error) => {
       console.warn('Nepodarilo se nacist faktury ze Supabase, zustavam na lokalnich datech.', error);
     })
     .finally(() => {
+      if (epoch !== invoicesScopeEpoch) return;
       invoicesHydrationPromise = null;
     });
 };
@@ -1409,6 +1427,8 @@ export const subscribeToInvoiceChanges = (listener: () => void): (() => void) =>
 };
 
 export const resetSupabaseInvoicesHydration = () => {
+  invoicesScopeEpoch += 1;
+  if (appDataSource === 'supabase') updateLocalAppState((snapshot) => ({ ...snapshot, invoices: [] }));
   invoicesHydrationPromise = null;
   invoicesLoaded = false;
 };

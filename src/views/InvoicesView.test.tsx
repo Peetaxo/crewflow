@@ -2,7 +2,7 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Contractor, Event, Invoice, InvoiceApprovalDocument } from '../types';
-import InvoicesView from './InvoicesView';
+import { LegacyInvoicesView as InvoicesView } from './InvoicesView';
 
 const setNavigationGuardMessage = vi.fn();
 const refetchInvoices = vi.fn();

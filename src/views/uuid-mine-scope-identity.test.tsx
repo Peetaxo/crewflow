@@ -343,7 +343,7 @@ describe('UUID mine-scope identity', () => {
   });
 
   it('filters mine invoices by currentProfileId', async () => {
-    const { default: InvoicesView } = await import('./InvoicesView');
+    const { LegacyInvoicesView: InvoicesView } = await import('./InvoicesView');
 
     render(<InvoicesView scope="mine" />);
 

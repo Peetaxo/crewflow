@@ -16,7 +16,7 @@ const result = () => ({ request_id: id(50), workflow_id: id(10), round: null,
     updated_at: next, km: t.km, note: t.note, review_note: null, crew_confirmation_snapshot: null,
     submitted_at: null, approved_at: null, days: [], approval: null })) });
 const harness = () => {
-  const rpc = vi.fn(async () => ({ data: result(), error: null }));
+  const rpc = vi.fn(async (_name: string, _args: Record<string, unknown>) => ({ data: result(), error: null }));
   const localWrite = vi.fn(() => result());
   const write = createShiftBatchWriter({ client: { rpc }, localWrite });
   return { rpc, localWrite, write };
@@ -96,4 +96,15 @@ describe('atomic shift batch writer', () => {
       p_action: 'handoff', p_note: '', p_affected_event_id: null, p_corrections: null,
     });
   });
+  it('binds final approval to the exact reviewed billing quote across retries', async () => {
+    const h = harness(); const cmd = { kind: 'transition', requestId: id(50), roundId: id(40), workflowId: id(10),
+      contractorProfileId: id(3), expectedRoundUpdatedAt: time, action: 'approve', note: '', affectedEventId: null, corrections: null,
+      billingQuoteId: id(90), targets: command().timelogs.map((t) => ({ id: t.id, expected_updated_at: time, expected_status: 'pending_coo' })) } as ShiftTransitionCommand;
+    h.rpc.mockRejectedValueOnce(new Error('network'));
+    await expect(h.write({ ...scope, role: 'coo' }, cmd, () => {})).rejects.toMatchObject({ kind: 'ambiguous' });
+    expect(h.rpc.mock.calls[0][1]).toMatchObject({ p_billing_quote: id(90) });
+    await expect(h.write({ ...scope, role: 'coo' }, cmd, () => {})).rejects.toMatchObject({ kind: 'ambiguous' });
+    expect(h.rpc.mock.calls[0]).toEqual(h.rpc.mock.calls[1]);
+  });
+
 });

@@ -1,3 +1,4 @@
+import { retireBillingDataScope } from '../../features/invoice-billing/identity-scope';
 import { resetSupabaseClientsHydration } from '../../features/clients/services/clients.service';
 import { resetSupabaseCrewHydration } from '../../features/crew/services/crew.service';
 import { resetSupabaseEventsHydration } from '../../features/events/services/events.service';
@@ -24,8 +25,11 @@ const resetHydrationGuards = () => {
 };
 
 export const resetSupabaseDataScope = async (): Promise<void> => {
-  await queryClient.cancelQueries();
-  queryClient.removeQueries({ queryKey: ['shift-workflows'] });
+  retireBillingDataScope();
   resetHydrationGuards();
+  await queryClient.cancelQueries();
+  for (const prefix of ['shift-workflows', 'invoice-billing', 'invoices', 'invoice-approvals']) {
+    queryClient.removeQueries({ queryKey: [prefix] });
+  }
   await queryClient.invalidateQueries();
 };

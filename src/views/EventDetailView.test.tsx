@@ -101,7 +101,7 @@ const timelog = {
 };
 
 const pendingApprovalTimelog = {
-  id: 8,
+  id: 8, supabaseId: '00000000-0000-4000-8000-000000000008', updatedAt: '2026-04-17T10:00:00Z',
   eid: 1,
   contractorProfileId: 'profile-2',
   days: [{ d: '2026-04-17', f: '09:00', t: '15:00', type: 'provoz' as const }],
@@ -2462,6 +2462,7 @@ describe('EventDetailView', () => {
   });
 
   it('shows event-scoped approvals and approves a pending timelog from the event detail', async () => {
+    vi.doMock('../features/invoice-billing/BillingApprovalPreview', () => ({ BillingApprovalPreview: ({ onApprove }: { onApprove: (q: unknown) => void }) => <button onClick={() => onApprove({ id: '00000000-0000-4000-8000-000000000090' })}>Potvrdit serverový náhled</button> }));
     updateTimelogStatus.mockResolvedValue({ ...pendingApprovalTimelog, status: 'approved' });
 
     vi.doMock('../context/useAppContext', () => ({
@@ -2524,9 +2525,12 @@ describe('EventDetailView', () => {
     expect(screen.getByText('09:00 - 15:00')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Schvalit' }));
+    expect(updateTimelogStatus).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Potvrdit serverový náhled' }));
 
     await waitFor(() => {
       expect(updateTimelogStatus).toHaveBeenCalledWith([8], 'coo', {
+        billingApproval: { quoteId: '00000000-0000-4000-8000-000000000090', targets: [{ id: pendingApprovalTimelog.supabaseId, expectedUpdatedAt: pendingApprovalTimelog.updatedAt, approvalId: null, approvalUpdatedAt: null }] },
         assertCurrent: expect.any(Function),
         currentProfileId: 'profile-1',
       });

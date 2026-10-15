@@ -591,6 +591,12 @@ export interface Database {
       };
       invoices: {
         Row: {
+          billing_kind: 'self_billing' | 'uploaded';
+          billing_statement_id: string | null;
+          billing_document_id: string | null;
+          paid_by_user_id: string | null;
+          paid_by_profile_id: string | null;
+          payment_recorded_at: string | null;
           id: string;
           contractor_id: string;
           event_id: string | null;
@@ -912,6 +918,7 @@ export interface Database {
       }
       transition_shift_workflow_round_atomic: {
         Args: {
+          p_billing_quote?: string | null
           p_action: string
           p_affected_event_id: string
           p_corrections: Json
@@ -1077,6 +1084,7 @@ export interface Database {
           p_targets: Json;
           p_resolution: 'approved' | 'returned';
           p_note?: string;
+          p_billing_quote?: string | null;
         };
         Returns: Json;
       };

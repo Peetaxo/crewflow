@@ -35,7 +35,7 @@ it('completes the real shared crew → CH correction → crew confirmation → C
       events: canonical.events, timelogs: canonical.timelogs });
     if (!context) throw new Error('Expected an assigned shared context');
     const session = createShiftEvidenceSession({ context, role: scope.role, assertCurrent: () => {}, write: (command, current) => writer(scope, command, current) });
-    const view = render(<SharedTimelogEditor data={{ context, legacy: false, contractor: data.contractors![0], events: canonical.events.filter((event) => context.eventIds.includes(event.supabaseId)) }}
+    const view = render(<SharedTimelogEditor source={scope.source} data={{ context, legacy: false, contractor: data.contractors![0], events: canonical.events.filter((event) => context.eventIds.includes(event.supabaseId)) }}
       role={scope.role} session={session} editorSessionKey={`${scope.role}:${anchor}`} actorProfileId={scope.profileId} actorUserId={scope.userId}
       onClose={() => {}} onReload={() => {}} />);
     return { session, close: () => { view.unmount(); session.dispose(); } };

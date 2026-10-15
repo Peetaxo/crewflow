@@ -52,4 +52,17 @@ describe('crew save rate provenance', () => {
     await createCrew({ ...crew, id: 2, profileId: 'crew-2', rate: 300, city: 'Praha', phone: '123' });
     expect(getLocalAppState().contractors.find((item) => item.id === 2)).toMatchObject({ rate: 300, hasKnownRate: true });
   });
+  it('retires an old owner save before a new profile reuses the same local numeric ID', async () => {
+    const { crew, updateCrew, update, getLocalAppState, resetSupabaseCrewHydration } = await setup('supabase');
+    let finish!: (value: unknown) => void;
+    update.mockReturnValueOnce({ eq: vi.fn(() => new Promise((resolve) => { finish = resolve; })) });
+    const saving = updateCrew({ ...crew, rate: 300, city: 'Private A', phone: '123', bank: 'PRIVATE A' });
+    const rejected = expect(saving).rejects.toThrow(/změnil|zmenil|přístup|pristup/i);
+    resetSupabaseCrewHydration();
+    const { updateLocalAppState } = await import('../../../lib/app-data');
+    updateLocalAppState((state) => ({ ...state, contractors: [{ ...crew, profileId: 'owner-B', bank: 'BANK B', city: 'B' }] }));
+    finish({ error: null }); await rejected;
+    expect(getLocalAppState().contractors[0]).toMatchObject({ profileId: 'owner-B', bank: 'BANK B', city: 'B' });
+  });
+
 });

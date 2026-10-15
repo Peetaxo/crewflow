@@ -321,6 +321,12 @@ export interface InvoiceItem {
 
 /** Faktura */
 export interface Invoice {
+  billingKind?: 'self_billing' | 'uploaded';
+  billingStatementId?: string | null;
+  billingDocumentId?: string | null;
+  paidByUserId?: string | null;
+  paidByProfileId?: string | null;
+  paymentRecordedAt?: string | null;
   id: string;
   /** False when persisted header amounts were incomplete or invalid during hydration. */
   hasKnownAmounts?: boolean;

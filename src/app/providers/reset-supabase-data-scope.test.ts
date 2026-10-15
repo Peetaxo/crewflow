@@ -42,11 +42,9 @@ describe('resetSupabaseDataScope', () => {
 
     expect(mocks.resets.every((reset) => reset.mock.calls.length === 1)).toBe(true);
     expect(mocks.removeQueries).toHaveBeenCalledWith({ queryKey: ['shift-workflows'] });
-    expect(mocks.order).toEqual([
-      'cancel',
-      'remove-workflows',
-      ...mocks.resets.map((_, index) => `reset-${index + 1}`),
-      'invalidate',
-    ]);
+    expect(mocks.order.indexOf('reset-4')).toBeLessThan(mocks.order.indexOf('cancel'));
+    for (const prefix of ['invoice-billing', 'invoices', 'invoice-approvals']) {
+      expect(mocks.removeQueries).toHaveBeenCalledWith({ queryKey: [prefix] });
+    }
   });
 });

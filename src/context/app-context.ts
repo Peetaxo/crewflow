@@ -19,8 +19,8 @@ export interface AppContextType {
   currentTab: string;
   setCurrentTab: (tab: string) => void;
   setNavigationGuardMessage: (message: string | null) => void;
-  settingsSection: 'menu' | 'profile' | 'appearance';
-  setSettingsSection: (section: 'menu' | 'profile' | 'appearance') => void;
+  settingsSection: 'menu' | 'profile' | 'appearance' | 'billing';
+  setSettingsSection: (section: 'menu' | 'profile' | 'appearance' | 'billing') => void;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
   timelogFilter: string;

@@ -385,6 +385,7 @@ export const LegacyTimelogEditModal = () => {
             </div>
           </div>
 
+          {canSubmitCurrentTimelog && <p className="px-4 pb-3 text-sm text-[color:var(--nodu-text-soft)]">Ke schválení odesíláte veškerou svou práci na této akci. Pokud budete hodiny ještě doplňovat, uložte výkaz jako rozpracovaný.</p>}
           <div className="flex gap-3 border-t border-[color:rgb(var(--nodu-text-rgb)/0.08)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-4">
             <Button
               onClick={() => setEditingTimelog(null)}

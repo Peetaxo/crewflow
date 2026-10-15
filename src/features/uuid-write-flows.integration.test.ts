@@ -390,7 +390,7 @@ describe('UUID write flows integration', () => {
       subscribeToLocalAppState: vi.fn(() => () => undefined),
     }));
     vi.doMock('../lib/query-client', () => ({
-      queryClient: { invalidateQueries, setQueryData },
+      queryClient: { invalidateQueries, setQueryData, setQueriesData: vi.fn() },
     }));
     vi.doMock('../lib/query-keys', () => ({
       queryKeys: {

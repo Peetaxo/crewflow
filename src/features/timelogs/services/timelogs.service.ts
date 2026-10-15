@@ -16,6 +16,7 @@ import {
 import {
   handoffTimelogsForApprovalAtomicRpc,
   resolveTimelogApprovalsAtomicRpc,
+  type TimelogApprovalResolutionTarget,
 } from './timelog-approval-rpc.service';
 import { getActiveTimelogApproval, isTimelogWaitingForProfile } from './timelog-approval-state';
 import { assertTimelogComplete } from './timelog-validation';
@@ -23,6 +24,7 @@ import { assertLegacyTimelogWrite } from './timelog-shared-write-guard';
 
 export type TimelogAction = 'sub' | 'ch' | 'coo' | 'rej';
 export interface TimelogActionOptions {
+  billingApproval?: { quoteId: string; targets: TimelogApprovalResolutionTarget[] };
   assertCurrent?: () => void;
   note?: string;
   /** Local/demo identity only. Remote authority always comes from Supabase Auth. */
@@ -1007,6 +1009,18 @@ export const updateTimelogStatuses = async (
 ): Promise<Timelog[]> => {
   if (ids.length === 0) return [];
   options.assertCurrent?.();
+  if (action === 'coo' && options.billingApproval && appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
+    // The reviewed quote and stable UUID targets own retries. A successful first
+    // attempt may already have approved/reindexed the reports before its reply
+    // reaches us; current local status is not replay authority.
+    const command = structuredClone(options.billingApproval);
+    return runTimelogMutation(command.targets.map((target) => `timelog:${target.id}`), async (assertCurrent) => {
+      assertCurrent();
+      await resolveTimelogApprovalsAtomicRpc({ targets: command.targets, resolution: 'approved', billingQuoteId: command.quoteId });
+      assertCurrent();
+      return reloadApprovalMutationResults(command.targets.map((target) => target.id), assertCurrent);
+    }, options.assertCurrent);
+  }
   const mode = assertApprovalActionShape(getRequestedTimelogs(ids), action, options);
   if (mode === 'transition') {
     return updateTimelogStatusesTo(ids, statusMap[action], options, true);

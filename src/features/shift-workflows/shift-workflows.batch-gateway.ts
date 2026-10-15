@@ -20,7 +20,7 @@ const messages: Record<string, string> = {
   shift_workflow_request_conflict: 'Tentýž požadavek už obsahuje jiné údaje. Obnovte evidenci.',
 };
 function errorFor(error: NonNullable<RpcResponse['error']>) {
-  if (error.code === '40001' || error.code === 'P0002') return shiftWorkflowConflict();
+  if (error.code === 'PT409' || error.code === '40001' || error.code === 'P0002') return shiftWorkflowConflict();
   if (error.code === '42501') return new ShiftWorkflowError('denied', 'K tomuto kroku nemáte oprávnění.');
   return error.message && messages[error.message]
     ? new ShiftWorkflowError('invalid', messages[error.message]) : shiftWorkflowAmbiguous();
@@ -32,6 +32,8 @@ export function assertShiftBatchAccess(scope: ShiftWorkflowScope, command: Shift
   if (command.kind !== 'transition' || command.action === 'confirm') {
     if (scope.role !== 'crew' || scope.profileId !== command.contractorProfileId) throw denied();
   } else {
+    if (scope.source === 'supabase' && command.action === 'approve' && !canonicalUuid.safeParse(command.billingQuoteId).success)
+      throw new ShiftWorkflowError('invalid', 'Před schválením zkontrolujte serverový náhled fakturace.');
     const required = command.targets[0].expected_status === 'pending_ch' ? 'crewhead' : 'coo';
     if (scope.role !== required) throw denied();
   }
@@ -69,6 +71,7 @@ export function createShiftBatchWriter(dependencies: {
             response = await client.rpc('transition_shift_workflow_round_atomic', {
               p_request_id: command.requestId, p_round_id: command.roundId, p_expected_round_updated_at: command.expectedRoundUpdatedAt,
               p_targets: command.targets, p_action: command.action, p_note: command.note,
+              ...(command.billingQuoteId ? { p_billing_quote: command.billingQuoteId } : {}),
               p_affected_event_id: command.affectedEventId, p_corrections: command.corrections as unknown as Database['public']['Functions']['transition_shift_workflow_round_atomic']['Args']['p_corrections'],
             });
           } else {

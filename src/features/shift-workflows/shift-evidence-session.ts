@@ -140,7 +140,7 @@ export function createShiftEvidenceSession(options: {
       if (options.role !== 'crew') throw new ShiftWorkflowError('denied', 'Evidenci odesílá člen crew.');
       return prepareShiftSubmission(state.context, createStableDraftUuid(), createStableDraftUuid());
     }),
-    transition: (action: ShiftRoundAction, detail: { note?: string; affectedEventId?: string } = {}) => execute(() => {
+    transition: (action: ShiftRoundAction, detail: { note?: string; affectedEventId?: string; billingQuoteId?: string } = {}) => execute(() => {
       if (state.dirty && action !== 'correct') throw new ShiftWorkflowError('blocked', 'Nejdříve uložte úpravy nebo je odešlete crew k potvrzení.');
       return prepareShiftTransition(state.context, createStableDraftUuid(), action, detail);
     }),

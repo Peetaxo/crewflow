@@ -23,6 +23,7 @@ export interface ShiftTransitionCommand {
   expectedRoundUpdatedAt: string; action: ShiftRoundAction; note: string; affectedEventId: string | null;
   targets: { id: string; expected_updated_at: string; expected_status: TimelogStatus }[];
   corrections: ShiftReportPayload[] | null;
+  billingQuoteId?: string;
 }
 export type ShiftBatchCommand = ShiftDraftCommand | ShiftTransitionCommand;
 export type ShiftDraftCohort = 'drafts' | 'confirmation';
@@ -109,7 +110,7 @@ export function prepareShiftSubmission(context: ShiftWorkflowContext, requestId:
 }
 
 export function prepareShiftTransition(context: ShiftWorkflowContext, requestId: string, action: ShiftRoundAction,
-  options: { note?: string; affectedEventId?: string } = {},
+  options: { note?: string; affectedEventId?: string; billingQuoteId?: string } = {},
 ): ShiftTransitionCommand {
   const reports = checkedReports(context);
   const round = context.activeRound;
@@ -128,5 +129,6 @@ export function prepareShiftTransition(context: ShiftWorkflowContext, requestId:
   return { kind: 'transition', requestId, roundId: round!.id, workflowId: context.workflowId, contractorProfileId: context.contractorProfileId,
     expectedRoundUpdatedAt: round!.updatedAt, action, note, affectedEventId,
     targets: frozen.map((t) => ({ id: t.supabaseId!, expected_updated_at: t.updatedAt!, expected_status: t.status })),
-    corrections: action === 'correct' ? serializeShiftReports(frozen) : null };
+    corrections: action === 'correct' ? serializeShiftReports(frozen) : null,
+    ...(options.billingQuoteId ? { billingQuoteId: options.billingQuoteId } : {}) };
 }

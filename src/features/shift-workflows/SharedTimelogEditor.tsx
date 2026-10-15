@@ -1,3 +1,5 @@
+import { appDataSource } from '../../lib/app-config';
+import { BillingApprovalPreview } from '../invoice-billing/BillingApprovalPreview';
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
@@ -13,7 +15,7 @@ import type { ShiftEvidenceSession } from './shift-evidence-session';
 import { serializeShiftReports } from './shift-workflows.batch-commands';
 
 export interface SharedTimelogEditorProps {
-  data: ShiftEvidenceData; role: Role; session: ShiftEvidenceSession; editorSessionKey: string;
+  source?: 'local' | 'supabase'; data: ShiftEvidenceData; role: Role; session: ShiftEvidenceSession; editorSessionKey: string;
   actorProfileId: string | null; actorUserId: string | null;
   onClose: () => void; onReload: () => void;
 }
@@ -39,8 +41,9 @@ function EvidenceTotal({ label, reports, data }: { label: string; reports: Timel
   </section>;
 }
 
-export default function SharedTimelogEditor({ data, role, session, editorSessionKey, actorProfileId, actorUserId, onClose, onReload }: SharedTimelogEditorProps) {
+export default function SharedTimelogEditor({ data, role, session, editorSessionKey, actorProfileId, actorUserId, onClose, onReload, source = appDataSource }: SharedTimelogEditorProps) {
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
+  const [showBillingQuote, setShowBillingQuote] = useState(false);
   const [reason, setReason] = useState('');
   const [affectedEvent, setAffectedEvent] = useState('');
   const [actionBusy, setActionBusy] = useState(false);
@@ -102,7 +105,7 @@ export default function SharedTimelogEditor({ data, role, session, editorSession
           <Button variant="ghost" size="icon" aria-label="Zavřít evidenci" onClick={requestClose}><X size={20} /></Button>
         </header>
         <div className="flex-1 space-y-4 overflow-y-auto overscroll-contain p-4 sm:p-6">
-          <p className="text-sm text-[var(--nodu-text-soft)]">Hodiny zůstávají rozepsané podle směn. Společné schválení nevytváří fakturu.</p>
+          <p className="text-sm text-[var(--nodu-text-soft)]">Hodiny zůstávají rozepsané podle směn. Finální schválení připraví podklad k fakturaci; případné vystavení závisí na souhlasu dodavatele.</p>
           {round && <div className="rounded-2xl border border-[var(--nodu-border)] p-3 text-sm" role="status">
             <p className="font-semibold">{statuses[round.status]}</p><p>Aktuální kolo zahrnuje {round.timelogIds.length} {round.timelogIds.length === 1 ? 'výkaz' : 'výkazy'}.</p>
             {round.note && <p className="mt-2 whitespace-pre-wrap">{round.note}</p>}
@@ -133,6 +136,9 @@ export default function SharedTimelogEditor({ data, role, session, editorSession
               <option value="">Vyberte směnu</option>{data.events.filter((e) => round?.eventIds.includes(e.supabaseId!)).map((e) => <option key={e.supabaseId} value={e.supabaseId}>{e.name}</option>)}
             </select></label>
           </div>}
+          {showBillingQuote && round?.status === 'pending_coo' && <BillingApprovalPreview timelogIds={frozen.map((t) => t.supabaseId!)}
+            onApprove={(quote) => session.transition('approve', { billingQuoteId: quote.id })} retryApproval={session.retry}
+            onCancel={() => setShowBillingQuote(false)} onStale={requestReload} />}
           {(actionError || state.error) && <p role="alert" className="text-sm text-red-700">{actionError ?? state.error?.message}</p>}
           {state.refreshError && <p role="alert" className="text-sm">{state.refreshError.message}</p>}
           {state.canRetry && <Button disabled={state.busy || actionBusy} onClick={() => { void run(session.retry); }}>Opakovat stejný požadavek</Button>}
@@ -146,6 +152,7 @@ export default function SharedTimelogEditor({ data, role, session, editorSession
           </div>}
         </div>
         <footer className="shrink-0 space-y-2 border-t border-[var(--nodu-border)] px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">
+          {role === 'crew' && <p className="text-sm text-[var(--nodu-text-soft)]">Odesláním ke kontrole uzavíráte veškerou svou práci na všech uvedených směnách odesílaného kola. Pokud budete hodiny ještě doplňovat, uložte výkazy jako rozpracované.</p>}
           <p role="status" className="text-xs text-[var(--nodu-text-soft)]">{state.busy ? 'Ukládání…' : state.canRetry ? 'Uložení není potvrzené' : state.dirty ? 'Neuložené změny' : 'Údaje jsou aktuální'}</p>
           <div className="flex flex-wrap justify-end gap-2">
             {role === 'crew' && (later || state.cohort === 'confirmation' && round?.status === 'pending_crew_confirmation') && <>
@@ -158,7 +165,7 @@ export default function SharedTimelogEditor({ data, role, session, editorSession
               <Button variant="outline" disabled={locked || confirmClose || !annotationsReady || !state.dirty} onClick={() => { void run(() => session.transition('correct', { note: reason, affectedEventId: affectedEvent })); }}>Odeslat úpravy crew k potvrzení</Button>
               <Button disabled={locked || confirmClose || state.dirty} onClick={() => { void run(() => session.transition('handoff')); }}>Předat celé kolo ke schválení</Button>
             </>}
-            {role === 'coo' && round?.status === 'pending_coo' && <Button disabled={locked || confirmClose || !canCooDecide} onClick={() => { void run(() => session.transition('approve')); }}>Schválit celé kolo</Button>}
+            {role === 'coo' && round?.status === 'pending_coo' && <Button disabled={locked || confirmClose || !canCooDecide} onClick={() => { if (source === 'supabase') setShowBillingQuote(true); else void run(() => session.transition('approve')); }}>Schválit celé kolo</Button>}
             {(canChDecide || role === 'coo' && round?.status === 'pending_coo') && <Button variant="outline" disabled={locked || confirmClose || !annotationsReady || state.dirty || role === 'coo' && !canCooDecide}
               onClick={() => { void run(() => session.transition('return', { note: reason, affectedEventId: affectedEvent })); }}>Vrátit celé kolo</Button>}
           </div>

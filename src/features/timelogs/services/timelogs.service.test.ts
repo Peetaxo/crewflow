@@ -2643,4 +2643,18 @@ describe('timelog Supabase policies', () => {
 
     expect(sql).toContain("status in ('draft'::timelog_status, 'pending_ch'::timelog_status)");
   });
+  it('replays an immutable quoted approval after its first committed result already changed local status and numeric IDs', async () => {
+    vi.resetModules(); vi.clearAllMocks();
+    const active = targetedApproval({ status: 'approved' });
+    const harness = await setupTargetedRemoteHarness({
+      timelogs: [targetedTimelog({ id: 999, status: 'approved', approvals: [active] })],
+      authoritativeTimelogs: [targetedTimelog({ id: 999, status: 'approved', approvals: [active] })],
+      authenticatedProfileId: TARGETED_IDS.approver,
+    });
+    const captured = { quoteId: TARGETED_IDS.round1, targets: [{ id: TARGETED_IDS.timelog1,
+      expectedUpdatedAt: '2026-09-21T10:00:00.123456+00:00', approvalId: TARGETED_IDS.approval1, approvalUpdatedAt: '2026-09-21T09:00:00.123456+00:00' }] };
+    await harness.service.updateTimelogStatuses([47], 'coo', { billingApproval: captured });
+    expect(harness.resolveTimelogApprovalsAtomicRpc).toHaveBeenCalledWith({ targets: captured.targets, resolution: 'approved', billingQuoteId: captured.quoteId });
+  });
+
 });

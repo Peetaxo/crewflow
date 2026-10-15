@@ -1,3 +1,4 @@
+vi.mock('../lib/app-config', () => ({ appDataSource: 'local' }));
 import React from 'react';
 const sharedMockState = vi.hoisted(() => ({ group: null as { canAct: boolean } | null }));
 vi.mock('../features/shift-workflows/useSharedApprovals', () => ({ useSharedApprovals: () => ({

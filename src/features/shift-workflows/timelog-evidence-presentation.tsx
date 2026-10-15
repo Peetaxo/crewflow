@@ -194,7 +194,7 @@ export const TimelogSubmitConfirmationDialog: React.FC<TimelogSubmitConfirmation
         <div className="nodu-mobile-timelog-submit-header">
           <div>
             <h4 id="mobile-timelog-submit-title">{title}</h4>
-            <p>Zkontroluj si ještě hodiny, cestovné a poznámku.</p>
+            <p>Ke schválení odesíláte veškerou svou práci na této akci. Pokud budete hodiny ještě doplňovat, uložte výkaz jako rozpracovaný.</p>
           </div>
           <button
             type="button"

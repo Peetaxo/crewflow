@@ -1,3 +1,5 @@
+import { appDataSource } from '../../lib/app-config';
+import { BillingPrepareModal } from '../../features/invoice-billing/BillingPrepareModal';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, CheckSquare, FilePlus2, Receipt, UserRound } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -21,7 +23,7 @@ interface InvoiceCreateModalProps {
   onSubmitSuccess?: () => void;
 }
 
-const InvoiceCreateModal = ({ onClose, onDirtyChange, onSubmitSuccess }: InvoiceCreateModalProps) => {
+const LegacyInvoiceCreateModal = ({ onClose, onDirtyChange, onSubmitSuccess }: InvoiceCreateModalProps) => {
   const invoicesQuery = useInvoicesQuery();
   const timelogsQuery = useTimelogsQuery();
   const receiptsQuery = useReceiptsQuery();
@@ -351,4 +353,5 @@ const InvoiceCreateModal = ({ onClose, onDirtyChange, onSubmitSuccess }: Invoice
   );
 };
 
+const InvoiceCreateModal = (props: InvoiceCreateModalProps) => appDataSource === 'supabase' ? <BillingPrepareModal {...props} /> : <LegacyInvoiceCreateModal {...props} />;
 export default InvoiceCreateModal;

@@ -1026,6 +1026,8 @@ describe('invoices.service billing batches', () => {
       error: { code: 'XX000', message: 'connection lost after invoice commit: raw internal detail' },
     });
     const setQueryData = vi.fn();
+    const setQueriesData = vi.fn();
+    const invalidateQueries = vi.fn();
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
@@ -1047,7 +1049,7 @@ describe('invoices.service billing batches', () => {
       subscribeToLocalAppState: vi.fn(() => () => undefined),
     }));
     vi.doMock('../../../lib/query-client', () => ({
-      queryClient: { setQueryData, invalidateQueries: vi.fn() },
+      queryClient: { setQueryData, setQueriesData, invalidateQueries },
     }));
     vi.doMock('../../timelogs/services/timelogs.service', () => ({
       getTimelogs: () => structuredClone(snapshot.timelogs), loadTimelogsSnapshot: vi.fn(async () => authoritativeTimelogs),
@@ -1072,7 +1074,9 @@ describe('invoices.service billing batches', () => {
       });
       expect(snapshot.timelogs).toEqual(authoritativeTimelogs);
       expect(snapshot.receipts).toEqual(authoritativeReceipts);
-      expect(setQueryData).toHaveBeenCalledWith(['invoices'], snapshot.invoices);
+      expect(setQueriesData).not.toHaveBeenCalled();
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['invoices'] });
+      expect(setQueryData).not.toHaveBeenCalledWith(['invoices'], expect.anything());
       expect(setQueryData).toHaveBeenCalledWith(['timelogs'], authoritativeTimelogs);
       expect(setQueryData).toHaveBeenCalledWith(['receipts'], authoritativeReceipts);
 

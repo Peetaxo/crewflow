@@ -370,4 +370,15 @@ describe('targeted timelog approval RPC adapter', () => {
     supabaseMock.rpc.mockRejectedValueOnce(networkError);
     await expect(listEventContactOptionsRpc()).rejects.toBe(networkError);
   });
+  it('sends the exact optional quote for a standalone final approval', async () => {
+    supabaseMock.rpc.mockResolvedValue({ data: [resolutionResult()], error: null });
+    await resolveTimelogApprovalsAtomicRpc({ targets: [resolutionTarget], resolution: 'approved', billingQuoteId: ids.extra });
+    expect(supabaseMock.rpc.mock.calls[0][1]).toMatchObject({ p_billing_quote: ids.extra });
+  });
+
+  it.each(['PT409', '40001'])('exposes quote/version conflict %s for a new preview instead of ambiguous retry', async (code) => {
+    supabaseMock.rpc.mockResolvedValue({ data: null, error: { code } });
+    await expect(resolveTimelogApprovalsAtomicRpc({ targets: [resolutionTarget], resolution: 'approved', billingQuoteId: ids.extra })).rejects.toMatchObject({ kind: 'conflict' });
+  });
+
 });

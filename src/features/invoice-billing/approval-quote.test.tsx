@@ -1,0 +1,22 @@
+import React from 'react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { expect, it, vi } from 'vitest';
+import { BillingApprovalPreview } from './BillingApprovalPreview';
+import { parseBillingQuote } from './contract';
+import { billingStatementFixture, id, version } from './test-fixtures';
+const io = vi.hoisted(() => ({ quote: vi.fn() }));
+vi.mock('./service', async (original) => ({ ...await original(), billingService: { quote: (...args: unknown[]) => io.quote(...args) } }));
+it('shows authoritative approval pricing before confirming and retains the quote on ambiguous retry', async () => {
+  const report = billingStatementFixture().financial_snapshot.reports[0];
+  const quote = parseBillingQuote({ id: id(80), fingerprint: 'f', timelog_ids: [report.timelog_id], preview: { currency: 'CZK', reports: [report], total_amount: report.total_amount }, created_at: version });
+  io.quote.mockResolvedValue(quote);
+  const approve = vi.fn().mockRejectedValueOnce(new Error('network')).mockResolvedValue(undefined);
+  render(<BillingApprovalPreview timelogIds={[report.timelog_id]} onApprove={approve} onCancel={vi.fn()} />);
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Potvrdit schválení s touto částkou' })).toBeEnabled());
+  expect(approve).not.toHaveBeenCalled(); expect(screen.getByText(/2\s083,33/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Potvrdit schválení s touto částkou' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Opakovat stejné schválení' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Opakovat stejné schválení' }));
+  await waitFor(() => expect(approve).toHaveBeenCalledTimes(2));
+  expect(approve.mock.calls[0][0]).toBe(quote); expect(approve.mock.calls[1][0]).toBe(quote); expect(io.quote).toHaveBeenCalledTimes(1);
+});

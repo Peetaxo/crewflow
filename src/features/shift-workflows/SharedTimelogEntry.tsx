@@ -26,7 +26,7 @@ function EvidenceSessionHost(props: { data: ShiftEvidenceData; workflows: Return
     return () => next.dispose();
   }, []);
   if (!session) return null;
-  return <SharedTimelogEditor data={props.data} role={props.workflows.scope.role} session={session} editorSessionKey={props.sessionKey}
+  return <SharedTimelogEditor source={props.workflows.scope.source} data={props.data} role={props.workflows.scope.role} session={session} editorSessionKey={props.sessionKey}
     actorProfileId={props.workflows.scope.profileId} actorUserId={props.workflows.scope.userId} onClose={props.onClose} onReload={props.onReload} />;
 }
 

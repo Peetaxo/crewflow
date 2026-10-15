@@ -1,3 +1,4 @@
+import { BillingError } from '../../invoice-billing/contract';
 import { supabase } from '../../../lib/supabase';
 import type {
   EventContactOption,
@@ -199,8 +200,9 @@ const toApprovalError = (error: unknown): unknown => {
   if (includesToken(message, 'timelog_approval_unauthorized') || code === '42501') {
     return new Error('K této operaci schválení nemáte oprávnění.');
   }
+  if (code === 'PT409') return new BillingError('conflict', 'Schválení nebo fakturační údaje se změnily. Obnovte data a zkontrolujte nový náhled.');
   if (includesToken(message, 'timelog_approval_conflict') || code === '40001') {
-    return new Error('Schválení se mezitím změnilo. Obnovte data a zkuste to znovu.');
+    return new BillingError('conflict', 'Schválení se mezitím změnilo. Obnovte data a zkuste to znovu.');
   }
   if (includesToken(message, 'timelog_approval_invalid') || code === '22023') {
     return new Error(INVALID_REQUEST_MESSAGE);
@@ -287,18 +289,22 @@ export const resolveTimelogApprovalsAtomicRpc = async ({
   targets,
   resolution,
   note = '',
+  billingQuoteId,
 }: {
   targets: TimelogApprovalResolutionTarget[];
   resolution: ApprovalResolution;
   note?: string;
+  billingQuoteId?: string;
 }): Promise<TimelogApprovalResolutionResult[]> => {
   if (resolution === 'returned' && note.trim() === '') {
     throw new Error(RETURN_NOTE_REQUIRED_MESSAGE);
   }
+  if (billingQuoteId && (!isUuid(billingQuoteId) || resolution !== 'approved')) return invalidRequest();
   const mappedTargets = mapResolutionTargets(targets);
   const result = await getClient().rpc('resolve_timelog_approvals_atomic', {
     p_targets: mappedTargets,
     p_resolution: resolution,
+    ...(billingQuoteId ? { p_billing_quote: billingQuoteId } : {}),
     p_note: note,
   });
   if (result.error) throw toApprovalError(result.error);

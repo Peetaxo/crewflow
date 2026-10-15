@@ -31,7 +31,7 @@ describe('shared evidence modal composition', () => {
     expect(screen.getByRole('heading', { name: 'Přípravy · JOB' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Instalace · JOB' })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Odeslat vše ke kontrole' })).toHaveLength(1);
-    expect(screen.getByText(/nevytváří fakturu/)).toBeInTheDocument();
+    expect(screen.getByText(/připraví podklad k fakturaci/)).toBeInTheDocument();
   });
   it('edits only the matching part and cancels delayed autosave on unmount', async () => {
     vi.useFakeTimers();

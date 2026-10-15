@@ -711,7 +711,8 @@ describe('MobileTimelogEditModal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Odeslat ke kontrole' }));
 
     const dialog = screen.getByRole('dialog', { name: 'Odeslat výkaz ke kontrole?' });
-    expect(dialog).toHaveTextContent('Zkontroluj si ještě hodiny, cestovné a poznámku.');
+    expect(dialog).toHaveTextContent('Ke schválení odesíláte veškerou svou práci na této akci.');
+    expect(dialog).toHaveTextContent('uložte výkaz jako rozpracovaný');
     expect(dialog).toHaveTextContent('13.07.');
     expect(dialog).not.toHaveTextContent('13.07.2026');
     expect(dialog).toHaveTextContent('08:00 - 17:00');

@@ -1,0 +1,30 @@
+import React from 'react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, expect, it, vi } from 'vitest';
+import SettingsView from './SettingsView';
+import type { Contractor } from '../types';
+const io = vi.hoisted(() => ({ section: 'menu', profile: 'A', saved: vi.fn(), setSection: vi.fn() }));
+vi.mock('../context/useAppContext', () => ({ useAppContext: () => ({ settingsSection: io.section, setSettingsSection: io.setSection, darkMode: false, setDarkMode: vi.fn() }) }));
+vi.mock('../app/providers/useAuth', () => ({ useAuth: () => ({ currentProfileId: io.profile, currentUserId: io.profile, role: 'crew', isAuthRequired: true, signOut: vi.fn(), profile: { firstName: io.profile, lastName: '', email: '' } }) }));
+vi.mock('../features/invoice-billing/BillingSettings', () => ({ BillingSettings: () => <p>Vlastní fakturační souhlas</p> }));
+vi.mock('../features/crew/services/crew.service', () => ({ getContractors: () => [{ id: 1, profileId: 'A', name: 'A', bank: 'A BANK', iban: 'CZ6508000000192000145399', email: '', phone: '', city: '', ico: '', dic: '' }, { id: 2, profileId: 'B', name: 'B', bank: 'B BANK', iban: '', email: '', phone: '', city: '', ico: '', dic: '' }] as Contractor[], subscribeToCrewChanges: () => () => {}, updateContractor: (...args: unknown[]) => io.saved(...args) }));
+beforeEach(() => { io.section = 'menu'; io.profile = 'A'; io.saved.mockReset(); io.setSection.mockReset(); });
+it('opens Fakturace through the existing settings section navigation', () => {
+  const view = render(<SettingsView />); fireEvent.click(screen.getByRole('button', { name: /Fakturace/ }));
+  expect(io.setSection).toHaveBeenCalledWith('billing'); io.section = 'billing'; view.rerender(<SettingsView />);
+  expect(screen.getByText('Vlastní fakturační souhlas')).toBeInTheDocument();
+});
+it('lets the owner review and clear the optional existing IBAN and retires a late profile callback', async () => {
+  io.section = 'profile'; let finish!: () => void;
+  io.saved.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
+  const view = render(<SettingsView />); fireEvent.click(screen.getByRole('button', { name: 'Upravit' }));
+  const iban = screen.getByLabelText(/IBAN pro QR platbu \(volitelné\)/);
+  expect(iban).toHaveValue('CZ6508000000192000145399'); fireEvent.change(iban, { target: { value: '' } });
+  fireEvent.click(screen.getByRole('button', { name: /Uložit|Ulozit/ }));
+  await waitFor(() => expect(io.saved).toHaveBeenCalledWith(expect.objectContaining({ profileId: 'A', iban: '' })));
+  io.profile = 'B'; view.rerender(<SettingsView />);
+  fireEvent.click(screen.getByRole('button', { name: 'Upravit' }));
+  await act(async () => finish());
+  expect(screen.getByLabelText(/IBAN pro QR platbu \(volitelné\)/)).toHaveValue('');
+  expect(screen.getByLabelText('Číslo účtu')).toHaveValue('B BANK');
+});

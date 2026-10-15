@@ -1005,6 +1005,7 @@ describe('TimelogsView', () => {
   });
 
   it('keeps other COO reports readonly, excludes them from bulk approval, and passes the current identity', async () => {
+    vi.doMock('../features/invoice-billing/BillingApprovalPreview', () => ({ BillingApprovalPreview: ({ onApprove }: { onApprove: (q: unknown) => void }) => <button onClick={() => onApprove({ id: '00000000-0000-4000-8000-000000000090' })}>Potvrdit serverový náhled</button> }));
     const updateTimelogStatuses = vi.fn().mockResolvedValue([]);
     mockExternalApprovalModules();
 
@@ -1019,7 +1020,7 @@ describe('TimelogsView', () => {
       useAuth: () => ({ currentProfileId: 'profile-coo' }),
     }));
     vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
-      useTimelogsQuery: () => ({ data: bulkFinalApprovalTimelogs }),
+      useTimelogsQuery: () => ({ data: bulkFinalApprovalTimelogs.map((t) => ({ ...t, supabaseId: `00000000-0000-4000-8000-${String(t.id).padStart(12, '0')}`, updatedAt: '2026-04-17T10:00:00Z' })) }),
     }));
     vi.doMock('../features/timelogs/services/timelogs.service', () => ({
       getTimelogDependencies: () => ({ contractors, events }),
@@ -1034,9 +1035,12 @@ describe('TimelogsView', () => {
     expect(screen.getAllByRole('button', { name: 'Schválit' })).toHaveLength(1);
 
     fireEvent.click(screen.getByRole('button', { name: 'Schválit vše (1)' }));
+    expect(updateTimelogStatuses).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Potvrdit serverový náhled' }));
 
     await waitFor(() => {
       expect(updateTimelogStatuses).toHaveBeenCalledWith([30], 'coo', {
+        billingApproval: { quoteId: '00000000-0000-4000-8000-000000000090', targets: [expect.objectContaining({ id: '00000000-0000-4000-8000-000000000030', expectedUpdatedAt: '2026-04-17T10:00:00Z' })] },
         assertCurrent: expect.any(Function),
         currentProfileId: 'profile-coo',
       });

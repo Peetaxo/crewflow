@@ -1,5 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, LogOut, Moon, Palette, Sun, UserRound } from 'lucide-react';
+import { BillingSettings } from '../features/invoice-billing/BillingSettings';
+import { appDataSource } from '../lib/app-config';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { ArrowLeft, LogOut, Moon, Palette, Sun, UserRound, FileText } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { useAuth } from '../app/providers/useAuth';
@@ -16,7 +18,9 @@ import {
 
 const SettingsView = () => {
   const { darkMode, setDarkMode, settingsSection, setSettingsSection } = useAppContext();
-  const { currentProfileId, isAuthRequired, profile, signOut } = useAuth();
+  const { currentProfileId, currentUserId, role: authRole, isRoleSwitching, isAuthRequired, profile, signOut } = useAuth();
+  const activation = useMemo(() => ({ active: false, currentProfileId, currentUserId, authRole, isRoleSwitching }), [currentProfileId, currentUserId, authRole, isRoleSwitching]);
+  useLayoutEffect(() => { activation.active = !isRoleSwitching; setIsEditingProfile(false); return () => { activation.active = false; }; }, [activation, isRoleSwitching]);
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -29,6 +33,7 @@ const SettingsView = () => {
     ico: '',
     dic: '',
     bank: '',
+    iban: '',
     billingName: '',
     billingStreet: '',
     billingZip: '',
@@ -55,6 +60,7 @@ const SettingsView = () => {
     ico: '',
     dic: '',
     bank: '',
+    iban: '',
     billingName: profile ? `${profile.firstName} ${profile.lastName}`.trim() || profile.email : '',
     billingStreet: '',
     billingZip: '',
@@ -75,6 +81,7 @@ const SettingsView = () => {
       ico: me.ico,
       dic: me.dic,
       bank: me.bank,
+      iban: me.iban ?? '',
       billingName: me.billingName ?? me.name,
       billingStreet: me.billingStreet ?? '',
       billingZip: me.billingZip ?? '',
@@ -83,7 +90,7 @@ const SettingsView = () => {
     });
   }, [me]);
 
-  const openSection = (section: 'profile' | 'appearance') => {
+  const openSection = (section: 'profile' | 'appearance' | 'billing') => {
     setIsEditingProfile(false);
     setSettingsSection(section);
   };
@@ -96,8 +103,9 @@ const SettingsView = () => {
         ...me,
         ...profileForm,
       });
-      setIsEditingProfile(false);
+      if (activation.active) setIsEditingProfile(false);
     } catch (error) {
+      if (!activation.active) return;
       toast.error(error instanceof Error ? error.message : 'Profil se nepodarilo ulozit.');
     }
   };
@@ -116,6 +124,7 @@ const SettingsView = () => {
   };
 
   const settingsCards = [
+    { id: 'billing' as const, title: 'Fakturace', description: 'Originály faktur a volitelný trvalý souhlas.', icon: FileText },
     {
       id: 'profile' as const,
       title: 'Profil',
@@ -175,6 +184,8 @@ const SettingsView = () => {
         </>
       )}
 
+      {settingsSection === 'billing' && <div className="space-y-4"><Button variant="link" onClick={() => setSettingsSection('menu')}>Zpět do nastavení</Button>{appDataSource === 'supabase' ? <BillingSettings /> : <p>Souhlas pro automatické vystavování je dostupný po přihlášení.</p>}</div>}
+
       {settingsSection === 'profile' && (
         <div className="space-y-5">
           <button
@@ -219,6 +230,7 @@ const SettingsView = () => {
                       ['IČO', displayProfile.ico || '—'],
                       ['DIČ', displayProfile.dic || '—'],
                       ['Č. účtu', displayProfile.bank || '—'],
+                      ['IBAN pro QR platbu', displayProfile.iban || 'Neuveden · bez QR platby'],
                     ].map(([label, value]) => (
                       <div key={label} className="flex justify-between gap-4 border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] py-1.5 last:border-0">
                         <span className="text-xs text-[color:var(--nodu-text-soft)]">{label}</span>
@@ -289,6 +301,10 @@ const SettingsView = () => {
                 </label>
                 <label className="text-xs text-[color:var(--nodu-text-soft)] md:col-span-2">Číslo účtu
                   <Input value={profileForm.bank} onChange={(e) => setProfileForm((prev) => ({ ...prev, bank: e.target.value }))} className="mt-1" />
+                </label>
+                <label className="text-xs text-[color:var(--nodu-text-soft)]">IBAN pro QR platbu (volitelné)
+                  <Input value={profileForm.iban} onChange={(e) => setProfileForm((prev) => ({ ...prev, iban: e.target.value }))} className="mt-1" />
+                  <span>Prázdný IBAN znamená fakturu bez QR platby.</span>
                 </label>
               </div>
 

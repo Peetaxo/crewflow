@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { appDataSource } from '../../lib/app-config';
 import {
@@ -82,6 +82,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [currentContractorId, setCurrentContractorId] = useState<number | null>(null);
   const [isDevSession, setIsDevSession] = useState(false);
   const [isRoleSwitching, setIsRoleSwitching] = useState(false);
+  const sessionLoadVersion = useRef(0);
   const [devLoginOptions, setDevLoginOptions] = useState<DevLoginOption[]>([]);
 
   useEffect(() => {
@@ -114,9 +115,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
 
     let isCancelled = false;
+    let previousUserId: string | null | undefined;
 
     const loadSessionState = async (nextSession: Session | null) => {
       if (isCancelled) return;
+      const loadVersion = ++sessionLoadVersion.current;
+      const nextUserId = nextSession?.user.id ?? null;
+      const changedIdentity = previousUserId !== undefined && previousUserId !== nextUserId;
+      previousUserId = nextUserId;
+      // Retire service publications immediately; query cancellation may await.
+      const reset = changedIdentity ? resetSupabaseDataScope() : null;
 
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
@@ -155,7 +163,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setIsDevSession(false);
       setIsRoleSwitching(false);
       setIsLoading(true);
+      setRole(null);
+      setCurrentProfileId(null);
+      setProfile(null);
       setCurrentUserId(nextSession.user.id);
+      if (reset) await reset;
+      if (isCancelled || loadVersion !== sessionLoadVersion.current) return;
 
       const [profileResult, rolesResult] = await Promise.all([
         supabase
@@ -169,7 +182,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           .eq('user_id', nextSession.user.id),
       ]);
 
-      if (isCancelled) return;
+      if (isCancelled || loadVersion !== sessionLoadVersion.current) return;
 
       if (profileResult.error) {
         console.warn('Nepodarilo se nacist profil prihlaseneho uzivatele.', profileResult.error);
@@ -209,6 +222,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     return () => {
       isCancelled = true;
+      sessionLoadVersion.current += 1;
       subscription.unsubscribe();
     };
   }, [isAuthRequired]);
@@ -233,6 +247,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (isRoleSwitching || role === nextRole) return;
 
     if (!isAuthRequired || isDevSession) {
+      void resetSupabaseDataScope();
       setRole(nextRole);
       const storedDevSession = readStoredDevSession();
       if (storedDevSession) {
@@ -246,6 +261,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
 
     setIsRoleSwitching(true);
+    const capturedSessionVersion = sessionLoadVersion.current;
 
     try {
       const { error } = await supabase.rpc('set_current_user_role', { p_role: nextRole });
@@ -253,11 +269,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         throw new Error(error.message);
       }
 
+      if (capturedSessionVersion !== sessionLoadVersion.current) return;
       await resetSupabaseDataScope();
+      if (capturedSessionVersion !== sessionLoadVersion.current) return;
       setRole(nextRole);
       getContractors();
     } finally {
-      setIsRoleSwitching(false);
+      if (capturedSessionVersion === sessionLoadVersion.current) setIsRoleSwitching(false);
     }
   }, [currentUserId, isAuthRequired, isDevSession, isRoleSwitching, role]);
 
@@ -301,6 +319,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         role: nextRole,
       };
 
+      sessionLoadVersion.current += 1;
+      void resetSupabaseDataScope();
       writeStoredDevSession(storedSession);
       setSession(null);
       setUser(null);
@@ -325,13 +345,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
       }
 
+      sessionLoadVersion.current += 1;
+      await resetSupabaseDataScope();
       writeStoredDevSession(null);
       clearPersistedUiSession();
+      setSession(null);
+      setUser(null);
+      setRole(null);
+      setProfile(null);
       setIsDevSession(false);
       setIsRoleSwitching(false);
       setCurrentProfileId(null);
       setCurrentUserId(null);
       setCurrentContractorId(null);
+      setIsLoading(false);
     },
   }), [currentContractorId, currentProfileId, currentUserId, devLoginOptions, isAuthRequired, isDevSession, isLoading, isRoleSwitching, profile, role, session, switchRole, user]);
 

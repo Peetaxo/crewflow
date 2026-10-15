@@ -40,7 +40,7 @@ const commandSchema = z.union([
     timelogs: z.array(report).min(1).max(200) }).strict(),
   z.object({ ...common, kind: z.literal('transition'), roundId: uuid, expectedRoundUpdatedAt: timestamp,
     action: z.enum(['handoff', 'approve', 'return', 'correct', 'confirm']), note: z.string(), affectedEventId: uuid.nullable(),
-    targets, corrections: z.array(report).min(1).max(200).nullable() }).strict(),
+    billingQuoteId: uuid.optional(), targets, corrections: z.array(report).min(1).max(200).nullable() }).strict(),
 ]);
 const complete = (rows: z.infer<typeof report>[]) => rows.every((t) => {
   try {
@@ -62,7 +62,7 @@ export function assertShiftBatchCommand(value: unknown): asserts value is ShiftB
     const expected = c.kind === 'save' && c.roundId !== null ? ['pending_crew_confirmation'] : ['draft', 'rejected'];
     if (c.timelogs.some((t) => !expected.includes(t.expected_status)) || (c.kind === 'submit' && (!c.roundId || !complete(c.timelogs)))) invalid();
   } else {
-    if (!unique(c.targets.map((t) => t.id))) invalid();
+    if (!unique(c.targets.map((t) => t.id)) || c.billingQuoteId && c.action !== 'approve') invalid();
     const expected = c.action === 'approve' ? ['pending_coo'] : c.action === 'confirm' ? ['pending_crew_confirmation']
       : c.action === 'return' ? ['pending_ch', 'pending_coo'] : ['pending_ch'];
     if (new Set(c.targets.map((t) => t.expected_status)).size !== 1 || c.targets.some((t) => !expected.includes(t.expected_status))) invalid();

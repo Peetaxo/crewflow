@@ -1,3 +1,5 @@
+import { appDataSource } from '../lib/app-config';
+import InvoiceBillingView from '../features/invoice-billing/InvoiceBillingView';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Info } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -48,7 +50,7 @@ const getApprovalDocumentStatusCounts = (documents: InvoiceApprovalDocument[]) =
   return acc;
 }, {} as Record<InvoiceApprovalDocument['approvalStatus'], number>);
 
-const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
+export const LegacyInvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
   const { currentProfileId } = useAuth();
   const { role, searchQuery, setNavigationGuardMessage } = useAppContext();
   const invoicesQuery = useInvoicesQuery();
@@ -149,7 +151,7 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
   const handleSendInvoice = async (invoiceId: string) => {
     try {
       await sendInvoice(invoiceId);
-      toast.success('Faktura byla odeslana.');
+      toast.success('Faktura byla označena jako vystavená.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Nepodarilo se odeslat fakturu.');
     }
@@ -264,7 +266,7 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
         <div>
           <div className="nodu-dashboard-kicker">Billing</div>
           <h1 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--nodu-text)]">{scope === 'mine' ? 'Moje faktury' : 'Faktury'}</h1>
-          <p className="mt-1 text-sm text-[color:var(--nodu-text-soft)]">Self-billing system</p>
+          <p className="mt-1 text-sm text-[color:var(--nodu-text-soft)]">Faktury a schválené výkazy</p>
         </div>
         {!isCrew && pendingBatchCount > 0 ? (
           <Button
@@ -275,13 +277,13 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
             Vytvorit fakturu ({pendingBatchCount}) {'->'}
           </Button>
         ) : (
-          <StatusBadge status="approved" label="Self-billing bezi" />
+          <StatusBadge status="approved" label="Přehled faktur" />
         )}
       </div>
 
       <div className="mb-4 rounded-[22px] border border-[color:rgb(var(--nodu-accent-rgb)/0.18)] bg-[color:rgb(var(--nodu-accent-rgb)/0.08)] p-4">
         <div className="mb-1 flex items-center gap-2 text-xs font-semibold text-[color:var(--nodu-accent)]">
-          <Info size={14} /> Self-billing je aktivni
+          <Info size={14} /> Fakturační podklady
         </div>
         <p className="text-[11px] leading-relaxed text-[color:var(--nodu-text-soft)]">
           Schvalene timelogy cekaji na vedome vytvoreni faktury. V seznamu nize vidis jen skutecne
@@ -455,7 +457,7 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
                       className="ml-auto text-[11px]"
                       size="sm"
                     >
-                      Odeslat fakturu {'->'}
+                      Označit jako vystavenou {'->'}
                     </Button>
                   </>
                 )}
@@ -484,4 +486,5 @@ const InvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
   );
 };
 
+const InvoicesView = (props: InvoicesViewProps) => appDataSource === 'supabase' ? <InvoiceBillingView {...props} /> : <LegacyInvoicesView {...props} />;
 export default InvoicesView;

@@ -333,6 +333,7 @@ export const createCrew = async (input: CreateCrewInput): Promise<CrewMember> =>
 };
 
 export const updateCrew = async (input: UpdateCrewInput): Promise<CrewMember> => {
+  const epoch = crewHydrationEpoch;
   const normalized = normalizeCrewMember(input);
   validateCrewMember(normalized);
 
@@ -353,8 +354,10 @@ export const updateCrew = async (input: UpdateCrewInput): Promise<CrewMember> =>
     }
   }
 
+  if (epoch !== crewHydrationEpoch) throw new Error('Přístup k profilu se změnil. Otevřete jej znovu.');
   updateLocalAppState((snapshot) => {
-    const existing = snapshot.contractors.find((member) => member.id === normalized.id);
+    const existing = snapshot.contractors.find((member) => member.id === normalized.id
+      && (appDataSource !== 'supabase' || member.profileId === normalized.profileId));
     if (!existing) {
       throw new Error('Clen crew nebyl nalezen.');
     }

@@ -1,10 +1,3 @@
-import { useQuery } from '@tanstack/react-query';
-import { queryKeys } from '../../../lib/query-keys';
+import { usePrivateInvoiceQuery } from '../../invoice-billing/useBillingScope';
 import { fetchInvoiceApprovalDocuments } from '../services/invoice-approval-sync.service';
-
-export const useInvoiceApprovalsQuery = () => (
-  useQuery({
-    queryKey: queryKeys.invoiceApprovals.all,
-    queryFn: fetchInvoiceApprovalDocuments,
-  })
-);
+export const useInvoiceApprovalsQuery = () => usePrivateInvoiceQuery('invoice-approvals', fetchInvoiceApprovalDocuments).query;

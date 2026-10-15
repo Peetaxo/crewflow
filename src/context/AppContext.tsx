@@ -123,7 +123,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const previousTab = useRef(currentTab);
   const [navigationGuardMessage, setNavigationGuardMessage] = useState<string | null>(null);
   const [pendingTab, setPendingTab] = useState<string | null>(null);
-  const [settingsSection, setSettingsSection] = useState<'menu' | 'profile' | 'appearance'>('menu');
+  const [settingsSection, setSettingsSection] = useState<'menu' | 'profile' | 'appearance' | 'billing'>('menu');
   const [searchQuery, setSearchQuery] = useState(initialUiSession?.searchQuery ?? '');
   const [timelogFilter, setTimelogFilter] = useState(initialUiSession?.timelogFilter ?? 'all');
   const [projectFilter, setProjectFilter] = useState(initialUiSession?.projectFilter ?? 'all');

@@ -290,6 +290,12 @@ export function mapTimelogApproval(row: TimelogApprovalRow): TimelogApproval {
 
 export function mapInvoice(row: InvoiceRow): Invoice {
   return {
+    billingKind: row.billing_kind ?? 'self_billing',
+    billingStatementId: row.billing_statement_id ?? null,
+    billingDocumentId: row.billing_document_id ?? null,
+    paidByUserId: row.paid_by_user_id ?? null,
+    paidByProfileId: row.paid_by_profile_id ?? null,
+    paymentRecordedAt: row.payment_recorded_at ?? null,
     id: row.id,
     hasKnownAmounts: [row.amount_hours, row.amount_km, row.total_amount]
       .every((amount) => amount != null && Number.isFinite(Number(amount)))

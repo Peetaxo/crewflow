@@ -1,19 +1,20 @@
 import assert from "node:assert/strict";
-import { chmod, readFile, writeFile } from "node:fs/promises";
-import { execFileSync } from "node:child_process";
-import { resolve } from "node:path";
+import { chmod, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { join, relative, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import {
   delayJobTimers,
   restoreJobTimers,
   snapshotJobTimers,
+  localQuery,
 } from "./invoice-job-test-state.mjs";
 import {
   createInvoiceTestLifecycle,
   InvoiceTestInterrupted,
 } from "./invoice-worker-test-lifecycle.mjs";
 import { createInvoiceCronTracker } from "./invoice-cron-test-tracker.mjs";
+process.umask(0o077);
 assert.ok(
   process.argv[2] && process.argv[3],
   "Pass private local demo directory and private worker env file",
@@ -32,7 +33,7 @@ const workerSecret = (await readFile(workerEnv, "utf8")).match(
 )?.[1];
 assert.ok(workerSecret);
 const run = randomUUID();
-const output = `${dir}/results/invoice-billing/task2-${run}`;
+const output = `/private/tmp/crewflow-invoice-workflow-20261015-dispatch/run-${run}`;
 await import("node:fs/promises").then((fs) =>
   fs.mkdir(output, { recursive: true })
 );
@@ -40,25 +41,70 @@ async function rawQuery(sql, privateFile = false) {
   const file = `${output}/query.sql`;
   await writeFile(file, sql, { mode: 0o600 });
   await chmod(file, 0o600);
-  const raw = execFileSync("/opt/homebrew/bin/supabase", [
-    "db",
-    "query",
-    "--local",
-    "--workdir",
-    "/Users/peetax/Projekty/.crewflow-demo-20261012",
-    "--file",
-    file,
-  ], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const rows = await localQuery(sql, file);
   if (privateFile) {
     await writeFile(file, "-- private setup redacted after execution\n", {
       mode: 0o600,
     });
   }
-  return raw.trim().startsWith("{") ? JSON.parse(raw).rows : [];
+  return rows;
 }
 let beforeJobTimers = null;
 let bucketRestore = null;
 let cronTracker = null;
+let protectedBefore = null;
+let originalGuards = null;
+const guardsSql = "select n.nspname schema,c.relname table_name,t.tgname,t.tgenabled,pg_get_triggerdef(t.oid) definition from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace where not t.tgisinternal and n.nspname in('public','private') order by n.nspname,c.relname,t.tgname";
+const protectedSql = await readFile(new URL("./invoice-protected-state.sql", import.meta.url), "utf8");
+const protectedRows = async () => Object.values((await rawQuery(protectedSql))[0])[0];
+const canonical = (value) => JSON.stringify(value, (_key, item) =>
+  item && typeof item === "object" && !Array.isArray(item)
+    ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b)))
+    : item);
+async function verifyProtectedRows() {
+  const after = await protectedRows();
+  const tables = [];
+  for (const [table, rows] of Object.entries(protectedBefore)) {
+    const current = new Map();
+    for (const row of after[table]) {
+      const key = canonical(row);
+      current.set(key, (current.get(key) ?? 0) + 1);
+    }
+    for (const row of rows) {
+      const key = canonical(row);
+      assert.ok(current.get(key) > 0, `Original row changed or missing in ${table}`);
+      current.set(key, current.get(key) - 1);
+    }
+    tables.push({ table, original: rows.length, preserved: rows.length, added: after[table].length - rows.length });
+  }
+  await writeFile(`${output}/protected-after.private.json`, JSON.stringify(after));
+  const summary = { tables, tableCount: tables.length, original: tables.reduce((n, t) => n + t.original, 0), preserved: tables.reduce((n, t) => n + t.preserved, 0) };
+  await writeFile(`${output}/preservation.json`, JSON.stringify(summary, null, 2));
+  return summary;
+}
+async function verifyServedSources() {
+  const source = resolve(new URL("..", import.meta.url).pathname);
+  const served = "/Users/peetax/Projekty/.crewflow-demo-20261012/supabase";
+  const rows = [];
+  async function walk(path) {
+    for (const name of await readdir(path)) {
+      const file = join(path, name);
+      if ((await stat(file)).isDirectory()) await walk(file);
+      else if (/\.(ts|ttf|otf|png)$/.test(name)) {
+        const a = await readFile(file), b = await readFile(join(served, relative(source, file)));
+        rows.push({ path: relative(source, file), same: a.equals(b), sha256: createHash("sha256").update(a).digest("hex") });
+      }
+    }
+  }
+  for (const name of ["generate-invoice-pdf", "upload-invoice-document", "process-invoice-pdfs"]) await walk(join(source, "functions", name));
+  const configs = await Promise.all([source, served].map(async (path) => {
+    const text = await readFile(join(path, "config.toml"), "utf8");
+    return Object.fromEntries(["generate-invoice-pdf", "upload-invoice-document", "process-invoice-pdfs"].map((name) => [name, text.match(new RegExp(`\\[functions\\.${name}\\]([\\s\\S]*?)(?=\\n\\[|$)`))?.[1].trim()]));
+  }));
+  assert.ok(rows.every((row) => row.same), "Served runtime source must match reviewed source");
+  assert.deepEqual(configs[0], configs[1]);
+  await writeFile(`${output}/edge-source-preflight.json`, JSON.stringify({ rows, configSame: true, configs }, null, 2));
+}
 const rawFetch = globalThis.fetch.bind(globalThis);
 let cleanupService;
 const lifecycle = createInvoiceTestLifecycle({
@@ -85,6 +131,7 @@ const lifecycle = createInvoiceTestLifecycle({
       JSON.stringify(body, null, 2),
       { mode: 0o600 },
     );
+    process.send?.({ stage: evidence.stage });
   },
   restore: async (proof) => {
     if (bucketRestore) {
@@ -102,6 +149,18 @@ const lifecycle = createInvoiceTestLifecycle({
       ...proof,
       snapshotFile: beforeJobTimers,
     });
+    const preservation = await verifyProtectedRows();
+    assert.deepEqual(await rawQuery(guardsSql), originalGuards, "Every original lifecycle trigger and enabled state must remain exact");
+    const finalState = (await rawQuery(`select (select enabled from private.invoice_worker_dispatch_control where id=1) dispatch_enabled,
+ (select count(*) from cron.job where jobname='crewflow-invoice-pdfs')::integer cron_jobs,
+ (select count(*) from net.http_request_queue)::integer http_queued,
+ (select count(*) from pg_stat_activity where pid<>pg_backend_pid() and query ilike '%claim_invoice_billing_jobs%' and state='active')::integer active_claims,
+ (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='private' and c.relname like 'invoice_pdf_test_%')::integer test_tables,
+ (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='private' and p.proname like 'invoice_pdf_test_%')::integer test_functions,
+ (select count(*) from pg_trigger where not tgisinternal and tgname like 'invoice_pdf_test_%')::integer test_recorders,
+ (select count(*) from pg_trigger where not tgisinternal and tgname in('invoice_billing_jobs_dispatch','invoice_lifecycle_guard','timelog_lifecycle_guard','invoice_billing_version_guard','invoice_billing_sources_guard') and tgenabled='D')::integer disabled_guards`))[0];
+    assert.deepEqual(finalState, { dispatch_enabled: false, cron_jobs: 0, http_queued: 0, active_claims: 0, test_tables: 0, test_functions: 0, test_recorders: 0, disabled_guards: 0 });
+    await writeFile(`${output}/final-state.json`, JSON.stringify({ ...finalState, preservation }, null, 2));
     return restored;
   },
 });
@@ -182,6 +241,20 @@ assert.equal(
   0,
   "Stop any existing local schedule before isolated worker tests",
 );
+await verifyServedSources();
+const initialState = (await query(`select enabled,(select count(*) from net.http_request_queue)::integer queued,
+ (select count(*) from pg_stat_activity where pid<>pg_backend_pid() and query ilike '%claim_invoice_billing_jobs%' and state='active')::integer active_claims
+ from private.invoice_worker_dispatch_control where id=1`))[0];
+assert.deepEqual(initialState, { enabled: false, queued: 0, active_claims: 0 });
+const localConfig = (await query(`select
+ (select decrypted_secret='http://supabase_kong_crewflow-demo-20261012:8000/functions/v1/process-invoice-pdfs' from vault.decrypted_secrets where name='invoice_pdf_worker_url') local_url,
+ (select decrypted_secret='${workerSecret.replaceAll("'", "''")}' from vault.decrypted_secrets where name='invoice_pdf_worker_secret') matching_secret`, true))[0];
+assert.deepEqual(localConfig, { local_url: true, matching_secret: true }, "Vault must target only this exact localhost stack and existing local worker secret");
+await writeFile(`${output}/local-config-preflight.json`, JSON.stringify(localConfig));
+protectedBefore = await protectedRows();
+await writeFile(`${output}/protected-before.private.json`, JSON.stringify(protectedBefore));
+originalGuards = await query(guardsSql);
+await writeFile(`${output}/lifecycle-guards-before.json`, JSON.stringify(originalGuards));
 const created = await service.auth.admin.createUser({
   email: `document-${run}@crewflow-demo.test`,
   password: `${run}!aA1`,
@@ -215,6 +288,7 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, () => lifecycle.stop(signal));
 }
 try {
+  await cronTracker.initialize();
   await delayJobTimers(beforeJobTimers);
   await query(
     `DO $$ BEGIN update public.profiles set hourly_rate=250,ico='12345678',bank_account='123/0800',billing_street='Testovací ulice 1',billing_zip='10000',billing_city='Praha',billing_country='CZ' where id='${profile}' and user_id='${userId}'; insert into public.user_roles(user_id,role) values('${userId}','crew') on conflict do nothing; END $$;`,
@@ -319,6 +393,7 @@ try {
     km = 50,
     meals = true,
     pilot = false,
+    prepareOnly = false,
   ) {
     const event = randomUUID(), report = randomUUID();
     const end = minutes === 500 ? "16:20" : "16:00";
@@ -327,6 +402,11 @@ try {
         days - 1
       })n; END $$;`,
     );
+    if (prepareOnly) {
+      const row = await coo.client.from("timelogs").select("id,updated_at").eq("id", report).single();
+      assert.equal(row.error, null);
+      return row.data;
+    }
     if (pilot) await completeReportPilot(event, report);
     else {
       const quote = await rpc(coo.client, "get_invoice_billing_quote", {
@@ -646,150 +726,193 @@ try {
   const recovered = await upload(orphanStatement, orphanId);
   assert.equal(recovered.status, 200, JSON.stringify(recovered.body));
   assert.equal(hash(await download(owner, path)), hash(firstBytes));
-  // Real service job failure, authorized retry, and same-invoice recovery.
+  const activation = await readFile(new URL("../functions/process-invoice-pdfs/activate-dispatch.sql", import.meta.url), "utf8");
+  const schedule = await readFile(new URL("../functions/process-invoice-pdfs/schedule.sql", import.meta.url), "utf8");
+  const pause = (ms = 200) => new Promise((resolve) => setTimeout(resolve, ms));
+  async function until(read, predicate, label, timeout = 90000) {
+    const deadline = Date.now() + timeout;
+    while (true) {
+      lifecycle.check();
+      const value = await read();
+      if (predicate(value)) return value;
+      assert.ok(Date.now() < deadline, `Timed out: ${label}`);
+      await pause();
+    }
+  }
+  const requestRows = () => query(`select t.request_id::text id,t.transaction_id::text,t.created_at,(q.id is not null) queued,r.status_code,r.timed_out,r.error_msg,r.content from private.${cronTracker.table} t left join net.http_request_queue q on q.id=t.request_id left join net._http_response r on r.id=t.request_id order by t.request_id`);
+  async function settledRequests() {
+    const rows = await until(requestRows, (items) => items.every((row) => !row.queued && row.status_code != null), "all recorded event requests");
+    for (const row of rows) {
+      assert.equal(row.status_code, 200, `Ambiguous/unexpected response for ${row.id}`);
+      assert.ok(!row.timed_out && !row.error_msg);
+      const body = JSON.parse(row.content);
+      assert.ok(Number.isInteger(body.processed) && body.processed >= 0 && body.processed <= 4);
+      assert.ok(Number.isInteger(body.rendered) && body.rendered >= 0 && body.rendered <= 1);
+    }
+    return rows;
+  }
+  async function invoiceFor(statementId) {
+    const state = await rpc(owner.client, "get_invoice_billing_snapshot");
+    const statement = state.statements.find((row) => row.id === statementId);
+    if (!statement?.invoice_id) return null;
+    const record = await owner.client.from("invoices").select("*").eq("id", statement.invoice_id).single();
+    assert.equal(record.error, null);
+    return record.data?.pdf_path ? record.data : null;
+  }
+  const waitForInvoice = (id) => until(() => invoiceFor(id), Boolean, `event PDF for ${id}`);
+  const ledgerCount = async () => (await query(`select count(*)::integer count from private.${cronTracker.table}`))[0].count;
+  const storedCommand = () => query("DO $fallback$ DECLARE command text; BEGIN select j.command into strict command from cron.job j where j.jobname='crewflow-invoice-pdfs';execute command;END $fallback$;");
+  // Install the intentional Storage failure BEFORE confirmation can commit an event wake.
   const self = await statementFor("self", 1, 500, 0, false);
   assert.equal(self.total_amount, 2083.33);
-  const issued = await rpc(owner.client, "confirm_invoice_billing", {
-    p_request_id: randomUUID(),
-    p_statement_id: self.id,
-    p_expected_updated_at: self.updated_at,
-    p_non_vat_confirmed: true,
-  });
-  const invoiceId = issued.statement.invoice_id;
-  const frozen = (await owner.client.from("invoices").select(
-    "id,invoice_number,total_amount,supplier_snapshot,customer_snapshot",
-  ).eq("id", invoiceId).single()).data;
-  const manual = await fetch(
-    `${credentials.API_URL}/functions/v1/generate-invoice-pdf`,
-    {
-      method: "POST",
-      headers: {
-        apikey: credentials.ANON_KEY,
-        Authorization: `Bearer ${owner.token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ invoiceId }),
-    },
-  );
-  assert.equal(manual.status, 409);
-  assert.equal((await worker(null)).status, 401);
-  assert.equal((await worker(`Bearer ${credentials.ANON_KEY}`)).status, 401);
-  assert.equal((await worker("Bearer wrong")).status, 401);
   const bucketBefore = await service.storage.getBucket("invoice-pdfs");
   assert.equal(bucketBefore.error, null);
   assert.equal(bucketBefore.data.public, false);
-  await writeFile(
-    `${output}/before-bucket.private.json`,
-    JSON.stringify(bucketBefore.data),
-    { mode: 0o600 },
-  );
+  await writeFile(`${output}/before-bucket.private.json`, JSON.stringify(bucketBefore.data));
   bucketRestore = bucketBefore.data;
-  assert.equal(
-    (await service.storage.updateBucket("invoice-pdfs", {
-      public: false,
-      allowedMimeTypes: ["image/png"],
-    })).error,
-    null,
-  );
+  assert.equal((await service.storage.updateBucket("invoice-pdfs", { public: false, allowedMimeTypes: ["image/png"] })).error, null);
+  await query(activation);
+  let issued, frozen, invoiceId, job;
   try {
-    const failed = await worker();
-    assert.equal(failed.status, 200, JSON.stringify(failed.body));
-    assert.equal(failed.body.rendered, 0);
+    issued = await rpc(owner.client, "confirm_invoice_billing", {
+      p_request_id: randomUUID(), p_statement_id: self.id,
+      p_expected_updated_at: self.updated_at, p_non_vat_confirmed: true,
+    });
+    invoiceId = issued.statement.invoice_id;
+    frozen = (await owner.client.from("invoices").select("id,invoice_number,total_amount,supplier_snapshot,customer_snapshot").eq("id", invoiceId).single()).data;
+    const manual = await fetch(`${credentials.API_URL}/functions/v1/generate-invoice-pdf`, {
+      method: "POST", headers: { apikey: credentials.ANON_KEY, Authorization: `Bearer ${owner.token}`, "Content-Type": "application/json" }, body: JSON.stringify({ invoiceId }),
+    });
+    assert.equal(manual.status, 409);
+    assert.equal((await worker(null)).status, 401);
+    assert.equal((await worker(`Bearer ${credentials.ANON_KEY}`)).status, 401);
+    assert.equal((await worker("Bearer wrong")).status, 401);
+    job = await until(async () => (await rpc(owner.client, "get_invoice_billing_snapshot")).jobs.find((j) => j.invoice_id === invoiceId),
+      (row) => row?.status === "queued" && row.failure_code === "transient_failure", "real event-triggered Storage failure");
+    assert.equal(job.attempts, 1);
+    await settledRequests();
   } finally {
-    assert.equal(
-      (await service.storage.updateBucket("invoice-pdfs", {
-        public: bucketRestore.public,
-        allowedMimeTypes: bucketRestore.allowed_mime_types,
-      })).error,
-      null,
-    );
+    assert.equal((await cleanupService.storage.updateBucket("invoice-pdfs", { public: bucketRestore.public, allowedMimeTypes: bucketRestore.allowed_mime_types })).error, null);
     bucketRestore = null;
   }
   let snapshot = await rpc(owner.client, "get_invoice_billing_snapshot");
-  const job = snapshot.jobs.find((j) => j.invoice_id === invoiceId);
-  assert.equal(job.status, "queued");
-  assert.equal(job.failure_code, "transient_failure");
-  assert.equal(job.attempts, 1);
   const current = snapshot.statements.find((s) => s.id === self.id);
+  const beforeRetryRequests = await ledgerCount();
   await rpc(owner.client, "retry_invoice_billing_job", {
-    p_request_id: randomUUID(),
-    p_statement_id: self.id,
-    p_job_id: job.id,
-    p_expected_updated_at: current.updated_at,
-    p_expected_job_updated_at: job.updated_at,
+    p_request_id: randomUUID(), p_statement_id: self.id, p_job_id: job.id,
+    p_expected_updated_at: current.updated_at, p_expected_job_updated_at: job.updated_at,
   });
-  const generated = await worker();
-  assert.equal(generated.status, 200, JSON.stringify(generated.body));
-  assert.equal(generated.body.rendered, 1);
-  const persisted =
-    (await owner.client.from("invoices").select("*").eq("id", invoiceId)
-      .single()).data;
-  for (const key of Object.keys(frozen)) {
-    assert.deepEqual(persisted[key], frozen[key]);
-  }
+  const persisted = await waitForInvoice(self.id);
+  assert.ok(await ledgerCount() > beforeRetryRequests, "Owner retry commits an event wake");
+  for (const key of Object.keys(frozen)) assert.deepEqual(persisted[key], frozen[key]);
   assert.equal(persisted.pdf_path, `invoices/${invoiceId}.pdf`);
-  await writeFile(
-    `${output}/worker-invoice.pdf`,
-    await download(owner, persisted.pdf_path),
-  );
+  await writeFile(`${output}/worker-invoice.pdf`, await download(owner, persisted.pdf_path));
   snapshot = await rpc(owner.client, "get_invoice_billing_snapshot");
-  assert.equal(snapshot.jobs.find((j) => j.id === job.id).status, "completed");
+  const recoveredJob = snapshot.jobs.find((j) => j.id === job.id);
+  assert.equal(recoveredJob.status, "completed");
+  assert.equal(recoveredJob.attempts, 2);
+  await settledRequests();
   const selfPayment = await markPaid(invoiceId);
-  // Standing consent queues a future issuance. Its only worker invocation will be pg_cron -> pg_net.
+  // ONE actual Auth approval transaction creates three independent standing statements.
+  // Cron is absent throughout this phase and no authorized worker is called directly.
   await rpc(owner.client, "set_self_billing_consent", {
-    p_request_id: randomUUID(),
-    p_enabled: true,
-    p_expected_updated_at: null,
-    p_non_vat_confirmed: true,
+    p_request_id: randomUUID(), p_enabled: true, p_expected_updated_at: null, p_non_vat_confirmed: true,
   });
-  const scheduled = await statementFor("scheduled", 1, 480, 0, false);
-  const schedule = await readFile(
-    new URL("../functions/process-invoice-pdfs/schedule.sql", import.meta.url),
-    "utf8",
-  );
-  await query(
-    `DO $setup$ BEGIN perform vault.update_secret(id,'http://supabase_kong_crewflow-demo-20261012:8000/functions/v1/process-invoice-pdfs') from vault.secrets where name='invoice_pdf_worker_url'; if not found then perform vault.create_secret('http://supabase_kong_crewflow-demo-20261012:8000/functions/v1/process-invoice-pdfs','invoice_pdf_worker_url'); end if; perform vault.update_secret(id,'${workerSecret}') from vault.secrets where name='invoice_pdf_worker_secret'; if not found then perform vault.create_secret('${workerSecret}','invoice_pdf_worker_secret'); end if; END $setup$;`,
-    true,
-  );
-  await cronTracker.initialize();
-  lifecycle.check();
-  await cronTracker.schedule(schedule);
-  lifecycle.check();
-  const scheduledAt = new Date().toISOString();
-  await writeFile(
-    `${output}/schedule-pending.json`,
-    JSON.stringify({ statementId: scheduled.id, scheduledAt, run }, null, 2),
-  );
-  console.log(`WAITING_FOR_CRON ${output}`);
-  let scheduledInvoice = null;
-  for (let n = 0; n < 75; n++) {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    const state = await rpc(owner.client, "get_invoice_billing_snapshot");
-    const s = state.statements.find((row) => row.id === scheduled.id);
-    if (s.invoice_id) {
-      const record = await owner.client.from("invoices").select("*").eq(
-        "id",
-        s.invoice_id,
-      ).single();
-      if (record.data?.pdf_path) {
-        scheduledInvoice = record.data;
-        break;
-      }
-    }
+  const reports = [];
+  for (let i = 0; i < 3; i++) reports.push(await statementFor(`event-burst-${i}`, 1, 480, 0, false, false, true));
+  if (process.env.INVOICE_DISPATCH_INTERRUPTION === "1") {
+    assert.ok(process.send, "Interruption mode requires the controlled parent");
+    process.channel.ref();
+    const waitMessage = () => new Promise((resolve, reject) => {
+      const cleanup = () => { process.off("message", message); process.off("SIGTERM", stop); process.off("SIGINT", stop); };
+      const message = (value) => { cleanup(); resolve(value); };
+      const stop = () => { cleanup(); reject(new InvoiceTestInterrupted("signal")); };
+      process.once("message", message); process.once("SIGTERM", stop); process.once("SIGINT", stop);
+    });
+    const approveOne = async (report) => {
+      const quote = await rpc(coo.client, "get_invoice_billing_quote", { p_timelog_ids: [report.id] });
+      await rpc(coo.client, "resolve_timelog_approvals_atomic", {
+        p_targets: [{ id: report.id, expected_updated_at: report.updated_at, approval_id: null, approval_updated_at: null }],
+        p_resolution: "approved", p_note: "", p_billing_quote: quote.id,
+      });
+    };
+    // Commit both Auth approvals before any worker can hold their shared owner
+    // profile. Only the second marked job's timer is changed during contention.
+    await query("update private.invoice_worker_dispatch_control set enabled=false where id=1");
+    await settledRequests();
+    await approveOne(reports[0]);
+    await approveOne(reports[1]);
+    const statements = (await rpc(owner.client, "get_invoice_billing_snapshot")).statements;
+    const second = statements.find((s) => s.sources.some((x) => x.timelog_id === reports[1].id));
+    await query(`update private.invoice_billing_jobs set available_at='infinity' where statement_id='${second.id}' and kind='issue' and status='queued'`);
+    process.send({ stage: "interruption-ready", output, table: cronTracker.table, reports: reports.map((r) => r.id) });
+    await waitMessage();
+    await query(activation);
+    process.send({ stage: "first-event-committed" });
+    await waitMessage();
+    await query(`update private.invoice_billing_jobs set available_at=clock_timestamp() where statement_id='${second.id}' and kind='issue' and status='queued'`);
+    const requests = await requestRows();
+    process.send({ stage: "second-event-committed", requestIds: requests.map((r) => r.id) });
+    await new Promise((_resolve, reject) => {
+      process.once("SIGTERM", () => reject(new InvoiceTestInterrupted("SIGTERM")));
+      process.once("SIGINT", () => reject(new InvoiceTestInterrupted("SIGINT")));
+    });
+    await writeFile(`${output}/LATER_MAIN_ACTION_SHOULD_NOT_EXIST`, "unexpected continuation");
   }
-  assert.ok(
-    scheduledInvoice,
-    "Database schedule must issue and render with no app present",
-  );
-  const cron = await query(
-    "select j.jobname,d.status,d.return_message,d.start_time from cron.job j join cron.job_run_details d on d.jobid=j.jobid where j.jobname='crewflow-invoice-pdfs' order by d.start_time desc limit 1",
-  );
-  assert.equal(cron[0]?.status, "succeeded");
-  const net = await query(
-    `select r.id::text,r.status_code,r.content from net._http_response r join private.${cronTracker.table} t on t.request_id=r.id order by r.id desc limit 1`,
-  );
-  assert.equal(net[0]?.status_code, 200);
-  assert.equal(JSON.parse(net[0].content).rendered, 1);
+  assert.equal((await query("select count(*)::integer count from cron.job where jobname='crewflow-invoice-pdfs'"))[0].count, 0);
+  const burstStartRequests = await ledgerCount();
+  const burstStartedAt = new Date().toISOString();
+  const burstQuote = await rpc(coo.client, "get_invoice_billing_quote", { p_timelog_ids: reports.map((r) => r.id) });
+  await rpc(coo.client, "resolve_timelog_approvals_atomic", {
+    p_targets: reports.map((row) => ({ id: row.id, expected_updated_at: row.updated_at, approval_id: null, approval_updated_at: null })),
+    p_resolution: "approved", p_note: "", p_billing_quote: burstQuote.id,
+  });
+  const standingStatements = (await rpc(owner.client, "get_invoice_billing_snapshot")).statements.filter((s) => s.sources.some((source) => reports.some((r) => r.id === source.timelog_id)));
+  assert.equal(standingStatements.length, 3);
+  const standingInvoices = [];
+  for (const statement of standingStatements) {
+    assert.equal(statement.sources.length, 1);
+    assert.ok(statement.consent_grant_id);
+    const record = await waitForInvoice(statement.id);
+    assert.equal(record.total_amount, statement.total_amount);
+    assert.deepEqual(record.supplier_snapshot, statement.supplier_snapshot);
+    assert.deepEqual(record.customer_snapshot, statement.customer_snapshot);
+    const bytes = await download(owner, record.pdf_path);
+    assert.equal(Buffer.from(bytes.subarray(0, 5)).toString(), "%PDF-");
+    await writeFile(`${output}/standing-${record.id}.pdf`, bytes);
+    standingInvoices.push(record);
+  }
+  const burstCompletedAt = new Date().toISOString();
+  const burstRequests = (await settledRequests()).slice(burstStartRequests);
+  assert.ok(burstRequests.filter((row) => JSON.parse(row.content).rendered === 1).length >= 3, "More than one PDF drains through event continuation");
+  assert.equal(new Set(standingInvoices.map((i) => i.id)).size, 3);
+  assert.equal(new Set(standingInvoices.map((i) => i.invoice_number)).size, 3);
+  assert.equal((await query("select count(*)::integer count from cron.job where jobname='crewflow-invoice-pdfs'"))[0].count, 0);
+  // Future work cannot wake immediately. Activation sees only a future marked job;
+  // the exact persisted hourly command must recover it when its timer becomes due.
+  await query("update private.invoice_worker_dispatch_control set enabled=false where id=1");
+  await settledRequests();
+  const delayed = await statementFor("delayed-fallback", 1, 480, 0, false);
+  await query(`update private.invoice_billing_jobs set available_at=clock_timestamp()+interval '5 seconds' where statement_id='${delayed.id}' and kind='issue' and status='queued'`);
+  const beforeFuture = await ledgerCount();
+  await query(activation);
+  const cron = await cronTracker.schedule(schedule);
+  await cronTracker.schedule(schedule);
+  assert.equal(await ledgerCount(), beforeFuture, "Activation does not wake future work");
+  await storedCommand();
+  assert.equal(await ledgerCount(), beforeFuture, "Exact hourly command stays idle before due");
+  await until(async () => (await query(`select available_at<=clock_timestamp() due from private.invoice_billing_jobs where statement_id='${delayed.id}' and kind='issue'`))[0].due, Boolean, "future fallback timer", 15000);
+  await storedCommand();
+  const delayedInvoice = await waitForInvoice(delayed.id);
+  assert.ok(await ledgerCount() > beforeFuture, "Exact stored hourly command enqueues due work");
+  await settledRequests();
+  const beforeIdle = await ledgerCount();
+  const idleControl = (await query("select last_request_id::text id from private.invoice_worker_dispatch_control where id=1"))[0].id;
+  await storedCommand();
+  assert.equal(await ledgerCount(), beforeIdle, "Idle exact hourly check sends no HTTP request");
+  assert.equal((await query("select last_request_id::text id from private.invoice_worker_dispatch_control where id=1"))[0].id, idleControl);
+  const net = await settledRequests();
+  const scheduled = standingStatements[0], scheduledInvoice = standingInvoices[0];
   const enabledConsent = (await rpc(owner.client, "get_invoice_billing_snapshot")).consent;
   await rpc(owner.client, "set_self_billing_consent", { p_request_id: randomUUID(), p_enabled: false,
     p_expected_updated_at: enabledConsent.updated_at, p_non_vat_confirmed: false });
@@ -811,13 +934,13 @@ try {
     const record = freshPaid.data.find((i) => i.id === payment.invoiceId);
     assert.deepEqual(record, { id: payment.invoiceId, status: "paid", pdf_path: payment.originalPath, total_amount: payment.totalAmount });
   }
-  for (const s of [own, self, scheduled]) {
+  for (const s of [own, self, ...standingStatements, delayed]) {
     const links = await coo.client.from("invoice_timelogs").select("invoice_id,timelog_id").in("timelog_id", s.sources.map((source) => source.timelog_id));
     assert.equal(links.error, null);
     assert.equal(links.data.length, s.sources.length);
     assert.equal(new Set(links.data.map((l) => l.invoice_id)).size, 1);
   }
-  const foreignInvoices = await other.client.from("invoices").select("id").in("id", [ownPayment.invoiceId, selfPayment.invoiceId, scheduledInvoice.id]);
+  const foreignInvoices = await other.client.from("invoices").select("id").in("id", [ownPayment.invoiceId, selfPayment.invoiceId, ...standingInvoices.map((i) => i.id), delayedInvoice.id]);
   assert.equal(foreignInvoices.error, null);
   assert.deepEqual(foreignInvoices.data, []);
   const scheduledAfter = await owner.client.from("invoices").select("id,invoice_number,total_amount,pdf_path").eq("id", scheduledInvoice.id).single();
@@ -842,6 +965,10 @@ try {
     workerFailureAttempts: job.attempts,
     workerRecoveryAttempts: 2,
     scheduledInvoiceId: scheduledInvoice.id,
+    eventStandingInvoices: standingInvoices.map((i) => ({ id: i.id, invoiceNumber: i.invoice_number, totalAmount: i.total_amount, pdfPath: i.pdf_path })),
+    eventStanding: { approvalTransactions: 1, cronAbsent: true, directAuthorizedWorkerCalls: 0, burstStartedAt, burstCompletedAt, elapsedMs: Date.parse(burstCompletedAt) - Date.parse(burstStartedAt), requests: burstRequests },
+    hourlyFallback: { proof: "exact stored command; no wall-clock hourly tick claimed", schedule: cron.schedule, command: cron.command, delayedStatementId: delayed.id, delayedInvoiceId: delayedInvoice.id, futureNoHttp: true, idleNoHttp: true, idempotent: true },
+    individualEventFailureRetry: true,
     cron,
     net,
     historicalPaidCZK: 2056,
@@ -854,7 +981,7 @@ try {
     exactlyOneInvoicePerCompleteSource: true,
   };
   await writeFile(`${output}/evidence.json`, JSON.stringify(summary, null, 2));
-  console.log(JSON.stringify(summary, null, 2));
+  console.log(JSON.stringify({ ...summary, output }, null, 2));
 } catch (error) {
   if (error instanceof InvoiceTestInterrupted || lifecycle.interrupted) {
     process.exitCode = 130;
@@ -864,4 +991,5 @@ try {
   }
 } finally {
   await lifecycle.cleanup();
+  if (process.connected) process.disconnect();
 }

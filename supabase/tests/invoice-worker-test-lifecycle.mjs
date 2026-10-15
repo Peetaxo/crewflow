@@ -95,6 +95,7 @@ export const createInvoiceTestLifecycle = (deps) => {
             completedAt: new Date().toISOString(),
             directWorkers: workers,
             cron,
+            eventDispatch: cron.eventDispatch,
           };
           await deps.record({ stage: "drained", ...proof });
           restorationAttempted = true;

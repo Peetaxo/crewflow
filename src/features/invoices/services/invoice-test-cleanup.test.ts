@@ -20,6 +20,7 @@ describe("invoice integration stop and drain barrier", () => {
       drainCron: async () => {
         events.push("drain-cron");
         await cron.promise;
+        return { eventDispatch: { disabled: true, fenced: true } };
       },
       restore: async () => {
         events.push("restore");

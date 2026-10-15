@@ -3,20 +3,21 @@ import assert from "node:assert/strict";
 import { chmod, readFile, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
-const demo = "/Users/peetax/Projekty/.crewflow-demo-20261012";
 export async function localQuery(sql, file) {
-  await writeFile(file, sql, { mode: 0o600 });
+  const select = sql.replace(/^\s*(?:--[^\n]*(?:\n|$)\s*)*/, "").trim();
+  const statement = /^select\b/i.test(select)
+    ? `select coalesce(json_agg(row_to_json(result)),'[]'::json) from (${select.replace(/;\s*$/, "")}) result;`
+    : sql;
+  await writeFile(file, statement, { mode: 0o600 });
   await chmod(file, 0o600);
-  const raw = execFileSync("/opt/homebrew/bin/supabase", [
-    "db",
-    "query",
-    "--local",
-    "--workdir",
-    demo,
-    "--file",
-    file,
-  ], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-  return raw.trim().startsWith("{") ? JSON.parse(raw).rows : [];
+  // Credentials expand only inside the exact disposable local container. The
+  // session option avoids the known local supautils revoked-EXECUTE crash hook.
+  const raw = execFileSync("docker", [
+    "exec", "-i", "-e", "PGOPTIONS=-c session_preload_libraries=",
+    "supabase_db_crewflow-demo-20261012", "sh", "-c",
+    'PGPASSWORD="$POSTGRES_PASSWORD" psql -XqAt -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -P pager=off',
+  ], { input: statement, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 });
+  return raw.trim() ? JSON.parse(raw) : [];
 }
 const rowsQuery =
   "select coalesce(jsonb_agg(to_jsonb(j) order by j.id),'[]') jobs from private.invoice_billing_jobs j where status in('queued','running')";
@@ -47,7 +48,7 @@ export async function snapshotJobTimers(directory) {
       new URL(import.meta.url).pathname
     } restore ${file} /private/tmp/crewflow-demo-20261012 ${
       resolve(directory, "worker-drain.private.json")
-    }\nDo not restore without a successful drain receipt. If missing/blocked, leave timers delayed and stop/drain queued and in-flight workers first; see the worker README.\n`,
+    }\nDo not restore without a successful drain receipt for BOTH event and Cron dispatch. If missing/blocked, leave timers delayed, disable/fence event dispatch and Cron, then drain all queued/in-flight workers; see the worker README. The restore holds captured job locks, then the production control lock through its live disabled/Cron-absent checks and exact mutation.\n`,
     { mode: 0o600 },
   );
   return file;
@@ -63,7 +64,11 @@ async function mutateTimers(file, restore) {
   }
   const original = JSON.stringify(jobs).replaceAll("'", "''");
   const sql =
-    `DO $timers$ DECLARE original jsonb:='${original}'::jsonb; item jsonb; current_row jsonb; changed integer:=0; BEGIN
+    `DO $timers$ DECLARE original jsonb:='${original}'::jsonb; item jsonb; current_row jsonb; changed integer:=0; active boolean; BEGIN
+ perform j.id from private.invoice_billing_jobs j where j.id in(select (value->>'id')::uuid from jsonb_array_elements(original)) order by j.id for update;
+ select enabled into strict active from private.invoice_worker_dispatch_control where id=1 for update;
+ if active then raise exception 'Disable event dispatch before timer mutation';end if;
+ if exists(select 1 from cron.job where jobname='crewflow-invoice-pdfs') then raise exception 'Stop Cron before timer mutation';end if;
  for item in select value from jsonb_array_elements(original) loop
   select to_jsonb(j) into current_row from private.invoice_billing_jobs j where id=(item->>'id')::uuid for update;
   if current_row is null or ${
@@ -122,11 +127,8 @@ export const restoreJobTimers = async (file, proof) => {
   assert.equal(proof.cron?.fenced, true);
   assert.equal(proof.cron?.activeCronCommands, 0);
   assert.ok(proof.cron.requests.every((request) => request.definitive));
-  const active = await localQuery(
-    "select count(*)::integer active from cron.job where jobname='crewflow-invoice-pdfs'",
-    resolve(file, "../verify-cron-stopped.private.sql"),
-  );
-  assert.equal(active[0].active, 0, "Stop the schedule before restoration");
+  assert.equal(proof.eventDispatch?.disabled, true, "Disable event dispatch before restoration");
+  assert.equal(proof.eventDispatch?.fenced, true, "Fence event dispatch before restoration");
   return mutateTimers(file, true);
 };
 if (

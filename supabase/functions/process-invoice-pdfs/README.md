@@ -95,6 +95,18 @@ ownership-rebind regression is
 `supabase/tests/invoice-document-owner-binding.test.sql` and rolls back
 entirely.
 
+The harness checks the served runtime files/config, asserts privately that Vault
+targets the exact local Kong worker and matches the passed local worker secret,
+and stores full original rows from `invoice-protected-state.sql` before changes.
+Private evidence lives under
+`/private/tmp/crewflow-invoice-workflow-20261015-dispatch/` (directories 700,
+files 600). Three standing statements are approved in one real Auth transaction
+with Cron absent; actual event workers must finish three PDFs. Individual
+confirmation, a real Storage failure and owner retry also use event dispatch.
+The hourly test registers the literal reviewed command twice, checks future and
+idle silence, then executes that exact stored command when marked work is due.
+This is an exact-command fallback proof, not an observed wall-clock hourly tick.
+
 The exact schedule installation invocation is
 `supabase db query --linked --file <absolute-path-to-schedule.sql>` after Vault
 provisioning. Deliberate activation uses the same command with
@@ -103,52 +115,54 @@ the private enabled flag false under the same singleton lock used by every
 dispatcher, then removes the named Cron job, atomically. This fences future event
 and late Cron invocations and retains queued work and both credential stores.
 Reapplying teardown is safe. It **does not drain already enqueued/running HTTP
-workers**. Local
-equivalents always use
-`--local --workdir /Users/peetax/Projekty/.crewflow-demo-20261012` and an
-absolute SQL path. Disable event dispatch and stop/fence the schedule before
+workers**. The local test query helper uses only
+`supabase_db_crewflow-demo-20261012` and its existing `supabase_admin` credential,
+expanded inside the container, with `PGOPTIONS=-c session_preload_libraries=`
+on that connection. SQL travels through private files/stdin; no ACL or RLS is
+changed. This also avoids the local diagnostic hook's known revoked-EXECUTE
+crash. Disable event dispatch and stop/fence the schedule before
 restoring a fixture snapshot; track and wait for every current request to finish.
 A private `RESTORE.txt` and independently
 runnable
 `invoice-job-test-state.mjs restore <before-job-timers.private.json> <private-local-credentials-dir> <worker-drain.private.json>`
-command are saved before test delays. The helper locks and verifies exact
-captured IDs and every non-timer field, atomically restores, then compares
+command are saved before test delays. The helper locks all captured job IDs in
+deterministic order, then holds the production singleton lock while asserting
+dispatch disabled/Cron absent and verifying every non-timer field. It atomically restores, then compares
 complete rows; SIGINT/SIGTERM use the same cleanup. After a forced process kill,
 use the saved command only with a successful drain receipt; otherwise leave
 timers delayed.
 
 Test interruption and independent recovery:
 
-- The integration harness captures each Cron request ID in a private local
-  ledger and serializes enqueue/stop through a private enabled row. This wrapper
-  exists only in tests; the deployed schedule stays `schedule.sql`. Stopping
-  also fences a late-dispatched command, then drains every queued/in-flight
+- The integration harness captures every successful dispatch request ID with a
+  test-only `AFTER UPDATE OF last_request_id` recorder on the private production
+  singleton. Distinct non-null updates capture queue, continuation, activation
+  and Cron requests; no trigger is installed on pg_net tables. The deployed
+  schedule and its saved command are unchanged. Stopping disables the production
+  singleton under its shared row lock before the test control/Cron fences, then drains every queued/in-flight
   request. Signals stop later main actions; only the main `finally` restores
   fixtures after recognized complete handler responses.
 - `worker-drain.private.json` is written before restoration. The independent
   command is
   `node supabase/tests/invoice-job-test-state.mjs restore <before-job-timers.private.json> <private-local-credentials-dir> <worker-drain.private.json>`.
-  It requires a successful receipt for that exact snapshot and a stopped
-  schedule; it does not manufacture a receipt or claim that a timeout stopped
+  It requires a successful receipt for that exact snapshot, fenced disabled
+  event dispatch and a stopped schedule; it does not manufacture a receipt or claim that a timeout stopped
   the server. Use it only for the same halted test run, with no new worker
   dispatches after its receipt.
 - If the receipt is missing or `cleanup-blocked.private.json` exists, leave
   timers delayed. Read the saved `cron-manifest.private.json` for the exact
   ledger/control table and inspect only its request IDs, queue entries and
-  response status. Stop the named schedule; set its test control row
+  response status. Disable the production singleton under its row lock first,
+  stop the named schedule, set its exact test control row
   enabled=false under its row lock and wait for pending Cron commands. Wait for
   each actual recognized worker response. A timeout/network error/503 is
   ambiguous: do not create a successful receipt from elapsed time or retry raw
   restoration.
-- The event-dispatch proof additionally requires a test-only recorder on updates
-  of `private.invoice_worker_dispatch_control.last_request_id`, so it captures
-  trigger, continuation and Cron requests. The earlier Cron-only tracker cannot
-  prove event-worker quiescence by itself. Snapshot original rows/timers before
-  protection; keep events disabled until this all-request recorder is installed.
-  Cleanup disables the production flag under its row lock, stops/fences Cron,
-  drains every captured request with definitive responses, then drops the test
-  recorder and restores exact timers. Never restore timers while dispatch remains
-  enabled or while any captured response is ambiguous.
+  A newly constructed tracker has no attached run: its empty/uninitialized branch
+  is never evidence for a saved existing ledger. Independent recovery must inspect
+  every exact saved request ID and validate its actual response, then persist a
+  receipt for the exact snapshot. Keep events disabled until the recorder is
+  installed; drop it only after definitive drain.
 - If definitive responses are irretrievable, root must first stop the exact
   local Edge runtime and verify that it is stopped, prevent/delete only the
   tracked queued test invocations before any runtime restart, and record an
@@ -156,8 +170,16 @@ Test interruption and independent recovery:
   recovery. No hosted operation is part of that procedure. Preserve the private
   full snapshot and blocked evidence; do not invent historical state or bypass
   the drain requirement.
-- The controlled proof also saves `CONTROL-RECOVERY.txt` before pausing local
-  pg_net or locking the local jobs table. If its parent is forcibly killed,
+- The current controlled proof is
+  `node supabase/tests/invoice-worker-interruption.integration.mjs <private-demo-credentials-dir> <private-worker-env-file>`.
+  That compatibility entry point delegates to the event driver. It observes one
+  actual worker in flight and a newer queue-trigger request committed while the
+  exact pg_net PID is paused. SIGTERM must fence a late event and retain delayed
+  timers until both requests finish. It permits serial pg_net delivery. The child
+  keeps IPC referenced until its main `finally` completes. Historical minute/Cron
+  proofs remain historical evidence, not the current runner's assumptions.
+  The proof saves `CONTROL-RECOVERY.txt` before pausing local
+  pg_net or taking the local invoice table SHARE lock. If its parent is forcibly killed,
   signal the recorded child to stop, resume only the recorded local pg_net PID,
   release only the recorded local lock connection, then complete the drain
   before restoration. Normal finally cleanup performs those steps automatically.

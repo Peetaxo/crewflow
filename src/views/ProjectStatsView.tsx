@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Building2, CalendarDays, PencilLine, Plus, Wallet } from 'lucide-react';
+import { ArrowLeft, Building2, CalendarDays, PencilLine, Wallet } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAppContext } from '../context/useAppContext';
 import { useAuth } from '../app/providers/useAuth';
@@ -16,7 +16,7 @@ import { useProjectDependencies } from '../features/projects/hooks/useProjectDep
 import ProjectDocuments, { ProjectQueryMessage } from '../features/projects/components/ProjectDocuments';
 import EventDetailView from './EventDetailView';
 import ProjectCosts from '../features/projects/components/ProjectCosts';
-import ProjectEvents from '../features/projects/components/ProjectEvents';
+import ProjectEventsSection from '../features/projects/components/ProjectEventsSection';
 import '../features/projects/components/project-detail.css';
 
 const sectionClass = 'project-overview-section';
@@ -70,16 +70,7 @@ const ProjectDetail = () => {
           {costsQuery ? <ProjectQueryMessage query={costsQuery} loadingLabel="Načítání nákladů" /> : <ProjectCosts costs={summary.costs} stages={summary.stages} hasMissingRates={summary.hasMissingRates} hasUnknownInvoiceAllocation={summary.hasUnknownInvoiceAllocation} />}
         </section>
 
-        <section className={sectionClass} aria-labelledby="project-events-title">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div className="project-overview-section-heading mb-0"><CalendarDays aria-hidden="true" /><h2 id="project-events-title">Akce projektu</h2></div>
-            {canManage && <Button size="icon" aria-label="Nová akce projektu" title="Nová akce projektu" className="h-9 w-9 shrink-0" onClick={() => setEditingEvent({ ...createEmptyEvent(), job: project.id, client: project.client, projectId: project.supabaseId ?? null })}><Plus aria-hidden="true" /></Button>}
-          </div>
-          <ProjectQueryMessage query={eventsQuery} loadingLabel="Načítání akcí" />
-          {!eventsQuery.isPending && !eventsQuery.isError && (summary.events.length ? (
-            <ProjectEvents events={summary.events} onOpen={setSelectedEventId} />
-          ) : <p className="py-4 text-sm text-[color:var(--nodu-text-soft)]">Projekt zatím nemá žádné akce.</p>)}
-        </section>
+        <ProjectEventsSection events={summary.events} query={eventsQuery} canManage={canManage} onOpen={setSelectedEventId} onCreate={() => setEditingEvent({ ...createEmptyEvent(), job: project.id, client: project.client, projectId: project.supabaseId ?? null })} />
 
         <ProjectDocuments invoices={summary.invoices} receipts={summary.receipts} events={summary.events} contractors={dependencies.contractors} invoicesQuery={invoicesQuery} receiptsQuery={receiptsQuery} />
       </div>

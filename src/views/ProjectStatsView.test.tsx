@@ -5,9 +5,9 @@ import type { Contractor, Event, Invoice, Project, ReceiptItem, Timelog } from '
 import ProjectStatsView from './ProjectStatsView';
 
 const mocks = vi.hoisted(() => ({
-  context: { selectedProjectIdForStats: 'JTI001', selectedEventId: null as string | number | null, setSelectedProjectIdForStats: vi.fn(), setSelectedEventId: vi.fn(), setEditingProject: vi.fn(), role: 'coo' },
+  context: { selectedProjectIdForStats: 'JTI001', selectedEventId: null as string | number | null, setSelectedProjectIdForStats: vi.fn(), setSelectedEventId: vi.fn(), setEditingProject: vi.fn(), searchQuery: 'Původní hledání projektů', setSearchQuery: vi.fn(), role: 'coo' },
   auth: { currentUserId: 'user-a', currentProfileId: 'profile-a', role: 'coo' },
-  eventsQuery: { data: [] as Event[], isPending: false, isError: false, error: null as Error | null, refetch: vi.fn() },
+  eventsQuery: { data: [] as Event[] | undefined, isPending: false, isError: false, error: null as Error | null, refetch: vi.fn() },
   timelogsQuery: { data: [] as Timelog[], isPending: false, isError: false, error: null as Error | null, refetch: vi.fn() },
   invoicesQuery: { data: [] as Invoice[], isPending: false, isError: false, error: null as Error | null, refetch: vi.fn() },
   receiptsQuery: { data: [] as ReceiptItem[], isPending: false, isError: false, error: null as Error | null, refetch: vi.fn() },
@@ -43,7 +43,7 @@ vi.mock('../features/invoices/services/invoice-pdf-download', () => ({ openInvoi
 describe('ProjectStatsView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    Object.assign(mocks.context, { selectedProjectIdForStats: project.id, selectedEventId: null, role: 'coo' });
+    Object.assign(mocks.context, { selectedProjectIdForStats: project.id, selectedEventId: null, searchQuery: 'Původní hledání projektů', role: 'coo' });
     Object.assign(mocks.auth, { currentUserId: 'user-a', currentProfileId: 'profile-a', role: 'coo' });
     for (const query of [mocks.eventsQuery, mocks.timelogsQuery, mocks.receiptsQuery, mocks.invoicesQuery]) Object.assign(query, { data: [], isPending: false, isError: false, error: null });
     mocks.projects = [project]; mocks.contractors = [contractor];
@@ -66,8 +66,150 @@ describe('ProjectStatsView', () => {
     expect(screen.queryByText('Variance')).not.toBeInTheDocument();
   });
 
+  it('starts with a collapsed, focusable native disclosure button and an associated content area', async () => {
+    render(<ProjectStatsView />);
+    const region = screen.getByRole('region', { name: 'Akce projektu' });
+    const toggle = within(region).getByRole('button', { name: 'Akce projektu' });
+    expect(within(region).getByRole('heading', { name: 'Akce projektu', level: 2 })).toBeInTheDocument();
+    expect(toggle.tagName).toBe('BUTTON');
+    expect(toggle).toHaveAttribute('type', 'button');
+    expect(toggle.tabIndex).toBe(0);
+    toggle.focus();
+    expect(toggle).toHaveFocus();
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(toggle).toHaveAccessibleDescription('Celkem akcí: 2');
+    const contentId = toggle.getAttribute('aria-controls');
+    expect(contentId).toBeTruthy();
+    const content = document.getElementById(contentId!);
+    expect(content).toBeInTheDocument();
+    expect(content).not.toBeVisible();
+    expect(within(region).queryByRole('list')).not.toBeInTheDocument();
+    expect(within(region).queryByRole('textbox', { name: 'Vyhledat akce projektu' })).not.toBeInTheDocument();
+    // Native keyboard activation dispatches the same click with no pointer detail.
+    fireEvent.click(toggle, { detail: 0 });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await waitFor(() => expect(content).toBeVisible());
+    expect(within(region).getByRole('textbox', { name: 'Vyhledat akce projektu' })).toHaveAttribute('placeholder', 'Název, místo nebo kontakt');
+    expect(within(region).getAllByRole('listitem')).toHaveLength(2);
+    fireEvent.click(toggle, { detail: 0 });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(content).not.toBeVisible();
+  });
+
+  it.each([
+    ['  mÁjAlÉs PŘÍPRAVA  ', 'Majales příprava'],
+    ['  zDaR NAD SAZAVOU  ', 'Festival'],
+    [' NA PRIKOPE 25 ', 'Majales příprava'],
+    ['  jana nova  ', 'Festival'],
+  ])('searches project event names, cities, addresses and contacts for %s', (query, match) => {
+    mocks.eventsQuery.data = [
+      { ...events[0], name: 'Festival', city: 'Žďár nad Sázavou', contactPerson: 'Jana Nová' },
+      { ...events[1], name: 'Majales příprava', address: 'Na Příkopě 25' },
+    ];
+    render(<ProjectStatsView />);
+    const region = screen.getByRole('region', { name: 'Akce projektu' });
+    const toggle = within(region).getByRole('button', { name: 'Akce projektu' });
+    fireEvent.click(toggle);
+    fireEvent.change(within(region).getByRole('textbox', { name: 'Vyhledat akce projektu' }), { target: { value: query } });
+    expect(within(region).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(region).getByRole('listitem')).toHaveTextContent(match);
+    expect(within(region).getByRole('status')).toHaveTextContent('Zobrazeno 1 z 2 akcí');
+    expect(toggle).toHaveAccessibleDescription('Celkem akcí: 2');
+  });
+
+  it('keeps filtered events in chronological order and clears back to all project events', () => {
+    mocks.eventsQuery.data = [...events, { ...events[0], id: 3, supabaseId: 'event-3', name: 'Other event', startDate: '2026-05-03', endDate: '2026-05-03' }];
+    render(<ProjectStatsView />);
+    const region = screen.getByRole('region', { name: 'Akce projektu' });
+    fireEvent.click(within(region).getByRole('button', { name: 'Akce projektu' }));
+    const search = within(region).getByRole('textbox', { name: 'Vyhledat akce projektu' });
+    fireEvent.change(search, { target: { value: 'MAJALES' } });
+    const rows = within(region).getAllByRole('listitem');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveTextContent('Majales priprava');
+    expect(rows[1]).toHaveTextContent('Majales rozvozy');
+    expect(within(region).getByRole('status')).toHaveTextContent('Zobrazeno 2 z 3 akcí');
+    const clear = within(region).getByRole('button', { name: 'Vymazat hledání akcí' });
+    clear.focus();
+    fireEvent.click(clear);
+    expect(search).toHaveValue('');
+    expect(search).toHaveFocus();
+    expect(within(region).getAllByRole('listitem')).toHaveLength(3);
+    expect(within(region).getByRole('status')).toHaveTextContent('Zobrazeno 3 z 3 akcí');
+  });
+
+  it('distinguishes no matches from a project without events and offers a clear control', async () => {
+    render(<ProjectStatsView />);
+    const region = screen.getByRole('region', { name: 'Akce projektu' });
+    fireEvent.click(within(region).getByRole('button', { name: 'Akce projektu' }));
+    fireEvent.change(within(region).getByRole('textbox', { name: 'Vyhledat akce projektu' }), { target: { value: 'Neexistující akce' } });
+    await waitFor(() => expect(within(region).getByText('Žádná akce neodpovídá hledání.')).toBeVisible());
+    expect(within(region).queryByText('Projekt zatím nemá žádné akce.')).not.toBeInTheDocument();
+    expect(within(region).queryByRole('list')).not.toBeInTheDocument();
+    expect(within(region).getByRole('status')).toHaveTextContent('Zobrazeno 0 z 2 akcí');
+    fireEvent.click(within(region).getByRole('button', { name: 'Vymazat hledání akcí' }));
+    expect(within(region).queryByText('Žádná akce neodpovídá hledání.')).not.toBeInTheDocument();
+    expect(within(region).getAllByRole('listitem')).toHaveLength(2);
+  });
+
+  it('preserves local search on collapse without affecting project-list search, costs or documents', () => {
+    render(<ProjectStatsView />);
+    const region = screen.getByRole('region', { name: 'Akce projektu' });
+    const toggle = within(region).getByRole('button', { name: 'Akce projektu' });
+    const costs = screen.getByRole('region', { name: 'Náklady projektu' });
+    const documents = screen.getByRole('region', { name: 'Doklady projektu' });
+    const initialCosts = costs.textContent;
+    const initialDocuments = documents.textContent;
+    fireEvent.click(toggle);
+    expect(within(region).getByRole('textbox', { name: 'Vyhledat akce projektu' })).toHaveValue('');
+    fireEvent.change(within(region).getByRole('textbox', { name: 'Vyhledat akce projektu' }), { target: { value: 'Brno' } });
+    fireEvent.click(toggle);
+    expect(within(region).queryByRole('textbox')).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(within(region).getByRole('textbox', { name: 'Vyhledat akce projektu' })).toHaveValue('Brno');
+    expect(within(region).getAllByRole('listitem')).toHaveLength(1);
+    expect(mocks.context.setSearchQuery).not.toHaveBeenCalled();
+    expect(mocks.context.searchQuery).toBe('Původní hledání projektů');
+    expect(costs.textContent).toBe(initialCosts);
+    expect(documents.textContent).toBe(initialDocuments);
+  });
+
+  it.each(['project', 'user', 'profile', 'role', 'authRole'] as const)('resets disclosure and local search after a %s scope change', (change) => {
+    const { rerender } = render(<ProjectStatsView />);
+    fireEvent.click(screen.getByRole('button', { name: 'Akce projektu' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Vyhledat akce projektu' }), { target: { value: 'Brno' } });
+    if (change === 'project') {
+      mocks.projects.push({ ...project, id: 'OTHER', name: 'Other project' });
+      mocks.context.selectedProjectIdForStats = 'OTHER';
+      mocks.eventsQuery.data = events.map((event) => ({ ...event, job: 'OTHER' }));
+    }
+    if (change === 'user') mocks.auth.currentUserId = 'user-b';
+    if (change === 'profile') mocks.auth.currentProfileId = 'profile-b';
+    if (change === 'role') mocks.context.role = 'crew';
+    if (change === 'authRole') mocks.auth.role = 'crew';
+    rerender(<ProjectStatsView />);
+    const toggle = screen.getByRole('button', { name: 'Akce projektu' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle);
+    expect(screen.getByRole('textbox', { name: 'Vyhledat akce projektu' })).toHaveValue('');
+    expect(within(screen.getByRole('region', { name: 'Akce projektu' })).getAllByRole('listitem')).toHaveLength(2);
+  });
+
+  it('keeps project event creation separate from the collapsed disclosure', () => {
+    render(<ProjectStatsView />);
+    const toggle = screen.getByRole('button', { name: 'Akce projektu' });
+    const create = screen.getByRole('button', { name: 'Nová akce projektu' });
+    expect(toggle).not.toContainElement(create);
+    fireEvent.click(create);
+    expect(screen.getByRole('dialog', { name: 'Nová akce' })).toHaveTextContent(project.supabaseId!);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(screen.getByRole('button', { name: 'Zavřít formulář' }));
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  });
+
   it('orders events chronologically and opens the existing event detail while retaining the project', () => {
     const { rerender } = render(<ProjectStatsView />);
+    fireEvent.click(screen.getByRole('button', { name: 'Akce projektu' }));
     const region = screen.getByRole('region', { name: 'Akce projektu' });
     const rows = within(region).getAllByRole('listitem');
     expect(rows[0]).toHaveTextContent('Majales priprava');
@@ -86,6 +228,7 @@ describe('ProjectStatsView', () => {
 
   it('describes each event card with its own period, location, occupancy and contact', () => {
     render(<ProjectStatsView />);
+    fireEvent.click(screen.getByRole('button', { name: 'Akce projektu' }));
     const preparation = screen.getByRole('button', { name: 'Majales priprava' });
     const deliveries = screen.getByRole('button', { name: 'Majales rozvozy' });
     expect(preparation).toHaveAccessibleDescription(/Praha.*1\. 5\. 2026.*0 \/ 1.*Kontaktní osoba: —/);
@@ -214,18 +357,63 @@ describe('ProjectStatsView', () => {
     mocks.eventsQuery.isPending = true;
     const { rerender } = render(<ProjectStatsView />);
     const region = screen.getByRole('region', { name: 'Akce projektu' });
+    const toggle = within(region).getByRole('button', { name: 'Akce projektu' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(toggle).not.toHaveAccessibleDescription();
+    expect(toggle).not.toHaveTextContent('2');
     expect(within(region).getByRole('status')).toHaveTextContent('Načítání akcí');
+    expect(within(region).queryByRole('textbox')).not.toBeInTheDocument();
     expect(within(region).queryByRole('list')).not.toBeInTheDocument();
     Object.assign(mocks.eventsQuery, { isPending: false, isError: true, error: new Error('Event load failed') });
     rerender(<ProjectStatsView />);
     expect(within(region).getByRole('alert')).toHaveTextContent('Event load failed');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(toggle).not.toHaveAccessibleDescription();
+    expect(toggle).not.toHaveTextContent('2');
+    expect(within(region).queryByRole('list')).not.toBeInTheDocument();
+    expect(within(region).queryByRole('textbox')).not.toBeInTheDocument();
+    expect(within(region).queryByText(/Zobrazeno/)).not.toBeInTheDocument();
     fireEvent.click(within(region).getByRole('button', { name: 'Zkusit znovu' }));
     expect(mocks.eventsQuery.refetch).toHaveBeenCalledOnce();
+  });
+
+  it('does not expose a count or a false empty state before the event snapshot is ready', () => {
+    mocks.eventsQuery.data = undefined;
+    render(<ProjectStatsView />);
+    const region = screen.getByRole('region', { name: 'Akce projektu' });
+    const toggle = within(region).getByRole('button', { name: 'Akce projektu' });
+    expect(toggle).not.toHaveAccessibleDescription();
+    expect(within(region).getByRole('status')).toHaveTextContent('Načítání akcí');
+    fireEvent.click(toggle);
+    expect(within(region).queryByRole('textbox')).not.toBeInTheDocument();
+    expect(within(region).queryByText('Projekt zatím nemá žádné akce.')).not.toBeInTheDocument();
+    expect(within(region).queryByText(/Zobrazeno/)).not.toBeInTheDocument();
+  });
+
+  it('hides stale events and counts when an expanded event query starts loading or fails', () => {
+    const { rerender } = render(<ProjectStatsView />);
+    const region = screen.getByRole('region', { name: 'Akce projektu' });
+    const toggle = within(region).getByRole('button', { name: 'Akce projektu' });
+    fireEvent.click(toggle);
+    expect(within(region).getAllByRole('listitem')).toHaveLength(2);
+    mocks.eventsQuery.isPending = true;
+    rerender(<ProjectStatsView />);
+    expect(within(region).getByRole('status')).toHaveTextContent('Načítání akcí');
+    expect(within(region).queryByRole('list')).not.toBeInTheDocument();
+    expect(within(region).queryByRole('textbox')).not.toBeInTheDocument();
+    expect(toggle).not.toHaveAccessibleDescription();
+    Object.assign(mocks.eventsQuery, { isPending: false, isError: true, error: new Error('Event load failed') });
+    rerender(<ProjectStatsView />);
+    expect(within(region).getByRole('alert')).toHaveTextContent('Event load failed');
+    expect(within(region).queryByRole('list')).not.toBeInTheDocument();
+    expect(within(region).queryByRole('textbox')).not.toBeInTheDocument();
+    expect(toggle).not.toHaveAccessibleDescription();
   });
 
   it('shows the full multi-day event period and keeps the contact visible', async () => {
     mocks.eventsQuery.data = [{ ...events[0], endDate: '2026-05-04' }];
     render(<ProjectStatsView />);
+    fireEvent.click(screen.getByRole('button', { name: 'Akce projektu' }));
     const eventCard = screen.getByRole('region', { name: 'Akce projektu' });
     await waitFor(() => expect(within(eventCard).getByText('2. 5. 2026 – 4. 5. 2026')).toBeVisible());
     expect(within(eventCard).getByText('Kontaktní osoba: Jana Nová')).toBeVisible();
@@ -299,6 +487,7 @@ describe('ProjectStatsView', () => {
   it('shows explicit empty event and document states for a project without related data', () => {
     mocks.eventsQuery.data = []; mocks.receiptsQuery.data = []; mocks.invoicesQuery.data = [];
     render(<ProjectStatsView />);
+    fireEvent.click(screen.getByRole('button', { name: 'Akce projektu' }));
     expect(screen.getByText('Projekt zatím nemá žádné akce.')).toBeInTheDocument();
     expect(screen.getByText('Projekt zatím nemá žádné účtenky.')).toBeInTheDocument();
     expect(screen.getByText('Projekt zatím nemá žádné faktury.')).toBeInTheDocument();

@@ -42,7 +42,7 @@ const ProjectCosts = ({ costs, stages, hasMissingRates, hasUnknownInvoiceAllocat
     </div>
     {workPhases && <ProjectWorkPhases workPhases={workPhases} total={costs.work} isPriceIncomplete={hasMissingRates || hasUnknownInvoiceAllocation} />}
     <dl className="project-cost-categories">
-      {categories.map(({ key, label, Icon }) => <div className={`project-cost-category project-cost-category-${key}`} key={key}>
+      {categories.filter(({ key }) => key === 'travel' || key === 'meals').map(({ key, label, Icon }) => <div className={`project-cost-category project-cost-category-${key}`} key={key}>
         <Icon aria-hidden="true" /><dt>{label}</dt><dd>{amountLabel(costs[key])}</dd>
       </div>)}
     </dl>

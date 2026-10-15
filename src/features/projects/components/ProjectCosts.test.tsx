@@ -51,7 +51,7 @@ it('places the actual work chart directly after Celkem with a work-only subtotal
   }} />);
   const chart = screen.getByRole('figure', { name: 'Práce podle fází' });
   expect(chart.previousElementSibling).toContainElement(screen.getByText('Celkem'));
-  expect(chart.nextElementSibling).toContainElement(screen.getByText('Práce', { selector: 'dt' }));
+  expect(chart.nextElementSibling).toContainElement(screen.getByText('Doprava', { selector: 'dt' }));
   expect(within(chart).getByText('Cena práce celkem').parentElement).toHaveTextContent('3 500 Kč');
   expect(within(chart).getAllByRole('listitem').map((row) => row.textContent?.replace(/\s/g, ' '))).toEqual([
     'Přípravy1 h350 Kč', 'Instal5 h1 750 Kč', 'Provoz3 h1 050 Kč', 'Deinstal1 h350 Kč',

@@ -279,10 +279,10 @@ describe('ProjectStatsView', () => {
     mocks.timelogsQuery.data = [{ id: 1, eid: 1, contractorProfileId: contractor.profileId, days: [{ d: '2026-05-01', f: '20:00', t: '01:00', type: 'provoz' }], km: 10, note: '', status: 'draft' }];
     render(<ProjectStatsView />);
     const region = screen.getByRole('region', { name: 'Náklady projektu' });
-    expect(within(region).getByText('Práce').parentElement).toHaveTextContent('1 250 Kc');
+    expect(within(region).getByText('Cena práce celkem').parentElement).toHaveTextContent('1 250 Kč');
     expect(within(region).getByText('Doprava').parentElement).toHaveTextContent('56 Kc');
     expect(within(region).getByText('Stravné').parentElement).toHaveTextContent('0 Kc');
-    expect(within(region).getByText('Účtenky').parentElement).toHaveTextContent('500 Kc');
+    expect(within(region).getByRole('img', { name: /Účtenky 500 Kc/ })).toBeInTheDocument();
     expect(within(region).getByText('Celkem').parentElement).toHaveTextContent('1 806 Kc');
     expect(within(region).getByText('Rozpracováno').parentElement).toHaveTextContent('1 306 Kc');
     expect(within(region).getByText('Schváleno').parentElement).toHaveTextContent('500 Kc');
@@ -505,8 +505,8 @@ describe('ProjectStatsView', () => {
     mocks.invoicesQuery.data = []; mocks.receiptsQuery.data = [];
     mocks.timelogsQuery.data = [{ id: 1, eid: 1, contractorProfileId: contractor.profileId, days: [{ d: '2026-05-01', f: '09:00', t: '10:00', type: 'provoz' }], km: 0, note: '', status: 'draft' }];
     render(<ProjectStatsView />);
-    expect(screen.getByText('Práce').parentElement).toHaveTextContent('250 Kc');
+    expect(screen.getByText('Cena práce celkem').parentElement).toHaveTextContent('250 Kč');
     act(() => { mocks.contractors = [{ ...contractor, rate: 300 }]; mocks.listener?.(); });
-    expect(screen.getByText('Práce').parentElement).toHaveTextContent('300 Kc');
+    expect(screen.getByText('Cena práce celkem').parentElement).toHaveTextContent('300 Kč');
   });
 });

@@ -66,3 +66,13 @@ Actual UI screenshots with fictional data:
 - `/Users/peetax/.codex/visualizations/2026/10/13/01a134ed-10ed-7b72-9e8e-e85580d127d4/project-work-phases-mobile-2026-10-15.jpg`
 
 This evidence update changes documentation only; the installed application source is `f0a33a1`.
+
+## Follow-up: simplify category cards
+
+The user requested removing the Práce and Účtenky cards beneath the phase chart, leaving Doprava and Stravné. Preserve all four categories in the total-cost bar, its accessible description and financial calculations; preserve receipts in Documents. Keep the remaining cards in two equal columns on desktop and mobile.
+
+- [x] In `ProjectCosts.tsx`, filter only the category-card render to `travel` / `meals`; keep the complete `categories` array for the total-cost bar. Update the existing chart-order assertion in `ProjectCosts.test.tsx` to reference Doprava instead of the removed Práce card. Existing ProjectStatsView assertions now read the work chart subtotal and accessible total-cost description in place of the removed cards. No new test is needed for this small presentation change.
+- [x] In `project-detail.css`, restrict the four-column desktop rule to `.project-cost-stages`, leaving the two-column category grid intact.
+- [ ] Run existing project/component tests, changed-file lint, production build and whitespace checks; inspect the final diff, merge and synchronize main, then refresh both development installations with the required script.
+
+Follow-up pre-merge verification: 143 project/component tests passed; changed-file ESLint, production build and whitespace checks passed. Browser QA confirmed only Doprava/Stravné cards in two equal columns on desktop and 375 px mobile, no card overflow, unchanged total and intact receipt documents. The temporary tab/server were closed and the viewport reset.

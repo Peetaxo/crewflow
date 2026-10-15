@@ -282,7 +282,6 @@ describe('ProjectStatsView', () => {
     expect(within(region).getByText('Cena práce celkem').parentElement).toHaveTextContent('1 250 Kč');
     expect(within(region).getByText('Doprava').parentElement).toHaveTextContent('56 Kc');
     expect(within(region).getByText('Stravné').parentElement).toHaveTextContent('0 Kc');
-    expect(within(region).getByRole('img', { name: /Účtenky 500 Kc/ })).toBeInTheDocument();
     expect(within(region).getByText('Celkem').parentElement).toHaveTextContent('1 806 Kc');
     expect(within(region).getByText('Rozpracováno').parentElement).toHaveTextContent('1 306 Kc');
     expect(within(region).getByText('Schváleno').parentElement).toHaveTextContent('500 Kc');

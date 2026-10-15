@@ -26,7 +26,7 @@ describe('ProjectWorkPhases', () => {
     data.hasUnallocatedInvoiceCosts = true;
     render(<ProjectWorkPhases workPhases={data} total={100} isPriceIncomplete={false} />);
     expect(screen.getByText('Nerozřazeno').closest('li')).toHaveTextContent('Nerozřazeno—100 Kč');
-    expect(screen.getByText(/U některých faktur chybí úplné a jednoznačné propojení/)).toBeInTheDocument();
+    expect(screen.getByText('Část fakturované práce nelze z dostupných výkazů rozdělit podle fází. Její cena je v řádku Nerozřazeno.')).toBeInTheDocument();
   });
 
   it('explains a known amount that cannot safely be partitioned into phase prices', () => {

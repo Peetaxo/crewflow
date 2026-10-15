@@ -33,7 +33,7 @@ export default function ProjectWorkPhases({ workPhases, total, isPriceIncomplete
     </ul>
     {isPriceIncomplete && <p className="project-work-phase-note">Cena práce je neúplná. Zobrazeny jsou známé částky a dostupné skutečně vykázané hodiny.</p>}
     {hasInvoicedAllocation && <p className="project-work-phase-note">Vyfakturovaná cena je rozdělena podle skutečně vykázaných hodin.</p>}
-    {hasUnallocatedInvoiceCosts && <p className="project-work-phase-note">U některých faktur chybí úplné a jednoznačné propojení s výkazy. Jejich cena práce je v řádku Nerozřazeno; dostupné hodiny jsou započteny jen jednou.</p>}
+    {hasUnallocatedInvoiceCosts && <p className="project-work-phase-note">Část fakturované práce nelze z dostupných výkazů rozdělit podle fází. Její cena je v řádku Nerozřazeno.</p>}
     {unallocated.amount !== 0 && unallocated.hours === 0 && !hasUnallocatedInvoiceCosts && <p className="project-work-phase-note">Cenu části práce nelze spolehlivě rozdělit podle fází.</p>}
     {unallocated.hours > 0 && <p className="project-work-phase-note">Část vykázaných hodin nemá podporovanou fázi a je v řádku Nerozřazeno.</p>}
   </figure>;

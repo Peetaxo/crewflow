@@ -8,7 +8,7 @@ Ověřovaný základ je `f5ec8309e5d2f855105754d169d536358c61e390`: hotová obra
 
 Jeden úplný výkaz pracovníka za jednu akci, včetně několika denních řádků, tvoří jeden podklad. Úplné konečné schválení provádí COO. Vlastní nahrané PDF přijímá nebo vrací **CH**. Pracovník může místo nahrání výslovně potvrdit self-billing jedné faktury; volitelný trvalý souhlas v nastavení platí pouze pro budoucí úplná schválení. Odběratelem je klient projektu. Podklady čekající na rozhodnutí jsou oddělené od skutečných faktur.
 
-Backend `7238ab7`, dokumenty a worker `fb3cdb2` i konečná obrazovková část `2d710f0` prošly samostatnou nezávislou kontrolou specifikace a následnou kontrolou kvality. Nálezy předchozích kontrol byly opravené před těmito konečnými souhlasy. Závěrečná kontrola Task 4 a následné zveřejnění jsou samostatné zbývající kroky.
+Backend `7238ab7`, dokumenty a worker `fb3cdb2` i konečná obrazovková část `2d710f0` prošly samostatnou nezávislou kontrolou specifikace a následnou kontrolou kvality. Nálezy předchozích kontrol byly opravené před těmito konečnými souhlasy. Dokončený automatizovaný díl Task 4 na `a14ca378a0c2d880e588b6c4028d5401df466c6b` prošel nezávislou kontrolou specifikace a konečnou kontrolou kvality i propojení celého řešení. Konečný reviewer navíc spustil 21 souborů / 155 testů a samostatně porovnal všech 486 původních řádků; nenašel zbývající zásadní nález. Zveřejnění, zařízení a blokovaný UI pilot jsou samostatné zbývající kroky.
 
 ## Konečné lokální kontroly
 
@@ -84,7 +84,7 @@ Před tímto během se zjistily starší obsluhované kopie funkcí. Po synchron
 
 Čerstvé snapshoty CH a COO obsahovaly každý 40 aktivních a 4 superseded podklady, 15 dokumentů a 47 bezpečně projektovaných job záznamů; oba běžné Crew účty měly ve vlastním scope prázdný seznam. Přesně **10 unikátních starších fiktivních podkladů** vytvořených před opravou kanonické schválené verze zůstává úzce rozpoznaných jako `needsSourceVerification`, pouze ke čtení. Nové kanonické podklady tento příznak nemají. Jejich staré částky, dokumenty ani raw verze se nepřepisovaly.
 
-Nové skutečné PDF workeru má jednu stránku A4. Poppler jej vykreslil a implementátor i root stránku nezávisle vizuálně prohlédli: úplné dlouhé české identity, **8 h 20 min / 2 083,33 Kč**, správná data a bankovní údaje, pravdivě chybějící IBAN, bez clippingu nebo překryvů. Důkaz je `task4-worker-invoice-1.png` a původní `worker-invoice.pdf` v adresáři běhu. Dřívějších šest vizuálně zkontrolovaných stran rendereru/workeru zahrnuje dlouhé identity, stránkování a stravné; toto je oddělený nový jednostránkový důkaz.
+Nové skutečné PDF workeru má jednu stránku A4. Poppler jej vykreslil a implementátor i root stránku nezávisle vizuálně prohlédli: úplné identity a české adresy, **8 h 20 min / 2 083,33 Kč**, správná data a bankovní údaje, pravdivě chybějící IBAN, bez clippingu nebo překryvů. Důkaz je `task4-worker-invoice-1.png` a původní `worker-invoice.pdf` v adresáři běhu. Dřívějších šest vizuálně zkontrolovaných stran rendereru/workeru zahrnuje dlouhé identity, stránkování a stravné; toto je oddělený nový jednostránkový důkaz.
 
 Soukromé přihlašovací údaje, tokeny, lease údaje, úplné snapshoty a PDF testovacího běhu zůstávají mimo Git. Všechny skutečné API testy výslovně ověřily `http://127.0.0.1:55321` a účty `@crewflow-demo.test`; ignorované `.env.local` směřující na Staff se pro ně nenačetlo.
 

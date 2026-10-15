@@ -52,7 +52,7 @@ export const saveInvoiceDocument = async (
   store: UploadStore,
 ): Promise<unknown> => {
   const validation = validateInvoiceDocument(raw);
-  if (!validation.ok) throw new UploadError(validation.error);
+  if (validation.ok === false) throw new UploadError(validation.error);
   const input = validation.value;
   // This read uses caller permissions and current owner/profile/role checks, before any privileged file operation.
   const statement = await store.loadOwnedStatement(input.statementId, userId);

@@ -118,7 +118,7 @@ const statement = {
   total_amount: 7030,
 };
 const makeStore = () => {
-  let saved: Record<string, unknown> | null = null;
+  let saved: Awaited<ReturnType<UploadStore["findDocument"]>> = null;
   let object: { bytes: Uint8Array; fingerprint: string } | null = null;
   let registrations = 0;
   let uploads = 0;

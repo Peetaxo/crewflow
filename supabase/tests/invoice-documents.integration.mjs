@@ -220,39 +220,135 @@ try {
     `DO $$ BEGIN update public.profiles set hourly_rate=250,ico='12345678',bank_account='123/0800',billing_street='Testovací ulice 1',billing_zip='10000',billing_city='Praha',billing_country='CZ' where id='${profile}' and user_id='${userId}'; insert into public.user_roles(user_id,role) values('${userId}','crew') on conflict do nothing; END $$;`,
   );
   const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
+  let reportPilot = null;
+  // Exercise the actual single-event round RPCs with only this run's new owner.
+  // Worker, timer, Cron and cleanup ownership remain with the existing lifecycle.
+  async function completeReportPilot(event, report) {
+    async function payload() {
+      const row = await owner.client.from("timelogs").select("*").eq("id", report).single();
+      const days = await owner.client.from("timelog_days").select("*").eq("timelog_id", report).order("date");
+      assert.equal(row.error, null);
+      assert.equal(days.error, null);
+      assert.equal(days.data.length, 3);
+      return [{ id: report, event_id: event, expected_updated_at: row.data.updated_at,
+        expected_status: row.data.status, km: row.data.km, note: row.data.note ?? "",
+        days: days.data.map(({ id, date, time_from, time_to, day_type, note, meal, meals }) =>
+          ({ id, date, time_from, time_to, day_type, note, meal, meals })) }];
+    }
+    const write = (name, roundId, timelogs) => rpc(owner.client, name, {
+      p_request_id: randomUUID(), p_round_id: roundId, p_workflow_id: null,
+      p_contractor_id: profile, p_anchor_event_id: event, p_timelogs: timelogs,
+    });
+    const transition = (session, receipt, action, note = "", quoteId = null) =>
+      rpc(session.client, "transition_shift_workflow_round_atomic", {
+        p_request_id: randomUUID(), p_round_id: receipt.round.id,
+        p_expected_round_updated_at: receipt.round.updated_at,
+        p_targets: receipt.timelogs.map((t) => ({ id: t.id, expected_updated_at: t.updated_at, expected_status: t.status })),
+        p_action: action, p_note: note, p_affected_event_id: action === "return" ? event : null,
+        p_corrections: null, ...(quoteId ? { p_billing_quote: quoteId } : {}),
+      });
+    const incomplete = await payload();
+    incomplete[0].days[0].time_from = "";
+    incomplete[0].days[0].time_to = "";
+    const draft = await write("save_shift_workflow_drafts_atomic", null, incomplete);
+    assert.equal(draft.round, null);
+    assert.equal(draft.timelogs[0].status, "draft");
+    const initial = await payload();
+    initial[0].days[0].time_from = "08:00";
+    initial[0].days[0].time_to = "15:00";
+    const submitted = await write("submit_shift_workflow_round_atomic", randomUUID(), initial);
+    assert.equal(submitted.round.status, "pending_ch");
+    const returnNote = "DISPOSABLE pilot: doplnit chybějící hodinu prvního dne";
+    const returned = await transition(ch, submitted, "return", returnNote);
+    assert.equal(returned.round.status, "rejected");
+    assert.equal(returned.round.note, returnNote);
+    const corrected = await payload();
+    corrected[0].days[0].time_to = "16:00";
+    corrected[0].note = "DISPOSABLE pilot: opraven celý třídenní výkaz";
+    const resubmitted = await write("submit_shift_workflow_round_atomic", randomUUID(), corrected);
+    assert.equal(resubmitted.round.status, "pending_ch");
+    assert.notEqual(resubmitted.round.id, submitted.round.id);
+    const handedOff = await transition(ch, resubmitted, "handoff");
+    assert.equal(handedOff.round.status, "pending_coo");
+    const quote = await rpc(coo.client, "get_invoice_billing_quote", { p_timelog_ids: [report] });
+    assert.equal(quote.preview.reports.length, 1);
+    assert.equal(quote.preview.reports[0].days.length, 3);
+    assert.equal(quote.preview.total_amount, 7030);
+    const approved = await transition(coo, handedOff, "approve", "", quote.id);
+    assert.equal(approved.round.status, "approved");
+    const history = await owner.client.from("shift_workflow_rounds").select("id,status,note").in("id", [submitted.round.id, resubmitted.round.id]);
+    assert.equal(history.error, null);
+    assert.equal(history.data.find((r) => r.id === submitted.round.id).status, "rejected");
+    reportPilot = { eventId: event, reportId: report, days: 3, returnNote,
+      returnedRoundId: submitted.round.id, approvedRoundId: approved.round.id,
+      quoteId: quote.id, totalAmount: quote.preview.total_amount };
+  }
+  async function markPaid(invoiceId) {
+    const before = await coo.client.from("invoices").select("*").eq("id", invoiceId).single();
+    assert.equal(before.error, null);
+    assert.equal(before.data.status, "sent");
+    const paidAt = new Date().toISOString();
+    await rpc(coo.client, "mark_invoice_paid_atomic", { p_invoice_id: invoiceId,
+      p_expected_status: before.data.status, p_expected_updated_at: before.data.updated_at, p_paid_at: paidAt });
+    const after = await coo.client.from("invoices").select("*").eq("id", invoiceId).single();
+    assert.equal(after.error, null);
+    for (const key of ["id", "invoice_number", "total_amount", "pdf_path", "supplier_snapshot", "customer_snapshot"]) {
+      assert.deepEqual(after.data[key], before.data[key]);
+    }
+    const actor = fixtures.accounts.find((a) => a.key === "coo");
+    assert.equal(after.data.status, "paid");
+    assert.equal(after.data.paid_by_user_id, actor.userId);
+    assert.equal(after.data.paid_by_profile_id, actor.profileId);
+    assert.equal(Date.parse(after.data.paid_at), Date.parse(paidAt));
+    assert.ok(Date.parse(after.data.payment_recorded_at) >= Date.parse(paidAt) - 1000);
+    const duplicate = await coo.client.rpc("mark_invoice_paid_atomic", { p_invoice_id: invoiceId,
+      p_expected_status: before.data.status, p_expected_updated_at: before.data.updated_at, p_paid_at: paidAt });
+    assert.equal(duplicate.error?.code, "PT409");
+    const preserved = await coo.client.from("invoices").select("paid_by_user_id,paid_by_profile_id,paid_at,payment_recorded_at").eq("id", invoiceId).single();
+    assert.equal(preserved.error, null);
+    for (const key of Object.keys(preserved.data)) assert.equal(preserved.data[key], after.data[key]);
+    return { invoiceId, invoiceNumber: after.data.invoice_number, totalAmount: after.data.total_amount,
+      originalPath: after.data.pdf_path, paidByUserId: after.data.paid_by_user_id,
+      paidByProfileId: after.data.paid_by_profile_id, paidAt: after.data.paid_at,
+      paymentRecordedAt: after.data.payment_recorded_at };
+  }
   async function statementFor(
     label,
     days = 3,
     minutes = 480,
     km = 50,
     meals = true,
+    pilot = false,
   ) {
     const event = randomUUID(), report = randomUUID();
     const end = minutes === 500 ? "16:20" : "16:00";
     await query(
-      `DO $$ BEGIN insert into public.events(id,name,project_id,job_number,date_from,date_to,meal_allowance_enabled) values('${event}','DISPOSABLE ${label} ${run}','${fixtures.projectId}','PDF-${label}','2026-10-10','2026-10-12',${meals}); insert into public.timelogs(id,event_id,contractor_id,status,km) values('${report}','${event}','${profile}','pending_coo',${km}); insert into public.timelog_days(timelog_id,date,time_from,time_to,day_type,meals) select '${report}','2026-10-10'::date+n,'08:00','${end}','provoz',array['obed'] from generate_series(0,${
+      `DO $$ BEGIN insert into public.events(id,name,project_id,job_number,date_from,date_to,meal_allowance_enabled,contact_profile_id,contact_approves_hours) values('${event}','DISPOSABLE ${label} ${run}','${fixtures.projectId}','PDF-${label}','2026-10-10','2026-10-12',${meals},'${fixtures.accounts.find((a) => a.key === "coo").profileId}',true); ${pilot ? `insert into public.event_assignments(event_id,profile_id) values('${event}','${profile}');` : ""} insert into public.timelogs(id,event_id,contractor_id,status,km) values('${report}','${event}','${profile}','${pilot ? "draft" : "pending_coo"}',${km}); insert into public.timelog_days(timelog_id,date,time_from,time_to,day_type,meals) select '${report}','2026-10-10'::date+n,'08:00','${end}','provoz',array['obed'] from generate_series(0,${
         days - 1
       })n; END $$;`,
     );
-    const quote = await rpc(coo.client, "get_invoice_billing_quote", {
-      p_timelog_ids: [report],
-    });
-    const result = await coo.client.from("timelogs").select("updated_at").eq(
-      "id",
-      report,
-    ).single();
-    assert.equal(result.error, null);
-    await rpc(coo.client, "resolve_timelog_approvals_atomic", {
-      p_targets: [{
-        id: report,
-        expected_updated_at: result.data.updated_at,
-        approval_id: null,
-        approval_updated_at: null,
-      }],
-      p_resolution: "approved",
-      p_note: "",
-      p_billing_quote: quote.id,
-    });
+    if (pilot) await completeReportPilot(event, report);
+    else {
+      const quote = await rpc(coo.client, "get_invoice_billing_quote", {
+        p_timelog_ids: [report],
+      });
+      const result = await coo.client.from("timelogs").select("updated_at").eq(
+        "id",
+        report,
+      ).single();
+      assert.equal(result.error, null);
+      await rpc(coo.client, "resolve_timelog_approvals_atomic", {
+        p_targets: [{
+          id: report,
+          expected_updated_at: result.data.updated_at,
+          approval_id: null,
+          approval_updated_at: null,
+        }],
+        p_resolution: "approved",
+        p_note: "",
+        p_billing_quote: quote.id,
+      });
+    }
     const snapshot = await rpc(owner.client, "get_invoice_billing_snapshot");
     return snapshot.statements.find((s) =>
       s.sources.some((x) => x.timelog_id === report)
@@ -316,8 +412,10 @@ try {
     );
     return { status: r.status, body: await r.json() };
   }
-  const own = await statementFor("own");
+  const own = await statementFor("own", 3, 480, 50, true, true);
   assert.equal(own.total_amount, 7030);
+  assert.equal(own.sources.length, 1);
+  assert.equal(own.financial_snapshot.reports[0].days.length, 3);
   assert.equal(
     (await upload(own, randomUUID(), firstBytes, { contentType: "image/png" }))
       .status,
@@ -505,6 +603,8 @@ try {
     time: guardAfter.data.pdf_generated_at,
     hash: hash(await download(owner, guardAfter.data.pdf_path)),
   }, guardBefore);
+  const ownPayment = await markPaid(accepted.statement.invoice_id);
+  assert.equal(hash(await download(owner, ownPayment.originalPath)), hash(replacementBytes));
   // Pre-upload an exact request with the same fingerprint, simulating lost registration after a committed Storage write.
   const orphanStatement = await statementFor("orphan");
   const orphanId = randomUUID();
@@ -634,6 +734,7 @@ try {
   );
   snapshot = await rpc(owner.client, "get_invoice_billing_snapshot");
   assert.equal(snapshot.jobs.find((j) => j.id === job.id).status, "completed");
+  const selfPayment = await markPaid(invoiceId);
   // Standing consent queues a future issuance. Its only worker invocation will be pg_cron -> pg_net.
   await rpc(owner.client, "set_self_billing_consent", {
     p_request_id: randomUUID(),
@@ -689,6 +790,39 @@ try {
   );
   assert.equal(net[0]?.status_code, 200);
   assert.equal(JSON.parse(net[0].content).rendered, 1);
+  const enabledConsent = (await rpc(owner.client, "get_invoice_billing_snapshot")).consent;
+  await rpc(owner.client, "set_self_billing_consent", { p_request_id: randomUUID(), p_enabled: false,
+    p_expected_updated_at: enabledConsent.updated_at, p_non_vat_confirmed: false });
+  const afterRevocation = await statementFor("after-revocation", 1, 480, 0, false);
+  assert.equal(afterRevocation.status, "ready");
+  assert.equal(afterRevocation.invoice_id, null);
+  assert.equal(afterRevocation.consent_grant_id, null);
+  const revokedState = await rpc(owner.client, "get_invoice_billing_snapshot");
+  assert.equal(revokedState.consent.enabled, false);
+  assert.equal(revokedState.jobs.filter((j) => j.statement_id === afterRevocation.id && j.kind === "issue").length, 0);
+  const freshOwner = await login({ email: created.data.user.email, password: `${run}!aA1` });
+  const refreshed = await rpc(freshOwner.client, "get_invoice_billing_snapshot");
+  assert.equal(refreshed.statements.find((s) => s.id === own.id).invoice_id, ownPayment.invoiceId);
+  assert.equal(refreshed.statements.find((s) => s.id === self.id).invoice_id, selfPayment.invoiceId);
+  const freshPaid = await freshOwner.client.from("invoices").select("id,status,pdf_path,total_amount").in("id", [ownPayment.invoiceId, selfPayment.invoiceId]);
+  assert.equal(freshPaid.error, null);
+  assert.equal(freshPaid.data.length, 2);
+  for (const payment of [ownPayment, selfPayment]) {
+    const record = freshPaid.data.find((i) => i.id === payment.invoiceId);
+    assert.deepEqual(record, { id: payment.invoiceId, status: "paid", pdf_path: payment.originalPath, total_amount: payment.totalAmount });
+  }
+  for (const s of [own, self, scheduled]) {
+    const links = await coo.client.from("invoice_timelogs").select("invoice_id,timelog_id").in("timelog_id", s.sources.map((source) => source.timelog_id));
+    assert.equal(links.error, null);
+    assert.equal(links.data.length, s.sources.length);
+    assert.equal(new Set(links.data.map((l) => l.invoice_id)).size, 1);
+  }
+  const foreignInvoices = await other.client.from("invoices").select("id").in("id", [ownPayment.invoiceId, selfPayment.invoiceId, scheduledInvoice.id]);
+  assert.equal(foreignInvoices.error, null);
+  assert.deepEqual(foreignInvoices.data, []);
+  const scheduledAfter = await owner.client.from("invoices").select("id,invoice_number,total_amount,pdf_path").eq("id", scheduledInvoice.id).single();
+  assert.equal(scheduledAfter.error, null);
+  for (const key of Object.keys(scheduledAfter.data)) assert.equal(scheduledAfter.data[key], scheduledInvoice[key]);
 
   const historic = await coo.client.from("invoices").select(
     "total_amount,status",
@@ -711,6 +845,13 @@ try {
     cron,
     net,
     historicalPaidCZK: 2056,
+    reportPilot,
+    ownPayment,
+    selfPayment,
+    revokedNextStatementId: afterRevocation.id,
+    independentAuthSessionRead: true,
+    foreignInvoicesHidden: true,
+    exactlyOneInvoicePerCompleteSource: true,
   };
   await writeFile(`${output}/evidence.json`, JSON.stringify(summary, null, 2));
   console.log(JSON.stringify(summary, null, 2));

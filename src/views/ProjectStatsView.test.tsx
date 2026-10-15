@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Contractor, Event, Invoice, Project, ReceiptItem, Timelog } from '../types';
 import ProjectStatsView from './ProjectStatsView';
@@ -52,7 +52,7 @@ describe('ProjectStatsView', () => {
     mocks.getInvoicePdfDownloadUrl.mockResolvedValue('https://signed.example/project.pdf');
   });
 
-  it('shows the four project sections with period, linked events, simple costs, and documents', () => {
+  it('shows the four project sections with period, linked events, costs, and documents', () => {
     render(<ProjectStatsView />);
     expect(screen.getByRole('heading', { name: project.name })).toBeInTheDocument();
     expect(screen.getByText('1. 5. 2026 – 2. 5. 2026')).toBeInTheDocument();
@@ -69,11 +69,12 @@ describe('ProjectStatsView', () => {
   it('orders events chronologically and opens the existing event detail while retaining the project', () => {
     const { rerender } = render(<ProjectStatsView />);
     const region = screen.getByRole('region', { name: 'Akce projektu' });
-    const rows = within(region).getAllByRole('row').slice(1);
+    const rows = within(region).getAllByRole('listitem');
     expect(rows[0]).toHaveTextContent('Majales priprava');
     expect(rows[1]).toHaveTextContent('Brno');
     expect(rows[1]).toHaveTextContent('2 / 3');
-    expect(rows[1]).toHaveTextContent('Jana Nová');
+    expect(rows[1]).toHaveTextContent('Kontaktní osoba: Jana Nová');
+    expect(rows[1]).toHaveTextContent('2. 5. 2026');
     fireEvent.click(within(rows[1]).getByRole('button', { name: 'Majales rozvozy' }));
     expect(mocks.context.setSelectedEventId).toHaveBeenCalledWith('event-2');
     mocks.context.selectedEventId = 'event-2'; rerender(<ProjectStatsView />);
@@ -133,18 +134,19 @@ describe('ProjectStatsView', () => {
     ];
     render(<ProjectStatsView />);
     const documents = screen.getByRole('region', { name: 'Doklady projektu' });
-    const row = within(documents).getByText('2026-0042').closest('tr')!;
+    const row = within(documents).getByText('2026-0042').closest('li')!;
     expect(row).toHaveTextContent('1 000 Kc');
+    expect(row).toHaveTextContent('Podíl projektu');
     expect(row).not.toHaveTextContent('3 000 Kc');
     expect(row).toHaveTextContent('20. 5. 2026');
-    expect(within(documents).getByText('2026-0043').closest('tr')).toHaveTextContent('Koncept');
-    expect(within(documents).getByText('2026-0044').closest('tr')).toHaveTextContent('Uhrazeno');
+    expect(within(documents).getByText('2026-0043').closest('li')).toHaveTextContent('Koncept');
+    expect(within(documents).getByText('2026-0044').closest('li')).toHaveTextContent('Uhrazeno');
   });
 
   it('labels unknown allocations instead of displaying the full shared invoice amount', () => {
     mocks.invoicesQuery.data = [{ ...invoice, job: 'JTI001, OTHER', jobNumbers: ['JTI001', 'OTHER'] }];
     render(<ProjectStatsView />);
-    const row = screen.getByText(invoice.invoiceNumber!).closest('tr')!;
+    const row = screen.getByText(invoice.invoiceNumber!).closest('li')!;
     expect(row).toHaveTextContent('Podíl neznámý');
     expect(row).not.toHaveTextContent('3 000 Kc');
     expect(screen.getByText(/Některé podíly faktur/)).toBeInTheDocument();
@@ -160,6 +162,52 @@ describe('ProjectStatsView', () => {
     rerender(<ProjectStatsView />);
     expect(within(costs).getByRole('alert')).toHaveTextContent('Invoice load failed');
     expect(within(costs).queryByText('0 Kc')).not.toBeInTheDocument();
+  });
+
+  it('keeps invoices available while receipts load and retries only the failed document query', () => {
+    mocks.receiptsQuery.isPending = true;
+    const { rerender } = render(<ProjectStatsView />);
+    const documents = screen.getByRole('region', { name: 'Doklady projektu' });
+    expect(within(documents).getByRole('status')).toHaveTextContent('Načítání účtenek');
+    expect(within(documents).getByRole('button', { name: 'Otevřít PDF 2026-0042' })).toBeInTheDocument();
+    Object.assign(mocks.receiptsQuery, { isPending: false, isError: true, error: new Error('Receipt load failed') });
+    rerender(<ProjectStatsView />);
+    expect(within(documents).getByRole('alert')).toHaveTextContent('Receipt load failed');
+    fireEvent.click(within(documents).getByRole('button', { name: 'Zkusit znovu' }));
+    expect(mocks.receiptsQuery.refetch).toHaveBeenCalledOnce();
+    expect(mocks.invoicesQuery.refetch).not.toHaveBeenCalled();
+  });
+
+  it('keeps receipts available while invoices load', () => {
+    mocks.invoicesQuery.isPending = true;
+    render(<ProjectStatsView />);
+    const documents = screen.getByRole('region', { name: 'Doklady projektu' });
+    expect(within(documents).getByRole('status')).toHaveTextContent('Načítání faktur');
+    const receiptCard = within(documents).getByRole('button', { name: 'Parking' }).closest('li');
+    expect(receiptCard).toHaveTextContent('2. 5. 2026');
+    expect(receiptCard).toHaveTextContent('500 Kc');
+    expect(receiptCard).toHaveTextContent('Schváleno');
+  });
+
+  it('keeps the event loading and retry states scoped to events', () => {
+    mocks.eventsQuery.isPending = true;
+    const { rerender } = render(<ProjectStatsView />);
+    const region = screen.getByRole('region', { name: 'Akce projektu' });
+    expect(within(region).getByRole('status')).toHaveTextContent('Načítání akcí');
+    expect(within(region).queryByRole('list')).not.toBeInTheDocument();
+    Object.assign(mocks.eventsQuery, { isPending: false, isError: true, error: new Error('Event load failed') });
+    rerender(<ProjectStatsView />);
+    expect(within(region).getByRole('alert')).toHaveTextContent('Event load failed');
+    fireEvent.click(within(region).getByRole('button', { name: 'Zkusit znovu' }));
+    expect(mocks.eventsQuery.refetch).toHaveBeenCalledOnce();
+  });
+
+  it('shows the full multi-day event period and keeps the contact visible', async () => {
+    mocks.eventsQuery.data = [{ ...events[0], endDate: '2026-05-04' }];
+    render(<ProjectStatsView />);
+    const eventCard = screen.getByRole('region', { name: 'Akce projektu' });
+    await waitFor(() => expect(within(eventCard).getByText('2. 5. 2026 – 4. 5. 2026')).toBeVisible());
+    expect(within(eventCard).getByText('Kontaktní osoba: Jana Nová')).toBeVisible();
   });
 
   it('opens receipts as read-only records with the event and member', () => {

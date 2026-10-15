@@ -84,6 +84,27 @@ describe('ProjectStatsView', () => {
     expect(mocks.context.setSelectedProjectIdForStats).not.toHaveBeenCalled();
   });
 
+  it('describes each event card with its own period, location, occupancy and contact', () => {
+    render(<ProjectStatsView />);
+    const preparation = screen.getByRole('button', { name: 'Majales priprava' });
+    const deliveries = screen.getByRole('button', { name: 'Majales rozvozy' });
+    expect(preparation).toHaveAccessibleDescription(/Praha.*1\. 5\. 2026.*0 \/ 1.*Kontaktní osoba: —/);
+    expect(deliveries).toHaveAccessibleDescription(/Brno.*2\. 5\. 2026.*2 \/ 3.*Kontaktní osoba: Jana Nová/);
+    expect(preparation).not.toHaveAccessibleDescription(/Brno|Jana Nová/);
+    expect(deliveries).not.toHaveAccessibleDescription(/Praha/);
+  });
+
+  it('describes each receipt card with its own date, amount and status', () => {
+    mocks.receiptsQuery.data = [receipt, { ...receipt, id: 2, title: 'Catering', amount: 900, paidAt: '2026-05-03', status: 'reimbursed' }];
+    render(<ProjectStatsView />);
+    const parking = screen.getByRole('button', { name: 'Parking' });
+    const catering = screen.getByRole('button', { name: 'Catering' });
+    expect(parking).toHaveAccessibleDescription(/2\. 5\. 2026.*500 Kc.*Schváleno/);
+    expect(catering).toHaveAccessibleDescription(/3\. 5\. 2026.*900 Kc.*Uhrazeno/);
+    expect(parking).not.toHaveAccessibleDescription(/900 Kc|Uhrazeno/);
+    expect(catering).not.toHaveAccessibleDescription(/500 Kc|Schváleno/);
+  });
+
   it('prefills the existing new-event form with project and client and keeps the project on close', () => {
     render(<ProjectStatsView />);
     fireEvent.click(screen.getByRole('button', { name: 'Nová akce projektu' }));

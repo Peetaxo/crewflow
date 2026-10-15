@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { ChevronRight, Download, Files, FileText, Receipt } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../../../components/ui/dialog';
@@ -29,6 +29,7 @@ type Props = {
 };
 
 const ProjectDocuments = ({ invoices, receipts, events, contractors, invoicesQuery, receiptsQuery }: Props) => {
+  const descriptionPrefix = useId();
   const [selectedReceipt, setSelectedReceipt] = useState<ReceiptItem | null>(null);
   const [openingInvoiceId, setOpeningInvoiceId] = useState<string | null>(null);
   const [pdfError, setPdfError] = useState('');
@@ -67,14 +68,17 @@ const ProjectDocuments = ({ invoices, receipts, events, contractors, invoicesQue
       <ProjectQueryMessage query={receiptsQuery} loadingLabel="Načítání účtenek" />
       {!receiptsQuery.isPending && !receiptsQuery.isError && (receipts.length ? (
         <ul className="project-document-list" aria-label="Účtenky projektu">
-          {receipts.map((receipt) => <li key={receipt.supabaseId ?? receipt.id}>
-            <button className="project-document-card project-receipt-card" aria-label={receipt.title} onClick={() => setSelectedReceipt(receipt)}>
-              <span className="project-document-icon"><Receipt aria-hidden="true" /></span>
-              <span className="project-document-main"><strong>{receipt.title}</strong><span>Účtenka · {dateLabel(receipt.paidAt)}</span></span>
-              <span className="project-document-value"><strong>{formatCurrency(receipt.amount)}</strong><span className={`project-status project-status-${statusTone(receipt.status)}`}>{receiptStatuses[receipt.status]}</span></span>
-              <ChevronRight className="project-document-arrow" aria-hidden="true" />
-            </button>
-          </li>)}
+          {receipts.map((receipt) => {
+            const descriptionId = `${descriptionPrefix}-receipt-${receipt.supabaseId ?? receipt.id}`;
+            return <li key={receipt.supabaseId ?? receipt.id}>
+              <button className="project-document-card project-receipt-card" aria-label={receipt.title} aria-describedby={`${descriptionId}-date ${descriptionId}-value`} onClick={() => setSelectedReceipt(receipt)}>
+                <span className="project-document-icon"><Receipt aria-hidden="true" /></span>
+                <span className="project-document-main"><strong>{receipt.title}</strong><span id={`${descriptionId}-date`}>Účtenka · {dateLabel(receipt.paidAt)}</span></span>
+                <span id={`${descriptionId}-value`} className="project-document-value"><strong>{formatCurrency(receipt.amount)}</strong><span className={`project-status project-status-${statusTone(receipt.status)}`}>{receiptStatuses[receipt.status]}</span></span>
+                <ChevronRight className="project-document-arrow" aria-hidden="true" />
+              </button>
+            </li>;
+          })}
         </ul>
       ) : <p className="py-4 text-sm text-[color:var(--nodu-text-soft)]">Projekt zatím nemá žádné účtenky.</p>)}
       <h3 className="mb-3 mt-6 text-sm font-semibold">Faktury</h3>

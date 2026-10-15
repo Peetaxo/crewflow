@@ -19,6 +19,8 @@ Jeden úplný výkaz pracovníka za jednu akci, včetně několika denních řá
 
 Základ před změnou prošel 158 soubory / 1 924 testy. To není výsledek konečné implementace. Široký existující dluh aplikační kontroly typů je veden odděleně; kontrola pouze kořenového referenčního projektu není důkazem čistých typů aplikace.
 
+Po spojení současné hlavní větve `94f9092` se serverovou částí na `ac4d014` prošlo 167 souborů / 2 132 testů, kontrola kódu i webové sestavení. Dvě původní časové chyby při souběhu celé sady se sestavením a kontrolou kódu se nepotvrdily samostatně (99/99) ani v kompletním běhu se čtyřmi pracovními procesy. Kontroly, zdroj ani časové limity se kvůli tomu neměnily. Jeden proces se v omezeném prostředí zastavil před spuštěním testů; stejný příkaz mimo toto omezení prošel. Toto je ověřený základ před obrazovkami fakturace, nikoli závěrečný výsledek celé funkce.
+
 Podrobné lokální výsledky jsou mimo Git v `/private/tmp/crewflow-invoice-workflow-20261013/`. Skutečné běhy dokumentů jsou v `/private/tmp/crewflow-demo-20261012/results/invoice-billing/`; obsahují výhradně označené fiktivní podklady. Soukromé přihlašovací údaje, lease tokeny a celé snímky testovacích úloh se nezveřejňují.
 
 ## Oddělená omezení a opravené testovací incidenty

@@ -8,10 +8,113 @@ const createDeferred = <T,>() => {
   return { promise, resolve };
 };
 
+describe('project list search and filters', () => {
+  const snapshot = {
+    projects: [
+      { id: 'AK001', name: 'Letní přehlídka', client: 'Škoda Auto', note: '', createdAt: '2026-01-01' },
+      { id: 'AK002', name: 'Jarní roadshow', client: 'Škoda Auto', note: '', createdAt: '2026-01-01' },
+      { id: 'BR003', name: 'Letní festival', client: 'Česká spořitelna', note: '', createdAt: '2026-01-01' },
+      { id: 'NO004', name: 'Letní příprava', client: 'Škoda Auto', note: '', createdAt: '2026-01-01' },
+    ],
+    events: [
+      { id: 1, job: 'AK001', startDate: '2026-04-01', endDate: '2026-04-10', needed: 1, filled: 0 },
+      { id: 2, job: 'AK001', startDate: '2026-04-20', endDate: '2026-04-25', needed: 1, filled: 0 },
+      { id: 3, job: 'AK002', startDate: '2026-04-10', endDate: '2026-04-20', needed: 1, filled: 0 },
+      { id: 4, job: 'BR003', startDate: '2026-05-01', endDate: '2026-05-10', needed: 1, filled: 0 },
+    ],
+    contractors: [], timelogs: [], receipts: [], invoices: [], clients: [],
+  };
+  beforeEach(() => {
+    vi.resetModules();
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'local' }));
+    vi.doMock('../../../lib/supabase', () => ({ isSupabaseConfigured: false, supabase: null }));
+    vi.doMock('../../../lib/app-data', () => ({ getLocalAppState: () => snapshot, subscribeToLocalAppState: vi.fn(), updateLocalAppState: vi.fn() }));
+  });
+
+  it.each([
+    ['  ak001  ', ['AK001']],
+    ['PREHLIDKA', ['AK001']],
+    ['cEsKa sPoRiTeLnA', ['BR003']],
+    ['LETNI', ['AK001', 'BR003', 'NO004']],
+    ['ŠKODA', ['AK001', 'AK002', 'NO004']],
+    ['přehlídka', ['AK001']],
+  ])('matches a trimmed query %s across job number, name and client without case or diacritics', async (query, ids) => {
+    const { getProjectRows } = await import('./projects.service');
+    expect(getProjectRows(query, {}).map((row) => row.id).sort()).toEqual(ids);
+  });
+
+  it('requires search, client and date period to match together', async () => {
+    const { getProjectRows } = await import('./projects.service');
+    expect(getProjectRows('letni', { client: 'Škoda Auto', startDate: '2026-04-15', endDate: '2026-04-15' }).map((row) => row.id)).toEqual(['AK001']);
+  });
+
+  it('includes both period boundaries and one-sided ranges', async () => {
+    const { getProjectRows } = await import('./projects.service');
+    expect(getProjectRows('', { startDate: '2026-04-25', endDate: '2026-05-01' }).map((row) => row.id)).toEqual(['AK001', 'BR003']);
+    expect(getProjectRows('', { startDate: '2026-04-25' }).map((row) => row.id)).toEqual(['AK001', 'BR003']);
+    expect(getProjectRows('', { endDate: '2026-04-01' }).map((row) => row.id)).toEqual(['AK001']);
+  });
+
+  it('keeps projects without events until a date bound is applied', async () => {
+    const { getProjectRows } = await import('./projects.service');
+    expect(getProjectRows('', { client: 'Škoda Auto' }).map((row) => row.id).sort()).toEqual(['AK001', 'AK002', 'NO004']);
+    expect(getProjectRows('', { client: 'Škoda Auto', endDate: '2026-12-31' }).map((row) => row.id)).toEqual(['AK001', 'AK002']);
+  });
+
+  it('matches gaps inside the overall realization period between multiple events', async () => {
+    const { getProjectRows } = await import('./projects.service');
+    const rows = getProjectRows('', { startDate: '2026-04-15', endDate: '2026-04-15' });
+    expect(rows.map((row) => row.id)).toEqual(['AK001', 'AK002']);
+    expect(rows[0].period).toEqual({ startDate: '2026-04-01', endDate: '2026-04-25' });
+  });
+});
+
 describe('projects.service write flow', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+  });
+
+  it('filters by client and inclusive event-period overlap, excluding projects without events', async () => {
+    const snapshot = {
+      projects: [
+        { id: 'A', name: 'A', client: 'Klient A', createdAt: '2026-01-01' },
+        { id: 'B', name: 'B', client: 'Klient B', createdAt: '2026-01-01' },
+        { id: 'C', name: 'C', client: 'Klient A', createdAt: '2026-01-01' },
+      ],
+      events: [
+        { id: 1, job: 'A', startDate: '2026-04-01', endDate: '2026-04-10', needed: 1, filled: 0 },
+        { id: 2, job: 'B', startDate: '2026-04-10', endDate: '2026-04-20', needed: 1, filled: 0 },
+      ],
+      contractors: [], timelogs: [], receipts: [], invoices: [], clients: [],
+    };
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'local' }));
+    vi.doMock('../../../lib/supabase', () => ({ isSupabaseConfigured: false, supabase: null }));
+    vi.doMock('../../../lib/app-data', () => ({ getLocalAppState: () => snapshot, subscribeToLocalAppState: vi.fn(), updateLocalAppState: vi.fn() }));
+    const { getProjectRows } = await import('./projects.service');
+    expect(getProjectRows('', { client: 'Klient A' }).map((row) => row.id).sort()).toEqual(['A', 'C']);
+    expect(getProjectRows('', { startDate: '2026-04-10', endDate: '2026-04-10' }).map((row) => row.id)).toEqual(['A', 'B']);
+    expect(getProjectRows('', { client: 'Klient A', startDate: '2026-04-10', endDate: '2026-04-10' }).map((row) => row.id)).toEqual(['A']);
+    expect(getProjectRows('', { startDate: '2026-04-11' }).map((row) => row.id)).toEqual(['B']);
+    expect(getProjectRows('', { endDate: '2026-03-31' })).toEqual([]);
+    expect(getProjectRows('', 'all').find((row) => row.id === 'A')?.period).toEqual({ startDate: '2026-04-01', endDate: '2026-04-10' });
+  });
+
+  it('takes project row snapshot after dependency loading triggers', async () => {
+    let snapshot = { projects: [{ id: 'A', name: 'A', client: '', createdAt: '2026-01-01' }], events: [], timelogs: [], contractors: [], invoices: [] };
+    const ensureSupabaseEventsLoaded = vi.fn(() => {
+      snapshot = { ...snapshot, events: [{ id: 1, job: 'A', startDate: '2026-04-01', endDate: '2026-04-10', needed: 1, filled: 0 }] };
+    });
+    const order = vi.fn().mockResolvedValue({ data: [], error: null });
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../../../lib/supabase', () => ({ isSupabaseConfigured: true, supabase: { from: () => ({ select: () => ({ order }) }) } }));
+    vi.doMock('../../../lib/app-data', () => ({ getLocalAppState: () => snapshot, subscribeToLocalAppState: vi.fn(), updateLocalAppState: vi.fn() }));
+    vi.doMock('../../events/services/events.service', () => ({ ensureSupabaseEventsLoaded }));
+    vi.doMock('../../timelogs/services/timelogs.service', () => ({ ensureSupabaseTimelogsLoaded: vi.fn() }));
+    vi.doMock('../../crew/services/crew.service', () => ({ ensureSupabaseCrewLoaded: vi.fn() }));
+    const { getProjectRows } = await import('./projects.service');
+    expect(getProjectRows()[0].eventCount).toBe(1);
+    expect(getProjectRows()[0].period).toEqual({ startDate: '2026-04-01', endDate: '2026-04-10' });
   });
 
   it('persists a new project to Supabase with resolved client UUID', async () => {

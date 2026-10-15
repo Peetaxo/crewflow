@@ -18,10 +18,11 @@ function viewport(height = 532, offsetTop = 0) {
   return Object.assign(new EventTarget(), { height, offsetTop }) as unknown as VisualViewport;
 }
 let renders = 0;
-function Fixture({ active = true, owner = 'one' }: { active?: boolean; owner?: string }) {
-  return <Session key={owner} active={active} />;
+let barHeight = 64;
+function Fixture({ active = true, owner = 'one', footer = false }: { active?: boolean; owner?: string; footer?: boolean }) {
+  return <Session key={owner} active={active} footer={footer} />;
 }
-function Session({ active }: { active: boolean }) {
+function Session({ active, footer }: { active: boolean; footer: boolean }) {
   const container = useRef<HTMLDivElement>(null);
   renders += 1;
   useShiftWorkflowVisualViewport({ container, active });
@@ -31,6 +32,7 @@ function Session({ active }: { active: boolean }) {
         <label>Search<input type="search" /></label><label>Date<input type="date" /></label>
       </div>
     </div>Cards
+    {footer && <div data-workflow-bar ref={(element) => { if (element) element.getBoundingClientRect = () => rect(barHeight); }}>Selection bar</div>}
   </div></main>;
 }
 function installViewport(visible: VisualViewport | undefined = viewport(), layoutHeight = 844) {
@@ -58,9 +60,21 @@ const expectReleasedHeader = (container: HTMLElement) => {
   expect(container).not.toHaveAttribute('data-workflow-keyboard-header');
   headerProperties.forEach((property) => expect(container.style.getPropertyValue(property)).toBe(''));
 };
-afterEach(() => { renders = 0; geometry = { height: 187, left: 16, width: 361 }; vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+afterEach(() => { renders = 0; barHeight = 64; geometry = { height: 187, left: 16, width: 361 }; vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('useShiftWorkflowVisualViewport', () => {
+  it('measures actual floating-bar clearance without changing the page viewport or rendering pixel state', () => {
+    installMobile(); installViewport(); const observations = installResizeObserver();
+    const { rerender } = render(<Fixture footer />); const container = screen.getByTestId('selection');
+    const root = screen.getByTestId('scroll-root'); root.scrollTop = 71;
+    expect(container.style.getPropertyValue('--nodu-workflow-bar-height')).toBe('64px');
+    const initialRenders = renders; barHeight = 96; act(() => observations[0].notify());
+    expect(container.style.getPropertyValue('--nodu-workflow-bar-height')).toBe('96px');
+    expect(renders).toBe(initialRenders); expect(root.scrollTop).toBe(71); expect(root.style.height).toBe('');
+    rerender(<Fixture footer active={false} />); expect(container.style.getPropertyValue('--nodu-workflow-bar-height')).toBe('');
+    expect(observations[0].disconnect).toHaveBeenCalledOnce();
+    barHeight = 120; act(() => observations[0].notify()); expect(container.style.getPropertyValue('--nodu-workflow-bar-height')).toBe('');
+  });
   it('fixes the mobile keyboard header using its measured flow space through native viewport pan and nested scroll', () => {
     installMobile();
     const visible = installViewport(viewport(818), 818)!;
@@ -336,6 +350,20 @@ describe('scoped selection native layout', () => {
     const reserve = mobile.match(/\.nodu-workflow-selection\[data-workflow-keyboard-header\] \.nodu-workflow-selection__toolbar-space\s*\{[^}]*\}/)?.[0];
     expect(reserve).toContain('height: var(--nodu-workflow-toolbar-height);');
     expect(mobile.match(/(?:^|\n) {2}\.nodu-workflow-selection__toolbar\s*\{[^}]*\}/)?.[0]).toContain('padding-top: 3rem;');
+  });
+  it('uses mobile toolbar measurement markers only during keyboard occlusion', () => {
+    const mobile = css.slice(css.indexOf('@media (max-width: 767px)', css.indexOf('.nodu-workflow-selection {')));
+    const toolbar = mobile.match(/\.nodu-mobile-workflow-selection\[data-workflow-keyboard-header\] \[data-workflow-toolbar\]\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(toolbar).toContain('position: fixed;');
+    expect(toolbar).toContain('z-index: 12;');
+    expect(toolbar).toContain('top: calc(env(safe-area-inset-top) + var(--nodu-workflow-viewport-top, 0px));');
+    expect(toolbar).toContain('left: var(--nodu-workflow-toolbar-left);');
+    expect(toolbar).toContain('width: var(--nodu-workflow-toolbar-width);');
+    expect(toolbar).toContain('box-sizing: border-box;');
+    expect(toolbar).toContain('background: rgb(var(--nodu-paper-rgb) / 0.98);');
+    const reserve = mobile.match(/\.nodu-mobile-workflow-selection\[data-workflow-keyboard-header\] \[data-workflow-toolbar-space\]\s*\{[^}]*\}/)?.[0];
+    expect(reserve).toContain('height: var(--nodu-workflow-toolbar-height);');
+    expect(css).not.toContain('.nodu-mobile-workflow-selection__toolbar');
   });
   it('keeps the native date control inside its grid cell without changing its input type', () => {
     const rule = css.match(/\.nodu-workflow-selection__toolbar input\[type="date"\]\s*\{[^}]*\}/)?.[0] ?? '';

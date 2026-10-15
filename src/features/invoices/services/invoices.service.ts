@@ -7,7 +7,7 @@ import { queryKeys } from '../../../lib/query-keys';
 import { mapInvoice } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 import type { Contractor, Event, Invoice, ReceiptItem, Timelog } from '../../../types';
-import { calculateTotalHours } from '../../../utils';
+import { calculateMealAllowance, calculateTotalHours } from '../../../utils';
 import {
   advanceLifecycleSnapshotGeneration,
   getLifecycleSnapshotGeneration,
@@ -56,6 +56,7 @@ type BillingItem = {
   amountHours: number;
   km: number;
   amountKm: number;
+  amountMeals: number;
   amountReceipts: number;
 };
 
@@ -113,6 +114,7 @@ export type InvoiceCreatePreviewItem = {
   amountHours: number;
   km: number;
   amountKm: number;
+  amountMeals: number;
   amountReceipts: number;
   totalAmount: number;
 };
@@ -127,6 +129,7 @@ export type InvoiceCreatePreview = {
   totalKm: number;
   totalAmountHours: number;
   totalAmountKm: number;
+  totalAmountMeals: number;
   totalAmountReceipts: number;
   totalAmount: number;
 };
@@ -141,6 +144,7 @@ type InvoiceItemRow = {
   km: number | null;
   amount_km: number | null;
   amount_receipts: number | null;
+  amount_meals: number | null;
   total_amount: number | null;
   created_at: string;
 };
@@ -303,6 +307,7 @@ const buildBillingBatches = (): BillingBatch[] => {
       amountHours: 0,
       km: 0,
       amountKm: 0,
+      amountMeals: 0,
       amountReceipts: 0,
     };
     batch.items.set(jobNumber, created);
@@ -325,6 +330,9 @@ const buildBillingBatches = (): BillingBatch[] => {
     item.amountHours += amountHours;
     item.km = round2(item.km + timelog.km);
     item.amountKm += amountKm;
+    if (appDataSource === 'local' && event.mealAllowanceEnabled) {
+      item.amountMeals += Math.round(calculateMealAllowance(timelog.days, { enabled: true }));
+    }
     item.eventIds.add(timelog.eid);
     item.timelogIds.push(timelog.id);
 
@@ -366,6 +374,7 @@ const buildInvoiceFromBatch = (
   const hAmt = itemList.reduce((sum, item) => sum + item.amountHours, 0);
   const km = round2(itemList.reduce((sum, item) => sum + item.km, 0));
   const kAmt = itemList.reduce((sum, item) => sum + item.amountKm, 0);
+  const mealAmt = itemList.reduce((sum, item) => sum + item.amountMeals, 0);
   const receiptAmt = itemList.reduce((sum, item) => sum + item.amountReceipts, 0);
   const primaryEventId = uniqueSortedNumbers(batch.eventIds)[0] ?? 0;
   const uniqueId = `FAK-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase()}-${index + 1}`;
@@ -378,10 +387,23 @@ const buildInvoiceFromBatch = (
     hAmt,
     km,
     kAmt,
+    mealAmt,
     receiptAmt,
-    total: hAmt + kAmt + receiptAmt,
+    total: hAmt + kAmt + mealAmt + receiptAmt,
     job: jobNumbers.join(', '),
     jobNumbers,
+    items: appDataSource === 'local' ? itemList.map((item, itemIndex) => ({
+      id: `${uniqueId}-ITEM-${itemIndex + 1}`,
+      jobNumber: item.jobNumber,
+      eventSupabaseId: item.eventIds.size === 1
+        ? getLocalAppState().events.find((event) => event.id === Array.from(item.eventIds)[0])?.supabaseId
+        : undefined,
+      work: item.amountHours,
+      travel: item.amountKm,
+      meals: item.amountMeals,
+      receipts: item.amountReceipts,
+      total: item.amountHours + item.amountKm + item.amountMeals + item.amountReceipts,
+    })) : undefined,
     timelogIds: uniqueSortedNumbers(batch.timelogIds),
     receiptIds: uniqueSortedNumbers(batch.receiptIds),
     eventIds: uniqueSortedNumbers(batch.eventIds),
@@ -439,8 +461,9 @@ const batchToPreview = (
         amountHours: item.amountHours,
         km: round2(item.km),
         amountKm: item.amountKm,
+        amountMeals: item.amountMeals,
         amountReceipts: item.amountReceipts,
-        totalAmount: item.amountHours + item.amountKm + item.amountReceipts,
+        totalAmount: item.amountHours + item.amountKm + item.amountMeals + item.amountReceipts,
       };
     })
     .sort((a, b) => a.jobNumber.localeCompare(b.jobNumber));
@@ -449,6 +472,7 @@ const batchToPreview = (
   const totalKm = round2(items.reduce((sum, item) => sum + item.km, 0));
   const totalAmountHours = items.reduce((sum, item) => sum + item.amountHours, 0);
   const totalAmountKm = items.reduce((sum, item) => sum + item.amountKm, 0);
+  const totalAmountMeals = items.reduce((sum, item) => sum + item.amountMeals, 0);
   const totalAmountReceipts = items.reduce((sum, item) => sum + item.amountReceipts, 0);
 
   return {
@@ -461,8 +485,9 @@ const batchToPreview = (
     totalKm,
     totalAmountHours,
     totalAmountKm,
+    totalAmountMeals,
     totalAmountReceipts,
-    totalAmount: totalAmountHours + totalAmountKm + totalAmountReceipts,
+    totalAmount: totalAmountHours + totalAmountKm + totalAmountMeals + totalAmountReceipts,
   };
 };
 
@@ -536,6 +561,7 @@ const buildBatchFromSelection = (
       amountHours: 0,
       km: 0,
       amountKm: 0,
+      amountMeals: 0,
       amountReceipts: 0,
     };
     batch.items.set(jobNumber, created);
@@ -556,6 +582,9 @@ const buildBatchFromSelection = (
     item.amountHours += amountHours;
     item.km = round2(item.km + timelog.km);
     item.amountKm += amountKm;
+    if (appDataSource === 'local' && event.mealAllowanceEnabled) {
+      item.amountMeals += Math.round(calculateMealAllowance(timelog.days, { enabled: true }));
+    }
     item.eventIds.add(timelog.eid);
     item.timelogIds.push(timelog.id);
 
@@ -630,7 +659,7 @@ const mapSupabaseInvoices = (
       ...items.map((item) => item.job_number),
       row.job_number ?? '',
       ...(localInvoice?.jobNumbers ?? []),
-    ]);
+    ].flatMap((jobNumber) => jobNumber.split(',').map((job) => job.trim().toUpperCase())));
     const eventIds = uniqueSortedNumbers([
       ...items
         .map((item) => item.event_id ? (eventIdMap.get(item.event_id) ?? Number.NaN) : Number.NaN)
@@ -670,6 +699,17 @@ const mapSupabaseInvoices = (
       receiptIds,
       receiptSupabaseIds,
       eventIds,
+      items: items.length ? items.map((item) => ({
+        id: item.id,
+        jobNumber: item.job_number,
+        eventSupabaseId: item.event_id ?? undefined,
+        // Missing fields remain unknown; zero defaults could disguise an incomplete item snapshot.
+        work: item.amount_hours == null ? Number.NaN : Number(item.amount_hours),
+        travel: item.amount_km == null ? Number.NaN : Number(item.amount_km),
+        meals: item.amount_meals == null ? Number.NaN : Number(item.amount_meals),
+        receipts: item.amount_receipts == null ? Number.NaN : Number(item.amount_receipts),
+        total: item.total_amount == null ? Number.NaN : Number(item.total_amount),
+      })) : undefined,
     };
   });
 };

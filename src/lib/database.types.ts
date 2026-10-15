@@ -599,6 +599,7 @@ export interface Database {
           total_hours: number | null;
           amount_hours: number | null;
           amount_km: number | null;
+          amount_meals: number | null;
           amount_receipts: number | null;
           total_amount: number | null;
           invoice_number: string | null;

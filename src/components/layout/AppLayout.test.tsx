@@ -9,6 +9,7 @@ const defaultAppContext = {
   role: 'crewhead',
   setRole,
   selectedEventId: null as string | null,
+  selectedProjectIdForStats: null as string | null,
 };
 
 const authMockState = {
@@ -210,6 +211,14 @@ describe('AppLayout shell', () => {
 
     expect(screen.queryByTestId('mobile-crew-nav')).not.toBeInTheDocument();
     expect(screen.getByTestId('events-view')).toBeInTheDocument();
+  });
+
+  it('hides the mobile nav inside an event opened from a project', () => {
+    mockAppContext = { ...mockAppContext, currentTab: 'projects', selectedProjectIdForStats: 'JTI001', selectedEventId: 'event-1' };
+    mockIsMobile = true;
+    render(<AppLayout />);
+    expect(screen.queryByTestId('mobile-crew-nav')).not.toBeInTheDocument();
+    expect(screen.getByTestId('projects-view')).toBeInTheDocument();
   });
 
   it('uses the mobile app shell for management roles on mobile', () => {

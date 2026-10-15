@@ -98,6 +98,7 @@ export function mapContractor(row: ProfileRow): Contractor {
     tags: row.tags ?? [],
     events: 0,
     rate: Number(row.hourly_rate ?? 0),
+    hasKnownRate: row.hourly_rate != null && Number.isFinite(Number(row.hourly_rate)),
     phone: row.phone ?? '',
     email: row.email ?? '',
     ico: row.ico ?? '',
@@ -290,6 +291,10 @@ export function mapTimelogApproval(row: TimelogApprovalRow): TimelogApproval {
 export function mapInvoice(row: InvoiceRow): Invoice {
   return {
     id: row.id,
+    hasKnownAmounts: [row.amount_hours, row.amount_km, row.total_amount]
+      .every((amount) => amount != null && Number.isFinite(Number(amount)))
+      && [row.amount_meals, row.amount_receipts]
+        .every((amount) => amount == null || Number.isFinite(Number(amount))),
     updatedAt: row.updated_at,
     contractorProfileId: row.contractor_id,
     eid: Number.NaN,
@@ -297,6 +302,7 @@ export function mapInvoice(row: InvoiceRow): Invoice {
     hAmt: Number(row.amount_hours ?? 0),
     km: 0,
     kAmt: Number(row.amount_km ?? 0),
+    mealAmt: Number(row.amount_meals ?? 0),
     receiptAmt: Number(row.amount_receipts ?? 0),
     total: Number(row.total_amount ?? 0),
     job: row.job_number ?? '',

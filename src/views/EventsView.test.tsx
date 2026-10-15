@@ -1,9 +1,382 @@
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mobileMockState = vi.hoisted(() => ({ isMobile: false }));
+
+const workflowBoundary = vi.hoisted(() => ({ read: vi.fn(), save: vi.fn(), events: vi.fn(), reports: vi.fn(), invoices: vi.fn() }));
+
+const workflowId = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+const workflowSnapshot = () => ({ revision: 1, workflows: [], rounds: [], assignedEventIds: [] });
+const workflowEvents = [
+  { id: 21, supabaseId: workflowId(21), name: 'Přípravy', job: 'JOB', startDate: '2026-05-12', endDate: '2026-05-12', city: 'Praha', client: 'Klient', needed: 2, filled: 0, status: 'upcoming' as const },
+  { id: 22, supabaseId: workflowId(22), name: 'Instalace', job: 'JOB', startDate: '2026-05-12', endDate: '2026-05-14', city: 'Praha', client: 'Klient', needed: 2, filled: 0, status: 'upcoming' as const },
+  { id: 23, supabaseId: workflowId(23), name: 'Starší přípravy', job: 'OLD', startDate: '2026-04-20', endDate: '2026-04-20', city: 'Praha', client: 'Klient', needed: 2, filled: 0, status: 'past' as const },
+].map((event) => ({ ...event, updatedAt: '2026-05-12T11:00:00Z' }));
+
+function held<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (cause: unknown) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+describe('mobile workflow selection in the actual events overview', () => {
+  const clients: QueryClient[] = [];
+  let context: typeof mockAppContext;
+  let presentation = workflowEvents;
+  let crewName = 'Zachycený Petr';
+  beforeEach(() => {
+    vi.resetModules(); vi.clearAllMocks();
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-05-12T12:00:00'));
+    mobileMockState.isMobile = true; presentation = workflowEvents; crewName = 'Zachycený Petr';
+    context = { ...mockAppContext, role: 'crewhead', eventsFilter: 'all', eventsCalendarDate: '2026-05-12', searchQuery: '' };
+    workflowBoundary.read.mockResolvedValue(workflowSnapshot()); workflowBoundary.save.mockResolvedValue({});
+    workflowBoundary.events.mockResolvedValue(workflowEvents); workflowBoundary.reports.mockResolvedValue([]); workflowBoundary.invoices.mockResolvedValue([]);
+    vi.doMock('../lib/app-config', () => ({ appDataSource: 'supabase' }));
+    vi.doMock('../app/providers/useAuth', () => ({ useAuth: () => ({ currentUserId: workflowId(1), currentProfileId: workflowId(2), role: context.role, isAuthenticated: true, isLoading: false, isRoleSwitching: false }) }));
+    vi.doMock('../context/useAppContext', () => ({ useAppContext: () => context }));
+    vi.doMock('../features/events/queries/useEventsQuery', () => ({ useEventsQuery: () => ({ data: presentation, isLoading: false, error: null }) }));
+    vi.doMock('../features/shift-workflows/shift-workflows.gateway', () => ({ readShiftWorkflowSnapshot: workflowBoundary.read, saveShiftWorkflow: workflowBoundary.save }));
+    vi.doMock('../features/events/services/events.service', async () => {
+      const actual = await vi.importActual<typeof import('../features/events/services/events.service')>('../features/events/services/events.service');
+      return { ...actual, fetchEventsSnapshot: workflowBoundary.events, getEventDetailData: (id: string) => ({
+        event: presentation.find((event) => event.supabaseId === id), timelogs: [], applications: [], contractors: [], receipts: [],
+        crewAssignments: [{ eventId: 21, eventSupabaseId: id, contractorProfileId: workflowId(99), name: crewName }],
+      }) };
+    });
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({ fetchTimelogsSnapshot: workflowBoundary.reports }));
+    vi.doMock('../features/invoices/services/invoices.service', () => ({ fetchInvoicesSnapshot: workflowBoundary.invoices }));
+    vi.doMock('./EventDetailView', () => ({ default: () => null }));
+    vi.doMock('../components/modals/EventEditModal', () => ({ default: () => null }));
+  });
+  afterEach(() => { clients.splice(0).forEach((client) => client.clear()); vi.useRealTimers(); vi.restoreAllMocks(); });
+  async function setup(role = 'crewhead') {
+    context.role = role;
+    const { default: EventsView } = await import('./EventsView');
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); clients.push(client);
+    const tree = () => <QueryClientProvider client={client}><div className="nodu-page-frame" data-testid="frame"><EventsView /></div></QueryClientProvider>;
+    return { ...render(tree()), tree, client };
+  }
+  const cards = () => Array.from(document.querySelectorAll<HTMLElement>('[data-workflow-occurrence]'));
+  const sameCards = (before: HTMLElement[]) => {
+    const after = cards(); expect(after).toHaveLength(before.length);
+    after.forEach((card, i) => expect(card).toBe(before[i]));
+  };
+  const simulatedSearchHeight = 60;
+  // Simulated normal flow: inline search adds height; toolbar, controls and cards move with frame scroll.
+  function measureOverview(withReasonLayout = false, compactFrame = false) {
+    const actual = HTMLElement.prototype.getBoundingClientRect;
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const frame = this.closest<HTMLElement>('.nodu-page-frame');
+      const index = cards().indexOf(this);
+      const selecting = Boolean(document.querySelector('.nodu-mobile-workflow-selection'));
+      const cardIndex = index >= 0 ? index : cards().indexOf(this.closest<HTMLElement>('[data-workflow-occurrence]')!);
+      const reasonShift = withReasonLayout && cardIndex >= 0 ? cards().slice(0, cardIndex).reduce((sum, card) => sum + (card.hasAttribute('aria-describedby') ? 48 : 0), 0) : 0;
+      const addedSearchHeight = selecting ? simulatedSearchHeight : 0;
+      const scrollTop = frame?.scrollTop ?? 0;
+      const cardPosition = (compactFrame ? 213 : 160) + addedSearchHeight + cardIndex * 220 + reasonShift - scrollTop;
+      const toolbar = this.closest<HTMLElement>('.nodu-mobile-events-toolbar');
+      const isToolbar = this === toolbar || this.hasAttribute('data-workflow-toolbar-space');
+      const isTitle = this.matches('.nodu-mobile-events-header__title');
+      const isHeaderControl = Boolean(this.closest('.nodu-mobile-events-header'));
+      const top = this === frame ? 0 : cardIndex >= 0 ? cardPosition + (index >= 0 ? 0 : this.matches('h3') ? 54 : this.matches('p') ? 74 : 16)
+        : (compactFrame ? 72 : 0) - scrollTop + (isToolbar ? 0 : isTitle ? 9 : isHeaderControl ? 0 : 52);
+      const height = this === frame ? (compactFrame ? 800 : 818) : index >= 0 ? 200
+        : isToolbar ? (compactFrame ? 92 : 72) + addedSearchHeight : isTitle ? 26 : isHeaderControl ? 44 : toolbar ? 32 : 16;
+      const frameWidth = compactFrame ? 368 : 393;
+      const width = isTitle ? 72 : toolbar && !isToolbar ? (isHeaderControl ? 44 : 56) : frameWidth;
+      const left = isTitle ? (frameWidth - width) / 2 : this.matches('.nodu-mobile-events-header__action--right') ? frameWidth - width : 0;
+      if (this === frame || cardIndex >= 0 || toolbar || isToolbar) return { x: left, y: top, top, bottom: top + height, left, right: left + width, width, height, toJSON: () => ({}) };
+      return actual.call(this);
+    });
+  }
+
+  it.each(['crewhead', 'coo'])('keeps ordinary toolbar presentation while selecting as %s', async (role) => {
+    const read = held<typeof workflowEvents>(); workflowBoundary.events.mockReturnValue(read.promise);
+    await setup(role);
+    const title = screen.getByRole('heading', { name: 'Akce' });
+    const toolbar = title.closest<HTMLElement>('.nodu-mobile-events-toolbar')!;
+    const space = toolbar.parentElement!;
+    const dateButton = screen.getByRole('button', { name: 'Vybrat datum akci' });
+    const allFilter = screen.getByRole('button', { name: 'Vse' });
+    const normalToolbarClass = toolbar.className, normalSpaceClass = space.className, before = cards();
+    const normalDateButtonClass = dateButton.className, normalAllFilterClass = allFilter.className;
+    const assertNormalToolbar = () => {
+      const currentTitle = screen.getByRole('heading', { name: 'Akce' });
+      const currentToolbar = currentTitle.closest<HTMLElement>('.nodu-mobile-events-toolbar')!;
+      const currentSpace = currentToolbar.parentElement!;
+      const currentDateButton = screen.getByRole('button', { name: 'Vybrat datum akci' });
+      const currentAllFilter = screen.getByRole('button', { name: 'Vse' });
+      expect(currentTitle).toBe(title);
+      expect(currentToolbar).toBe(toolbar);
+      expect(currentSpace).toBe(space);
+      expect(currentDateButton).toBe(dateButton);
+      expect(currentAllFilter).toBe(allFilter);
+      expect(currentToolbar.className).toBe(normalToolbarClass);
+      expect(currentSpace.className).toBe(normalSpaceClass);
+      expect(currentDateButton.className).toBe(normalDateButtonClass);
+      expect(currentAllFilter.className).toBe(normalAllFilterClass);
+      [currentTitle, currentToolbar, currentSpace, currentDateButton, currentAllFilter].forEach((element) => {
+        expect(element.isConnected).toBe(true);
+        expect(document.contains(element)).toBe(true);
+      });
+    };
+
+    fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' }));
+    assertNormalToolbar();
+    expect(toolbar).toHaveAttribute('data-workflow-toolbar');
+    expect(space).toHaveAttribute('data-workflow-toolbar-space');
+    expect(toolbar).not.toHaveClass('nodu-mobile-workflow-selection__toolbar');
+    expect(space).not.toHaveClass('nodu-workflow-selection__toolbar-space');
+    const search = screen.getByRole('searchbox', { name: 'Hledat směnu nebo jobnumber' });
+    expect(search).not.toHaveFocus();
+    expect(allFilter.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Zrušit' }).closest('[data-workflow-bar]')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pokračovat' })).toBeInTheDocument();
+    sameCards(before);
+
+    await act(async () => read.resolve(workflowEvents));
+    await waitFor(() => expect(workflowBoundary.events).toHaveBeenCalledOnce());
+    assertNormalToolbar();
+    expect(toolbar).toHaveAttribute('data-workflow-toolbar');
+    expect(space).toHaveAttribute('data-workflow-toolbar-space');
+    sameCards(before);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Zrušit' }));
+    assertNormalToolbar();
+    expect(toolbar).not.toHaveAttribute('data-workflow-toolbar');
+    expect(space).not.toHaveAttribute('data-workflow-toolbar-space');
+    sameCards(before);
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
+    expect(workflowBoundary.save).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { role: 'crewhead', entryScroll: 0 }, { role: 'crewhead', entryScroll: 137 },
+    { role: 'coo', entryScroll: 0 }, { role: 'coo', entryScroll: 137 },
+  ])('keeps the simulated flow header as $role at scrollTop=$entryScroll and restores the normal snapshot on cancel', async ({ role, entryScroll }) => {
+    const read = held<typeof workflowEvents>(); workflowBoundary.events.mockReturnValue(read.promise);
+    await setup(role); measureOverview(false, true); const frame = screen.getByTestId('frame');
+    let flowTop = 0; Object.defineProperty(frame, 'scrollTop', { configurable: true, get: () => flowTop, set: (value: number) => { flowTop = Math.max(0, value); } });
+    frame.scrollTop = entryScroll;
+    const before = cards(); const first = before[0]; const normalOffset = first.getBoundingClientRect().top;
+    const toolbar = screen.getByRole('heading', { name: 'Akce' }).closest<HTMLElement>('.nodu-mobile-events-toolbar')!;
+    const controls = [screen.getByRole('heading', { name: 'Akce' }), screen.getByRole('button', { name: 'Vybrat datum akci' }), screen.getByRole('button', { name: 'Vse' })];
+    const controlRects = () => controls.map((element) => {
+      const { top, bottom, left, right, width, height } = element.getBoundingClientRect();
+      return { top, bottom, left, right, width, height };
+    });
+    const normalControls = controlRects(), normalToolbar = toolbar.getBoundingClientRect();
+    const normalGap = normalOffset - normalToolbar.bottom;
+    const assertFlowHeader = () => {
+      expect(frame.scrollTop).toBe(entryScroll);
+      expect(toolbar.getBoundingClientRect().top).toBe(normalToolbar.top);
+      expect(controlRects()).toEqual(normalControls);
+    };
+    const selectedDate = first.dataset.workflowOccurrence!.slice(-10);
+    fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' }));
+    assertFlowHeader();
+    fireEvent.scroll(frame); fireEvent.scroll(frame); sameCards(before);
+    assertFlowHeader();
+    expect(document.querySelector('[data-workflow-start-date]')).toHaveAttribute('data-workflow-start-date', '2026-05-12');
+    expect(toolbar.getBoundingClientRect().height).toBe(normalToolbar.height + simulatedSearchHeight);
+    expect(first.getBoundingClientRect().top).toBe(normalOffset + simulatedSearchHeight);
+    expect(first.getBoundingClientRect().top - toolbar.getBoundingClientRect().bottom).toBe(normalGap);
+    expect(first.getBoundingClientRect().top).toBeGreaterThanOrEqual(toolbar.getBoundingClientRect().bottom);
+    expect(within(first).getByRole('heading').getBoundingClientRect().top).toBeGreaterThanOrEqual(toolbar.getBoundingClientRect().bottom);
+    expect(within(first).getByText('JOB').getBoundingClientRect().top).toBeGreaterThanOrEqual(toolbar.getBoundingClientRect().bottom);
+    within(first).getAllByText(/12\. 5\. 2026/).forEach((date) => expect(date.getBoundingClientRect().top).toBeGreaterThanOrEqual(toolbar.getBoundingClientRect().bottom));
+    expect(first.dataset.workflowOccurrence).toContain(selectedDate); expect(document.querySelector('[data-workflow-start-date]')).toHaveAttribute('data-workflow-start-date', '2026-05-12');
+    expect(screen.getByRole('searchbox')).not.toHaveFocus();
+    expect(screen.getByRole('searchbox')).toHaveValue(''); expect(screen.getByRole('button', { name: 'Vse' })).toHaveClass('text-[color:var(--nodu-accent)]');
+    const entryOffset = first.getBoundingClientRect().top; fireEvent.click(before[0]); fireEvent.click(before[1]);
+    await act(async () => read.resolve(workflowEvents)); await waitFor(() => expect(screen.getByRole('button', { name: 'Pokračovat' })).toBeEnabled());
+    assertFlowHeader();
+    sameCards(before); expect(first.getBoundingClientRect().top).toBe(entryOffset);
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'OLD' } }); fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } });
+    const restored = cards()[0]; expect(restored.getBoundingClientRect().top).toBe(entryOffset);
+    const summaryCards = cards(); fireEvent.click(screen.getByRole('button', { name: 'Pokračovat' })); fireEvent.click(screen.getByRole('button', { name: 'Zpět k výběru' }));
+    fireEvent.scroll(frame); sameCards(summaryCards);
+    expect(document.querySelector('[data-workflow-start-date]')).toHaveAttribute('data-workflow-start-date', '2026-05-12');
+    expect(restored.getBoundingClientRect().top).toBe(entryOffset); expect(frame.getBoundingClientRect()).toMatchObject({ width: 368, height: 800 });
+    fireEvent.click(screen.getByRole('button', { name: 'Zrušit' })); expect(frame.scrollTop).toBe(entryScroll); expect(cards()[0].getBoundingClientRect().top).toBe(normalOffset);
+    assertFlowHeader(); expect(toolbar.getBoundingClientRect().height).toBe(normalToolbar.height); sameCards(summaryCards);
+    expect(workflowBoundary.save).not.toHaveBeenCalled();
+  });
+  it.each([{ query: 'Přípravy', scroll: 0, count: 1 }, { query: 'JOB', scroll: 100, count: 4 }])('clears inherited query $query back to the current selected flow window', async ({ query, scroll, count }) => {
+    context.searchQuery = query; await setup(); measureOverview(false, true);
+    const frame = screen.getByTestId('frame'); let nativeTop = 0;
+    Object.defineProperty(frame, 'scrollTop', { configurable: true, get: () => nativeTop, set: (value: number) => { nativeTop = Math.max(0, value); } });
+    const normalOffset = cards()[0].getBoundingClientRect().top;
+    fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' })); const entryOffset = cards()[0].getBoundingClientRect().top;
+    expect(entryOffset).toBeGreaterThanOrEqual(document.querySelector<HTMLElement>('[data-workflow-toolbar]')!.getBoundingClientRect().bottom);
+    const occurrenceKey = cards()[0].dataset.workflowOccurrence;
+    frame.scrollTop += scroll; fireEvent.scroll(frame); const localOffset = cards()[0].getBoundingClientRect().top;
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } });
+    const originalOccurrence = cards().find((card) => card.dataset.workflowOccurrence === occurrenceKey)!;
+    expect(originalOccurrence.getBoundingClientRect().top).toBe(localOffset); expect(cards()).toHaveLength(4);
+    fireEvent.click(screen.getByRole('button', { name: 'Zrušit' })); expect(cards()).toHaveLength(count); expect(frame.scrollTop).toBe(0); expect(cards()[0].getBoundingClientRect().top).toBe(normalOffset);
+  });
+
+  it.each(['crewhead', 'coo'])('selects immediately for %s while preserving the real May 12 cards, date, filter, and position', async (role) => {
+    vi.setSystemTime(new Date('2026-05-20T12:00:00'));
+    const read = held<typeof workflowEvents>(); workflowBoundary.events.mockReturnValue(read.promise);
+    const { rerender, tree } = await setup(role);
+    fireEvent.click(screen.getByRole('button', { name: 'Vybrat datum akci' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Zobrazit akce od 12. května 2026' }));
+    expect(mockAppContext.setEventsCalendarDate).toHaveBeenCalledWith('2026-05-12'); mockAppContext.setEventsCalendarDate.mockClear();
+    measureOverview();
+    const frame = screen.getByTestId('frame'); frame.scrollTop = 137;
+    const before = cards(); const keys = before.map((card) => card.dataset.workflowOccurrence);
+    const normalVisiblePosition = before[0].getBoundingClientRect().top;
+    expect(before).toHaveLength(4);
+    fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' }));
+    const visiblePosition = normalVisiblePosition + simulatedSearchHeight;
+    expect(frame.scrollTop).toBe(137);
+    sameCards(before); expect(cards().map((card) => card.dataset.workflowOccurrence)).toEqual(keys); expect(before[0].getBoundingClientRect().top).toBe(visiblePosition); expect(frame.getBoundingClientRect().height).toBe(818);
+    expect(screen.queryByRole('heading', { name: 'Propojit směny' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Načítání propojení…')).not.toBeInTheDocument(); expect(screen.queryByText('Vyberte alespoň dvě směny.')).not.toBeInTheDocument();
+    expect(document.querySelector('input[type="date"]')).toBeNull();
+    const search = screen.getByRole('searchbox', { name: 'Hledat směnu nebo jobnumber' }); expect(search).not.toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Vse' }).compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Nova akce' })).not.toBeInTheDocument();
+    fireEvent.click(before[0]); fireEvent.click(before[1]); expect(screen.getByText('Vybráno: 2')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pokračovat' })).toBeDisabled();
+    presentation = workflowEvents.map((event) => ({ ...event, name: 'Nová publikace', endDate: '2026-05-19' })); crewName = 'Živá Jana'; rerender(tree());
+    sameCards(before); expect(within(before[0]).getByText('Zachycený Petr')).toBeInTheDocument(); expect(screen.queryByText('Živá Jana')).not.toBeInTheDocument();
+    await act(async () => read.resolve(workflowEvents));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Pokračovat' })).toBeEnabled());
+    sameCards(before); expect(before[0].getBoundingClientRect().top).toBe(visiblePosition); expect(frame.getBoundingClientRect().height).toBe(818); expect(before[0]).toBeChecked(); expect(before[1]).toBeChecked();
+    expect(mockAppContext.setEventsFilter).not.toHaveBeenCalled(); expect(mockAppContext.setEventsCalendarDate).not.toHaveBeenCalled(); expect(workflowBoundary.save).not.toHaveBeenCalled();
+  });
+
+  it('keeps marks through a read failure/retry, summary/back, local filters/search/date, and restores entry on cancel', async () => {
+    const read = held<typeof workflowEvents>(); workflowBoundary.events.mockReturnValueOnce(read.promise);
+    await setup(); const before = cards(); const frame = screen.getByTestId('frame'); frame.scrollTop = 91;
+    fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' })); fireEvent.click(before[0]); fireEvent.click(before[1]);
+    await act(async () => read.reject(new Error('offline')));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/nepodařilo/); sameCards(before); expect(screen.getByText('Vybráno: 2')).toBeInTheDocument();
+    expect(within(document.querySelector<HTMLElement>('[data-workflow-bar]')!).getByRole('alert')).toHaveTextContent(/nepodařilo/);
+    expect(within(document.querySelector<HTMLElement>('[data-workflow-bar]')!).getByRole('button', { name: 'Zkusit načíst znovu' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Zkusit načíst znovu' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Pokračovat' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Pokračovat' })); expect(screen.getByRole('dialog')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Zpět k výběru' })); sameCards(before); expect(frame.scrollTop).toBe(91);
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'OLD' } }); expect(cards()).toHaveLength(1); expect(screen.getByText('Starší přípravy')).toBeInTheDocument(); expect(screen.getByText('Vybráno: 2')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Nadchazejici' })); expect(cards()).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Vse' }));
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } }); expect(cards()).toHaveLength(4); expect(frame.scrollTop).toBe(91);
+    fireEvent.click(screen.getByRole('button', { name: 'Vybrat datum akci' })); fireEvent.click(screen.getByRole('button', { name: 'Zobrazit akce od 14. května 2026' }));
+    expect(cards()).toHaveLength(1); expect(cards()[0]).toBeChecked(); expect(screen.getByText('Vybráno: 2')).toBeInTheDocument();
+    expect(mockAppContext.setEventsCalendarDate).not.toHaveBeenCalled(); expect(mockAppContext.setEventsFilter).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Zrušit' })); expect(screen.queryByRole('searchbox')).not.toBeInTheDocument(); expect(cards()).toHaveLength(4); expect(frame.scrollTop).toBe(91); expect(workflowBoundary.save).not.toHaveBeenCalled();
+  });
+  it.each(['missing', 'invalid', 'approval'] as const)('retains a %s provisional mark on the same real card with a visible reason and fails closed', async (problem) => {
+    const read = held<typeof workflowEvents>(); workflowBoundary.events.mockReturnValue(read.promise);
+    if (problem === 'invalid') presentation = workflowEvents.map((event, i) => i === 0 ? { ...event, supabaseId: 'not-a-server-id' } : event);
+    if (problem === 'approval') workflowBoundary.reports.mockResolvedValue([{ id: 100, eid: 21, eventSupabaseId: workflowId(21), contractorProfileId: workflowId(99), status: 'pending_ch', days: [], km: 0, note: '' }]);
+    await setup(); const before = cards(); fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' })); fireEvent.click(before[0]); fireEvent.click(before[1]);
+    await act(async () => read.resolve(problem === 'missing' ? workflowEvents.slice(1) : workflowEvents));
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument()); sameCards(before);
+    const provisional = before.find((card) => card.dataset.workflowOccurrence?.startsWith(problem === 'invalid' ? 'not-a-server-id|' : `${workflowId(21)}|`))!;
+    expect(provisional).toBeChecked(); expect(provisional).toHaveAttribute('aria-disabled', 'false');
+    expect(within(provisional).getByText(problem === 'approval' ? /schvalování/ : /není dostupná/)).toBeInTheDocument();
+    expect(screen.getByText('Vybráno: 2')).toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Pokračovat' })).toBeDisabled();
+    fireEvent.click(provisional); expect(screen.getByText('Vybráno: 1')).toBeInTheDocument(); expect(workflowBoundary.save).not.toHaveBeenCalled();
+  });
+  it.each([1, 2] as const)('keeps inclusive v%s multiday copies stable and counts the event once', async (scheduleVersion) => {
+    presentation = workflowEvents.map((event, i) => i === 1 ? { ...event, scheduleVersion } : event);
+    await setup(); const before = cards(); fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' }));
+    await waitFor(() => expect(workflowBoundary.events).toHaveBeenCalledOnce()); sameCards(before);
+    const copies = screen.getAllByRole('checkbox', { name: /Instalace · JOB/ }); expect(copies).toHaveLength(3);
+    fireEvent.click(copies[1]); expect(copies.every((copy) => copy.getAttribute('aria-checked') === 'true')).toBe(true); expect(screen.getByText('Vybráno: 1')).toBeInTheDocument();
+    const preparations = before.find((card) => card.dataset.workflowOccurrence?.startsWith(`${workflowId(21)}|`))!;
+    fireEvent.keyDown(preparations, { key: 'Enter' }); expect(screen.getByText('Vybráno: 2')).toBeInTheDocument();
+    fireEvent.keyDown(preparations, { key: ' ' }); expect(screen.getByText('Vybráno: 1')).toBeInTheDocument();
+    expect(screen.queryByTitle('Smazat akci')).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Kopirovat akci na jiny den' })).not.toBeInTheDocument(); expect(mockAppContext.setSelectedEventId).not.toHaveBeenCalled();
+  });
+  it('expands seven-day history through empty weeks from an upward gesture at the entry boundary', async () => {
+    await setup(); const before = cards(); const frame = screen.getByTestId('frame');
+    fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' })); sameCards(before);
+    const start = () => document.querySelector('[data-workflow-start-date]')?.getAttribute('data-workflow-start-date');
+    expect(start()).toBe('2026-05-12');
+    fireEvent.wheel(frame, { deltaY: -20 }); expect(start()).toBe('2026-05-05'); expect(cards()).toHaveLength(4);
+    fireEvent.wheel(frame, { deltaY: -20 }); expect(start()).toBe('2026-04-28'); expect(cards()).toHaveLength(4);
+    fireEvent.touchStart(frame, { touches: [{ clientY: 100 }] }); fireEvent.touchMove(frame, { touches: [{ clientY: 140 }] }); expect(start()).toBe('2026-04-21');
+    fireEvent.wheel(frame, { deltaY: -20 }); expect(start()).toBe('2026-04-14'); expect(screen.getByText('Starší přípravy')).toBeInTheDocument();
+    expect(screen.queryByText(/Starší směny zobrazíte/)).not.toBeInTheDocument(); expect(workflowBoundary.save).not.toHaveBeenCalled();
+  });
+  it('keeps all older history reachable from an empty entry date without a scrollTop decrease', async () => {
+    await setup(); const frame = screen.getByTestId('frame');
+    fireEvent.click(screen.getByRole('button', { name: 'Vybrat datum akci' })); fireEvent.click(screen.getByRole('button', { name: 'Zobrazit akce od 30. května 2026' }));
+    expect(cards()).toHaveLength(0); fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' })); expect(cards()).toHaveLength(0);
+    for (const date of ['2026-05-23', '2026-05-16', '2026-05-09', '2026-05-02', '2026-04-25', '2026-04-18']) {
+      expect(frame.scrollTop).toBe(0); fireEvent.wheel(frame, { deltaY: -20 });
+      expect(document.querySelector('[data-workflow-start-date]')).toHaveAttribute('data-workflow-start-date', date);
+    }
+    expect(screen.getByText('Starší přípravy')).toBeInTheDocument(); expect(workflowBoundary.save).not.toHaveBeenCalled();
+  });
+  it('preserves the visible occurrence when a completed blocked read inserts a reason above it', async () => {
+    const read = held<typeof workflowEvents>(); workflowBoundary.events.mockReturnValue(read.promise);
+    workflowBoundary.reports.mockResolvedValue([{ id: 100, eid: 22, eventSupabaseId: workflowId(22), contractorProfileId: workflowId(99), status: 'pending_ch', days: [], km: 0, note: '' }]);
+    await setup(); measureOverview(true); const frame = screen.getByTestId('frame'); frame.scrollTop = 370;
+    const before = cards(); const visible = before.find((card) => card.dataset.workflowOccurrence?.startsWith(`${workflowId(21)}|`))!;
+    const normalOffset = visible.getBoundingClientRect().top;
+    fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' })); fireEvent.click(before[0]); fireEvent.click(visible);
+    expect(frame.scrollTop).toBe(370);
+    expect(visible.getBoundingClientRect().top).toBe(normalOffset + simulatedSearchHeight);
+    frame.scrollTop += simulatedSearchHeight; fireEvent.scroll(frame);
+    expect(before[0].getBoundingClientRect().bottom).toBeLessThanOrEqual(frame.getBoundingClientRect().top);
+    expect(visible.getBoundingClientRect().top).toBeGreaterThanOrEqual(frame.getBoundingClientRect().top);
+    expect(visible.getBoundingClientRect().bottom).toBeLessThanOrEqual(frame.getBoundingClientRect().bottom);
+    const offset = visible.getBoundingClientRect().top;
+    await act(async () => read.resolve(workflowEvents)); await screen.findByRole('alert');
+    expect(within(before[0]).getByText(/schvalování/)).toBeInTheDocument(); sameCards(before);
+    expect(visible.getBoundingClientRect().top).toBe(offset); expect(frame.getBoundingClientRect().height).toBe(818);
+    expect(screen.getByText('Vybráno: 2')).toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Pokračovat' })).toBeDisabled();
+  });
+  it('remembers the local window position on the first inline edit of an inherited nonempty query', async () => {
+    context.searchQuery = 'Přípravy'; await setup(); measureOverview();
+    const frame = screen.getByTestId('frame'); frame.scrollTop = 80;
+    const entry = cards()[0]; const normalOffset = entry.getBoundingClientRect().top;
+    fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' }));
+    const offset = normalOffset + simulatedSearchHeight;
+    expect(frame.scrollTop).toBe(80);
+    expect(cards()).toHaveLength(1); expect(cards()[0]).toBe(entry); expect(entry.getBoundingClientRect().top).toBe(offset);
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'OLD' } }); expect(screen.getByText('Starší přípravy')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } });
+    expect(cards()).toHaveLength(4); const restored = cards().find((card) => card.dataset.workflowOccurrence?.startsWith(`${workflowId(21)}|`))!;
+    expect(restored.getBoundingClientRect().top).toBe(offset); expect(mockAppContext.setSearchQuery).not.toHaveBeenCalled();
+  });
+  it('restores the captured normal query, date, and status after external preference publication during selection', async () => {
+    context.searchQuery = 'Přípravy';
+    const setSearchQuery = vi.fn((query: string) => { context.searchQuery = query; });
+    context = { ...context, setSearchQuery,
+      setEventsFilter: vi.fn((filter: string) => { context.eventsFilter = filter; }),
+      setEventsCalendarDate: vi.fn((date: string) => { context.eventsCalendarDate = date; }) };
+    const { rerender, tree } = await setup(); const entry = cards().map((card) => card.dataset.workflowOccurrence);
+    fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' }));
+    context.searchQuery = 'Instalace'; context.eventsFilter = 'past'; context.eventsCalendarDate = '2026-06-10'; rerender(tree());
+    expect(cards().map((card) => card.dataset.workflowOccurrence)).toEqual(entry);
+    fireEvent.click(screen.getByRole('button', { name: 'Zrušit' })); rerender(tree());
+    expect(context.searchQuery).toBe('Přípravy'); expect(context.eventsFilter).toBe('all'); expect(context.eventsCalendarDate).toBe('2026-05-12');
+    expect(cards().map((card) => card.dataset.workflowOccurrence)).toEqual(entry); expect(workflowBoundary.save).not.toHaveBeenCalled();
+  });
+  it.each(['crewhead', 'coo'])('saves through the shared command path for %s and restores the entry overview', async (role) => {
+    await setup(role); const before = cards(); const frame = screen.getByTestId('frame'); frame.scrollTop = 94;
+    fireEvent.click(screen.getByRole('button', { name: 'Propojit směny' })); fireEvent.click(before[0]); fireEvent.click(before[1]);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Pokračovat' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Pokračovat' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Propojit směny' }));
+    await waitFor(() => expect(screen.queryByRole('searchbox')).not.toBeInTheDocument());
+    sameCards(before); expect(frame.scrollTop).toBe(94); expect(workflowBoundary.save).toHaveBeenCalledOnce();
+    expect(workflowBoundary.save.mock.calls[0][0]).toMatchObject({ role });
+    expect(workflowBoundary.save.mock.calls[0][1]).toMatchObject({ eventIds: [workflowId(21), workflowId(22)], expectedRevision: 1 });
+    expect(screen.getByRole('button', { name: 'Propojit směny' })).toHaveAttribute('aria-pressed', 'false');
+  });
+});
 
 vi.mock('../app/providers/useAuth', () => ({
   useAuth: () => ({ currentProfileId: 'profile-current' }),
@@ -28,6 +401,7 @@ const mockAppContext = {
   setSelectedEventId: vi.fn(),
   setSelectedContractorProfileId: vi.fn(),
   searchQuery: '',
+  setSearchQuery: vi.fn(),
   setDeleteConfirm: vi.fn(),
   setEventTab: vi.fn(),
   eventsViewMode: 'list',
@@ -147,6 +521,9 @@ describe('EventsView', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    vi.doUnmock('../lib/app-config');
+    vi.doUnmock('../features/shift-workflows/shift-workflows.gateway');
+    vi.doMock('../app/providers/useAuth', () => ({ useAuth: () => ({ currentProfileId: 'profile-current' }) }));
     mobileMockState.isMobile = false;
   });
 
@@ -232,14 +609,15 @@ describe('EventsView', () => {
     expect(screen.getByText('AK001')).toBeInTheDocument();
   });
 
-  it('renders a compact mobile Crew events header while keeping list and calendar controls for management', async () => {
+  it.each(['crew', 'crewhead', 'coo'] as const)('uses the compact list-only mobile header for %s even with a saved calendar preference', async (role) => {
     mobileMockState.isMobile = true;
 
-    const setupMocks = (role: 'crew' | 'crewhead') => {
+    const setupMocks = (role: 'crew' | 'crewhead' | 'coo') => {
       vi.doMock('../context/useAppContext', () => ({
         useAppContext: () => ({
           ...mockAppContext,
           role,
+          eventsViewMode: 'calendar',
         }),
       }));
 
@@ -272,10 +650,10 @@ describe('EventsView', () => {
       }));
     };
 
-    setupMocks('crew');
+    setupMocks(role);
     const { default: CrewEventsView } = await import('./EventsView');
 
-    const { unmount } = render(
+    render(
       <QueryClientProvider client={new QueryClient()}>
         <CrewEventsView />
       </QueryClientProvider>,
@@ -283,24 +661,11 @@ describe('EventsView', () => {
 
     expect(screen.getByRole('heading', { name: 'Akce' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Vybrat datum akci' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Filtrovat akce' })).toBeInTheDocument();
+    if (role === 'crew') expect(screen.getByRole('button', { name: 'Filtrovat akce' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Seznam' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Kalendar' })).not.toBeInTheDocument();
 
-    unmount();
-    vi.resetModules();
-
-    setupMocks('crewhead');
-    const { default: ManagementEventsView } = await import('./EventsView');
-
-    render(
-      <QueryClientProvider client={new QueryClient()}>
-        <ManagementEventsView />
-      </QueryClientProvider>,
-    );
-
-    expect(screen.getByRole('button', { name: 'Seznam' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Kalendar' })).toBeInTheDocument();
+    expect(mockAppContext.setEventsViewMode).not.toHaveBeenCalled();
   });
 
   it('keeps the event list under the mobile detail so swipe back reveals the previous page', async () => {

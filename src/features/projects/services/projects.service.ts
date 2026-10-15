@@ -7,8 +7,13 @@ import { calculateTotalHours, getEventStatus } from '../../../utils';
 import { ensureSupabaseCrewLoaded } from '../../crew/services/crew.service';
 import { ensureSupabaseEventsLoaded } from '../../events/services/events.service';
 import { ensureSupabaseTimelogsLoaded } from '../../timelogs/services/timelogs.service';
+import { getProjectPeriod, type ProjectSummarySnapshot } from './project-summary';
+
+export { formatProjectPeriod, getProjectPeriod, getProjectSummary } from './project-summary';
+export type { ProjectPeriod, ProjectCostBreakdown, ProjectCostStage, ProjectSummarySnapshot, ProjectInvoiceRecord, ProjectSummary } from './project-summary';
 
 export type ProjectFilter = 'all' | 'upcoming' | 'past';
+export type ProjectListFilters = { client?: string; startDate?: string; endDate?: string };
 
 const normalizeProject = (project: Project): Project => ({
   ...project,
@@ -146,22 +151,30 @@ const calculateProjectCrewCost = (
     }, 0);
 };
 
-export const getProjects = (search = '', filter: ProjectFilter = 'all'): Project[] => {
-  ensureSupabaseProjectsLoaded();
-  ensureSupabaseProjectDependenciesLoaded();
-  const snapshot = getLocalAppState();
+const normalizeProjectSearch = (value: string): string => value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+
+const selectProjects = (snapshot: ProjectSummarySnapshot, search: string, filter: ProjectFilter | ProjectListFilters): Project[] => {
   let projects = snapshot.projects ?? [];
 
-  const query = search.trim().toLowerCase();
+  const query = normalizeProjectSearch(search.trim());
   if (query) {
     projects = projects.filter((project) => (
-      project.id.toLowerCase().includes(query)
-      || project.name.toLowerCase().includes(query)
-      || project.client.toLowerCase().includes(query)
+      normalizeProjectSearch(project.id).includes(query)
+      || normalizeProjectSearch(project.name).includes(query)
+      || normalizeProjectSearch(project.client).includes(query)
     ));
   }
 
-  if (filter !== 'all') {
+  if (typeof filter === 'object') {
+    projects = projects.filter((project) => {
+      if (filter.client && project.client !== filter.client) return false;
+      if (!filter.startDate && !filter.endDate) return true;
+      const period = getProjectPeriod((snapshot.events ?? []).filter((event) => event.job === project.id));
+      return period !== null
+        && (!filter.startDate || period.endDate >= filter.startDate)
+        && (!filter.endDate || period.startDate <= filter.endDate);
+    });
+  } else if (filter !== 'all') {
     const now = new Date().toISOString().split('T')[0];
     projects = projects.filter((project) => {
       const projectEvents = snapshot.events.filter((event) => event.job === project.id);
@@ -173,6 +186,12 @@ export const getProjects = (search = '', filter: ProjectFilter = 'all'): Project
   return projects;
 };
 
+export const getProjects = (search = '', filter: ProjectFilter | ProjectListFilters = 'all'): Project[] => {
+  ensureSupabaseProjectsLoaded();
+  ensureSupabaseProjectDependenciesLoaded();
+  return selectProjects(getLocalAppState(), search, filter);
+};
+
 export const getProjectById = (id: string | null): Project | null => {
   ensureSupabaseProjectsLoaded();
   ensureSupabaseProjectDependenciesLoaded();
@@ -180,7 +199,7 @@ export const getProjectById = (id: string | null): Project | null => {
   return (getLocalAppState().projects ?? []).find((project) => project.id === id) ?? null;
 };
 
-export const getProjectDependencies = (): { projects: Project[]; events: Event[]; invoices: Invoice[]; clients: Client[] } => {
+export const getProjectDependencies = (): ProjectSummarySnapshot & { clients: Client[] } => {
   ensureSupabaseProjectsLoaded();
   ensureSupabaseProjectDependenciesLoaded();
   const snapshot = getLocalAppState();
@@ -188,6 +207,9 @@ export const getProjectDependencies = (): { projects: Project[]; events: Event[]
     projects: snapshot.projects ?? [],
     events: snapshot.events ?? [],
     invoices: snapshot.invoices ?? [],
+    timelogs: snapshot.timelogs ?? [],
+    receipts: snapshot.receipts ?? [],
+    contractors: snapshot.contractors ?? [],
     clients: snapshot.clients ?? [],
   };
 };
@@ -269,10 +291,11 @@ export const deleteProject = async (id: string): Promise<{ id: string }> => {
   return { id };
 };
 
-export const getProjectRows = (search = '', filter: ProjectFilter = 'all') => {
+export const getProjectRows = (search = '', filter: ProjectFilter | ProjectListFilters = 'all') => {
   ensureSupabaseProjectsLoaded();
+  ensureSupabaseProjectDependenciesLoaded();
   const snapshot = getLocalAppState();
-  const projects = getProjects(search, filter);
+  const projects = selectProjects(snapshot, search, filter);
   const events = snapshot.events ?? [];
   const timelogs = snapshot.timelogs ?? [];
   const contractors = snapshot.contractors ?? [];
@@ -295,6 +318,7 @@ export const getProjectRows = (search = '', filter: ProjectFilter = 'all') => {
         client: project.client,
         status,
         eventCount: projectEvents.length,
+        period: getProjectPeriod(projectEvents),
         crewCost: calculateProjectCrewCost(projectEvents, timelogs, contractors),
         createdAt: project.createdAt,
       };

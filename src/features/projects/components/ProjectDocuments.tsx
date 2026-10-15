@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
+import { ChevronRight, Download, Files, FileText, Receipt } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../../../components/ui/dialog';
 import type { Contractor, Event, ReceiptItem } from '../../../types';
@@ -12,6 +13,7 @@ const receiptStatuses: Record<ReceiptItem['status'], string> = {
   draft: 'Koncept', submitted: 'Odesláno', approved: 'Schváleno', attached: 'Ve faktuře', reimbursed: 'Uhrazeno', rejected: 'Zamítnuto',
 };
 const invoiceStatuses = { draft: 'Koncept', sent: 'Odesláno', paid: 'Uhrazeno' };
+const statusTone = (status: string) => ['paid', 'reimbursed', 'approved'].includes(status) ? 'success' : status === 'rejected' ? 'error' : ['sent', 'submitted', 'attached'].includes(status) ? 'info' : 'neutral';
 const dateLabel = (date?: string) => date ? formatProjectPeriod({ startDate: date.slice(0, 10), endDate: date.slice(0, 10) }) : '—';
 
 export const ProjectQueryMessage = ({ query, loadingLabel }: { query: ProjectQueryState; loadingLabel: string }) => (
@@ -27,6 +29,7 @@ type Props = {
 };
 
 const ProjectDocuments = ({ invoices, receipts, events, contractors, invoicesQuery, receiptsQuery }: Props) => {
+  const descriptionPrefix = useId();
   const [selectedReceipt, setSelectedReceipt] = useState<ReceiptItem | null>(null);
   const [openingInvoiceId, setOpeningInvoiceId] = useState<string | null>(null);
   const [pdfError, setPdfError] = useState('');
@@ -58,36 +61,42 @@ const ProjectDocuments = ({ invoices, receipts, events, contractors, invoicesQue
   const receiptMember = selectedReceipt ? contractors.find((contractor) => contractor.profileId === selectedReceipt.contractorProfileId) : undefined;
 
   return (
-    <section aria-labelledby="project-documents-title" className="min-w-0 rounded-[28px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] p-5 md:p-6">
-      <h2 id="project-documents-title" className="mb-5 text-lg font-semibold">Doklady projektu</h2>
-      {pdfError && <p role="alert" className="mb-4 text-sm text-[#c45c39]">{pdfError}</p>}
-      <h3 className="mb-2 text-sm font-semibold">Účtenky</h3>
+    <section aria-labelledby="project-documents-title" className="project-overview-section">
+      <div className="project-overview-section-heading"><Files aria-hidden="true" /><h2 id="project-documents-title">Doklady projektu</h2></div>
+      {pdfError && <p role="alert" className="mb-4 text-sm text-[color:var(--nodu-error-text)]">{pdfError}</p>}
+      <h3 className="mb-3 text-sm font-semibold">Účtenky</h3>
       <ProjectQueryMessage query={receiptsQuery} loadingLabel="Načítání účtenek" />
       {!receiptsQuery.isPending && !receiptsQuery.isError && (receipts.length ? (
-        <div className="max-w-full overflow-x-auto"><table className="w-full min-w-[500px] text-left text-xs">
-          <thead><tr className="border-b border-[color:var(--nodu-border)] text-[color:var(--nodu-text-soft)]"><th className="py-3 pr-4">Název</th><th className="py-3 pr-4">Datum</th><th className="py-3 pr-4">Stav</th><th className="py-3 text-right">Částka</th></tr></thead>
-          <tbody>{receipts.map((receipt) => <tr key={receipt.supabaseId ?? receipt.id} className="border-b border-[color:var(--nodu-border)] last:border-0">
-            <td className="py-3 pr-4"><button className="text-left font-semibold text-[color:var(--nodu-accent)] hover:underline" onClick={() => setSelectedReceipt(receipt)}>{receipt.title}</button></td>
-            <td className="whitespace-nowrap py-3 pr-4">{dateLabel(receipt.paidAt)}</td><td className="py-3 pr-4">{receiptStatuses[receipt.status]}</td><td className="whitespace-nowrap py-3 text-right font-semibold">{formatCurrency(receipt.amount)}</td>
-          </tr>)}</tbody>
-        </table></div>
+        <ul className="project-document-list" aria-label="Účtenky projektu">
+          {receipts.map((receipt) => {
+            const descriptionId = `${descriptionPrefix}-receipt-${receipt.supabaseId ?? receipt.id}`;
+            return <li key={receipt.supabaseId ?? receipt.id}>
+              <button className="project-document-card project-receipt-card" aria-label={receipt.title} aria-describedby={`${descriptionId}-date ${descriptionId}-value`} onClick={() => setSelectedReceipt(receipt)}>
+                <span className="project-document-icon"><Receipt aria-hidden="true" /></span>
+                <span className="project-document-main"><strong>{receipt.title}</strong><span id={`${descriptionId}-date`}>Účtenka · {dateLabel(receipt.paidAt)}</span></span>
+                <span id={`${descriptionId}-value`} className="project-document-value"><strong>{formatCurrency(receipt.amount)}</strong><span className={`project-status project-status-${statusTone(receipt.status)}`}>{receiptStatuses[receipt.status]}</span></span>
+                <ChevronRight className="project-document-arrow" aria-hidden="true" />
+              </button>
+            </li>;
+          })}
+        </ul>
       ) : <p className="py-4 text-sm text-[color:var(--nodu-text-soft)]">Projekt zatím nemá žádné účtenky.</p>)}
-      <h3 className="mb-2 mt-6 text-sm font-semibold">Faktury</h3>
+      <h3 className="mb-3 mt-6 text-sm font-semibold">Faktury</h3>
       <ProjectQueryMessage query={invoicesQuery} loadingLabel="Načítání faktur" />
       {!invoicesQuery.isPending && !invoicesQuery.isError && (invoices.length ? (
-        <div className="max-w-full overflow-x-auto"><table className="w-full min-w-[580px] text-left text-xs">
-          <thead><tr className="border-b border-[color:var(--nodu-border)] text-[color:var(--nodu-text-soft)]"><th className="py-3 pr-4">Číslo faktury</th><th className="py-3 pr-4">Stav</th><th className="py-3 pr-4">Splatnost</th><th className="py-3 pr-4 text-right">Podíl projektu</th><th className="py-3 text-right">Doklad</th></tr></thead>
-          <tbody>{invoices.map((record) => <tr key={record.invoice.id} className="border-b border-[color:var(--nodu-border)] last:border-0">
-            <td className="py-3 pr-4 font-semibold">{record.invoice.invoiceNumber || 'Bez čísla'}</td><td className="py-3 pr-4">{invoiceStatuses[record.invoice.status]}</td><td className="whitespace-nowrap py-3 pr-4">{dateLabel(record.invoice.dueDate)}</td>
-            <td className="whitespace-nowrap py-3 pr-4 text-right font-semibold">{record.share ? formatCurrency(record.share.total) : 'Podíl neznámý'}</td>
-            <td className="py-3 text-right"><Button variant="outline" size="sm" className="text-xs" aria-label={`Otevřít PDF ${record.invoice.invoiceNumber || 'faktury bez čísla'}`} disabled={openingInvoiceId !== null} onClick={() => { void openPdf(record); }}>{openingInvoiceId === record.invoice.id ? 'Načítání…' : 'PDF'}</Button></td>
-          </tr>)}</tbody>
-        </table></div>
+        <ul className="project-document-list" aria-label="Faktury projektu">
+          {invoices.map((record) => <li className="project-document-card project-invoice-card" key={record.invoice.id}>
+            <span className="project-document-icon"><FileText aria-hidden="true" /></span>
+            <div className="project-document-main"><strong>{record.invoice.invoiceNumber || 'Bez čísla'}</strong><span>Splatnost {dateLabel(record.invoice.dueDate)}</span><span className={`project-status project-status-${statusTone(record.invoice.status)}`}>{invoiceStatuses[record.invoice.status]}</span></div>
+            <div className="project-document-value"><span>Podíl projektu</span><strong>{record.share ? formatCurrency(record.share.total) : 'Podíl neznámý'}</strong></div>
+            <Button variant="outline" size="sm" className="project-document-pdf text-xs" aria-label={`Otevřít PDF ${record.invoice.invoiceNumber || 'faktury bez čísla'}`} disabled={openingInvoiceId !== null} onClick={() => { void openPdf(record); }}><Download aria-hidden="true" />{openingInvoiceId === record.invoice.id ? 'Načítání…' : 'PDF'}</Button>
+          </li>)}
+        </ul>
       ) : <p className="py-4 text-sm text-[color:var(--nodu-text-soft)]">Projekt zatím nemá žádné faktury.</p>)}
       <Dialog open={Boolean(selectedReceipt)} onOpenChange={(open) => { if (!open) setSelectedReceipt(null); }}>
         {selectedReceipt && <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-lg">
-          <DialogTitle>{selectedReceipt.title}</DialogTitle><DialogDescription>Záznam účtenky</DialogDescription>
-          <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-3 text-sm">
+          <DialogTitle className="[overflow-wrap:anywhere]">{selectedReceipt.title}</DialogTitle><DialogDescription>Záznam účtenky</DialogDescription>
+          <dl className="project-receipt-details grid grid-cols-[auto_minmax(0,1fr)] gap-x-5 gap-y-3 text-sm">
             <dt className="text-[color:var(--nodu-text-soft)]">Dodavatel</dt><dd>{selectedReceipt.vendor || '—'}</dd>
             <dt className="text-[color:var(--nodu-text-soft)]">Datum</dt><dd>{dateLabel(selectedReceipt.paidAt)}</dd>
             <dt className="text-[color:var(--nodu-text-soft)]">Částka</dt><dd>{formatCurrency(selectedReceipt.amount)}</dd>

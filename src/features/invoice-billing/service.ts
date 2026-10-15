@@ -61,7 +61,9 @@ export function createBillingService(client: BillingClient | null) {
       if (quote.timelogIds.length !== timelogIds.length || quote.timelogIds.some((id) => !timelogIds.includes(id))) throw new BillingError('invalid', 'Náhled patří jinému výběru.');
       return quote;
     },
-    execute: async (scope: BillingScope, input: BillingCommand) => {
+    execute: async (scope: BillingScope, input: BillingCommand, isCurrent: () => boolean) => {
+      const assertCurrent = () => { if (!isCurrent()) throw new BillingError('denied', 'Přístup k fakturaci se změnil. Obnovte data.'); };
+      assertCurrent();
       assertScope(scope);
       const result = commandSchema.safeParse(input);
       if (!result.success) throw new BillingError('invalid', 'Neplatný požadavek fakturace.');
@@ -92,6 +94,8 @@ export function createBillingService(client: BillingClient | null) {
           for (const field of ['requestId', 'statementId', 'expectedUpdatedAt', 'invoiceNumber', 'issueDate', 'dueDate'] as const) body.append(field, c[field]);
           body.append('file', c.file);
           try {
+            // The header read yielded control; never send a prior scope's PDF.
+            assertCurrent();
             const response = await client.functions.invoke('upload-invoice-document', { body });
             if (response.error) {
               const context = (response.error as { context?: Response }).context;

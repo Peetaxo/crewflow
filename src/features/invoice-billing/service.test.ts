@@ -7,16 +7,16 @@ describe('billing I/O', () => {
     const rpc = vi.fn().mockResolvedValueOnce({ error: { code: '503' } }).mockResolvedValue({ data: { statement: billingSnapshotFixture().statements[0] } });
     const service = createBillingService({ rpc });
     const command = makeBillingCommand({ kind: 'confirm', statementId: id(8), expectedUpdatedAt: version, nonVatConfirmed: true });
-    await expect(service.execute(scope, command)).rejects.toMatchObject({ kind: 'ambiguous' });
-    await service.execute(scope, command);
+    await expect(service.execute(scope, command, () => true)).rejects.toMatchObject({ kind: 'ambiguous' });
+    await service.execute(scope, command, () => true);
     expect(rpc.mock.calls[0]).toEqual(rpc.mock.calls[1]);
     expect(rpc.mock.calls[0][1]).toMatchObject({ p_expected_updated_at: version, p_non_vat_confirmed: true, p_request_id: command.requestId });
     expect(Object.isFrozen(command)).toBe(true);
   });
   it('requires explicit owner non-VAT confirmation and CH-only review', async () => {
     const rpc = vi.fn(); const service = createBillingService({ rpc });
-    await expect(service.execute(scope, makeBillingCommand({ kind: 'confirm', statementId: id(8), expectedUpdatedAt: version, nonVatConfirmed: false }))).rejects.toMatchObject({ kind: 'invalid' });
-    await expect(service.execute({ ...scope, role: 'coo' }, makeBillingCommand({ kind: 'review', statementId: id(8), documentId: id(10), expectedUpdatedAt: version, decision: 'accept', note: '' }))).rejects.toMatchObject({ kind: 'denied' });
+    await expect(service.execute(scope, makeBillingCommand({ kind: 'confirm', statementId: id(8), expectedUpdatedAt: version, nonVatConfirmed: false }), () => true)).rejects.toMatchObject({ kind: 'invalid' });
+    await expect(service.execute({ ...scope, role: 'coo' }, makeBillingCommand({ kind: 'review', statementId: id(8), documentId: id(10), expectedUpdatedAt: version, decision: 'accept', note: '' }), () => true)).rejects.toMatchObject({ kind: 'denied' });
     expect(rpc).not.toHaveBeenCalled();
   });
   it.each(['PT409', '40001'])('recognizes version conflicts %s', async (code) => {
@@ -31,7 +31,7 @@ describe('billing I/O', () => {
     const file = new File(['%PDF-content'], 'original.pdf', { type: 'application/pdf' });
     vi.spyOn(file, 'slice').mockReturnValue({ arrayBuffer: async () => new TextEncoder().encode('%PDF-').buffer } as Blob);
     const command = makeBillingCommand({ kind: 'upload', statementId: id(8), expectedUpdatedAt: version, invoiceNumber: 'EXT-01', issueDate: '2026-10-15', dueDate: '2026-10-29', file });
-    await service.execute(scope, command);
+    await service.execute(scope, command, () => true);
     const [name, options] = invoke.mock.calls[0]; expect(name).toBe('upload-invoice-document');
     expect(Object.keys(options)).toEqual(['body']);
     const body = options.body as FormData;

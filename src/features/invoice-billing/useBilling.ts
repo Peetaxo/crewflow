@@ -17,7 +17,7 @@ export function useBilling(enabled = true) {
     const captured = pending.current ?? freezeBillingCommand(command);
     pending.current = captured; inFlight.current = true; setSaving(true); setError(null);
     let failure: BillingError | null = null;
-    try { await billingService.execute(scope, captured); }
+    try { await billingService.execute(scope, captured, isCurrent); }
     catch (cause) { failure = toBillingError(cause); }
     if (!isCurrent()) throw billingInactive();
     if (!failure || failure.kind !== 'ambiguous') pending.current = null;

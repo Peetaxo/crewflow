@@ -6,6 +6,10 @@ static_files = ["./functions/generate-invoice-pdf/assets/*"]
 verify_jwt = true
 
 [functions.process-invoice-pdfs]
-# Custom server-only secret; this is the only function with gateway JWT verification disabled.
+# Custom server-only secret protects this existing processor.
 verify_jwt = false
 static_files = ["./functions/generate-invoice-pdf/assets/*"]
+
+[functions.crew-onboarding]
+# The invitation token is the capability; every SQL helper remains service-role-only.
+verify_jwt = false

@@ -1,6 +1,6 @@
 export type ActivationError = "disabled" | "invalid_invitation" | "expired_invitation" | "already_active" | "activation_in_progress" | "invalid_password" | "activation_unavailable";
 type Result<T> = { data?: T; error?: string };
-type Preview = { email: string; firstName: string; lastName: string; phone: string | null; expiresAt: string };
+type Preview = { email: string; firstName: string; lastName: string; phone: string; expiresAt: string };
 type Claim = Preview & { reservedUserId: string; profileId: string; claimId: string };
 type Active = { status: "active"; email: string; profileId: string };
 type AuthResult = { data: { user: { id: string; email?: string } | null }; error: { status?: number; code?: string } | null };
@@ -64,7 +64,7 @@ export function createActivationHandler(dependencies: ActivationDependencies) {
       const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
       if (body.action === "preview") {
         const result = await dependencies.store.preview(hash);
-        return result.data && !result.error ? success(result.data) : fail(safeError(result.error));
+        return result.data && !result.error ? success({ ...result.data, phone: result.data.phone ?? "" }) : fail(safeError(result.error));
       }
       const claimed = await dependencies.store.claim(hash);
       if (claimed.error || !claimed.data) return fail(safeError(claimed.error));

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createActivationHandler } from "../../../../supabase/functions/crew-onboarding/handler";
 
 const token = "a".repeat(64);
-const preview = { email: "pilot@crewflow-onboarding.test", firstName: "Ada", lastName: "Crew", phone: null, expiresAt: "2026-10-22T12:00:00Z" };
+const preview = { email: "pilot@crewflow-onboarding.test", firstName: "Ada", lastName: "Crew", phone: "", expiresAt: "2026-10-22T12:00:00Z" };
 function fixture(enabled = true) {
   const store = {
     preview: vi.fn(async () => ({ data: preview })),
@@ -30,6 +30,15 @@ describe("invitation activation handler", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ data: preview });
     expect(f.store.preview).toHaveBeenCalledWith("ffe054fe7ae0cb6dc65c3af9b61d5209f439851db43d0ba5997337df154668eb");
+    expect(f.store.claim).not.toHaveBeenCalled();
+    expect(f.auth.createUser).not.toHaveBeenCalled();
+  });
+  it("normalizes an absent stored phone to the shared string preview contract", async () => {
+    const f = fixture();
+    f.store.preview.mockResolvedValueOnce({ data: { ...preview, phone: null } } as never);
+    const response = await f.request({ action: "preview", token });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ data: { ...preview, phone: "" } });
     expect(f.store.claim).not.toHaveBeenCalled();
     expect(f.auth.createUser).not.toHaveBeenCalled();
   });

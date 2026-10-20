@@ -87,13 +87,13 @@ try {
     });
     let fresh;
     await test('48 hour invitation contains only a token hash and preview has zero mutations', async () => {
-      fresh = await issue('fresh');
+      fresh = await issue('fresh', { p_phone: null });
       const before = invitation(fresh.token);
       check(Math.abs(Date.parse(before.expires_at) - Date.parse(before.created_at) - 48 * 3600000) < 1000, '48 hour expiry');
       check(before.token_hash === hash(fresh.token) && !Object.values(before).includes(fresh.token), 'hash stored, raw token absent');
       check(sql(`select count(*) from auth.users where email=${q(fresh.email)};`) === '0', 'issuance creates no Auth user');
       const response = await call({ action: 'preview', token: fresh.token }, { origin: 'http://127.0.0.1:8096' });
-      check(response.status === 200 && response.body.data.email === fresh.email && response.body.data.firstName === 'Ada', 'preview contract');
+      check(response.status === 200 && response.body.data.email === fresh.email && response.body.data.firstName === 'Ada' && response.body.data.phone === '', 'preview contract normalizes null phone to string');
       check(JSON.stringify(before) === JSON.stringify(invitation(fresh.token)), 'preview leaves invitation unchanged');
       check(sql(`select count(*) from auth.users where email=${q(fresh.email)};`) === '0', 'preview creates no Auth user');
       await expectError({ action: 'complete', token: fresh.token, password: 'short' }, 'invalid_password');

@@ -52,6 +52,7 @@ begin
   if v ? 'error' then raise exception 'SQL fixture invitation not created'; end if;
   pid := (v->>'profileId')::uuid;
   h := encode(extensions.digest(v->>'token','sha256'),'hex');
+  if public.crew_onboarding_preview(h)->>'phone' is distinct from '' then raise exception 'preview must normalize null phone to string'; end if;
   select reserved_user_id into uid from crew_onboarding_private.invitations where token_hash=h;
   begin
     update crew_onboarding_private.invitations set email='changed@crewflow-onboarding.test' where token_hash=h;
@@ -64,6 +65,7 @@ begin
   if exists(select 1 from auth.users where id=uid) or exists(select 1 from public.profiles where id=pid and user_id is not null) then raise exception 'failed trigger did not roll back'; end if;
   v := public.crew_onboarding_claim(h);
   if v ? 'error' then raise exception 'SQL fixture claim failed'; end if;
+  if v->>'phone' is distinct from '' then raise exception 'claim must normalize null phone to string'; end if;
   insert into auth.users(id,email) values(uid,'sql-access@crewflow-onboarding.test');
   if public.crew_onboarding_verify(h,uid)->>'status' is distinct from 'active' then raise exception 'trusted intent did not atomically bind'; end if;
   select count(*) into n from public.profiles where user_id=uid;

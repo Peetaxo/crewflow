@@ -91,7 +91,7 @@ begin
      or (select count(*) from public.profiles p2 where lower(btrim(p2.email))=i.email)<>1
      or exists(select 1 from auth.users u where lower(btrim(u.email))=i.email) then return jsonb_build_object('error','invalid_invitation'); end if;
   if i.state='claiming' then return jsonb_build_object('error','activation_in_progress'); end if;
-  return jsonb_build_object('email',i.email,'firstName',p.first_name,'lastName',p.last_name,'phone',p.phone,'expiresAt',i.expires_at);
+  return jsonb_build_object('email',i.email,'firstName',p.first_name,'lastName',p.last_name,'phone',coalesce(p.phone,''),'expiresAt',i.expires_at);
 end $$;
 
 create function public.crew_onboarding_claim(p_token_hash text)
@@ -114,7 +114,7 @@ begin
   v_claim := gen_random_uuid();
   update crew_onboarding_private.invitations set state='claiming',claim_id=v_claim,claimed_at=clock_timestamp() where id=i.id;
   insert into crew_onboarding_private.trusted_intents(reserved_user_id,invitation_id,email,claim_id) values(i.reserved_user_id,i.id,i.email,v_claim);
-  return jsonb_build_object('email',i.email,'firstName',p.first_name,'lastName',p.last_name,'phone',p.phone,'expiresAt',i.expires_at,'reservedUserId',i.reserved_user_id,'profileId',i.profile_id,'claimId',v_claim);
+  return jsonb_build_object('email',i.email,'firstName',p.first_name,'lastName',p.last_name,'phone',coalesce(p.phone,''),'expiresAt',i.expires_at,'reservedUserId',i.reserved_user_id,'profileId',i.profile_id,'claimId',v_claim);
 end $$;
 
 create function public.crew_onboarding_verify(p_token_hash text,p_reserved_user_id uuid)

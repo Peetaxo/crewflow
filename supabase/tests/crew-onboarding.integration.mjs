@@ -159,6 +159,53 @@ try {
       check(!(await signIn(invite.email, passwords[winner])).result.error, 'first password remains unchanged');
       assertActive(invite.token);
     });
+    await test('Auth bcrypt password boundaries are enforced before claim in UTF8 bytes', async () => {
+      const ascii72 = randomBytes(36).toString('hex');
+      const utf8_72 = randomBytes(12).toString('hex') + '🔒'.repeat(12);
+      for (const [label, password, accepted] of [
+        ['ascii72', ascii72, true], ['ascii73', ascii72 + 'x', false],
+        ['utf8-72', utf8_72, true], ['utf8-73', utf8_72 + 'x', false],
+        ['unicode11', '🔒'.repeat(11), false], ['unicode12', '🔒'.repeat(12), true],
+      ]) {
+        const invite = await issue(`password-${label}`);
+        const response = await complete(invite.token, password);
+        if (accepted) {
+          check(response.status === 200, 'valid 12-codepoint and at-most-72-byte password accepted');
+          assertActive(invite.token);
+          check(!(await signIn(invite.email, password)).result.error, 'boundary password signs in');
+        } else {
+          check(response.status === 422 && response.body.error === 'invalid_password', 'invalid password boundary classified');
+          check(invitation(invite.token).state === 'pending', 'invalid password never claims invitation');
+          check(sql(`select count(*) from auth.users where email=${q(invite.email)};`) === '0', 'invalid password creates no Auth identity');
+        }
+      }
+    });
+    await test('profile deletion preserves tombstones and rejects delayed Auth creation', async () => {
+      const anchor = scalar(`select * from public.profiles where id=${q(fresh.profileId)}`)[0];
+      const roles = scalar(`select * from public.user_roles where user_id=${q(anchor.user_id)} order by id`);
+      for (const state of ['pending', 'claiming']) {
+        const invite = await issue(`deleted-${state}`);
+        if (state === 'claiming') await rpc('crew_onboarding_claim', { p_token_hash: hash(invite.token) });
+        const before = invitation(invite.token);
+        // Exercise the existing deleteCrew order without changing that service.
+        const assignmentDelete = await service.from('event_assignments').delete().eq('profile_id', invite.profileId);
+        check(!assignmentDelete.error, 'assignment removal succeeds');
+        const profileDelete = await service.from('profiles').delete().eq('id', invite.profileId);
+        check(!profileDelete.error, 'invitation does not block profile deletion');
+        const tombstone = invitation(invite.token);
+        check(tombstone.profile_id === null && tombstone.reserved_user_id === before.reserved_user_id && tombstone.token_hash === before.token_hash, 'reserved UUID and token-hash tombstone preserved');
+        check(sql(`select count(*) from crew_onboarding_private.trusted_intents where reserved_user_id=${q(before.reserved_user_id)};`) === (state === 'claiming' ? '1' : '0'), 'trusted intent retained for claimed tombstone');
+        await expectError({ action: 'preview', token: invite.token }, 'invalid_invitation');
+        await expectError({ action: 'complete', token: invite.token, password: randomBytes(24).toString('hex') }, 'invalid_invitation');
+        const delayed = await service.auth.admin.createUser({ id: before.reserved_user_id, email: invite.email, password: randomBytes(24).toString('hex'), email_confirm: true });
+        check(Boolean(delayed.error), 'delayed Auth creation rejected by reserved tombstone');
+        check(sql(`select count(*) from auth.users where id=${q(before.reserved_user_id)};`) === '0', 'delayed Auth insert rolls back');
+        check(sql(`select count(*) from public.profiles where email=${q(invite.email)};`) === '0', 'no legacy fallback profile created');
+      }
+      check(JSON.stringify(scalar(`select * from public.profiles where id=${q(fresh.profileId)}`)[0]) === JSON.stringify(anchor), 'existing identity rate and binding unchanged');
+      check(JSON.stringify(scalar(`select * from public.user_roles where user_id=${q(anchor.user_id)} order by id`)) === JSON.stringify(roles), 'existing crew roles unchanged');
+      assertActive(fresh.token);
+    });
     await test('untrusted signup metadata cannot bind an existing profile', async () => {
       const target = await issue('metadata-target');
       const attackerEmail = email('metadata-unrelated');

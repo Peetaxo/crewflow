@@ -8,7 +8,7 @@ function fixture(enabled = true) {
     preview: vi.fn(async () => ({ data: preview })),
     claim: vi.fn(async () => ({ data: { ...preview, reservedUserId: "reserved", profileId: "profile", claimId: "claim" } })),
     verify: vi.fn(async () => ({ data: { status: "active", email: preview.email, profileId: "profile" } })),
-    release: vi.fn(async () => undefined),
+    release: vi.fn(async () => ({ status: "released" })),
   };
   const auth = { createUser: vi.fn(async () => ({ data: { user: { id: "reserved", email: preview.email } }, error: null })), getUserById: vi.fn(async () => ({ data: { user: null }, error: { status: 404 } })) };
   const handler = createActivationHandler({ enabled, allowedOrigins: ["http://localhost:8096", "capacitor://localhost"], store, auth });
@@ -66,6 +66,45 @@ describe("invitation activation handler", () => {
     expect(response.status).toBeGreaterThanOrEqual(400);
     expect(await response.json()).toEqual({ error });
     expect(f.auth.createUser).not.toHaveBeenCalled();
+  });
+  it.each([
+    ["72 ASCII bytes", "x".repeat(72), true],
+    ["73 ASCII bytes", "x".repeat(73), false],
+    ["72 UTF8 bytes", "🔒".repeat(18), true],
+    ["76 UTF8 bytes", "🔒".repeat(19), false],
+    ["72 two-byte UTF8 bytes", "é".repeat(36), true],
+    ["74 two-byte UTF8 bytes", "é".repeat(37), false],
+    ["11 Unicode codepoints", "🔒".repeat(11), false],
+    ["12 Unicode codepoints", "🔒".repeat(12), true],
+  ])("enforces password boundary %s before claiming", async (_label, password, accepted) => {
+    const f = fixture();
+    const response = await f.request({ action: "complete", token, password });
+    if (accepted) {
+      expect(response.status).toBe(200);
+      expect(f.store.claim).toHaveBeenCalledTimes(1);
+      expect(f.auth.createUser).toHaveBeenCalledTimes(1);
+    } else {
+      expect(response.status).toBe(422);
+      expect(await response.json()).toEqual({ error: "invalid_password" });
+      expect(f.store.claim).not.toHaveBeenCalled();
+      expect(f.auth.createUser).not.toHaveBeenCalled();
+    }
+  });
+  it("classifies a known Auth password-policy rejection after definite release", async () => {
+    const f = fixture();
+    f.auth.createUser.mockResolvedValueOnce({ data: { user: null }, error: { status: 422, code: "weak_password" } } as never);
+    const response = await f.request({ action: "complete", token, password: "safe-password-123" });
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({ error: "invalid_password" });
+    expect(f.store.release).toHaveBeenCalledWith(expect.any(String), "claim");
+  });
+  it("keeps unavailable status if a password-policy rejection could not release its claim", async () => {
+    const f = fixture();
+    f.auth.createUser.mockResolvedValueOnce({ data: { user: null }, error: { status: 422, code: "weak_password" } } as never);
+    f.store.release.mockResolvedValueOnce({ error: "activation_unavailable" } as never);
+    const response = await f.request({ action: "complete", token, password: "safe-password-123" });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "activation_unavailable" });
   });
   it("creates only the reserved identity and verifies atomic consumption before success", async () => {
     const f = fixture();

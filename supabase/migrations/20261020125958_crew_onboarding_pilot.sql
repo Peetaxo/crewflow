@@ -5,7 +5,9 @@ revoke all on schema crew_onboarding_private from public, anon, authenticated;
 create table crew_onboarding_private.invitations (
   id uuid primary key default gen_random_uuid(),
   token_hash text not null unique check (token_hash ~ '^[a-f0-9]{64}$'),
-  profile_id uuid not null references public.profiles(id),
+  -- Retain reserved UUID tombstones after normal crew deletion. Cascading invitations
+  -- away would let a delayed Auth insert use the unrelated-user legacy path.
+  profile_id uuid references public.profiles(id) on delete set null,
   email text not null check (email = lower(btrim(email))),
   reserved_user_id uuid not null unique,
   state text not null default 'pending' check (state in ('pending','claiming','consumed','revoked')),
@@ -32,9 +34,14 @@ alter table crew_onboarding_private.trusted_intents enable row level security;
 revoke all on crew_onboarding_private.trusted_intents from public, anon, authenticated, service_role;
 
 create function crew_onboarding_private.protect_invitation_identity()
-returns trigger language plpgsql set search_path = '' as $$
+returns trigger language plpgsql security definer set search_path = '' as $$
 begin
-  if new.email is distinct from old.email or new.profile_id is distinct from old.profile_id
+  if new.email is distinct from old.email
+     or (new.profile_id is distinct from old.profile_id and not (
+       new.profile_id is null and old.profile_id is not null
+       and pg_catalog.pg_trigger_depth()>1
+       and not exists(select 1 from public.profiles p where p.id=old.profile_id)
+     ))
      or new.reserved_user_id is distinct from old.reserved_user_id or new.token_hash is distinct from old.token_hash then
     raise exception 'invitation_identity_immutable' using errcode='23514';
   end if;
@@ -83,7 +90,7 @@ declare i crew_onboarding_private.invitations%rowtype; p public.profiles%rowtype
 begin
   if p_token_hash is null or p_token_hash !~ '^[a-f0-9]{64}$' then return jsonb_build_object('error','invalid_invitation'); end if;
   select * into i from crew_onboarding_private.invitations where token_hash=p_token_hash;
-  if not found or i.state='revoked' then return jsonb_build_object('error','invalid_invitation'); end if;
+  if not found or i.state='revoked' or i.profile_id is null then return jsonb_build_object('error','invalid_invitation'); end if;
   if i.state='consumed' then return jsonb_build_object('error','already_active'); end if;
   if i.expires_at<=statement_timestamp() then return jsonb_build_object('error','expired_invitation'); end if;
   select * into p from public.profiles where id=i.profile_id;
@@ -103,7 +110,7 @@ begin
   if not found then return jsonb_build_object('error','invalid_invitation'); end if;
   perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(v_email,714802));
   select * into i from crew_onboarding_private.invitations where token_hash=p_token_hash for update;
-  if i.state='revoked' then return jsonb_build_object('error','invalid_invitation'); end if;
+  if i.state='revoked' or i.profile_id is null then return jsonb_build_object('error','invalid_invitation'); end if;
   if i.state='consumed' then return jsonb_build_object('error','already_active'); end if;
   if i.expires_at<=clock_timestamp() then return jsonb_build_object('error','expired_invitation'); end if;
   if i.state='claiming' then return jsonb_build_object('error','activation_in_progress'); end if;
@@ -140,7 +147,7 @@ begin
   if not found then return jsonb_build_object('error','invalid_invitation'); end if;
   perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(v_email,714802));
   select * into i from crew_onboarding_private.invitations where token_hash=p_token_hash for update;
-  if i.state='claiming' and i.claim_id=p_claim_id and not exists(select 1 from auth.users u where u.id=i.reserved_user_id) then
+  if i.state='claiming' and i.profile_id is not null and i.claim_id=p_claim_id and not exists(select 1 from auth.users u where u.id=i.reserved_user_id) then
     delete from crew_onboarding_private.trusted_intents where invitation_id=i.id and claim_id=p_claim_id;
     update crew_onboarding_private.invitations set state='pending',claim_id=null,claimed_at=null where id=i.id;
     return jsonb_build_object('status','released');
@@ -174,7 +181,7 @@ begin
   if found then
     perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(v_email,714802));
     select * into i from crew_onboarding_private.invitations where reserved_user_id=new.id for update;
-    if i.state<>'claiming' or i.expires_at<=clock_timestamp() or new.email is distinct from i.email
+    if i.profile_id is null or i.state<>'claiming' or i.expires_at<=clock_timestamp() or new.email is distinct from i.email
        or not exists(select 1 from crew_onboarding_private.trusted_intents t where t.invitation_id=i.id and t.reserved_user_id=new.id and t.email=new.email and t.claim_id=i.claim_id) then
       raise exception 'invalid_onboarding_intent' using errcode='23514';
     end if;

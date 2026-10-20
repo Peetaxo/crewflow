@@ -1,4 +1,4 @@
-# Registrace přes Tally a aktivace účtu crew
+# Registrace a aktivace účtu crew
 
 Datum: 20. 10. 2026
 
@@ -8,13 +8,18 @@ Výchozí revize aplikace: `535fa0a`.
 
 ## Účel
 
-Propojit současný náborový formulář Tally s účtem v aplikaci nodu tak, aby zájemce mohl po odeslání formuláře získat přístup bez běžného ručního schvalování. Dokončení účtu musí fungovat v prohlížeči na telefonu i na počítači. Stejný účet následně používá mobilní aplikace.
+Sjednotit cestu od přihlášky nebo pozvání k aktivnímu účtu v aplikaci nodu. Prvním připojeným zdrojem bude současný náborový formulář Tally; společný systém musí umožnit i další vstupy bez druhého modelu účtů nebo profilů.
+
+Hlavní uživatelský průchod se navrhuje pro mobilní aplikaci. Webová verze umožní dokončení i bez instalace a použití na počítači. Obě verze používají stejný účet, profil, heslo, sazbu a oprávnění.
 
 Tento návrh nahrazuje pro první provoz obecné povinné schvalování všech nových členů popsané v návrhu z 24. dubna. Pohovor může dál proběhnout podle potřeby, ale běžnou aktivaci účtu neblokuje.
 
 ## Potvrzené požadavky
 
 - Současný formulář `https://tally.so/r/q4WOgd` se ponechá včetně znění otázky o fyzické práci.
+- Tally je první připojený zdroj přihlášek, nikoli jediná přípustná cesta registrace. Systém počítá i s pozvánkou správce a budoucí registrací přímo v aplikaci nebo přes jiný formulář.
+- Mobilní aplikace je preferovaný způsob používání. Aktivace i obnova hesla musí mít plnohodnotný mobilní průchod a funkční webové pokračování.
+- Aktivační pozvánka platí 48 hodin od prvního odeslání aktuální pozvánky.
 - Zájem o manuální práci i preference lehčí výpomoci umožňují automatickou pozvánku.
 - Zájem pouze o administrativní výpomoc automatickou pozvánku neumožňuje.
 - Zkušenost z eventů se eviduje jako samostatná odpověď. Odpověď „ne“ neznamená začátečníka ani nevypovídá o zkušenostech z jiných oborů.
@@ -26,15 +31,24 @@ Tento návrh nahrazuje pro první provoz obecné povinné schvalování všech n
 
 ## Doporučené řešení a alternativy
 
-Doporučená první verze ponechá Tally jako jediný veřejný vstup registrace a doplní přímo existující napojení do aplikace. Zpracování odpovědi, příprava účtu a zasílání pozvánky budou oddělené kroky se zaznamenaným výsledkem.
+Doporučená první verze připojí Tally ke společné službě pro vyhodnocení přihlášky, dohledání profilu, přípravu účtu a pozvání. Tally bude jedním vstupním adaptérem. Společná pravidla a životní cyklus účtu nebudou závislé na jeho názvech polí, webhooku nebo identifikátorech.
 
-Alternativa s ručním potvrzením každé přihlášky přidává provozní práci a čekání. Ruční kontrola proto zůstane pouze pro nejasné případy. Samostatný nový registrační formulář v aplikaci by vyžadoval udržovat dvě vstupní cesty; do první verze nepatří. Tlačítko registrace na webu aplikace otevře Tally.
+| Vstup | Rozsah a návaznost |
+| --- | --- |
+| Současný formulář Tally | První automatický vstup, stávající otázky a dohodnuté vyhodnocení |
+| Pozvánka od oprávněného správce | Stejná aktivace a jeden profil, správce zaznamená důvod pozvání |
+| Budoucí registrace přímo v mobilní nebo webové aplikaci | Připojí se ke stejným pravidlům, identitě uživatele a aktivaci |
+| Jiný formulář nebo integrace | Vlastní ověření vstupu a mapování odpovědí, společné zpracování přihlášky |
+
+Alternativa s ručním potvrzením každé přihlášky přidává provozní práci a čekání. Ruční kontrola proto zůstane pro nejasné případy. Vlastní registrační formulář není nutné dodat současně s prvním napojením Tally; návrh tuto možnost zachovává. Tlačítko registrace v mobilní i webové verzi zatím otevře Tally a po přidání jiného vstupu se může změnit bez přestavby aktivace.
 
 ## Cesta nového zájemce
 
-### 1. Odeslání Tally
+### 1. Přihláška nebo pozvání
 
-Zájemce vyplní současný formulář. Aplikace přijme podepsané oznámení o dokončeném odeslání, uloží odpověď a zdroj přihlášky a zaznamená výsledek zpracování. Rozpracovaný formulář účty nezakládá.
+V prvním automatickém vstupu zájemce vyplní současný formulář Tally. Jeho adaptér přijme podepsané oznámení o dokončeném odeslání, uloží odpověď a zdroj přihlášky a předá společnému zpracování rozpoznané údaje. Rozpracovaný formulář účty nezakládá.
+
+Společná přihláška obsahuje zdroj, identifikátor události daného zdroje, kontaktní údaje, pracovní preference a samostatné odpovědi o zkušenostech. Další formulář předá stejný význam údajů svým adaptérem. Ruční pozvání je autorizovaná operace správce se zdrojem a důvodem; nevyžaduje uměle vytvářet odpověď Tally.
 
 Rozhodnutí se vztahuje pouze k přístupu do aplikace. Samotný přístup neslibuje přidělení směny ani nepotvrzuje schopnost konkrétní práci vykonat.
 
@@ -62,7 +76,7 @@ Systém hledá přesnou shodu normalizovaného e-mailu. Existující jednoznačn
 | Již aktivní účet | Nezakládat další účet, neměnit heslo ani přístup; použít běžné přihlášení a obnovu hesla |
 | Pozvánka čekající na aktivaci | Zachovat stejný profil; opakovaná událost sama nevyvolá další pozvánku |
 | Pozastavený účet nebo ruční zákaz pozvání | Zachovat omezení a předat případ ke kontrole |
-| Rozpor mezi e-mailem Tally, profilem a Cal.com | Nepřepisovat ověřenou identitu; předat případ ke kontrole |
+| Rozpor mezi e-mailem přihlášky, profilem a dalšími zdroji, například Cal.com | Nepřepisovat ověřenou identitu; předat případ ke kontrole |
 
 Nový profil získá sazbu 250 Kč/h serverově. Změny sazeb zůstávají ve stávajícím administrativním workflow a nemění uložené finanční podklady již uzavřené práce. Hromadná změna sazeb starých profilů není součástí tohoto projektu.
 
@@ -72,19 +86,29 @@ E-mail obsahuje oslovení, důvod přijetí zprávy, stručný popis přístupu 
 
 Zpráva se posílá na e-mail konkrétní pozvánky. Vstupní formulář nemůže změnit přihlašovací e-mail existujícího účtu. Oprava překlepu se řeší opravou cíle pozvánky oprávněným správcem a vydáním nové pozvánky na opravenou adresu, bez automatického slučování podle jména.
 
-Navržená platnost odkazu je 24 hodin. Nové zaslání vytvoří aktuální pozvánku; neaktivuje účet a neobnoví pozastavený přístup. Veřejné vyžádání nové pozvánky podléhá omezení četnosti a vždy vrací obecnou odpověď bez zveřejnění existence účtu.
+Platnost pozvánky je 48 hodin od jejího prvního odeslání. Pouhé otevření nebo technické opakování stejné zprávy tuto dobu neprodlužuje. Výslovné nové zaslání vytvoří novou aktuální pozvánku na dalších 48 hodin a předchozí zneplatní; neaktivuje účet a neobnoví pozastavený přístup. Veřejné vyžádání nové pozvánky podléhá omezení četnosti a vždy vrací obecnou odpověď bez zveřejnění existence účtu.
 
-Provozní e-maily využijí ověřenou odesílací doménu a vlastní e-mailovou službu připojenou k Supabase Auth. Odesílací adresa, veřejná HTTPS adresa aplikace a kontakt podpory budou součástí konfigurace konkrétního nasazení. Jejich nastavení se před zapnutím ověří skutečnou testovací zprávou na výslovně určenou adresu.
+E-mail obsahuje jeden HTTPS odkaz, který na podporovaném telefonu umožní pokračování v nainstalované aplikaci a jinak zobrazí webovou aktivační stránku. Na ní je možné pokračovat v prohlížeči nebo otevřít dostupný ověřený způsob instalace mobilní aplikace. Po instalaci člověk znovu otevře původní odkaz z e-mailu. Nepředpokládá se automatické přenesení rozpracované pozvánky přes obchod s aplikacemi.
+
+Provozní e-maily využijí ověřenou odesílací doménu a vlastní e-mailovou službu; stejná konfigurace odesílatele se použije pro e-maily Supabase Auth, jako je obnova hesla. Odesílací adresa, veřejná HTTPS adresa aplikace, dostupný instalační odkaz a kontakt podpory budou součástí konfigurace konkrétního nasazení. Jejich nastavení se před zapnutím ověří skutečnou testovací zprávou na výslovně určenou adresu.
 
 ### 5. Aktivace účtu
 
-Aktivační stránka funguje v běžném prohlížeči a nevyžaduje předchozí instalaci mobilní aplikace. Otevření stránky samo neaktivuje účet ani nespotřebuje jednorázový odkaz; potvrzení provede člověk vlastní akcí.
+Stejný aktivační průchod bude dostupný v mobilní aplikaci i na webu. Rozložení a ovládání se nejdříve navrhují pro telefon. Otevření odkazu samo neaktivuje účet ani nespotřebuje pozvánku; potvrzení provede člověk vlastní akcí.
+
+| Kde se otevře odkaz | Pokračování |
+| --- | --- |
+| Telefon s nainstalovanou podporovanou aplikací | Aktivace v aplikaci; při neotevření aplikace nabídne web také tlačítko pro otevření |
+| Telefon bez aplikace | Web nabídne instalaci a možnost dokončit aktivaci v prohlížeči |
+| Po instalaci aplikace | Opětovné otevření původního e-mailového odkazu pokračuje ke stejnému profilu |
+| Počítač | Aktivace ve webové verzi |
+| Účet již aktivovaný v jiné verzi | Běžné přihlášení stejným e-mailem a heslem |
 
 Po ověření pozvánky se zobrazí formulář pro nastavení vlastního hesla a kontrolu předvyplněného jména a telefonu. E-mail pozvánky zde nelze volně přepsat. Heslo spravuje Supabase Auth; aplikace je neukládá do profilu ani provozních záznamů.
 
 Účet se stane aktivním po serverovém ověření správné pozvánky, e-mailu a dokončení nastavení hesla. Do té doby má případná přihlašovací relace přístup pouze k vlastním krokům aktivace. Přerušení lze dokončit znovu; nepřipravuje se další provozní profil.
 
-Po aktivaci člověk zůstane přihlášený a pokračuje do prvního uvedení do aplikace.
+Po aktivaci člověk zůstane přihlášený v prostředí, kde ji dokončil, a pokračuje do prvního uvedení do aplikace. Web a mobil mají vlastní přihlašovací relace. Aktivace ve webovém prohlížeči proto neslibuje automatické přihlášení v později nainstalované aplikaci; tam člověk použije stejné zvolené heslo.
 
 ### 6. První vstup
 
@@ -96,7 +120,7 @@ První uvedení je možné přeskočit a později otevřít z nápovědy. Jeho z
 
 ### 7. Další přihlášení a obnova
 
-Další přihlášení používá e-mail a heslo ve webové i mobilní aplikaci. Přihlášení nabídne obnovu zapomenutého hesla. Neaktivní účet pokračuje v aktivaci; pozastavenému účtu se zobrazí odpovídající stav a kontakt podpory.
+Další přihlášení používá e-mail a heslo ve webové i mobilní aplikaci. Přihlášení nabídne obnovu zapomenutého hesla s návratem do mobilní aplikace, pokud je dostupná, a funkčním dokončením na webu. Neaktivní účet pokračuje v aktivaci; pozastavenému účtu se zobrazí odpovídající stav a kontakt podpory.
 
 Obnova hesla sama nemění rozhodnutí o přístupu, sazbu ani roli. Prošlá nebo již použitá pozvánka nabídne odpovídající cestu k novému odkazu nebo běžnému přihlášení.
 
@@ -118,6 +142,14 @@ Pro první verzi je navržena správa přístupů a individuální sazby pro rol
 
 ## Technické hranice
 
+### Společný proces a adaptéry vstupů
+
+- Doménové zpracování přihlášky, profilu a pozvánky přijímá obecný zdroj a normalizované údaje. Nezávisí na Tally payloadu, popiscích otázek ani konkrétním klientovi.
+- Tally adaptér ověřuje podpis a formulář a mapuje stávající odpovědi. Případný formulář přímo v aplikaci a další integrace mají vlastní validaci vstupu a použijí stejné společné zpracování.
+- Pracovní preference mají společný význam: manuální výpomoc, lehčí výpomoc, pouze administrativa, nerozpoznáno. Zkušenost z eventů zůstává samostatným údajem.
+- Jedinečnost události vychází ze zdroje a jeho identifikátoru odeslání. Jeden člověk může přijít více zdroji, aniž by vznikl další účet nebo se přepsaly ruční úpravy.
+- Připojení nového zdroje je výslovná konfigurace s určenými pravidly. Samotné nezpracované vytvoření Auth účtu není schváleným vstupem registrace.
+
 ### Příjem Tally a opakování
 
 - Přijímat pouze podepsané dokončené odpovědi schváleného formuláře. Odmítnout neplatný podpis, neočekávaný formulář a neplatnou strukturu.
@@ -127,13 +159,30 @@ Pro první verzi je navržena správa přístupů a individuální sazby pro rol
 - Při souběhu se musí zachovat jeden provozní profil a jeden účet. Po nejasném výsledku vytvoření účtu se nejprve ověří skutečný stav a teprve potom pokračuje.
 - Zasílání má uložený stav, omezené opakování a možnost ruční nápravy. Vzácná duplicitní zpráva při nejasném potvrzení poskytovatele nesmí vytvořit druhý účet ani druhé oprávnění.
 
+### Pozvánka na 48 hodin
+
+Platnost pozvánky spravuje vlastní serverový záznam s cílovým profilem a e-mailem, otiskem kryptograficky náhodného tajemství, časem prvního odeslání, koncem platnosti a stavem použití či odvolání. Tajemství umožňuje pouze dokončení konkrétní pozvánky; není to provozní přihlašovací relace ani obecný reset hesla.
+
+Po vlastní potvrzující akci člověka server ověří platnost, cílovou identitu a aktuální stav účtu a umožní krátkodobý ověřovací krok Supabase Auth pro nastavení hesla. Otevření odkazu ani tento krok neprodlouží 48hodinovou hranici. Dokončení se autorizuje serverově a jednorázově; po aktivaci se pozvánka zneplatní. Souběžná dokončení nesmějí změnit jiný účet nebo opakovaně nastavovat heslo již aktivního uživatele. Oprava přerušeného dokončení používá zaznamenaný stav stejné operace.
+
+Podle dokumentace Supabase sdílejí nativní e-mailové odkazy nastavení expirace také s obnovou hesla a změnou e-mailu. Proto se kvůli dvoudenní pozvánce plošně neprodlužuje životnost těchto dalších ověřovacích prostředků. Hesla a běžné relace dál spravuje Supabase Auth.
+
+### Mobilní a webové pokračování
+
+- Veřejný HTTPS odkaz použije ověřené Universal Links nebo App Links na podporovaných platformách a má funkční webovou stránku pro pokračování.
+- Mobilní klient zpracuje odkaz při spuštění zavřené aplikace i při návratu do již spuštěné aplikace. Současná konfigurace Capacitor sama o sobě nezajišťuje toto směrování; jde o součást implementace aktivace.
+- Přesměrování smí vést pouze na povolenou doménu a povolené mobilní cíle. Pozvánkové tajemství ani přihlašovací tokeny se nepředávají do obchodu s aplikacemi nebo analytiky.
+- Odkaz funguje na jiném zařízení a v jiném prohlížeči, než kde vznikla přihláška. Dokončení nezávisí na lokálním stavu prohlížeče, který odeslal Tally.
+- Mobilní i webový klient používají stejnou serverovou kontrolu platnosti a jednorázového dokončení. Stav aktivace se neukládá jen do paměti konkrétního klienta.
+- Obnova hesla má stejné směrování mezi mobilem a webem, ale vlastní pravidla a platnost ověřovacího kroku. Již přihlášený jiný člověk musí při aktivaci výslovně přejít na identitu pozvánky; aktivace nesmí přepsat jeho účet.
+
 ### Identita a oprávnění
 
 - `profiles.id` zůstává provozní identitou. Vazba na účet používá `profiles.user_id`; kandidát má explicitní vazbu na tento profil.
 - Současný trigger při vytvoření Auth účtu automaticky zakládá profil. Implementace musí tento krok sladit s připojením existujícího profilu, aby nevytvořil duplicitní identitu. Vazbu určuje důvěryhodná serverová operace, nikoli upravitelná metadata klienta.
 - Role, sazba a aktivace se autorizují serverově. Vývojářské přepínání rolí nesmí novým uživatelům umožnit získat skutečná vyšší oprávnění.
 - Omezení neaktivního a pozastaveného účtu platí také pro databázové operace, veřejně volatelné funkce a dokumenty, nejen pro viditelnost obrazovek. Musí účinkovat i u existující relace.
-- Přímé volání registrace Supabase nesmí obejít požadovaný vstup a získat provozní přístup. Případný samotný Auth účet není oprávněním k provozním datům.
+- Přímé volání registrace Supabase nesmí obejít společná pravidla schváleného vstupu a získat provozní přístup. Budoucí oficiální registrační obrazovka tato pravidla použije; není závislá na existenci odpovědi Tally. Případný samotný Auth účet není oprávněním k provozním datům.
 - Změna přihlášeného účtu nesmí zobrazit soukromé údaje předchozího člověka. Zachová se současná izolace dat podle identity.
 - Tokeny, hesla, plné pozvánkové odkazy a kompletní odpovědi formuláře nepatří do veřejných protokolů ani analytiky. Životopis a původní odpovědi nejsou běžně přístupné ostatním členům crew.
 
@@ -145,10 +194,10 @@ Starší kandidáti nedostanou hromadně pozvánku změnou aplikace. Případné
 
 ## Postupné dodání
 
-1. **Jeden celý průchod na testovacích datech:** propojení jednoho profilu, sazba 250 Kč/h pro nový profil, pozvánka do lokální schránky, vlastní heslo, aktivace, první přihlášení a obnova hesla. Zahrnout omezení přístupu před aktivací.
-2. **Automatický vstup Tally:** přesné mapování stávajících odpovědí, vyhodnocení pravidla a trvalé zpracování s ochranou proti souběhům a duplicitám.
+1. **Jeden celý průchod na testovacích datech:** společný profil a pozvání nezávislé na zdroji, sazba 250 Kč/h pro nový profil, pozvánka do lokální schránky s platností 48 hodin, vlastní heslo, aktivace, první přihlášení a obnova hesla. Ověřit hlavní průchod v mobilní aplikaci i webové pokračování bez instalace a omezení přístupu před aktivací.
+2. **První automatický vstup Tally:** samostatný adaptér, přesné mapování stávajících odpovědí a předání společnému zpracování s ochranou proti souběhům a duplicitám. Ověřit také ruční pozvánku přes stejné jádro, bez nutnosti vytvářet odpověď Tally.
 3. **Provozní dohled:** stav přihlášky, účtu a odesílání, opakování pozvánky, ruční kontrola nejasností a pozastavení přístupu.
-4. **Ověření a omezené zapnutí:** celý průchod na telefonu a počítači, kontrola e-mailové konfigurace a konkrétních oprávnění. Automatické zasílání se zapne až pro výslovně určený cíl a rozsah pilotu.
+4. **Ověření a omezené zapnutí:** celý průchod v nainstalované mobilní aplikaci, pokračování bez instalace a použití na počítači, kontrola e-mailové konfigurace a konkrétních oprávnění. Automatické zasílání se zapne až pro výslovně určený cíl a rozsah pilotu.
 
 Detailní implementační plán se připraví po revizi tohoto návrhu. Produktový návrh ani lokální test neopravňuje sám o sobě k rozesílání pozvánek skutečným lidem nebo ke změně přístupů v provozu.
 
@@ -166,16 +215,27 @@ Detailní implementační plán se připraví po revizi tohoto návrhu. Produkto
 | Shodné jméno dvou lidí | Profily se automaticky nesloučí |
 | Chyba odesílání a opakování | Přihláška se neztratí, stav je viditelný, nový účet nevznikne |
 | Přednačtení odkazu poštovním systémem | Samo neaktivuje účet ani nespotřebuje pozvánku |
+| Otevření mezi 24. a 48. hodinou od odeslání | Pozvánka stále umožní dokončení aktivace |
+| Dokončení po 48 hodinách nebo použití odvolané pozvánky | Aktivace se odmítne a nabídne novou pozvánku |
+| Opakované odeslání stejné zprávy poskytovatelem | Neposune původní konec platnosti |
+| Výslovně vyžádaná nová pozvánka | Nových 48 hodin, původní odkaz neplatí |
 | Přerušení nebo prošlý odkaz | Srozumitelné pokračování nebo nový odkaz ke stejnému profilu |
+| Odkaz na telefonu s aplikací | Aktivace v aplikaci při studeném startu i v běžící aplikaci |
+| Odkaz na telefonu bez aplikace | Funkční webové pokračování a dostupná instalační cesta |
+| Instalace mezi přijetím pozvánky a aktivací | Opětovné otevření původního odkazu pokračuje ke stejnému profilu |
+| Aktivace na webu a následný vstup v mobilní aplikaci | Běžné přihlášení stejným účtem, žádná nová registrace |
+| Odkaz otevřený na jiném zařízení než přihláška | Platná aktivace bez závislosti na původním prohlížeči |
 | Pokus o provozní operaci před aktivací | Odmítnutí na serveru i při přímém volání |
 | Pozastavení a následný nový formulář nebo obnova hesla | Přístup zůstává pozastavený |
 | Změna účtu na stejném zařízení | Žádné zobrazení dat předchozího člověka |
-| Přímá registrace mimo Tally | Žádné obejití rozhodnutí o provozním přístupu |
+| Ruční pozvání správce bez odpovědi Tally | Stejná aktivace a profil se zaznamenaným zdrojem a důvodem |
+| Později připojený schválený registrační vstup | Společná pravidla a identita, žádný druhý model účtů |
+| Přímé volání registrace mimo schválené vstupy | Žádné obejití rozhodnutí o provozním přístupu |
 | Aktualizace aplikace se starými kandidáty | Žádné hromadné automatické pozvánky |
 
 ## Rozsah první verze
 
-Součástí jsou aktivace, přihlášení, obnova hesla, napojení Tally, jednotný profil, výchozí sazba a dohled nad přístupem. Automatické smlouvy, nový systém hodnocení lidí, přestavba směn, sociální přihlášení a distribuce aplikace přes App Store patří do samostatných projektů.
+Součástí jsou společný proces přihlášky a pozvání, mobilní a webová aktivace, přihlášení, obnova hesla, Tally jako první automatické napojení, ruční pozvánka, jednotný profil, výchozí sazba a dohled nad přístupem. Další registrační formuláře a integrace se mohou připojit následně ke stejnému základu. Automatické smlouvy, nový systém hodnocení lidí, přestavba směn, sociální přihlášení a samotné publikování aplikace do App Store patří do samostatných projektů; zpracování aktivačních odkazů v mobilní aplikaci je součástí této verze.
 
 ## Podklady
 
@@ -184,5 +244,8 @@ Součástí jsou aktivace, přihlášení, obnova hesla, napojení Tally, jednot
 - [Tally: webhooks, podpis a opakované doručení](https://tally.so/help/webhooks).
 - [Supabase: odesílání e-mailů přes vlastní SMTP](https://supabase.com/docs/guides/auth/auth-smtp).
 - [Supabase: e-mailové šablony a přednačítání odkazů](https://supabase.com/docs/guides/auth/auth-email-templates).
+- [Supabase: společná expirace e-mailových ověřovacích prostředků](https://supabase.com/docs/guides/auth/auth-email-passwordless).
+- [Supabase: pokračování přihlašování v mobilní aplikaci](https://supabase.com/docs/guides/auth/native-mobile-deep-linking).
+- [Capacitor: Universal Links a App Links](https://capacitorjs.com/docs/guides/deep-links).
 
-Technický stav vychází ze souborů `supabase/functions/tally-candidate-webhook/index.ts`, `supabase/migrations/20260408103107_.sql`, `src/app/providers/AuthProvider.tsx`, `src/pages/Index.tsx`, `src/App.tsx`, `src/views/RecruitmentView.tsx` a stávajícího modelu `profiles` v uvedené revizi aplikace. Konfigurace živého e-mailového poskytovatele ani doručení do skutečných schránek nebyly touto dokumentací ověřeny.
+Technický stav vychází ze souborů `supabase/functions/tally-candidate-webhook/index.ts`, `supabase/migrations/20260408103107_.sql`, `src/app/providers/AuthProvider.tsx`, `src/pages/Index.tsx`, `src/App.tsx`, `src/views/RecruitmentView.tsx`, `capacitor.config.ts` a stávajícího modelu `profiles` v uvedené revizi aplikace. Konfigurace živého e-mailového poskytovatele, doručení do skutečných schránek ani nativní směrování aktivačních odkazů nebyly touto dokumentací ověřeny.

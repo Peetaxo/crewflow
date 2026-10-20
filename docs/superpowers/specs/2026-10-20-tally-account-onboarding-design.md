@@ -106,7 +106,7 @@ Stejný aktivační průchod bude dostupný v mobilní aplikaci i na webu. Rozlo
 
 Po ověření pozvánky se zobrazí formulář pro nastavení vlastního hesla a kontrolu předvyplněného jména a telefonu. E-mail pozvánky zde nelze volně přepsat. Heslo spravuje Supabase Auth; aplikace je neukládá do profilu ani provozních záznamů.
 
-Účet se stane aktivním po serverovém ověření správné pozvánky, e-mailu a dokončení nastavení hesla. Do té doby má případná přihlašovací relace přístup pouze k vlastním krokům aktivace. Přerušení lze dokončit znovu; nepřipravuje se další provozní profil.
+Účet se stane aktivním po serverovém ověření správné pozvánky, e-mailu a dokončení nastavení hesla. V prvním pilotu před dokončením nevzniká přihlašovací účet ani relace. Běžně přerušený formulář lze otevřít znovu; nepřipravuje se další provozní profil. Pokud se ztratí odpověď při vytváření účtu, server nejprve ověří vyhrazený účet. Jestli nelze bezpečně určit výsledek, další pokus zůstane zablokovaný a správce vydá novou pozvánku ke stejnému profilu. Původní pozvánka ani případný opožděný požadavek potom nemohou dokončit aktivaci nebo přepsat heslo.
 
 Po aktivaci člověk zůstane přihlášený v prostředí, kde ji dokončil, a pokračuje do prvního uvedení do aplikace. Web a mobil mají vlastní přihlašovací relace. Aktivace ve webovém prohlížeči proto neslibuje automatické přihlášení v později nainstalované aplikaci; tam člověk použije stejné zvolené heslo.
 

@@ -48,6 +48,7 @@ export interface Event {
   client: string;
   description?: string;
   contactProfileId?: string | null;
+  coordinatorProfileId?: string | null;
   contactApprovesHours?: boolean;
   timelogApproverProfileId?: string | null;
   contactPerson?: string;

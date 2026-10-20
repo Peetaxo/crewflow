@@ -13,3 +13,7 @@ static_files = ["./functions/generate-invoice-pdf/assets/*"]
 [functions.crew-onboarding]
 # The invitation token is the capability; every SQL helper remains service-role-only.
 verify_jwt = false
+
+[functions.send-notifications]
+# Authenticated inside the function using a server-owned, rotated private worker secret.
+verify_jwt = false

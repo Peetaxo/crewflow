@@ -1019,6 +1019,7 @@ const toSupabaseEventPayload = async (event: Event, expectedEpoch: number) => {
     status: event.status,
     description: event.description ?? null,
     contact_profile_id: event.contactProfileId ?? null,
+    coordinator_profile_id: event.coordinatorProfileId ?? null,
     contact_approves_hours: event.contactApprovesHours ?? true,
     timelog_approver_profile_id: event.timelogApproverProfileId ?? null,
     contact_person: event.contactPerson ?? null,
@@ -1816,6 +1817,7 @@ const matchesSavedEvent = (actual: Event, expected: Event): boolean => (
   && actual.status === expected.status
   && actual.description === expected.description
   && (actual.contactProfileId ?? null) === (expected.contactProfileId ?? null)
+  && (actual.coordinatorProfileId ?? null) === (expected.coordinatorProfileId ?? null)
   && (actual.contactApprovesHours ?? true) === (expected.contactApprovesHours ?? true)
   && (actual.timelogApproverProfileId ?? null) === (expected.timelogApproverProfileId ?? null)
   && actual.contactPerson === expected.contactPerson

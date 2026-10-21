@@ -16,7 +16,7 @@ Změny jsou v samostatné větvi `codex/notifications-20261020`. Nejsou sloučen
 | TypeScript celého stávajícího projektu | Stávající chyby na `main`; žádná diagnostika v nových modulech upozornění |
 | Nativní XML zdroje a kontrola whitespace diffu | Prošly |
 | Databázové testy | Připravené; **neprovedené**, protože změna databáze nebyla povolena |
-| Vizuální kontrola v prohlížeči | Neprovedená: lokální browser runtime a otevření lokálního HTML nebyly prostředím povoleny |
+| Vizuální kontrola v prohlížeči | Provedená v izolovaném místním náhledu skutečných komponent s fiktivními daty: zvoneček, historie, označení přečtených zpráv, přechod do nastavení, kategorie pro crew/COO a světlý/tmavý vzhled na desktopu a mobilní šířce 390 px; plné propojení s databází neověřené |
 | Doručení do skutečného iPhonu / Androidu | **Neověřené**, vyžaduje konfiguraci poskytovatelů a nativních oprávnění |
 
 ## Konkrétní rozsah nasazení čekajícího na souhlas
@@ -49,6 +49,29 @@ schválit výše popsané nasazení do projektu Staff / NODU.
 Bez provedení databázových testů nelze tvrdit, že je SQL ověřené v PostgreSQL.
 Lokální Docker socket nebyl dostupný a žádné alternativní živé DDL nebylo spuštěno.
 
+### Kontrola při navázání 21. 10. 2026
+
+Uživatel souhlasil s postupným pokračováním a dotázal se na Firebase. Před
+nasazením byl ověřen aktuální projekt Staff, potřebná rozšíření a sloupce,
+existující konfigurace URL workeru a výchozí bezpečnostní/výkonnostní advisories.
+
+Automatická kontrola znovu odmítla `apply_migration` (migrace spolu s testy,
+jejichž fixture se vrací zpět): obecné pokračování nepovažuje za výslovný souhlas
+se změnou živých tabulek, triggerů, funkcí, oprávnění a Cron. Následný read-only
+dotaz potvrdil, že tabulky upozornění ani Cron úloha nevznikly.
+
+`git fetch origin` prošel a vzdálený main zůstává na `535fa0a`. Odeslání
+samostatné větve do existujícího remote `https://github.com/Peetaxo/crewflow.git`
+automatická kontrola odmítla jako nepovolený přenos zdrojového kódu. Větev nebyla
+odeslána, PR nevzniklo a main ani vývojové instalace se nezměnily. Před dalším
+pokusem je potřeba výslovný souhlas s tímto cílovým repozitářem i databázovým
+nasazením. Odmítnuté operace nebyly obcházeny.
+
+Místní vizuální kontrola používala dočasný náhled komponent bez přihlášení či
+připojení k databázi. Neověřovala ukládání na server ani skutečnou navigaci do
+směny. Mobilní panel po dokončení animace zabíral 390 px bez vodorovného přetečení.
+Dočasný náhled byl po kontrole odstraněn; nejde o součást aplikace.
+
 ## Mobilní konfigurace
 
 Postup a serverové proměnné jsou v
@@ -56,6 +79,11 @@ Postup a serverové proměnné jsou v
 entitlements, není automaticky připojený k podpisu. Je potřeba ověřit podporu push
 u vývojářského týmu, provisioning a klíč APNs. Android potřebuje odpovídající Firebase
 konfiguraci a ověření na zařízení. Klíče nepatří do klientských `VITE_*` proměnných.
+
+Firebase zatím není nakonfigurované a nenahrazuje Supabase. Návrh používá pouze
+Firebase Cloud Messaging pro Android, protože jej využívá nativní Capacitor push
+plugin. iOS používá přímo APNs; historie, účty, databáze a pravidla upozornění
+zůstávají v Supabase. Firebase není podmínkou nasazení historie ani iOS push.
 
 Testy předpokládají přibližné připomenutí 24 h před aktuálně naplánovaným začátkem.
 Neznámý čas se nevymýšlí; změna času, zrušení nebo vyřízení úkolu zneplatní starou

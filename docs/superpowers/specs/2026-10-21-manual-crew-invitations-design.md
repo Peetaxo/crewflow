@@ -14,6 +14,7 @@ The member record remains independent from login access. Saving a profile does n
 - “Pozvat do aplikace” opens a confirmation dialog with the selected member’s name/email, 48-hour validity and test mailbox wording. Its submit button creates one test invitation; cancel does nothing. Disable duplicate submission immediately.
 - A pending invitation displays its expiry. Explicit replacement uses “Vytvořit novou pozvánku” and explains that the old link becomes invalid. Expired or interrupted preparation can be recovered the same way. No replacement is offered for an active account or activation in progress.
 - An optimistic version check prevents a stale tab or second concurrent request from silently replacing a newer invitation. Responses from a previous profile, email or signed-in identity must never update the currently displayed member.
+- If a saved email changes after an invitation was captured, status must not claim delivery to the new email. For an unactivated, nonclaiming profile report `not_invited`, retaining the old invitation ID as the optimistic version and returning a null expiry. Any nonnull invitation ID requires explicit replacement confirmation, including this state; reading status never revokes an invitation.
 - No password, raw invitation token, activation URL, service key or message HTML is returned to or retained by this management UI.
 
 ## Shared HTTP contract

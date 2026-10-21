@@ -21,6 +21,7 @@ Implementation commit: `3246b794782f407f10f158322588605257b2e1a1`.
 - TypeScript remains at the accepted 110 existing diagnostics, with none referencing new backend files/tests. Local security advisors returned nine existing warnings, none naming the new manual helpers; this is not a claim that existing public authorization is ready for release.
 - Private evidence: `manual-integration-enabled.private.log`, `manual-activation-regression.private.log`, `manual-backend-vitest.private.log`, `manual-handler-red.private.log`, `manual-sql-red.private.log`, `manual-http-disabled.private.log`, `manual-advisors.private.json`.
 - Pilot worker restarted alone, with copied committed sources verified equal; serve session 27935. The restored old invoice demo and log configuration were untouched. Existing activation remains enabled only in the disposable pilot.
+- Independent spec review passed. Quality review found one status defect after a saved recipient change: captured mail to A was attributed to current email B. Correction `e9095281` reports `not_invited`, retains the old optimistic invitation version and returns no expiry, without revoking on read. Actual HTTP RED was reproduced, then 14/14 manual integration groups passed including stale email, explicit replacement, competing requests and claiming protection. Private evidence: `manual-stale-email-{red,green,apply}.private.log`. Targeted independent re-review is pending.
 
 ## Separate UI fixture
 

@@ -47,6 +47,7 @@ function InvitationControls({ profileId, name, email, authId, reason }: { profil
   const [success, setSuccess] = useState(false);
   const alive = useRef(true);
   const submittingRef = useRef(false);
+  const refreshButtonRef = useRef<HTMLButtonElement>(null);
   const matchesSelection = (value: CrewInvitationStatus) => value.profileId === profileId && value.email === email;
 
   useEffect(() => {
@@ -102,9 +103,12 @@ function InvitationControls({ profileId, name, email, authId, reason }: { profil
     <Dialog open={open} onOpenChange={(value) => { if (!submittingRef.current) setOpen(value); }}>
       <div className="mt-3 flex flex-wrap gap-2">
         <DialogTrigger asChild><Button type="button" className="min-h-11 h-auto whitespace-normal" disabled={Boolean(reason) || loading || submitting || !status || locked}>{replacement && !locked ? 'Vytvořit novou pozvánku' : 'Pozvat do aplikace'}</Button></DialogTrigger>
-        {error && !reason && <Button type="button" variant="outline" className="min-h-11 h-auto whitespace-normal" disabled={loading || submitting} onClick={() => { setOpen(false); setRefresh((value) => value + 1); }}>Obnovit stav pozvánky</Button>}
+        {error && !reason && <Button ref={refreshButtonRef} type="button" variant="outline" className="min-h-11 h-auto whitespace-normal" disabled={loading || submitting} onClick={() => { setOpen(false); setRefresh((value) => value + 1); }}>Obnovit stav pozvánky</Button>}
       </div>
-      <DialogContent className="w-[calc(100%-2rem)] max-h-[90dvh] overflow-y-auto [&>button]:min-h-11 [&>button]:min-w-11">
+      <DialogContent className="w-[calc(100%-2rem)] max-h-[90dvh] overflow-y-auto [&>button]:min-h-11 [&>button]:min-w-11" onCloseAutoFocus={(event) => {
+        const recovery = refreshButtonRef.current;
+        if (recovery && !recovery.disabled) { event.preventDefault(); recovery.focus(); }
+      }}>
         <DialogHeader><DialogTitle>{replacement ? 'Vytvořit novou pozvánku' : 'Pozvat do aplikace'}</DialogTitle>
           <DialogDescription>Odkaz bude platit 48 hodin. Pozvánka bude zachycena pouze v lokální testovací schránce.</DialogDescription></DialogHeader>
         <div className="min-w-0 space-y-2 text-sm"><p className="break-words font-semibold">{name}</p><p className="break-all">{email}</p>

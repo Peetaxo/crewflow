@@ -86,6 +86,7 @@ describe('profile invitation controls', () => {
     await act(async () => { writing.resolve(pending); });
     expect(screen.getByRole('status')).toHaveTextContent(/zachycena v lokální testovací schránce/);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Vytvořit novou pozvánku' })).toHaveFocus());
   });
 
   it.each(['pending', 'expired', 'preparing', 'not_invited'])('requires explicit replacement confirmation for %s with an existing invitation', async (state) => {
@@ -126,6 +127,7 @@ describe('profile invitation controls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Vytvořit testovací pozvánku' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/Pozvánka se změnila/);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument(); expect(mocks.status).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Obnovit stav pozvánky' })).toHaveFocus());
     mocks.status.mockResolvedValue(pending);
     fireEvent.click(screen.getByRole('button', { name: 'Obnovit stav pozvánky' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Vytvořit novou pozvánku' }));

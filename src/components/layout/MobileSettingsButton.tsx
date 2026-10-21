@@ -3,7 +3,6 @@ import { useAuth } from '../../app/providers/useAuth';
 import { useAppContext } from '../../context/useAppContext';
 import type { Contractor } from '../../types';
 import { getContractors, subscribeToCrewChanges } from '../../features/crew/services/crew.service';
-import { NotificationBell } from '../../features/notifications/NotificationCenter';
 
 const getFallbackInitials = (name: string) => name
   .trim()
@@ -34,7 +33,6 @@ const MobileSettingsButton = () => {
   }), [contractor?.bg, contractor?.fg]);
 
   return (
-    <span className="inline-flex items-center gap-2 md:hidden"><NotificationBell/>
     <button
       type="button"
       aria-label="Otevřít nastavení"
@@ -47,7 +45,6 @@ const MobileSettingsButton = () => {
     >
       {initials}
     </button>
-    </span>
   );
 };
 

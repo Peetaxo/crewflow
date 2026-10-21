@@ -1,5 +1,9 @@
 # Notifications — paused at the user's request, 2026-10-20
 
+**Resumed on 2026-10-21. This historical checkpoint is superseded by
+`docs/testing/2026-10-21-notifications.md`. The current blocker is explicit approval
+for production database rollout, not permission to continue implementation.**
+
 The user approved the notification scope, then explicitly requested stopping and
 continuing tomorrow. Do not resume until asked. This is a WORK IN PROGRESS checkpoint,
 not a completed implementation or a production deployment.

@@ -111,6 +111,7 @@ const AppLayoutContent: React.FC = () => {
   return (
     <div className={`nodu-app-shell ${isMobileAppShell ? 'nodu-app-shell--mobile-crew' : ''} ${darkMode ? 'dark' : ''}`}>
       {!isMobileAppShell && <Sidebar />}
+      {isMobileAppShell&&<div className="fixed right-4 z-[45]" style={{top:'max(0.5rem, env(safe-area-inset-top))'}}><NotificationBell/></div>}
 
       {isMobileAppShell && (
         <div className="nodu-mobile-role-switcher" aria-label="Přepnutí role v mobilním preview">

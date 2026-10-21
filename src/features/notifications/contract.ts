@@ -24,7 +24,7 @@ export const preferencesSchema = z.object({
   quiet_from: z.string().regex(/^\d\d:\d\d(?::\d\d)?$/), quiet_to: z.string().regex(/^\d\d:\d\d(?::\d\d)?$/), timezone: z.string(),
 });
 export type NotificationPreferences = z.infer<typeof preferencesSchema>;
-export const snapshotSchema = z.object({items:z.array(notificationSchema),unread:z.number().int().nonnegative(),asOf:z.string(),preferences:preferencesSchema});
+export const snapshotSchema = z.object({items:z.array(notificationSchema),unread:z.number().int().nonnegative(),asOf:z.string(),preferences:preferencesSchema,deliveryReady:z.boolean().default(false)});
 export type NotificationSnapshot = z.infer<typeof snapshotSchema>;
 export function parseSnapshot(data: unknown, userId: string, profileId: string): NotificationSnapshot {
   const snapshot = snapshotSchema.parse(data);

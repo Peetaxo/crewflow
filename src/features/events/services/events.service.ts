@@ -1773,6 +1773,7 @@ type EventMutationResponse = {
   id: string;
   updated_at: string;
   crew_filled: number;
+  coordinator_profile_id?: string | null;
 };
 
 const isEventMutationResponse = (value: unknown): value is EventMutationResponse => (
@@ -1817,7 +1818,7 @@ const matchesSavedEvent = (actual: Event, expected: Event): boolean => (
   && actual.status === expected.status
   && actual.description === expected.description
   && (actual.contactProfileId ?? null) === (expected.contactProfileId ?? null)
-  && (actual.coordinatorProfileId ?? null) === (expected.coordinatorProfileId ?? null)
+  && ((!expected.updatedAt && expected.coordinatorProfileId==null) || (actual.coordinatorProfileId ?? null) === (expected.coordinatorProfileId ?? null))
   && (actual.contactApprovesHours ?? true) === (expected.contactApprovesHours ?? true)
   && (actual.timelogApproverProfileId ?? null) === (expected.timelogApproverProfileId ?? null)
   && actual.contactPerson === expected.contactPerson
@@ -1979,13 +1980,13 @@ export const saveEvent = async (event: Event): Promise<Event> => {
               .update(payload)
               .eq('id', event.supabaseId)
               .eq('updated_at', normalized.updatedAt!)
-              .select('id,updated_at,crew_filled')
+              .select('id,updated_at,crew_filled,coordinator_profile_id')
               .single();
           } else {
             result = await supabase
               .from('events')
               .insert({ id: event.supabaseId, ...payload })
-              .select('id,updated_at,crew_filled')
+              .select('id,updated_at,crew_filled,coordinator_profile_id')
               .single();
           }
           requireCurrentEventMutationEpoch(mutationEpoch);
@@ -2004,6 +2005,7 @@ export const saveEvent = async (event: Event): Promise<Event> => {
             supabaseId: result.data.id,
             updatedAt: result.data.updated_at,
             filled: result.data.crew_filled,
+            coordinatorProfileId: result.data.coordinator_profile_id ?? normalized.coordinatorProfileId ?? null,
           };
         } catch (error) {
           if (mutationEpoch !== eventsHydrationEpoch) {

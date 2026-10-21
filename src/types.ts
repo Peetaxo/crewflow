@@ -154,6 +154,7 @@ export interface EventContactOption {
   name: string;
   phone: string;
   canApproveHours: boolean;
+  canCoordinate?: boolean;
 }
 
 export interface TimelogApproval {

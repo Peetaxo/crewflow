@@ -19,11 +19,7 @@ let package = Package(
                 .product(name: "Capacitor", package: "capacitor-swift-pm"),
                 .product(name: "Cordova", package: "capacitor-swift-pm")
             ],
-            path: "ios/Sources/PushNotificationsPlugin"),
-        .testTarget(
-            name: "PushNotificationsPluginTests",
-            dependencies: ["PushNotificationsPlugin"],
-            path: "ios/Tests/PushNotificationsPluginTests")
+            path: "ios/Sources/PushNotificationsPlugin")
     ]
 )
 

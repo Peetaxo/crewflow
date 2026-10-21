@@ -513,6 +513,7 @@ describe('events.service write flow', () => {
       status: event.status,
       description: null,
       contact_profile_id: event.contactProfileId ?? null,
+      coordinator_profile_id: event.coordinatorProfileId ?? null,
       contact_approves_hours: event.contactApprovesHours ?? true,
       timelog_approver_profile_id: event.timelogApproverProfileId ?? null,
       contact_person: event.contactPerson ?? null,
@@ -1026,6 +1027,7 @@ describe('events.service write flow', () => {
         client: row.client_name,
         description: row.description ?? undefined,
         contactProfileId: row.contact_profile_id ?? null,
+        coordinatorProfileId: row.coordinator_profile_id ?? null,
         contactApprovesHours: row.contact_approves_hours ?? true,
         timelogApproverProfileId: row.timelog_approver_profile_id ?? null,
         contactPerson: row.contact_person ?? undefined,
@@ -1727,6 +1729,7 @@ describe('events.service write flow', () => {
       status: 'upcoming',
       description: null,
       contact_profile_id: null,
+      coordinator_profile_id: null,
       contact_approves_hours: true,
       timelog_approver_profile_id: null,
       contact_person: null,
@@ -2006,7 +2009,7 @@ describe('events.service write flow', () => {
     expect(update).toHaveBeenCalledWith(expect.not.objectContaining({ crew_filled: expect.anything() }));
     expect(idEq).toHaveBeenCalledWith('id', 'event-row-1');
     expect(versionEq).toHaveBeenCalledWith('updated_at', '2026-05-12T10:00:00Z');
-    expect(select).toHaveBeenCalledWith('id,updated_at,crew_filled');
+    expect(select).toHaveBeenCalledWith('id,updated_at,crew_filled,coordinator_profile_id');
     expect(saved).toMatchObject({
       supabaseId: 'event-row-1', updatedAt: '2026-05-12T11:00:00Z', filled: 2, name: 'Změněná akce',
     });

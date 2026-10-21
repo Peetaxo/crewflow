@@ -15,7 +15,7 @@ export async function disconnectNativePush() {
   try { if(id) await notificationCall('unregister_notification_device',{p_installation_id:id}); }
   finally { await PushNotifications.unregister().catch(()=>{}); }
 }
-export async function connectNativePush(isCurrent:()=>boolean,onOpen:(id:string)=>void,onError:(message:string)=>void) {
+export async function connectNativePush(isCurrent:()=>boolean,onOpen:(id:string)=>void,onError:(message:string)=>void,register=false) {
   const handles:PluginListenerHandle[]=[];
   if(!nativePushAvailable()) return ()=>{};
   const add=async (handle:Promise<PluginListenerHandle>)=>{
@@ -29,14 +29,17 @@ export async function connectNativePush(isCurrent:()=>boolean,onOpen:(id:string)
       p_environment:Capacitor.getPlatform()==='ios'&&import.meta.env.VITE_APNS_ENVIRONMENT==='development'?'development':'production',
     }); } catch { if(isCurrent()) onError('Telefon se nepodařilo připojit k upozorněním. Zkuste připojení znovu v nastavení.'); }
   };
+  const stop=()=>{void Promise.all(handles.splice(0).map(h=>h.remove()));};
+  try {
   await add(PushNotifications.addListener('registration',({value})=>{void syncToken(value);}));
   await add(PushNotifications.addListener('registrationError',()=>{if(isCurrent()) onError('Upozornění do telefonu se nepodařilo zapnout.');}));
   await add(PushNotifications.addListener('pushNotificationActionPerformed',({notification})=>{
     const id=notification.data?.notificationId;
     if(isCurrent()&&typeof id==='string'&&/^[0-9a-f-]{36}$/i.test(id)) onOpen(id);
   }));
-  if(isCurrent()&&(await PushNotifications.checkPermissions()).receive==='granted') await PushNotifications.register();
-  return ()=>{void Promise.all(handles.map(h=>h.remove()));};
+  if(register&&isCurrent()&&(await PushNotifications.checkPermissions()).receive==='granted'&&isCurrent()) await PushNotifications.register();
+  return stop;
+  } catch(error) {stop();throw error;}
 }
 export async function enableNativePush() {
   if(!nativePushAvailable()) return false;

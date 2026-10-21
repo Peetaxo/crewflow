@@ -1,6 +1,6 @@
 # Manual Crew Invitations Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Let an authorized test operator prepare a 48-hour activation invitation directly from a saved member profile, and make new-member defaults consistently 250 CZK/h, with real delivery and Tally disabled.
 
@@ -16,8 +16,8 @@ Approved contract and exact edge cases: `docs/superpowers/specs/2026-10-21-manua
 
 **Create:** migration via `supabase migration new manual_crew_invitations`; `supabase/functions/crew-invitations/{index,handler}.ts`; focused handler tests under `src/features/onboarding/services/`; real runner `supabase/tests/crew-invitations.integration.mjs` and SQL access checks. **Modify:** `supabase/config.toml`; email renderer/shared module as required. Own the database default here.
 
-- [ ] Write handler tests using the exact request/status/error unions in the spec. Minimum cases: disabled before dependencies, no/invalid bearer, nonallowlisted caller even with COO role, wrong origin/JSON/UUID/oversized body, missing profile/email, normal domain, safe successful capture/status and capture failure. Assert no raw token or backend error in any response. Run and record the expected red.
-- [ ] Create the migration with CLI discovery (`supabase migration --help`, then `new`). Add `manual_request_id uuid unique` and `mail_captured_at timestamptz` to the private invitation record, plus service-only `crew_onboarding_manual_status`, `crew_onboarding_manual_prepare` and `crew_onboarding_manual_capture` helpers. A concrete prepare call is:
+- [x] Write handler tests using the exact request/status/error unions in the spec. Minimum cases: disabled before dependencies, no/invalid bearer, nonallowlisted caller even with COO role, wrong origin/JSON/UUID/oversized body, missing profile/email, normal domain, safe successful capture/status and capture failure. Assert no raw token or backend error in any response. Run and record the expected red.
+- [x] Create the migration with CLI discovery (`supabase migration --help`, then `new`). Add `manual_request_id uuid unique` and `mail_captured_at timestamptz` to the private invitation record, plus service-only `crew_onboarding_manual_status`, `crew_onboarding_manual_prepare` and `crew_onboarding_manual_capture` helpers. A concrete prepare call is:
   ```ts
   service.rpc('crew_onboarding_manual_prepare', {
     p_profile_id: body.profileId, p_expected_email: body.expectedEmail,
@@ -26,10 +26,10 @@ Approved contract and exact edge cases: `docs/superpowers/specs/2026-10-21-manua
   });
   ```
   Status takes `p_profile_id`; capture and separate `crew_onboarding_manual_cancel` take exact `p_profile_id`, `p_request_id`, `p_token_hash`. The old core cancellation helper accepts only a profile; retain its signature and wrap it under an exact-request check/email lock. See the spec for optimistic version, replay and current-invitation checks. Preserve all core activation functions and existing profile values. Include `alter table public.profiles alter column hourly_rate set default 250;` without any row update.
-- [ ] Implement a dependency-injected handler. Validate configuration/local targets, bearer/Auth user + server UUID allowlist + database COO role, origin/body, then dispatch status or prepare. Prepare reads trusted profile email, creates no Auth account, sends captured HTML/text mail, acknowledges that exact invitation and returns only safe status. Failure cancels only its token hash. No raw diagnostics/logs. The index supplies pinned Supabase 2.103.0 and the fixed allowed local Mailpit transport.
-- [ ] Move/reuse the existing small escaped renderer if needed, retaining the existing 11 script tests. Use `verify_jwt=false` with explicit bearer validation for compatibility with local keys, as existing functions do; never accept the anon key as user authorization.
-- [ ] Observe SQL/API red against the disposable target, apply only these reviewed new objects locally, then verify green. Test ordinary authenticated operator requests against real GoTrue/Edge/Mailpit, role/allowlist denials, service-only grants, mail failure/replay/replacement races, stale email/version and custom/zero/history preservation. Guard every runner against a remote API and nonsynthetic recipient. Save private proof logs. Commit only tested task files.
-- [ ] Independent spec review, followed by quality/security review; repair and re-review all important findings before Task 2.
+- [x] Implement a dependency-injected handler. Validate configuration/local targets, bearer/Auth user + server UUID allowlist + database COO role, origin/body, then dispatch status or prepare. Prepare reads trusted profile email, creates no Auth account, sends captured HTML/text mail, acknowledges that exact invitation and returns only safe status. Failure cancels only its token hash. No raw diagnostics/logs. The index supplies pinned Supabase 2.103.0 and the fixed allowed local Mailpit transport.
+- [x] Move/reuse the existing small escaped renderer if needed, retaining the existing 11 script tests. Use `verify_jwt=false` with explicit bearer validation for compatibility with local keys, as existing functions do; never accept the anon key as user authorization.
+- [x] Observe SQL/API red against the disposable target, apply only these reviewed new objects locally, then verify green. Test ordinary authenticated operator requests against real GoTrue/Edge/Mailpit, role/allowlist denials, service-only grants, mail failure/replay/replacement races, stale email/version and custom/zero/history preservation. Guard every runner against a remote API and nonsynthetic recipient. Save private proof logs. Commit only tested task files.
+- [x] Independent spec review, followed by quality/security review; repair and re-review all important findings before Task 2.
 
 ## Task 2 — Profile invitation controls and form default
 

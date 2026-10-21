@@ -22,7 +22,7 @@ describe('global shared evidence entry', () => {
   beforeEach(() => { vi.clearAllMocks(); mocks.ready = true; mocks.scope = { source: 'supabase', role: 'crew', profileId: id(3), userId: id(4) };
     mocks.opened = value().context.timelogs[0]; mocks.load.mockResolvedValue(value()); mocks.write.mockRejectedValue(new Error('offline')); mocks.refresh.mockResolvedValue(undefined); });
   it('creates a live editable session in StrictMode rather than retaining a disposed probe', async () => {
-    render(<StrictMode><SharedTimelogEntry legacy={<div>Old editor</div>} /></StrictMode>);
+    await act(async () => { render(<StrictMode><SharedTimelogEntry legacy={<div>Old editor</div>} /></StrictMode>); });
     const input = await screen.findByLabelText('Hours'); fireEvent.change(input, { target: { value: 'new hours' } });
     expect(screen.getByLabelText('Hours')).toHaveValue('new hours'); expect(screen.queryByText('Old editor')).not.toBeInTheDocument();
   });

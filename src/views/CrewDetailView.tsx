@@ -17,6 +17,7 @@ import ShiftWorkflowSummary from '../features/shift-workflows/ShiftWorkflowSumma
 import { CrewInvoiceRecords, CrewTimelogRecords } from '../features/crew/components/CrewDetailRecords';
 import CrewProfilePanel from '../features/crew/components/CrewProfilePanel';
 import CrewBillingChart from '../features/crew/components/CrewBillingChart';
+import CrewInvitationPanel from '../features/onboarding/CrewInvitationPanel';
 import type { Event } from '../types';
 
 type DetailTab = 'shifts' | 'timelogs' | 'invoices';
@@ -71,6 +72,7 @@ export default function CrewDetailView() {
             {!contractor.phone && !contractor.email && <p className="text-xs text-[var(--nodu-text-soft)]">Kontakt zatím není vyplněný.</p>}
           </div>
         </header>
+        {role === 'coo' && <CrewInvitationPanel profileId={contractor.profileId ?? null} name={contractor.name} email={contractor.email ?? ''} />}
       </div>
 
       <section aria-label="Aktuální přehled" className="grid grid-cols-2 gap-3 lg:grid-cols-3">

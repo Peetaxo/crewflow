@@ -31,7 +31,7 @@ const createEmptyContractor = (nextId: number): Contractor => {
     fg: palette.fg,
     tags: [],
     events: 0,
-    rate: 200,
+    rate: 250,
     phone: '',
     email: '',
     ico: '',

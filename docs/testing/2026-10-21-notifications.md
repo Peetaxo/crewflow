@@ -1,10 +1,11 @@
 # NODU: upozornění — ověření a nasazení, 21. 10. 2026
 
-Implementace byla sloučena do main přes PR #7 (`67d48bb`). Uživatel výslovně
+Implementace byla sloučena do main přes PR #7 (`67d48bb`) a mobilní oprava přes
+PR #8 (`5844496`). Uživatel výslovně
 schválil nasazení do Staff/NODU a odeslání do `Peetaxo/crewflow`; potvrzení MCP řeší
 ručně. Oprávnění pluginu nebyla změněna. Databáze i chráněný Edge worker jsou
-nasazené. Následná mobilní oprava je ve větvi
-`codex/notification-inbox-mobile-layer-20261021`.
+nasazené. Obě změny jsou v hlavní větvi a konečný kód main byl po ověření čistého,
+synchronizovaného checkoutu znovu sestaven, nainstalován a spuštěn v simulátoru.
 
 **Historie i push zůstávají vypnuté.** Automatická kontrola odmítla zapnutí historie
 jako změnu produkčního chování nad rámec souhlasu s nasazením schématu. Zapnutí
@@ -63,6 +64,13 @@ proto skončil před nativní instalací. XcodeBuildMCP následně úspěšně s
 nainstaloval a spustil tentýž projekt v běžícím iPhone 17 Pro / iOS 26.5.
 Fyzický iPhone tímto obnoven nebyl; vypršení samostatného probe nepotvrzuje,
 že je telefon skutečně odpojený. Push doručení na zařízení nebylo testováno.
+
+Po sloučení PR #8 byl znovu ověřen main `5844496`, shoda s origin/main i přesná
+shoda stromu s otestovanou větví. Povinný refresh znovu prošel produkčním buildem
+a sync, pak narazil na stejnou infrastrukturu simctl. Finální XcodeBuildMCP
+build/install/launch nad tímto main úspěšně skončil 21. 10. 2026 ve 14:29 SELČ.
+Read-only kontrola databáze potvrdila vypnutou historii i push, nulové zprávy,
+frontu a zařízení a úspěšný poslední běh Cron.
 
 Při vizuální kontrole skutečné aplikace se ukázalo, že mobilní přepínač rolí
 s vrstvou 90 překrývá nadpis panelu a zavírací tlačítko zasahuje do stavového

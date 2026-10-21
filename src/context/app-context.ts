@@ -1,5 +1,6 @@
 import { createContext } from 'react';
 import type { Client, Project, ReceiptItem, Role, Timelog } from '../types';
+import type { NotificationTarget } from '../features/notifications/contract';
 
 export type SelectedEventId = number | string;
 
@@ -19,8 +20,9 @@ export interface AppContextType {
   currentTab: string;
   setCurrentTab: (tab: string) => void;
   setNavigationGuardMessage: (message: string | null) => void;
-  settingsSection: 'menu' | 'profile' | 'appearance' | 'billing';
-  setSettingsSection: (section: 'menu' | 'profile' | 'appearance' | 'billing') => void;
+  settingsSection: 'menu' | 'profile' | 'appearance' | 'billing' | 'notifications';
+  setSettingsSection: (section: 'menu' | 'profile' | 'appearance' | 'billing' | 'notifications') => void;
+  openNotificationTarget?: (target: NotificationTarget) => void;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
   timelogFilter: string;

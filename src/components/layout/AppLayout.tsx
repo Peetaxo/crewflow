@@ -9,6 +9,8 @@ import type { Role } from '../../types';
 import Sidebar from './Sidebar';
 import MobileCrewNav from './MobileCrewNav';
 import { useNavBadgeCounts } from './useNavBadgeCounts';
+import { NotificationsProvider } from '../../features/notifications/NotificationsProvider';
+import { NotificationCenter,NotificationBell } from '../../features/notifications/NotificationCenter';
 
 import DashboardView from '../../views/DashboardView';
 import MyShiftsView from '../../views/MyShiftsView';
@@ -32,7 +34,7 @@ import DeleteConfirmModal from '../modals/DeleteConfirmModal';
 
 const mobileRoleOptions = ['crew', 'crewhead', 'coo'] as const;
 
-const AppLayout: React.FC = () => {
+const AppLayoutContent: React.FC = () => {
   const {
     darkMode,
     currentTab,
@@ -109,6 +111,7 @@ const AppLayout: React.FC = () => {
   return (
     <div className={`nodu-app-shell ${isMobileAppShell ? 'nodu-app-shell--mobile-crew' : ''} ${darkMode ? 'dark' : ''}`}>
       {!isMobileAppShell && <Sidebar />}
+      {isMobileAppShell&&<div className="fixed right-4 z-[45]" style={{top:'max(0.5rem, env(safe-area-inset-top))'}}><NotificationBell/></div>}
 
       {isMobileAppShell && (
         <div className="nodu-mobile-role-switcher" aria-label="Přepnutí role v mobilním preview">
@@ -141,8 +144,11 @@ const AppLayout: React.FC = () => {
       <ReceiptEditModal />
       <ClientEditModal />
       <DeleteConfirmModal />
+      <NotificationCenter />
     </div>
   );
 };
+
+const AppLayout=()=> <NotificationsProvider><AppLayoutContent/></NotificationsProvider>;
 
 export default AppLayout;

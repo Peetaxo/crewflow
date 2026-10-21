@@ -9,3 +9,7 @@ verify_jwt = true
 # Custom server-only secret; this is the only function with gateway JWT verification disabled.
 verify_jwt = false
 static_files = ["./functions/generate-invoice-pdf/assets/*"]
+
+[functions.send-notifications]
+# Authenticated inside the function using a server-owned, rotated private worker secret.
+verify_jwt = false

@@ -571,6 +571,7 @@ export interface Database {
           status: EventStatus;
           description: string | null;
           contact_profile_id: string | null;
+          coordinator_profile_id?: string | null;
           contact_approves_hours: boolean;
           timelog_approver_profile_id: string | null;
           contact_person: string | null;

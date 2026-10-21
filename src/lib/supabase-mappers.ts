@@ -141,6 +141,7 @@ export function mapEvent(row: EventRow): Event {
     client: row.client_name ?? '',
     description: row.description ?? undefined,
     contactProfileId: row.contact_profile_id ?? null,
+    coordinatorProfileId: row.coordinator_profile_id ?? null,
     contactApprovesHours: row.contact_approves_hours ?? true,
     timelogApproverProfileId: row.timelog_approver_profile_id ?? null,
     contactPerson: row.contact_person ?? undefined,

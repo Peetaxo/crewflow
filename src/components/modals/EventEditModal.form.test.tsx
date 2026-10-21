@@ -59,7 +59,7 @@ describe('Event form', () => {
     expect(screen.queryByLabelText('Datum konce')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Schvaluje také hodiny')).toBeChecked();
     expect(document.activeElement?.tagName).not.toBe('INPUT');
-    await screen.findByRole('option', { name: 'Anna COO' });
+    await within(screen.getByLabelText('Vybrat kontakt')).findByRole('option', { name: 'Anna COO' });
   });
 
   it('looks up canonical UUID alone for create/edit and preserves historical dresscode on save', async () => {
@@ -77,7 +77,7 @@ describe('Event form', () => {
     fireEvent.click(screen.getByRole('button', { name: /JOB2/ }));
     expect(screen.getByLabelText('Název akce')).toHaveValue('Nový projekt');
     expect(screen.getByLabelText('Klient / Firma')).toHaveValue('Druhý klient');
-    await screen.findByRole('option', { name: 'Anna COO' });
+    await within(screen.getByLabelText('Vybrat kontakt')).findByRole('option', { name: 'Anna COO' });
   });
 
   it('caches end date and phases across range, global clock and phase toggle changes', async () => {
@@ -110,12 +110,12 @@ describe('Event form', () => {
     expect(saveEvent).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText('Datum konce'), { target: { value: '2026-09-25' } });
     expect(within(screen.getByRole('group', { name: 'pátek 25. 9. 2026' })).getByRole('combobox')).toHaveValue('instal');
-    await screen.findByRole('option', { name: 'Anna COO' });
+    await within(screen.getByLabelText('Vybrat kontakt')).findByRole('option', { name: 'Anna COO' });
   });
 
   it('selects contact snapshots and preserves the separate approver when toggled', async () => {
     render(<Host />);
-    await screen.findByRole('option', { name: 'Anna COO' });
+    await within(screen.getByLabelText('Vybrat kontakt')).findByRole('option', { name: 'Anna COO' });
     fireEvent.change(screen.getByLabelText('Vybrat kontakt'), { target: { value: 'offline' } });
     expect(screen.getByLabelText('Kontaktní osoba')).toHaveValue('Petr bez účtu');
     expect(screen.getByLabelText('Telefon')).toHaveValue('456');
@@ -134,7 +134,7 @@ describe('Event form', () => {
     render(<Host />);
     expect(await screen.findByText('Kontakty nejsou dostupné.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Zkusit znovu' }));
-    await screen.findByRole('option', { name: 'Anna COO' });
+    await within(screen.getByLabelText('Vybrat kontakt')).findByRole('option', { name: 'Anna COO' });
     fireEvent.change(screen.getByLabelText('Kontaktní osoba'), { target: { value: 'Ručně zadaný kontakt' } });
     fireEvent.click(screen.getByRole('button', { name: 'Vytvořit akci' }));
     await waitFor(() => expect(saveEvent).toHaveBeenCalledWith(expect.objectContaining({ contactProfileId: null, contactPerson: 'Ručně zadaný kontakt' })));
@@ -148,7 +148,7 @@ describe('Event form', () => {
     fireEvent.change(screen.getByLabelText('Konec'), { target: { value: '09:00' } });
     fireEvent.click(screen.getByRole('button', { name: 'Vytvořit akci' }));
     expect(screen.getByRole('alert')).toHaveTextContent('Vyberte nebo doplňte kontaktní osobu.');
-    await screen.findByRole('option', { name: 'Anna COO' });
+    await within(screen.getByLabelText('Vybrat kontakt')).findByRole('option', { name: 'Anna COO' });
   });
 
   it('asks before discarding dirty changes on Escape and retains the draft when canceled', async () => {
@@ -171,7 +171,7 @@ describe('Event form', () => {
     fireEvent.click(screen.getByLabelText('Rozdělit akci na fáze'));
     expect(screen.getByText('Pokročilé nastavení').parentElement).toHaveAttribute('open');
     expect(screen.getByLabelText('Povolit Crew navrhnout čas příchodu a odchodu')).toBeVisible();
-    await screen.findByRole('option', { name: 'Anna COO' });
+    await within(screen.getByLabelText('Vybrat kontakt')).findByRole('option', { name: 'Anna COO' });
   });
 
   it('materializes legacy preparation days even when schedules were an empty object', async () => {
@@ -204,7 +204,7 @@ describe('Event form', () => {
     rendered.rerender(<EventEditModal editingEvent={draft} onChange={vi.fn()} onClose={vi.fn()} />);
     expect(within(screen.getByRole('group', { name: 'středa 23. 9. 2026' })).getByRole('combobox')).toHaveValue('');
     expect(saveEvent).not.toHaveBeenCalled();
-    await screen.findByRole('option', { name: 'Anna COO' });
+    await within(screen.getByLabelText('Vybrat kontakt')).findByRole('option', { name: 'Anna COO' });
   });
 
   it('persists only active dates after explicit trim confirmation', async () => {
@@ -277,6 +277,6 @@ describe('Event form', () => {
     render(<Host initial={{ ...fixture, ...coordinates }} />);
     expect(screen.queryByTestId('map-preview')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Vybrat na mapě' })).toBeInTheDocument();
-    await screen.findByRole('option', { name: 'Anna COO' });
+    await within(screen.getByLabelText('Vybrat kontakt')).findByRole('option', { name: 'Anna COO' });
   });
 });

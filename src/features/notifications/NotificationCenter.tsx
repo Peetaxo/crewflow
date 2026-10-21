@@ -18,7 +18,7 @@ export function NotificationCenter() {
   const store=useNotifications();const app=useAppContext();
   if(!store?.ready) return null;
   return <Sheet open={store.panelOpen} onOpenChange={store.setPanelOpen}>
-    <SheetContent className={`${app.darkMode?'dark':''} flex w-full flex-col bg-[color:var(--nodu-paper)] px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-[max(24px,env(safe-area-inset-top))] sm:max-w-md`}>
+    <SheetContent overlayClassName="z-[100]" className={`${app.darkMode?'dark':''} z-[101] flex w-full flex-col bg-[color:var(--nodu-paper)] px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-[max(24px,env(safe-area-inset-top))] sm:max-w-md [&>button]:top-[max(1rem,env(safe-area-inset-top))]`}>
       <SheetHeader><SheetTitle>Upozornění</SheetTitle><SheetDescription>Směny, výkazy a vyúčtování na jednom místě.</SheetDescription></SheetHeader>
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" size="sm" disabled={store.busy||!store.data?.unread} onClick={()=>{void store.markAll().catch(()=>{});}}><CheckCheck size={15}/>Přečíst vše</Button>

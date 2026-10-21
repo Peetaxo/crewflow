@@ -35,14 +35,28 @@ Parent full ESLint passed, normal production web build passed with existing chun
 
 A dedicated synthetic operator and uninvited target were created without modifying the earlier “Mobilní Test” account. Credentials are only in `manual-invitation-operator.private.json` (mode 0600). Operator Auth UUID: `bda0ee6e-db97-4afe-9002-2d4316935913`; target profile UUID: `0c69d4ac-8134-459a-a6f5-14759f4481b6`.
 
-Parent used ordinary email/password login in the real browser preview, observed the COO role and selected the target “Manual Invitation”. No session injection, client service key or developer-login shortcut was used. Invitation UI implementation and its end-to-end proof are the next task; the target has not been invited through the UI yet.
+Parent used ordinary email/password login in the real browser preview, observed the COO role and selected the target “Manual Invitation”. No session injection, client service key or developer-login shortcut was used. Dialog cancellation left zero messages and unchanged status/profile. Actual UI submission captured one message with a 48-hour expiry; explicit UI replacement captured a second and made the first link invalid. Anonymous activation preview accepts exactly one current link. Profile/rate/note remain unchanged and no Auth user was created. Selecting the operator's existing profile showed “Účet je aktivní.” with invitation disabled. The target is now pending activation.
 
-The UI baseline snapshot records `not_invited`, zero captured messages, rate 250 and no Auth binding. A separate private simulator preview project uses bundle `cz.nodu.app.manualinvitations` and display name `nodu test`, preserving the earlier pilot installation and its human-tested session. The normal clean-main checkout has neither activation nor invitation frontend opt-in flag set. These are preparation facts; native/UI verification is still pending.
+The UI baseline snapshot records `not_invited`, zero captured messages, rate 250 and no Auth binding. A separate private simulator preview project uses bundle `cz.nodu.app.manualinvitations` and display name `nodu test`, preserving the earlier pilot installation and its human-tested session. Build/run succeeded; parent signed in normally as the separate operator, selected the target and observed its actual pending status/expiry through native-origin authenticated requests. Replacement confirmation and cancellation work without an extra message. A small mobile header/close-button overlap is being corrected before final visual acceptance. The normal clean-main checkout has neither activation nor invitation frontend opt-in flag set.
+
+Private runtime proof: `manual-ui-runtime-proof.private.log` reports two captured messages, one valid link, unchanged profile and zero created Auth users. Actual browser screenshot: `manual-invitation-web-proof.png` (embedded in progress). The normal-main device refresh remains pending.
 
 The old local baseline schema does not contain every recent shared-workflow/activity helper used elsewhere in main. A pre-existing empty-dashboard/activity widget can therefore show unavailable data in this disposable pilot. This feature does not modify those unrelated workflows; invitation/profile verification is recorded separately.
 
+## User-requested stopping point — 2026-10-21
+
+The user explicitly stopped work to continue next time. Do not treat this checkpoint as completed integration. Source is committed through `d592776` on `codex/manual-crew-invitations`; root main/origin remain unchanged at the previous baseline. No final main merge, push or normal-device refresh has happened for this feature.
+
+The mobile overlap correction reserves a 48px header gutter while preserving the 44px close target. Its spec and quality reviews passed, 36 panel tests/scoped lint passed, and the final pilot web bundle build completed successfully. The installed separate simulator app still contains the earlier bundle: copying the corrected bundle, rebuilding/relaunching and visually confirming the dialog remain the next step. It is already genuinely logged in as the separate test operator and showing the pending target profile; no user password was changed.
+
+Private staging project: `manual-mobile-preview/` under the pilot directory; bundle `cz.nodu.app.manualinvitations`, display `nodu test`. XcodeBuildMCP profile `crewflow-manual-invitations`, DerivedData `/private/tmp/crewflow-manual-invitations-ios`, simulator `B337323A-264B-4AAC-9236-BEAAB3701659`. Rebuild the pilot assets with `build-native-pilot.mjs`, copy to staging `dist/`, run Capacitor copy there, then build/run the existing profile. Original pilot app/session remains intact.
+
+Runtime target has two captured messages and one valid current link, no Auth account, rate250 and preserved note/history. `manual-ui-runtime-proof.private.log` confirms the result. Existing operator credentials remain only in mode0600 `manual-invitation-operator.private.json`; never display them. Browser preview tab2 is retained for later continuation. Temporary preview/Edge workers are stopped for this pause; Docker databases and the older invoice demo are retained. Restart only the pilot worker from its `.env.functions` and UI with `manual-invitation-ui-server.mjs` when resuming. Do not re-run fixture setup or reset the original “Mobilní Test” account.
+
+Root's three unrelated working files remain preserved; their pre-integration diff backup is `/private/tmp/manual-invitations-unrelated-before.patch`. Use the existing clean main checkout for final verification/device refresh and preserve its ignored `.env.local`.
+
 ## Remaining acceptance
 
-- Actual invite/confirmation/capture/reissue/active-state UI proof and mobile layout.
+- Final mobile dialog layout verification after the close-button gutter correction.
 - Full test/lint/build/type comparison and final review.
 - Verified integration, main synchronization and required simulator/physical-phone development refresh with preserved local configuration. No linked deployment, real recipient or Tally automation.

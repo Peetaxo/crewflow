@@ -13,3 +13,7 @@ static_files = ["./functions/generate-invoice-pdf/assets/*"]
 [functions.crew-onboarding]
 # The invitation token is the capability; every SQL helper remains service-role-only.
 verify_jwt = false
+
+[functions.crew-invitations]
+# This endpoint explicitly validates a real Auth bearer, server allowlist and current COO role.
+verify_jwt = false

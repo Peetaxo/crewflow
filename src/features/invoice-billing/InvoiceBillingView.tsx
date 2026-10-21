@@ -49,7 +49,7 @@ function BillingContents({ billing, scope }: { billing: BillingController; scope
       {pending.map((s) => <BillingStatementCard actors={actors} key={`${billing.scopeKey}:${s.id}:${s.updatedAt}`} statement={s} scope={billing.scope} documents={data!.documents} jobs={data!.jobs} busy={locked} onCommand={command} onDownload={download} onBillingSettings={onSettings} />)}
     </section>
     <section className="space-y-3" aria-label="Skutečné faktury"><h2 className="text-lg font-semibold">Vystavené a přijaté faktury ({invoices.length})</h2>
-      {invoices.map((invoice) => <div key={invoice.id}><BillingInvoiceCard actors={actors} invoice={invoice} role={billing.scope.role} busy={locked} jobs={(data?.jobs ?? []).filter((j) => !data?.statements.find((s) => s.id === j.statementId)?.needsSourceVerification)} onDownload={download}
+      {invoices.map((invoice) => <div key={invoice.id} id={`notification-invoice-${invoice.id}`} tabIndex={-1}><BillingInvoiceCard actors={actors} invoice={invoice} role={billing.scope.role} busy={locked} jobs={(data?.jobs ?? []).filter((j) => !data?.statements.find((s) => s.id === j.statementId)?.needsSourceVerification)} onDownload={download}
         onLegacyPdf={(id) => { void run(async () => { await generateInvoicePdf(id); await actual.refetch(); }); }}
         onPaid={(id) => { void run(async () => {
           const isCurrent = billing.capture();

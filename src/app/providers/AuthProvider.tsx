@@ -338,6 +338,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     },
     switchRole,
     signOut: async () => {
+      if(supabase) {
+        const {disconnectNativePush}=await import('../../features/notifications/native-push');
+        await disconnectNativePush().catch(()=>{});
+      }
       if (supabase) {
         const { error } = await supabase.auth.signOut({ scope: 'local' });
         if (error) {

@@ -6,7 +6,7 @@ alter table crew_onboarding_private.invitations
 
 create function public.crew_onboarding_manual_status(p_profile_id uuid)
 returns jsonb language plpgsql security definer set search_path = '' as $$
-declare p public.profiles%rowtype; i crew_onboarding_private.invitations%rowtype; v_email text; v_state text;
+declare p public.profiles%rowtype; i crew_onboarding_private.invitations%rowtype; v_email text; v_state text; v_expires_at timestamptz;
 begin
   select * into p from public.profiles where id=p_profile_id;
   if not found then return jsonb_build_object('error','profile_unavailable'); end if;
@@ -15,13 +15,16 @@ begin
   if length(v_email)>320 or v_email !~ '^[a-z0-9][a-z0-9._+-]*@crewflow-onboarding\.test$' then return jsonb_build_object('error','test_only'); end if;
   if (select count(*) from public.profiles p2 where lower(btrim(p2.email))=v_email)<>1 then return jsonb_build_object('error','profile_unavailable'); end if;
   select * into i from crew_onboarding_private.invitations where profile_id=p.id and state in ('pending','claiming');
+  v_expires_at := i.expires_at;
   if p.user_id is not null or exists(select 1 from auth.users u where lower(btrim(u.email))=v_email) then v_state := 'active';
   elsif i.state='claiming' then v_state := 'activation_in_progress';
   elsif i.id is null then v_state := 'not_invited';
+  -- Keep the old optimistic version, but never attribute its delivery or expiry to an edited recipient.
+  elsif i.email is distinct from v_email then v_state := 'not_invited'; v_expires_at := null;
   elsif i.expires_at<=clock_timestamp() then v_state := 'expired';
   elsif i.mail_captured_at is null then v_state := 'preparing';
   else v_state := 'pending'; end if;
-  return jsonb_build_object('profileId',p.id,'email',v_email,'state',v_state,'invitationId',i.id,'expiresAt',i.expires_at);
+  return jsonb_build_object('profileId',p.id,'email',v_email,'state',v_state,'invitationId',i.id,'expiresAt',v_expires_at);
 end $$;
 
 create function public.crew_onboarding_manual_prepare(p_profile_id uuid,p_expected_email text,p_request_id uuid,p_expected_invitation_id uuid,p_replace_existing boolean)

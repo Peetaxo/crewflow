@@ -144,6 +144,49 @@ try {
       const rawToken = /activate#token=([a-f0-9]{64})/.exec(message.HTML)[1];
       check(hash(rawToken) === i.token_hash && !Object.values(i).includes(rawToken), 'raw token only in mailbox');
     });
+    await test('edited recipient never inherits old captured delivery and replacements keep optimistic protection', async () => {
+      const p = profile('email-before'); const original = input(p);
+      const first = await call(original, signed.token); check(first.status === 200 && first.body.data.state === 'pending', 'original captured invitation');
+      const oldId = first.body.data.invitationId; const oldRow = inviteRow(oldId);
+      const mailbox = await (await fetch(`${credentials.MAILPIT_URL}/api/v1/search?query=${encodeURIComponent(`to:${p.email}`)}`)).json();
+      const message = await (await fetch(`${credentials.MAILPIT_URL}/api/v1/message/${mailbox.messages[0].ID}`)).json();
+      const oldToken = /activate#token=([a-f0-9]{64})/.exec(message.HTML)[1];
+      const edited = { ...p, email: email('email-after') };
+      sql(`update public.profiles set email=${q(edited.email)} where id=${q(p.profileId)};`);
+      const changed = await call({ action: 'status', profileId: p.profileId }, signed.token);
+      check(changed.status === 200 && changed.body.data.state === 'not_invited' && changed.body.data.email === edited.email, 'edited address is not invited');
+      check(changed.body.data.invitationId === oldId && changed.body.data.expiresAt === null, 'old version retained without attributing old expiry');
+      check(JSON.stringify(inviteRow(oldId)) === JSON.stringify(oldRow), 'status does not revoke or mutate old invitation');
+      const preview = await fetch(`${apiUrl}/functions/v1/crew-onboarding`, { method: 'POST', headers: { apikey: credentials.ANON_KEY, 'content-type': 'application/json' }, body: JSON.stringify({ action: 'preview', token: oldToken }) });
+      check(preview.status >= 400 && (await preview.json()).error === 'invalid_invitation', 'old token cannot preview changed identity');
+      check((await call(input(p, { expectedInvitationId: oldId, replaceExisting: true }), signed.token)).body.error === 'invitation_changed', 'stale old email refused');
+      check((await call(input(edited), signed.token)).body.error === 'invitation_changed', 'implicit new email replacement refused');
+      const attempts = [input(edited, { expectedInvitationId: oldId, replaceExisting: true }), input(edited, { expectedInvitationId: oldId, replaceExisting: true })];
+      const results = await Promise.all(attempts.map((body) => call(body, signed.token)));
+      const winner = results.findIndex((result) => result.status === 200);
+      check(winner >= 0 && results.filter((result) => result.status === 200).length === 1 && results.some((result) => result.body.error === 'invitation_changed'), 'one explicit changed-email replacement wins');
+      const replacement = results[winner].body.data;
+      check(replacement.state === 'pending' && replacement.email === edited.email && replacement.invitationId !== oldId, 'new recipient capture acknowledged');
+      check(inviteRow(oldId).state === 'revoked', 'old recipient capability revoked');
+      check(await mailboxCount(p.email) === 1 && await mailboxCount(edited.email) === 1, 'one capture per recipient');
+      check((await call(attempts[winner], signed.token)).body.data.invitationId === replacement.invitationId, 'changed-email request replays safely');
+      check(await mailboxCount(edited.email) === 1, 'changed-email replay never sends again');
+      check((await capture(original, oldToken)).error === 'invitation_changed' && (await cancel(original, oldToken)).error === 'invitation_changed', 'old sender cannot acknowledge or cancel replacement');
+    });
+    await test('email edits preserve claiming and linked-account protections', async () => {
+      const p = profile('claim-email-before'); const body = input(p); const prepared = await prepare(body);
+      const claim = await rpc('crew_onboarding_claim', { p_token_hash: hash(prepared.token) }); check(claim.reservedUserId, 'claim reserved before edit');
+      const edited = { ...p, email: email('claim-email-after') };
+      sql(`update public.profiles set email=${q(edited.email)} where id=${q(p.profileId)};`);
+      check((await status(p.profileId)).state === 'activation_in_progress', 'email edit never masks a claim');
+      check((await prepare(input(edited, { expectedInvitationId: prepared.invitationId, replaceExisting: true }))).error === 'activation_in_progress', 'edited claiming profile cannot be replaced');
+      const active = await user('active-email-before');
+      const linked = rows(`select id from public.profiles where user_id=${q(active.userId)}`)[0];
+      const activeEmail = email('active-email-after');
+      sql(`update public.profiles set email=${q(activeEmail)} where id=${q(linked.id)};`);
+      check((await status(linked.id)).state === 'active', 'email edit never masks a linked account');
+      check((await prepare(input({ profileId: linked.id, email: activeEmail }))).error === 'already_active', 'edited active profile cannot be invited');
+    });
     await test('new omitted default is 250 while explicit zero custom and history stay intact', async () => {
       for (const [label, rate] of [['default', undefined], ['zero', 0], ['custom', 399]]) {
         const p = profile(label, rate); const before = rows(`select * from public.profiles where id=${q(p.profileId)}`)[0];

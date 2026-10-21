@@ -114,7 +114,13 @@ begin
   perform private.emit_notification(manager,'invoices','invoice_ready','Test quiet time','Rollback-only',jsonb_build_object('tab','invoices'),'test-quiet');
   select id into n from public.app_notifications where recipient_user_id=m and dedupe_key='test-quiet';
   update private.notification_push_jobs set available_at=clock_timestamp()-interval '1 second' where notification_id=n;
-  if jsonb_array_length(public.claim_notification_push(secret,array['ios']))<>0 or (select available_at from private.notification_push_jobs where notification_id=n)<=clock_timestamp() then raise exception 'Quiet time did not defer ordinary delivery'; end if; checks:=checks+1;
+  claimed:=public.claim_notification_push(secret,array['ios']);
+  if jsonb_array_length(claimed)<>0 or (select available_at from private.notification_push_jobs where notification_id=n)<=clock_timestamp() then
+   raise exception 'Quiet time did not defer ordinary delivery (claimed %, job %, preferences %, stamp %)',
+    jsonb_array_length(claimed),
+    (select jsonb_build_object('status',status,'available_at',available_at) from private.notification_push_jobs where notification_id=n),
+    (select to_jsonb(settings)-'user_id' from public.notification_preferences settings where user_id=m),clock_timestamp();
+  end if; checks:=checks+1;
   perform private.emit_notification(manager,'shift_changes','shift_changed','Test urgent change','Rollback-only',jsonb_build_object('tab','events','eventId',ev),'test-urgent',null,true);
   claimed:=public.claim_notification_push(secret,array['ios']);
   if jsonb_array_length(claimed)<>1 or claimed#>>'{0,notification,dedupe_key}'<>'test-urgent' then raise exception 'Urgent change was incorrectly deferred'; end if; checks:=checks+1;

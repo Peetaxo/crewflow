@@ -3,6 +3,13 @@
 Změny jsou v samostatné větvi `codex/notifications-20261020`. Nejsou sloučené do
 `main`, nejsou nasazené do databáze a vývojové instalace nebyly obnovené.
 
+**Nejnovější stav:** uživatel výslovně schválil databázové nasazení i odeslání kódu
+do `Peetaxo/crewflow`. Větev byla spojena s aktuálním mobilním onboardingem z main.
+Prošlo všech **2 419 testů / 196 souborů** a vývojový webový build. Předchozí údaje
+o chybějícím souhlasu níže jsou historickým záznamem, nikoli aktuální blokací.
+Migrace dosud necommitnula: transakční rollout testy zastavují nasazení na kontrole
+nočního klidu; potvrzení MCP navíc opakovaně expirují. Push i historie zůstávají vypnuté.
+
 ## Ověřeno
 
 | Kontrola | Výsledek |
@@ -71,6 +78,27 @@ Místní vizuální kontrola používala dočasný náhled komponent bez přihl�
 připojení k databázi. Neověřovala ukládání na server ani skutečnou navigaci do
 směny. Mobilní panel po dokončení animace zabíral 390 px bez vodorovného přetečení.
 Dočasný náhled byl po kontrole odstraněn; nejde o součást aplikace.
+
+### Ověřování po výslovném schválení
+
+- Při spojení s novým onboardingem byly zachovány plugin Capacitor App i Push
+  Notifications a `loggingBehavior: 'none'` chránící aktivační odkazy.
+- Závislosti byly nainstalovány do vlastní složky node_modules tohoto checkoutu;
+  původně sdílený adresář jiného checkoutu nebyl upraven.
+- Runtime PostgreSQL kontrola odhalila směšování `time` a `text` ve vypočteném
+  rozvrhu. Oba zdroje nyní používají validovaný převod `notification_time`.
+- Místní pglast 7.21 ověřil celý SQL soubor, všech 22 PL/pgSQL funkcí i testovací
+  DO blok. Regresní kontrola potvrzuje, že původní nezávorkovaný CASE v podmínce
+  nočního klidu byl neplatný; závorkovaná oprava prochází.
+- Kompletní databázové testy se dostaly až ke kontrole nočního klidu, která zatím
+  selhala. Do testu byla doplněna diagnostika počtu claimů, stavu vlastní testovací
+  úlohy a testovacích preferencí. Tato verze testu ještě neběžela: následná MCP
+  potvrzení skončila `Invalid or expired requestState`.
+- Po neúspěšných pokusech byl read-only dotazem potvrzen rollback celé migrace.
+  Testovací účty ani tabulky upozornění nezůstaly uložené.
+- Uživatel upozornil na opakované dialogy „Povolit ChatGPT používat codex_apps?“.
+  Supabase přebírá režim `Allow low-risk actions` z globálního nastavení. Nastavení
+  oprávnění nebylo změněno; další živý rollout je pozastaven do vyřešení dialogů.
 
 ## Mobilní konfigurace
 

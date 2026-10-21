@@ -323,14 +323,14 @@ language sql stable security definer set search_path='' as $$
  select q.event_id,q.profile_id,q.shift_date,(q.shift_date+min(q.planned_from)) at time zone 'Europe/Prague'
  from (
   select e.id as event_id,a.profile_id,d.date as shift_date,
-   coalesce(case when e.allow_crew_time_proposal then app.planned_from end,
+   coalesce(case when e.allow_crew_time_proposal then private.notification_time(app.planned_from::text) end,
     case when e.show_day_types then
       (select min(private.notification_time(slot->>'from')) from jsonb_each(case when jsonb_typeof(e.phase_schedules)='object' then e.phase_schedules else '{}'::jsonb end) phase
        cross join lateral jsonb_array_elements(case when jsonb_typeof(phase.value)='array' then phase.value else '[]'::jsonb end) slot
        where phase.key=d.day_type::text and (slot->'dates') ? d.date::text)
      when e.date_from=e.date_to then private.notification_time(e.time_from) end,
     case when e.schedule_version=1 and e.show_day_types then private.notification_time(e.phase_times->d.day_type::text->>'from') end,
-    case when not coalesce(e.show_day_types,false) or e.schedule_version=1 then d.time_from end) as planned_from
+    case when not coalesce(e.show_day_types,false) or e.schedule_version=1 then private.notification_time(d.time_from::text) end) as planned_from
   from public.events e join public.event_assignments a on a.event_id=e.id
    join public.timelogs t on t.event_id=e.id and t.contractor_id=a.profile_id
    join public.timelog_days d on d.timelog_id=t.id
@@ -427,8 +427,8 @@ begin
   end if;
   local_time:=(v_now at time zone coalesce(pref.timezone,'Europe/Prague'))::time;
   if not n.urgent and coalesce(pref.quiet_enabled,true) and coalesce(pref.quiet_from,'22:00')<>coalesce(pref.quiet_to,'07:00') and
-   case when coalesce(pref.quiet_from,'22:00')<coalesce(pref.quiet_to,'07:00') then local_time>=coalesce(pref.quiet_from,'22:00') and local_time<coalesce(pref.quiet_to,'07:00')
-    else local_time>=coalesce(pref.quiet_from,'22:00') or local_time<coalesce(pref.quiet_to,'07:00') end then
+   (case when coalesce(pref.quiet_from,'22:00')<coalesce(pref.quiet_to,'07:00') then local_time>=coalesce(pref.quiet_from,'22:00') and local_time<coalesce(pref.quiet_to,'07:00')
+    else local_time>=coalesce(pref.quiet_from,'22:00') or local_time<coalesce(pref.quiet_to,'07:00') end) then
    delay_until:=(((v_now at time zone coalesce(pref.timezone,'Europe/Prague'))::date+coalesce(pref.quiet_to,'07:00'))
     +case when local_time>=coalesce(pref.quiet_from,'22:00') and coalesce(pref.quiet_from,'22:00')>=coalesce(pref.quiet_to,'07:00') then interval '1 day' else interval '0' end) at time zone coalesce(pref.timezone,'Europe/Prague');
    update private.notification_push_jobs set status='queued',available_at=delay_until where notification_id=j.notification_id; continue;

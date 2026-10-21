@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../app/providers/useAuth';
 import { Button } from '../../components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../../components/ui/dialog';
 import { createCrewInvitation, CrewInvitationError, getCrewInvitationStatus, isCrewInvitationsEnabled, isSavedProfileId, isTestInvitationEmail, normalizeInvitationEmail, type CrewInvitationErrorCode, type CrewInvitationStatus } from './services/invitations.service';
 
 type Props = { profileId: string | null; name: string; email: string };
@@ -99,11 +99,11 @@ function InvitationControls({ profileId, name, email, authId, reason }: { profil
     {status?.state === 'pending' && <p className="mt-2 break-words text-sm">Pozvánka čeká na aktivaci.{status.expiresAt ? ` Platnost do ${new Date(status.expiresAt).toLocaleString('cs-CZ')}.` : ''}</p>}
     {success && <p role="status" className="mt-2 break-words text-sm">Pozvánka byla zachycena v lokální testovací schránce.</p>}
     {error && <p role="alert" className="mt-2 break-words text-sm text-[var(--nodu-error-text)]">{error}</p>}
-    <div className="mt-3 flex flex-wrap gap-2">
-      <Button type="button" className="min-h-11 h-auto whitespace-normal" disabled={Boolean(reason) || loading || submitting || !status || locked} onClick={() => setOpen(true)}>{replacement && !locked ? 'Vytvořit novou pozvánku' : 'Pozvat do aplikace'}</Button>
-      {error && !reason && <Button type="button" variant="outline" className="min-h-11 h-auto whitespace-normal" disabled={loading || submitting} onClick={() => { setOpen(false); setRefresh((value) => value + 1); }}>Obnovit stav pozvánky</Button>}
-    </div>
     <Dialog open={open} onOpenChange={(value) => { if (!submittingRef.current) setOpen(value); }}>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <DialogTrigger asChild><Button type="button" className="min-h-11 h-auto whitespace-normal" disabled={Boolean(reason) || loading || submitting || !status || locked}>{replacement && !locked ? 'Vytvořit novou pozvánku' : 'Pozvat do aplikace'}</Button></DialogTrigger>
+        {error && !reason && <Button type="button" variant="outline" className="min-h-11 h-auto whitespace-normal" disabled={loading || submitting} onClick={() => { setOpen(false); setRefresh((value) => value + 1); }}>Obnovit stav pozvánky</Button>}
+      </div>
       <DialogContent className="w-[calc(100%-2rem)] max-h-[90dvh] overflow-y-auto [&>button]:min-h-11 [&>button]:min-w-11">
         <DialogHeader><DialogTitle>{replacement ? 'Vytvořit novou pozvánku' : 'Pozvat do aplikace'}</DialogTitle>
           <DialogDescription>Odkaz bude platit 48 hodin. Pozvánka bude zachycena pouze v lokální testovací schránce.</DialogDescription></DialogHeader>

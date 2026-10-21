@@ -7,8 +7,10 @@ import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Contractor, Event, Role, Timelog } from '../types';
 import CrewDetailView from './CrewDetailView';
+import { AuthContext, type AuthContextType } from '../app/providers/auth-context';
 
 const mocks = vi.hoisted(() => ({ role: 'crewhead' as Role, load: vi.fn(), reload: vi.fn(), save: vi.fn(), detail: vi.fn() }));
+vi.mock('../lib/supabase', () => ({ supabase: null }));
 vi.mock('../context/useAppContext', () => ({ useAppContext: () => ({ role: mocks.role, selectedContractorProfileId: 'person', darkMode: false }) }));
 vi.mock('../features/crew/services/crew.service', () => ({ getCrewDetailData: mocks.detail, subscribeToCrewChanges: () => () => undefined, updateCrew: vi.fn() }));
 vi.mock('../features/shift-workflows/useShiftWorkflows', () => ({ useShiftWorkflows: () => ({
@@ -26,6 +28,7 @@ const event = { id: 21, supabaseId: id(21), name: 'Přípravy', job: 'JOB', star
 const timelog = { id: 101, eid: 21, contractorProfileId: 'person', days: [], km: 0, note: '', status: 'draft' } as Timelog;
 const contractor = { id: 1, profileId: 'person', name: 'Petr', ii: 'PH', bg: '#eee', fg: '#333', tags: [], events: 1, rate: 250,
   phone: '', email: '', ico: '', dic: '', bank: '', city: 'Praha', reliable: true, note: '' } as Contractor;
+const renderDetail = () => render(<AuthContext.Provider value={{ isAuthenticated: false, isLoading: false, isDevSession: false, isRoleSwitching: false, role: 'coo', currentUserId: null, user: null, session: null } as AuthContextType}><CrewDetailView /></AuthContext.Provider>);
 
 describe('workflow placement in crew detail', () => {
   beforeEach(() => {
@@ -39,7 +42,7 @@ describe('workflow placement in crew detail', () => {
     });
   });
   it.each(['crewhead', 'coo'] as const)('shows %s a personal noninteractive summary of current assignments', async (role) => {
-    mocks.role = role; render(<CrewDetailView />);
+    mocks.role = role; renderDetail();
     const summary = await screen.findByText('Společná evidence: Přípravy');
     expect(summary.closest('button')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Propojit směny' })).not.toBeInTheDocument();
@@ -47,7 +50,7 @@ describe('workflow placement in crew detail', () => {
     expect(screen.queryByText('Fakturační skupina')).not.toBeInTheDocument();
   });
   it('does not expose management controls to crew', () => {
-    mocks.role = 'crew'; render(<CrewDetailView />);
+    mocks.role = 'crew'; renderDetail();
     expect(screen.queryByRole('button', { name: 'Propojit směny' })).not.toBeInTheDocument();
     expect(mocks.load).not.toHaveBeenCalled();
   });

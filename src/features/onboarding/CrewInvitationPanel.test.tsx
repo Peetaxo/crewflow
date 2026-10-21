@@ -63,6 +63,20 @@ describe('profile invitation controls', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument(); expect(mocks.invite).not.toHaveBeenCalled();
   });
 
+  it.each(['cancel', 'Escape'])('restores focus to the invitation action after %s without writing', async (method) => {
+    render(view());
+    const action = screen.getByRole('button', { name: 'Pozvat do aplikace' });
+    await waitFor(() => expect(action).toBeEnabled());
+    action.focus(); fireEvent.click(action);
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
+    if (method === 'cancel') fireEvent.click(within(dialog).getByRole('button', { name: 'Zrušit' }));
+    else fireEvent.keyDown(dialog, { key: 'Escape', code: 'Escape' });
+    await waitFor(() => expect(action).toHaveFocus());
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(mocks.invite).not.toHaveBeenCalled();
+  });
+
   it('suppresses duplicate confirmation immediately and reports test mailbox capture', async () => {
     const writing = deferred<typeof pending>(); mocks.invite.mockReturnValue(writing.promise);
     render(view()); await openInitial();

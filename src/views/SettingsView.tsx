@@ -1,7 +1,8 @@
 import { BillingSettings } from '../features/invoice-billing/BillingSettings';
+import { NotificationSettings } from '../features/notifications/NotificationSettings';
 import { appDataSource } from '../lib/app-config';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { ArrowLeft, LogOut, Moon, Palette, Sun, UserRound, FileText } from 'lucide-react';
+import { ArrowLeft, LogOut, Moon, Palette, Sun, UserRound, FileText, Bell } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { useAuth } from '../app/providers/useAuth';
@@ -90,7 +91,7 @@ const SettingsView = () => {
     });
   }, [me]);
 
-  const openSection = (section: 'profile' | 'appearance' | 'billing') => {
+  const openSection = (section: 'profile' | 'appearance' | 'billing' | 'notifications') => {
     setIsEditingProfile(false);
     setSettingsSection(section);
   };
@@ -124,6 +125,7 @@ const SettingsView = () => {
   };
 
   const settingsCards = [
+    { id:'notifications' as const,title:'Upozornění',description:'Zprávy do telefonu, kategorie a noční klid.',icon:Bell },
     { id: 'billing' as const, title: 'Fakturace', description: 'Originály faktur a volitelný trvalý souhlas.', icon: FileText },
     {
       id: 'profile' as const,
@@ -185,6 +187,7 @@ const SettingsView = () => {
       )}
 
       {settingsSection === 'billing' && <div className="space-y-4"><Button variant="link" onClick={() => setSettingsSection('menu')}>Zpět do nastavení</Button>{appDataSource === 'supabase' ? <BillingSettings /> : <p>Souhlas pro automatické vystavování je dostupný po přihlášení.</p>}</div>}
+      {settingsSection === 'notifications' && <div className="space-y-4"><Button variant="link" onClick={()=>setSettingsSection('menu')}>Zpět do nastavení</Button><NotificationSettings/></div>}
 
       {settingsSection === 'profile' && (
         <div className="space-y-5">

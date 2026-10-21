@@ -5,6 +5,7 @@ import { useAuth } from '../../app/providers/useAuth';
 import { useAppContext } from '../../context/useAppContext';
 import { getNavItemsForRole, ROLE_LABELS, ROLE_SHORT_LABELS } from '../../constants';
 import { useNavBadgeCounts } from './useNavBadgeCounts';
+import { NotificationBell } from '../../features/notifications/NotificationCenter';
 
 const navButtonBaseClass = 'relative flex w-full items-center rounded-xl px-3 py-2.5 text-[13px] transition-all';
 const navButtonIdleClass = 'border border-transparent nodu-nav-idle';
@@ -256,6 +257,7 @@ const Sidebar: React.FC = () => {
       </div>
 
       <div className="nodu-sidebar-divider p-2">
+        <div className="mb-2"><NotificationBell expanded={!sidebarCollapsed}/></div>
         <button
           onClick={() => openSettings('menu')}
           className={`${navButtonBaseClass} ${sidebarCollapsed ? 'justify-center' : 'gap-2.5'} ${currentTab === 'settings' ? navButtonActiveClass : navButtonIdleClass}`}

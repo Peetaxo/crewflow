@@ -121,6 +121,7 @@ const parseContactOptions = (data: unknown): EventContactOption[] => {
       name: value.name,
       phone: typeof value.phone === 'string' ? value.phone : '',
       canApproveHours: value.can_approve_hours,
+      ...(typeof value.can_coordinate==='boolean'?{canCoordinate:value.can_coordinate}:{}),
     };
   });
   if (hasDuplicates(options.map((option) => option.profileId))) return invalidResponse();
@@ -269,7 +270,7 @@ const mapResolutionTargets = (
 };
 
 export const listEventContactOptionsRpc = async (): Promise<EventContactOption[]> => {
-  const result = await getClient().rpc('list_event_contact_options');
+  const result = await getClient().rpc('list_event_notification_contacts');
   if (result.error) throw toApprovalError(result.error);
   return parseContactOptions(result.data);
 };

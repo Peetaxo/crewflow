@@ -109,7 +109,7 @@ function InvitationControls({ profileId, name, email, authId, reason }: { profil
         const recovery = refreshButtonRef.current;
         if (recovery && !recovery.disabled) { event.preventDefault(); recovery.focus(); }
       }}>
-        <DialogHeader><DialogTitle>{replacement ? 'Vytvořit novou pozvánku' : 'Pozvat do aplikace'}</DialogTitle>
+        <DialogHeader className="pr-12"><DialogTitle>{replacement ? 'Vytvořit novou pozvánku' : 'Pozvat do aplikace'}</DialogTitle>
           <DialogDescription>Odkaz bude platit 48 hodin. Pozvánka bude zachycena pouze v lokální testovací schránce.</DialogDescription></DialogHeader>
         <div className="min-w-0 space-y-2 text-sm"><p className="break-words font-semibold">{name}</p><p className="break-all">{email}</p>
           {replacement && <p>Předchozí odkaz přestane platit. Vytvoření nové pozvánky potvrď znovu.</p>}</div>

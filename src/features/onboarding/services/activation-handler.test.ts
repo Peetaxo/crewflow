@@ -7,7 +7,7 @@ function fixture(enabled = true) {
   const store = {
     preview: vi.fn(async () => ({ data: preview })),
     claim: vi.fn(async () => ({ data: { ...preview, reservedUserId: "reserved", profileId: "profile", claimId: "claim" } })),
-    verify: vi.fn(async () => ({ data: { status: "active", email: preview.email, profileId: "profile" } })),
+    verify: vi.fn(async () => ({ data: { status: "active" as const, email: preview.email, profileId: "profile" } })),
     release: vi.fn(async () => ({ status: "released" })),
   };
   const auth = { createUser: vi.fn(async () => ({ data: { user: { id: "reserved", email: preview.email } }, error: null })), getUserById: vi.fn(async () => ({ data: { user: null }, error: { status: 404 } })) };

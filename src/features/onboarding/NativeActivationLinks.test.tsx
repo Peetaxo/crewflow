@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-rou
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import NativeActivationLinks from './NativeActivationLinks';
 import { useActivationLink } from './activation-link';
+import nativeConfig from '../../../capacitor.config';
 
 const native = vi.hoisted(() => ({ enabled: true, addListener: vi.fn(), getLaunchUrl: vi.fn(), remove: vi.fn() }));
 vi.mock('@capacitor/core', () => ({ Capacitor: { isNativePlatform: () => native.enabled } }));
@@ -140,5 +141,11 @@ describe('native activation handoff', () => {
     expect(read('ios/App/CapApp-SPM/Package.swift')).toContain('CapacitorApp');
     expect(read('android/capacitor.settings.gradle')).toContain('@capacitor/app/android');
     expect(JSON.parse(read('package.json')).dependencies['@capacitor/app']).toBe('8.1.2');
+  });
+
+  it('disables native bridge logging so launch invitation tokens cannot enter debug logs', () => {
+    expect(nativeConfig.loggingBehavior).toBe('none');
+    expect(nativeConfig.ios?.loggingBehavior ?? nativeConfig.loggingBehavior).toBe('none');
+    expect(nativeConfig.android?.loggingBehavior ?? nativeConfig.loggingBehavior).toBe('none');
   });
 });

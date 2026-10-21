@@ -57,7 +57,9 @@ const ActivationOperation = ({ initialToken, clearToken }: { initialToken: strin
   const tokenRef = useRef(initialToken);
   const alive = useRef(true);
   const submitting = useRef(false);
+  const previewInProgress = useRef(false);
   const [preview, setPreview] = useState<InvitationPreview | null>(null);
+  const [previewAttempt, setPreviewAttempt] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ActivationErrorCode | null>(null);
   const [password, setPassword] = useState('');
@@ -67,11 +69,13 @@ const ActivationOperation = ({ initialToken, clearToken }: { initialToken: strin
 
   useEffect(() => {
     alive.current = true;
+    previewInProgress.current = true;
     let cancelled = false;
     const token = tokenRef.current;
     if (!token || !isActivationToken(token)) {
       setError('invalid_invitation');
       setLoading(false);
+      previewInProgress.current = false;
     } else {
       void previewActivation(token).then((data) => {
         if (cancelled) return;
@@ -79,10 +83,14 @@ const ActivationOperation = ({ initialToken, clearToken }: { initialToken: strin
         else setPreview(data);
       }).catch((failure: unknown) => {
         if (!cancelled) setError(toErrorCode(failure));
-      }).finally(() => { if (!cancelled) setLoading(false); });
+      }).finally(() => {
+        if (cancelled) return;
+        previewInProgress.current = false;
+        setLoading(false);
+      });
     }
     return () => { cancelled = true; alive.current = false; };
-  }, []);
+  }, [previewAttempt]);
 
   useEffect(() => {
     if (!preview || phase !== 'form') return;
@@ -98,6 +106,14 @@ const ActivationOperation = ({ initialToken, clearToken }: { initialToken: strin
     setConfirmation('');
     clearToken();
   }, [clearToken, error]);
+
+  const retryPreview = () => {
+    if (previewInProgress.current || !tokenRef.current || preview || phase !== 'form') return;
+    previewInProgress.current = true;
+    setError(null);
+    setLoading(true);
+    setPreviewAttempt((attempt) => attempt + 1);
+  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -143,10 +159,20 @@ const ActivationOperation = ({ initialToken, clearToken }: { initialToken: strin
     }
   };
 
-  if (loading) return <ActivationCard><p role="status">Ověřuji pozvánku…</p></ActivationCard>;
+  if (loading) return (
+    <ActivationCard>
+      <p role="status">Ověřuji pozvánku…</p>
+      {previewAttempt > 0 ? <Button type="button" disabled className="h-11 w-full">Zkusit znovu</Button> : null}
+    </ActivationCard>
+  );
   if (phase === 'signing-in') return <ActivationCard><p role="status">Účet je aktivní. Přihlašuji tě…</p></ActivationCard>;
   if (phase === 'login-required') return <ActivationCard><Alert>Účet je aktivní, ale automatické přihlášení se nepodařilo. Přejdi na přihlášení a použij svůj e-mail a právě zvolené heslo.</Alert></ActivationCard>;
-  if (error && (terminalErrors.has(error) || !preview)) return <ActivationCard><Alert>{messages[error]}</Alert></ActivationCard>;
+  if (error && (terminalErrors.has(error) || !preview)) return (
+    <ActivationCard>
+      <Alert>{messages[error]}</Alert>
+      {error === 'activation_unavailable' && !preview ? <Button type="button" onClick={retryPreview} className="h-11 w-full">Zkusit znovu</Button> : null}
+    </ActivationCard>
+  );
   if (!preview) return <ActivationCard><Alert>{messages.activation_unavailable}</Alert></ActivationCard>;
 
   const busy = phase === 'completing';

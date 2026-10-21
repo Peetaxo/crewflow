@@ -5,8 +5,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ActivationView from './ActivationView';
 import { ActivationLinkContext } from './activation-link';
 import { ActivationError } from './services/activation.service';
+import NativeActivationLinks from './NativeActivationLinks';
 
 const api = vi.hoisted(() => ({ preview: vi.fn(), complete: vi.fn(), signIn: vi.fn(), clear: vi.fn() }));
+const native = vi.hoisted(() => ({ addListener: vi.fn(), getLaunchUrl: vi.fn(), remove: vi.fn() }));
+vi.mock('@capacitor/core', () => ({ Capacitor: { isNativePlatform: () => true } }));
+vi.mock('@capacitor/app', () => ({ App: { addListener: native.addListener, getLaunchUrl: native.getLaunchUrl } }));
 vi.mock('../../app/providers/useAuth', () => ({ useAuth: () => ({ signIn: api.signIn, isLoading: true }) }));
 vi.mock('../../lib/supabase', () => ({ supabase: null }));
 vi.mock('./services/activation.service', async (original) => ({ ...await original<typeof import('./services/activation.service')>(), previewActivation: api.preview, completeActivation: api.complete }));
@@ -183,5 +187,89 @@ describe('ActivationView', () => {
     await screen.findByLabelText('Heslo');
     expect(screen.getByLabelText('Heslo')).toHaveValue('');
     expect(screen.getByLabelText('Heslo znovu')).toHaveValue('');
+  });
+
+  it('recovers the same native invitation after a preview outage without resetting an active submission', async () => {
+    let openUrl: (event: { url: string }) => void;
+    let finishCompletion: (value: { status: 'active'; email: string; profileId: string }) => void;
+    native.getLaunchUrl.mockResolvedValue({ url: `nodu://activate#token=${token}` });
+    native.remove.mockResolvedValue(undefined);
+    native.addListener.mockImplementation(async (_event, listener) => { openUrl = listener; return { remove: native.remove }; });
+    api.preview.mockRejectedValueOnce(new ActivationError('activation_unavailable'));
+    api.complete.mockReturnValue(new Promise((resolve) => { finishCompletion = resolve; }));
+    render(
+      <MemoryRouter initialEntries={['/app']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <NativeActivationLinks>
+          <Routes>
+            <Route path="/activate" element={<ActivationView />} />
+            <Route path="/app" element={<div>Authenticated app</div>} />
+          </Routes>
+        </NativeActivationLinks>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent(/nyní není dostupná/i);
+    act(() => openUrl({ url: `nodu://activate#token=${token}` }));
+    expect(api.preview).toHaveBeenCalledTimes(1);
+    expect(api.complete).not.toHaveBeenCalled();
+    expect(api.signIn).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Zkusit znovu' }));
+    expect(await screen.findByLabelText('E-mail')).toHaveValue(preview.email);
+    expect(api.preview).toHaveBeenNthCalledWith(2, token);
+    expect(api.complete).not.toHaveBeenCalled();
+    expect(api.signIn).not.toHaveBeenCalled();
+
+    enterPasswords();
+    submit();
+    act(() => openUrl({ url: `nodu://activate#token=${token}` }));
+    expect(screen.getByRole('button', { name: /Aktivuji/ })).toBeDisabled();
+    expect(api.preview).toHaveBeenCalledTimes(2);
+    expect(api.complete).toHaveBeenCalledExactlyOnceWith(token, '  moje heslo 123  ');
+    expect(api.signIn).not.toHaveBeenCalled();
+    await act(async () => finishCompletion({ status: 'active', email: preview.email, profileId: 'profile' }));
+    expect(api.signIn).toHaveBeenCalledExactlyOnceWith(preview.email, '  moje heslo 123  ');
+    expect(screen.getByText('Authenticated app')).toBeInTheDocument();
+  });
+
+  it('prevents duplicate preview retries and ignores a retry response after unmount', async () => {
+    let finishRetry: (value: typeof preview) => void;
+    api.preview.mockRejectedValueOnce(new ActivationError('activation_unavailable'));
+    const view = renderActivation();
+    const retry = await screen.findByRole('button', { name: 'Zkusit znovu' });
+    api.preview.mockReturnValue(new Promise((resolve) => { finishRetry = resolve; }));
+    act(() => { fireEvent.click(retry); fireEvent.click(retry); });
+    await waitFor(() => expect(api.preview).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('status')).toHaveTextContent('Ověřuji pozvánku');
+    expect(screen.getByRole('button', { name: 'Zkusit znovu' })).toBeDisabled();
+    view.unmount();
+    await act(async () => finishRetry(preview));
+    expect(api.complete).not.toHaveBeenCalled();
+    expect(api.signIn).not.toHaveBeenCalled();
+  });
+
+  it('retries safely after StrictMode effect replay', async () => {
+    api.preview.mockRejectedValue(new ActivationError('activation_unavailable'));
+    renderActivation(token, 1, true);
+    const retry = await screen.findByRole('button', { name: 'Zkusit znovu' });
+    api.preview.mockResolvedValue(preview);
+    fireEvent.click(retry);
+    expect(await screen.findByLabelText('E-mail')).toHaveValue(preview.email);
+    expect(api.signIn).not.toHaveBeenCalled();
+  });
+
+  it('ignores an older retry response when a different invitation replaces the route', async () => {
+    let finishRetry: (value: typeof preview) => void;
+    api.preview.mockRejectedValueOnce(new ActivationError('activation_unavailable'));
+    const view = renderActivation();
+    const retry = await screen.findByRole('button', { name: 'Zkusit znovu' });
+    api.preview.mockReturnValueOnce(new Promise((resolve) => { finishRetry = resolve; }));
+    fireEvent.click(retry);
+    const nextPreview = { ...preview, email: 'next@example.test' };
+    api.preview.mockResolvedValueOnce(nextPreview);
+    view.rerender(activationTree('b'.repeat(64), 2));
+    expect(await screen.findByLabelText('E-mail')).toHaveValue(nextPreview.email);
+    await act(async () => finishRetry(preview));
+    expect(screen.getByLabelText('E-mail')).toHaveValue(nextPreview.email);
+    expect(api.signIn).not.toHaveBeenCalled();
   });
 });

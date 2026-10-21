@@ -37,7 +37,7 @@ not a completed implementation or a production deployment.
 
 ## Written but unfinished
 
-- CLI-generated migration `20261020131551_app_notifications.sql`: notification
+- CLI-generated migration `20261021120809_app_notifications.sql`: notification
   tables, RLS/identity snapshots, event/application/assignment/report/finance triggers,
   reminder generator, push queue/leases, preferences/device APIs and Cron.
 - Coordinator field added to event schema/type/mapping/form; defaults to event author

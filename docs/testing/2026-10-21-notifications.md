@@ -1,119 +1,86 @@
-# NODU: upozornění — stav připravený k revizi, 21. 10. 2026
+# NODU: upozornění — ověření a nasazení, 21. 10. 2026
 
-Změny jsou v samostatné větvi `codex/notifications-20261020`. Nejsou sloučené do
-`main`, nejsou nasazené do databáze a vývojové instalace nebyly obnovené.
+Aktuální větev: `codex/notifications-rollout-20261021`. Uživatel výslovně schválil
+nasazení do Staff/NODU a odeslání do `Peetaxo/crewflow`; potvrzení MCP řeší ručně.
+Oprávnění pluginu nebyla změněna. Databáze i chráněný Edge worker jsou nasazené.
+Integrace do main a obnova vývojových instalací jsou následující krok.
 
-**Nejnovější stav:** uživatel výslovně schválil databázové nasazení i odeslání kódu
-do `Peetaxo/crewflow`. Větev byla spojena s aktuálním mobilním onboardingem z main.
-Prošlo všech **2 419 testů / 196 souborů** a vývojový webový build. Předchozí údaje
-o chybějícím souhlasu níže jsou historickým záznamem, nikoli aktuální blokací.
-Migrace dosud necommitnula: transakční rollout testy zastavují nasazení na kontrole
-nočního klidu; potvrzení MCP navíc opakovaně expirují. Push i historie zůstávají vypnuté.
-
-## Ověřeno
+## Ověření
 
 | Kontrola | Výsledek |
 | --- | --- |
-| Kompletní sada Vitest | **2 318 testů / 190 souborů prošlo** |
-| Nové testy soukromí, historie, navigace, workeru a autorizace | Prošly jako součást úplné sady |
-| Vývojový webový build a Capacitor sync iOS | Prošly; známá upozornění na velikost balíku zůstávají |
-| Nativní sestavení pro iOS simulátor | Prošlo; pouze sestavení, nikoli instalace nebo test push |
-| ESLint upravených modulů a workeru | Bez chyb a upozornění |
-| Samostatný TypeScript check Edge workeru | Prošel |
-| TypeScript celého stávajícího projektu | Stávající chyby na `main`; žádná diagnostika v nových modulech upozornění |
-| Nativní XML zdroje a kontrola whitespace diffu | Prošly |
-| Databázové testy | Připravené; **neprovedené**, protože změna databáze nebyla povolena |
-| Vizuální kontrola v prohlížeči | Provedená v izolovaném místním náhledu skutečných komponent s fiktivními daty: zvoneček, historie, označení přečtených zpráv, přechod do nastavení, kategorie pro crew/COO a světlý/tmavý vzhled na desktopu a mobilní šířce 390 px; plné propojení s databází neověřené |
-| Doručení do skutečného iPhonu / Androidu | **Neověřené**, vyžaduje konfiguraci poskytovatelů a nativních oprávnění |
+| Kompletní sada Vitest po spojení s onboardingem | **2 419 testů / 196 souborů prošlo** |
+| Vývojový webový build a Capacitor sync iOS | Prošly; známá upozornění na velikost balíku a dynamické importy zůstávají |
+| Nativní sestavení pro iOS simulátor po spojení pluginů | Prošlo přes XcodeBuildMCP bez chyb a upozornění |
+| SQL a PL/pgSQL syntaxe | Prošel celý soubor, 22 PL/pgSQL funkcí a testovací DO blok přes pglast 7.21 |
+| Databázové scénáře | **37 kontrol prošlo**, při migraci i při samostatném opakování |
+| Izolace účtů a přístupy | Anonym nemůže číst historii; klient nemůže vkládat zprávy, číst zařízení, autorizovat worker ani přebírat frontu |
+| Bezpečnost odesílacího endpointu | GET bez klíče 405; POST bez klíče 401; POST s neplatným klíčem 401 |
+| Zkušební data po testech | **0 účtů, 0 zpráv, 0 zařízení, 0 úloh** |
+| Vizuální kontrola | Skutečné komponenty ve fiktivním místním náhledu: desktop, mobilní šířka 390 px, světlý/tmavý vzhled, historie, přečtené zprávy, nastavení a role crew/COO; nešlo o test propojení se serverem |
+| Mobilní doručení | Zatím neověřené; Apple a Firebase nejsou nakonfigurované, push zůstává vypnuté |
 
-## Konkrétní rozsah nasazení čekajícího na souhlas
+TypeScript celého původního projektu obsahuje existující chyby; předchozí kontrola
+nezjistila diagnostiku v nových modulech upozornění. ESLint modulů a samostatný
+TypeScript Edge workeru prošly před spojením s onboardingem.
 
-Migrace `supabase/migrations/20261020131551_app_notifications.sql` přidává:
+## Nasazená databázová část
 
-- Koordinátora směny a jeho výběr z účtů COO/CrewHead.
-- Pět nových tabulek: vlastní historie a preference, soukromá zařízení,
-  fronta doručování a soukromé řízení aktivace.
-- 27 funkcí a 11 triggerů pro příjemce, soukromí, změny stavů, deduplikaci,
-  bezpečné klientské operace, připomínky a řízení workeru.
-- Jednu minutovou Cron úlohu `nodu-notifications`.
+Projekt Staff: `gkxbluqkugprwcpdephk`. Zaznamenaná verze migrace:
+`20261021120809_app_notifications.sql`. Lokální existující migrační soubor byl
+přejmenován podle verze skutečně zapsané MCP, aby budoucí CLI nepovažovalo stejnou
+změnu za chybějící migraci.
 
-Migrace sama ponechá generování historie i mobilní doručování vypnuté. Při
-odsouhlaseném nasazení se nejdříve provedou databázové testy a kontrola přístupů.
-Teprve potom se výslovně zapne historie s novým časem aktivace; staré směny se
-zpětně nerozesílají. Mobilní push zůstanou samostatně vypnuté do ověření poskytovatelů.
+Migrace přidává koordinátora směny, historii a preference, soukromá zařízení,
+frontu doručování, řízení aktivace, funkce a triggery událostí a připomínek.
+Cron `nodu-notifications` běží jednou za minutu; s vypnutou historií i push
+negeneruje zprávy ani nevolá doručovacího poskytovatele.
 
-Po databázovém nasazení je nutné nasadit chráněný Edge worker `send-notifications`,
-sloučit kompatibilní aplikaci a obnovit simulátor/iPhone podle `AGENTS.md`.
-Účet bez mobilních oprávnění má historii pod zvonečkem dál k dispozici.
+Po migraci jsou `history_enabled=false` a `push_enabled=false`. Historie bude
+zapnuta s čerstvým časem aktivace až po integraci kompatibilní aplikace. Staré
+směny se zpětně nerozesílají. Zapnutí push je samostatný pozdější krok po ověření
+skutečných zařízení.
 
-## Blokace nasazení
+## Opravy a význam testů
 
-Automatické schvalování odmítlo pokus o produkční migraci: pokračování v implementaci
-podle jeho odůvodnění nepředstavuje souhlas s tímto konkrétním živým zásahem do
-schématu, triggerů, oprávnění a Cron. Odmítnutí nebylo obcházeno. Je třeba výslovně
-schválit výše popsané nasazení do projektu Staff / NODU.
+Rozvrh převádí časy z textových řádků i typovaných návrhů přes validovaný
+`notification_time`. Podmínka nočního klidu obsahuje závorkovaný CASE; místní
+regresní kontrola odmítá původní neplatnou syntaxi.
 
-Bez provedení databázových testů nelze tvrdit, že je SQL ověřené v PostgreSQL.
-Lokální Docker socket nebyl dostupný a žádné alternativní živé DDL nebylo spuštěno.
+Test nočního klidu nyní nejdříve dokončí `claim_notification_push` a teprve pak
+kontroluje stav úlohy. Původní jediný výraz OR četl stav pomocí poddotazu před
+provedením funkce s vedlejším účinkem a mohl hlásit neúspěch i při správném
+odložení. Test běží v úmyslně vrácené subtransakci; neprovádí volání poskytovatelů.
 
-### Kontrola při navázání 21. 10. 2026
+Při spojení s mobilním onboardingem jsou zachovány pluginy Capacitor App i Push
+Notifications a `loggingBehavior: 'none'` chránící aktivační odkazy. Závislosti
+checkoutu jsou samostatné; původně sdílený node_modules jiného checkoutu nebyl měněn.
 
-Uživatel souhlasil s postupným pokračováním a dotázal se na Firebase. Před
-nasazením byl ověřen aktuální projekt Staff, potřebná rozšíření a sloupce,
-existující konfigurace URL workeru a výchozí bezpečnostní/výkonnostní advisories.
+## Přezkoumané advisories
 
-Automatická kontrola znovu odmítla `apply_migration` (migrace spolu s testy,
-jejichž fixture se vrací zpět): obecné pokračování nepovažuje za výslovný souhlas
-se změnou živých tabulek, triggerů, funkcí, oprávnění a Cron. Následný read-only
-dotaz potvrdil, že tabulky upozornění ani Cron úloha nevznikly.
+Nová INFO upozornění na RLS bez politik se týkají tří soukromých tabulek:
+klientské role mají odebraná práva a přístup je úmyslně jen přes úzce řízené RPC.
+Sedm nových upozornění na SECURITY DEFINER odpovídá záměrným klientským API:
+každé ověřuje přihlášení a vlastní identitu, výběr kontaktů navíc vyžaduje COO/CH.
+Anonymní ani worker API nebyla klientům zpřístupněna. Výkonnostní kontrola nepřidala
+nové WARN nálezy; nové nepoužité indexy jsou očekávané před prvním provozem.
 
-`git fetch origin` prošel a vzdálený main zůstává na `535fa0a`. Odeslání
-samostatné větve do existujícího remote `https://github.com/Peetaxo/crewflow.git`
-automatická kontrola odmítla jako nepovolený přenos zdrojového kódu. Větev nebyla
-odeslána, PR nevzniklo a main ani vývojové instalace se nezměnily. Před dalším
-pokusem je potřeba výslovný souhlas s tímto cílovým repozitářem i databázovým
-nasazením. Odmítnuté operace nebyly obcházeny.
+Odkazy na pravidla:
+- https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy
+- https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable
+- https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index
 
-Místní vizuální kontrola používala dočasný náhled komponent bez přihlášení či
-připojení k databázi. Neověřovala ukládání na server ani skutečnou navigaci do
-směny. Mobilní panel po dokončení animace zabíral 390 px bez vodorovného přetečení.
-Dočasný náhled byl po kontrole odstraněn; nejde o součást aplikace.
+## Mobilní doručování
 
-### Ověřování po výslovném schválení
+Edge Function `send-notifications`, verze 1, je aktivní. Ověřuje vlastní soukromý
+serverový klíč ještě před převzetím práce z fronty. Klientské role klíč ani tokeny
+zařízení nevidí. Neplatné či chybějící ověření bylo otestované přes skutečné HTTP.
 
-- Při spojení s novým onboardingem byly zachovány plugin Capacitor App i Push
-  Notifications a `loggingBehavior: 'none'` chránící aktivační odkazy.
-- Závislosti byly nainstalovány do vlastní složky node_modules tohoto checkoutu;
-  původně sdílený adresář jiného checkoutu nebyl upraven.
-- Runtime PostgreSQL kontrola odhalila směšování `time` a `text` ve vypočteném
-  rozvrhu. Oba zdroje nyní používají validovaný převod `notification_time`.
-- Místní pglast 7.21 ověřil celý SQL soubor, všech 22 PL/pgSQL funkcí i testovací
-  DO blok. Regresní kontrola potvrzuje, že původní nezávorkovaný CASE v podmínce
-  nočního klidu byl neplatný; závorkovaná oprava prochází.
-- Kompletní databázové testy se dostaly až ke kontrole nočního klidu, která zatím
-  selhala. Do testu byla doplněna diagnostika počtu claimů, stavu vlastní testovací
-  úlohy a testovacích preferencí. Tato verze testu ještě neběžela: následná MCP
-  potvrzení skončila `Invalid or expired requestState`.
-- Po neúspěšných pokusech byl read-only dotazem potvrzen rollback celé migrace.
-  Testovací účty ani tabulky upozornění nezůstaly uložené.
-- Uživatel upozornil na opakované dialogy „Povolit ChatGPT používat codex_apps?“.
-  Supabase přebírá režim `Allow low-risk actions` z globálního nastavení. Nastavení
-  oprávnění nebylo změněno; další živý rollout je pozastaven do vyřešení dialogů.
+Firebase zatím není nakonfigurované. Návrh používá jen Firebase Cloud Messaging
+pro Android; iOS používá přímo Apple APNs. Účty, data, historie a pravidla zůstávají
+v Supabase. Firebase není podmínkou spuštění historie ani iOS push.
 
-## Mobilní konfigurace
-
-Postup a serverové proměnné jsou v
-`supabase/functions/send-notifications/README.md`. Pro Apple je připravený vzor
-entitlements, není automaticky připojený k podpisu. Je potřeba ověřit podporu push
-u vývojářského týmu, provisioning a klíč APNs. Android potřebuje odpovídající Firebase
-konfiguraci a ověření na zařízení. Klíče nepatří do klientských `VITE_*` proměnných.
-
-Firebase zatím není nakonfigurované a nenahrazuje Supabase. Návrh používá pouze
-Firebase Cloud Messaging pro Android, protože jej využívá nativní Capacitor push
-plugin. iOS používá přímo APNs; historie, účty, databáze a pravidla upozornění
-zůstávají v Supabase. Firebase není podmínkou nasazení historie ani iOS push.
-
-Testy předpokládají přibližné připomenutí 24 h před aktuálně naplánovaným začátkem.
-Neznámý čas se nevymýšlí; změna času, zrušení nebo vyřízení úkolu zneplatní starou
-čekající připomínku. Hromadná doručení se slučují podle příjemce, kategorie a skupiny;
-již doručená zařízení se při opakování vynechávají.
+Pro skutečné mobilní doručení zbývá Apple capability a provisioning, APNs klíče,
+Firebase konfigurace Androidu a serverový účet FCM, následně ověření na skutečném
+iPhonu a Androidu. Přesný postup je v
+`supabase/functions/send-notifications/README.md`. Klíče nepatří do `VITE_*`.

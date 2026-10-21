@@ -4,7 +4,7 @@ The notification migration and this worker are not activated by a frontend build
 Apply the migration only after explicit approval for the Staff database rollout.
 The migration starts with both `history_enabled=false` and `push_enabled=false`.
 
-1. Apply `20261020131551_app_notifications.sql` to the approved database and run
+1. Apply `20261021120809_app_notifications.sql` to the approved database and run
    `supabase/tests/app-notifications.sql`. Its disposable fixtures run in a rolled-back
    subtransaction; it must report its assertion count with no residual test users.
 2. Deploy `send-notifications` with `verify_jwt=false`. Its only accepted request is

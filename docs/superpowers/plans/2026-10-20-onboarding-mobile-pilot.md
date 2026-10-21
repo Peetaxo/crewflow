@@ -100,7 +100,7 @@ The HTTP envelope is `{ data: InvitationPreview | ActivationComplete }` on succe
 - [x] Run the real backend suite and all changed frontend tests. Verify no Auth account can sign in before activation, expiry remains 48 hours, active-user password cannot be changed by replay, and reserved profile/history/rate are preserved.
 - [x] Run full Vitest, lint and production build. Compare type diagnostics to the existing baseline; do not claim unrelated pre-existing type failures were repaired.
 - [x] Build and launch the iPhone simulator app against the isolated local backend. Capture activation and the correct logged-in crew identity. Check the cold/warm link path, ordinary logout/login, session restoration, and invalid/reused link handling. Report any unverified UI step precisely.
-- [ ] Commit verification evidence paths and results without secrets. Review the complete diff, integrate the verified work into main while preserving unrelated changes, synchronize with origin/main, and run the required `npm run ios:refresh:devices` from a clean checkout. Preserve ignored `.env.local`; report simulator and phone outcomes separately.
+- [x] Commit verification evidence paths and results without secrets. Review the complete diff, integrate the verified work into main while preserving unrelated changes, synchronize with origin/main, and run the required `npm run ios:refresh:devices` from a clean checkout. Preserve ignored `.env.local`; report simulator and phone outcomes separately.
 - [x] Do not deploy the migration/function to a linked backend or send real invitations as part of this pilot. Report the first test slice separately from later Tally automation, account suspension, public Universal Links and production email delivery.
 
 ## Self-review

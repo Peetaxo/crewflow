@@ -19,4 +19,9 @@ Soukromé důkazy mimo Git v `/Users/peetax/Projekty/.crewflow-ui-pilot-20261022
 
 ## Vývojové instalace
 
-Výsledky začlenění, kontroly main a povinného obnovení simulátoru a fyzického iPhonu se doplní po dokončení; zařízení budou uvedena odděleně.
+Změna byla začleněna a zveřejněna v main jako `d88e800`. Na tomto zdroji znovu prošlo všech **2 591 testů / 201 souborů**, produkční build, ESLint a `git diff --check b687113`. Demo na 8098 běží z hlavního checkoutu a po obnovení zobrazuje všechny čtyři karty. Původní preference vzhledu i viewport prohlížeče jsou obnovené. Pomocný checkout je zachovaný.
+
+- **Simulátor:** povinný `npm run ios:refresh:devices` aplikaci sestavil, nainstaloval a spustil. Na reálných původních záznamech z uživatelova snímku ověřen nový vzhled, měsíc a filtr nad kartami, souhrny a rozbalení všech čtyř dnů; hodnoty zůstaly shodné. Žádná změna se neukládala.
+- **Fyzický iPhone:** sestavení, podpis a instalace proběhly úspěšně. Spuštění systém odmítl s důvodem `Locked`; celý refresh proto skončil kódem 1. Telefon zatím není označený jako úspěšně aktualizovaný. Uživatel byl požádán o odemčení, potom zbývá zopakovat spuštění již nainstalovaného sestavení.
+
+Všech **17/17 souborů** produkčního webového buildu je bajtově shodných s obsahem nainstalovaných balíků simulátoru i iPhonu. Ignorovaná `.env.local` zůstala beze změny (ověřeno SHA-256). Nativní soukromé důkazy mimo Git: `compact-simulator-original.jpg` a `compact-simulator-original-expanded.jpg`; obsahují reálná Staff data, proto se nepřidávají do repozitáře.

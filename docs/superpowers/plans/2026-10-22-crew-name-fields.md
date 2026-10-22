@@ -20,6 +20,7 @@ Files: src/types.ts; src/lib/supabase-mappers.ts and existing tests; src/feature
 - [ ] Run focused Vitest and record expected RED caused by missing controls/structured persistence.
 - [ ] Add optional firstName/lastName to Contractor. Implement a resolver returning explicit components when either is defined; otherwise split a trimmed legacy name into all-but-last and last (one token becomes first only). Preserve empty explicit values.
 - [ ] mapContractor returns firstName and lastName alongside name. normalizeCrewMember resolves and trims components, derives name and initials, retains current other-field normalization. toProfilePayload writes the resolved firstName/lastName instead of resplitting name.
+- [ ] Keep the legacy updateContractor Settings caller working: compare against the matching current member and re-resolve only a changed full name whose components were carried through unchanged. Regression-check both a full-name edit and unrelated edits to a compound name. No Settings UI changes.
 - [ ] Replace the combined input with associated Jméno/Příjmení inputs, autocomplete given-name/family-name. Their onChange passes both components and composed name to the parent. Keep city and remaining fields in the existing responsive grid system. Do not add new validation restrictions.
 - [ ] Run focused tests and lint; self-review and commit only the task files. Independent spec review, then quality/final review, resolving any findings before integration.
 

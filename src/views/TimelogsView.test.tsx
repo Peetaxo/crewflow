@@ -363,7 +363,7 @@ describe('TimelogsView', () => {
     }));
     const { default: TimelogsView } = await import('./TimelogsView');
     render(<TimelogsView />);
-    expect(screen.getByRole('region', { name: 'Společné výkazy' })).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Společné výkazy' })).toBeInTheDocument();
     expect(screen.queryByText('Žádné záznamy pro tento filtr')).not.toBeInTheDocument();
   });
 

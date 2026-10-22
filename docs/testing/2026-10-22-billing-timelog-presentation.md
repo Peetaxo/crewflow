@@ -35,3 +35,14 @@ Skutečný Browser Use v lokálním Supabase demu na portu 8098:
 Tato vizuální kontrola neopakovala vystavení, přijetí ani úhradu faktur. Tyto operace mají předchozí úplný pilot; tato změna kontrolovala jejich zachované ovladače a testy. Lokální worker ani Cron se nezapínal a žádná testovací finanční data se nezapisovala do Staff.
 
 Soukromé důkazy jsou v `/Users/peetax/Projekty/.crewflow-ui-pilot-20261022/`: `layout-timelogs-desktop.jpg`, `layout-timelogs-390.jpg`, `layout-timelogs-320.jpg`, `layout-timelogs-dark.jpg`, `layout-billing-desktop.jpg`, `layout-billing-390.jpg`, `layout-billing-dark-390.jpg`, `layout-billing-exact-320.jpg` a `layout-after.private.json`. Snímky obsahují pouze místní testovací demo. Úplné databázové snímky a přihlašovací údaje zůstávají mimo Git.
+
+## Začlenění a vývojové instalace
+
+Implementace je začleněná a zveřejněná v `main` jako `0228b2c`. Přímo na začleněném zdroji znovu prošlo **2 589 testů / 201 souborů**, produkční build, ESLint upravených TS/TSX a kontrola diffu. Pozdější souběžné commity do `0a407c9` přidaly pouze dokumentaci druhé práce; zdroj aplikace je proti ověřené verzi totožný. Demo na 8098 nyní běží z tohoto hlavního checkoutu. Po restartu a obnovení stránky znovu ověřeny faktury i filtry výkazů na desktopu a mobilu, viewport prohlížeče obnoven a záložka ponechána uživateli.
+
+- **Simulátor:** povinný `npm run ios:refresh:devices` s existujícím týmem sestavil, nainstaloval a spustil novou aplikaci na iPhone 17 Pro / iOS 26.5. Vizuálně ověřeno umístění filtru nad výkazy a nová fakturační obrazovka. Původní role CH obnovena. Jde o krátkou kontrolu zobrazení; celý fakturační průchod se zde neopakoval.
+- **Fyzický iPhone:** zařízení bylo dostupné; build nyní čeká při podpisu frameworků na systémovou aplikaci SecurityAgent. Aktualizace telefonu zatím **není potvrzená**. Uživatel byl požádán, aby případný dialog klíčenky vyřídil přímo na Macu; ovládání této aplikace nástroj z bezpečnostních důvodů odmítá. Výsledek instalace a spuštění se doplní po dokončení podpisu.
+
+Ignorovaná `.env.local` zůstala beze změny (ověřeno shodným SHA-256). Nativní zobrazení používá Staff; během kontroly se nevytvářely ani neměnily finanční záznamy. Soukromé nativní snímky `layout-simulator-timelogs.jpg` a `layout-simulator-invoices.jpg` proto nejsou určeny jako veřejné demo důkazy.
+
+Pomocný čistý checkout a již začleněná větev zůstaly zachované: automatická kontrola odmítla jejich odstranění kvůli riziku smazání práce. Ostatní pracovní checkouty se neměnily.

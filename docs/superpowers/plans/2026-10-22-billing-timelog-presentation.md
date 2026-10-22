@@ -26,3 +26,5 @@
 - [x] Visually inspect both screens via CUA in local demo at desktop, 390px, 320px and dark theme. Check actual control placement, text wrapping, disclosure and action availability; save screenshots. Do not issue or pay new invoices for styling proof.
 - [x] Run full Vitest suite, production build, ESLint changed files and diff check. Review code and spec conformance.
 - [ ] Merge verified changes into main, verify merged source, sync origin/main and run `npm run ios:refresh:devices` with existing signing team and preserved `.env.local`. Perform a short simulator visual check; record simulator and phone separately.
+
+Main integration, synchronization, merged verification and simulator installation/visual smoke are complete for `0228b2c`. The physical phone was available, but its framework signing is waiting for macOS SecurityAgent; user assistance with the system keychain dialog was requested. Leave this final item open until the phone install/launch result is known. The development demo is running from main; the manual feature checkout is retained after cleanup was rejected by automatic approval review.

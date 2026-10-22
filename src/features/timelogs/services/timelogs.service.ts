@@ -198,6 +198,7 @@ export const fetchTimelogsSnapshot = async (): Promise<Timelog[]> => {
   const supabaseTimelogs = await loadTimelogsSnapshot();
 
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
+    syncTimelogQueryData(supabaseTimelogs);
     return supabaseTimelogs;
   }
 
@@ -214,6 +215,8 @@ export const fetchTimelogsSnapshot = async (): Promise<Timelog[]> => {
     ...snapshot,
     timelogs: supabaseTimelogs,
   }));
+  // Explicit post-save refreshes must also update mounted query consumers.
+  syncTimelogQueryData(supabaseTimelogs);
 
   return supabaseTimelogs;
 };

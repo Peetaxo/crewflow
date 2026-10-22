@@ -2,28 +2,27 @@ import { describe, expect, it, vi } from 'vitest';
 import { openInvoicePdfUrl } from './invoice-pdf-download';
 
 describe('invoice PDF download', () => {
-  it('falls back to current tab when opening the PDF in a new tab is blocked', () => {
-    const open = vi.fn(() => null);
-    const assign = vi.fn();
+  it('starts one download even when a successful noopener popup returns null', () => {
+    const downloads: string[] = [];
+    // With noopener, null is also the expected result of a successful open.
+    const target = {
+      open: vi.fn((url: string) => { downloads.push(url); return null; }),
+      location: { assign: vi.fn((url: string) => { downloads.push(url); }) },
+    };
 
-    openInvoicePdfUrl('https://signed.example/invoice.pdf', {
-      open,
-      location: { assign },
-    });
+    openInvoicePdfUrl('https://signed.example/invoice.pdf?download=', target);
 
-    expect(open).toHaveBeenCalledWith('https://signed.example/invoice.pdf', '_blank', 'noopener,noreferrer');
-    expect(assign).toHaveBeenCalledWith('https://signed.example/invoice.pdf');
+    expect(downloads).toEqual(['https://signed.example/invoice.pdf?download=']);
+    expect(target.open).not.toHaveBeenCalled();
+    expect(target.location.assign).toHaveBeenCalledExactlyOnceWith('https://signed.example/invoice.pdf?download=');
   });
 
-  it('keeps the user on the current page when the new tab opens', () => {
-    const open = vi.fn(() => ({} as WindowProxy));
-    const assign = vi.fn();
+  it('does not depend on popups being allowed for an attachment download', () => {
+    const target = { open: vi.fn(() => null), location: { assign: vi.fn() } };
 
-    openInvoicePdfUrl('https://signed.example/invoice.pdf', {
-      open,
-      location: { assign },
-    });
+    openInvoicePdfUrl('https://signed.example/invoice.pdf?download=', target);
 
-    expect(assign).not.toHaveBeenCalled();
+    expect(target.open).not.toHaveBeenCalled();
+    expect(target.location.assign).toHaveBeenCalledExactlyOnceWith('https://signed.example/invoice.pdf?download=');
   });
 });

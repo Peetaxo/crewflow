@@ -1,5 +1,9 @@
 # NODU: upozornění — ověření a nasazení, 21. 10. 2026
 
+> Aktualizace 22. 10.: historie byla po konkrétním souhlasu zapnuta; push zůstává
+> vypnutý. Test skutečného načtení zprávy a zbývající ruční kontroly popisuje
+> [novější záznam](2026-10-22-notifications-simulator.md). Níže je stav k 21. 10.
+
 Implementace byla sloučena do main přes PR #7 (`67d48bb`) a mobilní oprava přes
 PR #8 (`5844496`). Uživatel výslovně
 schválil nasazení do Staff/NODU a odeslání do `Peetaxo/crewflow`; potvrzení MCP řeší

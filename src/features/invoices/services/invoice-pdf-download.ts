@@ -1,5 +1,4 @@
 type InvoicePdfWindowTarget = {
-  open: Window['open'];
   location: Pick<Location, 'assign'>;
 };
 
@@ -7,8 +6,7 @@ export const openInvoicePdfUrl = (
   url: string,
   target: InvoicePdfWindowTarget = window,
 ) => {
-  const openedWindow = target.open(url, '_blank', 'noopener,noreferrer');
-  if (!openedWindow) {
-    target.location.assign(url);
-  }
+  // Signed URLs use Content-Disposition: attachment. One navigation downloads
+  // the file without a popup; noopener's null return cannot trigger a second one.
+  target.location.assign(url);
 };

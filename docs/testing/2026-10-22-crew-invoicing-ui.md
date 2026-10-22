@@ -1,6 +1,6 @@
 # Skutečný průchod fakturací v demo rozhraní - 22. 10. 2026
 
-**Výsledek: obě možnosti fakturace prošly celým skutečným UI průchodem až ke stažení PDF a záznamu úhrady. Zůstávají dva potvrzené nálezy v obnovování přehledů a stahování souborů.**
+**Výsledek: obě možnosti fakturace prošly celým skutečným UI průchodem až ke stažení PDF a záznamu úhrady. Oba následně nalezené problémy s obnovou přehledů a dvojím stažením byly opraveny a znovu ověřeny v demu; viz navazující kontrola níže.**
 
 Ověřovaný zdroj: `9b9813f8bd2facd4caf074a1eef6bbbc608d722f`. Prohlížečový přístup na `http://127.0.0.1:8098/app` nyní funguje. Všechny obchodní kroky níže proběhly klikáním a formuláři přes Browser Use, nikoli spuštěním dřívějšího API pilotu. Crew, CH a COO měli tři samostatné fiktivní Auth účty; přepínač vývojových rolí se nepoužíval.
 
@@ -25,7 +25,7 @@ Ověřovaný zdroj: `9b9813f8bd2facd4caf074a1eef6bbbc608d722f`. Prohlížečový
 
 Vytvoření nové faktury po zapnutí trvalého souhlasu se v tomto GUI běhu neopakovalo. To má dřívější samostatný integrační důkaz; současný průchod používá jednotlivý souhlas. Nejde o test dvou fyzických zařízení ani o nové ovládání nativního iPhonu.
 
-## Potvrzené nálezy
+## Původní potvrzené nálezy (před opravou)
 
 ### 1. Přehledy po vlastních změnách ukazují starší hodiny a počítadla
 
@@ -42,6 +42,28 @@ Opakovaně se při jednom kliknutí stáhly dvě totožné kopie: název bez př
 Podezřelé místo je `src/features/invoices/services/invoice-pdf-download.ts:10`: nejprve se volá `window.open` s `noopener,noreferrer` a při prázdném návratu následně navigace stejného okna na tentýž odkaz. Potvrzeným výsledkem je dvojí download v tomto prohlížeči; dopad na ostatní prohlížeče se zde neměřil.
 
 Důkazy: `own-download-check.private.json`, skutečné vrácené cesty Browser Use a stažené soubory. Oprava má zajistit jeden download na jeden klik bez ztráty možnosti stáhnout soubor při zablokování nového okna.
+
+## Navazující oprava a skutečná kontrola v demu
+
+Oprava vychází z `bea52e6`. Po `fetchTimelogsSnapshot` se nová data publikují také do TanStack Query, odkud čerpají přehledy a počítadla. Stávající kontroly epochy přihlášení a generace zápisů zůstaly před publikací. Lokální režim zachovává identifikátory výkazů.
+
+PDF se stahuje jednou navigací na podepsaný odkaz s `Content-Disposition: attachment`. Původní `window.open(..., 'noopener,noreferrer')` může úspěšně otevřít dokument a současně vrátit `null`; následná větev proto spouštěla druhé stažení. Nešlo o dvojí vystavení faktury. Chování návratové hodnoty popisuje [MDN – window.open / noopener](https://developer.mozilla.org/en-US/docs/Web/API/Window/open#noopener).
+
+Nová označená akce `UI2210 oprava obnovy – 3 dny` (19.–21. 10.) prošla skutečným UI za třemi samostatnými Auth účty. Po každé vlastní změně se přehled ověřil ještě v téže relaci, bez reloadu nebo opětovného přihlášení:
+
+| Kontrola | Výsledek |
+|---|---|
+| Crew uloží první den a zavře editor | Karta ihned 7 h; koncepty 1 |
+| Crew doplní další dva dny a odešle | Karta ihned 23 h / 5 750 Kč; koncepty 0, kontrola CH 1 |
+| CH vrátí s důvodem, Crew opraví první den a odešle znovu | Karta ihned 24 h / 6 000 Kč; kontrola CH 1, vráceno 0 |
+| CH předá celé kolo | Kontrola CH 0, čeká COO 6 (původních 5 + nový výkaz) |
+| COO potvrdí serverový náhled | Čeká COO 5, schváleno 19 (původních 18 + nový výkaz); karta 24 h / 6 000 Kč |
+| Crew jednou klikne na self-billing PDF | Právě nový soubor `(2).pdf`, následující `(3).pdf` neexistuje ani po dalším stažení originálu; aplikace zůstala otevřená |
+| Crew jednou klikne na přijatý originál | Před kliknutím `(4).pdf` neexistoval; vznikl právě `(4).pdf`, následující `(5).pdf` neexistuje; aplikace zůstala otevřená |
+
+Obě skutečně stažená PDF bajtově odpovídají původním dokumentům (SHA-256: originál `b0b82b18229152c83a176286a0b0b4bd86e008dd262d244350d50893d253ff0b`, self-billing `696eaecf298cfb34686845a099743885bd0d2b580d4d744eaba6859151504d4b`). Původní dvě faktury zůstaly zaplacené; nový schválený výkaz zůstal bez vystavené faktury. Worker ani Cron se pro tuto kontrolu nezapínal. Rekurzivní porovnání zachovalo všech **1 210/1 210** řádků zachycených před novou akcí, včetně původních faktur, historie a jobů.
+
+Regresní důkaz: před opravou 7 nových/změněných případů selhalo z očekávaných důvodů (dvě navigace a chybějící publikace cache); po opravě 78/78 cílených testů a celá sada **2 551/2 551 testů ve 200 souborech**. Web build, ESLint čtyř změněných souborů a `git diff --check` prošly. Soukromé důkazy: `fix-draft-7h.jpg`, `fix-submitted-23h.jpg`, `fix-ch-handoff.jpg`, `fix-coo-approved.jpg`, `fix-crew-final.jpg`, `fix-downloaded-own.pdf`, `fix-downloaded-self.pdf`, `ui-fix-before.private.json` a `ui-fix-after.private.json` ve stejném adresáři jako původní pilot.
 
 ## Prostředí, ochrana dat a hranice výsledku
 

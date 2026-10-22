@@ -326,6 +326,35 @@ describe('timelogs.service write flow', () => {
     vi.mocked(assertLegacyTimelogWrite).mockReset().mockResolvedValue(undefined);
   });
 
+  it.each(['draft', 'pending_ch', 'pending_coo', 'approved'] as const)(
+    'publishes refreshed %s evidence to the query cache used by cards and counters', async (status) => {
+      const report: Timelog = { id: 1, eid: 1, supabaseId: 'report', eventSupabaseId: 'event',
+        contractorProfileId: 'person', status: 'draft', days: [], km: 0, note: 'Before save' };
+      const harness = await setupStableUuidWriteHarness({ timelogs: [report],
+        authoritativeTimelogs: [{ ...report, status, note: 'Saved evidence' }], snapshotEventSupabaseId: 'event' });
+
+      const refreshed = await harness.service.fetchTimelogsSnapshot();
+
+      expect(refreshed[0]).toMatchObject({ status, note: 'Saved evidence' });
+      expect(harness.setQueryData).toHaveBeenCalledExactlyOnceWith(['timelogs'], refreshed);
+      expect(harness.getSnapshot().timelogs).toEqual(refreshed);
+    },
+  );
+
+  it('publishes locally saved hours without changing their local identities', async () => {
+    const report: Timelog = { id: 42, eid: 17, contractorProfileId: 'person', status: 'draft',
+      days: [{ d: '2026-10-22', f: '08:00', t: '15:00', type: 'provoz' }], km: 0, note: '' };
+    const harness = await setupStableUuidWriteHarness({ timelogs: [report] });
+    vi.resetModules();
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'local' }));
+    const service = await import('./timelogs.service');
+
+    const refreshed = await service.fetchTimelogsSnapshot();
+
+    expect(refreshed).toEqual([report]);
+    expect(harness.setQueryData).toHaveBeenCalledExactlyOnceWith(['timelogs'], [report]);
+  });
+
   it('refuses old status, save, create and delete APIs when shared membership requires the full editor', async () => {
     const report: Timelog = { id: 1, eid: 1, supabaseId: 'report', eventSupabaseId: 'event', contractorProfileId: 'person', updatedAt: '2026-09-20T00:00:00Z',
       status: 'draft', days: [{ d: '2026-09-20', f: '08:00', t: '16:00', type: 'provoz' }], km: 0, note: '' };

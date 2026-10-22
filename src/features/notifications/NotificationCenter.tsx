@@ -9,7 +9,7 @@ export function NotificationBell({expanded=false}:{expanded?:boolean}) {
   if(!store?.ready) return null;
   const count=store.data?.unread??0;
   return <button type="button" aria-label={`Upozornění${count?`, ${count} nepřečtených`:''}`} onClick={()=>store.setPanelOpen(true)}
-    className={`relative inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-[color:var(--nodu-border)] px-3 text-[color:var(--nodu-text)] ${expanded?'w-full justify-start':''}`}>
+    className={`relative inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-[color:var(--nodu-text)] ${expanded?'w-full justify-start':''}`}>
     <span className="relative"><Bell size={19}/>{count>0&&<span className="absolute -right-2 -top-2 rounded-full bg-[color:var(--nodu-accent)] px-1 text-[10px] font-bold text-white">{count>99?'99+':count}</span>}</span>
     {expanded&&<span className="text-sm">Upozornění</span>}
   </button>;

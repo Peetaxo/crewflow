@@ -29,8 +29,9 @@ zpráva vytvořena a push zůstává vypnutý.
 3. Klepnout na zprávu: má se otevřít přehled akcí.
 4. Vrátit se do zvonečku: zpráva má být přečtená a počet nepřečtených se sníží.
 
-Tyto kroky zatím nejsou vizuálně potvrzené. XcodeBuildMCP runtime snapshot
-neposkytuje interakční cíle uvnitř tohoto WebView.
+Uživatel následně potvrdil všechny uvedené kroky otevření a přečtení ve skutečné
+aplikaci v simulátoru („vše jak říkáš“). Nejde o potvrzení systémového push banneru.
+XcodeBuildMCP runtime snapshot neposkytuje interakční cíle uvnitř tohoto WebView.
 
 ## Samostatný test systémového banneru
 

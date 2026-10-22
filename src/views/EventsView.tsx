@@ -635,9 +635,7 @@ const EventsOverview = ({ selection = null }: { selection?: MobileWorkflowSelect
                 }}
               >
                 <Filter size={18} />
-              </button> : selection && !selectedEventId ? <button type="button" aria-label="Propojit směny" aria-pressed={selectionActive}
-                className={`nodu-mobile-events-header__action nodu-mobile-events-header__action--right ${selectionActive ? 'nodu-mobile-events-header__action--active' : ''}`}
-                disabled={selection.draft.busy} onClick={selectionActive ? selection.close : openSelection}><Link2 size={18} /></button> : <span className="nodu-mobile-events-header__action--right" />}
+              </button> : <span className="nodu-mobile-events-header__action--right" />}
             </div>
           ) : (
             <div>
@@ -785,6 +783,16 @@ const EventsOverview = ({ selection = null }: { selection?: MobileWorkflowSelect
               <span className="text-[11px] font-medium text-[color:var(--nodu-text-soft)]">
                 {listVisibleEvents.length} akci
               </span>
+              {isMobileEventFeed && selection && !selectedEventId && <button
+                type="button"
+                aria-label="Propojit směny"
+                aria-pressed={selectionActive}
+                className={`ml-auto inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border transition-colors ${selectionActive
+                  ? 'border-[color:rgb(var(--nodu-accent-rgb)/0.18)] bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)]'
+                  : 'border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.96)] text-[color:var(--nodu-text-soft)]'}`}
+                disabled={selection.draft.busy}
+                onClick={selectionActive ? selection.close : openSelection}
+              ><Link2 size={18} /></button>}
             </div>
           )}
           {selectionActive && <label className="nodu-mobile-workflow-selection__search">Hledat směnu nebo jobnumber

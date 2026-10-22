@@ -595,6 +595,36 @@ describe('TimelogsView', () => {
     expect(screen.getByText('JTI001')).toBeInTheDocument();
   });
 
+  it.each([true, false])('summarizes original reports and keeps every day available on demand (mobile=%s)', async (mobile) => {
+    mobileMockState.isMobile = mobile;
+    mockExternalApprovalModules();
+    const report = { ...timelogs[0], days: [
+      { d: '2026-04-20', f: '09:00', t: '14:00', type: 'provoz' as const },
+      { d: '2026-04-21', f: '10:00', t: '16:00', type: 'instal' as const },
+    ] };
+    vi.doMock('../context/useAppContext', () => ({ useAppContext: () => ({ ...mockContext, role: 'crew' }) }));
+    vi.doMock('../app/providers/useAuth', () => ({ useAuth: () => ({ currentProfileId: 'profile-1' }) }));
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({ useTimelogsQuery: () => ({ data: [report] }) }));
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      getTimelogDependencies: () => ({ contractors, events }), updateTimelogStatus: vi.fn(),
+    }));
+    const { default: TimelogsView } = await import('./TimelogsView');
+    render(<TimelogsView scope="mine" />);
+
+    const card = screen.getByRole('region', { name: 'Výkaz Ploom Chodov – Crew One' });
+    const summary = within(card).getByRole('region', { name: 'Souhrn výkazu' });
+    expect(within(summary).getByText('11 h')).toBeInTheDocument();
+    expect(within(summary).getByText('2 750 Kč')).toBeInTheDocument();
+    const details = within(card).getByText('Dny výkazu (2)').closest('details');
+    expect(details).not.toHaveAttribute('open');
+    expect(within(card).getByText('09:00 - 14:00')).not.toBeVisible();
+    fireEvent.click(within(card).getByText('Dny výkazu (2)'));
+    await waitFor(() => expect(within(card).getByText('09:00 - 14:00')).toBeVisible());
+    expect(within(card).getByText('10:00 - 16:00')).toBeVisible();
+    fireEvent.click(within(card).getByRole('button', { name: 'Upravit' }));
+    expect(mockContext.setEditingTimelog).toHaveBeenCalledWith(report);
+  });
+
   it('shows Crew which CH changes are waiting for confirmation on mobile cards', async () => {
     mobileMockState.isMobile = true;
     mockExternalApprovalModules();

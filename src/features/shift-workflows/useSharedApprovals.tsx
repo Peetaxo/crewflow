@@ -67,7 +67,7 @@ export function useSharedApprovals(timelogs: Timelog[], events: Event[], contrac
           || round.timelogIds.some((id) => group.round.timelogIds.includes(id))
           || round.eventIds.some((id) => group.round.eventIds.includes(id)))).map((round) => round.id));
       return <SharedApprovalCard key={group.round.id} group={group} contractors={people}
-        events={canonicalEvents} canAct={group.canAct}
+        events={canonicalEvents} canAct={group.canAct} showPerson={role !== 'crew'}
         onOpen={(report) => setEditingTimelog(local ? allTimelogs.find((item) => item.id === report.id) ?? report : report)}
         history={history?.key === historyKey ? history.actions.filter((action) => relatedRoundIds.has(action.roundId)) : []} />;
     })}

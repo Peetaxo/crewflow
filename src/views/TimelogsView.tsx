@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { addMonths, endOfMonth, format, isValid, parseISO, startOfMonth, subMonths } from 'date-fns';
 import { cs } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, SlidersHorizontal } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, SlidersHorizontal } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '../components/ui/button';
 import { useAuth } from '../app/providers/useAuth';
@@ -11,6 +11,8 @@ import { MEAL_CONFIG } from '../constants';
 import { Contractor, Event, EventId, Timelog, TimelogDay } from '../types';
 import { calculateDayHours, calculateMealAllowance, calculateTotalHours, formatCurrency, formatShortDate, normalizeMealSelection } from '../utils';
 import StatusBadge from '../components/shared/StatusBadge';
+import { TimelogSummaryCard } from '../features/timelogs/components/TimelogSummaryCard';
+import { displayTimelogHours, timelogPeriod } from '../features/timelogs/components/timelog-summary-format';
 import { getContractors, subscribeToCrewChanges } from '../features/crew/services/crew.service';
 import { useEventsQuery } from '../features/events/queries/useEventsQuery';
 import {
@@ -134,7 +136,6 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
       ? timelogs.filter((timelog) => timelog.contractorProfileId === currentProfileId)
       : timelogs
   ), [currentProfileId, scope, timelogs]);
-  const isMobileMineView = scope === 'mine' && isCrew && isMobile;
   const timelogMonthReferenceDate = useMemo(() => getLatestTimelogDayDate(baseTimelogs), [baseTimelogs]);
   const selectedTimelogMonthDate = useMemo(() => {
     const parsedDate = selectedTimelogMonth ? parseISO(selectedTimelogMonth) : timelogMonthReferenceDate;
@@ -307,7 +308,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
     return (
       <div
         key={`${timelogId}-${index}-${day.d}-${day.f}-${day.t}-${day.type}-${mealLabels.join(',')}`}
-        className="grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-3 rounded-[16px] bg-[color:rgb(var(--nodu-text-rgb)/0.035)] px-3 py-2 text-xs"
+        className="grid grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-x-2 gap-y-1 sm:grid-cols-[3rem_minmax(0,1fr)_auto] rounded-[16px] bg-[color:rgb(var(--nodu-text-rgb)/0.035)] px-3 py-2 text-xs"
       >
         <span className="text-[color:var(--nodu-text-soft)]">{formatShortDate(day.d)}</span>
         <div className="min-w-0">
@@ -322,9 +323,9 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
             </div>
           )}
         </div>
-        <div className="flex items-center justify-end gap-2">
+        <div className="col-start-2 flex flex-wrap items-center gap-2 sm:col-start-auto sm:justify-end">
           <StatusBadge status={day.type} />
-          <span className="min-w-[2.4rem] text-right font-semibold text-[color:var(--nodu-text-soft)]">{dayHours.toFixed(1)}h</span>
+          <span className="min-w-[2.4rem] text-right font-semibold text-[color:var(--nodu-text-soft)]">{displayTimelogHours(dayHours)}</span>
         </div>
       </div>
     );
@@ -360,7 +361,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
   );
 
   const renderRowActions = (timelog: typeof filtered[number]) => (
-    <div className="flex gap-2">
+    <div className="flex flex-wrap items-center gap-2 [&:empty]:hidden [&_button]:min-h-11">
       {canSubmitTimelog(timelog, role) && (
         <Button
           onClick={() => handleTimelogAction(timelog.id, 'sub')}
@@ -425,6 +426,49 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
       )}
     </div>
   );
+
+  const renderOriginalTimelog = (timelog: Timelog, withinEvent = false) => {
+    const contractor = findContractor(timelog.contractorProfileId);
+    const event = findEvent(timelog.eid);
+    if (!contractor || !event) return null;
+    const hours = calculateTotalHours(timelog.days);
+    const meals = calculateMealAllowance(timelog.days, { enabled: Boolean(event.mealAllowanceEnabled) });
+    const changes = buildTimelogChangeSummary(timelog);
+    const showConfirmation = isCrewMineScope && timelog.status === 'pending_crew_confirmation' && changes.length > 0;
+    return <TimelogSummaryCard key={timelog.supabaseId ?? timelog.id}
+      label={`Výkaz ${event.name} – ${contractor.name}`}
+      person={isCrewMineScope ? undefined : { name: contractor.name, initials: contractor.ii }}
+      status={<StatusBadge status={timelog.status} label={getTimelogStatusLabel(timelog.status, isCrewMineScope)} />}
+      hours={hours} amount={hours * contractor.rate + timelog.km * KM_RATE + meals}
+      entries={[{ id: String(timelog.id), name: withinEvent ? undefined : event.name,
+        job: withinEvent ? undefined : event.job, period: timelogPeriod(timelog), client: withinEvent ? undefined : event.client,
+        supplement: <>{renderApprovalAssignee(timelog, event)}
+          {(timelog.km > 0 || meals > 0) && <p className="mt-1 text-[11px] text-[color:var(--nodu-text-soft)]">
+            {timelog.km > 0 && `Cestovné ${timelog.km.toLocaleString('cs-CZ')} km`}
+            {timelog.km > 0 && meals > 0 && ' · '}
+            {meals > 0 && `Stravné ${formatCurrency(meals)}`}
+          </p>}
+        </> }]}
+    >
+      {showConfirmation && <div className="mt-2 rounded-xl border border-[color:rgb(var(--nodu-accent-rgb)/0.24)] bg-[color:rgb(var(--nodu-accent-rgb)/0.07)] p-2 text-xs">
+        <div className="flex flex-wrap justify-between gap-1 font-semibold text-[color:var(--nodu-accent)]"><span>Upraveno CH</span><span>Čeká na tvoje potvrzení</span></div>
+        <div className="mt-1 space-y-1">{changes.slice(0, 2).map((change) => <div key={change}>{change}</div>)}
+          {changes.length > 2 && <div>+ {changes.length - 2} další změny v detailu</div>}
+        </div>
+      </div>}
+      {shouldShowCrewConfirmedCorrection(timelog, changes) && renderCrewConfirmedCorrectionNotice(changes)}
+      {timelog.status === 'rejected' && !timelog.reviewNote?.trim() && isCrewMineScope && <div className="mt-2 rounded-xl bg-[color:var(--nodu-error-bg)] p-2 text-xs text-[color:var(--nodu-error-text)]"><div className="space-y-1"><div className="font-semibold">Důvod vrácení</div><p>Uprav výkaz a odešli ho znovu ke kontrole.</p></div></div>}
+      {renderReturnedReview(timelog)}
+      <details className="group/days mt-2 border-t border-[color:var(--nodu-border)]">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 text-xs font-medium text-[color:var(--nodu-text-soft)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[color:var(--nodu-accent)] [&::-webkit-details-marker]:hidden">
+          Dny výkazu ({timelog.days.length})<ChevronDown size={14} aria-hidden="true" className="transition-transform group-open/days:rotate-180" />
+        </summary>
+        <div className="space-y-2 pb-2">{timelog.days.map((day, index) => renderTimelogDayRow(timelog.id, day, index, Boolean(event.mealAllowanceEnabled)))}</div>
+        {showTimelogNotes && timelog.note && <p className="pb-2 text-xs italic text-[color:var(--nodu-text-soft)]">"{timelog.note}"</p>}
+      </details>
+      {renderRowActions(timelog)}
+    </TimelogSummaryCard>;
+  };
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -560,8 +604,8 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
             const bulkAction = getBulkActionMeta(group.timelogs);
 
             return (
-              <div key={group.eventId} className="nodu-panel rounded-[28px] p-5">
-                <div className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] pb-3">
+              <div key={group.eventId} className="nodu-panel rounded-[20px] p-3 sm:p-4">
+                <div className="mb-3 flex flex-wrap items-start justify-between gap-3 border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] pb-3">
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="jn nodu-job-badge px-2 py-1 text-sm">{group.job}</span>
@@ -574,116 +618,12 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
 
                   <div className="text-right">
                     <div className="text-xl font-semibold text-[color:var(--nodu-text)]">{formatCurrency(totalAmount)}</div>
-                    <div className="text-xs text-[color:var(--nodu-text-soft)]">{totalHours.toFixed(1)}h celkem</div>
+                    <div className="text-xs text-[color:var(--nodu-text-soft)]">{displayTimelogHours(totalHours)} celkem</div>
                   </div>
                 </div>
 
                 <div className="space-y-3">
-                  {group.timelogs.map((timelog) => {
-                    const contractor = findContractor(timelog.contractorProfileId);
-                    const event = findEvent(timelog.eid);
-                    if (!contractor || !event) return null;
-
-                    const hours = calculateTotalHours(timelog.days);
-                    const changeSummary = buildTimelogChangeSummary(timelog);
-                    const showCrewConfirmedCorrection = shouldShowCrewConfirmedCorrection(timelog, changeSummary);
-
-                    return (
-                      <div key={timelog.id} className="rounded-[22px] border border-[color:rgb(var(--nodu-text-rgb)/0.08)] bg-[color:rgb(var(--nodu-surface-rgb)/0.9)] p-4 shadow-[0_12px_28px_rgba(47,38,31,0.06)]">
-                        <div className="mb-3 flex flex-wrap items-center gap-3 border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] pb-3">
-                          <div className="av w-8 h-8 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>
-                            {contractor.ii}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="text-sm font-semibold text-[color:var(--nodu-text)]">{contractor.name}</div>
-                            {renderApprovalAssignee(timelog, event)}
-                          </div>
-                          <StatusBadge status={timelog.status} label={getTimelogStatusLabel(timelog.status, isCrewMineScope)} />
-                          <div className="text-right">
-                            <div className="text-sm font-semibold text-[color:var(--nodu-text)]">{hours.toFixed(1)}h</div>
-                            <div className="text-[11px] text-[color:var(--nodu-text-soft)]">
-                              {formatCurrency(hours * contractor.rate + calculateMealAllowance(timelog.days, { enabled: Boolean(event.mealAllowanceEnabled) }))}
-                              {timelog.km > 0 ? ` + ${formatCurrency(timelog.km * KM_RATE)}` : ''}
-                            </div>
-                          </div>
-                        </div>
-
-                        {showCrewConfirmedCorrection && renderCrewConfirmedCorrectionNotice(changeSummary)}
-                        {renderReturnedReview(timelog)}
-
-                        <div className="mb-3 space-y-2">
-                          {timelog.days.map((day, index) => renderTimelogDayRow(
-                            timelog.id,
-                            day,
-                            index,
-                            Boolean(event.mealAllowanceEnabled),
-                          ))}
-                        </div>
-
-                        <div className="mb-3 flex items-center gap-3">
-                          {showTimelogNotes && timelog.note && (
-                            <p className="min-w-0 flex-1 text-xs italic text-[color:var(--nodu-text-soft)]">"{timelog.note}"</p>
-                          )}
-                          {(scope === 'mine' || !isCrew) && canEditTimelog(timelog, role) && (
-                            <button
-                              onClick={() => setEditingTimelog(timelog)}
-                              className="ml-auto rounded-xl border border-[color:var(--nodu-border)] px-3 py-1.5 text-[11px] font-medium text-[color:var(--nodu-text)] transition hover:bg-[color:var(--nodu-accent-soft)]"
-                            >
-                              Upravit
-                            </button>
-                          )}
-                        </div>
-
-                        <div className="flex gap-2">
-                          {canSubmitTimelog(timelog, role) && (
-                            <button
-                              onClick={() => handleTimelogAction(timelog.id, 'sub')}
-                              disabled={isTimelogActionPending}
-                              className="rounded-xl border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] px-3 py-1.5 text-[11px] font-semibold text-[color:var(--nodu-success-text)] shadow-[0_12px_24px_rgba(47,125,79,0.10)] transition hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)]"
-                            >
-                              {getSubmitActionLabel(timelog)}
-                            </button>
-                          )}
-                          {timelog.status === 'pending_ch' && role === 'crewhead' && (
-                            <>
-                              <button
-                                onClick={() => handleTimelogAction(timelog.id, 'ch')}
-                                disabled={isTimelogActionPending}
-                                className="rounded-xl border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] px-3 py-1.5 text-[11px] font-semibold text-[color:var(--nodu-success-text)] shadow-[0_12px_24px_rgba(47,125,79,0.10)] transition hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)]"
-                              >
-                                Schválit a poslat COO
-                              </button>
-                              <button
-                                onClick={() => handleTimelogAction(timelog.id, 'rej')}
-                                disabled={isTimelogActionPending}
-                                className="rounded-xl border border-[color:var(--nodu-error-border)] px-3 py-1.5 text-[11px] font-medium text-[color:var(--nodu-error-text)] transition hover:bg-[color:var(--nodu-error-bg)]"
-                              >
-                                Zamítnout
-                              </button>
-                            </>
-                          )}
-                          {timelog.status === 'pending_coo' && isTimelogApprovalActionable(timelog, role, currentProfileId) && (
-                            <>
-                              <button
-                                onClick={() => handleTimelogAction(timelog.id, 'coo')}
-                                disabled={isTimelogActionPending}
-                                className="rounded-xl border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] px-3 py-1.5 text-[11px] font-semibold text-[color:var(--nodu-success-text)] shadow-[0_12px_24px_rgba(47,125,79,0.10)] transition hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)]"
-                              >
-                                Schválit
-                              </button>
-                              <button
-                                onClick={() => handleTimelogAction(timelog.id, 'rej')}
-                                disabled={isTimelogActionPending}
-                                className="rounded-xl border border-[color:var(--nodu-error-border)] px-3 py-1.5 text-[11px] font-medium text-[color:var(--nodu-error-text)] transition hover:bg-[color:var(--nodu-error-bg)]"
-                              >
-                                Vrátit
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {group.timelogs.map((timelog) => renderOriginalTimelog(timelog, true))}
                 </div>
 
                 {bulkAction && (
@@ -710,118 +650,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
         </div>
       ) : (
         <div className="space-y-3">
-          {filtered.map((timelog) => {
-            const contractor = findContractor(timelog.contractorProfileId);
-            const event = findEvent(timelog.eid);
-            if (!contractor || !event) return null;
-
-            const totalHours = calculateTotalHours(timelog.days);
-            const changeSummary = buildTimelogChangeSummary(timelog);
-            const showCrewConfirmationChanges = isCrewMineScope
-              && timelog.status === 'pending_crew_confirmation'
-              && changeSummary.length > 0;
-            const showCrewConfirmedCorrection = shouldShowCrewConfirmedCorrection(timelog, changeSummary);
-            const showReturnedNotice = isCrewMineScope && timelog.status === 'rejected';
-            const returnedReason = timelog.reviewNote?.trim() || '';
-
-            return (
-              <div key={timelog.id} className="nodu-panel rounded-[28px] p-5">
-                {isMobileMineView ? (
-                  <div className="mb-3 border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] pb-3">
-                    <div className="mb-2 flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="mb-2 flex flex-wrap items-center gap-1.5">
-                          <span className="jn nodu-job-badge">{event.job}</span>
-                          <StatusBadge status={timelog.status} label={getTimelogStatusLabel(timelog.status, isCrewMineScope)} />
-                        </div>
-                        <div className="text-base font-semibold leading-tight text-[color:var(--nodu-text)]">{event.name}</div>
-                        <div className="mt-1 text-xs text-[color:var(--nodu-text-soft)]">{event.client}</div>
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <div className="text-lg font-semibold text-[color:var(--nodu-text)]">{totalHours.toFixed(1)}h</div>
-                        {timelog.km > 0 && <div className="text-[10px] text-[color:var(--nodu-text-soft)]">+ {timelog.km} km</div>}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mb-3 flex items-center gap-3 border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] pb-3">
-                    <div className="av w-8 h-8 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>
-                      {contractor.ii}
-                    </div>
-                    <div className="flex-1">
-                      <div className="text-sm font-semibold text-[color:var(--nodu-text)]">{contractor.name}</div>
-                      {renderApprovalAssignee(timelog, event)}
-                      <div className="mt-0.5 flex items-center gap-1.5">
-                        <span className="jn nodu-job-badge">{event.job}</span>
-                        <span className="text-xs text-[color:var(--nodu-text-soft)]">{event.name}</span>
-                      </div>
-                    </div>
-                    <StatusBadge status={timelog.status} label={getTimelogStatusLabel(timelog.status, isCrewMineScope)} />
-                    <div className="text-right">
-                      <div className="text-base font-semibold text-[color:var(--nodu-text)]">{totalHours.toFixed(1)}h</div>
-                      {timelog.km > 0 && <div className="text-[10px] text-[color:var(--nodu-text-soft)]">+ {timelog.km} km</div>}
-                    </div>
-                  </div>
-                )}
-
-                {showCrewConfirmationChanges && (
-                  <div className="mb-3 rounded-[18px] border border-[color:rgb(var(--nodu-accent-rgb)/0.24)] bg-[color:rgb(var(--nodu-accent-rgb)/0.07)] p-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--nodu-accent)]">
-                        Upraveno CH
-                      </div>
-                      <div className="text-[11px] font-semibold text-[color:var(--nodu-text-soft)]">
-                        Čeká na tvoje potvrzení
-                      </div>
-                    </div>
-                    <div className="mt-2 space-y-1 text-xs font-medium text-[color:var(--nodu-text)]">
-                      {changeSummary.slice(0, 2).map((change) => (
-                        <div key={change}>{change}</div>
-                      ))}
-                      {changeSummary.length > 2 && (
-                        <div className="text-[color:var(--nodu-text-soft)]">
-                          + {changeSummary.length - 2} další změny v detailu
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {showCrewConfirmedCorrection && renderCrewConfirmedCorrectionNotice(changeSummary)}
-
-                {showReturnedNotice && !returnedReason && (
-                  <div className="mb-3 rounded-[18px] border border-[color:var(--nodu-error-border)] bg-[color:var(--nodu-error-bg)] p-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--nodu-error-text)]">
-                        Důvod vrácení
-                      </div>
-                      <div className="text-[11px] font-semibold text-[color:var(--nodu-text-soft)]">
-                        Uprav výkaz a odešli ho znovu ke kontrole.
-                      </div>
-                    </div>
-                    {returnedReason && (
-                      <div className="mt-2 rounded-[14px] bg-[color:rgb(var(--nodu-surface-rgb)/0.76)] px-3 py-2 text-xs font-medium text-[color:var(--nodu-text)]">
-                        {returnedReason}
-                      </div>
-                    )}
-                  </div>
-                )}
-                {renderReturnedReview(timelog)}
-
-                <div className="mb-3 space-y-2">
-                  {timelog.days.map((day, index) => renderTimelogDayRow(
-                    timelog.id,
-                    day,
-                    index,
-                    Boolean(event.mealAllowanceEnabled),
-                  ))}
-                </div>
-
-                {showTimelogNotes && timelog.note && <p className="mb-3 text-xs italic text-[color:var(--nodu-text-soft)]">"{timelog.note}"</p>}
-                {renderRowActions(timelog)}
-              </div>
-            );
-          })}
+          {filtered.map((timelog) => renderOriginalTimelog(timelog))}
 
           {visibleTimelogs.length === 0 && (
             <div className="nodu-panel rounded-[24px] p-10 text-center text-sm text-[color:var(--nodu-text-soft)]">

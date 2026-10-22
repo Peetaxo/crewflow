@@ -21,6 +21,7 @@ const ContractorEditModal = ({
 }: ContractorEditModalProps) => {
   if (!editingContractor) return null;
 
+  const portalContainer = document.querySelector<HTMLElement>('.nodu-app-shell') ?? document.body;
   const isExisting = getCrew().some((contractor) => contractor.id === editingContractor.id);
   const { firstName, lastName } = resolveCrewName(editingContractor);
   const labelClass = 'mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--nodu-text-soft)]';
@@ -324,7 +325,7 @@ const ContractorEditModal = ({
         </div>
       )}
     </AnimatePresence>,
-    document.body,
+    portalContainer,
   );
 };
 

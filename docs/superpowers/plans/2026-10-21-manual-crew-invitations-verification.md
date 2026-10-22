@@ -43,7 +43,9 @@ Private runtime proof: `manual-ui-runtime-proof.private.log` reports two capture
 
 The old local baseline schema does not contain every recent shared-workflow/activity helper used elsewhere in main. A pre-existing empty-dashboard/activity widget can therefore show unavailable data in this disposable pilot. This feature does not modify those unrelated workflows; invitation/profile verification is recorded separately.
 
-## User-requested stopping point — 2026-10-21
+## Historical user-requested stopping point — 2026-10-21
+
+The following records the pause; the resumed acceptance below supersedes its pending items.
 
 The user explicitly stopped work to continue next time. Do not treat this checkpoint as completed integration. Source is committed through `d592776` on `codex/manual-crew-invitations`; root main/origin remain unchanged at the previous baseline. No final main merge, push or normal-device refresh has happened for this feature.
 
@@ -55,8 +57,10 @@ Runtime target has two captured messages and one valid current link, no Auth acc
 
 Root's three unrelated working files remain preserved; their pre-integration diff backup is `/private/tmp/manual-invitations-unrelated-before.patch`. Use the existing clean main checkout for final verification/device refresh and preserve its ignored `.env.local`.
 
-## Remaining acceptance
+## Resumed acceptance — 2026-10-22
 
-- Final mobile dialog layout verification after the close-button gutter correction.
-- Full test/lint/build/type comparison and final review.
-- Verified integration, main synchronization and required simulator/physical-phone development refresh with preserved local configuration. No linked deployment, real recipient or Tally automation.
+- Rebuilt the committed source, copied the current pilot bundle into the private native project and successfully built/installed/launched it in 13.8 seconds. Ordinary operator authentication survived the update. Selected the existing target through Crew search and verified native-origin pending status and expiry.
+- Actual corrected replacement dialog has readable title/description with no close-button overlap. Screenshot `manual-mobile-dialog-final-20261022.jpg` was inspected and embedded in progress. Cancellation left exactly two captured messages and the original profile/rate intact; private evidence `manual-ui-resumed-proof-20261022.private.json` records pending, rate250, no Auth binding and zero extra messages.
+- Final combined independent review of `cac82bd..824e332` found no critical, important or minor issues and approved merging for the authorized test scope only.
+- Fresh full Vitest passed 2529/2529 in 196 files. Full ESLint and normal web build passed. TypeScript remains at exactly110 accepted existing diagnostics with none in the changed files. Existing email scripts passed11/11. Parent logs: `/private/tmp/manual-invitations-20261022-{tests,lint,types,build}.log`.
+- Remaining: verified main integration/synchronization, merged-code verification and required normal simulator/physical-phone development refresh. No linked deployment, real recipient or Tally automation.

@@ -64,3 +64,11 @@ Root's three unrelated working files remain preserved; their pre-integration dif
 - Final combined independent review of `cac82bd..824e332` found no critical, important or minor issues and approved merging for the authorized test scope only.
 - Fresh full Vitest passed 2529/2529 in 196 files. Full ESLint and normal web build passed. TypeScript remains at exactly110 accepted existing diagnostics with none in the changed files. Existing email scripts passed11/11. Parent logs: `/private/tmp/manual-invitations-20261022-{tests,lint,types,build}.log`.
 - Remaining: verified main integration/synchronization, merged-code verification and required normal simulator/physical-phone development refresh. No linked deployment, real recipient or Tally automation.
+
+## Integration with current main
+
+While paused, origin/main advanced to `9b9813f` with the independently developed notification feature. Merged it into the invitation branch as `da3c2bf`. The only conflict was adjoining Supabase function configuration; resolution retains both independently authorized function sections and their explicit authentication comments. Independent final review confirmed that the difference from new main contains only the intended invitation files and the Auth/AppContext interfaces remain compatible.
+
+Combined verification passed 2546/2546 tests in 200 files and retained the same110 existing TypeScript diagnostics, none in the invitation files. The upstream vendored push-plugin definitions triggered four first-party lint errors; correction `c310352` excludes only that exact third-party directory, leaving application rules and official sources intact. Full lint passed, with independent spec/quality approval. The first Vite process stalled before output with idle Rolldown workers; an identical isolated retry passed in1.43s without code changes. Logs: `/private/tmp/manual-invitations-combined-{tests,lint,types}.log`, `/private/tmp/manual-invitations-combined-build-retry.log`.
+
+Read-only Docker inspection confirmed all15 running local services retain compressed JSON logs limited to3×10MB. No logging reconfiguration or old-demo restart was performed.

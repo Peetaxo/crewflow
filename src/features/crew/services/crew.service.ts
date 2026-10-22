@@ -3,6 +3,7 @@ import { Contractor, Event, Invoice, Project, ReceiptItem, Timelog } from '../..
 import { getLocalAppState, subscribeToLocalAppState, updateLocalAppState } from '../../../lib/app-data';
 import { mapContractor } from '../../../lib/supabase-mappers';
 import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
+import { resolveCrewName } from './crew-name';
 import {
   CreateCrewInput,
   CrewListFilters,
@@ -15,16 +16,6 @@ const DEFAULT_BILLING_COUNTRY = 'Ceska republika';
 let crewHydrationPromise: Promise<void> | null = null;
 let crewLoaded = false;
 let crewHydrationEpoch = 0;
-
-const getInitials = (name: string) => (
-  name
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('')
-);
 
 const clampRating = (rating?: number | null) => {
   if (rating == null || Number.isNaN(Number(rating))) return null;
@@ -40,9 +31,10 @@ const normalizeTags = (tags: string[] = []) => (
 );
 
 const toProfilePayload = (member: CreateCrewInput | UpdateCrewInput) => {
+  const { firstName, lastName } = resolveCrewName(member);
   return {
-    first_name: member.name.trim().split(/\s+/).slice(0, -1).join(' ') || member.name.trim(),
-    last_name: member.name.trim().split(/\s+/).slice(-1).join(''),
+    first_name: firstName,
+    last_name: lastName,
     phone: member.phone || null,
     email: member.email || null,
     ico: member.ico || null,
@@ -63,14 +55,19 @@ const toProfilePayload = (member: CreateCrewInput | UpdateCrewInput) => {
 };
 
 const normalizeCrewMember = <T extends CreateCrewInput | UpdateCrewInput>(member: T): T => {
-  const name = normalizeText(member.name);
+  const resolvedName = resolveCrewName(member);
+  const firstName = normalizeText(resolvedName.firstName);
+  const lastName = normalizeText(resolvedName.lastName);
+  const name = `${firstName} ${lastName}`.trim();
   const city = normalizeText(member.city);
   const rate = Number(member.rate) || 0;
 
   return {
     ...member,
     name,
-    ii: getInitials(name),
+    firstName,
+    lastName,
+    ii: `${firstName[0] ?? ''}${lastName[0] ?? ''}`.toUpperCase(),
     phone: normalizeText(member.phone),
     email: normalizeText(member.email),
     ico: normalizeText(member.ico),
@@ -378,9 +375,20 @@ export const updateCrew = async (input: UpdateCrewInput): Promise<CrewMember> =>
   return updatedContractor as CrewMember;
 };
 
-export const updateContractor = async (contractor: Contractor): Promise<Contractor> => (
-  updateCrew(contractor as UpdateCrewInput)
-);
+export const updateContractor = async (contractor: Contractor): Promise<Contractor> => {
+  const existing = getLocalAppState().contractors.find((member) => (
+    member.id === contractor.id && (!contractor.profileId || member.profileId === contractor.profileId)
+  ));
+  // The settings form edits only fullname while spreading the saved components.
+  const hasLegacyNameEdit = existing
+    && normalizeText(contractor.name) !== normalizeText(existing.name)
+    && contractor.firstName === existing.firstName
+    && contractor.lastName === existing.lastName;
+
+  return updateCrew(hasLegacyNameEdit
+    ? { ...contractor, ...resolveCrewName({ name: contractor.name }) }
+    : contractor);
+};
 
 export const deleteCrew = async (id: number): Promise<DeleteCrewResult> => {
   let existing: Contractor | null = null;

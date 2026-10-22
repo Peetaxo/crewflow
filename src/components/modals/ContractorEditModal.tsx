@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { Contractor } from '../../types';
 import { createCrew, getCrew, updateCrew } from '../../features/crew/services/crew.service';
 import { upsertCrewRating } from '../../features/crew/services/crew-ratings.service';
+import { resolveCrewName } from '../../features/crew/services/crew-name';
 
 interface ContractorEditModalProps {
   editingContractor: Contractor | null;
@@ -20,9 +21,19 @@ const ContractorEditModal = ({
   if (!editingContractor) return null;
 
   const isExisting = getCrew().some((contractor) => contractor.id === editingContractor.id);
+  const { firstName, lastName } = resolveCrewName(editingContractor);
   const labelClass = 'mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--nodu-text-soft)]';
   const inputClass = 'w-full rounded-xl border border-[var(--nodu-border)] bg-white px-3 py-2 text-sm text-[var(--nodu-text)] outline-none transition focus:border-[var(--nodu-accent)] focus:ring-2 focus:ring-[rgba(var(--nodu-accent-rgb),0.16)]';
   const checkClass = 'rounded border-[var(--nodu-border)] text-[var(--nodu-accent)] focus:ring-[var(--nodu-accent)]';
+
+  const handleNameChange = (nextFirstName: string, nextLastName: string) => {
+    onChange({
+      ...editingContractor,
+      firstName: nextFirstName,
+      lastName: nextLastName,
+      name: `${nextFirstName.trim()} ${nextLastName.trim()}`.trim(),
+    });
+  };
 
   const handleSave = async () => {
     try {
@@ -69,13 +80,27 @@ const ContractorEditModal = ({
             <div className="space-y-4 overflow-y-auto p-5">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <label className={labelClass}>Jmeno</label>
+                  <label htmlFor="contractor-first-name" className={labelClass}>Jméno</label>
                   <input
+                    id="contractor-first-name"
                     type="text"
-                    value={editingContractor.name}
-                    onChange={(e) => onChange({ ...editingContractor, name: e.target.value })}
+                    autoComplete="given-name"
+                    value={firstName}
+                    onChange={(e) => handleNameChange(e.target.value, lastName)}
                     className={inputClass}
-                    placeholder="Jmeno a prijmeni"
+                    placeholder="Jméno"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="contractor-last-name" className={labelClass}>Příjmení</label>
+                  <input
+                    id="contractor-last-name"
+                    type="text"
+                    autoComplete="family-name"
+                    value={lastName}
+                    onChange={(e) => handleNameChange(firstName, e.target.value)}
+                    className={inputClass}
+                    placeholder="Příjmení"
                   />
                 </div>
                 <div>

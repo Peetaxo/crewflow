@@ -92,6 +92,8 @@ export function mapContractor(row: ProfileRow): Contractor {
     profileId: row.id,
     userId: row.user_id,
     name: `${firstName} ${lastName}`.trim(),
+    firstName,
+    lastName,
     ii: initials(firstName, lastName),
     bg: row.avatar_bg ?? '#E0E7FF',
     fg: row.avatar_color ?? '#4338CA',

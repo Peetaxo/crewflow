@@ -99,6 +99,8 @@ export interface Contractor {
   profileId?: string;
   userId?: string | null;
   name: string;
+  firstName?: string;
+  lastName?: string;
   /** Inicialy pro avatar */
   ii: string;
   /** Barva pozadi avataru */

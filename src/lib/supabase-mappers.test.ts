@@ -203,6 +203,15 @@ describe('supabase mappers', () => {
     expect(mapContractor({ ...row, rating: 8.5 }).rating).toBe(8.5);
   });
 
+  it.each([
+    { first_name: 'Anna Marie', last_name: 'van der Berg', name: 'Anna Marie van der Berg', ii: 'AV' },
+    { first_name: 'Prince', last_name: '', name: 'Prince', ii: 'P' },
+    { first_name: '', last_name: 'van der Berg', name: 'van der Berg', ii: 'V' },
+  ])('hydrates exact structured name components from profiles: $name', ({ first_name, last_name, name, ii }) => {
+    const member = mapContractor({ id: 'profile-name', first_name, last_name } as ProfileRow);
+    expect(member).toMatchObject({ firstName: first_name, lastName: last_name, name, ii });
+  });
+
   it('preserves project_id on mapped events', () => {
     const row: EventRow = {
       id: 'event-uuid-1',

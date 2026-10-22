@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Contractor } from '../../../types';
 
 const createDeferred = <T,>() => {
   let resolve!: (value: T) => void;
@@ -8,10 +9,92 @@ const createDeferred = <T,>() => {
   return { promise, resolve };
 };
 
+const nameTestMember: Contractor = {
+  id: 1, profileId: 'profile-name', name: 'Anna Marie van der Berg', firstName: 'Anna Marie', lastName: 'van der Berg',
+  ii: 'AV', bg: '#000', fg: '#fff', tags: [], events: 0, rate: 250,
+  phone: '777111222', email: '', ico: '', dic: '', bank: '', city: 'Praha', reliable: false, note: '',
+};
+
+const nameCases = [
+  { label: 'structured compound names', input: { name: 'Stale display name', firstName: '  Anna Marie  ', lastName: '  van der Berg  ' }, firstName: 'Anna Marie', lastName: 'van der Berg', ii: 'AV' },
+  { label: 'legacy fullname', input: { name: '  Jan   Karel  Novák  ' }, firstName: 'Jan Karel', lastName: 'Novák', ii: 'JN' },
+  { label: 'legacy mononym', input: { name: '  Prince  ' }, firstName: 'Prince', lastName: '', ii: 'P' },
+  { label: 'cleared given name', input: { name: 'Stale display name', firstName: '', lastName: 'van der Berg' }, firstName: '', lastName: 'van der Berg', ii: 'V' },
+  { label: 'only an explicit surname', input: { name: 'Stale display name', lastName: 'Nová' }, firstName: '', lastName: 'Nová', ii: 'N' },
+  { label: 'only an explicit given name', input: { name: 'Stale display name', firstName: 'Anna Marie' }, firstName: 'Anna Marie', lastName: '', ii: 'A' },
+];
+
+const setupNamePersistence = (existing: Contractor[] = [], returnedNames = { firstName: 'Anna Marie', lastName: 'van der Berg' }) => {
+  let snapshot = { contractors: existing };
+  const single = vi.fn().mockResolvedValue({ data: {
+    id: 'profile-name', first_name: returnedNames.firstName, last_name: returnedNames.lastName,
+    phone: nameTestMember.phone, billing_city: nameTestMember.city, hourly_rate: nameTestMember.rate,
+  }, error: null });
+  const insert = vi.fn(() => ({ select: vi.fn(() => ({ single })) }));
+  const eq = vi.fn().mockResolvedValue({ error: null });
+  const update = vi.fn(() => ({ eq }));
+  vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
+  vi.doMock('../../../lib/supabase', () => ({
+    isSupabaseConfigured: true,
+    supabase: { from: vi.fn((table: string) => {
+      if (table !== 'profiles') throw new Error(`Unexpected table ${table}`);
+      return { insert, update };
+    }) },
+  }));
+  vi.doMock('../../../lib/app-data', () => ({
+    getLocalAppState: () => structuredClone(snapshot),
+    updateLocalAppState: (updater: (state: typeof snapshot) => typeof snapshot) => {
+      snapshot = structuredClone(updater(structuredClone(snapshot)));
+      return structuredClone(snapshot);
+    },
+    subscribeToLocalAppState: vi.fn(() => () => undefined),
+  }));
+  return { insert, update, eq, getSavedMember: () => snapshot.contractors[0] };
+};
+
 describe('crew.service', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+  });
+
+  it.each(nameCases)('inserts exact profile components for $label and hydrates them locally', async ({ input, firstName, lastName, ii }) => {
+    const { insert, getSavedMember } = setupNamePersistence([], { firstName, lastName });
+    const { createCrew } = await import('./crew.service');
+    const member = { ...nameTestMember, firstName: undefined, lastName: undefined, ...input };
+    const created = await createCrew(member);
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ first_name: firstName, last_name: lastName, hourly_rate: 250 }));
+    const expected = { firstName, lastName, name: [firstName, lastName].filter(Boolean).join(' '), ii };
+    expect(created).toMatchObject(expected);
+    expect(getSavedMember()).toMatchObject(expected);
+  });
+
+  it.each(nameCases)('updates exact profile components for $label without resplitting', async ({ input, firstName, lastName, ii }) => {
+    const { update, eq, getSavedMember } = setupNamePersistence([nameTestMember]);
+    const { updateCrew } = await import('./crew.service');
+    const member = { ...nameTestMember, firstName: undefined, lastName: undefined, ...input, note: 'Unrelated edit' };
+    const updated = await updateCrew(member);
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ first_name: firstName, last_name: lastName, note: 'Unrelated edit' }));
+    expect(eq).toHaveBeenCalledWith('id', 'profile-name');
+    const expected = { firstName, lastName, name: [firstName, lastName].filter(Boolean).join(' '), ii };
+    expect(updated).toMatchObject(expected);
+    expect(getSavedMember()).toMatchObject(expected);
+  });
+
+  it('keeps compound names during a legacy settings contact update', async () => {
+    const { update, getSavedMember } = setupNamePersistence([nameTestMember]);
+    const { updateContractor } = await import('./crew.service');
+    await updateContractor({ ...nameTestMember, phone: '777333444' });
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ first_name: 'Anna Marie', last_name: 'van der Berg', phone: '777333444' }));
+    expect(getSavedMember()).toMatchObject({ firstName: 'Anna Marie', lastName: 'van der Berg', name: 'Anna Marie van der Berg' });
+  });
+
+  it('applies legacy settings fullname edits when spread structured components still match the saved profile', async () => {
+    const { update, getSavedMember } = setupNamePersistence([nameTestMember]);
+    const { updateContractor } = await import('./crew.service');
+    await updateContractor({ ...nameTestMember, name: 'Eva Marie Nová' });
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ first_name: 'Eva Marie', last_name: 'Nová' }));
+    expect(getSavedMember()).toMatchObject({ firstName: 'Eva Marie', lastName: 'Nová', name: 'Eva Marie Nová', ii: 'EN' });
   });
 
   it('does not query protected crew data until an authenticated session exists', async () => {

@@ -1,0 +1,10 @@
+{
+  "Simulator Target Bundle": "cz.nodu.app",
+  "aps": {
+    "alert": {
+      "title": "TEST: Upozornění v NODU",
+      "body": "Zkušební systémový banner. Žádná směna ani vyúčtování se nemění."
+    },
+    "sound": "default"
+  }
+}

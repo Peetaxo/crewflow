@@ -20,8 +20,8 @@ describe('crew member real form names and rates', () => {
     render(<CrewView />); fireEvent.click(screen.getByRole('button', { name: 'Nový člen' }));
     // The existing form has a single rate spinbutton before its rating spinbutton.
     expect(screen.getAllByRole('spinbutton')[0]).toHaveValue(250);
-    const firstName = screen.getByRole('textbox', { name: 'Jméno', exact: true });
-    const lastName = screen.getByRole('textbox', { name: 'Příjmení', exact: true });
+    const firstName = screen.getByRole('textbox', { name: 'Jméno' });
+    const lastName = screen.getByRole('textbox', { name: 'Příjmení' });
     expect(firstName).toHaveAttribute('autocomplete', 'given-name');
     expect(lastName).toHaveAttribute('autocomplete', 'family-name');
     fireEvent.change(lastName, { target: { value: 'van der Berg' } });
@@ -38,8 +38,8 @@ describe('crew member real form names and rates', () => {
     fireEvent.keyDown(screen.getByRole('button', { name: 'Možnosti pro Jana Nová' }), { key: 'Enter' });
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Upravit profil' }));
     expect(screen.getAllByRole('spinbutton')[0]).toHaveValue(rate);
-    expect(screen.getByRole('textbox', { name: 'Jméno', exact: true })).toHaveValue('Jana');
-    expect(screen.getByRole('textbox', { name: 'Příjmení', exact: true })).toHaveValue('Nová');
+    expect(screen.getByRole('textbox', { name: 'Jméno' })).toHaveValue('Jana');
+    expect(screen.getByRole('textbox', { name: 'Příjmení' })).toHaveValue('Nová');
     fireEvent.change(screen.getByPlaceholderText('Praha'), { target: { value: 'Brno' } });
     fireEvent.click(screen.getByRole('button', { name: 'Ulozit clena' }));
     await waitFor(() => expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ name: 'Jana Nová', city: 'Brno', rate })));
@@ -51,8 +51,8 @@ describe('crew member real form names and rates', () => {
     render(<CrewView />);
     fireEvent.keyDown(screen.getByRole('button', { name: 'Možnosti pro Anna Marie van der Berg' }), { key: 'Enter' });
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Upravit profil' }));
-    expect(screen.getByRole('textbox', { name: 'Jméno', exact: true })).toHaveValue('Anna Marie');
-    expect(screen.getByRole('textbox', { name: 'Příjmení', exact: true })).toHaveValue('van der Berg');
+    expect(screen.getByRole('textbox', { name: 'Jméno' })).toHaveValue('Anna Marie');
+    expect(screen.getByRole('textbox', { name: 'Příjmení' })).toHaveValue('van der Berg');
     fireEvent.change(screen.getByPlaceholderText('Praha'), { target: { value: 'Brno' } });
     fireEvent.click(screen.getByRole('button', { name: 'Ulozit clena' }));
     await waitFor(() => expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ name: 'Anna Marie van der Berg', firstName: 'Anna Marie', lastName: 'van der Berg', city: 'Brno' })));
@@ -66,9 +66,9 @@ describe('crew member real form names and rates', () => {
     render(<CrewView />);
     fireEvent.keyDown(screen.getByRole('button', { name: 'Možnosti pro Anna Marie van der Berg' }), { key: 'Enter' });
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Upravit profil' }));
-    fireEvent.change(screen.getByRole('textbox', { name: label, exact: true }), { target: { value: '' } });
-    expect(screen.getByRole('textbox', { name: 'Jméno', exact: true })).toHaveValue(firstName);
-    expect(screen.getByRole('textbox', { name: 'Příjmení', exact: true })).toHaveValue(lastName);
+    fireEvent.change(screen.getByRole('textbox', { name: label }), { target: { value: '' } });
+    expect(screen.getByRole('textbox', { name: 'Jméno' })).toHaveValue(firstName);
+    expect(screen.getByRole('textbox', { name: 'Příjmení' })).toHaveValue(lastName);
     fireEvent.click(screen.getByRole('button', { name: 'Ulozit clena' }));
     await waitFor(() => expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ firstName, lastName, name })));
   });

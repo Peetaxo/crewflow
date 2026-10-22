@@ -65,6 +65,14 @@ Obě skutečně stažená PDF bajtově odpovídají původním dokumentům (SHA-
 
 Regresní důkaz: před opravou 7 nových/změněných případů selhalo z očekávaných důvodů (dvě navigace a chybějící publikace cache); po opravě 78/78 cílených testů a celá sada **2 551/2 551 testů ve 200 souborech**. Web build, ESLint čtyř změněných souborů a `git diff --check` prošly. Soukromé důkazy: `fix-draft-7h.jpg`, `fix-submitted-23h.jpg`, `fix-ch-handoff.jpg`, `fix-coo-approved.jpg`, `fix-crew-final.jpg`, `fix-downloaded-own.pdf`, `fix-downloaded-self.pdf`, `ui-fix-before.private.json` a `ui-fix-after.private.json` ve stejném adresáři jako původní pilot.
 
+### Začlenění a vývojové instalace po opravě
+
+Oprava `acb8f80` byla po nezávislé revizi bez nálezů začleněna do `main`, znovu ověřena celou sadou 2 551 testů, buildem a cíleným ESLintem a synchronizována s `origin/main`. Následný `npm run ios:refresh:devices` skončil úspěšně: **simulátor updated, fyzický iPhone updated**. Obě instalace byly sestavené, nainstalované a spuštěné; původní `.env.local` zůstala zachovaná a podpisový tým se dodal prostředím.
+
+Na iPhone 17 Pro / iOS 26.5 v simulátoru proběhla krátká skutečná UI kontrola: přehled CH, výkazy, rozbalení filtrů s počítadly (363 celkem = 130 konceptů + 4 ke kontrole + 4 čekající COO + 225 schválených), přepnutí na Crew a načtení fakturace. Aktuální nativní účet neměl vystavenou fakturu. Stahování PDF a zápis hodin se v této nativní kontrole neopakovaly; mají skutečný důkaz v lokálním demu výše. Pohled se vrátil na původní CH a ověřilo se také úplné zastavení a nové spuštění aplikace. Fyzický telefon má důkaz instalace a spuštění z refresh příkazu, nikoli nový úplný UI průchod.
+
+Důkazy: `/private/tmp/crewflow-ui-fixes-native.log`, soukromé snímky `fix-simulator-timelog-filters.jpg`, `fix-simulator-invoices.jpg`, `fix-simulator-cold-launch.jpg`. Demo bylo vráceno na zveřejněný main; snímek `fix-final-main.jpg` ukazuje 24 h / 6 000 Kč a odpovídající filtr Schváleno 1. Dočasný viewport byl zrušen.
+
 ## Prostředí, ochrana dat a hranice výsledku
 
 Původní lokální server neběžel a dočasné spouštěcí soubory již chyběly. Byl obnoven nad aktuálním ověřovaným main s výslovným lokálním API `http://127.0.0.1:55321`, bez načtení konfigurace Staff. Doplnily se místní závislosti a dvě již existující migrace aktuální aplikace. Všechna původní obchodní pole se rekurzivně porovnala před i po přípravě schématu. Žádný obchodní zápis ani testovací faktura nevstoupily do Staff; žádný nový hosted klíč, deployment nebo změna nativní instalace nebyly součástí této kontroly.

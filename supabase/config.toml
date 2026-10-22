@@ -17,3 +17,7 @@ verify_jwt = false
 [functions.crew-invitations]
 # This endpoint explicitly validates a real Auth bearer, server allowlist and current COO role.
 verify_jwt = false
+
+[functions.send-notifications]
+# Authenticated inside the function using a server-owned, rotated private worker secret.
+verify_jwt = false

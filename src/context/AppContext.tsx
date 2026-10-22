@@ -22,6 +22,9 @@ import { deleteReceipt } from '../features/receipts/services/receipts.service';
 import { loadPersistedUiSession, readPersistedUiSession, savePersistedUiSession, type PersistedUiSessionState } from './ui-session-storage';
 import { loadUiPreferences, saveUiPreferences } from './ui-preferences-storage';
 import { AppContext, type AppContextType, type DeleteConfirmData, type SelectedEventId } from './app-context';
+import type { NotificationTarget } from '../features/notifications/contract';
+import { getTimelogs } from '../features/timelogs/services/timelogs.service';
+import { getReceipts } from '../features/receipts/services/receipts.service';
 
 // Both home routes represent one mobile Overview, including after session restore.
 const resolveCurrentTab = (tab: string, role: Role, isMobile: boolean): string => (
@@ -123,7 +126,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const previousTab = useRef(currentTab);
   const [navigationGuardMessage, setNavigationGuardMessage] = useState<string | null>(null);
   const [pendingTab, setPendingTab] = useState<string | null>(null);
-  const [settingsSection, setSettingsSection] = useState<'menu' | 'profile' | 'appearance' | 'billing'>('menu');
+  const [settingsSection, setSettingsSection] = useState<'menu' | 'profile' | 'appearance' | 'billing' | 'notifications'>('menu');
+  const pendingNotification = useRef<{target:NotificationTarget;scope:string}|null>(null);
   const [searchQuery, setSearchQuery] = useState(initialUiSession?.searchQuery ?? '');
   const [timelogFilter, setTimelogFilter] = useState(initialUiSession?.timelogFilter ?? 'all');
   const [projectFilter, setProjectFilter] = useState(initialUiSession?.projectFilter ?? 'all');
@@ -150,6 +154,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [eventsCalendarDate, setEventsCalendarDate] = useState<string>(initialUiSession?.eventsCalendarDate ?? '');
 
   const setCurrentTab = useCallback((tab: string) => {
+    pendingNotification.current=null;
     if (navigationGuardMessage && tab !== currentTab) {
       setPendingTab(tab);
       return;
@@ -157,6 +162,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     setCurrentTabState(tab);
   }, [currentTab, navigationGuardMessage]);
+
+  const applyNotificationTarget = (target:NotificationTarget) => {
+    if(!NAV_BY_ROLE[role].includes(target.tab)) {
+      toast.info('Pro vyřízení tohoto upozornění přepněte do příslušné pracovní role.');
+      return;
+    }
+    setCurrentTabState(target.tab);
+    setSearchQuery(''); setTimelogFilter('all'); setProjectFilter('all');
+    setSelectedContractorProfileId(null);setSelectedProjectIdForStats(null);setSelectedClientIdForStats(null);
+    setSelectedEventId(target.eventId??null);setEventTab(target.eventTab??'overview');
+    if(target.timelogId) {
+      const timelog=getTimelogs().find(t=>t.supabaseId===target.timelogId);
+      if(timelog) setEditingTimelog(timelog);
+      else toast.info('Výkaz už nemusí být dostupný. Zobrazujeme aktuální přehled.');
+    }
+    if(target.receiptId) {
+      const receipt=getReceipts().find(r=>r.supabaseId===target.receiptId);
+      if(receipt) setEditingReceipt(receipt);
+    }
+    if(target.invoiceId) {
+      const id=target.invoiceId;
+      let observer:MutationObserver|null=null;
+      const focus=()=>{const node=document.getElementById(`notification-invoice-${id}`);if(node){node.scrollIntoView({block:'center'});node.focus({preventScroll:true});observer?.disconnect();return true;}return false;};
+      if(!focus()) {observer=new MutationObserver(focus);observer.observe(document.body,{subtree:true,childList:true});setTimeout(()=>observer?.disconnect(),5000);}
+    }
+  };
+  const openNotificationTarget = (target:NotificationTarget) => {
+    if(navigationGuardMessage) {
+      pendingNotification.current={target,scope:evidenceScopeKey};setPendingTab(target.tab);return;
+    }
+    applyNotificationTarget(target);
+  };
 
   useEffect(() => {
     if (previousTab.current === currentTab) return;
@@ -315,6 +352,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     role, setRole,
     currentTab, setCurrentTab,
     setNavigationGuardMessage,
+    openNotificationTarget,
     settingsSection, setSettingsSection,
     searchQuery, setSearchQuery,
     timelogFilter, setTimelogFilter,
@@ -339,7 +377,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   return (
     <AppContext.Provider value={value}>
       {children}
-      <AlertDialog open={pendingTab !== null} onOpenChange={(open) => { if (!open) setPendingTab(null); }}>
+      <AlertDialog open={pendingTab !== null} onOpenChange={(open) => { if (!open) {setPendingTab(null);pendingNotification.current=null;} }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Rozpracovane zmeny se neulozi</AlertDialogTitle>
@@ -353,8 +391,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               onClick={() => {
                 if (pendingTab) {
                   setNavigationGuardMessage(null);
-                  setCurrentTabState(pendingTab);
+                  if(pendingNotification.current?.scope===evidenceScopeKey) applyNotificationTarget(pendingNotification.current.target);
+                  else if(!pendingNotification.current) setCurrentTabState(pendingTab);
                 }
+                pendingNotification.current=null;
                 setPendingTab(null);
               }}
             >

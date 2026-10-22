@@ -91,7 +91,7 @@ describe('targeted timelog approval RPC adapter', () => {
       phone: '',
       canApproveHours: true,
     }]);
-    expect(supabaseMock.rpc).toHaveBeenCalledWith('list_event_contact_options');
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('list_event_notification_contacts');
   });
 
   it('passes caller-generated handoff ids and versions exactly', async () => {

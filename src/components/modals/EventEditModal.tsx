@@ -245,6 +245,12 @@ const EventEditModal = ({ editingEvent, onClose, onChange, mode }: EventEditModa
             </section>
             <section className="event-form-section" aria-labelledby="event-contact-title">
               <h3 id="event-contact-title">Kontakt na akci</h3>
+              <label className="event-form-label">Koordinátor směny<select value={editingEvent.coordinatorProfileId??''} disabled={contactsLoading} onChange={e=>patchEvent({coordinatorProfileId:e.target.value||null})}>
+                <option value="">{mode==='create'?'Autor směny':'Tým COO'}</option>
+                {editingEvent.coordinatorProfileId&&!contacts.some(c=>c.profileId===editingEvent.coordinatorProfileId)&&<option value={editingEvent.coordinatorProfileId}>Uložený koordinátor</option>}
+                {contacts.filter(c=>(c.canCoordinate??c.canApproveHours)||c.profileId===editingEvent.coordinatorProfileId).map(c=><option key={c.profileId} value={c.profileId}>{c.name}</option>)}
+              </select></label>
+              <p className="event-form-hint">Koordinátor a kontaktní osoba s účtem dostávají upozornění na nové přihlášky.</p>
               {contactsLoading && <p role="status" className="event-form-hint">Načítám kontakty…</p>}
               {contactsError && <div role="alert" className="event-form-error">{contactsError} <button type="button" className="event-form-text-button" onClick={() => setContactsRetry((retry) => retry + 1)}>Zkusit znovu</button></div>}
               <label className="event-form-label">Vybrat kontakt<select value={editingEvent.contactProfileId ?? ''} disabled={contactsLoading} onChange={(e) => {

@@ -72,3 +72,19 @@ While paused, origin/main advanced to `9b9813f` with the independently developed
 Combined verification passed 2546/2546 tests in 200 files and retained the same110 existing TypeScript diagnostics, none in the invitation files. The upstream vendored push-plugin definitions triggered four first-party lint errors; correction `c310352` excludes only that exact third-party directory, leaving application rules and official sources intact. Full lint passed, with independent spec/quality approval. The first Vite process stalled before output with idle Rolldown workers; an identical isolated retry passed in1.43s without code changes. Logs: `/private/tmp/manual-invitations-combined-{tests,lint,types}.log`, `/private/tmp/manual-invitations-combined-build-retry.log`.
 
 Read-only Docker inspection confirmed all15 running local services retain compressed JSON logs limited to3×10MB. No logging reconfiguration or old-demo restart was performed.
+
+## Main acceptance — 2026-10-22
+
+Integrated and pushed app source through `4981606` to main. Root main and the independent clean main checkout matched origin/main. SHA-256 checks confirmed that all three unrelated root working files retained their exact pre-integration contents. The clean checkout retained its mode0600 `.env.local`, existing development team and unset activation/invitation opt-in flags.
+
+Fresh verification from the synchronized clean main checkout passed all 2546 tests in 200 files in 48.8s and full ESLint. Logs: `/private/tmp/manual-invitations-merged-main-{tests,lint}.log`.
+
+The required `npm run ios:refresh:devices` passed its unchanged main/clean/synchronization preflight and production web build. The first simulator build found incomplete old temporary Swift-package artifacts: their framework directories existed, but their Info.plist and payload files were absent. No application source was changed. Restored only Capacitor's verified generated package-path rewrite and reran the same refresh with the supported `IOS_REFRESH_DERIVED_DATA_ROOT=/private/tmp/crewflow-ios-device-refresh-20261022-manual` override. Fresh framework Info.plist files were present after resolution. Logs: `/private/tmp/manual-invitations-main-device-refresh{,-retry}-20261022.log`.
+
+The retry completed with exit 0 for app source `4981606`:
+
+- Simulator iPhone 17 Pro: native build, installation and launch of `cz.nodu.app` succeeded.
+- Physical paired iPhone “Peetax”: available; native build, existing-team signing, installation and launch succeeded. No unlock/trust intervention was required.
+- Both are normal development installations with activation/manual-invitation frontend opt-ins unset. The separately verified `nodu test` simulator installation retains the local manual-invitation preview and its synthetic operator session.
+
+Restored only the known generated package-path rewrite after the refresh. No shared development team or native project configuration changed. All application work and acceptance checklist items are complete; the final follow-up commit updates documentation only. Tally, real email delivery and linked backend deployment remain disabled. Existing user-entered rates/history and the root's three unrelated working files are preserved. The earlier pending statements record intermediate checkpoints and are superseded by this final acceptance.

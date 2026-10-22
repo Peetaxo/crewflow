@@ -12,4 +12,3 @@ export function timelogPeriod(timelog: Timelog) {
   const range = dates.length === 1 ? formatShortDate(last) : `${formatShortDate(dates[0])} – ${formatShortDate(last)}`;
   return `${range} ${last.slice(0, 4)}`;
 }
-

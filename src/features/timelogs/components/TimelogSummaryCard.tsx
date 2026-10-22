@@ -34,30 +34,32 @@ export function TimelogSummaryCard({ label, person, metadata, status, entries, h
         {status}
       </header>
       {person && metadata && <p className="mt-1 text-[11px] text-[color:var(--nodu-text-soft)]">{metadata}</p>}
-      <div className="mt-2 space-y-2">
-        {entries.map((entry) => <div key={entry.id} className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1">
-          <div className="min-w-0 flex-1 basis-40">
-            {(entry.name || entry.job) && <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              {entry.job && <span className="jn nodu-job-badge shrink-0">{entry.job}</span>}
-              {entry.name && <h4 className="min-w-0 text-sm font-semibold leading-snug [overflow-wrap:anywhere]">{entry.name}</h4>}
-            </div>}
-            <div className="mt-1 flex items-start gap-1.5 text-[11px] leading-relaxed text-[color:var(--nodu-text-soft)]">
-              <CalendarDays size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
-              <span>{entry.period}{entry.client && ` · ${entry.client}`}</span>
+      <div className="mt-2 grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+        <div className="space-y-2">
+          {entries.map((entry) => <div key={entry.id} className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1">
+            <div className="min-w-0 flex-1 basis-40">
+              {(entry.name || entry.job) && <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                {entry.job && <span className="jn nodu-job-badge shrink-0">{entry.job}</span>}
+                {entry.name && <h4 className="min-w-0 text-sm font-semibold leading-snug [overflow-wrap:anywhere]">{entry.name}</h4>}
+              </div>}
+              <div className="mt-1 flex items-start gap-1.5 text-[11px] leading-relaxed text-[color:var(--nodu-text-soft)]">
+                <CalendarDays size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
+                <span>{entry.period}{entry.client && ` · ${entry.client}`}</span>
+              </div>
+              {entry.supplement}
             </div>
-            {entry.supplement}
-          </div>
-          {entry.totals}
-        </div>)}
-      </div>
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-[color:var(--nodu-border)] pt-2">
-        <section aria-label="Souhrn výkazu" className="min-w-0 flex-1">
-          <dl className="flex flex-wrap gap-x-5 gap-y-1">
-            <div><dt className="text-[10px] text-[color:var(--nodu-text-soft)]">Celkem hodin</dt><dd className="text-base font-semibold leading-snug tabular-nums">{displayTimelogHours(hours)}</dd></div>
-            <div><dt className="text-[10px] text-[color:var(--nodu-text-soft)]">Odměna celkem</dt><dd className="text-base font-semibold leading-snug tabular-nums">{displayTimelogMoney(amount)}</dd></div>
-          </dl>
-        </section>
-        {control}
+            {entry.totals}
+          </div>)}
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[color:var(--nodu-border)] pt-2 md:border-l md:border-t-0 md:pl-4 md:pt-0">
+          <section aria-label="Souhrn výkazu" className="min-w-0 flex-1">
+            <dl className="flex flex-wrap gap-x-5 gap-y-1">
+              <div><dt className="text-[10px] text-[color:var(--nodu-text-soft)]">Celkem hodin</dt><dd className="text-base font-semibold leading-snug tabular-nums">{displayTimelogHours(hours)}</dd></div>
+              <div><dt className="text-[10px] text-[color:var(--nodu-text-soft)]">Odměna celkem</dt><dd className="text-base font-semibold leading-snug tabular-nums">{displayTimelogMoney(amount)}</dd></div>
+            </dl>
+          </section>
+          {control}
+        </div>
       </div>
       {children}
     </div>

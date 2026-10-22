@@ -1,7 +1,7 @@
 import React from 'react';
-const sharedCardMock = vi.hoisted(() => ({ visible: false }));
+const sharedCardMock = vi.hoisted(() => ({ visible: false, onlyShared: false }));
 vi.mock('../features/shift-workflows/useSharedApprovals', () => ({ useSharedApprovals: () => ({
-  cards: () => sharedCardMock.visible ? <section aria-label="Společné výkazy">Výkaz k ověření pořadí</section> : null, legacyOnly: (reports: unknown[]) => reports, reviewSelection: () => false,
+  cards: () => sharedCardMock.visible ? <section aria-label="Společné výkazy">Výkaz k ověření pořadí</section> : null, legacyOnly: (reports: unknown[]) => sharedCardMock.onlyShared ? [] : reports, reviewSelection: () => false,
   groupsFor: () => ({ rounds: [], legacy: [] }),
 }) }));
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -318,6 +318,7 @@ describe('TimelogsView', () => {
     vi.clearAllMocks();
     mobileMockState.isMobile = false;
     sharedCardMock.visible = false;
+    sharedCardMock.onlyShared = false;
   });
 
   it('groups all timelogs by event instead of job number', async () => {
@@ -348,6 +349,22 @@ describe('TimelogsView', () => {
     expect(screen.queryByRole('button', { name: 'Po Job Number' })).not.toBeInTheDocument();
     expect(screen.getAllByText('Ploom Chodov').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Ploom Zlicin').length).toBeGreaterThan(0);
+  });
+
+  it('does not show an empty state when all visible reports use shared cards', async () => {
+    sharedCardMock.visible = true;
+    sharedCardMock.onlyShared = true;
+    mockExternalApprovalModules();
+    vi.doMock('../context/useAppContext', () => ({ useAppContext: () => mockContext }));
+    vi.doMock('../app/providers/useAuth', () => ({ useAuth: () => ({ currentProfileId: null }) }));
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({ useTimelogsQuery: () => ({ data: timelogs }) }));
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      getTimelogDependencies: () => ({ contractors, events }), updateTimelogStatus: vi.fn(),
+    }));
+    const { default: TimelogsView } = await import('./TimelogsView');
+    render(<TimelogsView />);
+    expect(screen.getByRole('region', { name: 'Společné výkazy' })).toBeVisible();
+    expect(screen.queryByText('Žádné záznamy pro tento filtr')).not.toBeInTheDocument();
   });
 
   it('does not expose CrewHead handoff controls to COO', async () => {

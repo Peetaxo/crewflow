@@ -503,7 +503,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                     </span>
                   </span>
                 </button>
-  
+
                 {mobileFilterOpen && (
                   <div className="grid grid-cols-2 gap-2 px-2 pb-2 pt-1">
                     {filterOptions.map((filter) => (
@@ -702,7 +702,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
             );
           })}
 
-          {groupedByEvent.length === 0 && (
+          {visibleTimelogs.length === 0 && (
             <div className="nodu-panel rounded-[24px] p-10 text-center text-sm text-[color:var(--nodu-text-soft)]">
               Žádné záznamy pro tento filtr
             </div>

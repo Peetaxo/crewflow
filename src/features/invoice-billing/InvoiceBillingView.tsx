@@ -39,7 +39,7 @@ function BillingContents({ billing, scope }: { billing: BillingController; scope
   };
   const locked = busy || billing.saving || billing.canRetry;
   return <div className={styles.view}>
-    <header className={styles.pageHeader}><div><h1>{scope === 'mine' ? 'Moje faktury' : 'Faktury'}</h1><p>Schválené podklady, originály a vystavené faktury.</p></div><Button variant="outline" onClick={onSettings}>Nastavení → Fakturace</Button></header>
+    <header className={styles.pageHeader}><div><div className="nodu-dashboard-kicker">Billing</div><h1>{scope === 'mine' ? 'Moje faktury' : 'Faktury'}</h1><p>Schválené podklady, originály a vystavené faktury.</p></div><Button variant="outline" onClick={onSettings}>Nastavení → Fakturace</Button></header>
     <details className={styles.guide}><summary>Jak funguje fakturace</summary><p>Po finálním schválení celého výkazu vznikne přesný podklad. Crew zvolí originál PDF nebo vystavení svým jménem.</p></details>
     <BillingOperationFeedback billing={billing} />
     {billing.query.error && <p role="alert">Podklady se nepodařilo načíst. <Button onClick={() => { void billing.reload().catch(() => {}); }}>Obnovit podklady</Button></p>}

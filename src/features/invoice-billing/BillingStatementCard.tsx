@@ -8,6 +8,7 @@ import { BillingFinancePreview } from './BillingFinancePreview';
 import { BillingUploadForm } from './BillingUploadForm';
 import { BillingDistanceRepair } from './BillingDistanceRepair';
 import styles from './BillingPresentation.module.css';
+import { formatBillingDate, formatBillingDateRange } from './billing-presentation';
 const billingStateLabels = { ready: 'K fakturaci', blocked: 'Podklad vyžaduje doplnění', document_pending: 'Originál čeká na kontrolu CH', document_returned: 'Originál vrácen CH', issued: 'Faktura vytvořena' };
 const reasons: Record<string, string> = {
   source_missing: 'Chybí zdrojové výkazy. Podklad musí ověřit COO.', mixed_supplier: 'Podklad obsahuje různé dodavatele. COO musí ověřit zdrojové výkazy.',
@@ -52,7 +53,7 @@ export function BillingStatementCard({ statement: s, documents, jobs, scope, onC
       <div><dt>Dodavatel</dt><dd>{s.supplierSnapshot.name || 'Dodavatel neznámý'}</dd></div>
       <div><dt>Odběratel</dt><dd>{s.customerSnapshot.name || 'Chybí odběratel'}</dd></div>
       <div><dt>Schválená práce</dt><dd>{reports.map((report) => <span key={report.timelogId}>{formatBillingHours(report.hours)}{reports.length > 1 ? ` · ${report.jobNumber || report.eventName}` : ''}</span>)}</dd></div>
-      <div><dt>Období</dt><dd>{reports.map((report) => <span key={report.timelogId}>{report.dateFrom || 'Neznámé datum'}{report.dateTo !== report.dateFrom ? ` – ${report.dateTo || 'Neznámé datum'}` : ''}</span>)}</dd></div>
+      <div><dt>Období</dt><dd>{reports.map((report) => <span key={report.timelogId}>{formatBillingDateRange(report.dateFrom, report.dateTo)}</span>)}</dd></div>
     </dl>
     {s.needsSourceVerification && <p className={styles.notice} role="status">Historický náhled zachycuje původní verzi před schválením. Podklad je dostupný pouze ke čtení a vyžaduje ověření zdrojů.</p>}
     {s.blockedReason && <p className={styles.notice} role="status">{reasons[s.blockedReason] ?? 'Podklad vyžaduje ověření COO. Obnovte podklady nebo požádejte o kontrolu.'}</p>}
@@ -67,9 +68,9 @@ export function BillingStatementCard({ statement: s, documents, jobs, scope, onC
         })}
         <BillingFinancePreview finance={s.financialSnapshot} />
         <dl className={styles.facts}>
-          <div><dt>Vystavení</dt><dd>{s.previewIssueDate}</dd></div>
-          <div><dt>Splatnost</dt><dd>{s.previewDueDate}</dd></div>
-          <div><dt>Datum plnění</dt><dd>{s.previewTaxableSupplyDate || 'Neuvedeno'}</dd></div>
+          <div><dt>Vystavení</dt><dd>{formatBillingDate(s.previewIssueDate)}</dd></div>
+          <div><dt>Splatnost</dt><dd>{formatBillingDate(s.previewDueDate)}</dd></div>
+          <div><dt>Datum plnění</dt><dd>{s.previewTaxableSupplyDate ? formatBillingDate(s.previewTaxableSupplyDate) : 'Neuvedeno'}</dd></div>
         </dl>
       </div>
     </details>

@@ -3,6 +3,7 @@ import type { Invoice } from '../../types';
 import { Button } from '../../components/ui/button';
 import { formatBillingHours, formatBillingMoney, type BillingJob } from './contract';
 import styles from './BillingPresentation.module.css';
+import { formatBillingDate } from './billing-presentation';
 export function BillingInvoiceCard({ invoice: i, role, busy, jobs, onDownload, onLegacyPdf, onPaid, onRetry, actors = [] }: {
   actors?: readonly BillingActor[];
   invoice: Invoice; role: string; busy: boolean; jobs: BillingJob[]; onDownload: (path: string) => void;
@@ -25,9 +26,9 @@ export function BillingInvoiceCard({ invoice: i, role, busy, jobs, onDownload, o
       <div><dt>Dodavatel</dt><dd>{i.supplierSnapshot?.name || 'Dodavatel neznámý'}</dd></div>
       <div><dt>Odběratel</dt><dd>{i.customerSnapshot?.name || 'Odběratel neznámý'}</dd></div>
       <div><dt>Práce</dt><dd>{formatBillingHours(i.hours)}</dd></div>
-      <div><dt>Splatnost</dt><dd>{i.dueDate || 'Neznámá'}</dd></div>
+      <div><dt>Splatnost</dt><dd>{formatBillingDate(i.dueDate)}</dd></div>
     </dl>
-    <p className={styles.muted}>Vystavení: {i.issueDate || 'Neznámé'}</p>
+    <p className={styles.muted}>Vystavení: {formatBillingDate(i.issueDate)}</p>
     <details className={styles.disclosure}>
       <summary>Podrobnosti faktury</summary>
       <dl className={styles.facts}>

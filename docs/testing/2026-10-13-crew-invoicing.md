@@ -1,5 +1,7 @@
 # Ověření fakturace crew
 
+**Aktualizace 22. 10. 2026:** přístup prohlížeče už funguje a celý skutečný průchod za tři samostatné účty Crew, CH a COO je dokončený pro vlastní originál i jednotlivý self-billing, včetně PDF a úhrad. Aktuální výsledky a dva zbývající UI nálezy jsou v `docs/testing/2026-10-22-crew-invoicing-ui.md`. Následující text zachovává historický stav a důkazy z 15. 10.; tehdejší PENDING prohlížečového pilotu už není aktuální.
+
 Lokální automatizované ověření k 15. 10. 2026 prošlo. Ověřený main `4763df6` je zveřejněný a vývojové instalace v simulátoru i na iPhonu jsou aktualizované a spuštěné. **Serverový worker, trigger a hodinová pojistka jsou na Staff nasazené a aktivní po výslovném schválení klíče uživatelem.** Podrobný aktuální stav je na konci v Task 5; předchozí rollout níže zachycuje i dřívější čekání na souhlas. **Celý průchod skutečným demo rozhraním a screenshot dema zůstávají PENDING kvůli policy blokaci prohlížeče.** Databázové, autentizované API a komponentové testy celý UI pilot nenahrazují.
 
 Ověřovaný základ je `f5ec8309e5d2f855105754d169d536358c61e390`: hotová obrazovková část `2d710f086716be5404c95345cad14142a206df22` spojená s publikovaným `main` na `2e61fa0a77699d6a4155ee83eaea57cd4289c25a`. Přehledy projektů a událostí z této hlavní větve zůstaly zachované. Task 4 přidává autentizované pilotní kontroly a dvě úzké opravy typů popsané níže. Poslední úplné aplikační kontroly již zahrnují obě opravy.

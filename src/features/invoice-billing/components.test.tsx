@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { BillingConsentPanel } from './BillingConsentPanel';
 import { BillingStatementCard } from './BillingStatementCard';
@@ -20,9 +20,36 @@ describe('billing consent and document decisions', () => {
     render(<BillingStatementCard statement={s} documents={[]} jobs={[]} scope={scope} onCommand={submit} onDownload={vi.fn()} onBillingSettings={vi.fn()} busy={false} />);
     fireEvent.click(screen.getByRole('button', { name: 'Vystavit mým jménem' }));
     const issue = screen.getByRole('button', { name: 'Potvrdit a vystavit fakturu' }); expect(issue).toBeDisabled();
-    expect(screen.getByText('Koncový klient')).toBeInTheDocument(); expect(screen.getAllByText(/8 h 20 min/).length).toBeGreaterThan(0);
+    const preview = screen.getByText('Přesný finanční náhled').closest('details')!;
+    expect(within(preview).getByText('Koncový klient')).toBeVisible(); expect(within(preview).getAllByText(/8 h 20 min/).length).toBeGreaterThan(0);
+    fireEvent.click(issue); expect(submit).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(issue);
     expect(submit).toHaveBeenCalledWith(expect.objectContaining({ kind: 'confirm', statementId: s.id, expectedUpdatedAt: s.updatedAt, nonVatConfirmed: true }));
+  });
+  it.each(['Vystavit mým jménem', 'Nahrát vlastní PDF'])('opens the exact collapsed preview before %s without submitting or granting consent', (action) => {
+    const submit = vi.fn();
+    render(<BillingStatementCard statement={data().statements[0]} documents={[]} jobs={[]} scope={scope} onCommand={submit} onDownload={vi.fn()} onBillingSettings={vi.fn()} busy={false} />);
+    const summary = screen.getByText('Přesný finanční náhled');
+    const preview = summary.closest('details')!;
+    expect(preview).not.toHaveAttribute('open');
+    expect(within(preview).getByText('Účet: 123/0100')).not.toBeVisible();
+    fireEvent.click(summary);
+    expect(within(preview).getByText('Účet: 123/0100')).toBeVisible();
+    fireEvent.click(summary);
+    expect(within(preview).getByText('Účet: 123/0100')).not.toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: action }));
+    expect(preview).toHaveAttribute('open');
+    expect(within(preview).getByText('Účet: 123/0100')).toBeVisible();
+    expect(within(preview).getByText('Koncový klient')).toBeVisible();
+    expect(within(preview).getByRole('table', { name: 'Schválené dny a stravné' })).toBeVisible();
+    expect(submit).not.toHaveBeenCalled();
+    if (action === 'Vystavit mým jménem') {
+      expect(screen.getByRole('checkbox')).not.toBeChecked();
+      expect(screen.getByRole('button', { name: 'Potvrdit a vystavit fakturu' })).toBeDisabled();
+    } else {
+      expect(screen.getByRole('button', { name: 'Nahrát originál ke kontrole CH' })).toBeDisabled();
+      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    }
   });
   it('blocks concurrent selfbilling during owned original review and gives CH alone document decisions', () => {
     const s = { ...data().statements[0], status: 'document_pending' as const, activeDocumentId: id(90) };
@@ -44,6 +71,9 @@ describe('billing consent and document decisions', () => {
     expect(screen.queryByRole('button', { name: 'Vystavit mým jménem' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Obnovit údaje a data náhledu' })).not.toBeInTheDocument();
     expect(screen.getByText(/původní verzi před schválením/)).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Přesný finanční náhled'));
+    expect(screen.getByText('Účet: 123/0100')).toBeVisible();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
   });
 
 });

@@ -1,0 +1,412 @@
+.view {
+  display: grid;
+  min-width: 0;
+  gap: 1.5rem;
+  color: var(--nodu-text);
+}
+
+.pageHeader, .sectionHeader, .cardHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem 1.5rem;
+}
+
+.pageHeader h1 {
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 650;
+  letter-spacing: -0.04em;
+}
+
+.muted, .pageHeader p, .eyebrow, .facts dt, .amountLabel, .reportHeader p {
+  color: var(--nodu-text-soft);
+  font-size: 0.8125rem;
+}
+
+.section, .cardList, .preview {
+  display: grid;
+  min-width: 0;
+  gap: 0.875rem;
+}
+
+.sectionHeader {
+  align-items: center;
+}
+
+.sectionHeader h2 {
+  font-size: 1rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.sectionHeader p {
+  font-size: 0.8125rem;
+  color: var(--nodu-text-soft);
+}
+
+.guide, .empty {
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--nodu-border);
+  border-radius: 1rem;
+  background: rgb(var(--nodu-surface-muted-rgb) / 0.6);
+  font-size: 0.875rem;
+  color: var(--nodu-text-soft);
+}
+
+.guide > summary {
+  color: var(--nodu-text);
+  font-weight: 550;
+}
+
+.guide > p {
+  margin-top: 0.5rem;
+}
+
+.card {
+  display: grid;
+  min-width: 0;
+  gap: 1rem;
+  padding: 1.25rem;
+  border-radius: 1.25rem;
+  overflow-wrap: anywhere;
+}
+
+.identity {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.identity h3 {
+  margin-top: 0.35rem;
+  font-size: 1.125rem;
+  line-height: 1.4;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+
+.identity .muted {
+  margin-top: 0.25rem;
+}
+
+.badge {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  padding: 0.25rem 0.625rem;
+  border: 1px solid var(--nodu-info-border);
+  border-radius: 0.5rem;
+  background: var(--nodu-info-bg);
+  color: var(--nodu-info-text);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  font-weight: 650;
+}
+
+.success {
+  border-color: var(--nodu-success-border);
+  background: var(--nodu-success-bg);
+  color: var(--nodu-success-text);
+}
+
+.warning {
+  border-color: var(--nodu-warning-border);
+  background: var(--nodu-warning-bg);
+  color: var(--nodu-warning-text);
+}
+
+.error {
+  border-color: var(--nodu-error-border);
+  background: var(--nodu-error-bg);
+  color: var(--nodu-error-text);
+}
+
+.amount {
+  display: grid;
+  flex: 0 1 auto;
+  gap: 0.125rem;
+  text-align: right;
+}
+
+.amount strong {
+  font-size: clamp(1.25rem, 2vw, 1.625rem);
+  line-height: 1.3;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--nodu-border);
+  border-radius: 0.875rem;
+  background: rgb(var(--nodu-surface-muted-rgb) / 0.65);
+}
+
+.facts > div {
+  min-width: 0;
+}
+
+.facts dd {
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 550;
+  line-height: 1.5;
+}
+
+.facts dd span {
+  display: block;
+}
+
+.notice {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--nodu-warning-border);
+  border-radius: 0.875rem;
+  background: var(--nodu-warning-bg);
+  color: var(--nodu-warning-text);
+  font-size: 0.875rem;
+}
+
+.disclosure {
+  min-width: 0;
+  border-top: 1px solid var(--nodu-border);
+  font-size: 0.8125rem;
+}
+
+.disclosure > summary, .guide > summary {
+  min-height: 44px;
+  padding-block: 0.75rem;
+  cursor: pointer;
+  line-height: 1.5;
+  font-weight: 550;
+}
+
+.disclosure > summary:focus-visible, .guide > summary:focus-visible {
+  outline: 2px solid var(--nodu-accent);
+  outline-offset: 3px;
+  border-radius: 0.25rem;
+}
+
+.disclosure > :not(summary) {
+  margin-top: 0.5rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.card button, .view button {
+  max-width: 100%;
+  height: auto;
+  min-height: 44px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.card input, .card form, .card label {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.consent, .review {
+  display: grid;
+  gap: 0.875rem;
+  padding: 1rem;
+  border: 1px solid var(--nodu-border);
+  border-radius: 0.875rem;
+  background: rgb(var(--nodu-surface-muted-rgb) / 0.6);
+  font-size: 0.875rem;
+}
+
+.consent {
+  border-color: rgb(var(--nodu-accent-rgb) / 0.4);
+}
+
+.consent label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  cursor: pointer;
+}
+
+.consent input {
+  flex-shrink: 0;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin-top: 0.125rem;
+  accent-color: var(--nodu-accent);
+}
+
+.history {
+  display: grid;
+  gap: 0.875rem;
+  padding-bottom: 0.5rem;
+}
+
+.history li {
+  padding-left: 0.875rem;
+  border-left: 2px solid var(--nodu-border);
+}
+
+.report {
+  display: grid;
+  min-width: 0;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--nodu-border);
+  border-radius: 0.875rem;
+  background: rgb(var(--nodu-surface-rgb) / 0.6);
+  color: var(--nodu-text);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
+.reportHeader h3 {
+  font-weight: 650;
+}
+
+.parties {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  line-height: 1.7;
+}
+
+.parties strong {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--nodu-text-soft);
+}
+
+.days {
+  width: 100%;
+  table-layout: fixed;
+  text-align: left;
+  font-size: 0.75rem;
+}
+
+.days th, .days td {
+  padding: 0.625rem 0.375rem;
+  vertical-align: top;
+  border-bottom: 1px solid var(--nodu-border);
+}
+
+.days th {
+  color: var(--nodu-text-soft);
+  font-weight: 550;
+}
+
+.days td span {
+  display: block;
+  margin-top: 0.125rem;
+  color: var(--nodu-text-soft);
+}
+
+.calculation {
+  display: grid;
+  gap: 0.25rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.reportTotal {
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--nodu-border);
+  font-weight: 650;
+}
+
+@media (max-width: 767px) {
+  .facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 639px) {
+  .view {
+    gap: 1.25rem;
+  }
+
+  .card {
+    gap: 0.875rem;
+    padding: 1rem;
+  }
+
+  .cardHeader {
+    gap: 0.75rem;
+  }
+
+  .identity {
+    flex-basis: 100%;
+  }
+
+  .amount {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: 0.5rem;
+    text-align: left;
+  }
+
+  .amount strong {
+    text-align: right;
+  }
+
+  .facts {
+    gap: 0.875rem;
+    padding: 0.875rem;
+  }
+
+  .actions > button {
+    flex: 1 1 12rem;
+  }
+
+  .parties {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .report {
+    padding: 0.875rem;
+  }
+
+  .days, .days tbody {
+    display: block;
+  }
+
+  .days thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .days tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+    padding: 0.875rem 0;
+    border-bottom: 1px solid var(--nodu-border);
+  }
+
+  .days td {
+    padding: 0;
+    border: 0;
+  }
+
+  .days td::before {
+    display: block;
+    margin-bottom: 0.25rem;
+    content: attr(data-label);
+    color: var(--nodu-text-soft);
+  }
+}

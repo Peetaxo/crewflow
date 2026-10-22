@@ -27,7 +27,7 @@ describe('shared approval surfaces', () => {
   });
   it('renders a single complete round from a narrow event view and opens the canonical global editor', async () => {
     render(<Harness />);
-    expect(screen.getAllByRole('region')).toHaveLength(1);
+    expect(screen.getAllByRole('region', { name: /^Společný výkaz/ })).toHaveLength(1);
     expect(screen.getByText('Směna 1')).toBeInTheDocument();
     expect(screen.getByText('Směna 2')).toBeInTheDocument();
     expect(screen.queryByText('Směna 3')).not.toBeInTheDocument();
@@ -66,9 +66,11 @@ describe('shared approval surfaces', () => {
     mocks.history.mockResolvedValue([{ id: 'action', roundId: 'old', action: 'return', label: 'Vráceno', note: 'Opravit původní cestovné', eventId: 'e1', createdAt: '2026-09-19T00:00:00Z' }]);
     render(<Harness />);
     await act(async () => undefined);
-    expect(screen.getAllByRole('region')).toHaveLength(1);
-    expect(screen.getByText(/Poslední důvod vrácení: Opravit původní cestovné/)).toBeInTheDocument();
-    expect(screen.getByText('Historie schvalování')).toBeInTheDocument();
+    expect(screen.getAllByRole('region', { name: /^Společný výkaz/ })).toHaveLength(1);
+    const previousReason = screen.getByText(/Poslední důvod vrácení: Opravit původní cestovné/);
+    expect(previousReason).not.toBeVisible();
+    fireEvent.click(screen.getByText('Historie schvalování'));
+    expect(previousReason).toBeVisible();
   });
   it.each([
     ['another COO', 'B', 'B', 0],

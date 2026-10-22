@@ -143,10 +143,10 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
   const selectedTimelogMonthStart = format(startOfMonth(selectedTimelogMonthDate), 'yyyy-MM-dd');
   const selectedTimelogMonthEnd = format(endOfMonth(selectedTimelogMonthDate), 'yyyy-MM-dd');
   const periodTimelogs = useMemo(() => (
-    isMobileMineView
+    isCrewMineScope
       ? baseTimelogs.filter((timelog) => hasTimelogDayInRange(timelog, selectedTimelogMonthStart, selectedTimelogMonthEnd))
       : baseTimelogs
-  ), [baseTimelogs, isMobileMineView, selectedTimelogMonthEnd, selectedTimelogMonthStart]);
+  ), [baseTimelogs, isCrewMineScope, selectedTimelogMonthEnd, selectedTimelogMonthStart]);
   const sharedApprovals = useSharedApprovals(timelogsQuery.data ?? [], events, contractors);
   const visibleTimelogs = timelogFilter === 'all'
     ? periodTimelogs
@@ -458,90 +458,95 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
           )}
         </div>
 
-        {sharedApprovals.cards(visibleTimelogs)}
-        {isMobile ? (
-          <div className="space-y-3">
-            {isMobileMineView && (
-              <div className="flex items-center justify-between rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.94)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
-                <button
-                  type="button"
-                  onClick={() => moveTimelogMonth('prev')}
-                  aria-label="Předchozí měsíc výkazů"
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-[14px] text-[color:var(--nodu-text-soft)] transition hover:bg-[color:rgb(var(--nodu-text-rgb)/0.06)] hover:text-[color:var(--nodu-text)]"
-                >
-                  <ChevronLeft size={18} aria-hidden="true" />
-                </button>
-                <div className="text-sm font-semibold text-[color:var(--nodu-text)]">
-                  {format(selectedTimelogMonthDate, 'LLLL yyyy', { locale: cs })}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => moveTimelogMonth('next')}
-                  aria-label="Další měsíc výkazů"
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-[14px] text-[color:var(--nodu-text-soft)] transition hover:bg-[color:rgb(var(--nodu-text-rgb)/0.06)] hover:text-[color:var(--nodu-text)]"
-                >
-                  <ChevronRight size={18} aria-hidden="true" />
-                </button>
-              </div>
-            )}
-
-            <div className="rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.94)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
+        <section aria-label="Období a stav výkazů" className="space-y-3">
+          {isCrewMineScope && (
+            <div className="flex items-center justify-between rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.94)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)] sm:w-80">
               <button
                 type="button"
-                onClick={() => setMobileFilterOpen((open) => !open)}
-                aria-expanded={mobileFilterOpen}
-                aria-label={`Filtr výkazů: ${activeFilter.label}, ${activeFilter.count} záznamy`}
-                className="flex w-full items-center justify-between gap-3 rounded-[14px] px-3 py-2.5 text-left transition hover:bg-[color:rgb(var(--nodu-text-rgb)/0.04)]"
+                onClick={() => moveTimelogMonth('prev')}
+                aria-label="Předchozí měsíc výkazů"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] text-[color:var(--nodu-text-soft)] transition hover:bg-[color:rgb(var(--nodu-text-rgb)/0.06)] hover:text-[color:var(--nodu-text)]"
               >
-                <span className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--nodu-text-soft)]">
-                  <SlidersHorizontal size={15} aria-hidden="true" />
-                  Filtr
-                </span>
-                <span className="inline-flex items-center gap-2 text-sm font-semibold text-[color:var(--nodu-text)]">
-                  {activeFilter.label}
-                  <span className="rounded-full bg-[color:rgb(var(--nodu-accent-rgb)/0.14)] px-2 py-0.5 text-xs text-[color:var(--nodu-accent)]">
-                    {activeFilter.count}
-                  </span>
-                </span>
+                <ChevronLeft size={18} aria-hidden="true" />
               </button>
-
-              {mobileFilterOpen && (
-                <div className="grid grid-cols-2 gap-2 px-2 pb-2 pt-1">
-                  {filterOptions.map((filter) => (
-                    <button
-                      key={filter.id}
-                      type="button"
-                      onClick={() => selectTimelogFilter(filter.id)}
-                      aria-label={`${filter.label} ${filter.count}`}
-                      className={`inline-flex items-center justify-between rounded-[14px] px-3 py-2 text-sm font-semibold transition-all ${timelogFilter === filter.id ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)] shadow-[inset_0_0_0_1px_rgba(255,128,13,0.16)]' : 'bg-[color:rgb(var(--nodu-text-rgb)/0.04)] text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
-                    >
-                      <span>{filter.label}</span>
-                      <span className={`rounded-full px-1.5 py-0.5 text-xs ${timelogFilter === filter.id ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.16)]' : 'bg-[color:rgb(var(--nodu-text-rgb)/0.08)]'}`}>
-                        {filter.count}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="flex w-fit flex-wrap gap-1 rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
-            {filterOptions.map((filter) => (
+              <div className="text-sm font-semibold text-[color:var(--nodu-text)]">
+                {format(selectedTimelogMonthDate, 'LLLL yyyy', { locale: cs })}
+              </div>
               <button
-                key={filter.id}
-                onClick={() => setTimelogFilter(filter.id)}
-                className={`inline-flex items-center gap-2 rounded-[14px] px-3 py-2 text-[11px] font-medium transition-all ${timelogFilter === filter.id ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)] shadow-[inset_0_0_0_1px_rgba(255,128,13,0.16)]' : 'text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
+                type="button"
+                onClick={() => moveTimelogMonth('next')}
+                aria-label="Další měsíc výkazů"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] text-[color:var(--nodu-text-soft)] transition hover:bg-[color:rgb(var(--nodu-text-rgb)/0.06)] hover:text-[color:var(--nodu-text)]"
               >
-                <span>{filter.label}</span>
-                <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${timelogFilter === filter.id ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.16)]' : 'bg-[color:rgb(var(--nodu-text-rgb)/0.08)] text-[color:var(--nodu-text-soft)]'}`}>
-                  {filter.count}
-                </span>
+                <ChevronRight size={18} aria-hidden="true" />
               </button>
-            ))}
-          </div>
-        )}
+            </div>
+          )}
+          {isMobile ? (
+            <div className="space-y-3">
+              <div className="rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.94)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
+                <button
+                  type="button"
+                  onClick={() => setMobileFilterOpen((open) => !open)}
+                  aria-expanded={mobileFilterOpen}
+                  aria-label={`Filtr výkazů: ${activeFilter.label}, ${activeFilter.count} záznamy`}
+                  className="flex min-h-11 w-full items-center justify-between gap-3 rounded-[14px] px-3 py-2.5 text-left transition hover:bg-[color:rgb(var(--nodu-text-rgb)/0.04)]"
+                >
+                  <span className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--nodu-text-soft)]">
+                    <SlidersHorizontal size={15} aria-hidden="true" />
+                    Filtr
+                  </span>
+                  <span className="inline-flex items-center gap-2 text-sm font-semibold text-[color:var(--nodu-text)]">
+                    {activeFilter.label}
+                    <span className="rounded-full bg-[color:rgb(var(--nodu-accent-rgb)/0.14)] px-2 py-0.5 text-xs text-[color:var(--nodu-accent)]">
+                      {activeFilter.count}
+                    </span>
+                  </span>
+                </button>
+  
+                {mobileFilterOpen && (
+                  <div className="grid grid-cols-2 gap-2 px-2 pb-2 pt-1">
+                    {filterOptions.map((filter) => (
+                      <button
+                        key={filter.id}
+                        type="button"
+                        onClick={() => selectTimelogFilter(filter.id)}
+                        aria-label={`${filter.label} ${filter.count}`}
+                        aria-pressed={timelogFilter === filter.id}
+                        className={`inline-flex min-h-11 items-center justify-between rounded-[14px] px-3 py-2 text-sm font-semibold transition-all ${timelogFilter === filter.id ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)] shadow-[inset_0_0_0_1px_rgba(255,128,13,0.16)]' : 'bg-[color:rgb(var(--nodu-text-rgb)/0.04)] text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
+                      >
+                        <span>{filter.label}</span>
+                        <span className={`rounded-full px-1.5 py-0.5 text-xs ${timelogFilter === filter.id ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.16)]' : 'bg-[color:rgb(var(--nodu-text-rgb)/0.08)]'}`}>
+                          {filter.count}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="flex w-fit flex-wrap gap-1 rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
+              {filterOptions.map((filter) => (
+                <button
+                  key={filter.id}
+                  onClick={() => setTimelogFilter(filter.id)}
+                  aria-label={`${filter.label} ${filter.count}`}
+                  aria-pressed={timelogFilter === filter.id}
+                  className={`inline-flex items-center gap-2 rounded-[14px] px-2 py-2 text-[11px] font-medium transition-all ${timelogFilter === filter.id ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)] shadow-[inset_0_0_0_1px_rgba(255,128,13,0.16)]' : 'text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
+                >
+                  <span>{filter.label}</span>
+                  <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${timelogFilter === filter.id ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.16)]' : 'bg-[color:rgb(var(--nodu-text-rgb)/0.08)] text-[color:var(--nodu-text-soft)]'}`}>
+                    {filter.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
+
+      {sharedApprovals.cards(visibleTimelogs)}
 
       {scope === 'all' && viewMode === 'event' ? (
         <div className="space-y-4">

@@ -1,6 +1,7 @@
 import React from 'react';
+const sharedCardMock = vi.hoisted(() => ({ visible: false }));
 vi.mock('../features/shift-workflows/useSharedApprovals', () => ({ useSharedApprovals: () => ({
-  cards: () => null, legacyOnly: (reports: unknown[]) => reports, reviewSelection: () => false,
+  cards: () => sharedCardMock.visible ? <section aria-label="Společné výkazy">Výkaz k ověření pořadí</section> : null, legacyOnly: (reports: unknown[]) => reports, reviewSelection: () => false,
   groupsFor: () => ({ rounds: [], legacy: [] }),
 }) }));
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -316,6 +317,7 @@ describe('TimelogsView', () => {
     vi.resetModules();
     vi.clearAllMocks();
     mobileMockState.isMobile = false;
+    sharedCardMock.visible = false;
   });
 
   it('groups all timelogs by event instead of job number', async () => {
@@ -449,6 +451,28 @@ describe('TimelogsView', () => {
 
     expect(screen.getByRole('button', { name: 'Koncepty 1' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Čeká na kontrolu 1' })).toBeInTheDocument();
+  });
+
+  it.each([true, false])('keeps month and status controls before shared cards (mobile=%s)', async (mobile) => {
+    mobileMockState.isMobile = mobile;
+    sharedCardMock.visible = true;
+    mockExternalApprovalModules();
+    vi.doMock('../context/useAppContext', () => ({ useAppContext: () => ({ ...mockContext, role: 'crew' }) }));
+    vi.doMock('../app/providers/useAuth', () => ({ useAuth: () => ({ currentProfileId: 'profile-1' }) }));
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({ useTimelogsQuery: () => ({ data: mixedMineTimelogs }) }));
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      getTimelogDependencies: () => ({ contractors, events }), updateTimelogStatus: vi.fn(),
+    }));
+    const { default: TimelogsView } = await import('./TimelogsView');
+    render(<TimelogsView scope="mine" />);
+    const card = screen.getByRole('region', { name: 'Společné výkazy' });
+    const month = screen.getByRole('button', { name: 'Předchozí měsíc výkazů' });
+    const filter = screen.getByRole('button', { name: mobile ? /Filtr výkazů: Vše, 3/ : 'Vše 3' });
+    expect(month.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(filter.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(month);
+    expect(screen.getByText('březen 2026')).toBeInTheDocument();
+    expect(screen.getByText('Žádné záznamy pro tento filtr')).toBeInTheDocument();
   });
 
   it('uses the compact status filter for mobile management Schvalovani', async () => {

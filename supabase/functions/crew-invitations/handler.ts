@@ -100,7 +100,7 @@ export function createInvitationsHandler(dependencies: InvitationDependencies) {
       const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
       const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
       try {
-        const message = renderActivationEmail({ firstName: prepared.data.firstName, activationUrl: `http://127.0.0.1:8096/activate#token=${token}`, nativeUrl: `nodu://activate#token=${token}` });
+        const message = renderActivationEmail({ firstName: prepared.data.firstName, activationUrl: `http://127.0.0.1:8096/activate#token=${token}`, nativeUrl: `nodu-test://activate#token=${token}` });
         if (!(await dependencies.mail.send({ email: status.email, ...message }))) throw new Error();
         const captured = await dependencies.store.capture(input.profileId, input.requestId, hash);
         const acknowledged = safeStatus(captured.data, input.profileId);

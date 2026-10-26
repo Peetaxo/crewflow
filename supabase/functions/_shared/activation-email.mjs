@@ -4,7 +4,7 @@ const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (character) => (
 
 export function renderActivationEmail({ firstName, activationUrl, nativeUrl }) {
   if (!/^http:\/\/127\.0\.0\.1:8096\/activate#token=[a-f0-9]{64}$/.test(activationUrl)
-    || !/^nodu:\/\/activate#token=[a-f0-9]{64}$/.test(nativeUrl)
+    || !/^nodu(?:-test)?:\/\/activate#token=[a-f0-9]{64}$/.test(nativeUrl)
     || activationUrl.split('#')[1] !== nativeUrl.split('#')[1]) {
     throw new Error('Unsupported pilot activation destination.');
   }

@@ -22,6 +22,8 @@ Show automatically once per genuine Auth UUID/version/device. Store only that no
 
 ## Complete trial
 
+The actual administrator form exposed a pre-existing missing INSERT policy on profiles. Add only the missing authenticated-management permission for a new unlinked profile (`user_id is null`), using the existing genuine CrewHead/COO role lookup. Ordinary crew, anonymous callers and attempts to attach an Auth identity remain denied. No other profile policies or identity triggers change; apply the new migration only to the private pilot during this trial.
+
 Use a fresh synthetic profile and real admin UI invitation; preserve the original Mobilní Test account and all prior human passwords. Verify captured48-hour mail, exact profile/Auth/crew identity, rate250, activation, login, welcome skip/reopen, logout/relogin/session restoration and recovery with old/new password behavior. Invalid/used/expired links, unknown recipients, stale operations and disabled gates receive tests. Keep private credentials/tokens/mail bodies outside Git and outputs. Any human entry of a new password in browser/simulator is handed off to the user; API-only automated fixtures may use privately generated disposable credentials.
 
 The unique nodu-test URL scheme is registered only by the separate simulator pilot installation. Ordinary app identity/signing and nodu URL registration remain unchanged. Refresh the normal development simulator/phone installations from clean synchronized main per AGENTS.md; report actual outcomes separately.

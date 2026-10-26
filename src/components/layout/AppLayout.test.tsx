@@ -1,19 +1,29 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Session, User } from '@supabase/supabase-js';
 
 const setRole = vi.fn();
+const setCurrentTab = vi.fn();
+const crewId = '11111111-1111-4111-8111-111111111111';
 const defaultAppContext = {
   darkMode: false,
   currentTab: 'dashboard',
   role: 'crewhead',
   setRole,
+  setCurrentTab,
   selectedEventId: null as string | null,
   selectedProjectIdForStats: null as string | null,
 };
 
 const authMockState = {
   isAuthRequired: false,
+  isAuthenticated: false,
+  isDevSession: false,
+  isLoading: false,
+  currentUserId: null as string | null,
+  user: null as User | null,
+  session: null as Session | null,
   isRoleSwitching: false,
   role: null as 'crew' | 'crewhead' | 'coo' | null,
   switchRole: vi.fn(async () => undefined),
@@ -131,16 +141,61 @@ describe('AppLayout shell', () => {
     mockAppContext = { ...defaultAppContext };
     mockIsMobile = false;
     setRole.mockClear();
+    setCurrentTab.mockClear();
+    window.localStorage.clear();
+    vi.stubEnv('VITE_ONBOARDING_ENABLED', 'false');
+    authMockState.isAuthenticated = false;
+    authMockState.isDevSession = false;
+    authMockState.isLoading = false;
+    authMockState.currentUserId = null;
+    authMockState.user = null;
+    authMockState.session = null;
     authMockState.isAuthRequired = false;
     authMockState.isRoleSwitching = false;
     authMockState.role = null;
     authMockState.switchRole.mockReset();
   });
 
-  it('applies nodu shell classes to the dashboard layout wrapper', () => {
-    const { container } = render(<AppLayout />);
+  afterEach(() => vi.unstubAllEnvs());
 
-    expect(container.firstElementChild).toHaveClass('nodu-app-shell');
+  const enableCrewGuide = () => {
+    vi.stubEnv('VITE_ONBOARDING_ENABLED', 'true');
+    vi.stubEnv('VITE_SUPABASE_URL', 'http://127.0.0.1:55431');
+    mockAppContext = { ...mockAppContext, role: 'crew' };
+    authMockState.isAuthRequired = true;
+    authMockState.isAuthenticated = true;
+    authMockState.currentUserId = crewId;
+    authMockState.role = 'crew';
+    authMockState.user = { id: crewId, is_anonymous: false } as User;
+    authMockState.session = { user: authMockState.user, access_token: 'test-session' } as Session;
+  };
+
+  it('offers the optional guide to genuine crew before entering the shell', () => {
+    enableCrewGuide();
+    render(<AppLayout />);
+
+    expect(screen.getByRole('heading', { name: 'Jak používat nodu' })).toBeInTheDocument();
+    expect(screen.getByTestId('dashboard-view')).not.toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Přeskočit' }));
+    expect(screen.getByTestId('dashboard-view')).toBeVisible();
+    expect(setCurrentTab).not.toHaveBeenCalled();
+  });
+
+  it('opens My Shifts from the guide and keeps it dismissed after remount', () => {
+    enableCrewGuide();
+    const first = render(<AppLayout />);
+    fireEvent.click(screen.getByRole('button', { name: 'Zobrazit směny' }));
+    expect(setCurrentTab).toHaveBeenCalledExactlyOnceWith('my-shifts');
+    first.unmount();
+    render(<AppLayout />);
+    expect(screen.queryByRole('heading', { name: 'Jak používat nodu' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('dashboard-view')).toBeVisible();
+  });
+
+  it('applies nodu shell classes to the dashboard layout wrapper', () => {
+    render(<AppLayout />);
+
+    expect(screen.getByRole('main').parentElement).toHaveClass('nodu-app-shell');
     expect(screen.getByRole('main')).toHaveClass('nodu-page-frame');
   });
 
@@ -150,9 +205,9 @@ describe('AppLayout shell', () => {
       darkMode: true,
     };
 
-    const { container } = render(<AppLayout />);
+    render(<AppLayout />);
 
-    expect(container.firstElementChild).toHaveClass('dark', 'nodu-app-shell');
+    expect(screen.getByRole('main').parentElement).toHaveClass('dark', 'nodu-app-shell');
     expect(screen.getByRole('main')).toHaveClass('nodu-page-frame');
     expect(screen.getByRole('main').className).not.toContain('bg-white');
   });
@@ -186,9 +241,9 @@ describe('AppLayout shell', () => {
     };
     mockIsMobile = true;
 
-    const { container } = render(<AppLayout />);
+    render(<AppLayout />);
 
-    expect(container.firstElementChild).toHaveClass('nodu-app-shell--mobile-crew');
+    expect(screen.getByRole('main').parentElement).toHaveClass('nodu-app-shell--mobile-crew');
     expect(screen.getByRole('main')).toHaveClass('nodu-page-frame--mobile-crew');
     expect(screen.queryByTestId('sidebar')).not.toBeInTheDocument();
     expect(screen.getByTestId('mobile-crew-nav')).toHaveTextContent('2');

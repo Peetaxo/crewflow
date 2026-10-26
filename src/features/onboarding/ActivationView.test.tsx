@@ -46,7 +46,7 @@ describe('ActivationView', () => {
     renderActivation();
     expect(await screen.findByLabelText('E-mail')).toHaveValue(preview.email);
     for (const name of ['E-mail', 'Jméno', 'Příjmení', 'Telefon']) expect(screen.getByLabelText(name)).toHaveAttribute('readonly');
-    expect(screen.getByText(/alespoň 12 znaků/i)).toBeInTheDocument();
+    expect(screen.getByText(/alespoň 8 znaků/i)).toBeInTheDocument();
     expect(screen.getByText(/48 hodin/i)).toBeInTheDocument();
     expect(api.preview).toHaveBeenCalledWith(token);
   });
@@ -70,12 +70,12 @@ describe('ActivationView', () => {
     expect(api.complete).not.toHaveBeenCalled();
   });
 
-  it.each(['short', '😀'.repeat(11), '😀'.repeat(19)])('rejects a password outside client bounds before mutation', async (password) => {
+  it.each(['short', '😀'.repeat(7), '😀'.repeat(19)])('rejects a password outside client bounds before mutation', async (password) => {
     renderActivation();
     await screen.findByLabelText('Heslo');
     enterPasswords(password);
     submit();
-    expect(screen.getByRole('alert')).toHaveTextContent(/12 znaků|příliš dlouhé/);
+    expect(screen.getByRole('alert')).toHaveTextContent(/8 znaků|příliš dlouhé/);
     expect(api.complete).not.toHaveBeenCalled();
   });
 

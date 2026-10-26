@@ -1,10 +1,11 @@
 import { BillingSettings } from '../features/invoice-billing/BillingSettings';
 import { NotificationSettings } from '../features/notifications/NotificationSettings';
 import { appDataSource } from '../lib/app-config';
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { ArrowLeft, LogOut, Moon, Palette, Sun, UserRound, FileText, Bell } from 'lucide-react';
+import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { ArrowLeft, LogOut, Moon, Palette, Sun, UserRound, FileText, Bell, BookOpen } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
+import { CrewGettingStartedContext } from '../features/onboarding/CrewGettingStartedContext';
 import { useAuth } from '../app/providers/useAuth';
 import { useAppContext } from '../context/useAppContext';
 import type { Contractor } from '../types';
@@ -18,6 +19,7 @@ import {
 } from '../features/crew/services/crew.service';
 
 const SettingsView = () => {
+  const gettingStarted = useContext(CrewGettingStartedContext);
   const { darkMode, setDarkMode, settingsSection, setSettingsSection } = useAppContext();
   const { currentProfileId, currentUserId, role: authRole, isRoleSwitching, isAuthRequired, profile, signOut } = useAuth();
   const activation = useMemo(() => ({ active: false, currentProfileId, currentUserId, authRole, isRoleSwitching }), [currentProfileId, currentUserId, authRole, isRoleSwitching]);
@@ -151,6 +153,19 @@ const SettingsView = () => {
       {settingsSection === 'menu' && (
         <>
           <div className="grid max-w-3xl grid-cols-1 gap-4 md:grid-cols-2">
+            {gettingStarted ? (
+              <Card className="text-left transition-all hover:border-[color:rgb(var(--nodu-accent-rgb)/0.24)]">
+                <button type="button" onClick={gettingStarted.openGuide} className="min-h-11 h-full w-full text-left">
+                  <CardHeader>
+                    <div className="mb-2 inline-flex h-11 w-11 items-center justify-center rounded-[16px] bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)]">
+                      <BookOpen size={18} aria-hidden="true" />
+                    </div>
+                    <CardTitle className="text-lg">Jak používat nodu</CardTitle>
+                    <CardDescription>Krátký průvodce směnami, potvrzením a výkazy.</CardDescription>
+                  </CardHeader>
+                </button>
+              </Card>
+            ) : null}
             {settingsCards.map((card) => (
               <Card
                 key={card.id}

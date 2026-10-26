@@ -3,9 +3,10 @@ import { App } from '@capacitor/app';
 import { Capacitor, type PluginListenerHandle } from '@capacitor/core';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ActivationLinkContext, consumeBrowserActivationToken, parseActivationLink } from './activation-link';
+import { isLocalOnboardingPilot } from './local-pilot';
 import { isOnboardingEnabled } from './services/activation.service';
 
-const NativeActivationLinks = ({ children }: { children: ReactNode }) => {
+const NativeActivationLinks = ({ children, gateChildren = true }: { children: ReactNode; gateChildren?: boolean }) => {
   const navigate = useNavigate();
   const navigateRef = useRef(navigate);
   useLayoutEffect(() => { navigateRef.current = navigate; }, [navigate]);
@@ -52,7 +53,7 @@ const NativeActivationLinks = ({ children }: { children: ReactNode }) => {
     const trustedOrigins = (import.meta.env.VITE_ONBOARDING_TRUSTED_ORIGINS ?? '').split(',').map((value) => value.trim()).filter(Boolean);
     const acceptUrl = (url: string) => {
       if (cancelled) return;
-      const token = parseActivationLink(url, trustedOrigins);
+      const token = parseActivationLink(url, trustedOrigins, isLocalOnboardingPilot());
       if (token) acceptToken(token);
     };
 
@@ -60,6 +61,7 @@ const NativeActivationLinks = ({ children }: { children: ReactNode }) => {
       if (cancelled) return;
       receivedWarmUrl = true;
       acceptUrl(url);
+      setNativeReady(true);
     }).then((handle) => {
       if (cancelled) void handle.remove().catch(() => {});
       else listener = handle;
@@ -76,11 +78,11 @@ const NativeActivationLinks = ({ children }: { children: ReactNode }) => {
     };
   }, [acceptToken, enabled, nativePlatform]);
 
-  const value = useMemo(() => ({ ...invitation, clearToken }), [clearToken, invitation]);
+  const value = useMemo(() => ({ ...invitation, ready: invitation.ready && nativeReady, clearToken }), [clearToken, invitation, nativeReady]);
   const awaitingActivationRoute = Boolean(invitation.token) && pathname !== '/activate';
   return (
     <ActivationLinkContext.Provider value={value}>
-      {nativeReady && !awaitingActivationRoute ? children : <div role="status" className="flex min-h-screen items-center justify-center bg-[color:var(--nodu-paper)] text-[color:var(--nodu-text)]">Otevírám aplikaci…</div>}
+      {!gateChildren || (nativeReady && !awaitingActivationRoute) ? children : <div role="status" className="flex min-h-screen items-center justify-center bg-[color:var(--nodu-paper)] text-[color:var(--nodu-text)]">Otevírám aplikaci…</div>}
     </ActivationLinkContext.Provider>
   );
 };

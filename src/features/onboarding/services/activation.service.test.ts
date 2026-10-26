@@ -52,8 +52,8 @@ describe('activation API', () => {
   });
 
   it('counts Unicode codepoints and enforces the 72 UTF-8 byte bound before mutation', async () => {
-    expect(isValidActivationPassword('😀'.repeat(11))).toBe(false);
-    expect(isValidActivationPassword('😀'.repeat(12))).toBe(true);
+    expect(isValidActivationPassword('😀'.repeat(7))).toBe(false);
+    expect(isValidActivationPassword('😀'.repeat(8))).toBe(true);
     expect(isValidActivationPassword('a'.repeat(72))).toBe(true);
     expect(isValidActivationPassword('a'.repeat(73))).toBe(false);
     expect(isValidActivationPassword('😀'.repeat(19))).toBe(false);

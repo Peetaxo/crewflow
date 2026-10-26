@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { assertPilotTarget, renderActivationEmail } from './onboarding-pilot-invite-lib.mjs';
 
 const target = {
@@ -31,7 +32,7 @@ for (const [name, replacement] of [
 test('renders the 48-hour invitation with escaped identity and both local activation paths', () => {
   const token = 'a'.repeat(64);
   const activationUrl = `http://127.0.0.1:8096/activate#token=${token}`;
-  const nativeUrl = `nodu://activate#token=${token}`;
+  const nativeUrl = `nodu-test://activate#token=${token}`;
   const message = renderActivationEmail({ firstName: '<Test & Crew>', activationUrl, nativeUrl });
   assert.match(message.subject, /nodu/);
   assert.match(message.html, /48 hodin/);
@@ -49,4 +50,21 @@ test('rejects an untrusted activation destination while rendering', () => {
   assert.throws(() => renderActivationEmail({
     firstName: 'Test', activationUrl: 'javascript:alert(1)', nativeUrl: 'nodu://activate',
   }));
+});
+
+
+test('keeps compatibility for existing ordinary native activation links', () => {
+  const token = 'b'.repeat(64);
+  assert.doesNotThrow(() => renderActivationEmail({ firstName: 'Test', activationUrl: `http://127.0.0.1:8096/activate#token=${token}`, nativeUrl: `nodu://activate#token=${token}` }));
+});
+
+test('provides a clearly separate one-hour local recovery template without enabling localhost mail in source config', () => {
+  const template = readFileSync(new URL('../supabase/templates/recovery-pilot.html', import.meta.url), 'utf8');
+  assert.ok(template.includes('http://127.0.0.1:8096/reset-password#token_hash={{ .TokenHash }}'));
+  assert.ok(template.includes('nodu-test://reset-password#token_hash={{ .TokenHash }}'));
+  assert.match(template, /1 hodinu/);
+  assert.doesNotMatch(template, /48 hodin|ConfirmationURL|access_token|refresh_token/);
+  const config = readFileSync(new URL('../supabase/config.toml', import.meta.url), 'utf8');
+  assert.match(config, /\[auth\]\s*minimum_password_length = 8/);
+  assert.doesNotMatch(config, /\[auth\.email\.template\.recovery\]/);
 });

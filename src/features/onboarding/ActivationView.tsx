@@ -125,7 +125,7 @@ const ActivationOperation = ({ initialToken, clearToken }: { initialToken: strin
       return;
     }
     if (!isValidActivationPassword(password)) {
-      setValidationError([...password].length < 12 ? 'Použij alespoň 12 znaků.' : 'Heslo je příliš dlouhé. Zvol kratší heslo.');
+      setValidationError([...password].length < 8 ? 'Použij alespoň 8 znaků.' : 'Heslo je příliš dlouhé. Zvol kratší heslo.');
       return;
     }
     if (password !== confirmation) {
@@ -211,7 +211,7 @@ const ActivationOperation = ({ initialToken, clearToken }: { initialToken: strin
             className="h-11"
           />
         </label>
-        <p id="password-guidance" className="text-xs leading-5 text-[color:var(--nodu-text-soft)]">Použij alespoň 12 znaků. Můžeš použít i celou větu.</p>
+        <p id="password-guidance" className="text-xs leading-5 text-[color:var(--nodu-text-soft)]">Použij alespoň 8 znaků. Můžeš použít i celou větu.</p>
         <label className="block space-y-2">
           <span className="font-medium">Heslo znovu</span>
           <Input

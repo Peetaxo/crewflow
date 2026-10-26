@@ -1,6 +1,7 @@
 import React from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import CrewGettingStartedGate from '../../features/onboarding/CrewGettingStartedGate';
 import { useAuth } from '../../app/providers/useAuth';
 import { useAppContext } from '../../context/useAppContext';
 import { useIsMobile } from '../../hooks/use-mobile';
@@ -149,6 +150,6 @@ const AppLayoutContent: React.FC = () => {
   );
 };
 
-const AppLayout=()=> <NotificationsProvider><AppLayoutContent/></NotificationsProvider>;
+const AppLayout=()=> <NotificationsProvider><CrewGettingStartedGate><AppLayoutContent/></CrewGettingStartedGate></NotificationsProvider>;
 
 export default AppLayout;

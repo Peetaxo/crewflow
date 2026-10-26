@@ -12,6 +12,11 @@ describe('activation link validation', () => {
     expect(parseActivationLink(`https://crew.example.test/activate#token=${token}`, trusted)).toBe(token);
   });
 
+  it('accepts the unique test scheme only under an explicit local-pilot gate', () => {
+    expect(parseActivationLink(`nodu-test://activate#token=${token}`, trusted)).toBeNull();
+    expect(parseActivationLink(`nodu-test://activate#token=${token}`, trusted, true)).toBe(token);
+  });
+
   it.each([
     'https://evil.example/activate', 'https://crew.example.test.evil.example/activate',
     'http://crew.example.test/activate', 'https://crew.example.test:444/activate',

@@ -58,8 +58,8 @@ export function createActivationHandler(dependencies: ActivationDependencies) {
       body = parsed as Record<string, unknown>;
     } catch { return fail("invalid_invitation"); }
     if ((body.action !== "preview" && body.action !== "complete") || typeof body.token !== "string" || !/^[a-f0-9]{64}$/.test(body.token)) return fail("invalid_invitation");
-    // GoTrue's bcrypt limit is 72 UTF8 bytes; the pilot minimum is 12 Unicode codepoints.
-    if (body.action === "complete" && (typeof body.password !== "string" || [...body.password].length < 12 || new TextEncoder().encode(body.password).length > 72)) return fail("invalid_password");
+    // GoTrue's bcrypt limit is 72 UTF8 bytes; the pilot minimum is 8 Unicode codepoints.
+    if (body.action === "complete" && (typeof body.password !== "string" || [...body.password].length < 8 || new TextEncoder().encode(body.password).length > 72)) return fail("invalid_password");
     try {
       const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body.token));
       const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");

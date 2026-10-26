@@ -165,12 +165,12 @@ try {
       for (const [label, password, accepted] of [
         ['ascii72', ascii72, true], ['ascii73', ascii72 + 'x', false],
         ['utf8-72', utf8_72, true], ['utf8-73', utf8_72 + 'x', false],
-        ['unicode11', '🔒'.repeat(11), false], ['unicode12', '🔒'.repeat(12), true],
+        ['unicode7', '🔒'.repeat(7), false], ['unicode8', '🔒'.repeat(8), true],
       ]) {
         const invite = await issue(`password-${label}`);
         const response = await complete(invite.token, password);
         if (accepted) {
-          check(response.status === 200, 'valid 12-codepoint and at-most-72-byte password accepted');
+          check(response.status === 200, 'valid 8-codepoint and at-most-72-byte password accepted');
           assertActive(invite.token);
           check(!(await signIn(invite.email, password)).result.error, 'boundary password signs in');
         } else {

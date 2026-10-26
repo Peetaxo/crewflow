@@ -74,8 +74,8 @@ describe("invitation activation handler", () => {
     ["76 UTF8 bytes", "🔒".repeat(19), false],
     ["72 two-byte UTF8 bytes", "é".repeat(36), true],
     ["74 two-byte UTF8 bytes", "é".repeat(37), false],
-    ["11 Unicode codepoints", "🔒".repeat(11), false],
-    ["12 Unicode codepoints", "🔒".repeat(12), true],
+    ["7 Unicode codepoints", "🔒".repeat(7), false],
+    ["8 Unicode codepoints", "🔒".repeat(8), true],
   ])("enforces password boundary %s before claiming", async (_label, password, accepted) => {
     const f = fixture();
     const response = await f.request({ action: "complete", token, password });

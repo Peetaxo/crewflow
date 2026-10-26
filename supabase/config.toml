@@ -1,3 +1,6 @@
+[auth]
+minimum_password_length = 8
+
 [functions.generate-invoice-pdf]
 verify_jwt = true
 static_files = ["./functions/generate-invoice-pdf/assets/*"]

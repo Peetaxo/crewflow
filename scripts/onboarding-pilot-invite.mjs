@@ -33,7 +33,7 @@ async function main() {
     throw new Error('Unexpected local invitation response.');
   }
   const activationUrl = `http://127.0.0.1:8096/activate#token=${invitation.token}`;
-  const nativeUrl = `nodu://activate#token=${invitation.token}`;
+  const nativeUrl = `nodu-test://activate#token=${invitation.token}`;
   const message = renderActivationEmail({ firstName: 'Mobilní', activationUrl, nativeUrl });
   const delivery = await fetch(`${mailpitUrl}/api/v1/send`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },

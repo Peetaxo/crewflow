@@ -1,5 +1,6 @@
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '../../../lib/supabase';
+import { isValidOnboardingPassword } from '../password-policy';
 import { isActivationToken } from '../activation-link';
 
 export type InvitationPreview = {
@@ -22,8 +23,7 @@ export class ActivationError extends Error {
 }
 
 export const isOnboardingEnabled = (): boolean => import.meta.env.VITE_ONBOARDING_ENABLED === 'true';
-export const isValidActivationPassword = (password: string): boolean => [...password].length >= 12
-  && new TextEncoder().encode(password).length <= 72;
+export const isValidActivationPassword = isValidOnboardingPassword;
 
 const errorCode = (value: unknown): ActivationErrorCode => {
   const code = value && typeof value === 'object' && 'error' in value ? value.error : undefined;

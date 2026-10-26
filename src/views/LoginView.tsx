@@ -1,11 +1,12 @@
 import { FormEvent, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { LockKeyhole, Mail } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { useAuth } from '../app/providers/useAuth';
+import { isPasswordRecoveryEnabled } from '../features/onboarding/services/password-recovery.service';
 import noduLogo from '../assets/nodu-logo.svg';
 
 const LoginView = () => {
@@ -80,6 +81,8 @@ const LoginView = () => {
               />
             </div>
           </label>
+
+          {isPasswordRecoveryEnabled() && <Link to="/forgot-password" className="inline-flex min-h-11 items-center underline underline-offset-4">Zapomenuté heslo</Link>}
 
           {error && (
             <div className="rounded-2xl border border-[color:var(--nodu-error-border)] bg-[color:var(--nodu-error-bg)] px-4 py-3 text-sm text-[color:var(--nodu-error-text)]">

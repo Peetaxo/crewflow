@@ -8,12 +8,12 @@ const fragmentToken = (hash: string): string | null => {
 };
 
 /** Native handoff accepts only explicitly trusted destinations, with no redirects. */
-export const parseActivationLink = (value: string, trustedHttpsOrigins: readonly string[] = []): string | null => {
+export const parseActivationLink = (value: string, trustedHttpsOrigins: readonly string[] = [], allowLocalPilot = false): string | null => {
   try {
     const url = new URL(value);
     if (url.username || url.password || url.search) return null;
 
-    const isPilot = url.protocol === 'nodu:' && url.host === 'activate' && url.pathname === '';
+    const isPilot = (url.protocol === 'nodu:' || (allowLocalPilot && url.protocol === 'nodu-test:')) && url.host === 'activate' && url.pathname === '';
     const isTrustedWeb = url.protocol === 'https:' && url.pathname === '/activate'
       && trustedHttpsOrigins.includes(url.origin);
     if (!isPilot && !isTrustedWeb) return null;

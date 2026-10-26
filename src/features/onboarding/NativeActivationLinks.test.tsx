@@ -83,6 +83,22 @@ describe('native activation handoff', () => {
     expect(screen.getByTestId('token')).toHaveTextContent(secondToken);
   });
 
+  it('accepts the unique simulator scheme only for the explicitly enabled local pilot', async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'http://127.0.0.1:55431');
+    renderLinks(); await screen.findByTestId('path');
+    act(() => onOpen({ url: `nodu-test://activate#token=${token}` }));
+    expect(screen.getByTestId('path')).toHaveTextContent('/activate');
+    expect(screen.getByTestId('token')).toHaveTextContent(token);
+  });
+
+  it('rejects the simulator scheme outside the local pilot', async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co');
+    renderLinks(); await screen.findByTestId('path');
+    act(() => onOpen({ url: `nodu-test://activate#token=${token}` }));
+    expect(screen.getByTestId('path')).toHaveTextContent('/app');
+    expect(screen.getByTestId('token')).toBeEmptyDOMElement();
+  });
+
   it('rejects external links without navigation', async () => {
     renderLinks();
     await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent('/app'));

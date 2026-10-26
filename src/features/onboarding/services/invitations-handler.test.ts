@@ -111,6 +111,7 @@ describe("privileged test invitation handler", () => {
     expect(f.store.prepare).toHaveBeenCalledWith({ ...invite, expectedEmail: email });
     expect(f.mail.send).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ email, subject: expect.any(String), text: expect.stringContaining("48 hodin"), html: expect.stringContaining("&lt;Ada &amp; Crew&gt;") }));
     expect(f.mail.send.mock.calls[0][0].html).toContain(`http://127.0.0.1:8096/activate#token=${token}`);
+    expect(f.mail.send.mock.calls[0][0].html).toContain(`nodu-test://activate#token=${token}`);
     expect(f.store.capture).toHaveBeenCalledExactlyOnceWith(profileId, requestId, hash);
     expect(f.store.cancel).not.toHaveBeenCalled();
   });

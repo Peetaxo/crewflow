@@ -16,20 +16,20 @@ Spec: docs/superpowers/specs/2026-10-26-member-onboarding-completion-design.md. 
 
 Owned files: new password-recovery service/link/context/views/tests under src/features/onboarding; App.tsx; LoginView.tsx/tests; existing activation policy/view/handler/tests and their integration boundary cases; activation-link/NativeActivationLinks and tests; local activation-email renderer/manual handler and tests for the unique test scheme; supabase/templates/recovery-pilot.html; source Supabase Auth minimum8 configuration. Do not touch AppLayout, SettingsView or welcome files.
 
-- [ ] Write failing tests for gating, generic requests, exact recovery-type verification, isolated sessions,8-character/72-byte bounds, cleanup/stale operation and native/web cold/warm links. Update existing activation boundary expectations from11/12 to7/8 and observe intended RED.
-- [ ] Implement request service and per-token completion operation with explicit disposal and retries. Verified recovery-session identity authorizes updateUser; opening a link does not sign in the normal client. Catch safe error codes only.
-- [ ] Implement request/reset views with accessible Czech labels, duplicate-submit suppression, validation, safe retry/new-request and success-to-local-signout/login. Add pilot login link and gated routes/context provider. No normal-build network calls when disabled.
-- [ ] Support nodu-test links only in the local pilot, while preserving existing activation URLs and public scheme behavior. Update only local capture renderer/fixtures to generate unique test-native activation links. Add a named local recovery email template; no production localhost template activation.
-- [ ] Run focused tests/lint and compare type diagnostics. Report tested diff/files/logs to parent; no Git commits while the independent task writes. Parent stages exact owned files and obtains spec then quality review.
+- [x] Write failing tests for gating, generic requests, exact recovery-type verification, isolated sessions,8-character/72-byte bounds, cleanup/stale operation and native/web cold/warm links. Update existing activation boundary expectations from11/12 to7/8 and observe intended RED.
+- [x] Implement request service and per-token completion operation with explicit disposal and retries. Verified recovery-session identity authorizes updateUser; opening a link does not sign in the normal client. Catch safe error codes only.
+- [x] Implement request/reset views with accessible Czech labels, duplicate-submit suppression, validation, safe retry/new-request and success-to-local-signout/login. Add pilot login link and gated routes/context provider. No normal-build network calls when disabled.
+- [x] Support nodu-test links only in the local pilot, while preserving existing activation URLs and public scheme behavior. Update only local capture renderer/fixtures to generate unique test-native activation links. Add a named local recovery email template; no production localhost template activation.
+- [x] Run focused tests/lint and compare type diagnostics. Report tested diff/files/logs to parent; no Git commits while the independent task writes. Parent stages exact owned files and obtains spec then quality review.
 
 ## Task 2 — First-use guide
 
 Owned files: new CrewGettingStarted component/gate/local preference service and tests; components/layout/AppLayout.tsx/tests; views/SettingsView.tsx/tests. Do not touch App.tsx, LoginView, activation/recovery files or AuthProvider.
 
-- [ ] Write failing tests for genuine crew eligibility, disabled/managers/dev/loading boundaries, first display, skip/continue, per-account persistence, storage failure, identity change and reopening from Settings.
-- [ ] Implement the3-point guide from the spec using existing tokens/controls,44px actions and safe mobile layout. Keep it separate from public WelcomeView.
-- [ ] Mount a keyed gate inside existing authenticated AppProvider context. Both skip/continue allow entry, primary opens my-shifts. Store only UUID/version preference. Reopen the same guide from a crew Settings control without changing the settings-section union or other settings behavior.
-- [ ] Run focused tests/lint, self-review and report exact owned files/logs. No Git staging/commits; parent handles those and independent reviews.
+- [x] Write failing tests for genuine crew eligibility, disabled/managers/dev/loading boundaries, first display, skip/continue, per-account persistence, storage failure, identity change and reopening from Settings.
+- [x] Implement the3-point guide from the spec using existing tokens/controls,44px actions and safe mobile layout. Keep it separate from public WelcomeView.
+- [x] Mount a keyed gate inside existing authenticated AppProvider context. Both skip/continue allow entry, primary opens my-shifts. Store only UUID/version preference. Reopen the same guide from a crew Settings control without changing the settings-section union or other settings behavior.
+- [x] Run focused tests/lint, self-review and report exact owned files/logs. No Git staging/commits; parent handles those and independent reviews.
 
 ## Task 3 — Runtime, integration and installations (parent)
 
@@ -40,3 +40,9 @@ Owned files: new CrewGettingStarted component/gate/local preference service and 
 - [ ] Save verification and a concise self-service trial guide; Tally and real delivery remain disabled. Finish all code/configuration work independently of a pending human password entry.
 
 Official references checked: Supabase resetPasswordForEmail, verifyOtp and email template docs; current changelog fetched2026-10-26. Existing pinned SDK supports recovery verification and scope-local signout; no dependency upgrade.
+
+## Current handoff (2026-10-26)
+
+Source implementation and both reviews completed; full suite2733/2733, merged-main focused383/383 and build passed. Simulator normal/pilot build/install/launch succeeded. Physical Peetax became unavailable during its build (destination missing, CoreDevice tunnel unavailable); it is not updated. Source types remain109 existing diagnostics with no new errors.
+
+The actual new-member form revealed a pre-existing missing management profile INSERT policy. Its narrow migration and RED/deny tests are ready. Automatic approval rejected runtime CREATE POLICY because it expands COO/CrewHead rights without explicit user authorization; an asynchronous consent question is pending. Do not apply or work around that change until approved. Previous API activation/recovery trial passed9 groups; expanded12-group run is waiting for that policy. Existing-profile UI invitation still works and was captured with48-hour expiry. Human native new-password entry/first-use/recovery UI confirmation remains pending.

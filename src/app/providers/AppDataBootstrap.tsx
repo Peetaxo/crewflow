@@ -20,12 +20,18 @@ const AppDataBootstrap = ({ children }: { children: ReactNode }) => {
     currentUserId,
     isAuthRequired,
     isAuthenticated,
+    isDevSession,
+    profile,
+    retryAuthMetadata,
     isLoading: isAuthLoading,
     role,
   } = useAuth();
   const scopeKey = isAuthRequired
-    ? [currentUserId ?? currentProfileId ?? 'authenticated', role ?? 'unknown'].join(':')
+    ? [currentUserId ?? 'authenticated', currentProfileId ?? 'unknown-profile', role ?? 'unknown'].join(':')
     : 'local';
+  const requiresVerifiedMetadata = appDataSource === 'supabase' && isAuthRequired && !isDevSession;
+  const hasVerifiedMetadata = !requiresVerifiedMetadata || Boolean(currentUserId && currentProfileId && profile && role);
+  const metadataError = requiresVerifiedMetadata && isAuthenticated && !isAuthLoading && !hasVerifiedMetadata;
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<{ scopeKey: string; status: BootstrapStatus }>({
     scopeKey,
@@ -58,6 +64,11 @@ const AppDataBootstrap = ({ children }: { children: ReactNode }) => {
       return;
     }
 
+    if (!hasVerifiedMetadata) {
+      setState({ scopeKey, status: 'error' });
+      return;
+    }
+
     const currentGeneration = ++generation.current;
     setState({ scopeKey, status: 'loading' });
 
@@ -68,7 +79,7 @@ const AppDataBootstrap = ({ children }: { children: ReactNode }) => {
       setState({ scopeKey, status: 'ready' });
     };
 
-    void bootstrapInitialAppData()
+    void bootstrapInitialAppData(() => generation.current === currentGeneration)
       .then(() => {
         if (generation.current !== currentGeneration) return;
 
@@ -97,9 +108,11 @@ const AppDataBootstrap = ({ children }: { children: ReactNode }) => {
         readyTimer.current = null;
       }
     };
-  }, [attempt, isAuthLoading, isAuthRequired, isAuthenticated, scopeKey]);
+  }, [attempt, hasVerifiedMetadata, isAuthLoading, isAuthRequired, isAuthenticated, scopeKey]);
 
-  const status = state.scopeKey === scopeKey ? state.status : 'loading';
+  const status = requiresVerifiedMetadata && (!isAuthenticated || isAuthLoading)
+    ? 'loading'
+    : metadataError ? 'error' : state.scopeKey === scopeKey ? state.status : 'loading';
   if (status === 'loading') return <AppLoadingMark />;
   if (status === 'error') {
     return (
@@ -109,7 +122,10 @@ const AppDataBootstrap = ({ children }: { children: ReactNode }) => {
           <button
             type="button"
             className="mt-4 rounded-xl bg-[color:var(--nodu-accent)] px-4 py-2 text-white"
-            onClick={() => setAttempt((value) => value + 1)}
+            onClick={() => {
+              if (metadataError) void retryAuthMetadata();
+              else setAttempt((value) => value + 1);
+            }}
           >
             Zkusit znovu
           </button>

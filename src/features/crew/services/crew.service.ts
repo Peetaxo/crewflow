@@ -289,6 +289,10 @@ export const getCrewDetailData = (profileId: string | null): {
 };
 
 export const createCrew = async (input: CreateCrewInput): Promise<CrewMember> => {
+  const epoch = crewHydrationEpoch;
+  const assertCurrentScope = () => {
+    if (epoch !== crewHydrationEpoch) throw new Error('Přístup ke crew se změnil. Otevřete profil znovu.');
+  };
   const normalized = normalizeCrewMember(input);
   validateCrewMember(normalized);
 
@@ -305,6 +309,7 @@ export const createCrew = async (input: CreateCrewInput): Promise<CrewMember> =>
       .select('*')
       .single();
 
+    assertCurrentScope();
     if (profileInsert.error) {
       throw new Error(profileInsert.error.message);
     }
@@ -321,6 +326,7 @@ export const createCrew = async (input: CreateCrewInput): Promise<CrewMember> =>
     };
   }
 
+  assertCurrentScope();
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     contractors: [...snapshot.contractors, created],
@@ -391,6 +397,10 @@ export const updateContractor = async (contractor: Contractor): Promise<Contract
 };
 
 export const deleteCrew = async (id: number): Promise<DeleteCrewResult> => {
+  const epoch = crewHydrationEpoch;
+  const assertCurrentScope = () => {
+    if (epoch !== crewHydrationEpoch) throw new Error('Přístup ke crew se změnil. Otevřete profil znovu.');
+  };
   let existing: Contractor | null = null;
 
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
@@ -417,6 +427,7 @@ export const deleteCrew = async (id: number): Promise<DeleteCrewResult> => {
       .delete()
       .eq('profile_id', existing.profileId);
 
+    assertCurrentScope();
     if (assignmentDelete.error) {
       throw new Error(assignmentDelete.error.message);
     }
@@ -431,6 +442,7 @@ export const deleteCrew = async (id: number): Promise<DeleteCrewResult> => {
     }
   }
 
+  assertCurrentScope();
   updateLocalAppState((snapshot) => {
     existing = snapshot.contractors.find((member) => member.id === id) ?? null;
     if (!existing) {

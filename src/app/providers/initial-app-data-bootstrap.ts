@@ -5,10 +5,19 @@ import { loadSupabaseTimelogs } from '../../features/timelogs/services/timelogs.
 import { getLocalAppState } from '../../lib/app-data';
 import { queryClient } from '../../lib/query-client';
 import { queryKeys } from '../../lib/query-keys';
-import { resetSupabaseDataScope } from './reset-supabase-data-scope';
+import { getSupabaseDataScopeVersion, resetSupabaseDataScope } from './reset-supabase-data-scope';
 
-export const bootstrapInitialAppData = async (): Promise<void> => {
-  await resetSupabaseDataScope();
+let bootstrapGeneration = 0;
+
+export const bootstrapInitialAppData = async (isActive: () => boolean = () => true): Promise<void> => {
+  if (!isActive()) return;
+  const generation = ++bootstrapGeneration;
+  const reset = resetSupabaseDataScope();
+  const scopeVersion = getSupabaseDataScopeVersion();
+  const isCurrent = () => isActive() && generation === bootstrapGeneration
+    && scopeVersion === getSupabaseDataScopeVersion();
+  await reset;
+  if (!isCurrent()) return;
   await Promise.all([
     loadSupabaseEvents(),
     loadSupabaseTimelogs(),
@@ -16,6 +25,7 @@ export const bootstrapInitialAppData = async (): Promise<void> => {
     loadSupabaseProjects(),
   ]);
 
+  if (!isCurrent()) return;
   const snapshot = getLocalAppState();
   queryClient.setQueryData(queryKeys.events.all, snapshot.events ?? []);
   queryClient.setQueryData(queryKeys.timelogs.all, snapshot.timelogs ?? []);

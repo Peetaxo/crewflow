@@ -17,6 +17,7 @@ const testMocks = vi.hoisted(() => ({
   setCurrentTab: vi.fn(),
   setSelectedContractorProfileId: vi.fn(),
   saveTimelog: vi.fn().mockResolvedValue(undefined),
+  reloadTimelogForEditor: vi.fn(),
 }));
 
 const testData = vi.hoisted(() => ({
@@ -82,6 +83,7 @@ vi.mock('../../features/timelogs/services/timelogs.service', () => ({
     };
   },
   saveTimelog: testMocks.saveTimelog,
+  reloadTimelogForEditor: testMocks.reloadTimelogForEditor,
 }));
 
 vi.mock('sonner', () => ({
@@ -107,6 +109,74 @@ const syncEditingTimelogUpdates = () => {
 };
 
 describe('MobileTimelogEditModal', () => {
+  it('keeps the original reviewed version and typed draft when the same report is refreshed in the background', async () => {
+    vi.useFakeTimers();
+    testState.editingTimelog = { ...testState.editingTimelog!, supabaseId: 'report-1', updatedAt: 'v1' };
+    const view = render(<MobileTimelogEditModal />);
+    fireEvent.change(screen.getByLabelText('Poznámka k výkazu'), { target: { value: 'My unsaved draft' } });
+
+    testState.editingTimelog = { ...testState.editingTimelog!, note: 'Another writer', updatedAt: 'v2' };
+    view.rerender(<MobileTimelogEditModal />);
+    expect(screen.getByLabelText('Poznámka k výkazu')).toHaveValue('My unsaved draft');
+    await act(async () => { await vi.advanceTimersByTimeAsync(800); });
+
+    expect(testMocks.saveTimelog).toHaveBeenCalledWith(expect.objectContaining({ note: 'My unsaved draft', updatedAt: 'v1' }));
+  });
+
+  it('preserves typed content after a conflict until the user explicitly reloads the current version', async () => {
+    vi.useFakeTimers();
+    syncEditingTimelogUpdates();
+    testState.editingTimelog = { ...testState.editingTimelog!, supabaseId: 'report-1', updatedAt: 'v1' };
+    const current = { ...testState.editingTimelog, note: 'Another writer', km: 18, updatedAt: 'v2' };
+    testMocks.saveTimelog.mockRejectedValueOnce(new Error('Výkaz se mezitím změnil.'));
+    testMocks.reloadTimelogForEditor
+      .mockRejectedValueOnce(new Error('Výkaz se během načítání změnil. Načtěte aktuální verzi znovu.'))
+      .mockResolvedValueOnce(current);
+    render(<MobileTimelogEditModal />);
+
+    fireEvent.change(screen.getByLabelText('Poznámka k výkazu'), { target: { value: 'My unsaved draft' } });
+    fireEvent.change(screen.getByLabelText('Cestovné celkem (km)'), { target: { value: '42' } });
+    await act(async () => { await vi.advanceTimersByTimeAsync(800); });
+
+    expect(screen.getByLabelText('Poznámka k výkazu')).toHaveValue('My unsaved draft');
+    expect(screen.getByLabelText('Cestovné celkem (km)')).toHaveValue(42);
+    expect(testMocks.setEditingTimelog).not.toHaveBeenCalledWith(null);
+    expect(screen.getByRole('alert')).toHaveTextContent('Výkaz se mezitím změnil.');
+    expect(testMocks.reloadTimelogForEditor).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Načíst aktuální verzi' }));
+    await act(async () => { await Promise.resolve(); });
+
+    expect(testMocks.reloadTimelogForEditor).toHaveBeenCalledWith(expect.objectContaining({ note: 'My unsaved draft', km: 42, updatedAt: 'v1' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Výkaz se během načítání změnil.');
+    expect(screen.getByLabelText('Poznámka k výkazu')).toHaveValue('My unsaved draft');
+    expect(screen.getByLabelText('Cestovné celkem (km)')).toHaveValue(42);
+    expect(testState.editingTimelog).toMatchObject({ note: 'My unsaved draft', km: 42, updatedAt: 'v1' });
+    fireEvent.click(screen.getByRole('button', { name: 'Načíst aktuální verzi' }));
+    await act(async () => { await Promise.resolve(); });
+
+    expect(screen.getByLabelText('Poznámka k výkazu')).toHaveValue('Another writer');
+    expect(screen.getByLabelText('Cestovné celkem (km)')).toHaveValue(18);
+    expect(testMocks.setEditingTimelog).toHaveBeenLastCalledWith(current);
+  });
+
+  it('makes reload available after a submit conflict while keeping the reviewed draft', async () => {
+    vi.useFakeTimers();
+    testMocks.saveTimelog.mockRejectedValueOnce(new Error('Výkaz se mezitím změnil.'));
+    render(<MobileTimelogEditModal />);
+    fireEvent.change(screen.getByLabelText('Poznámka k výkazu'), { target: { value: 'My unsaved draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Odeslat ke kontrole' }));
+    const confirmation = screen.getByRole('dialog', { name: 'Odeslat výkaz ke kontrole?' });
+    await act(async () => {
+      fireEvent.click(within(confirmation).getByRole('button', { name: 'Odeslat ke kontrole' }));
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole('dialog', { name: 'Odeslat výkaz ke kontrole?' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Poznámka k výkazu')).toHaveValue('My unsaved draft');
+    expect(screen.getByRole('alert')).toHaveTextContent('Výkaz se mezitím změnil.');
+    expect(screen.getByRole('button', { name: 'Načíst aktuální verzi' })).toBeVisible();
+  });
+
   it('retires edits and pending callbacks when the same report becomes read-only externally', async () => {
     vi.useFakeTimers();
     let resolveSave!: (report: Timelog) => void;

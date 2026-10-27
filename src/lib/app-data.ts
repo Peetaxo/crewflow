@@ -142,6 +142,12 @@ export function updateLocalAppState(
   return nextSnapshot;
 }
 
+/** Retire account snapshots without disturbing local preview data or drafts. */
+export function resetSupabaseAppData(): void {
+  if (appDataSource !== 'supabase') return;
+  updateLocalAppState(() => emptyAppData);
+}
+
 export function subscribeToLocalAppState(listener: AppDataListener): () => void {
   localAppListeners.add(listener);
   return () => {

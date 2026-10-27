@@ -7,7 +7,7 @@ import { useIsMobile } from '../../hooks/use-mobile';
 import { MEAL_CONFIG, PHASE_CONFIG } from '../../constants';
 import { KM_RATE } from '../../data';
 import { calculateMealAllowance, calculateTotalHours, formatCurrency, normalizeMealSelection } from '../../utils';
-import { getTimelogDependencies, saveTimelog } from '../../features/timelogs/services/timelogs.service';
+import { getTimelogDependencies, reloadTimelogForEditor, saveTimelog } from '../../features/timelogs/services/timelogs.service';
 import { buildTimelogChangeSummary } from '../../features/timelogs/services/timelog-change-summary';
 import { canSubmitTimelog } from '../../features/timelogs/services/timelog-permissions';
 import { resolveTimelogDayDefaults } from '../../features/timelogs/services/timelog-day-ui';
@@ -26,6 +26,13 @@ export const LegacyTimelogEditModal = () => {
     role,
   } = useAppContext();
   const isMobile = useIsMobile();
+  const [saveError, setSaveError] = React.useState<string | null>(null);
+  const [isReloading, setIsReloading] = React.useState(false);
+  const currentEditorRef = React.useRef(editingTimelog);
+  React.useLayoutEffect(() => {
+    currentEditorRef.current = editingTimelog;
+    return () => { currentEditorRef.current = null; };
+  }, [editingTimelog]);
 
   if (isMobile) {
     return <MobileTimelogEditModal />;
@@ -68,7 +75,25 @@ export const LegacyTimelogEditModal = () => {
       await saveTimelog({ ...editingTimelog, status: 'pending_ch' });
       setEditingTimelog(null);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Nepodařilo se odeslat výkaz ke kontrole.');
+      const message = error instanceof Error ? error.message : 'Nepodařilo se odeslat výkaz ke kontrole.';
+      setSaveError(message);
+      toast.error(message);
+    }
+  };
+
+  const reloadCurrentTimelog = async () => {
+    if (isReloading) return;
+    const reviewed = editingTimelog;
+    setIsReloading(true);
+    try {
+      const current = await reloadTimelogForEditor(reviewed);
+      if (currentEditorRef.current !== reviewed) return;
+      setEditingTimelog(current);
+      setSaveError(null);
+    } catch (error) {
+      if (currentEditorRef.current === reviewed) setSaveError(error instanceof Error ? error.message : 'Nepodařilo se načíst výkaz.');
+    } finally {
+      setIsReloading(false);
     }
   };
 
@@ -129,6 +154,15 @@ export const LegacyTimelogEditModal = () => {
           </div>
 
           <div className="flex-1 space-y-4 overflow-y-auto p-5">
+            {saveError && (
+              <div role="alert" className="rounded-2xl border border-[color:var(--nodu-border)] p-4 text-sm">
+                <p>{saveError}</p>
+                <p className="mt-1">Načtením aktuální verze nahradíte rozepsané úpravy.</p>
+                <Button type="button" variant="outline" className="mt-2" disabled={isReloading} onClick={() => { void reloadCurrentTimelog(); }}>
+                  Načíst aktuální verzi
+                </Button>
+              </div>
+            )}
             <div className="rounded-[22px] border border-[color:rgb(var(--nodu-accent-rgb)/0.18)] bg-[color:rgb(var(--nodu-accent-rgb)/0.08)] p-4">
               <div className="flex items-center justify-between">
                 <div className="text-xs uppercase tracking-[0.18em] text-[color:var(--nodu-accent)]">Celkem hodin</div>
@@ -402,7 +436,9 @@ export const LegacyTimelogEditModal = () => {
                     : editingTimelog);
                   setEditingTimelog(null);
                 } catch (error) {
-                  toast.error(error instanceof Error ? error.message : 'Nepodařilo se uložit výkaz.');
+                  const message = error instanceof Error ? error.message : 'Nepodařilo se uložit výkaz.';
+                  setSaveError(message);
+                  toast.error(message);
                 }
               }}
               className="flex-1"

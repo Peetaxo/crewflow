@@ -4,6 +4,7 @@ import CrewGettingStartedGate from '../../features/onboarding/CrewGettingStarted
 import { useAppContext } from '../../context/useAppContext';
 import { useIsMobile } from '../../hooks/use-mobile';
 import Sidebar from './Sidebar';
+import AppDataFreshness from './AppDataFreshness';
 import MobileCrewNav from './MobileCrewNav';
 import { useNavBadgeCounts } from './useNavBadgeCounts';
 import { NotificationsProvider } from '../../features/notifications/NotificationsProvider';
@@ -90,6 +91,7 @@ const AppLayoutContent: React.FC = () => {
       <main className={`nodu-page-frame ${isMobileAppShell ? 'nodu-page-frame--mobile-crew relative' : ''}`}>
         {isMobileAppShell&&<div className="absolute right-4 z-[45]" style={{top:'max(0.5rem, env(safe-area-inset-top))'}}><NotificationBell/></div>}
         <div className="mx-auto max-w-6xl">
+          <AppDataFreshness />
           <AnimatePresence mode="wait">{renderCurrentView()}</AnimatePresence>
         </div>
       </main>

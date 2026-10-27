@@ -20,6 +20,29 @@ describe('app-data Supabase loading', () => {
     expect(getLocalAppState().warehouseItems).toEqual([]);
   });
 
+  it('clears every Supabase snapshot slice synchronously and notifies subscribers', async () => {
+    vi.doMock('./app-config', () => ({ appDataSource: 'supabase' }));
+    const data = await import('./app-data');
+    data.updateLocalAppState((snapshot) => Object.fromEntries(
+      Object.keys(snapshot).map((key) => [key, [{ id: 'private-A' }]]),
+    ) as unknown as typeof snapshot);
+    const listener = vi.fn();
+    const unsubscribe = data.subscribeToLocalAppState(listener);
+    data.resetSupabaseAppData();
+    expect(Object.values(data.getLocalAppState()).every((slice) => slice.length === 0)).toBe(true);
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsubscribe();
+  });
+
+  it('preserves local preview data and drafts when retiring a Supabase scope', async () => {
+    vi.doMock('./app-config', () => ({ appDataSource: 'local' }));
+    const data = await import('./app-data');
+    data.updateLocalAppState((snapshot) => ({ ...snapshot, receipts: [{ id: 47 }] as typeof snapshot.receipts }));
+    const before = data.getLocalAppState();
+    data.resetSupabaseAppData();
+    expect(data.getLocalAppState()).toEqual(before);
+  });
+
   it('keeps local seed data available without local event clutter', async () => {
     vi.doMock('./app-config', () => ({
       appDataSource: 'local',

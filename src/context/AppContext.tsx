@@ -67,10 +67,10 @@ const normalizeUiSessionState = (
 type EvidenceActivation = { active: boolean; scopeKey: string; ready: boolean };
 
 /** Mask the old editor during render, then retire its state and async callbacks. */
-function useScopedTimelogEditor(scopeKey: string, ready: boolean) {
+function useScopedPrivateState<T>(scopeKey: string, ready: boolean) {
   const activation = useMemo<EvidenceActivation>(() => ({ active: false, scopeKey, ready }), [scopeKey, ready]);
   const activeRef = useRef<EvidenceActivation | null>(null);
-  const [state, setState] = useState<{ activation: EvidenceActivation; value: Timelog | null } | null>(null);
+  const [state, setState] = useState<{ activation: EvidenceActivation; value: T | null } | null>(null);
 
   useLayoutEffect(() => {
     activation.active = activation.ready;
@@ -82,7 +82,7 @@ function useScopedTimelogEditor(scopeKey: string, ready: boolean) {
     };
   }, [activation]);
 
-  const setTimelog = useCallback((next: Timelog | null) => {
+  const setValue = useCallback((next: T | null) => {
     if (!activation.active || activeRef.current !== activation) return;
     setState((current) => {
       if (!activation.active || activeRef.current !== activation) return current;
@@ -90,8 +90,9 @@ function useScopedTimelogEditor(scopeKey: string, ready: boolean) {
     });
   }, [activation]);
 
-  const timelog = ready && state?.activation === activation ? state.value : null;
-  return [timelog, setTimelog] as const;
+  const value = ready && state?.activation === activation ? state.value : null;
+  const isActive = useCallback(() => activation.active && activeRef.current === activation, [activation]);
+  return [value, setValue, isActive] as const;
 }
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
@@ -142,11 +143,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     isAuthenticated && !isAuthLoading && !isRoleSwitching
     && Boolean(currentUserId && currentProfileId && authRole) && authRole === role
   );
-  const [editingTimelog, setEditingTimelog] = useScopedTimelogEditor(evidenceScopeKey, evidenceReady);
-  const [editingProject, setEditingProject] = useState<Project | null>(initialUiSession?.editingProject ?? null);
-  const [editingReceipt, setEditingReceipt] = useState<ReceiptItem | null>(initialUiSession?.editingReceipt ?? null);
-  const [editingClient, setEditingClient] = useState<Client | null>(initialUiSession?.editingClient ?? null);
-  const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmData | null>(null);
+  const [editingTimelog, setEditingTimelog] = useScopedPrivateState<Timelog>(evidenceScopeKey, evidenceReady);
+  const [editingProject, setEditingProject] = useScopedPrivateState<Project>(evidenceScopeKey, evidenceReady);
+  const [editingReceipt, setEditingReceipt] = useScopedPrivateState<ReceiptItem>(evidenceScopeKey, evidenceReady);
+  const [editingClient, setEditingClient] = useScopedPrivateState<Client>(evidenceScopeKey, evidenceReady);
+  const [deleteConfirm, setDeleteConfirm, isDeleteScopeActive] = useScopedPrivateState<DeleteConfirmData>(evidenceScopeKey, evidenceReady);
   const [eventTab, setEventTab] = useState<string>(initialUiSession?.eventTab ?? 'overview');
   const [eventsViewMode, setEventsViewMode] = useState<'list' | 'calendar'>(initialUiSession?.eventsViewMode ?? 'list');
   const [eventsCalendarMode, setEventsCalendarMode] = useState<'month' | 'week'>(initialUiSession?.eventsCalendarMode ?? 'month');
@@ -254,9 +255,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setEventsCalendarMode(restoredState.eventsCalendarMode);
       setEventsFilter(restoredState.eventsFilter);
       setEventsCalendarDate(restoredState.eventsCalendarDate);
-      setEditingReceipt(restoredState.editingReceipt);
-      setEditingProject(restoredState.editingProject);
-      setEditingClient(restoredState.editingClient);
       pendingDeferredUiSession.current = null;
     }
   }, [authRole, currentTab, isAuthLoading, isAuthRequired, isMobile, role]);
@@ -317,7 +315,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   ]);
 
   const handleDelete = useCallback(async () => {
-    if (!deleteConfirm) return;
+    if (!deleteConfirm || !isDeleteScopeActive()) return;
     const { type, id } = deleteConfirm;
 
     try {
@@ -339,12 +337,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           break;
       }
 
+      if (!isDeleteScopeActive()) return;
       setDeleteConfirm(null);
       toast.success(`${deleteConfirm.name} smazano.`);
     } catch (error) {
+      if (!isDeleteScopeActive()) return;
       toast.error(error instanceof Error ? error.message : 'Nepodarilo se polozku smazat.');
     }
-  }, [deleteConfirm]);
+  }, [deleteConfirm, isDeleteScopeActive, setDeleteConfirm]);
 
   const value: AppContextType = {
     darkMode, setDarkMode,

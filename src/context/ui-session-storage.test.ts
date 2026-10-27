@@ -69,6 +69,29 @@ describe('ui session storage', () => {
     expect(window.sessionStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 
+  it('never serializes or restores any private editor and scrubs legacy objects', () => {
+    const privateEditors = {
+      editingTimelog: privateTimelog,
+      editingReceipt: { id: 1, eid: 1, job: 'private-job', title: 'private-receipt', vendor: '', amount: 1, paidAt: '', note: '', status: 'draft' as const },
+      editingProject: { id: 'A', name: 'private-project', client: 'A', createdAt: '' },
+      editingClient: { id: 1, name: 'private-client' },
+    };
+    savePersistedUiSession({ ...snapshot, ...privateEditors });
+    const raw = window.sessionStorage.getItem(STORAGE_KEY)!;
+    for (const key of Object.keys(privateEditors)) expect(JSON.parse(raw).state).not.toHaveProperty(key);
+    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, state: { ...snapshot, ...privateEditors } }));
+    expect(loadPersistedUiSession()).toEqual(snapshot);
+    expect(window.sessionStorage.getItem(STORAGE_KEY)).not.toContain('private-');
+  });
+
+  it('scrubs legacy delete confirmations as well as editor objects', () => {
+    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+      version: 2, state: { ...snapshot, deleteConfirm: { type: 'receipt', id: 1, name: 'private-delete' } },
+    }));
+    expect(loadPersistedUiSession()).toEqual(snapshot);
+    expect(window.sessionStorage.getItem(STORAGE_KEY)).not.toContain('private-delete');
+  });
+
   it('round-trips a valid UI snapshot', () => {
     savePersistedUiSession(snapshot);
 

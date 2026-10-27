@@ -12,6 +12,7 @@ let editingTimelog: Timelog | null = null;
 let setEditingTimelogMock = vi.fn();
 const testMocks = vi.hoisted(() => ({
   saveTimelog: vi.fn(),
+  reloadTimelogForEditor: vi.fn(),
   eventOverrides: {} as Partial<Event>,
 }));
 
@@ -79,6 +80,7 @@ vi.mock('../../features/timelogs/services/timelogs.service', () => ({
     ],
   }),
   saveTimelog: testMocks.saveTimelog,
+  reloadTimelogForEditor: testMocks.reloadTimelogForEditor,
 }));
 
 describe('TimelogEditModal responsive switch', () => {
@@ -144,6 +146,34 @@ describe('TimelogEditModal responsive switch', () => {
 
     expect(screen.queryByTestId('mobile-timelog-modal')).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Upravit výkaz' })).toBeInTheDocument();
+  });
+
+  it('keeps the desktop draft after a conflict and replaces it only on explicit reload', async () => {
+    setEditingTimelogMock.mockImplementation((next) => { editingTimelog = next; });
+    editingTimelog = { ...editingTimelog!, supabaseId: 'report-1', updatedAt: 'v1' };
+    const current = { ...editingTimelog, note: 'Another writer', updatedAt: 'v2' };
+    testMocks.saveTimelog.mockRejectedValueOnce(new Error('Výkaz se mezitím změnil.'));
+    testMocks.reloadTimelogForEditor
+      .mockRejectedValueOnce(new Error('Výkaz se během načítání změnil. Načtěte aktuální verzi znovu.'))
+      .mockResolvedValueOnce(current);
+    const view = render(<TimelogEditModal />);
+    fireEvent.change(screen.getByPlaceholderText('Doplňte detaily...'), { target: { value: 'My unsaved draft' } });
+    view.rerender(<TimelogEditModal />);
+    fireEvent.click(screen.getByRole('button', { name: 'Uložit změny' }));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Výkaz se mezitím změnil.'));
+    expect(screen.getByDisplayValue('My unsaved draft')).toBeInTheDocument();
+    expect(editingTimelog).toMatchObject({ note: 'My unsaved draft', updatedAt: 'v1' });
+    expect(testMocks.reloadTimelogForEditor).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Načíst aktuální verzi' }));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Výkaz se během načítání změnil.'));
+    expect(screen.getByDisplayValue('My unsaved draft')).toBeInTheDocument();
+    expect(editingTimelog).toMatchObject({ note: 'My unsaved draft', updatedAt: 'v1' });
+    fireEvent.click(screen.getByRole('button', { name: 'Načíst aktuální verzi' }));
+    await waitFor(() => expect(setEditingTimelogMock).toHaveBeenLastCalledWith(current));
+    view.rerender(<TimelogEditModal />);
+
+    expect(screen.getByDisplayValue('Another writer')).toBeInTheDocument();
   });
 
   it('updates optional notes for individual days in the desktop editor', () => {

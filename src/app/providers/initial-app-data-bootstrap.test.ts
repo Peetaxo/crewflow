@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   order: [] as string[],
+  scopeVersion: 0,
   reset: vi.fn(async () => { mocks.order.push('reset'); }),
   events: vi.fn(async () => { mocks.order.push('events'); }),
   timelogs: vi.fn(async () => { mocks.order.push('timelogs'); }),
@@ -13,6 +14,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('./reset-supabase-data-scope', () => ({
   resetSupabaseDataScope: mocks.reset,
+  getSupabaseDataScopeVersion: () => mocks.scopeVersion,
 }));
 
 vi.mock('../../features/events/services/events.service', () => ({
@@ -66,6 +68,40 @@ describe('bootstrapInitialAppData', () => {
     expect(new Set(mocks.order.slice(1))).toEqual(new Set(['events', 'timelogs', 'crew', 'projects']));
     expect(mocks.setQueryData).toHaveBeenCalledWith(['events'], mocks.snapshot.events);
     expect(mocks.setQueryData).toHaveBeenCalledWith(['timelogs'], mocks.snapshot.timelogs);
+  });
+
+  it('never starts old loaders after a newer bootstrap passes its reset', async () => {
+    let finishA!: () => void;
+    mocks.reset.mockReturnValueOnce(new Promise<void>((resolve) => { finishA = resolve; }));
+    const { bootstrapInitialAppData } = await import('./initial-app-data-bootstrap');
+    const old = bootstrapInitialAppData();
+    await bootstrapInitialAppData();
+    mocks.events.mockClear(); mocks.setQueryData.mockClear();
+    finishA(); await old;
+    expect(mocks.events).not.toHaveBeenCalled();
+    expect(mocks.setQueryData).not.toHaveBeenCalled();
+  });
+
+  it('does not seed from old loaders after scope retirement', async () => {
+    let finishA!: () => void;
+    mocks.events.mockReturnValueOnce(new Promise<void>((resolve) => { finishA = resolve; }));
+    const { bootstrapInitialAppData } = await import('./initial-app-data-bootstrap');
+    const old = bootstrapInitialAppData();
+    await Promise.resolve();
+    mocks.scopeVersion += 1;
+    finishA(); await old;
+    expect(mocks.setQueryData).not.toHaveBeenCalled();
+  });
+
+  it('does not start loaders for a cancelled activation', async () => {
+    let active = true;
+    let finishReset!: () => void;
+    mocks.reset.mockReturnValueOnce(new Promise<void>((resolve) => { finishReset = resolve; }));
+    const { bootstrapInitialAppData } = await import('./initial-app-data-bootstrap');
+    const old = bootstrapInitialAppData(() => active);
+    active = false;
+    finishReset(); await old;
+    expect(mocks.events).not.toHaveBeenCalled();
   });
 
   it('does not seed caches when a required loader rejects', async () => {

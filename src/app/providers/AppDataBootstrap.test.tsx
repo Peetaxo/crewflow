@@ -13,6 +13,9 @@ const createDeferred = <T,>() => {
 const mockAuthState = {
   currentProfileId: 'profile-1' as string | null,
   currentUserId: 'user-1' as string | null,
+  isDevSession: false,
+  profile: { firstName: 'Ready', lastName: 'User', email: '' } as { firstName: string; lastName: string; email: string } | null,
+  retryAuthMetadata: vi.fn(async () => undefined),
   isAuthRequired: true,
   isAuthenticated: true,
   isLoading: false,
@@ -50,12 +53,15 @@ describe('AppDataBootstrap', () => {
     Object.assign(mockAuthState, {
       currentProfileId: 'profile-1',
       currentUserId: 'user-1',
+      isDevSession: false,
+      profile: { firstName: 'Ready', lastName: 'User', email: '' },
       isAuthRequired: true,
       isAuthenticated: true,
       isLoading: false,
       role: 'crew',
     });
     mocks.bootstrap.mockReset().mockResolvedValue(undefined);
+    mockAuthState.retryAuthMetadata.mockClear();
     vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
       matches: query === '(prefers-reduced-motion: reduce)' && prefersReducedMotion,
       media: query,
@@ -266,6 +272,16 @@ describe('AppDataBootstrap', () => {
 
     await act(async () => { cooAttempt.resolve(); });
     expect(await screen.findByText('Ready dashboard')).toBeInTheDocument();
+  });
+
+  it.each(['local', 'dev session'] as const)('preserves %s preview access without real verified metadata', async (mode) => {
+    runtimeConfig.appDataSource = mode === 'local' ? 'local' : 'supabase';
+    mockAuthState.isDevSession = mode === 'dev session';
+    mockAuthState.currentProfileId = null;
+    mockAuthState.profile = null;
+    render(<AppDataBootstrap><div>Preview dashboard</div></AppDataBootstrap>);
+    expect(await screen.findByText('Preview dashboard')).toBeInTheDocument();
+    expect(mockAuthState.retryAuthMetadata).not.toHaveBeenCalled();
   });
 
   it('renders local data immediately without starting Supabase bootstrap', () => {

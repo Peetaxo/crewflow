@@ -147,8 +147,9 @@ export const subscribeToFleetChanges = subscribeToLocalAppState;
 
 let fleetHydrationPromise: Promise<void> | null = null;
 let fleetLoaded = false;
+let fleetHydrationEpoch = 0;
 
-const hydrateFleetFromSupabase = async (): Promise<void> => {
+const hydrateFleetFromSupabase = async (epoch: number): Promise<void> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
     return;
   }
@@ -164,6 +165,8 @@ const hydrateFleetFromSupabase = async (): Promise<void> => {
     supabase.from('projects').select('*').order('job_number'),
     supabase.from('events').select('*').order('date_from'),
   ]);
+
+  if (epoch !== fleetHydrationEpoch) return;
 
   const firstError = vehiclesResult.error
     ?? reservationsResult.error
@@ -202,19 +205,23 @@ const ensureSupabaseFleetLoaded = () => {
     return;
   }
 
-  fleetHydrationPromise = hydrateFleetFromSupabase()
+  const epoch = fleetHydrationEpoch;
+  const request = hydrateFleetFromSupabase(epoch)
     .then(() => {
+      if (epoch !== fleetHydrationEpoch) return;
       fleetLoaded = true;
     })
     .catch((error) => {
       console.warn('Nepodarilo se nacist flotilu ze Supabase, zustavam na lokalnich datech.', error);
     })
     .finally(() => {
-      fleetHydrationPromise = null;
+      if (fleetHydrationPromise === request) fleetHydrationPromise = null;
     });
+  fleetHydrationPromise = request;
 };
 
 export const resetSupabaseFleetHydration = () => {
+  fleetHydrationEpoch += 1;
   fleetLoaded = false;
   fleetHydrationPromise = null;
 };
@@ -318,6 +325,10 @@ export const findFleetReservationConflicts = (
 export const saveFleetReservation = async (
   reservation: FleetReservationDraft,
 ): Promise<FleetReservation> => {
+  const epoch = fleetHydrationEpoch;
+  const assertCurrentScope = () => {
+    if (epoch !== fleetHydrationEpoch) throw new Error('Přístup k flotile se změnil. Otevřete rezervaci znovu.');
+  };
   if (!reservation.vehicleId) throw new Error('Vyberte auto.');
   if (!reservation.projectId) throw new Error('Vyberte projekt.');
   if (!reservation.responsibleProfileId) throw new Error('Vyberte odpovědnou osobu.');
@@ -345,6 +356,7 @@ export const saveFleetReservation = async (
         .update(payload)
         .eq('id', reservation.supabaseId);
 
+      assertCurrentScope();
       if (updateResult.error) {
         throw new Error(updateResult.error.message);
       }
@@ -355,6 +367,7 @@ export const saveFleetReservation = async (
         .select('id')
         .single();
 
+      assertCurrentScope();
       if (insertResult.error) {
         throw new Error(insertResult.error.message);
       }
@@ -376,6 +389,7 @@ export const saveFleetReservation = async (
     hasConflict: conflicts.length > 0,
   };
 
+  assertCurrentScope();
   updateLocalAppState((state) => ({
     ...state,
     fleetReservations: [

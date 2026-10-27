@@ -11,6 +11,18 @@ import { clearPersistedUiSession } from '../../context/ui-session-storage';
 import { AuthContext, type AuthProfile, type AuthContextType, type DevLoginOption } from './auth-context';
 import { resetSupabaseDataScope } from './reset-supabase-data-scope';
 
+// Cover the SDK's complete operation: its sign-in and sign-out methods do not
+// share a lock. Use our own public Web Lock across same-origin product tabs.
+let authTransitionTail: Promise<void> = Promise.resolve();
+const runAuthTransition = <T,>(transition: () => Promise<T>): Promise<T> => {
+  const run = () => typeof navigator !== 'undefined' && navigator.locks?.request
+    ? navigator.locks.request('crewflow.auth-transition', transition)
+    : transition();
+  const request = authTransitionTail.then(run, run);
+  authTransitionTail = request.then(() => undefined, () => undefined);
+  return request;
+};
+
 const DEV_SESSION_STORAGE_KEY = 'event-helper-dev-session';
 
 type StoredDevSession = {
@@ -74,6 +86,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const isAuthRequired = appDataSource === 'supabase' && isSupabaseConfigured && Boolean(supabase);
   const [isLoading, setIsLoading] = useState(isAuthRequired);
   const [session, setSession] = useState<Session | null>(null);
+  const currentSession = useRef<Session | null>(null);
+  const retryAuthMetadataRef = useRef<(() => Promise<void>) | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<Role | null>(null);
   const [profile, setProfile] = useState<AuthProfile | null>(null);
@@ -83,6 +97,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [isDevSession, setIsDevSession] = useState(false);
   const [isRoleSwitching, setIsRoleSwitching] = useState(false);
   const sessionLoadVersion = useRef(0);
+  const authActivation = useRef<object>({});
+  const isMounted = useRef(true);
+  useEffect(() => {
+    isMounted.current = true;
+    return () => { isMounted.current = false; };
+  }, []);
+  const signOutActivation = useRef<object | null>(null);
   const [devLoginOptions, setDevLoginOptions] = useState<DevLoginOption[]>([]);
 
   useEffect(() => {
@@ -101,6 +122,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     if (!isAuthRequired || !supabase) {
+      currentSession.current = null;
       setIsLoading(false);
       setSession(null);
       setUser(null);
@@ -116,13 +138,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     let isCancelled = false;
     let previousUserId: string | null | undefined;
+    let readyIdentity: { userId: string; activation: object } | null = null;
 
-    const loadSessionState = async (nextSession: Session | null) => {
+    const loadSessionState = async (nextSession: Session | null, event?: string) => {
       if (isCancelled) return;
+      currentSession.current = nextSession;
       const loadVersion = ++sessionLoadVersion.current;
       const nextUserId = nextSession?.user.id ?? null;
       const changedIdentity = previousUserId !== undefined && previousUserId !== nextUserId;
       previousUserId = nextUserId;
+      const isOwnSignOut = event === 'SIGNED_OUT' && nextUserId === null
+        && signOutActivation.current === authActivation.current;
+      if (changedIdentity && !isOwnSignOut) authActivation.current = {};
+      if (changedIdentity) readyIdentity = null;
+      const isBackgroundRefresh = nextUserId !== null
+        && readyIdentity?.userId === nextUserId
+        && readyIdentity?.activation === authActivation.current;
+      // Clear ownerless navigation before another provider can restore it.
+      if (changedIdentity) clearPersistedUiSession();
       // Retire service publications immediately; query cancellation may await.
       const reset = changedIdentity ? resetSupabaseDataScope() : null;
 
@@ -162,66 +195,100 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       writeStoredDevSession(null);
       setIsDevSession(false);
       setIsRoleSwitching(false);
-      setIsLoading(true);
-      setRole(null);
-      setCurrentProfileId(null);
-      setProfile(null);
+      if (!isBackgroundRefresh) {
+        setIsLoading(true);
+        setRole(null);
+        setCurrentProfileId(null);
+        setCurrentContractorId(null);
+        setProfile(null);
+      }
       setCurrentUserId(nextSession.user.id);
       if (reset) await reset;
       if (isCancelled || loadVersion !== sessionLoadVersion.current) return;
 
-      const [profileResult, rolesResult] = await Promise.all([
-        supabase
-          .from('profiles')
-          .select('id, first_name, last_name, email')
-          .eq('user_id', nextSession.user.id)
-          .maybeSingle(),
-        supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', nextSession.user.id),
-      ]);
+      try {
+        const [profileResult, rolesResult] = await Promise.all([
+          supabase
+            .from('profiles')
+            .select('id, first_name, last_name, email')
+            .eq('user_id', nextSession.user.id)
+            .maybeSingle(),
+          supabase
+            .from('user_roles')
+            .select('role')
+            .eq('user_id', nextSession.user.id),
+        ]);
 
-      if (isCancelled || loadVersion !== sessionLoadVersion.current) return;
+        if (isCancelled || loadVersion !== sessionLoadVersion.current) return;
 
-      if (profileResult.error) {
-        console.warn('Nepodarilo se nacist profil prihlaseneho uzivatele.', profileResult.error);
+        if (profileResult.error) {
+          console.warn('Nepodarilo se nacist profil prihlaseneho uzivatele.', profileResult.error);
+        }
+
+        if (rolesResult.error) {
+          console.warn('Nepodarilo se nacist role prihlaseneho uzivatele.', rolesResult.error);
+        }
+
+        // Keep this identity's trusted metadata and mounted drafts on transient
+        // background failures. Successful changes still publish a new scope.
+        if (profileResult.error || rolesResult.error) {
+          if (!isBackgroundRefresh) setIsLoading(false);
+          return;
+        }
+
+        const nextProfile = profileResult.data
+          ? {
+              firstName: profileResult.data.first_name ?? '',
+              lastName: profileResult.data.last_name ?? '',
+              email: profileResult.data.email ?? nextSession.user.email ?? '',
+            }
+          : {
+              firstName: '',
+              lastName: '',
+              email: nextSession.user.email ?? '',
+            };
+
+        const nextProfileId = profileResult.data?.id ?? null;
+        const nextRole = pickPrimaryRole((rolesResult.data ?? []).map((item) => item.role as Role));
+        readyIdentity = !profileResult.error && !rolesResult.error && nextProfileId && nextRole
+          ? { userId: nextSession.user.id, activation: authActivation.current }
+          : null;
+        setProfile(nextProfile);
+        setRole(nextRole);
+        setCurrentProfileId(nextProfileId);
+        setCurrentContractorId(getContractorIdByProfileId(nextProfileId));
+        setIsLoading(false);
+      } catch (error) {
+        if (isCancelled || loadVersion !== sessionLoadVersion.current) return;
+        console.warn('Nepodarilo se obnovit profil a role prihlaseneho uzivatele.', error);
+        if (!isBackgroundRefresh) setIsLoading(false);
       }
-
-      if (rolesResult.error) {
-        console.warn('Nepodarilo se nacist role prihlaseneho uzivatele.', rolesResult.error);
-      }
-
-      const nextProfile = profileResult.data
-        ? {
-            firstName: profileResult.data.first_name ?? '',
-            lastName: profileResult.data.last_name ?? '',
-            email: profileResult.data.email ?? nextSession.user.email ?? '',
-          }
-        : {
-            firstName: '',
-            lastName: '',
-            email: nextSession.user.email ?? '',
-          };
-
-      const nextProfileId = profileResult.data?.id ?? null;
-      setProfile(nextProfile);
-      setRole(pickPrimaryRole((rolesResult.data ?? []).map((item) => item.role as Role)));
-      setCurrentProfileId(nextProfileId);
-      setCurrentContractorId(getContractorIdByProfileId(nextProfileId));
-      setIsLoading(false);
     };
 
-    void supabase.auth.getSession().then(({ data }) => loadSessionState(data.session));
+    const retryMetadata = async () => {
+      const nextSession = currentSession.current;
+      if (isCancelled || !nextSession?.user) return;
+      await loadSessionState(nextSession);
+    };
+    retryAuthMetadataRef.current = retryMetadata;
+
+    const initialLoadVersion = sessionLoadVersion.current;
+    void supabase.auth.getSession().then(({ data }) => {
+      if (isCancelled || sessionLoadVersion.current !== initialLoadVersion) return;
+      return loadSessionState(data.session);
+    });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      void loadSessionState(nextSession);
+      void loadSessionState(nextSession, _event);
     });
 
     return () => {
       isCancelled = true;
+      if (retryAuthMetadataRef.current === retryMetadata) retryAuthMetadataRef.current = null;
+      currentSession.current = null;
+      authActivation.current = {};
       sessionLoadVersion.current += 1;
       subscription.unsubscribe();
     };
@@ -274,7 +341,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     currentUserId,
     currentContractorId,
     devLoginOptions,
-    signIn: async (email: string, password: string) => {
+    retryAuthMetadata: () => retryAuthMetadataRef.current?.() ?? Promise.resolve(),
+    signIn: (email: string, password: string) => runAuthTransition(async () => {
+      if (!isMounted.current) return;
       if (!supabase) {
         throw new Error('Supabase klient neni dostupny.');
       }
@@ -283,7 +352,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (error) {
         throw new Error(error.message);
       }
-    },
+    }),
     signInAsDevUser: (profileId: string, nextRole: Role) => {
       const contractor = (getContractors() ?? []).find((item) => item.profileId === profileId);
       if (!contractor) {
@@ -299,50 +368,69 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         role: nextRole,
       };
 
-      sessionLoadVersion.current += 1;
-      void resetSupabaseDataScope();
-      writeStoredDevSession(storedSession);
-      setSession(null);
-      setUser(null);
-      setIsDevSession(true);
-      setRole(nextRole);
-      setCurrentProfileId(storedSession.profileId);
-      setCurrentUserId(storedSession.userId);
-      setCurrentContractorId(getContractorIdByProfileId(storedSession.profileId));
-      setProfile({
-        firstName,
-        lastName,
-        email: contractor.email || '',
+      void runAuthTransition(async () => {
+        if (!isMounted.current) return;
+        authActivation.current = {};
+        sessionLoadVersion.current += 1;
+        void resetSupabaseDataScope();
+        writeStoredDevSession(storedSession);
+        currentSession.current = null;
+        setSession(null);
+        setUser(null);
+        setIsDevSession(true);
+        setRole(nextRole);
+        setCurrentProfileId(storedSession.profileId);
+        setCurrentUserId(storedSession.userId);
+        setCurrentContractorId(getContractorIdByProfileId(storedSession.profileId));
+        setProfile({
+          firstName,
+          lastName,
+          email: contractor.email || '',
+        });
+        setIsLoading(false);
       });
-      setIsLoading(false);
     },
     switchRole,
-    signOut: async () => {
-      if(supabase) {
-        const {disconnectNativePush}=await import('../../features/notifications/native-push');
-        await disconnectNativePush().catch(()=>{});
-      }
-      if (supabase) {
-        const { error } = await supabase.auth.signOut({ scope: 'local' });
-        if (error) {
-          throw new Error(error.message);
-        }
-      }
+    signOut: () => {
+      const activation = authActivation.current;
+      const isCurrent = () => authActivation.current === activation;
+      return runAuthTransition(async () => {
+        if (!isCurrent()) return;
+        try {
+          if (supabase) {
+            const { disconnectNativePush } = await import('../../features/notifications/native-push');
+            if (!isCurrent()) return;
+            await disconnectNativePush().catch(() => {});
+            if (!isCurrent()) return;
+            // This request may emit SIGNED_OUT before resolving. That event still
+            // belongs to this activation; any intervening sign-in retires it.
+            signOutActivation.current = activation;
+            const { error } = await supabase.auth.signOut({ scope: 'local' });
+            if (!isCurrent()) return;
+            if (error) throw new Error(error.message);
+          }
 
-      sessionLoadVersion.current += 1;
-      await resetSupabaseDataScope();
-      writeStoredDevSession(null);
-      clearPersistedUiSession();
-      setSession(null);
-      setUser(null);
-      setRole(null);
-      setProfile(null);
-      setIsDevSession(false);
-      setIsRoleSwitching(false);
-      setCurrentProfileId(null);
-      setCurrentUserId(null);
-      setCurrentContractorId(null);
-      setIsLoading(false);
+          if (!isCurrent()) return;
+          sessionLoadVersion.current += 1;
+          await resetSupabaseDataScope();
+          if (!isCurrent()) return;
+          writeStoredDevSession(null);
+          clearPersistedUiSession();
+          currentSession.current = null;
+          setSession(null);
+          setUser(null);
+          setRole(null);
+          setProfile(null);
+          setIsDevSession(false);
+          setIsRoleSwitching(false);
+          setCurrentProfileId(null);
+          setCurrentUserId(null);
+          setCurrentContractorId(null);
+          setIsLoading(false);
+        } finally {
+          if (signOutActivation.current === activation) signOutActivation.current = null;
+        }
+      });
     },
   }), [currentContractorId, currentProfileId, currentUserId, devLoginOptions, isAuthRequired, isDevSession, isLoading, isRoleSwitching, profile, role, session, switchRole, user]);
 

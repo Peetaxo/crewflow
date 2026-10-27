@@ -30,6 +30,7 @@ export interface AuthContextType {
   currentUserId: string | null;
   currentContractorId: number | null;
   devLoginOptions: DevLoginOption[];
+  retryAuthMetadata: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signInAsDevUser: (profileId: string, role: Role) => void;
   switchRole: (role: Role) => Promise<void>;

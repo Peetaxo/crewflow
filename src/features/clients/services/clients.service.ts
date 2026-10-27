@@ -45,8 +45,13 @@ const getSupabaseClientRowId = async (client: Client): Promise<string> => {
 
 let clientsHydrationPromise: Promise<void> | null = null;
 let clientsLoaded = false;
+let clientsHydrationEpoch = 0;
 
-const hydrateClientsFromSupabase = async (): Promise<void> => {
+const assertClientsScope = (epoch: number) => {
+  if (epoch !== clientsHydrationEpoch) throw new Error('Přístup ke klientům se změnil. Otevřete klienta znovu.');
+};
+
+const hydrateClientsFromSupabase = async (epoch: number): Promise<void> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
     return;
   }
@@ -55,6 +60,8 @@ const hydrateClientsFromSupabase = async (): Promise<void> => {
     .from('clients')
     .select('*')
     .order('name');
+
+  if (epoch !== clientsHydrationEpoch) return;
 
   if (error) {
     throw new Error(error.message);
@@ -84,16 +91,19 @@ const ensureSupabaseClientsLoaded = () => {
     return;
   }
 
-  clientsHydrationPromise = hydrateClientsFromSupabase()
+  const epoch = clientsHydrationEpoch;
+  const request = hydrateClientsFromSupabase(epoch)
     .then(() => {
+      if (epoch !== clientsHydrationEpoch) return;
       clientsLoaded = true;
     })
     .catch((error) => {
       console.warn('Nepodarilo se nacist klienty ze Supabase, zustavam na lokalnich datech.', error);
     })
     .finally(() => {
-      clientsHydrationPromise = null;
+      if (clientsHydrationPromise === request) clientsHydrationPromise = null;
     });
+  clientsHydrationPromise = request;
 };
 
 export const getClients = (search = ''): Client[] => {
@@ -130,6 +140,7 @@ export const createEmptyClient = (): Client => ({
 });
 
 export const saveClient = async (client: Client): Promise<Client> => {
+  const epoch = clientsHydrationEpoch;
   let normalizedClient = normalizeClient(client);
   if (!normalizedClient.name) {
     throw new Error('Vyplnte nazev klienta.');
@@ -149,11 +160,13 @@ export const saveClient = async (client: Client): Promise<Client> => {
 
     if (existing) {
       const clientRowId = await getSupabaseClientRowId(normalizedClient);
+      assertClientsScope(epoch);
       const clientUpdate = await supabase
         .from('clients')
         .update(payload)
         .eq('id', clientRowId);
 
+      assertClientsScope(epoch);
       if (clientUpdate.error) {
         throw new Error(clientUpdate.error.message);
       }
@@ -167,12 +180,14 @@ export const saveClient = async (client: Client): Promise<Client> => {
         .from('clients')
         .insert(payload);
 
+      assertClientsScope(epoch);
       if (clientInsert.error) {
         throw new Error(clientInsert.error.message);
       }
     }
   }
 
+  assertClientsScope(epoch);
   updateLocalAppState((snapshot) => {
     const exists = snapshot.clients.some((item) => item.id === normalizedClient.id);
     return {
@@ -187,6 +202,7 @@ export const saveClient = async (client: Client): Promise<Client> => {
 };
 
 export const deleteClient = async (id: number): Promise<{ id: number }> => {
+  const epoch = clientsHydrationEpoch;
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
     const existing = getLocalAppState().clients.find((client) => client.id === id);
     if (!existing) {
@@ -194,16 +210,19 @@ export const deleteClient = async (id: number): Promise<{ id: number }> => {
     }
 
     const clientRowId = await getSupabaseClientRowId(existing);
+    assertClientsScope(epoch);
     const clientDelete = await supabase
       .from('clients')
       .delete()
       .eq('id', clientRowId);
 
+    assertClientsScope(epoch);
     if (clientDelete.error) {
       throw new Error(clientDelete.error.message);
     }
   }
 
+  assertClientsScope(epoch);
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     clients: snapshot.clients.filter((client) => client.id !== id),
@@ -230,6 +249,7 @@ export const subscribeToClientChanges = (listener: () => void): (() => void) => 
 };
 
 export const resetSupabaseClientsHydration = () => {
+  clientsHydrationEpoch += 1;
   clientsHydrationPromise = null;
   clientsLoaded = false;
 };

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppProvider } from './AppContext';
 import { useAppContext } from './useAppContext';
 import type { Role, Timelog } from '../types';
+import { deleteReceipt } from '../features/receipts/services/receipts.service';
 import type { AppContextType } from './app-context';
 import {
   clearPersistedUiSession,
@@ -183,6 +184,53 @@ describe('AppProvider UI session restore', () => {
     expect(screen.getByTestId('editingTimelogNote')).toHaveTextContent('null');
   });
 
+  it.each([
+    ['user change', { currentUserId: 'user-b' }],
+    ['role switching', { isRoleSwitching: true }],
+    ['session loading', { isLoading: true }],
+  ])('retires all private editors and delete callbacks on %s', (_label, change) => {
+    let context!: AppContextType;
+    const observed: unknown[][] = [];
+    function Probe() {
+      context = useAppContext();
+      observed.push([context.editingReceipt, context.editingProject, context.editingClient, context.deleteConfirm]);
+      return null;
+    }
+    const view = render(<AppProvider><Probe /></AppProvider>);
+    const receipt = { ...editingReceipt };
+    const project = { id: 'A', name: 'private-project', client: 'A', createdAt: '' };
+    const client = { id: 1, name: 'private-client' };
+    const deletion = { type: 'receipt' as const, id: 42, name: 'private-receipt' };
+    act(() => {
+      context.setEditingReceipt(receipt); context.setEditingProject(project);
+      context.setEditingClient(client); context.setDeleteConfirm(deletion);
+    });
+    expect(context.editingReceipt).toEqual(receipt);
+    const setters = [context.setEditingReceipt, context.setEditingProject, context.setEditingClient, context.setDeleteConfirm];
+    Object.assign(mockAuthState, change);
+    observed.length = 0;
+    view.rerender(<AppProvider><Probe /></AppProvider>);
+    expect(observed[0]).toEqual([null, null, null, null]);
+    act(() => {
+      setters[0](receipt as never); setters[1](project as never);
+      setters[2](client as never); setters[3](deletion as never);
+    });
+    expect([context.editingReceipt, context.editingProject, context.editingClient, context.deleteConfirm]).toEqual([null, null, null, null]);
+  });
+
+  it('does not execute a captured delete handler after its identity retires', async () => {
+    vi.mocked(deleteReceipt).mockClear();
+    let context!: AppContextType;
+    function Probe() { context = useAppContext(); return null; }
+    const view = render(<AppProvider><Probe /></AppProvider>);
+    act(() => context.setDeleteConfirm({ type: 'receipt', id: 42, name: 'A receipt' }));
+    const oldDelete = context.handleDelete;
+    mockAuthState.currentUserId = 'user-b';
+    view.rerender(<AppProvider><Probe /></AppProvider>);
+    await act(async () => { await oldDelete(); });
+    expect(deleteReceipt).not.toHaveBeenCalled();
+  });
+
   it('closes evidence when the local testing role changes', () => {
     mockAuthState.isAuthRequired = false;
     render(<AppProvider><ContextProbe /></AppProvider>);
@@ -266,7 +314,7 @@ describe('AppProvider UI session restore', () => {
     expect(screen.getByTestId('searchQuery')).toHaveTextContent('rozdelane');
     expect(screen.getByTestId('selectedEventId')).toHaveTextContent('12');
     expect(screen.getByTestId('eventTab')).toHaveTextContent('crew');
-    expect(screen.getByTestId('editingReceiptTitle')).toHaveTextContent('Taxi');
+    expect(screen.getByTestId('editingReceiptTitle')).toHaveTextContent('null');
   });
 
   it('does not clear restored search query on initial mount', () => {
@@ -492,10 +540,7 @@ describe('AppProvider UI session restore', () => {
         searchQuery: 'rozdelana prace',
         selectedEventId: 55,
         eventTab: 'crew',
-        editingReceipt: expect.objectContaining({
-          id: 42,
-          title: 'Taxi',
-        }),
+        editingReceipt: null,
       });
     });
 

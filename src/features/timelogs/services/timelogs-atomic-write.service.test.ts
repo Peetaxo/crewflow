@@ -324,7 +324,89 @@ describe('timelog atomic write coordination', () => {
     expect(harness.from).not.toHaveBeenCalled();
   });
 
-  it('serializes overlapping saves and reads the version produced by the first save', async () => {
+  it('rejects an editor draft reviewed before the same UUID was refreshed to a newer version', async () => {
+    const reviewed = makeTimelog();
+    const current = makeTimelog({
+      id: 12,
+      note: 'Another writer',
+      updatedAt: '2026-08-17T11:00:00.000Z',
+    });
+    const harness = await setupAtomicHarness({ timelogs: [current] });
+
+    await expect(harness.service.saveTimelog({ ...reviewed, note: 'My unsaved draft' }))
+      .rejects.toThrow(/mezitím změnil/);
+
+    expect(harness.saveTimelogAtomicRpc).not.toHaveBeenCalled();
+    expect(harness.deleteTimelogAtomicRpc).not.toHaveBeenCalled();
+    expect(harness.getSnapshot().timelogs[0]).toMatchObject(current);
+    expect(reviewed).toMatchObject({ note: '', updatedAt: '2026-08-17T10:00:00.000Z' });
+  });
+
+  it('does not delete a newer version when a stale editor removes every day', async () => {
+    const reviewed = makeTimelog();
+    const current = makeTimelog({
+      id: 12,
+      note: 'Another writer',
+      updatedAt: '2026-08-17T11:00:00.000Z',
+    });
+    const harness = await setupAtomicHarness({ timelogs: [current] });
+
+    await expect(harness.service.saveTimelog({ ...reviewed, days: [] }))
+      .rejects.toThrow(/mezitím změnil/);
+
+    expect(harness.saveTimelogAtomicRpc).not.toHaveBeenCalled();
+    expect(harness.deleteTimelogAtomicRpc).not.toHaveBeenCalled();
+    expect(harness.getSnapshot().timelogs[0]).toMatchObject(current);
+  });
+
+  it('explicitly reloads the editor by UUID and returns the current version without changing its old draft', async () => {
+    const reviewed = makeTimelog({ id: 41, note: 'My unsaved draft' });
+    const current = makeTimelog({ note: 'Another writer', updatedAt: '2026-08-17T11:00:00.000Z' });
+    const harness = await setupAtomicHarness({ timelogs: [reviewed], authoritativeTimelogs: [current] });
+
+    const reloaded = await harness.service.reloadTimelogForEditor(reviewed);
+
+    expect(reloaded).toMatchObject({
+      id: 1,
+      supabaseId: current.supabaseId,
+      note: 'Another writer',
+      updatedAt: current.updatedAt,
+    });
+    expect(reviewed.note).toBe('My unsaved draft');
+    expect(harness.getSnapshot().timelogs[0]).toMatchObject(reloaded);
+    expect(harness.saveTimelogAtomicRpc).not.toHaveBeenCalled();
+  });
+
+  it.each(['lifecycle', 'timelog'] as const)('rejects an editor reload invalidated by a %s generation change instead of returning its old cache', async (generation) => {
+    const read = createDeferred<void>();
+    const saved = makeTimelog({ note: 'Last saved version' });
+    const reviewed = { ...saved, note: 'My unsaved draft' };
+    const harness = await setupAtomicHarness({
+      timelogs: [saved],
+      // The authoritative response no longer contains the report. Falling back
+      // to its cached row must never count as an explicit reload succeeding.
+      authoritativeTimelogs: [],
+      authoritativeReadGate: read.promise,
+    });
+
+    const reload = harness.service.reloadTimelogForEditor(reviewed);
+    const result = expect(reload).rejects.toThrow(/během načítání změnil/);
+    await vi.waitFor(() => expect(harness.from).toHaveBeenCalledTimes(5));
+    if (generation === 'lifecycle') {
+      const { advanceLifecycleSnapshotGeneration } = await import('../../event-lifecycle-generation');
+      advanceLifecycleSnapshotGeneration();
+    } else {
+      await harness.service.saveTimelog({ ...saved, note: 'Committed while reading' });
+    }
+    read.resolve();
+
+    await result;
+    expect(reviewed.note).toBe('My unsaved draft');
+    expect(harness.getSnapshot().timelogs[0].note)
+      .toBe(generation === 'lifecycle' ? 'Last saved version' : 'Committed while reading');
+  });
+
+  it('serializes overlapping saves and rejects a queued draft with the earlier reviewed version', async () => {
     const first = createDeferred<{
       id: string;
       updated_at: string;
@@ -333,6 +415,7 @@ describe('timelog atomic write coordination', () => {
     let call = 0;
     const harness = await setupAtomicHarness({
       timelogs: [makeTimelog()],
+      authoritativeTimelogs: [makeTimelog({ note: 'first', updatedAt: '2026-08-17T11:00:00.000Z' })],
       saveImplementation: async () => {
         call += 1;
         if (call === 1) return first.promise;
@@ -346,6 +429,7 @@ describe('timelog atomic write coordination', () => {
 
     const firstSave = harness.service.saveTimelog({ ...makeTimelog(), note: 'first' });
     const secondSave = harness.service.saveTimelog({ ...makeTimelog(), note: 'second' });
+    const secondSaveResult = expect(secondSave).rejects.toThrow(/mezitím změnil/);
     await vi.waitFor(() => expect(harness.saveTimelogAtomicRpc).toHaveBeenCalledTimes(1));
 
     first.resolve({
@@ -354,20 +438,16 @@ describe('timelog atomic write coordination', () => {
       status: 'draft',
     });
     await firstSave;
-    await secondSave;
+    await secondSaveResult;
 
-    expect(harness.saveTimelogAtomicRpc).toHaveBeenCalledTimes(2);
-    expect(harness.saveTimelogAtomicRpc.mock.calls[1]?.[0]).toEqual(expect.objectContaining({
-      expectedUpdatedAt: '2026-08-17T11:00:00.000Z',
-      note: 'second',
-    }));
+    expect(harness.saveTimelogAtomicRpc).toHaveBeenCalledOnce();
     expect(harness.getSnapshot().timelogs[0]).toMatchObject({
-      note: 'second',
-      updatedAt: '2026-08-17T12:00:00.000Z',
+      note: 'first',
+      updatedAt: '2026-08-17T11:00:00.000Z',
     });
   });
 
-  it('reserves the local row before hydrating a missing UUID and version', async () => {
+  it('preserves unversioned legacy hydration fallback while reserving the local row before its first write', async () => {
     const authoritativeRead = createDeferred<void>();
     const firstRpc = createDeferred<{
       id: string;

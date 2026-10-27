@@ -23,9 +23,12 @@ export type PersistedUiSessionState = {
   editingClient: Client | null;
 };
 
+type PrivateEditorKey = 'editingTimelog' | 'editingReceipt' | 'editingProject' | 'editingClient';
+const privateEditorKeys: PrivateEditorKey[] = ['editingTimelog', 'editingReceipt', 'editingProject', 'editingClient'];
+
 type PersistedUiSessionPayload = {
   version: 2;
-  state: Omit<PersistedUiSessionState, 'editingTimelog'>;
+  state: Omit<PersistedUiSessionState, PrivateEditorKey>;
 };
 
 const isStorageAvailable = () =>
@@ -45,39 +48,6 @@ const isNullableNumber = (value: unknown): value is number | null =>
 const isNullableEventId = (value: unknown): value is SelectedEventId | null =>
   value === null || isNumber(value) || isString(value);
 
-const isReceiptItem = (value: unknown): value is ReceiptItem =>
-  isRecord(value) &&
-  isNumber(value.id) &&
-  (value.contractorProfileId === undefined || isString(value.contractorProfileId)) &&
-  isNumber(value.eid) &&
-  isString(value.job) &&
-  isString(value.title) &&
-  isString(value.vendor) &&
-  isNumber(value.amount) &&
-  isString(value.paidAt) &&
-  isString(value.note) &&
-  isString(value.status);
-
-const isProject = (value: unknown): value is Project =>
-  isRecord(value) &&
-  isString(value.id) &&
-  isString(value.name) &&
-  isString(value.client) &&
-  (value.note === undefined || isString(value.note)) &&
-  isString(value.createdAt);
-
-const isClient = (value: unknown): value is Client =>
-  isRecord(value) &&
-  isNumber(value.id) &&
-  isString(value.name) &&
-  (value.ico === undefined || isString(value.ico)) &&
-  (value.dic === undefined || isString(value.dic)) &&
-  (value.street === undefined || isString(value.street)) &&
-  (value.zip === undefined || isString(value.zip)) &&
-  (value.city === undefined || isString(value.city)) &&
-  (value.country === undefined || isString(value.country)) &&
-  (value.note === undefined || isString(value.note));
-
 const isPersistedUiSessionState = (value: unknown): value is PersistedUiSessionPayload['state'] =>
   isRecord(value) &&
   isString(value.currentTab) &&
@@ -92,10 +62,24 @@ const isPersistedUiSessionState = (value: unknown): value is PersistedUiSessionP
   (value.eventsViewMode === 'list' || value.eventsViewMode === 'calendar') &&
   (value.eventsCalendarMode === 'month' || value.eventsCalendarMode === 'week') &&
   (value.eventsFilter === 'upcoming' || value.eventsFilter === 'past' || value.eventsFilter === 'all') &&
-  isString(value.eventsCalendarDate) &&
-  (value.editingReceipt === null || isReceiptItem(value.editingReceipt)) &&
-  (value.editingProject === null || isProject(value.editingProject)) &&
-  (value.editingClient === null || isClient(value.editingClient));
+  isString(value.eventsCalendarDate);
+
+// Allow only navigation fields; legacy payloads can contain other private keys.
+const getNavigationState = (state: PersistedUiSessionPayload['state']): PersistedUiSessionPayload['state'] => ({
+  currentTab: state.currentTab,
+  searchQuery: state.searchQuery,
+  timelogFilter: state.timelogFilter,
+  projectFilter: state.projectFilter,
+  selectedContractorProfileId: state.selectedContractorProfileId,
+  selectedEventId: state.selectedEventId,
+  selectedProjectIdForStats: state.selectedProjectIdForStats,
+  selectedClientIdForStats: state.selectedClientIdForStats,
+  eventTab: state.eventTab,
+  eventsViewMode: state.eventsViewMode,
+  eventsCalendarMode: state.eventsCalendarMode,
+  eventsFilter: state.eventsFilter,
+  eventsCalendarDate: state.eventsCalendarDate,
+});
 
 const safelyRemovePersistedUiSession = () => {
   try {
@@ -122,10 +106,10 @@ const readUiSession = (sanitizeStorage: boolean): PersistedUiSessionState | null
       return null;
     }
 
-    // Legacy v2 sessions may contain a full report. Preserve navigation, never
-    // reopen that report, and remove its contents from storage immediately.
-    const state = { ...parsed.state, editingTimelog: null };
-    if (sanitizeStorage && 'editingTimelog' in parsed.state) {
+    // Legacy sessions contain ownerless private objects. Preserve navigation
+    // while scrubbing every editor before it can be restored.
+    const state: PersistedUiSessionState = { ...getNavigationState(parsed.state), editingTimelog: null, editingReceipt: null, editingProject: null, editingClient: null };
+    if (sanitizeStorage && [...privateEditorKeys, 'deleteConfirm'].some((key) => key in parsed.state)) {
       safelyRemovePersistedUiSession();
       savePersistedUiSession(state);
     }
@@ -147,10 +131,9 @@ export const savePersistedUiSession = (state: PersistedUiSessionState) => {
     return;
   }
 
-  const { editingTimelog: _privateEvidence, ...navigationState } = state;
   const payload: PersistedUiSessionPayload = {
     version: 2,
-    state: navigationState,
+    state: getNavigationState(state),
   };
 
   try {

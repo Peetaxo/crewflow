@@ -18,6 +18,11 @@ export interface UpsertCrewRatingInput {
 
 let crewRatingsHydrationPromise: Promise<void> | null = null;
 let crewRatingsLoaded = false;
+let crewRatingsHydrationEpoch = 0;
+
+const assertCrewRatingsScope = (epoch: number) => {
+  if (epoch !== crewRatingsHydrationEpoch) throw new Error('Přístup k hodnocení se změnil. Otevřete profil znovu.');
+};
 
 export const validateCrewRatingValue = (rating: number): number => {
   if (!Number.isInteger(rating) || rating < 0 || rating > 10) {
@@ -94,7 +99,7 @@ const withRecalculatedProfileRating = (
   ));
 };
 
-const hydrateCrewRatingsFromSupabase = async () => {
+const hydrateCrewRatingsFromSupabase = async (epoch: number) => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
     return;
   }
@@ -103,6 +108,8 @@ const hydrateCrewRatingsFromSupabase = async () => {
     .from('crew_ratings')
     .select('*')
     .order('updated_at');
+
+  if (epoch !== crewRatingsHydrationEpoch) return;
 
   if (result.error) {
     throw new Error(result.error.message);
@@ -124,16 +131,19 @@ export const ensureSupabaseCrewRatingsLoaded = () => {
     return;
   }
 
-  crewRatingsHydrationPromise = hydrateCrewRatingsFromSupabase()
+  const epoch = crewRatingsHydrationEpoch;
+  const request = hydrateCrewRatingsFromSupabase(epoch)
     .then(() => {
+      if (epoch !== crewRatingsHydrationEpoch) return;
       crewRatingsLoaded = true;
     })
     .catch((error) => {
       console.warn('Nepodarilo se nacist hodnoceni crew ze Supabase.', error);
     })
     .finally(() => {
-      crewRatingsHydrationPromise = null;
+      if (crewRatingsHydrationPromise === request) crewRatingsHydrationPromise = null;
     });
+  crewRatingsHydrationPromise = request;
 };
 
 export const getCrewRatingsForEvent = (eventId: number | null): CrewRating[] => {
@@ -186,12 +196,15 @@ const saveCrewRatingToSupabase = async (
   source: CrewRatingSource,
   rating: number,
   eventSupabaseId: string | null,
+  epoch: number,
 ): Promise<CrewRating | null> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
     return null;
   }
 
+  assertCrewRatingsScope(epoch);
   const existingId = await findSupabaseCrewRating(source, input.profileId, eventSupabaseId);
+  assertCrewRatingsScope(epoch);
   const payload = {
     profile_id: input.profileId,
     event_id: eventSupabaseId,
@@ -214,6 +227,7 @@ const saveCrewRatingToSupabase = async (
         .select('*')
         .single();
 
+  assertCrewRatingsScope(epoch);
   if (result.error) {
     throw new Error(result.error.message);
   }
@@ -222,6 +236,7 @@ const saveCrewRatingToSupabase = async (
 };
 
 export const upsertCrewRating = async (input: UpsertCrewRatingInput): Promise<CrewRating> => {
+  const epoch = crewRatingsHydrationEpoch;
   if (!input.profileId) {
     throw new Error('Nepodarilo se dohledat clena crew pro hodnoceni.');
   }
@@ -236,7 +251,8 @@ export const upsertCrewRating = async (input: UpsertCrewRatingInput): Promise<Cr
     throw new Error('Hodnoceni z akce musi byt navazane na akci.');
   }
 
-  const supabaseRating = await saveCrewRatingToSupabase(input, source, rating, eventSupabaseId);
+  const supabaseRating = await saveCrewRatingToSupabase(input, source, rating, eventSupabaseId, epoch);
+  assertCrewRatingsScope(epoch);
   const now = new Date().toISOString();
   let savedRating: CrewRating | null = null;
 
@@ -280,6 +296,7 @@ export const subscribeToCrewRatingChanges = (listener: () => void): (() => void)
 );
 
 export const resetSupabaseCrewRatingsHydration = () => {
+  crewRatingsHydrationEpoch += 1;
   crewRatingsHydrationPromise = null;
   crewRatingsLoaded = false;
 };

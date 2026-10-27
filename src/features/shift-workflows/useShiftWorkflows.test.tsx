@@ -212,3 +212,30 @@ describe('shared workflow scope', () => {
     expect(reloadResult?.revision).toBe(2);
   });
 });
+
+describe('workflow freshness', () => {
+  it('refreshes a fresh workflow cache when another surface opens', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 60_000 } } });
+    clients.push(client); client.setQueryData(shiftWorkflowQueryKey(scope()), snapshot(0));
+    boundary.read.mockResolvedValue(snapshot(1));
+    let latest!: HookValue;
+    function Probe() { latest = useShiftWorkflows(); return null; }
+    render(<QueryClientProvider client={client}><Probe /></QueryClientProvider>);
+    await waitFor(() => expect(latest.query.data?.revision).toBe(1));
+    expect(boundary.read).toHaveBeenCalledOnce();
+  });
+
+  it('publishes remote workflow changes to mounted consumers within 20 seconds', async () => {
+    vi.useFakeTimers();
+    try {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+      const view = setup();
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+      expect(view.current().query.data?.revision).toBe(0);
+      boundary.read.mockResolvedValue(snapshot(2));
+      await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+      expect(view.current().query.data?.revision).toBe(2);
+      view.unmount();
+    } finally { vi.useRealTimers(); }
+  });
+});

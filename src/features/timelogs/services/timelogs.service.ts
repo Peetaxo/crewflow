@@ -434,6 +434,22 @@ const findTimelogForIdentity = (
   ));
 };
 
+export const reloadTimelogForEditor = async (reviewed: Timelog): Promise<Timelog> => {
+  const epoch = timelogsHydrationEpoch;
+  const lifecycleGeneration = getLifecycleSnapshotGeneration();
+  const timelogGeneration = timelogSnapshotGeneration;
+  await fetchTimelogsSnapshot();
+  if (epoch !== timelogsHydrationEpoch) {
+    throw new Error('Přístup k výkazům se změnil. Otevřete výkaz znovu.');
+  }
+  if (lifecycleGeneration !== getLifecycleSnapshotGeneration() || timelogGeneration !== timelogSnapshotGeneration) {
+    throw new Error('Výkaz se během načítání změnil. Načtěte aktuální verzi znovu.');
+  }
+  const current = findTimelogForIdentity(reviewed.id, reviewed.supabaseId, reviewed);
+  if (!current) throw new Error('Výkaz už neexistuje nebo k němu nemáte přístup.');
+  return current;
+};
+
 const getTimelogMutationKeys = (localId: number, supabaseId?: string): string[] => [
   `local:${localId}`,
   ...(supabaseId ? [`timelog:${supabaseId}`] : []),
@@ -1270,8 +1286,15 @@ export const importApprovedTimelog = async (
   });
 };
 
+const assertReviewedTimelogVersion = (reviewedUpdatedAt: string | undefined, current: Timelog) => {
+  if (reviewedUpdatedAt && reviewedUpdatedAt !== current.updatedAt) {
+    throw new Error('Výkaz se mezitím změnil. Načtěte aktuální verzi a zkontrolujte změny.');
+  }
+};
+
 export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
   const hydrationEpoch = timelogsHydrationEpoch;
+  const reviewedUpdatedAt = updated.updatedAt;
   // Submission must fail before the empty-draft deletion path or any identity refresh.
   assertCompleteForStatus(updated, updated.status);
   const persistsToSupabase = appDataSource === 'supabase' && Boolean(supabase) && isSupabaseConfigured;
@@ -1329,7 +1352,7 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
   }
 
   if (normalizedTimelog.days.length === 0) {
-    await deleteTimelog(existingTimelog.id);
+    await deleteTimelog(existingTimelog.id, reviewedUpdatedAt);
     return normalizedTimelog;
   }
 
@@ -1354,6 +1377,7 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
     if (!currentTimelog) {
       throw new Error('Výkaz už neexistuje nebo k němu nemáte přístup.');
     }
+    assertReviewedTimelogVersion(reviewedUpdatedAt, currentTimelog);
 
     let persistedTimelog: Timelog = {
       ...normalizedTimelog,
@@ -1369,7 +1393,7 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
 
     if (persistsToSupabase) {
       const timelogRowId = currentTimelog.supabaseId;
-      const expectedUpdatedAt = currentTimelog.updatedAt;
+      const expectedUpdatedAt = reviewedUpdatedAt ?? currentTimelog.updatedAt;
       const eventRowId = await getSupabaseEventRowId(persistedTimelog);
       assertCurrent();
       const contractorRowId = persistedTimelog.contractorProfileId;
@@ -1426,7 +1450,7 @@ export const saveTimelog = async (updated: Timelog): Promise<Timelog> => {
   });
 };
 
-export const deleteTimelog = async (id: number): Promise<{ id: number }> => {
+export const deleteTimelog = async (id: number, reviewedUpdatedAt?: string): Promise<{ id: number }> => {
   const persistsToSupabase = appDataSource === 'supabase' && Boolean(supabase) && isSupabaseConfigured;
   const initialTimelog = findTimelogForMutation(id);
   if (!initialTimelog) {
@@ -1449,6 +1473,7 @@ export const deleteTimelog = async (id: number): Promise<{ id: number }> => {
     if (!currentTimelog) {
       throw new Error('Výkaz už neexistuje nebo k němu nemáte přístup.');
     }
+    assertReviewedTimelogVersion(reviewedUpdatedAt, currentTimelog);
 
     await assertLegacyTimelogWrite([currentTimelog]);
     assertCurrent();
@@ -1459,7 +1484,7 @@ export const deleteTimelog = async (id: number): Promise<{ id: number }> => {
       }
       await deleteTimelogAtomicRpc({
         id: currentTimelog.supabaseId,
-        expectedUpdatedAt: currentTimelog.updatedAt,
+        expectedUpdatedAt: reviewedUpdatedAt ?? currentTimelog.updatedAt,
         expectedStatus: currentTimelog.status,
       });
     }

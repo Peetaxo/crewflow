@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { useAppContext } from '../../context/useAppContext';
 import { KM_RATE } from '../../data';
 import { calculateMealAllowance, calculateTotalHours, normalizeMealSelection } from '../../utils';
-import { getTimelogDependencies, saveTimelog } from '../../features/timelogs/services/timelogs.service';
+import { getTimelogDependencies, reloadTimelogForEditor, saveTimelog } from '../../features/timelogs/services/timelogs.service';
 import { canEditTimelog, canSubmitTimelog } from '../../features/timelogs/services/timelog-permissions';
 import type { Contractor, Event, Role, Timelog } from '../../types';
 import { Button } from '../ui/button';
@@ -91,6 +91,7 @@ const MobileTimelogSession = ({ initialTimelog, event, contractor, role, setEdit
   const [isSubmitReviewOpen, setIsSubmitReviewOpen] = React.useState(false);
   const [autosaveState, setAutosaveState] = React.useState<AutosaveState>('idle');
   const [isSaving, setIsSaving] = React.useState(false);
+  const [saveError, setSaveError] = React.useState<string | null>(null);
   const [timelogSwipeOffset, setTimelogSwipeOffset] = React.useState(0);
   const [timelogSwipePhase, setTimelogSwipePhase] = React.useState<'idle' | 'dragging' | 'closing'>('idle');
   const autosaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -150,8 +151,11 @@ const MobileTimelogSession = ({ initialTimelog, event, contractor, role, setEdit
       return savedTimelog;
     })();
     autosavePromiseRef.current = pending;
-    void pending.catch(() => {
-      if (!retiredRef.current) setAutosaveState('error');
+    void pending.catch((error) => {
+      if (!retiredRef.current) {
+        setAutosaveState('error');
+        setSaveError(error instanceof Error ? error.message : 'Nepodařilo se uložit výkaz.');
+      }
     }).finally(() => {
       if (autosavePromiseRef.current === pending) autosavePromiseRef.current = null;
     });
@@ -216,14 +220,47 @@ const MobileTimelogSession = ({ initialTimelog, event, contractor, role, setEdit
     try {
       await saveCurrentTimelog(isCrewHeadCorrection ? 'pending_crew_confirmation' : editingTimelog.status === 'rejected' ? 'draft' : undefined);
     } catch (error) {
-      if (!retiredRef.current) toast.error(error instanceof Error ? error.message : 'Nepodařilo se uložit výkaz.');
+      if (!retiredRef.current) {
+        const message = error instanceof Error ? error.message : 'Nepodařilo se uložit výkaz.';
+        setSaveError(message);
+        toast.error(message);
+      }
     }
   };
   const confirmSubmitForReview = async () => {
     try {
       await saveCurrentTimelog('pending_ch');
     } catch (error) {
-      if (!retiredRef.current) toast.error(error instanceof Error ? error.message : 'Nepodařilo se odeslat výkaz ke kontrole.');
+      if (!retiredRef.current) {
+        const message = error instanceof Error ? error.message : 'Nepodařilo se odeslat výkaz ke kontrole.';
+        setIsSubmitReviewOpen(false);
+        setSaveError(message);
+        toast.error(message);
+      }
+    }
+  };
+  const reloadCurrentTimelog = async () => {
+    if (retiredRef.current || saveInFlightRef.current) return;
+    saveInFlightRef.current = true;
+    setIsSaving(true);
+    clearAutosaveTimer();
+    try {
+      await autosavePromiseRef.current?.catch(() => undefined);
+      if (retiredRef.current) return;
+      const current = await reloadTimelogForEditor(latestDraftRef.current);
+      if (retiredRef.current) return;
+      latestDraftRef.current = current;
+      lastAutosavedSignatureRef.current = getTimelogDraftSignature(current);
+      setDraft(current);
+      setEditingTimelog(current);
+      setIsSubmitReviewOpen(false);
+      setAutosaveState('idle');
+      setSaveError(null);
+    } catch (error) {
+      if (!retiredRef.current) setSaveError(error instanceof Error ? error.message : 'Nepodařilo se načíst výkaz.');
+    } finally {
+      saveInFlightRef.current = false;
+      if (!retiredRef.current) setIsSaving(false);
     }
   };
   const handleSubmitForReview = () => {
@@ -470,6 +507,15 @@ const MobileTimelogSession = ({ initialTimelog, event, contractor, role, setEdit
         </header>
 
         <fieldset disabled={isSaving} aria-busy={isSaving} className="contents">
+        {saveError && (
+          <div role="alert" className="rounded-2xl border border-[color:var(--nodu-border)] p-4 text-sm">
+            <p>{saveError}</p>
+            <p className="mt-1">Načtením aktuální verze nahradíte rozepsané úpravy.</p>
+            <Button type="button" variant="outline" className="mt-2" onClick={() => { void reloadCurrentTimelog(); }}>
+              Načíst aktuální verzi
+            </Button>
+          </div>
+        )}
         <div className="min-h-0 flex-1 overflow-y-auto">
         <TimelogEvidenceSection
           timelog={editingTimelog}

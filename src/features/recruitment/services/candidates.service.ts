@@ -6,6 +6,7 @@ import { isSupabaseConfigured, supabase } from '../../../lib/supabase';
 
 let candidatesHydrationPromise: Promise<void> | null = null;
 let candidatesLoaded = false;
+let candidatesHydrationEpoch = 0;
 
 const stageRank: Record<RecruitmentStage, number> = {
   new: 0,
@@ -117,7 +118,7 @@ const mergeDuplicateCandidates = (candidates: Candidate[]): Candidate[] => {
   return merged;
 };
 
-const hydrateCandidatesFromSupabase = async (): Promise<void> => {
+const hydrateCandidatesFromSupabase = async (epoch: number): Promise<void> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
     return;
   }
@@ -126,6 +127,8 @@ const hydrateCandidatesFromSupabase = async (): Promise<void> => {
     .from('candidates')
     .select('*')
     .order('created_at');
+
+  if (epoch !== candidatesHydrationEpoch) return;
 
   if (error) {
     throw new Error(error.message);
@@ -143,16 +146,18 @@ const hydrateCandidatesFromSupabase = async (): Promise<void> => {
   }));
 };
 
-export const refreshCandidatesFromSupabase = async (): Promise<void> => {
-  candidatesHydrationPromise = hydrateCandidatesFromSupabase()
+export const refreshCandidatesFromSupabase = (): Promise<void> => {
+  const epoch = candidatesHydrationEpoch;
+  const request = hydrateCandidatesFromSupabase(epoch)
     .then(() => {
+      if (epoch !== candidatesHydrationEpoch) return;
       candidatesLoaded = true;
     })
     .finally(() => {
-      candidatesHydrationPromise = null;
+      if (candidatesHydrationPromise === request) candidatesHydrationPromise = null;
     });
-
-  await candidatesHydrationPromise;
+  candidatesHydrationPromise = request;
+  return request;
 };
 
 const ensureSupabaseCandidatesLoaded = () => {
@@ -168,10 +173,10 @@ const ensureSupabaseCandidatesLoaded = () => {
     return;
   }
 
-  candidatesHydrationPromise = refreshCandidatesFromSupabase()
+  void refreshCandidatesFromSupabase()
     .catch((error) => {
       console.warn('Nepodarilo se nacist kandidaty ze Supabase, zustavam na lokalnich datech.', error);
-    })
+    });
 };
 
 export const getCandidates = (): Candidate[] => {
@@ -211,6 +216,7 @@ export const subscribeToCandidateChanges = (listener: () => void): (() => void) 
 );
 
 export const resetSupabaseCandidatesHydration = () => {
+  candidatesHydrationEpoch += 1;
   candidatesHydrationPromise = null;
   candidatesLoaded = false;
 };

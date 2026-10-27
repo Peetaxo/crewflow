@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tansta
 import { useAuth } from '../../app/providers/useAuth';
 import { useAppContext } from '../../context/useAppContext';
 import { appDataSource } from '../../lib/app-config';
+import { operationalQueryOptions } from '../../lib/operational-query-options';
 import { readShiftWorkflowSnapshot, saveShiftWorkflow } from './shift-workflows.gateway';
 import { ShiftWorkflowError, type SaveShiftWorkflow, type ShiftWorkflowScope } from './shift-workflows.contract';
 
@@ -65,6 +66,7 @@ export function useShiftWorkflows(enabled = true) {
     return snapshot;
   }, [scope]);
   const query = useQuery({
+    ...operationalQueryOptions(scope.source === 'supabase'),
     queryKey: shiftWorkflowQueryKey(scope), enabled: ready, retry: false, gcTime: 0, queryFn: read,
   });
   const mutation = useMutation({

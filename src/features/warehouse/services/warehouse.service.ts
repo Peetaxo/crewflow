@@ -186,8 +186,13 @@ const mapWarehouseReservation = (
 
 let warehouseHydrationPromise: Promise<void> | null = null;
 let warehouseLoaded = false;
+let warehouseHydrationEpoch = 0;
 
-const hydrateWarehouseFromSupabase = async (): Promise<void> => {
+const assertWarehouseScope = (epoch: number) => {
+  if (epoch !== warehouseHydrationEpoch) throw new Error('Přístup ke skladu se změnil. Otevřete rezervaci znovu.');
+};
+
+const hydrateWarehouseFromSupabase = async (epoch: number): Promise<void> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
     return;
   }
@@ -202,6 +207,8 @@ const hydrateWarehouseFromSupabase = async (): Promise<void> => {
     supabaseUntyped.from('warehouse_reservations').select('*').order('starts_at'),
     supabaseUntyped.from('warehouse_reservation_items').select('*').order('created_at'),
   ]);
+
+  if (epoch !== warehouseHydrationEpoch) return;
 
   const firstError = itemsResult.error ?? reservationsResult.error ?? reservationItemsResult.error;
   if (firstError) {
@@ -236,19 +243,23 @@ const ensureSupabaseWarehouseLoaded = () => {
     return;
   }
 
-  warehouseHydrationPromise = hydrateWarehouseFromSupabase()
+  const epoch = warehouseHydrationEpoch;
+  const request = hydrateWarehouseFromSupabase(epoch)
     .then(() => {
+      if (epoch !== warehouseHydrationEpoch) return;
       warehouseLoaded = true;
     })
     .catch((error) => {
       console.warn('Nepodarilo se nacist sklad ze Supabase.', error);
     })
     .finally(() => {
-      warehouseHydrationPromise = null;
+      if (warehouseHydrationPromise === request) warehouseHydrationPromise = null;
     });
+  warehouseHydrationPromise = request;
 };
 
 export const resetSupabaseWarehouseHydration = () => {
+  warehouseHydrationEpoch += 1;
   warehouseLoaded = false;
   warehouseHydrationPromise = null;
 };
@@ -313,10 +324,11 @@ export const findWarehouseReservationConflicts = (
   });
 };
 
-const saveWarehouseReservationToSupabase = async (reservation: WarehouseReservation) => {
+const saveWarehouseReservationToSupabase = async (reservation: WarehouseReservation, epoch: number) => {
   if (!supabase || !isSupabaseConfigured) return;
 
   const supabaseUntyped = supabase as unknown as SupabaseInsertClient;
+  assertWarehouseScope(epoch);
   const reservationResult = await supabaseUntyped.from('warehouse_reservations').insert({
     id: reservation.id,
     project_id: reservation.projectId,
@@ -333,6 +345,7 @@ const saveWarehouseReservationToSupabase = async (reservation: WarehouseReservat
     booqable_order_id: reservation.booqableOrderId,
   });
 
+  assertWarehouseScope(epoch);
   if (reservationResult.error) throw new Error(reservationResult.error.message);
 
   const lineResult = await supabaseUntyped.from('warehouse_reservation_items').insert(
@@ -348,8 +361,10 @@ const saveWarehouseReservationToSupabase = async (reservation: WarehouseReservat
     })),
   );
 
+  assertWarehouseScope(epoch);
   if (lineResult.error) {
     const cleanupResult = await supabaseUntyped.from('warehouse_reservations').delete().eq('id', reservation.id);
+    assertWarehouseScope(epoch);
     if (cleanupResult.error) {
       throw new Error(`${lineResult.error.message} Cleanup failed: ${cleanupResult.error.message}`);
     }
@@ -360,6 +375,7 @@ const saveWarehouseReservationToSupabase = async (reservation: WarehouseReservat
 export const createWarehouseReservation = async (
   draft: WarehouseReservationDraft,
 ): Promise<WarehouseReservation> => {
+  const epoch = warehouseHydrationEpoch;
   if (!draft.projectJobNumber.trim()) throw new Error('Vyberte projekt.');
   if (!draft.startsAt || !draft.endsAt) throw new Error('Vyplnte zacatek a konec rezervace.');
   if (!isValidDateTime(draft.startsAt) || !isValidDateTime(draft.endsAt)) {
@@ -407,7 +423,8 @@ export const createWarehouseReservation = async (
     items: lines.map((line) => ({ ...line, reservationId })),
   };
 
-  await saveWarehouseReservationToSupabase(saved);
+  await saveWarehouseReservationToSupabase(saved, epoch);
+  assertWarehouseScope(epoch);
 
   updateLocalAppState((state) => ({
     ...state,

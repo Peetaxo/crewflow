@@ -134,6 +134,8 @@ vi.mock('../modals/DeleteConfirmModal', () => ({
   default: () => null,
 }));
 
+vi.mock('./AppDataFreshness', () => ({ default: () => <div data-testid="data-freshness" /> }));
+
 import AppLayout from './AppLayout';
 
 describe('AppLayout shell', () => {
@@ -190,6 +192,11 @@ describe('AppLayout shell', () => {
     render(<AppLayout />);
     expect(screen.queryByRole('heading', { name: 'Jak používat nodu' })).not.toBeInTheDocument();
     expect(screen.getByTestId('dashboard-view')).toBeVisible();
+  });
+
+  it('mounts scoped freshness feedback inside the page content', () => {
+    render(<AppLayout />);
+    expect(screen.getByRole('main')).toContainElement(screen.getByTestId('data-freshness'));
   });
 
   it('applies nodu shell classes to the dashboard layout wrapper', () => {

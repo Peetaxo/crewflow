@@ -3,6 +3,7 @@ import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-quer
 import { useAuth } from '../../app/providers/useAuth';
 import { useAppContext } from '../../context/useAppContext';
 import { appDataSource } from '../../lib/app-config';
+import { operationalQueryOptions } from '../../lib/operational-query-options';
 import { BillingError, type BillingScope } from './contract';
 import { registerBillingActivation } from './identity-scope';
 const consumers = new WeakMap<QueryClient, Map<string, number>>();
@@ -41,8 +42,8 @@ export function usePrivateInvoiceQuery<T>(prefix: string, read: () => Promise<T>
   const queryFn = useCallback(async ({ signal }: { signal: AbortSignal }) => {
     const result = await read(); if (signal.aborted) throw billingInactive(); return result;
   }, [read]);
-  const query = useQuery({ queryKey: key, queryFn, enabled: ready, retry: false, gcTime: 0,
-    refetchOnWindowFocus: 'always', refetchOnReconnect: 'always', refetchInterval: scope.source === 'supabase' ? 30000 : false });
+  const query = useQuery({ refetchOnWindowFocus: 'always', refetchOnReconnect: 'always', ...operationalQueryOptions(scope.source === 'supabase'),
+    queryKey: key, queryFn, enabled: ready, retry: false, gcTime: 0 });
   const reload = useCallback(async () => {
     const isCurrent = capture(); if (!isCurrent()) throw billingInactive();
     const result = await client.fetchQuery({ queryKey: key, queryFn, staleTime: 0, gcTime: 0, retry: false });

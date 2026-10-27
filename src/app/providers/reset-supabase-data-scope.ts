@@ -1,3 +1,5 @@
+import { resetSupabaseAppData } from '../../lib/app-data';
+import { resetSupabaseCrewRatingsHydration } from '../../features/crew/services/crew-ratings.service';
 import { retireBillingDataScope } from '../../features/invoice-billing/identity-scope';
 import { resetSupabaseClientsHydration } from '../../features/clients/services/clients.service';
 import { resetSupabaseCrewHydration } from '../../features/crew/services/crew.service';
@@ -22,14 +24,21 @@ const resetHydrationGuards = () => {
   resetSupabaseCandidatesHydration();
   resetSupabaseFleetHydration();
   resetSupabaseWarehouseHydration();
+  resetSupabaseCrewRatingsHydration();
 };
 
+let scopeVersion = 0;
+
+export const getSupabaseDataScopeVersion = () => scopeVersion;
+
 export const resetSupabaseDataScope = async (): Promise<void> => {
+  scopeVersion += 1;
   retireBillingDataScope();
   resetHydrationGuards();
-  await queryClient.cancelQueries();
-  for (const prefix of ['shift-workflows', 'invoice-billing', 'invoice-billing-actors', 'invoices', 'invoice-approvals']) {
-    queryClient.removeQueries({ queryKey: [prefix] });
-  }
-  await queryClient.invalidateQueries();
+  // Start cancellation and evict synchronously. A late cancellation completion
+  // must never evict the next identity's cache or restart old observers.
+  const cancellation = queryClient.cancelQueries();
+  queryClient.removeQueries();
+  resetSupabaseAppData();
+  await cancellation;
 };

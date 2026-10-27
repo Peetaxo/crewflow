@@ -56,6 +56,10 @@ let projectsHydrationPromise: Promise<void> | null = null;
 let projectsLoaded = false;
 let projectsHydrationEpoch = 0;
 
+const assertProjectsScope = (epoch: number) => {
+  if (epoch !== projectsHydrationEpoch) throw new Error('Přístup k projektům se změnil. Otevřete projekt znovu.');
+};
+
 const hydrateProjectsFromSupabase = async (epoch: number): Promise<void> => {
   if (appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured) {
     return;
@@ -223,6 +227,7 @@ export const createEmptyProject = (): Project => ({
 });
 
 export const saveProject = async (project: Project): Promise<Project> => {
+  const epoch = projectsHydrationEpoch;
   const normalizedProject = normalizeProject(project);
   if (!normalizedProject.id || !normalizedProject.name) {
     throw new Error('Vyplnte Job Number a nazev projektu.');
@@ -231,6 +236,7 @@ export const saveProject = async (project: Project): Promise<Project> => {
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
     const existing = (getLocalAppState().projects ?? []).some((item) => item.id === normalizedProject.id);
     const clientRowId = await getSupabaseClientRowIdByName(normalizedProject.client);
+    assertProjectsScope(epoch);
     const payload = {
       job_number: normalizedProject.id,
       name: normalizedProject.name,
@@ -244,6 +250,7 @@ export const saveProject = async (project: Project): Promise<Project> => {
         .update(payload)
         .eq('job_number', normalizedProject.id);
 
+      assertProjectsScope(epoch);
       if (projectUpdate.error) {
         throw new Error(projectUpdate.error.message);
       }
@@ -252,12 +259,14 @@ export const saveProject = async (project: Project): Promise<Project> => {
         .from('projects')
         .insert(payload);
 
+      assertProjectsScope(epoch);
       if (projectInsert.error) {
         throw new Error(projectInsert.error.message);
       }
     }
   }
 
+  assertProjectsScope(epoch);
   updateLocalAppState((snapshot) => {
     const exists = snapshot.projects.some((item) => item.id === normalizedProject.id);
     return {
@@ -272,6 +281,7 @@ export const saveProject = async (project: Project): Promise<Project> => {
 };
 
 export const deleteProject = async (id: string): Promise<{ id: string }> => {
+  const epoch = projectsHydrationEpoch;
   if (appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
     const projectDelete = await supabase
       .from('projects')
@@ -283,6 +293,7 @@ export const deleteProject = async (id: string): Promise<{ id: string }> => {
     }
   }
 
+  if (epoch !== projectsHydrationEpoch) throw new Error('Přístup k projektům se změnil. Otevřete projekt znovu.');
   updateLocalAppState((snapshot) => ({
     ...snapshot,
     projects: snapshot.projects.filter((project) => project.id !== id),

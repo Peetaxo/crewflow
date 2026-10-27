@@ -69,6 +69,7 @@ function authFor(userId: string | null, profileId: string | null, role: Role | n
     currentUserId: userId,
     currentContractorId: null,
     devLoginOptions: [],
+    retryAuthMetadata: asyncNoop,
     signIn: asyncNoop,
     signInAsDevUser: noop,
     switchRole: asyncNoop,

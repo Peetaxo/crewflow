@@ -1,6 +1,6 @@
 # Nodu — ověření přístupů před skutečným pilotem
 
-Datum: **27. 10. 2026**. Etapa 2.1: serverová oprava je nasazená a ověřená; aktualizace aplikačního main a vývojových instalací ještě probíhá.
+Datum: **27. 10. 2026**. Etapa 2.1: serverová oprava je nasazená a ověřená, klient je v main a aktualizovaném simulátoru. Nedostupný fyzický iPhone čeká na instalaci. [Závěrečné ověření etapy 2](2026-10-27-stage-2-verification.md).
 
 ## Oprava a nové ověření
 

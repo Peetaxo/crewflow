@@ -82,13 +82,13 @@ Navázat na `docs/superpowers/plans/2026-10-26-member-onboarding-trial-guide.md`
 
 ### 2.1 Uzavřít vývojové přepínání rolí pro běžné uživatele
 
-**Stav: probíhá, pouze čtecí audit.** Aktuální živá definice a granty znovu potvrzují možnost vlastního zvýšení role přihlášeným uživatelem. Blokuje skutečné pozvánky; žádný živý zápis neproběhl. [Důkaz a neprovedené API scénáře](../../testing/2026-10-27-pilot-access.md).
+**Stav: dokončeno v živém backendu, main a simulátoru; nedostupný fyzický iPhone čeká na instalaci.** Samovolná změna role je zakázaná bez výjimky pro přepínač; oba přepínače jsou odstraněné. Navíc uzavřen anonymní seznam crew. **17 skutečných místních API skupin**, 14 integračních skupin pozvánek a živé SQL regrese prošly. Původní role zůstaly zachované. [Rozsah a důkazy](../../testing/2026-10-27-pilot-access.md).
 
 - [x] Porovnat aktuální nasazenou definici `set_current_user_role` a související granty s `supabase/user-role-switching.sql`. Historický nález z auditu ověřit znovu proti skutečnému backendu.
-- [ ] Zachovat vývojové zkoušení pohledů v odděleném testovacím režimu. Běžný uživatel nesmí změnit skutečnou roli sám sobě; samotné schování přepínače není splnění.
-- [ ] Ověřit přímo API jako anon, crew A, crew B, CH a COO: role, cizí profily, výkazy, přiřazení, faktury, přílohy a pozvánky. Pozitivní případy musí dál fungovat podle role a vlastnictví.
-- [ ] Ověřit, že profil bez účtu mohou založit pouze oprávněné vedoucí role a nemohou přitom podstrčit cizí Auth identitu. Lokálně schválené oprávnění se do živého prostředí nepřenáší bez této kontroly.
-- [ ] Zaznamenat testované role, endpointy a skutečné výsledky do `docs/testing/2026-10-27-pilot-access.md`.
+- [x] Podle upřesnění uživatele odstranit vývojové přepínače z UI a neponechávat kvůli nim žádnou serverovou výjimku. Běžný uživatel nesmí změnit skutečnou roli sám sobě; samotné schování přepínače není splnění.
+- [x] Ověřit přímo API jako anon, crew A, crew B, CH a COO: role, cizí profily, výkazy, přiřazení, faktury, přílohy a pozvánky. Pozitivní případy musí dál fungovat podle role a vlastnictví.
+- [x] Ověřit, že profil bez účtu mohou založit pouze oprávněné vedoucí role a nemohou přitom podstrčit cizí Auth identitu. Lokálně schválené oprávnění se do živého prostředí nepřenáší bez této kontroly.
+- [x] Zaznamenat testované role, endpointy a skutečné výsledky do `docs/testing/2026-10-27-pilot-access.md`.
 
 **Hotovo, když:** běžný crew nedokáže přímým voláním získat vyšší oprávnění ani cizí soukromé údaje a CH/COO mohou dokončit určené pracovní kroky.
 
@@ -96,12 +96,12 @@ Navázat na `docs/superpowers/plans/2026-10-26-member-onboarding-trial-guide.md`
 
 ### 2.2 Opravit období a souhrny dashboardu
 
-**Stav: čeká.**
+**Stav: dokončeno v main a simulátoru; nedostupný fyzický iPhone čeká na instalaci.** Aktuální měsíc, rozdělení hodin po dnech a starší fronty prošly 18 novými regresními případy; celý dashboard má 27 úspěšných testů. Mobilní i desktopový náhled ukázal říjen 2026. Celá sada má **211 souborů / 2 754 úspěšných testů**. [Ověření etapy 2](../../testing/2026-10-27-stage-2-verification.md).
 
-- [ ] Nahradit pevný „Duben 2026“ skutečně zobrazeným obdobím. Pro první verzi použít aktuální kalendářní měsíc; nepřidávat nový složitý filtr bez potřeby.
-- [ ] Hodiny označené „tento měsíc“ počítat podle data jednotlivých odpracovaných dnů. Výkaz přes hranici měsíců přispívá do každého měsíce pouze svými příslušnými dny.
-- [ ] Zachovat stavové fronty „čeká na mě“ napříč obdobími, aby oprava měsíčních statistik neschovala starší práci ke schválení.
-- [ ] Ověřit hranici měsíce a roku, prázdný měsíc a role crew/CH/COO na mobilu i desktopu.
+- [x] Nahradit pevný „Duben 2026“ skutečně zobrazeným obdobím. Pro první verzi použít aktuální kalendářní měsíc; nepřidávat nový složitý filtr bez potřeby.
+- [x] Hodiny označené „tento měsíc“ počítat podle data jednotlivých odpracovaných dnů. Výkaz přes hranici měsíců přispívá do každého měsíce pouze svými příslušnými dny.
+- [x] Zachovat stavové fronty „čeká na mě“ napříč obdobími, aby oprava měsíčních statistik neschovala starší práci ke schválení.
+- [x] Ověřit hranici měsíce a roku, prázdný měsíc a role crew/CH/COO na mobilu i desktopu.
 
 **Hotovo, když:** období v nadpisu odpovídá měsíčním hodnotám a seznam práce ke schválení dál obsahuje všechny relevantní nevyřízené položky.
 
@@ -231,4 +231,4 @@ Fakturaci neimplementovat znovu. Navázat na `docs/testing/2026-10-22-crew-invoi
 8. Dokončit technický úklid a připravit finální verzi.
 9. Provést bezpečnostní audit a řízený penetrační test, opravit nálezy, zopakovat testy a uzavřít první verzi.
 
-**Etapy 0–1 byly uzavřené 27. 10. 2026.** Navazující pracovní celek je etapa 2: samostatně připravit opravu oprávnění podle potvrzeného živého nálezu a následně opravit dashboard. Skutečné pozvánky zůstávají podmíněné dalšími etapami.
+**Etapy 0–2 byly uzavřené 27. 10. 2026.** Etapa 2 je v živém backendu a main, simulátor je aktualizovaný; potvrzeně nedostupný fyzický iPhone má čekající instalaci. Navazující pracovní celek je etapa 3: ověřit aktuálnost dat mezi účty a zařízeními. Skutečné pozvánky zůstávají podmíněné dalšími etapami.

@@ -1,6 +1,6 @@
 # Nodu — ověření etapy 2
 
-Stav: **etapa 2 dokončená v main a živém backendu; simulátor aktualizovaný, fyzický iPhone čeká na dostupnost.**
+Stav: **etapa 2 dokončená v main a živém backendu; simulátor i fyzický iPhone aktualizované při doplňující opravě crew Přehledu.**
 
 ## Oprávnění
 
@@ -28,7 +28,11 @@ Podrobné API scénáře a živá migrace: [záznam přístupů](2026-10-27-pilo
 - Aplikační commit **`6f434a769d5d0534d4f3815b5827cd2576246dec`** je začleněný do `origin/main`; zahrnuje oprávnění `d444991` a dashboard `6f434a7`. Následný evidenční commit mění pouze dokumentaci.
 - Čistá samostatná kopie `/Users/peetax/Projekty/crewflow-stage2-refresh-20261027` měla před refreshem větev main, čistý stav a HEAD shodný s origin/main. Ignorovaná `.env.local` byla zachovaná. Na tomto main znovu prošlo **5 souborů / 56 cílených testů**.
 - Povinný `npm run ios:refresh:devices` byl spuštěný s nezměněnými preflight kontrolami a odděleným DerivedData. **Simulátor iPhone 17 Pro / iOS 26.5: sestavení, instalace a spuštění úspěšné.** Na skutečné obrazovce nejsou přepínače rolí. Snímek: `/private/tmp/nodu-stage2-simulator-20261027.png`.
-- **Fyzický Peetax iPhone 13 mini: čeká na instalaci, není aktualizovaný.** Xcode neměl odpovídající cílové zařízení. Následné `devicectl list devices` i přímý osmivteřinový probe potvrdily `unavailable`. Původní helper bohužel považuje návratový kód 0 z informací o nedostupném zařízení za dostupnost a vypíše `phone: failed`; nejde o prokázanou chybu sestavení na dostupném telefonu. Podle AGENTS.md je potvrzená nedostupnost neblokující. Pomocný skript nebyl v této etapě rozšiřovaný; před příštím refreshem počítat s tímto chováním.
+- **Původní refresh etapy 2 — fyzický Peetax iPhone 13 mini tehdy čekal na dostupnost.** Xcode neměl odpovídající cílové zařízení. Následné `devicectl list devices` i přímý osmivteřinový probe potvrdily `unavailable`. Původní helper bohužel považuje návratový kód 0 z informací o nedostupném zařízení za dostupnost a vypíše `phone: failed`; nejde o prokázanou chybu sestavení na dostupném telefonu. Podle AGENTS.md je potvrzená nedostupnost neblokující. Pomocný skript nebyl v této etapě rozšiřovaný; před příštím refreshem počítat s tímto chováním.
 - Log refreshe: `/private/tmp/nodu-stage2-ios-refresh-20261027.log`; potvrzení dostupnosti: `/private/tmp/nodu-stage2-phone-probe-20261027.log`. Vygenerované místní cesty SwiftPM byly po refreshe vrácené; čistý main opět ověřený. Původní tři rozpracované soubory hlavního checkoutu zůstaly podle SHA-256 beze změny. Samostatná aplikace nodu test a její účet zůstávají zachované.
 
 Navazuje etapa 3 podle řídicího plánu. Skutečné pozvánky a veřejný onboarding zůstávají podmíněné dalšími etapami.
+
+## Dodatečná kontrola crew Přehledu a Výkazů
+
+Uživatel následně nahlásil rozdílné počty v samostatném crew Přehledu (`MyShiftsView`) a vlastních Výkazech. Příčinou byl implicitní měsíční filtr pouze ve Výkazech a různě široké stavové skupiny. Aplikační oprava `de2daae` sjednocuje výchozí rozsah na všechna období a vysvětluje počty i zahrnuté stavy. V tomto navazujícím běhu byl fyzický iPhone připojený: simulátor i telefon se úspěšně sestavily, nainstalovaly a spustily; dřívější čekající instalace tím odpadá. [Přesná reprodukce a nové ověření](2026-10-27-crew-report-counts.md).

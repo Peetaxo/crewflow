@@ -82,7 +82,7 @@ Navázat na `docs/superpowers/plans/2026-10-26-member-onboarding-trial-guide.md`
 
 ### 2.1 Uzavřít vývojové přepínání rolí pro běžné uživatele
 
-**Stav: dokončeno v živém backendu, main a simulátoru; nedostupný fyzický iPhone čeká na instalaci.** Samovolná změna role je zakázaná bez výjimky pro přepínač; oba přepínače jsou odstraněné. Navíc uzavřen anonymní seznam crew. **17 skutečných místních API skupin**, 14 integračních skupin pozvánek a živé SQL regrese prošly. Původní role zůstaly zachované. [Rozsah a důkazy](../../testing/2026-10-27-pilot-access.md).
+**Stav: dokončeno v živém backendu, main, simulátoru i fyzickém iPhonu.** Samovolná změna role je zakázaná bez výjimky pro přepínač; oba přepínače jsou odstraněné. Navíc uzavřen anonymní seznam crew. **17 skutečných místních API skupin**, 14 integračních skupin pozvánek a živé SQL regrese prošly. Původní role zůstaly zachované. [Rozsah a důkazy](../../testing/2026-10-27-pilot-access.md).
 
 - [x] Porovnat aktuální nasazenou definici `set_current_user_role` a související granty s `supabase/user-role-switching.sql`. Historický nález z auditu ověřit znovu proti skutečnému backendu.
 - [x] Podle upřesnění uživatele odstranit vývojové přepínače z UI a neponechávat kvůli nim žádnou serverovou výjimku. Běžný uživatel nesmí změnit skutečnou roli sám sobě; samotné schování přepínače není splnění.
@@ -96,7 +96,7 @@ Navázat na `docs/superpowers/plans/2026-10-26-member-onboarding-trial-guide.md`
 
 ### 2.2 Opravit období a souhrny dashboardu
 
-**Stav: dokončeno v main a simulátoru; nedostupný fyzický iPhone čeká na instalaci.** Aktuální měsíc, rozdělení hodin po dnech a starší fronty prošly 18 novými regresními případy; celý dashboard má 27 úspěšných testů. Mobilní i desktopový náhled ukázal říjen 2026. Celá sada má **211 souborů / 2 754 úspěšných testů**. [Ověření etapy 2](../../testing/2026-10-27-stage-2-verification.md).
+**Stav: dokončeno v main, simulátoru i fyzickém iPhonu.** Aktuální měsíc, rozdělení hodin po dnech a starší fronty prošly 18 novými regresními případy; celý dashboard má 27 úspěšných testů. Mobilní i desktopový náhled ukázal říjen 2026. Celá sada má **211 souborů / 2 754 úspěšných testů**. [Ověření etapy 2](../../testing/2026-10-27-stage-2-verification.md).
 
 - [x] Nahradit pevný „Duben 2026“ skutečně zobrazeným obdobím. Pro první verzi použít aktuální kalendářní měsíc; nepřidávat nový složitý filtr bez potřeby.
 - [x] Hodiny označené „tento měsíc“ počítat podle data jednotlivých odpracovaných dnů. Výkaz přes hranici měsíců přispívá do každého měsíce pouze svými příslušnými dny.
@@ -231,4 +231,4 @@ Fakturaci neimplementovat znovu. Navázat na `docs/testing/2026-10-22-crew-invoi
 8. Dokončit technický úklid a připravit finální verzi.
 9. Provést bezpečnostní audit a řízený penetrační test, opravit nálezy, zopakovat testy a uzavřít první verzi.
 
-**Etapy 0–2 byly uzavřené 27. 10. 2026.** Etapa 2 je v živém backendu a main, simulátor je aktualizovaný; potvrzeně nedostupný fyzický iPhone má čekající instalaci. Navazující pracovní celek je etapa 3: ověřit aktuálnost dat mezi účty a zařízeními. Skutečné pozvánky zůstávají podmíněné dalšími etapami.
+**Etapy 0–2 byly uzavřené 27. 10. 2026.** Etapa 2 je v živém backendu a main; simulátor i fyzický iPhone jsou po doplňující opravě crew Přehledu aktualizované. Navazující pracovní celek je etapa 3: ověřit aktuálnost dat mezi účty a zařízeními. Skutečné pozvánky zůstávají podmíněné dalšími etapami.

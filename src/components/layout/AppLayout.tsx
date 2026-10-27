@@ -1,12 +1,8 @@
 import React from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { toast } from 'sonner';
 import CrewGettingStartedGate from '../../features/onboarding/CrewGettingStartedGate';
-import { useAuth } from '../../app/providers/useAuth';
 import { useAppContext } from '../../context/useAppContext';
 import { useIsMobile } from '../../hooks/use-mobile';
-import { ROLE_LABELS, ROLE_SHORT_LABELS } from '../../constants';
-import type { Role } from '../../types';
 import Sidebar from './Sidebar';
 import MobileCrewNav from './MobileCrewNav';
 import { useNavBadgeCounts } from './useNavBadgeCounts';
@@ -33,42 +29,20 @@ import ClientEditModal from '../modals/ClientEditModal';
 import ReceiptEditModal from '../modals/ReceiptEditModal';
 import DeleteConfirmModal from '../modals/DeleteConfirmModal';
 
-const mobileRoleOptions = ['crew', 'crewhead', 'coo'] as const;
 
 const AppLayoutContent: React.FC = () => {
   const {
     darkMode,
     currentTab,
     role,
-    setRole,
     selectedEventId,
     selectedProjectIdForStats,
   } = useAppContext();
-  const { isAuthRequired, isRoleSwitching, role: authRole, switchRole } = useAuth();
   const isMobile = useIsMobile();
   const badgeCounts = useNavBadgeCounts();
   const isMobileAppShell = isMobile;
   const isMobileEventDetail = isMobileAppShell && Boolean(selectedEventId)
     && (currentTab === 'events' || (currentTab === 'projects' && Boolean(selectedProjectIdForStats)));
-  const effectiveRole = authRole ?? role;
-
-  const handleMobileRoleChange = React.useCallback(async (nextRole: Role) => {
-    if (nextRole === effectiveRole || (isAuthRequired && isRoleSwitching)) return;
-
-    if (!isAuthRequired) {
-      setRole(nextRole);
-      return;
-    }
-
-    try {
-      await switchRole(nextRole);
-      toast.success(`Role změněna na ${ROLE_LABELS[nextRole]}.`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Změna role se nepodařila.';
-      toast.error(message);
-    }
-  }, [effectiveRole, isAuthRequired, isRoleSwitching, setRole, switchRole]);
-
   const renderCurrentView = () => {
     if (currentTab === 'settings') return <SettingsView key="settings" />;
 
@@ -112,24 +86,6 @@ const AppLayoutContent: React.FC = () => {
   return (
     <div className={`nodu-app-shell ${isMobileAppShell ? 'nodu-app-shell--mobile-crew' : ''} ${darkMode ? 'dark' : ''}`}>
       {!isMobileAppShell && <Sidebar />}
-
-      {isMobileAppShell && (
-        <div className="nodu-mobile-role-switcher" aria-label="Přepnutí role v mobilním preview">
-          {mobileRoleOptions.map((roleOption) => (
-            <button
-              key={roleOption}
-              type="button"
-              onClick={() => { void handleMobileRoleChange(roleOption); }}
-              disabled={isAuthRequired && isRoleSwitching}
-              aria-label={ROLE_LABELS[roleOption]}
-              aria-pressed={effectiveRole === roleOption}
-              className={`nodu-mobile-role-switcher__button ${effectiveRole === roleOption ? 'nodu-mobile-role-switcher__button--active' : ''}`}
-            >
-              {ROLE_SHORT_LABELS[roleOption]}
-            </button>
-          ))}
-        </div>
-      )}
 
       <main className={`nodu-page-frame ${isMobileAppShell ? 'nodu-page-frame--mobile-crew relative' : ''}`}>
         {isMobileAppShell&&<div className="absolute right-4 z-[45]" style={{top:'max(0.5rem, env(safe-area-inset-top))'}}><NotificationBell/></div>}

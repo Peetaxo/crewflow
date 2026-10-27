@@ -234,7 +234,7 @@ describe('AppLayout shell', () => {
     expect(screen.getByTestId('warehouse-view')).toBeInTheDocument();
   });
 
-  it('uses the mobile app shell for Crew and keeps the role switcher visible', () => {
+  it('uses the mobile app shell for Crew without preview role controls', () => {
     mockAppContext = {
       ...mockAppContext,
       role: 'crew',
@@ -248,9 +248,9 @@ describe('AppLayout shell', () => {
     expect(screen.queryByTestId('sidebar')).not.toBeInTheDocument();
     expect(screen.getByTestId('mobile-crew-nav')).toHaveTextContent('2');
     expect(screen.getByTestId('mobile-crew-nav')).toHaveAttribute('data-role', 'crew');
-    expect(screen.getByRole('button', { name: 'Crew' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'CrewHead' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'COO' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Crew' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'CrewHead' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'COO' })).not.toBeInTheDocument();
   });
 
   it('hides the mobile Crew nav while a Crew event detail is open', () => {
@@ -288,29 +288,17 @@ describe('AppLayout shell', () => {
     expect(screen.queryByTestId('sidebar')).not.toBeInTheDocument();
     expect(screen.getByRole('main')).toHaveClass('nodu-page-frame--mobile-crew');
     expect(screen.getByTestId('mobile-crew-nav')).toHaveAttribute('data-role', 'crewhead');
-    expect(screen.getByRole('button', { name: 'CrewHead' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: 'CrewHead' })).not.toBeInTheDocument();
   });
 
-  it('switches roles locally in preview mode', () => {
+  it.each([false, true])('does not expose mobile role controls (authenticated=%s)', (authenticated) => {
     mockAppContext = { ...mockAppContext, role: 'crew' };
-    mockIsMobile = true;
-
-    render(<AppLayout />);
-    fireEvent.click(screen.getByRole('button', { name: 'CrewHead' }));
-
-    expect(setRole).toHaveBeenCalledWith('crewhead');
-  });
-
-  it('switches roles through auth without mutating local role directly', () => {
-    mockAppContext = { ...mockAppContext, role: 'crew' };
-    authMockState.isAuthRequired = true;
+    authMockState.isAuthRequired = authenticated;
     authMockState.role = 'crew';
     mockIsMobile = true;
-
     render(<AppLayout />);
-    fireEvent.click(screen.getByRole('button', { name: 'CrewHead' }));
-
-    expect(authMockState.switchRole).toHaveBeenCalledWith('crewhead');
+    expect(screen.queryByLabelText('Přepnutí role v mobilním preview')).not.toBeInTheDocument();
     expect(setRole).not.toHaveBeenCalled();
+    expect(authMockState.switchRole).not.toHaveBeenCalled();
   });
 });

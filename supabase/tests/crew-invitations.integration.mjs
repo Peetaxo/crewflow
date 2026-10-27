@@ -95,7 +95,7 @@ try {
     const identity = await service.auth.admin.getUserById(operator.userId);
     check(!identity.error && identity.data.user?.email === operator.email, 'operator fixture identity matches');
     const signed = await signIn(operator);
-    await test('anonymous invalid nonallowlisted and self-promoted callers cannot manage invitations', async () => {
+    await test('anonymous invalid nonallowlisted and self-promotion attempts cannot manage invitations', async () => {
       const p = profile('denied'); const body = input(p);
       check((await call(body)).body.error === 'unauthorized', 'no bearer');
       check((await call(body, 'invalid')).body.error === 'unauthorized', 'invalid bearer');
@@ -104,8 +104,13 @@ try {
       check((await call(body, outsiderSession.token)).body.error === 'forbidden', 'nonallowlisted');
       const metadata = await outsiderSession.client.auth.updateUser({ data: { role: 'coo' } }); check(!metadata.error, 'untrusted metadata updated');
       check((await call(body, outsiderSession.token)).body.error === 'forbidden', 'metadata cannot authorize');
-      const promoted = await outsiderSession.client.rpc('set_current_user_role', { p_role: 'coo' }); check(!promoted.error, 'existing mutable role setter exercised');
-      check((await call(body, outsiderSession.token)).body.error === 'forbidden', 'database self-promoted COO not allowlisted');
+      const promoted = await outsiderSession.client.rpc('set_current_user_role', { p_role: 'coo' });
+      check(promoted.error?.code === '42501', 'self-promotion is denied by the server');
+      check(rows(`select role from public.user_roles where user_id=${q(outsider.userId)}`)[0]?.role === 'crew', 'denied self-promotion preserves crew role');
+      // Exercise the separate allowlist boundary using only privileged fixture provisioning.
+      sql(`update public.user_roles set role='coo' where user_id=${q(outsider.userId)};`);
+      try { check((await call(body, outsiderSession.token)).body.error === 'forbidden', 'administratively provisioned COO not allowlisted'); }
+      finally { sql(`update public.user_roles set role='crew' where user_id=${q(outsider.userId)};`); }
       sql(`delete from public.user_roles where user_id=${q(operator.userId)}; insert into public.user_roles(user_id,role) values(${q(operator.userId)},'crew');`);
       try { check((await call(body, signed.token)).body.error === 'forbidden', 'allowlisted crew denied'); }
       finally { sql(`delete from public.user_roles where user_id=${q(operator.userId)}; insert into public.user_roles(user_id,role) values(${q(operator.userId)},'coo');`); }
@@ -140,7 +145,7 @@ try {
       check(await mailboxCount(p.email) === 1, 'replay never sends again');
       const mail = await (await fetch(`${credentials.MAILPIT_URL}/api/v1/search?query=${encodeURIComponent(`to:${p.email}`)}`)).json();
       const message = await (await fetch(`${credentials.MAILPIT_URL}/api/v1/message/${mail.messages[0].ID}`)).json();
-      check(message.HTML.includes('&lt;Ada &amp; Crew&gt;') && message.Text.includes('48 hodin') && message.HTML.includes('nodu://activate#token='), 'safe complete shared email');
+      check(message.HTML.includes('&lt;Ada &amp; Crew&gt;') && message.Text.includes('48 hodin') && message.HTML.includes('nodu-test://activate#token='), 'safe complete shared email');
       const rawToken = /activate#token=([a-f0-9]{64})/.exec(message.HTML)[1];
       check(hash(rawToken) === i.token_hash && !Object.values(i).includes(rawToken), 'raw token only in mailbox');
     });

@@ -68,6 +68,7 @@ const Probe = () => {
     <>
       <div data-testid="role">{role ?? 'none'}</div><div data-testid="identity">{isLoading ? 'loading' : currentProfileId ?? 'none'}</div>
       <button onClick={() => { void switchRole('crewhead').catch(() => undefined); }}>Switch to CrewHead</button>
+      <button onClick={() => { void switchRole('coo').catch(() => undefined); }}>Switch to COO</button>
       <button onClick={() => { void signOut().catch(() => undefined); }}>Sign out</button>
     </>
   );
@@ -132,47 +133,18 @@ describe('AuthProvider', () => {
     });
   });
 
-  it('persists role switches through the authenticated role RPC', async () => {
-    render(
-      <AuthProvider>
-        <Probe />
-      </AuthProvider>,
-    );
-
-    await waitFor(() => {
-      expect(screen.getByTestId('role')).toHaveTextContent('coo');
+  it.each(['crew', 'crewhead', 'coo'])('does not let a real %s session change its server role', async (initialRole) => {
+    rolesData = [{ role: initialRole }];
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(screen.getByTestId('role')).toHaveTextContent(initialRole));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: initialRole === 'crewhead' ? 'Switch to COO' : 'Switch to CrewHead' }));
     });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Switch to CrewHead' }));
-
-    await waitFor(() => {
-      expect(rpcMock).toHaveBeenCalledWith('set_current_user_role', { p_role: 'crewhead' });
-      expect(screen.getByTestId('role')).toHaveTextContent('crewhead');
-      expect(resetSupabaseDataScopeMock).toHaveBeenCalledTimes(1);
-    });
+    expect(rpcMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId('role')).toHaveTextContent(initialRole);
+    expect(resetSupabaseDataScopeMock).not.toHaveBeenCalled();
   });
 
-  it('keeps the previous role and data scope when the role RPC fails', async () => {
-    rpcMock.mockResolvedValueOnce({ data: null, error: { message: 'role conflict' } });
-
-    render(
-      <AuthProvider>
-        <Probe />
-      </AuthProvider>,
-    );
-
-    await waitFor(() => {
-      expect(screen.getByTestId('role')).toHaveTextContent('coo');
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Switch to CrewHead' }));
-
-    await waitFor(() => {
-      expect(rpcMock).toHaveBeenCalledWith('set_current_user_role', { p_role: 'crewhead' });
-      expect(screen.getByTestId('role')).toHaveTextContent('coo');
-      expect(resetSupabaseDataScopeMock).not.toHaveBeenCalled();
-    });
-  });
   it('retires owner scope synchronously and discards a late old-session profile', async () => {
     let listener!: (event: string, session: typeof mockSession | null) => void;
     let finishA!: (value: unknown) => void;

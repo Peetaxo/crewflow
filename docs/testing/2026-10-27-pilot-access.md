@@ -1,6 +1,24 @@
 # Nodu — ověření přístupů před skutečným pilotem
 
-Datum: **27. 10. 2026**. Etapa 2.1: **probíhá**, pouze první čtecí kontrola definic a grantů. Celková akceptace oprávnění není splněná.
+Datum: **27. 10. 2026**. Etapa 2.1: serverová oprava je nasazená a ověřená; aktualizace aplikačního main a vývojových instalací ještě probíhá.
+
+## Oprava a nové ověření
+
+- Živý projekt Staff má aplikovanou migraci **`20261027121722_disable_self_role_switching`**. RPC má zachovanou signaturu, ale je SECURITY INVOKER, prázdný search_path a vždy vrací SQLSTATE **42501**. PUBLIC, anon, authenticated i service_role nemají EXECUTE. Aktuální role žádného uživatele se nepřepisuje; oprávněná administrace rolí COO zůstává oddělená.
+- V živém backendu prošel transakční SQL regresní test včetně odmítnutí přímého volání a porovnání původních rolí. Počet i otisk všech rolí byly před a po přesně stejné. Privátní předchozí definice je zachovaná mimo Git.
+- Stejná migrace bezpečně přebírá již dříve lokálně ověřenou INSERT politiku: pouze skutečné CH/COO a pouze `user_id IS NULL`. Zákaz podstrčení cizí Auth identity byl ověřen přes SDK se skutečnými testovacími relacemi a musí vracet přímo **42501**, nikoli jen jinou databázovou chybu.
+- AuthProvider pro skutečnou relaci odmítá změnu role ještě před RPC; lokální vývojová relace pouze mění vlastní místní pohled. Mobilní i desktopové přepínače byly z UI odstraněné. Nezávislé review serveru i klienta dokončeno; zjištěná slabina negativního testu byla opravena a znovu ověřena.
+- Místní REST/Auth/Storage test používá oddělené syntetické crew A, crew B, CH a COO. Kontroluje přímé změny `user_roles`, RPC zvýšení role, nedůvěryhodná user metadata, vlastní/cizí profily, výkazy, položky faktur, přiřazení, originály PDF, management INSERT a privátní pomocné funkce pozvánek. Původní role mimo vyhrazené testovací identity zůstávají přesně shodné. Hesla jsou náhodná pouze v paměti; metadata fixture zůstávají v soukromém pilotním adresáři.
+- Doplňující anonymní test odhalil veřejné RPC `list_event_crew_assignments`: živá definice odpovídá repozitáři, ale původní živý grant dovoloval i anon. Migrace **`20261027123811_restrict_anonymous_crew_roster`** je již nasazená a ověřená: PUBLIC/anon nemají přístup, přihlášení mají původní omezený seznam jmen a přiřazení. Obsahuje úplnou kanonickou definici, aby fungovala i při migraci databáze bez dříve ručně vytvořené funkce; tento scénář byl ověřen RED/GREEN uvnitř rollback-only transakce.
+- Konečná rozšířená matice **17 skutečných API skupin prošla**, včetně anonymních čtení všech uvedených domén a pozitivního seznamu crew pro všechny čtyři přihlášené role. Privátní log: `/private/tmp/nodu-stage2-access-api-complete-20261027.log`. SQL regrese pro role i seznam crew prošly také přímo v živé databázi bez změny původních rolí.
+- Existující test pozvánek byl aktualizovaný, aby vyžadoval odmítnutí zvýšení role a používal administrativně připravenou syntetickou COO identitu pro test allowlistu. **14 integračních skupin prošlo**, včetně skutečného zachyceného e-mailu a pozitivních i negativních API cest. Veřejné doručování a onboarding nejsou tímto zapnuté.
+- Příprava testovacích příloh zjistila, že místní pilot neměl bucket ani SELECT politiky úložiště. Doplněn soukromý `invoice-pdfs` a přesné existující politiky z repozitáře; živé úložiště je již mělo. Nebyly uvolněné INSERT/UPDATE/DELETE politiky klientům.
+
+Při problému klienta lze vrátit klientský balík při zachované serverové blokaci. Návrat nesmí znovu povolit zranitelné samovolné přepisování rolí. Běžné role ani existující profily se migrací nemění; soukromý předchozí SQL snapshot slouží pro řízenou opravu vpřed.
+
+## Původní audit před opravou
+
+Následující část zachycuje výchozí stav zjištěný před nasazením, nikoli současná oprávnění.
 
 ## Ověřený cíl a metoda
 

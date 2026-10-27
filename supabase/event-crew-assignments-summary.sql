@@ -20,5 +20,5 @@ join public.profiles on profiles.id = timelogs.contractor_id
 order by profiles.last_name, profiles.first_name;
 $$;
 
-revoke all on function public.list_event_crew_assignments() from public;
+revoke all on function public.list_event_crew_assignments() from public, anon;
 grant execute on function public.list_event_crew_assignments() to authenticated;

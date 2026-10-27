@@ -3,20 +3,19 @@ import { ChevronDown, ChevronUp, ChevronsLeft, ChevronsRight, LogOut, Search, Se
 import { toast } from 'sonner';
 import { useAuth } from '../../app/providers/useAuth';
 import { useAppContext } from '../../context/useAppContext';
-import { getNavItemsForRole, ROLE_LABELS, ROLE_SHORT_LABELS } from '../../constants';
+import { getNavItemsForRole, ROLE_LABELS } from '../../constants';
 import { useNavBadgeCounts } from './useNavBadgeCounts';
 import { NotificationBell } from '../../features/notifications/NotificationCenter';
 
 const navButtonBaseClass = 'relative flex w-full items-center rounded-xl px-3 py-2.5 text-[13px] transition-all';
 const navButtonIdleClass = 'border border-transparent nodu-nav-idle';
 const navButtonActiveClass = 'nodu-nav-active font-medium text-[color:var(--nodu-accent)]';
-const roleOptions = ['crew', 'crewhead', 'coo'] as const;
 
 const Sidebar: React.FC = () => {
-  const { isAuthRequired, isRoleSwitching, profile, role: authRole, signOut, switchRole } = useAuth();
+  const { isAuthRequired, profile, role: authRole, signOut } = useAuth();
   const {
     sidebarCollapsed, setSidebarCollapsed,
-    role, setRole,
+    role,
     currentTab, setCurrentTab,
     setSettingsSection,
     searchQuery, setSearchQuery,
@@ -34,60 +33,6 @@ const Sidebar: React.FC = () => {
   const navItems = getNavItemsForRole(role);
   const effectiveRole = authRole ?? role;
   const profileName = profile ? `${profile.firstName} ${profile.lastName}`.trim() || profile.email : 'Petr Heitzer';
-
-  const handleRoleChange = useCallback(async (roleOption: typeof roleOptions[number]) => {
-    if (roleOption === effectiveRole || (isAuthRequired && isRoleSwitching)) return;
-
-    if (!isAuthRequired) {
-      setRole(roleOption);
-      return;
-    }
-
-    try {
-      await switchRole(roleOption);
-      toast.success(`Role zmenena na ${ROLE_LABELS[roleOption]}.`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Zmena role se nepodarila.';
-      toast.error(message);
-    }
-  }, [effectiveRole, isAuthRequired, isRoleSwitching, setRole, switchRole]);
-
-  const renderExpandedRoleSwitcher = () => (
-    <div className="nodu-sidebar-surface grid grid-cols-3 gap-1 rounded-xl border border-[color:var(--nodu-border)] p-1">
-      {roleOptions.map((roleOption) => (
-        <button
-          key={roleOption}
-          type="button"
-          onClick={() => { void handleRoleChange(roleOption); }}
-          disabled={isAuthRequired && isRoleSwitching}
-          aria-label={ROLE_LABELS[roleOption]}
-          aria-pressed={effectiveRole === roleOption}
-          className={`rounded-lg border py-1.5 text-[11px] font-medium transition-all disabled:cursor-not-allowed disabled:opacity-60 ${effectiveRole === roleOption ? 'nodu-role-toggle-active' : 'border-transparent text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
-        >
-          {ROLE_SHORT_LABELS[roleOption]}
-        </button>
-      ))}
-    </div>
-  );
-
-  const renderCollapsedRoleSwitcher = () => (
-    <div className="space-y-2">
-      {roleOptions.map((roleOption) => (
-        <button
-          key={roleOption}
-          type="button"
-          onClick={() => { void handleRoleChange(roleOption); }}
-          disabled={isAuthRequired && isRoleSwitching}
-          aria-label={ROLE_LABELS[roleOption]}
-          aria-pressed={effectiveRole === roleOption}
-          className={`flex w-full items-center justify-center rounded-xl border px-2 py-2 text-[11px] font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-60 ${effectiveRole === roleOption ? 'nodu-role-toggle-active' : 'nodu-sidebar-surface border-[color:var(--nodu-border)] text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
-          title={ROLE_LABELS[roleOption]}
-        >
-          {ROLE_SHORT_LABELS[roleOption]}
-        </button>
-      ))}
-    </div>
-  );
 
   const updateScrollHints = useCallback(() => {
     const node = navRef.current;
@@ -202,19 +147,6 @@ const Sidebar: React.FC = () => {
           </button>
         </div>
       )}
-
-      <div className="nodu-sidebar-divider p-3">
-        {!sidebarCollapsed ? (
-          <>
-            <div className="mb-2 text-[10px] uppercase tracking-[0.24em] text-[color:var(--nodu-text-soft)]">
-              {isAuthRequired ? 'Prihlasena role' : 'Zobrazuji jako'}
-            </div>
-            {renderExpandedRoleSwitcher()}
-          </>
-        ) : (
-          renderCollapsedRoleSwitcher()
-        )}
-      </div>
 
       <div className="relative flex-1 min-h-0">
         {showScrollHintTop && (

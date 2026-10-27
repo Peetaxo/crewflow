@@ -256,28 +256,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       return;
     }
 
-    if (!supabase || !currentUserId) {
-      throw new Error('Roli nelze zmenit bez prihlaseneho uzivatele.');
-    }
-
-    setIsRoleSwitching(true);
-    const capturedSessionVersion = sessionLoadVersion.current;
-
-    try {
-      const { error } = await supabase.rpc('set_current_user_role', { p_role: nextRole });
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      if (capturedSessionVersion !== sessionLoadVersion.current) return;
-      await resetSupabaseDataScope();
-      if (capturedSessionVersion !== sessionLoadVersion.current) return;
-      setRole(nextRole);
-      getContractors();
-    } finally {
-      if (capturedSessionVersion === sessionLoadVersion.current) setIsRoleSwitching(false);
-    }
-  }, [currentUserId, isAuthRequired, isDevSession, isRoleSwitching, role]);
+    throw new Error('Změna přihlášené role není povolená.');
+  }, [isAuthRequired, isDevSession, isRoleSwitching, role]);
 
   const value = useMemo<AuthContextType>(() => ({
     isAuthRequired,

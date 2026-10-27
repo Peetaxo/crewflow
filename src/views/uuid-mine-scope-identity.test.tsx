@@ -375,7 +375,7 @@ describe('UUID mine-scope identity', () => {
 
     expect(screen.getByAltText('Nodu')).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/Hledat akci, job nebo jmeno/i)).toHaveClass('nodu-sidebar-search');
-    expect(screen.getByRole('button', { name: 'Crew' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTitle('Profil')).toHaveTextContent('Crew');
     expect(screen.getByTitle('Profil')).toHaveClass('nodu-sidebar-hover-surface');
     expect(screen.getByRole('button', { name: /Schvalování/i })).toHaveClass('nodu-nav-active');
     expect(screen.getByRole('button', { name: /Schvalování/i })).toHaveTextContent('1');
@@ -383,7 +383,7 @@ describe('UUID mine-scope identity', () => {
     expect(screen.getByRole('button', { name: /Moje účtenky/i })).toHaveTextContent('1');
   });
 
-  it('persists authenticated role switches from the sidebar', async () => {
+  it('shows the authenticated role without exposing sidebar role switches', async () => {
     const switchRole = vi.fn(async () => undefined);
     const { default: Sidebar } = await import('../components/layout/Sidebar');
     mockAuth = {
@@ -398,11 +398,10 @@ describe('UUID mine-scope identity', () => {
 
     render(<Sidebar />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'CrewHead' }));
-
-    await waitFor(() => {
-      expect(switchRole).toHaveBeenCalledWith('crewhead');
-    });
+    expect(screen.queryByRole('button', { name: 'CrewHead' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'COO' })).not.toBeInTheDocument();
+    expect(screen.getByTitle('Profil')).toHaveTextContent('COO');
+    expect(switchRole).not.toHaveBeenCalled();
     expect(setRole).not.toHaveBeenCalled();
   });
 });

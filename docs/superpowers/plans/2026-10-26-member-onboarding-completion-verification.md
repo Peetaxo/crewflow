@@ -39,3 +39,27 @@ Human native new-password entry, first-use/relogin/recovery UI confirmation rema
 Peetax later reconnected (iOS27.0.1, CoreDevice connected). Resumed only the prior phone build/install/launch plan using clean synchronized main preflight and preserved development team. Codesign paused on two macOS keychain prompts; the user confirmed access directly in macOS. **Phone build and installation succeeded.** First launch was refused because the device was locked. Repeated only the exact `devicectl device process launch` command, which completed with **exit0** and no error output. **Normal development nodu is updated and launched on Peetax.** Simulator was already updated; the separate local activation pilot remains nodu test in the simulator. No keychain password was entered by automation and no keychain ACLs were changed.
 
 Self-service steps: [trial guide](2026-10-26-member-onboarding-trial-guide.md). Credentials, tokens, captured messages and private fixtures remain outside Git.
+
+## Resumed native trial — 2026-10-27
+
+The completion roadmap now uses a separate clean source checkout based on verified `main` **`ddc3101`**; see [fresh baseline](../../testing/2026-10-27-completion-baseline.md). Application code did not change in this continuation.
+
+The existing local pilot containers were healthy. The stopped web preview was restored on `127.0.0.1:8096` using the preserved guarded private launcher and configuration. The invoice demo containers were left running unchanged. The installed **nodu test** bundle is `cz.nodu.app.manualinvitations`, with `nodu-test` scheme; its JS artifact `index-Wq-86IsW.js` matches the preserved pilot build and includes recovery support. The iPhone 17 Pro simulator runs iOS 26.5. No new phone or simulator installation was made.
+
+Read-only database and captured-mail checks confirmed exactly one unlinked **Nový Člen** profile, rate **250 Kč/h**, no Auth account for its synthetic email and one matching pending invitation valid until **28 October 2026, 15:10 Europe/Prague**. The preserved native URL and captured email match the stored invitation hash. Activation preview returned HTTP 200. No replacement invite or duplicate profile was created.
+
+Opening the link while the previously signed-in operator app was warm initially left the operator overview visible after the OS handoff dialog. A cold handoff after stopping only nodu test displayed the correct activation form. The cold path is verified; the initial warm-path observation remains a reproduction note for further checking, not a claim that both paths passed. The Xcode UI tap did not dismiss this Device Hub OS dialog; its native CUA button did.
+
+The user entered and submitted the password directly in the simulator and confirmed **“Aktivace hotová”**. Subsequent read-only verification confirmed one profile, one Auth user, the exact reserved identity link, role **crew** only, rate **250**, consumed invitation and a real sign-in. No password was read, copied or entered by automation.
+
+Actual native UI checks then passed:
+
+- First-use guide displayed after activation; **Přeskočit** opened the crew overview showing **Nový Člen**.
+- **Nastavení → Jak používat nodu** reopened the guide. **Zobrazit směny** opened the existing crew overview route; **Procházet akce** reached the events offer with an appropriate empty state for this new user.
+- Stopping only nodu test and launching it normally restored the same signed-in **Nový Člen** overview without showing the first-use guide again.
+
+Logout/password sign-in, recovery UI, old-password rejection, reused recovery link, expired/invalid invitation screens and the warm activation observation remain open. The simulator is prepared in Settings for the human logout/sign-in step. Activation and persistence alone do not close stage 1.
+
+Other observed pilot limitations: the isolated backend lacks `get_my_notifications(p_before_id)` and the operator overview reported unavailable shared approvals before activation. These are environment/version prerequisites to resolve before using this pilot for multi-account operations; notification history was not verified here. The guide says “Moje směny” while current mobile navigation labels are “Přehled” and “Akce”; track this copy mismatch for final polish.
+
+Private evidence files in the preserved pilot directory: `completion-resume-status-20261027.private.json`, `completion-resume-activation-20261027.private.json`, `completion-resume-native-open-20261027.private.log`, `completion-resume-cold-open-20261027.private.log`, `completion-ui-20261027.private.log`. They contain no new password; capabilities and personal fixture data remain outside Git.

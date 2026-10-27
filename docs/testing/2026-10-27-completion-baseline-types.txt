@@ -1,0 +1,177 @@
+src/app/providers/AuthProvider.test.tsx(50,44): error TS2556: A spread argument must either have a tuple type or be passed to a rest parameter.
+src/app/providers/AuthProvider.test.tsx(51,42): error TS2556: A spread argument must either have a tuple type or be passed to a rest parameter.
+src/app/providers/AuthProvider.tsx(197,38): error TS2339: Property 'data' does not exist on type 'never'.
+src/app/providers/AuthProvider.tsx(198,37): error TS2339: Property 'data' does not exist on type 'never'.
+src/app/providers/AuthProvider.tsx(199,34): error TS2339: Property 'data' does not exist on type 'never'.
+src/app/providers/AuthProvider.tsx(207,29): error TS18047: 'profileResult.data' is possibly 'null'.
+src/app/providers/AuthProvider.tsx(267,69): error TS2345: Argument of type '{ p_role: Role; }' is not assignable to parameter of type 'never'.
+src/components/layout/nav-badges.test.ts(2,35): error TS2305: Module '"../../types"' has no exported member 'Receipt'.
+src/components/layout/nav-badges.ts(1,35): error TS2305: Module '"../../types"' has no exported member 'Receipt'.
+src/components/modals/MobileTimelogEditModal.test.tsx(293,7): error TS2322: Type 'string' is not assignable to type 'number'.
+src/components/modals/ReceiptEditModal.tsx(44,95): error TS2339: Property 'cid' does not exist on type 'ReceiptItem'.
+src/components/modals/TimelogEditModal.tsx(39,73): error TS2367: This comparison appears to be unintentional because the types 'string' and 'number' have no overlap.
+src/components/modals/uuid-contractor-modal-identity.test.tsx(116,90): error TS2556: A spread argument must either have a tuple type or be passed to a rest parameter.
+src/components/modals/uuid-contractor-modal-identity.test.tsx(117,66): error TS2556: A spread argument must either have a tuple type or be passed to a rest parameter.
+src/components/modals/uuid-contractor-modal-identity.test.tsx(232,16): error TS2322: Type '{ id: number; job: string; name: string; client: string; }' is not assignable to type 'ModalEvent'.
+  Type '{ id: number; job: string; name: string; client: string; }' is missing the following properties from type 'Pick<Event, "id" | "name" | "endDate" | "startDate">': endDate, startDate
+src/features/clients/services/clients.service.ts(39,8): error TS18047: 'clientLookup.data' is possibly 'null'.
+src/features/clients/services/clients.service.ts(43,23): error TS2339: Property 'data' does not exist on type 'never'.
+src/features/clients/services/clients.service.ts(154,17): error TS2345: Argument of type '{ name: string; ico: string; dic: string; street: string; zip: string; city: string; country: string; }' is not assignable to parameter of type 'never'.
+src/features/clients/services/clients.service.ts(168,17): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated"; }): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "clients", never, "POST">', gave the following error.
+    Argument of type '{ name: string; ico: string; dic: string; street: string; zip: string; city: string; country: string; }' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated"; defaultToNull?: boolean; }): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "clients", never, "POST">', gave the following error.
+    Argument of type '{ name: string; ico: string; dic: string; street: string; zip: string; city: string; country: string; }' is not assignable to parameter of type 'never[]'.
+      Type '{ name: string; ico: string; dic: string; street: string; zip: string; city: string; country: string; }' is missing the following properties from type 'never[]': length, pop, push, concat, and 29 more.
+src/features/crew/services/crew-ratings.service.test.ts(47,9): error TS2322: Type '{ events: { id: number; supabaseId: string; name: string; job: string; startDate: string; endDate: string; city: string; needed: number; filled: number; status: "past"; client: string; }[]; eventApplications: undefined[]; ... 14 more ...; clients: undefined[]; }' is not assignable to type 'CrewRatingsSnapshot'.
+  Type '{ events: { id: number; supabaseId: string; name: string; job: string; startDate: string; endDate: string; city: string; needed: number; filled: number; status: "past"; client: string; }[]; eventApplications: undefined[]; ... 14 more ...; clients: undefined[]; }' is missing the following properties from type 'AppDataSnapshot': invoiceApprovalDocuments, grasonEventConfirmations
+src/features/crew/services/crew-ratings.service.ts(181,10): error TS18047: 'result.data' is possibly 'null'.
+src/features/crew/services/crew-ratings.service.ts(207,17): error TS2345: Argument of type '{ profile_id: string; event_id: string; source: CrewRatingSource; rating: number; note: string; rated_by_profile_id: string; }' is not assignable to parameter of type 'never'.
+src/features/crew/services/crew-ratings.service.ts(213,17): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated"; }): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "crew_ratings", never, "POST">', gave the following error.
+    Argument of type '{ profile_id: string; event_id: string; source: CrewRatingSource; rating: number; note: string; rated_by_profile_id: string; }' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated"; defaultToNull?: boolean; }): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "crew_ratings", never, "POST">', gave the following error.
+    Argument of type '{ profile_id: string; event_id: string; source: CrewRatingSource; rating: number; note: string; rated_by_profile_id: string; }' is not assignable to parameter of type 'never[]'.
+      Type '{ profile_id: string; event_id: string; source: CrewRatingSource; rating: number; note: string; rated_by_profile_id: string; }' is missing the following properties from type 'never[]': length, pop, push, concat, and 29 more.
+src/features/crew/services/crew-ratings.service.ts(221,48): error TS2339: Property 'data' does not exist on type 'never'.
+src/features/crew/services/crew.service.test.ts(718,42): error TS2493: Tuple type '[]' of length '0' has no element at index '0'.
+src/features/crew/services/crew.service.ts(304,15): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated"; }): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "profiles", never, "POST">', gave the following error.
+    Argument of type '{ first_name: string; last_name: string; phone: string; email: string; ico: string; dic: string; bank_account: string; iban: string; billing_street: string; billing_zip: string; billing_city: string; ... 6 more ...; avatar_bg: string; }' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated"; defaultToNull?: boolean; }): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "profiles", never, "POST">', gave the following error.
+    Argument of type '{ first_name: string; last_name: string; phone: string; email: string; ico: string; dic: string; bank_account: string; iban: string; billing_street: string; billing_zip: string; billing_city: string; ... 6 more ...; avatar_bg: string; }' is not assignable to parameter of type 'never[]'.
+      Type '{ first_name: string; last_name: string; phone: string; email: string; ico: string; dic: string; bank_account: string; iban: string; billing_street: string; billing_zip: string; billing_city: string; ... 6 more ...; avatar_bg: string; }' is missing the following properties from type 'never[]': length, pop, push, concat, and 29 more.
+src/features/crew/services/crew.service.ts(318,38): error TS2339: Property 'data' does not exist on type 'never'.
+src/features/crew/services/crew.service.ts(346,15): error TS2345: Argument of type '{ first_name: string; last_name: string; phone: string; email: string; ico: string; dic: string; bank_account: string; iban: string; billing_street: string; billing_zip: string; billing_city: string; ... 6 more ...; avatar_bg: string; }' is not assignable to parameter of type 'never'.
+src/features/events/services/event-assignment-lifecycle.service.ts(121,58): error TS2345: Argument of type '{ p_event_id: string; p_profile_id: string; p_application_id: string; p_days: { date: string; time_from: string; time_to: string; day_type: TimelogType; note: string; }[]; }' is not assignable to parameter of type 'never'.
+src/features/events/services/event-assignment-lifecycle.service.ts(138,3): error TS2775: Assertions require every name in the call target to be declared with an explicit type annotation.
+src/features/events/services/event-assignment-lifecycle.service.ts(150,58): error TS2345: Argument of type '{ p_event_id: string; p_profile_id: string; }' is not assignable to parameter of type 'never'.
+src/features/events/services/event-assignment-lifecycle.service.ts(159,3): error TS2775: Assertions require every name in the call target to be declared with an explicit type annotation.
+src/features/events/services/event-assignment-lifecycle.service.ts(172,65): error TS2345: Argument of type '{ p_event_id: string; p_profile_id: string; p_application_id: string; }' is not assignable to parameter of type 'never'.
+src/features/events/services/event-assignment-lifecycle.service.ts(182,3): error TS2775: Assertions require every name in the call target to be declared with an explicit type annotation.
+src/features/events/services/event-mutation-rpc.service.ts(66,60): error TS2345: Argument of type '{ p_event_id: string; p_expected_updated_at: string; }' is not assignable to parameter of type 'never'.
+src/features/events/services/events.service.ts(560,41): error TS2677: A type predicate's type must be assignable to its parameter's type.
+  Type 'EventCrewAssignment' is not assignable to type '{ eventId: number; eventSupabaseId: string; contractorProfileId: string; name: string; }'.
+    Property 'eventSupabaseId' is optional in type 'EventCrewAssignment' but required in type '{ eventId: number; eventSupabaseId: string; contractorProfileId: string; name: string; }'.
+src/features/events/services/events.service.ts(580,43): error TS2677: A type predicate's type must be assignable to its parameter's type.
+  Type 'EventApplication' is not assignable to type '{ id: number; supabaseId: string; eventId: number; eventSupabaseId: string; contractorProfileId: string; status: EventApplicationStatus; note: string; plannedFrom: string; plannedTo: string; createdAt: string; }'.
+    Property 'supabaseId' is optional in type 'EventApplication' but required in type '{ id: number; supabaseId: string; eventId: number; eventSupabaseId: string; contractorProfileId: string; status: EventApplicationStatus; note: string; plannedFrom: string; plannedTo: string; createdAt: string; }'.
+src/features/events/services/events.service.ts(594,41): error TS2677: A type predicate's type must be assignable to its parameter's type.
+  Type 'EventCrewAssignment' is not assignable to type '{ eventId: number; eventSupabaseId: string; contractorProfileId: string; name: string; }'.
+    Property 'eventSupabaseId' is optional in type 'EventCrewAssignment' but required in type '{ eventId: number; eventSupabaseId: string; contractorProfileId: string; name: string; }'.
+src/features/events/services/events.service.ts(984,6): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated"; }): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "projects", never, "POST">', gave the following error.
+    Argument of type '{ job_number: string; name: string; client_id: string; note: string; }' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated"; defaultToNull?: boolean; }): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "projects", never, "POST">', gave the following error.
+    Object literal may only specify known properties, and 'job_number' does not exist in type 'never[]'.
+src/features/events/services/events.service.ts(998,10): error TS18047: 'projectInsert.data' is possibly 'null'.
+src/features/events/services/events.service.ts(1198,8): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { onConflict?: string; ignoreDuplicates?: boolean; count?: "exact" | "planned" | "estimated"; }): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "event_applications", never, "POST">', gave the following error.
+    Argument of type '{ event_id: string; profile_id: string; status: string; note: null; planned_from: string; planned_to: string; }' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { onConflict?: string; ignoreDuplicates?: boolean; count?: "exact" | "planned" | "estimated"; defaultToNull?: boolean; }): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, ... 4 more ..., "POST">', gave the following error.
+    Object literal may only specify known properties, and 'event_id' does not exist in type 'never[]'.
+src/features/events/services/events.service.ts(1278,15): error TS2345: Argument of type '{ status: EventApplicationStatus; }' is not assignable to parameter of type 'never'.
+src/features/events/services/events.service.ts(1406,8): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { onConflict?: string; ignoreDuplicates?: boolean; count?: "exact" | "planned" | "estimated"; }): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "event_applications", never, "POST">', gave the following error.
+    Argument of type '{ event_id: string; profile_id: string; status: string; note: string; planned_from: string; planned_to: string; }' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { onConflict?: string; ignoreDuplicates?: boolean; count?: "exact" | "planned" | "estimated"; defaultToNull?: boolean; }): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, ... 4 more ..., "POST">', gave the following error.
+    Object literal may only specify known properties, and 'event_id' does not exist in type 'never[]'.
+src/features/events/services/events.service.ts(1980,23): error TS2345: Argument of type '{ name: string; project_id: string; job_number: string; client_name: string; date_from: string; date_to: string; time_from: string; time_to: string; city: string; address: string; place_id: string; ... 19 more ...; phase_schedules: Partial<...>; }' is not assignable to parameter of type 'never'.
+src/features/events/services/events.service.ts(1988,16): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated"; }): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "events", never, "POST">', gave the following error.
+    Argument of type '{ name: string; project_id: string; job_number: string; client_name: string; date_from: string; date_to: string; time_from: string; time_to: string; city: string; address: string; place_id: string; ... 20 more ...; id: string; }' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated"; defaultToNull?: boolean; }): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "events", never, "POST">', gave the following error.
+    Object literal may only specify known properties, and 'id' does not exist in type 'never[]'.
+src/features/fleet/services/fleet.service.ts(345,17): error TS2345: Argument of type '{ vehicle_id: string; project_id: string; event_id: string; responsible_profile_id: string; starts_at: string; ends_at: string; note: string; has_conflict: boolean; }' is not assignable to parameter of type 'never'.
+src/features/fleet/services/fleet.service.ts(354,17): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated"; }): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "fleet_reservations", never, "POST">', gave the following error.
+    Argument of type '{ vehicle_id: string; project_id: string; event_id: string; responsible_profile_id: string; starts_at: string; ends_at: string; note: string; has_conflict: boolean; }' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated"; defaultToNull?: boolean; }): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "fleet_reservations", never, "POST">', gave the following error.
+    Argument of type '{ vehicle_id: string; project_id: string; event_id: string; responsible_profile_id: string; starts_at: string; ends_at: string; note: string; has_conflict: boolean; }' is not assignable to parameter of type 'never[]'.
+      Type '{ vehicle_id: string; project_id: string; event_id: string; responsible_profile_id: string; starts_at: string; ends_at: string; note: string; has_conflict: boolean; }' is missing the following properties from type 'never[]': length, pop, push, concat, and 29 more.
+src/features/fleet/services/fleet.service.ts(362,20): error TS18047: 'insertResult.data' is possibly 'null'.
+src/features/invoices/services/approval-timelog-sync.service.test.ts(666,9): error TS2740: Type '{ eventId: string; eventName: string; jobNumber: string; shiftDate: string; confirmedName: string; profileId: string; }' is missing the following properties from type 'GrasonEventConfirmation': id, source, sourceMonth, sourceKey, and 6 more.
+src/features/invoices/services/approval-timelog-sync.service.test.ts(1170,9): error TS2740: Type '{ eventId: string; eventName: string; jobNumber: string; shiftDate: string; confirmedName: string; profileId: string; }' is missing the following properties from type 'GrasonEventConfirmation': id, source, sourceMonth, sourceKey, and 6 more.
+src/features/invoices/services/invoice-mutation-rpc.service.test.ts(56,41): error TS2345: Argument of type '{ invoice: { contractor_id: string; event_id: string; job_number: string; total_hours: number; amount_hours: number; amount_km: number; amount_receipts: number; total_amount: number; invoice_number: string; ... 5 more ...; customer_snapshot: { ...; }; }; items: { ...; }[]; timelogs: { ...; }[]; receipts: { ...; }[]; }' is not assignable to parameter of type 'CreateInvoiceAtomicInput'.
+  The types of 'invoice.currency' are incompatible between these types.
+    Type 'string' is not assignable to type '"CZK"'.
+src/features/invoices/services/invoice-mutation-rpc.service.test.ts(231,43): error TS2345: Argument of type '{ invoice: { contractor_id: string; event_id: string; job_number: string; total_hours: number; amount_hours: number; amount_km: number; amount_receipts: number; total_amount: number; invoice_number: string; ... 5 more ...; customer_snapshot: { ...; }; }; items: { ...; }[]; timelogs: { ...; }[]; receipts: { ...; }[]; }' is not assignable to parameter of type 'CreateInvoiceAtomicInput'.
+  The types of 'invoice.currency' are incompatible between these types.
+    Type 'string' is not assignable to type '"CZK"'.
+src/features/invoices/services/invoice-mutation-rpc.service.ts(235,57): error TS2345: Argument of type 'Record<string, Json>' is not assignable to parameter of type 'never'.
+src/features/invoices/services/invoices.service.test.ts(347,7): error TS2353: Object literal may only specify known properties, and 'contractors' does not exist in type 'Partial<{ invoices: Invoice[]; timelogs: Timelog[]; receipts: ReceiptItem[]; }>'.
+src/features/invoices/services/invoices.service.ts(253,75): error TS2345: Argument of type '{ p_invoice_year: number; p_supplier_profile_id: string; }' is not assignable to parameter of type 'never'.
+src/features/invoices/services/invoices.service.ts(263,17): error TS2339: Property 'data' does not exist on type 'never'.
+src/features/projects/services/projects.service.ts(52,10): error TS18047: 'clientLookup.data' is possibly 'null'.
+src/features/projects/services/projects.service.ts(244,17): error TS2345: Argument of type '{ job_number: string; name: string; client_id: string; note: string; }' is not assignable to parameter of type 'never'.
+src/features/projects/services/projects.service.ts(253,17): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated"; }): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "projects", never, "POST">', gave the following error.
+    Argument of type '{ job_number: string; name: string; client_id: string; note: string; }' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated"; defaultToNull?: boolean; }): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "projects", never, "POST">', gave the following error.
+    Argument of type '{ job_number: string; name: string; client_id: string; note: string; }' is not assignable to parameter of type 'never[]'.
+      Type '{ job_number: string; name: string; client_id: string; note: string; }' is missing the following properties from type 'never[]': length, pop, push, concat, and 29 more.
+src/features/receipts/services/receipt-mutation-rpc.service.ts(100,75): error TS2345: Argument of type '{ p_receipts: Json; p_expected_status: ReceiptStatus; p_next_status: ReceiptStatus; }' is not assignable to parameter of type 'never'.
+src/features/receipts/services/receipts.service.ts(129,47): error TS2344: Type 'typeof supabase.from<"receipts">' does not satisfy the constraint '(...args: any) => any'.
+  Type 'typeof supabase.from<"receipts">' provides no match for the signature '(...args: any): any'.
+src/features/receipts/services/receipts.service.ts(129,68): error TS2635: Type '{ <TableName extends string, Table extends never[TableName]>(relation: TableName): PostgrestQueryBuilder<{ PostgrestVersion: "12"; }, never, Table, TableName, Table extends { ...; } ? R : unknown>; <ViewName extends string, View extends never[ViewName]>(relation: ViewName): PostgrestQueryBuilder<...>; }' has no signatures for which the type argument list is applicable.
+src/features/receipts/services/receipts.service.ts(130,45): error TS2344: Type 'typeof supabase.from<"events">' does not satisfy the constraint '(...args: any) => any'.
+  Type 'typeof supabase.from<"events">' provides no match for the signature '(...args: any): any'.
+src/features/receipts/services/receipts.service.ts(130,66): error TS2635: Type '{ <TableName extends string, Table extends never[TableName]>(relation: TableName): PostgrestQueryBuilder<{ PostgrestVersion: "12"; }, never, Table, TableName, Table extends { ...; } ? R : unknown>; <ViewName extends string, View extends never[ViewName]>(relation: ViewName): PostgrestQueryBuilder<...>; }' has no signatures for which the type argument list is applicable.
+src/features/receipts/services/receipts.service.ts(647,25): error TS2345: Argument of type '{ contractor_id: string; event_id: string; job_number: string; name: string; supplier: string; amount: number; paid_at: string; note: string; }' is not assignable to parameter of type 'never'.
+src/features/receipts/services/receipts.service.ts(655,18): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: never, options?: { count?: "exact" | "planned" | "estimated"; }): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "receipts", never, "POST">', gave the following error.
+    Argument of type '{ status: string; contractor_id: string; event_id: string; job_number: string; name: string; supplier: string; amount: number; paid_at: string; note: string; id: string; }' is not assignable to parameter of type 'never'.
+  Overload 2 of 2, '(values: never[], options?: { count?: "exact" | "planned" | "estimated"; defaultToNull?: boolean; }): PostgrestFilterBuilder<{ PostgrestVersion: "12"; }, never, never, null, "receipts", never, "POST">', gave the following error.
+    Object literal may only specify known properties, and 'status' does not exist in type 'never[]'.
+src/features/receipts/services/receipts.service.ts(662,13): error TS18047: 'result.data' is possibly 'null'.
+src/features/receipts/services/receipts.service.ts(663,23): error TS18047: 'result.data' is possibly 'null'.
+src/features/receipts/services/receipts.service.ts(664,16): error TS18047: 'result.data' is possibly 'null'.
+src/features/receipts/services/receipts.service.ts(665,16): error TS18047: 'result.data' is possibly 'null'.
+src/features/receipts/services/receipts.service.ts(673,25): error TS18047: 'result.data' is possibly 'null'.
+src/features/receipts/services/receipts.service.ts(674,24): error TS18047: 'result.data' is possibly 'null'.
+src/features/receipts/services/receipts.service.ts(675,30): error TS18047: 'result.data' is possibly 'null'.
+src/features/receipts/services/receipts.service.ts(676,21): error TS18047: 'result.data' is possibly 'null'.
+src/features/receipts/services/receipts.service.ts(802,9): error TS18047: 'receiptDelete.data' is possibly 'null'.
+src/features/timelogs/services/timelog-change-summary.test.ts(8,7): error TS2322: Type 'string' is not assignable to type 'number'.
+src/features/timelogs/services/timelog-change-summary.test.ts(9,7): error TS2322: Type 'string' is not assignable to type 'number'.
+src/features/timelogs/services/timelog-change-summary.test.ts(40,7): error TS2322: Type 'string' is not assignable to type 'number'.
+src/features/timelogs/services/timelog-change-summary.test.ts(41,7): error TS2322: Type 'string' is not assignable to type 'number'.
+src/features/timelogs/services/timelog-change-summary.test.ts(69,7): error TS2322: Type 'string' is not assignable to type 'number'.
+src/features/timelogs/services/timelog-change-summary.test.ts(70,7): error TS2322: Type 'string' is not assignable to type 'number'.
+src/features/timelogs/services/timelog-change-summary.test.ts(98,7): error TS2322: Type 'string' is not assignable to type 'number'.
+src/features/timelogs/services/timelog-change-summary.test.ts(99,7): error TS2322: Type 'string' is not assignable to type 'number'.
+src/features/timelogs/services/timelog-change-summary.test.ts(126,7): error TS2322: Type 'string' is not assignable to type 'number'.
+src/features/timelogs/services/timelog-change-summary.test.ts(127,7): error TS2322: Type 'string' is not assignable to type 'number'.
+src/features/timelogs/services/timelog-change-summary.test.ts(154,7): error TS2322: Type 'string' is not assignable to type 'number'.
+src/features/timelogs/services/timelog-change-summary.test.ts(155,7): error TS2322: Type 'string' is not assignable to type 'number'.
+src/features/timelogs/services/timelog-change-summary.test.ts(184,7): error TS2322: Type 'string' is not assignable to type 'number'.
+src/features/timelogs/services/timelog-change-summary.test.ts(185,7): error TS2322: Type 'string' is not assignable to type 'number'.
+src/features/timelogs/services/timelog-mutation-rpc.service.ts(131,66): error TS2345: Argument of type '{ p_timelog_id: string; p_event_id: string; p_contractor_id: string; p_expected_updated_at: string; p_expected_status: TimelogStatus; p_km: number; p_note: string; p_status: TimelogStatus; p_days: { ...; }[]; }' is not assignable to parameter of type 'never'.
+src/features/timelogs/services/timelog-mutation-rpc.service.ts(165,81): error TS2345: Argument of type '{ p_targets: { id: string; expected_updated_at: string; }[]; p_expected_status: TimelogStatus; p_next_status: TimelogStatus; }' is not assignable to parameter of type 'never'.
+src/features/timelogs/services/timelog-mutation-rpc.service.ts(187,68): error TS2345: Argument of type '{ p_timelog_id: string; p_expected_updated_at: string; p_expected_status: TimelogStatus; }' is not assignable to parameter of type 'never'.
+src/features/timelogs/services/timelog-mutation-rpc.service.ts(203,77): error TS2345: Argument of type '{ p_timelog_id: string; p_event_id: string; p_contractor_id: string; p_expected_updated_at: string; p_expected_status: TimelogStatus; p_km: number; p_note: string; p_days: { ...; }[]; }' is not assignable to parameter of type 'never'.
+src/lib/app-data.ts(552,43): error TS2677: A type predicate's type must be assignable to its parameter's type.
+  Type 'EventApplication' is not assignable to type '{ id: number; supabaseId: any; eventId: number; eventSupabaseId: any; contractorProfileId: any; status: any; note: any; plannedFrom: any; plannedTo: any; createdAt: any; }'.
+    Property 'supabaseId' is optional in type 'EventApplication' but required in type '{ id: number; supabaseId: any; eventId: number; eventSupabaseId: any; contractorProfileId: any; status: any; note: any; plannedFrom: any; plannedTo: any; createdAt: any; }'.
+src/lib/app-data.ts(572,41): error TS2677: A type predicate's type must be assignable to its parameter's type.
+  Type 'EventCrewAssignment' is not assignable to type '{ eventId: number; eventSupabaseId: string; contractorProfileId: string; name: string; }'.
+    Property 'eventSupabaseId' is optional in type 'EventCrewAssignment' but required in type '{ eventId: number; eventSupabaseId: string; contractorProfileId: string; name: string; }'.
+src/lib/app-data.ts(586,41): error TS2677: A type predicate's type must be assignable to its parameter's type.
+  Type 'EventCrewAssignment' is not assignable to type '{ eventId: number; eventSupabaseId: string; contractorProfileId: string; name: string; }'.
+    Property 'eventSupabaseId' is optional in type 'EventCrewAssignment' but required in type '{ eventId: number; eventSupabaseId: string; contractorProfileId: string; name: string; }'.
+src/lib/supabase-mappers.ts(323,23): error TS2352: Conversion of type 'string | number | boolean | { [key: string]: Json; } | Json[]' to type 'InvoiceSupplierSnapshot' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type 'Json[]' is missing the following properties from type 'InvoiceSupplierSnapshot': profileId, name, ico, dic, and 6 more.
+src/lib/supabase-mappers.ts(324,23): error TS2352: Conversion of type 'string | number | boolean | { [key: string]: Json; } | Json[]' to type 'InvoiceCustomerSnapshot' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type 'Json[]' is missing the following properties from type 'InvoiceCustomerSnapshot': clientId, name, ico, dic, and 4 more.
+src/types.ts(430,16): error TS2552: Cannot find name 'Json'. Did you mean 'JSON'?
+src/views/DashboardView.test.tsx(284,9): error TS2322: Type 'string' is not assignable to type 'number'.
+src/views/DashboardView.tsx(92,70): error TS2367: This comparison appears to be unintentional because the types 'string' and 'number' have no overlap.
+src/views/EventDetailView.test.tsx(314,47): error TS2345: Argument of type 'Element' is not assignable to parameter of type 'HTMLElement | SVGElement'.
+  Type 'Element' is missing the following properties from type 'SVGElement': ownerSVGElement, viewportElement, attributeStyleMap, style, and 99 more.
+src/views/EventsView.test.tsx(2053,9): error TS2353: Object literal may only specify known properties, and 'supabaseId' does not exist in type '{ id: number; name: string; job: string; startDate: string; endDate: string; startTime: string; endTime: string; city: string; needed: number; filled: number; status: "upcoming"; client: string; }'.
+src/views/EventsView.test.tsx(2199,61): error TS2339: Property 'derivedStatus' does not exist on type '{ id: number; supabaseId: string; name: string; startDate: string; endDate: string; job: string; city: string; needed: number; filled: number; status: "upcoming"; client: string; }'.
+src/views/MyShiftsView.tsx(9,29): error TS2724: '"../types"' has no exported member named 'EventId'. Did you mean 'Event'?
+src/views/TimelogsView.tsx(11,29): error TS2724: '"../types"' has no exported member named 'EventId'. Did you mean 'Event'?
+src/views/uuid-mine-scope-identity.test.tsx(358,7): error TS2322: Type '"profile"' is not assignable to type '"menu"'.
+src/views/uuid-mine-scope-identity.test.tsx(391,7): error TS2322: Type '"coo"' is not assignable to type '"crew"'.
+src/views/uuid-mine-scope-identity.test.tsx(396,7): error TS2322: Type '"coo"' is not assignable to type '"crew"'.

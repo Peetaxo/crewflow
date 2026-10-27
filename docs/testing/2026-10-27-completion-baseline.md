@@ -40,4 +40,4 @@ Podrobné místní logy: `/private/tmp/nodu-completion-baseline-tests-20261027.l
 
 ## Navazující práce
 
-Aktivace a úvod jsou nově ověřené v [záznamu onboardingu](../superpowers/plans/2026-10-26-member-onboarding-completion-verification.md); průchod přihlášením a obnovou pokračuje. První čtecí kontrola živých oprávnění je v [záznamu přístupů](2026-10-27-pilot-access.md). `TODO.md` zůstává beze změny jako zásobník pro závěrečnou etapu.
+Celý místní průchod nového člena je uzavřený v [záznamu onboardingu](../superpowers/plans/2026-10-26-member-onboarding-completion-verification.md). První čtecí kontrola živých oprávnění je v [záznamu přístupů](2026-10-27-pilot-access.md); navazuje samostatná oprava oprávnění. `TODO.md` zůstává beze změny jako zásobník pro závěrečnou etapu.

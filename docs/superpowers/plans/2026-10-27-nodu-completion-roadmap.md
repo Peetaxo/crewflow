@@ -58,7 +58,7 @@ První verze cílí na web a iOS, kde už probíhá vývoj a ověřování. Andr
 
 ## Etapa 1 — Uzavřít místní průchod nového člena
 
-**Stav: probíhá.** Zachovaný profil a platná pozvánka ověřené; uživatel 27. 10. zadal heslo a potvrdil aktivaci. Skutečné UI a databáze potvrzují správnou identitu, crew a 250 Kč/h; přeskočení a znovuotevření úvodu i nabídka akcí prošly. Zbývající relace, nové přihlášení a obnova se dále ověřují v [existujícím záznamu](2026-10-26-member-onboarding-completion-verification.md).
+**Stav: ověřeno 27. 10. 2026.** Celý navazující místní průchod prošel skutečným UI v nodu test s lidským zadáním obou hesel. Ověřena identita crew a 250 Kč/h, úvod, odhlášení/přihlášení, relace po restartu, obnova, odmítnutí starého hesla a chybové stavy pozvánek. Jednorázovost obnovy navíc potvrzuje skutečné API. [Úplný záznam a rozlišení důkazů](2026-10-26-member-onboarding-completion-verification.md).
 
 **Závislost:** etapa 0. **Rozdělení práce:** Codex připraví prostředí a ověří uloženou identitu; uživatel projde zadáním hesel a mobilními obrazovkami.
 
@@ -67,9 +67,9 @@ Navázat na `docs/superpowers/plans/2026-10-26-member-onboarding-trial-guide.md`
 - [x] Ověřit stav zachovaného pilotu, připraveného profilu a platnost pozvánky. Při expiraci vystavit náhradu pro tentýž profil, nevytvářet duplicitní účet.
 - [x] Projít pozvánku z testovací schránky do nodu test, aktivovat účet heslem o nejméně 8 znacích a ověřit správné jméno, roli crew a sazbu.
 - [x] Vyzkoušet přeskočení úvodu i jeho opětovné otevření z nastavení; projít vstup do směn.
-- [ ] Ověřit odhlášení, nové přihlášení a zachování relace po ukončení a spuštění aplikace.
-- [ ] Přes „Zapomenuté heslo“ projít obnovu od e-mailu po nové přihlášení. Potvrdit odmítnutí starého hesla a opakovaného použitého odkazu.
-- [ ] Ověřit srozumitelný stav pro expirovanou a neplatnou pozvánku a uložit výsledky do existujícího záznamu ověření.
+- [x] Ověřit odhlášení, nové přihlášení a zachování relace po ukončení a spuštění aplikace.
+- [x] Přes „Zapomenuté heslo“ projít obnovu od e-mailu po nové přihlášení. Potvrdit odmítnutí starého hesla a opakovaného použitého odkazu.
+- [x] Ověřit srozumitelný stav pro expirovanou a neplatnou pozvánku a uložit výsledky do existujícího záznamu ověření.
 
 **Hotovo, když:** poslední celý navazující průchod skutečně prošel obrazovkami a nezůstává čekající lidské potvrzení. API důkaz sám tuto etapu neuzavírá.
 
@@ -205,4 +205,4 @@ Fakturaci neimplementovat znovu. Navázat na `docs/testing/2026-10-22-crew-invoi
 7. Doplnit iOS push.
 8. Dokončit technický úklid a závěrečnou akceptaci.
 
-Nejbližší konkrétní pracovní celek tvoří **etapy 0–1**. Jejich výsledkem má být uzavřený test příchodu nového člověka, nikoli další rozšíření funkcí.
+**Etapy 0–1 byly uzavřené 27. 10. 2026.** Navazující pracovní celek je etapa 2: samostatně připravit opravu oprávnění podle potvrzeného živého nálezu a následně opravit dashboard. Skutečné pozvánky zůstávají podmíněné dalšími etapami.

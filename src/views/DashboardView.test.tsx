@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EventApplication, TimelogApproval } from '../types';
 
 const mockAppContext = {
@@ -55,7 +55,7 @@ const defaultMockTimelogs = [
     cid: 1,
     contractorProfileId: 'profile-1',
     status: 'pending_ch',
-    days: [{ f: '08:00', t: '16:00' }],
+    days: [{ d: '2026-12-28', f: '08:00', t: '16:00' }],
   },
 ];
 const mockTimelogsState: { timelogs: (typeof defaultMockTimelogs[number] & {
@@ -149,6 +149,7 @@ vi.mock('../features/timelogs/services/timelogs.service', () => ({
 }));
 
 describe('DashboardView', () => {
+  afterEach(() => vi.useRealTimers());
   beforeEach(() => {
     vi.clearAllMocks();
     mockAppContext.role = 'crewhead';
@@ -158,6 +159,44 @@ describe('DashboardView', () => {
     authMockState.currentProfileId = 'profile-current';
     mockTimelogsState.timelogs = [...defaultMockTimelogs];
     sharedMockState.group = null;
+  });
+
+  const monthlyCases = [
+    { date: new Date(2026, 11, 15, 12), label: 'prosinec 2026', hours: '3h' },
+    { date: new Date(2027, 0, 15, 12), label: 'leden 2027', hours: '11h' },
+    { date: new Date(2027, 1, 15, 12), label: 'únor 2027', hours: '0h' },
+  ].flatMap(period => ['crew', 'crewhead', 'coo'].flatMap(role => [false, true].map(mobile => ({ ...period, role, mobile }))));
+
+  it.each(monthlyCases)('allocates $label approved days for $role (mobile=$mobile) without hiding old approvals', async ({ date, label, hours, role, mobile }) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(date);
+    mockAppContext.role = role;
+    mobileMockState.isMobile = mobile;
+    mockTimelogsState.timelogs = [
+      { ...defaultMockTimelogs[0], id: 'cross-year', status: 'approved', days: [
+        { d: '2026-12-31', f: '08:00', t: '11:00' },
+        { d: '2027-01-01', f: '08:00', t: '12:00' },
+      ] },
+      { ...defaultMockTimelogs[0], id: 'issued', status: 'invoiced', days: [{ d: '2027-01-02', f: '08:00', t: '13:00' }] },
+      { ...defaultMockTimelogs[0], id: 'paid', status: 'paid', days: [{ d: '2027-01-03', f: '08:00', t: '10:00' }] },
+      { ...defaultMockTimelogs[0], id: 'unapproved', status: 'draft', days: [{ d: '2027-01-04', f: '08:00', t: '18:00' }] },
+      { ...defaultMockTimelogs[0], id: 'historical-pending', status: role === 'crewhead' ? 'pending_ch' : 'pending_coo',
+        days: [{ d: '2026-06-01', f: '08:00', t: '16:00' }] },
+    ];
+    const { default: DashboardView } = await import('./DashboardView');
+    render(<DashboardView />);
+    expect(screen.getByText(label)).toBeInTheDocument();
+    const hourCard = mobile && role !== 'crew'
+      ? screen.getByText('Hodiny').parentElement!
+      : screen.getByText('Schvalene hodiny').parentElement!;
+    expect(within(hourCard).getByText(hours)).toBeInTheDocument();
+    if (role === 'crew') return;
+    if (mobile) {
+      expect(within(screen.getByRole('region', { name: 'Rychlý stav' })).getByText('1 výkaz')).toBeInTheDocument();
+    } else {
+      expect(within(screen.getByText('Vykazy cekaji na me').parentElement!).getByText('1')).toBeInTheDocument();
+    }
+    expect(screen.getByRole('button', { name: /Alex Novak.*Nodu pilot Prague/ })).toBeInTheDocument();
   });
 
   it.each([false, true])('counts a shared COO round only when personally actionable: %s', async (canAct) => {

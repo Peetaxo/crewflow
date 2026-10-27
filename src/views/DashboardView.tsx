@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { CalendarDays, ChevronRight, ClipboardCheck, UserPlus, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { endOfMonth, format, startOfMonth } from 'date-fns';
+import { cs } from 'date-fns/locale';
 import { useAppContext } from '../context/useAppContext';
 import { useAuth } from '../app/providers/useAuth';
 import { useSharedApprovals } from '../features/shift-workflows/useSharedApprovals';
@@ -51,6 +53,10 @@ const DashboardView = () => {
   const receiptsQuery = useReceiptsQuery();
   const invoicesQuery = useInvoicesQuery();
   const isMobile = useIsMobile();
+  const currentDate = new Date();
+  const monthStart = format(startOfMonth(currentDate), 'yyyy-MM-dd');
+  const monthEnd = format(endOfMonth(currentDate), 'yyyy-MM-dd');
+  const monthLabel = format(currentDate, 'LLLL yyyy', { locale: cs });
 
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
@@ -166,7 +172,9 @@ const DashboardView = () => {
   const pendingReceipts = receipts.filter((receipt) => receipt.status === 'submitted' || receipt.status === 'approved').length;
   const approvedHours = timelogs
     .filter((timelog) => timelog.status === 'approved' || timelog.status === 'invoiced' || timelog.status === 'paid')
-    .reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
+    .reduce((sum, timelog) => sum + calculateTotalHours(
+      timelog.days.filter(day => day.d >= monthStart && day.d <= monthEnd),
+    ), 0);
   const actionableEvents = filteredEvents.filter((event) => getEventStatus(event) !== 'past');
   const needsFilling = actionableEvents.filter((event) => event.filled < event.needed).length;
   const openCrewSlots = actionableEvents.reduce((sum, event) => sum + Math.max(0, event.needed - event.filled), 0);
@@ -279,7 +287,9 @@ const DashboardView = () => {
         <header className="nodu-management-overview-header">
           <p className="nodu-dashboard-kicker">Management</p>
           <h1 className="nodu-management-overview-title">Přehled</h1>
-          <p className="nodu-management-overview-lead">{role === 'crewhead' ? 'CH pohled' : 'COO pohled'}</p>
+          <p className="nodu-management-overview-lead">
+            {role === 'crewhead' ? 'CH pohled' : 'COO pohled'} · <time dateTime={monthStart.slice(0, 7)}>{monthLabel}</time>
+          </p>
         </header>
 
         <section className="nodu-management-overview-grid" aria-label="Rychlý stav">
@@ -443,7 +453,7 @@ const DashboardView = () => {
         <p className="nodu-dashboard-kicker">Pilot overview</p>
         <h1 className="nodu-dashboard-heading">Dashboard</h1>
         <p className="nodu-dashboard-lead">
-          {roleLabel} · Duben 2026
+          {roleLabel} · <time dateTime={monthStart.slice(0, 7)}>{monthLabel}</time>
         </p>
       </div>
 

@@ -109,16 +109,16 @@ Navázat na `docs/superpowers/plans/2026-10-26-member-onboarding-trial-guide.md`
 
 ## Etapa 3 — Potvrdit aktuální data mezi účty a zařízeními
 
-**Stav: čeká.**
+**Stav: dokončeno 27. 10. 2026 v main, webu a iOS; běžné instalace aktualizované v simulátoru i fyzickém iPhonu.** Výchozí otevřená fronta CH byla neaktuální nejméně 131 sekund. Po opravě všech sedm skutečných přechodů mezi účty prošlo na webu a iOS simulátoru do 30 sekund (nejvyšší zachycená mez 27,464 s); návrat do aplikace, výpadek/retry, koncept, konflikt i oddělení účtů prošly. Zdroj `c0b1d90`, plná sada 2 870 testů a navazující cílené regrese prošly. [Důkazy a přesný rozsah ověření](../../testing/2026-10-27-multi-account-refresh.md).
 
 **Závislost:** etapa 2. **Výstup:** spolehlivý provoz crew, CH a COO bez restartování aplikace.
 
-- [ ] Ve třech samostatných účtech reprodukovat přiřazení člověka, odeslání výkazu, vrácení, opravu, schválení a změnu stavu faktury. Rozlišit již opravené obnovování po vlastním zápisu od aktualizace po zápisu jiného účtu.
-- [ ] Stanovit pro pilot toto chování: úspěšný vlastní zápis se projeví ihned; po návratu do aplikace či otevření příslušného seznamu se data obnoví; změna jiného účtu se na aktivní obrazovce projeví nejpozději do 30 sekund. Jde o cílové kritérium, nikoli o doloženou vlastnost dnešní verze.
-- [ ] Doplnit nejmenší potřebné obnovování ve stávajících query a lifecycle obsluhách podle výsledků reprodukce. Nespuštět kvůli tomu plošnou migraci na Realtime.
-- [ ] Při ztrátě připojení ukázat neaktuální stav a možnost obnovení. Před nevratným schválením použít aktuální serverový podklad a při souběžné změně nabídnout nové načtení.
-- [ ] Ověřit, že aktualizace nesmaže rozepsaný výkaz a že odhlášení nebo změna účtu nepřenese data předchozí osoby.
-- [ ] Zapsat časové výsledky a kombinace zařízení do `docs/testing/2026-10-27-multi-account-refresh.md`.
+- [x] Ve třech samostatných účtech reprodukovat přiřazení člověka, odeslání výkazu, vrácení, opravu, schválení a změnu stavu faktury. Rozlišit již opravené obnovování po vlastním zápisu od aktualizace po zápisu jiného účtu.
+- [x] Ověřit pro pilot toto chování: úspěšný vlastní zápis se projeví ihned; po návratu do aplikace či otevření příslušného seznamu se data obnoví; změna jiného účtu se na aktivní obrazovce projeví nejpozději do 30 sekund. Doložený rozsah: samostatné skutečné místní Auth účty, web a iOS simulátor.
+- [x] Doplnit nejmenší potřebné obnovování ve stávajících query a lifecycle obsluhách podle výsledků reprodukce. Nespuštět kvůli tomu plošnou migraci na Realtime.
+- [x] Při ztrátě připojení ukázat neaktuální stav a možnost obnovení. Před nevratným schválením použít aktuální serverový podklad a při souběžné změně nabídnout nové načtení.
+- [x] Ověřit, že aktualizace nesmaže rozepsaný výkaz a že odhlášení nebo změna účtu nepřenese data předchozí osoby.
+- [x] Zapsat časové výsledky a kombinace zařízení do `docs/testing/2026-10-27-multi-account-refresh.md`.
 
 **Hotovo, když:** všechny uvedené přechody splní cíl obnovování ve webu i iOS a žádná rozepsaná práce ani izolace účtů se neztratí.
 
@@ -231,4 +231,4 @@ Fakturaci neimplementovat znovu. Navázat na `docs/testing/2026-10-22-crew-invoi
 8. Dokončit technický úklid a připravit finální verzi.
 9. Provést bezpečnostní audit a řízený penetrační test, opravit nálezy, zopakovat testy a uzavřít první verzi.
 
-**Etapy 0–2 byly uzavřené 27. 10. 2026.** Etapa 2 je v živém backendu a main; simulátor i fyzický iPhone jsou po doplňující opravě crew Přehledu aktualizované. Navazující pracovní celek je etapa 3: ověřit aktuálnost dat mezi účty a zařízeními. Skutečné pozvánky zůstávají podmíněné dalšími etapami.
+**Etapy 0–3 byly uzavřené 27. 10. 2026.** Oprávnění etapy 2 platí i v živém backendu; zdroj etapy 3 je v main a běžné instalace simulátoru i fyzického iPhonu jsou aktualizované. Časová akceptace aktuálnosti prošla se skutečnými místními účty na webu a iOS simulátoru. Navazuje etapa 4: připravit skutečné pozvánky a dostupné prostředí. Skutečné pozvánky zůstávají podmíněné dalšími etapami.

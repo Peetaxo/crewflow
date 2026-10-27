@@ -11,9 +11,9 @@ import type { ShiftRoundAction } from './shift-round-history';
 import { TimelogSummaryCard } from '../timelogs/components/TimelogSummaryCard';
 import { displayTimelogHours, displayTimelogMoney, timelogPeriod } from '../timelogs/components/timelog-summary-format';
 
-export function SharedApprovalCard({ group, contractors, events, canAct, onOpen, history = [], showPerson = true }: {
+export function SharedApprovalCard({ group, contractors, events, canAct, onOpen, history = [], showPerson = true, canOpen = true }: {
   group: ShiftApprovalGroup; contractors: Contractor[]; events: Event[]; canAct: boolean;
-  onOpen: (timelog: Timelog) => void; history?: ShiftRoundAction[]; showPerson?: boolean;
+  canOpen?: boolean; onOpen: (timelog: Timelog) => void; history?: ShiftRoundAction[]; showPerson?: boolean;
 }) {
   const contractor = contractors.find((person) => person.profileId === group.round.contractorProfileId);
   const parts = group.timelogs.map((timelog) => {
@@ -50,7 +50,7 @@ export function SharedApprovalCard({ group, contractors, events, canAct, onOpen,
         <div>{displayTimelogHours(partHours)}</div><div className="mt-0.5 text-[11px] font-normal text-[color:var(--nodu-text-soft)]">{displayTimelogMoney(partAmount)}</div>
       </div>,
     }))}
-    control={<Button type="button" variant={canAct ? 'default' : 'outline'} disabled={!group.complete || !contractor || !parts.length}
+    control={<Button type="button" variant={canAct ? 'default' : 'outline'} disabled={!canOpen || !group.complete || !contractor || !parts.length}
       aria-label={canAct ? 'Zkontrolovat celý výkaz' : 'Otevřít celý výkaz'}
       onClick={() => onOpen(group.timelogs[0])} className="h-11 gap-1.5 rounded-xl px-3 text-xs">
       {canAct ? 'Zkontrolovat' : 'Otevřít'}<ArrowUpRight size={14} aria-hidden="true" />

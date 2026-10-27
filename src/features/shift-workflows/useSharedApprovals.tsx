@@ -29,7 +29,8 @@ export function useSharedApprovals(timelogs: Timelog[], events: Event[], contrac
   const people = useMemo(() => local ? contractors.map((person) => ({ ...person,
     profileId: person.profileId ? localShiftWorkflowId('profile', person.profileId) : person.profileId,
   })) : contractors, [contractors, local]);
-  const snapshot = workflows.ready && !workflows.query.isError ? workflows.query.data : undefined;
+  const snapshot = workflows.ready ? workflows.query.data : undefined;
+  const reviewReady = Boolean(snapshot) && !workflows.query.isError;
   const historyKey = JSON.stringify([workflows.scopeKey, snapshot?.rounds.map((round) => [round.id, round.updatedAt])]);
   const [history, setHistory] = useState<{ key: string; actions: ShiftRoundAction[]; error?: string } | null>(null);
   useEffect(() => {
@@ -57,7 +58,7 @@ export function useSharedApprovals(timelogs: Timelog[], events: Event[], contrac
     return visible.filter((report) => !sharedIds.has((local ? localCanonicalReport(report) : report).supabaseId ?? ''));
   };
   const cards = (visible: Timelog[]) => <>
-    {!snapshot && <p role="status" className="mb-3 text-sm">{workflows.query.isError
+    {(!snapshot || workflows.query.isError) && <p role="status" className="mb-3 text-sm">{workflows.query.isError
       ? 'Společné výkazy se nepodařilo načíst. Obnovte data před rozhodnutím.'
       : 'Načítám společné výkazy…'}</p>}
     {groupsFor(visible).rounds.map((group) => {
@@ -67,8 +68,11 @@ export function useSharedApprovals(timelogs: Timelog[], events: Event[], contrac
           || round.timelogIds.some((id) => group.round.timelogIds.includes(id))
           || round.eventIds.some((id) => group.round.eventIds.includes(id)))).map((round) => round.id));
       return <SharedApprovalCard key={group.round.id} group={group} contractors={people}
-        events={canonicalEvents} canAct={group.canAct} showPerson={role !== 'crew'}
-        onOpen={(report) => setEditingTimelog(local ? allTimelogs.find((item) => item.id === report.id) ?? report : report)}
+        events={canonicalEvents} canAct={reviewReady && group.canAct} canOpen={reviewReady} showPerson={role !== 'crew'}
+        onOpen={(report) => {
+          if (!reviewReady) return;
+          setEditingTimelog(local ? allTimelogs.find((item) => item.id === report.id) ?? report : report);
+        }}
         history={history?.key === historyKey ? history.actions.filter((action) => relatedRoundIds.has(action.roundId)) : []} />;
     })}
     {snapshot && history?.key === historyKey && history.error && <p role="status" className="text-xs">{history.error}</p>}
@@ -93,5 +97,5 @@ export function useSharedApprovals(timelogs: Timelog[], events: Event[], contrac
     setEditingTimelog(local ? allTimelogs.find((report) => report.id === target.id) ?? target : target);
     return true;
   };
-  return { cards, legacyOnly, reviewSelection, groupsFor, ready: Boolean(snapshot), identityKey: `${workflows.scopeKey}:${workflows.ready}` };
+  return { cards, legacyOnly, reviewSelection, groupsFor, ready: reviewReady, identityKey: `${workflows.scopeKey}:${workflows.ready}` };
 }

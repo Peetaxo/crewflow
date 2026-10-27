@@ -460,6 +460,8 @@ describe('TimelogsView', () => {
 
     render(<TimelogsView scope="mine" />);
 
+    expect(screen.getByRole('button', { name: 'Všechna období', pressed: true })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Po měsících' }));
     expect(screen.getByText('duben 2026')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Filtr výkazů: Vše, 3/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Koncepty 1/ })).not.toBeInTheDocument();
@@ -483,6 +485,7 @@ describe('TimelogsView', () => {
     const { default: TimelogsView } = await import('./TimelogsView');
     render(<TimelogsView scope="mine" />);
     const card = screen.getByRole('region', { name: 'Společné výkazy' });
+    fireEvent.click(screen.getByRole('button', { name: 'Po měsících' }));
     const month = screen.getByRole('button', { name: 'Předchozí měsíc výkazů' });
     const filter = screen.getByRole('button', { name: mobile ? /Filtr výkazů: Vše, 3/ : 'Vše 3' });
     expect(month.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

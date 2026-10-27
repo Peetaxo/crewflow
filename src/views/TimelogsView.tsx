@@ -84,6 +84,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
+  const [timelogPeriodMode, setTimelogPeriodMode] = useState<'all' | 'month'>('all');
   const [selectedTimelogMonth, setSelectedTimelogMonth] = useState('');
 
   const loadDependencies = useCallback(() => {
@@ -144,10 +145,10 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
   const selectedTimelogMonthStart = format(startOfMonth(selectedTimelogMonthDate), 'yyyy-MM-dd');
   const selectedTimelogMonthEnd = format(endOfMonth(selectedTimelogMonthDate), 'yyyy-MM-dd');
   const periodTimelogs = useMemo(() => (
-    isCrewMineScope
+    isCrewMineScope && timelogPeriodMode === 'month'
       ? baseTimelogs.filter((timelog) => hasTimelogDayInRange(timelog, selectedTimelogMonthStart, selectedTimelogMonthEnd))
       : baseTimelogs
-  ), [baseTimelogs, isCrewMineScope, selectedTimelogMonthEnd, selectedTimelogMonthStart]);
+  ), [baseTimelogs, isCrewMineScope, selectedTimelogMonthEnd, selectedTimelogMonthStart, timelogPeriodMode]);
   const sharedApprovals = useSharedApprovals(timelogsQuery.data ?? [], events, contractors);
   const visibleTimelogs = timelogFilter === 'all'
     ? periodTimelogs
@@ -160,11 +161,6 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
     if (timelog.status === 'rejected') return 'Odeslat znovu';
     return 'Odeslat ke kontrole CH';
   };
-
-  useEffect(() => {
-    if (selectedTimelogMonth) return;
-    setSelectedTimelogMonth(format(startOfMonth(timelogMonthReferenceDate), 'yyyy-MM-dd'));
-  }, [selectedTimelogMonth, timelogMonthReferenceDate]);
 
   const filterOptions = useMemo(() => {
     const counts = {
@@ -504,6 +500,21 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
 
         <section aria-label="Období a stav výkazů" className="space-y-3">
           {isCrewMineScope && (
+            <div className="inline-flex rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.94)] p-1">
+              {(['all', 'month'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  aria-pressed={timelogPeriodMode === mode}
+                  onClick={() => setTimelogPeriodMode(mode)}
+                  className={`min-h-11 rounded-[14px] px-4 py-2 text-sm font-semibold ${timelogPeriodMode === mode ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)]' : 'text-[color:var(--nodu-text-soft)]'}`}
+                >
+                  {mode === 'all' ? 'Všechna období' : 'Po měsících'}
+                </button>
+              ))}
+            </div>
+          )}
+          {isCrewMineScope && timelogPeriodMode === 'month' && (
             <div className="flex items-center justify-between rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.94)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)] sm:w-80">
               <button
                 type="button"

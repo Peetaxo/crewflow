@@ -402,13 +402,14 @@ const MyShiftsView = () => {
         <div className="nodu-my-shifts-section-header">
           <div>
             <h2 id="my-shifts-list-title">Výkazy</h2>
+            <p className="mt-1 text-xs text-[color:var(--nodu-text-soft)]">Všechna období · počty výkazů</p>
           </div>
         </div>
 
         <div className="nodu-my-shifts-tabs">
           {[
             { id: 'drafts' as const, lbl: 'Rozpracované', count: categorized.drafts.length },
-            { id: 'processing' as const, lbl: 'Ke kontrole', count: categorized.processing.length },
+            { id: 'processing' as const, lbl: 'Ve zpracování', count: categorized.processing.length },
             { id: 'invoiced' as const, lbl: 'Schválené', count: categorized.invoiced.length },
           ].map((tab) => (
             <button
@@ -421,6 +422,14 @@ const MyShiftsView = () => {
             </button>
           ))}
         </div>
+
+        <p className="mb-3 text-xs text-[color:var(--nodu-text-soft)]">
+          {activeTab === 'invoiced'
+            ? 'Schválené, fakturované a zaplacené výkazy.'
+            : activeTab === 'processing'
+              ? 'Výkazy ke kontrole CH, schválení COO, tvému potvrzení nebo opravě.'
+              : 'Rozpracované výkazy před odesláním ke kontrole.'}
+        </p>
 
         <AnimatePresence mode="wait">
           <motion.div key={activeTab} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="nodu-my-shifts-card-grid">

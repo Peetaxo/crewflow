@@ -16,7 +16,7 @@ Datum plánu: **27. 10. 2026**. Výchozí ověřený vzdálený main: `ddc3101`.
 
 **Milník A — připravený a úspěšně dokončený malý pilot:** nový člověk dostane skutečnou pozvánku, aktivuje účet a na vlastním zařízení projde prací od přiřazení po zaplacenou fakturu. Crew, CH a COO pracují ve vlastních účtech a vidí aktuální údaje. Splněné etapy 0–5; mobilní push není podmínkou tohoto pilotu.
 
-**Milník B — uzavřená první verze:** splněný milník A, funkční iOS push a dokončený technický úklid podle etap 6–7. Každé rozhodnutí o odložení mění rozsah tohoto milníku výslovně; čekající krok se neoznačuje jako hotový.
+**Milník B — uzavřená první verze:** splněný milník A, funkční iOS push, technický úklid a dokončený bezpečnostní test včetně oprav a jejich opakovaného ověření podle etap 6–8. Každé rozhodnutí o odložení mění rozsah tohoto milníku výslovně; čekající krok se neoznačuje jako hotový.
 
 První verze cílí na web a iOS, kde už probíhá vývoj a ověřování. Android/FCM je navazující samostatná etapa. Auta, účtenky, rozšiřování skladu, Toggl, offline režim, oblečení, hodnocení crew, náhradníci a automatické přebírání zájemců z Tally zůstávají mimo tento dokončovací plán. Existující části zůstávají dostupné podle dosavadního rozsahu.
 
@@ -42,6 +42,7 @@ První verze cílí na web a iOS, kde už probíhá vývoj a ověřování. Andr
 - Regresní test přidat pro měněné chování. Před začleněním spustit odpovídající testy, lint a build; plošné ověření opakovat při integračním milníku nebo novém důvodu.
 - Živý zásah připravit jako konkrétní ověřený balík s návratem zpět a postupovat podle platného oprávnění. Tento plán sám není pokyn k odeslání skutečných pozvánek ani k zapnutí produkčních funkcí.
 - Testovací hesla zadává uživatel přímo do aplikace. Tajné klíče, aktivační odkazy a soukromé osobní údaje nepatří do plánu ani evidence v Gitu.
+- Před malým pilotem dokončit kontrolu oprávnění z etapy 2. Před širším spuštěním navíc provést bezpečnostní review kódu a řízený penetrační test běžící aplikace z etapy 8. Nový požadavek na tento test byl doplněn 27. 10. 2026; jeho provedení je plánované na později.
 
 ## Etapa 0 — Sjednotit pracovní základ
 
@@ -177,7 +178,7 @@ Fakturaci neimplementovat znovu. Navázat na `docs/testing/2026-10-22-crew-invoi
 
 **Soubory:** `src/features/notifications/native-push.ts`, `src/features/notifications/NotificationSettings.tsx`, `src/features/notifications/NotificationsProvider.tsx`, `supabase/functions/send-notifications/push.ts`, `supabase/functions/send-notifications/worker.ts`, iOS capability a signing konfigurace.
 
-## Etapa 7 — Technický úklid a uzavření první verze
+## Etapa 7 — Technický úklid a příprava finální verze
 
 **Stav: čeká.**
 
@@ -190,9 +191,33 @@ Fakturaci neimplementovat znovu. Navázat na `docs/testing/2026-10-22-crew-invoi
 - [ ] Porovnat staré větve a draft PR #6 se skutečně začleněným kódem; uzavřít pouze překonané položky. Pracovní kopie archivovat až po zachování veškeré dosud potřebné práce a místních konfigurací.
 - [ ] Na výsledném main spustit závěrečné ověření: `npm test`, `npm run lint`, `npm run build`, `npx tsc --noEmit -p tsconfig.app.json` a `git diff --check`. Očekávaný výsledek každého příkazu je exit 0; známé typové chyby už nejsou přijatelná výjimka tohoto milníku.
 - [ ] Pro přesně ověřený commit dokončit refresh podle `AGENTS.md`, samostatně potvrdit simulátor a fyzický iPhone a zkontrolovat, že nasazený backend a mobilní balík odpovídají ověřené verzi.
-- [ ] Uložit `docs/testing/2026-10-27-v1-acceptance.md`: commit, cílové prostředí, zařízení, výsledky etap, případná výslovná rozhodnutí o rozsahu, postup obnovení přístupu a kontakt pro provozní problém.
+- [ ] Připravit `docs/testing/2026-10-27-v1-acceptance.md`: commit, cílové prostředí, zařízení, dosavadní výsledky etap, případná výslovná rozhodnutí o rozsahu, postup obnovení přístupu a kontakt pro provozní problém. Bezpečnostní výsledek a konečné přijetí doplnit až po etapě 8.
 
-**Hotovo, když:** milník A platí i na výsledné verzi, iOS push funguje, kontroly procházejí a všechny zbývající položky jsou výslovně zařazené až do další verze. Tím je splněn **milník B**.
+**Hotovo, když:** milník A platí i na výsledné verzi, iOS push funguje a technické kontroly procházejí. Tato verze je připravená k závěrečnému bezpečnostnímu testu; milník B se uzavírá v etapě 8.
+
+## Etapa 8 — Bezpečnostní audit a řízený penetrační test
+
+**Stav: čeká.**
+
+**Závislosti:** etapy 5–7; testovat stabilního kandidáta první verze před širším spuštěním. Tato etapa doplňuje základní kontrolu oprávnění před pilotem a zahrnuje pokusy o zneužití aplikace přes její skutečné rozhraní a API.
+
+**Výstup:** ověřené slabiny s prioritou, opravy a opakovaný test, který potvrdí jejich odstranění. Samotné spuštění skeneru tuto etapu neuzavírá.
+
+- [ ] Vybrat dostupný bezpečnostní skill/plugin pro review kódu a vhodné nástroje pro test běžící aplikace. Při výběru ověřit, zda nástroj kontroluje zdrojový kód, závislosti, konfiguraci nebo skutečně zkouší API; pokrytí zaznamenat pro každou část zvlášť. Nástroje vybírat podle aktuální dostupnosti v době testu.
+- [ ] Připravit konkrétní rozsah: testované webové/API adresy, iOS sestavení, commit, nasazené funkce a role. Použít vyhrazené prostředí se syntetickými daty a odpovídající konfigurací oprávnění. Případné zkoušky živého prostředí předem vymezit samostatně; zátěžové a destruktivní zkoušky do běžného testu nezahrnovat.
+- [ ] Připravit účty nepřihlášeného návštěvníka, crew A, crew B, CH a COO. Pro každý významný endpoint evidovat očekávané povolení a odmítnutí, aby schování tlačítka nebylo vydáváno za serverovou ochranu.
+- [ ] Zkusit obejít přihlášení, zvýšit si roli, přebrat cizí profil, použít cizí nebo opakovaný aktivační/obnovovací odkaz a pokračovat se zneplatněným přístupem. Ověřit také řízené omezení opakovaných žádostí o přihlášení, obnovu a pozvánku.
+- [ ] Zkusit číst a měnit cizí profily, výkazy, schválení, faktury a přílohy změnou identifikátoru nebo přímým voláním API/RPC. Zkontrolovat RLS, granty, privilegované funkce, Storage a platnost odkazů ke stažení.
+- [ ] Prověřit únik tajných klíčů a tokenů ve webovém balíku, mobilní konfiguraci, historii repozitáře a logování. Nálezy zaznamenat bez zveřejnění hodnot; potvrzený únik řešit i výměnou dotčeného klíče nebo tokenu.
+- [ ] Prověřit vstupy pro vložení škodlivého obsahu, injekce, nahrávání souborů, generování PDF a zneužití veřejných funkcí či webhooků. Ověřit typ a velikost příloh a to, že neověřený volající nespustí privilegovanou operaci.
+- [ ] Prověřit obchodní zneužití: podvrženou částku nebo odběratele, přeskočení CH/COO, vystavení bez souhlasu, opakované odeslání a souběžné požadavky vedoucí ke dvojí fakturaci. U push ověřit cizí registraci zařízení, odhlášení a únik citlivých údajů do zpráv.
+- [ ] Zkontrolovat závislosti a konfiguraci nasazení; u skutečně použitých komponent posoudit dopad nalezených zranitelností. Výstup automatického nástroje ověřit před zařazením mezi potvrzené chyby.
+- [ ] Vést `docs/testing/2026-10-27-security-assessment.md`: rozsah a omezení testu, použitá verze, scénáře, potvrzené nálezy, závažnost, postup reprodukce, dotčené místo a stav opravy. Citlivé podklady uchovávat mimo Git.
+- [ ] Opravit potvrzené kritické a vysoké nálezy před širším spuštěním. Střední nálezy buď opravit, nebo předložit k výslovnému rozhodnutí s konkrétním dopadem, dočasným omezením a termínem řešení; nezmizí automaticky do zásobníku nápadů.
+- [ ] Po opravách zopakovat původní pokusy i související povolené operace, aby oprava neodstavila běžnou práci. Zneužitelné scénáře převést na vhodné regresní testy a ověřit výsledný main, backend a mobilní sestavení.
+- [ ] Doplnit konečný bezpečnostní výsledek a přesnou ověřenou verzi do akceptačního záznamu první verze. Změny po auditu, které zasáhnou přihlášení, oprávnění nebo kontrolované vstupy, vyžadují opakování příslušných bezpečnostních scénářů.
+
+**Hotovo, když:** proběhlo review kódu i test běžící aplikace, všechny nálezy mají doložený výsledek, nezůstává otevřená kritická ani vysoká slabina a opravy prošly opakovaným testem na výsledné verzi. Spolu se splněním předchozích etap tím vzniká **milník B**. Evidence uvádí skutečný rozsah ověření, nikoli příslib absolutní nenabouratelnosti.
 
 ## Pořadí navazující práce
 
@@ -203,6 +228,7 @@ Fakturaci neimplementovat znovu. Navázat na `docs/testing/2026-10-22-crew-invoi
 5. Zpřístupnit skutečné pozvánky a prostředí pro vybrané lidi.
 6. Dokončit malý skutečný pilot a opravit jeho blokující nálezy.
 7. Doplnit iOS push.
-8. Dokončit technický úklid a závěrečnou akceptaci.
+8. Dokončit technický úklid a připravit finální verzi.
+9. Provést bezpečnostní audit a řízený penetrační test, opravit nálezy, zopakovat testy a uzavřít první verzi.
 
 **Etapy 0–1 byly uzavřené 27. 10. 2026.** Navazující pracovní celek je etapa 2: samostatně připravit opravu oprávnění podle potvrzeného živého nálezu a následně opravit dashboard. Skutečné pozvánky zůstávají podmíněné dalšími etapami.

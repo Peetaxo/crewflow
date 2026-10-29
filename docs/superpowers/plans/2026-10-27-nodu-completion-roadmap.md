@@ -18,6 +18,8 @@ Datum plánu: **27. 10. 2026**. Výchozí ověřený vzdálený main: `ddc3101`.
 
 **Milník B — uzavřená první verze:** splněný milník A, funkční iOS push, technický úklid a dokončený bezpečnostní test včetně oprav a jejich opakovaného ověření podle etap 6–8. Každé rozhodnutí o odložení mění rozsah tohoto milníku výslovně; čekající krok se neoznačuje jako hotový.
 
+**Změna pořadí na přání uživatele, 29. 10. 2026:** doménu, veřejný hosting a skutečné rozesílání řešit až v závěru po dokončení a místním ověření aplikace. Nejprve lze dokončit nezávislé opravy, technický úklid a místní přípravu/testy upozornění i bezpečnosti. Etapy 4–5 a ověření závislé na konečné veřejné konfiguraci zůstávají otevřené. „Místně dokončená aplikace“ není konečné provozní přijetí první verze; rozsah milníků A a B se tím nesnižuje.
+
 První verze cílí na web a iOS, kde už probíhá vývoj a ověřování. Android/FCM je navazující samostatná etapa. Auta, účtenky, rozšiřování skladu, Toggl, offline režim, oblečení, hodnocení crew, náhradníci a automatické přebírání zájemců z Tally zůstávají mimo tento dokončovací plán. Existující části zůstávají dostupné podle dosavadního rozsahu.
 
 ## Výchozí stav
@@ -36,7 +38,7 @@ První verze cílí na web a iOS, kde už probíhá vývoj a ověřování. Andr
 ## Pravidla práce a dokončení
 
 - V jednu chvíli implementovat jeden úkol. Pokud čeká na heslo, účet nebo službu, uložit přesný bod pokračování a posunout jiný nezávislý úkol; čekající akceptaci nepřeskočit. Zjištěné nové problémy přidávat k příslušné etapě a určit jejich dopad na její dokončení.
-- U každé etapy vést stav **čeká / probíhá / čeká na uživatele nebo službu / ověřeno** a připojit konkrétní důkaz. Pořadí v plánu není tvrzení, že je etapa spuštěná.
+- U každé etapy vést stav **čeká / probíhá / čeká na uživatele nebo službu / odloženo na přání uživatele / ověřeno** a připojit konkrétní důkaz. Pořadí v plánu není tvrzení, že je etapa spuštěná.
 - Dokončení znamená výsledek v aplikaci, ověření příslušného scénáře, začlenění do main a aktualizované vývojové instalace podle `AGENTS.md`. Samotný webový build nestačí.
 - Po změně aplikace použít čistý ověřený main, zachovat ignorovanou `.env.local` a spustit `npm run ios:refresh:devices`. Simulátor a fyzický iPhone vykazovat samostatně. Nedostupný telefon je čekající instalace; dostupný telefon s chybou sestavení, podpisu, instalace nebo spuštění je neúspěšný krok.
 - Regresní test přidat pro měněné chování. Před začleněním spustit odpovídající testy, lint a build; plošné ověření opakovat při integračním milníku nebo novém důvodu.
@@ -126,9 +128,9 @@ Navázat na `docs/superpowers/plans/2026-10-26-member-onboarding-trial-guide.md`
 
 ## Etapa 4 — Připravit skutečné pozvánky a dostupné prostředí
 
-**Stav: zahájeno 29. 10. 2026 — průzkum a návrh provozu.** Aktuální main ověřený, živý Supabase je na Free a databáze má přibližně 25 MB; onboardingové serverové objekty dosud nejsou nasazené. Připravené [varianty hostingu, náklady, skutečné předpoklady a kontroly před pilotem](../../testing/2026-10-29-stage-4-readiness.md). Doména, odesílatel a iOS distribuce se teprve vybírají; žádné nasazení nebo skutečná pozvánka touto přípravou neproběhly.
+**Stav: veřejné prostředí a skutečné rozesílání odloženo na přání uživatele, 29. 10. 2026, až po dokončení a místním ověření aplikace.** Průzkum je uložený v [připravenosti etapy 4](../../testing/2026-10-29-stage-4-readiness.md). Směr vlastní doména + Cloudflare + současný Supabase + Resend byl přijatý, konkrétní doména a nastavení nejsou vybrané. Žádné nasazení nebo skutečná pozvánka touto přípravou neproběhly. Nezávislé místní opravy a regrese mohou pokračovat; veřejná akceptace etapy zůstává otevřená.
 
-**Závislosti:** etapy 1–3. **Potřebné vstupy od uživatele:** veřejná adresa aplikace, odesílací adresa a způsob distribuce iOS pro vybrané lidi. Tyto volby uzavřít na konkrétním návrhu této etapy; nebrzdí dokončení místního testu.
+**Závislosti:** etapy 1–3 a připravený místně ověřený kandidát aplikace. **Potřebné vstupy od uživatele při návratu k veřejnému spuštění:** veřejná adresa aplikace, odesílací adresa a způsob distribuce iOS pro vybrané lidi. Tyto volby nyní nejsou podmínkou pokračování ve vývoji. Před skutečnými pozvánkami znovu ověřit dostupnost vybrané domény a aktuální ceny.
 
 - [ ] Vybrat provozní adresu a hostované prostředí pro malý pilot. Ověřit otevření a přihlášení z druhé sítě při vypnutém notebooku.
 - [ ] Připravit serverové nastavení pozvánek a obnovy hesla, přesměrování a schváleného odesílatele. Lokální adresy a schémata nodu test zachovat pouze pro místní pilot.
@@ -146,7 +148,7 @@ Navázat na `docs/superpowers/plans/2026-10-26-member-onboarding-trial-guide.md`
 
 **Stav: čeká.**
 
-**Závislost:** etapa 4. **Rozsah:** 3–5 vybraných členů crew, CH a COO ve vlastních účtech; alespoň dvě zařízení a web+iOS. Počet lidí je návrh velikosti pilotu.
+**Závislost:** etapa 4, jejíž veřejná část je na přání uživatele odložená na závěr. **Rozsah:** 3–5 vybraných členů crew, CH a COO ve vlastních účtech; alespoň dvě zařízení a web+iOS. Počet lidí je návrh velikosti pilotu. Místní syntetické testy nenahrazují tento pozdější skutečný pilot.
 
 - [ ] Připravit kontaktní, identifikační a fakturační údaje pouze vybraných lidí. Potvrdit, kdo za které účty vystupuje a kdo řeší dotazy pilotu.
 - [ ] Projít jednu celou skutečnou akci: přiřazení → přijetí informace → výkaz → vrácení s důvodem → oprava → CH → COO → fakturace → PDF → záznam úhrady.
@@ -165,7 +167,7 @@ Fakturaci neimplementovat znovu. Navázat na `docs/testing/2026-10-22-crew-invoi
 
 **Stav: čeká.**
 
-**Závislost:** stabilní výsledek etapy 5. **Externí závislost:** potřebný Apple účet, přístupy a podepisování. Při chybějícím přístupu vykazovat čekající krok, ne úspěšné push.
+**Závislost pro závěrečnou provozní akceptaci:** stabilní výsledek etapy 5 a konečný distribuční způsob aplikace. Příprava a izolované testy mohou po stabilních etapách 0–3 předcházet veřejnému pilotu; evidovat přesné testované sestavení/prostředí a konečnou konfiguraci později znovu ověřit. **Externí závislost:** potřebný Apple účet, přístupy a podepisování. Při chybějícím přístupu vykazovat čekající krok, ne úspěšné push.
 
 - [ ] Podle `supabase/functions/send-notifications/README.md` ověřit Apple capability, provisioning a serverovou APNs konfiguraci pro skutečný distribuční způsob aplikace.
 - [ ] Ověřit žádost o oprávnění, jeho zamítnutí a pozdější změnu, registraci zařízení a odpojení zařízení při odhlášení nebo změně účtu.
@@ -182,7 +184,7 @@ Fakturaci neimplementovat znovu. Navázat na `docs/testing/2026-10-22-crew-invoi
 
 **Stav: čeká.**
 
-**Závislost:** etapa 5; závěrečná akceptace vyžaduje také dokončenou etapu 6. Technický úklid zůstává podle dosavadní dohody na konci, ale může pokračovat během čekání na Apple účet.
+**Závislost pro technický úklid:** stabilní základ etap 0–3; podle rozhodnutí 29. 10. může předcházet veřejnému prostředí i skutečnému pilotu. Opravy nálezů pilotu a závěrečná akceptace nadále vyžadují etapu 5 a dokončenou etapu 6. Úspěšný místní úklid sám neuzavírá první verzi.
 
 - [ ] Přepočítat skutečný aktuální seznam TypeScript diagnostik. Opravovat po souvisejících skupinách; neřešit je plošným `any`, vypnutím kontroly nebo hromadnými ignore komentáři.
 - [ ] Dostat aplikační typecheck na nulu a přidat jeho běh do běžného ověřování projektu. Chyby patřící samostatnému serverovému runtime kontrolovat jeho vlastním odpovídajícím postupem.
@@ -199,7 +201,7 @@ Fakturaci neimplementovat znovu. Navázat na `docs/testing/2026-10-22-crew-invoi
 
 **Stav: čeká.**
 
-**Závislosti:** etapy 5–7; testovat stabilního kandidáta první verze před širším spuštěním. Tato etapa doplňuje základní kontrolu oprávnění před pilotem a zahrnuje pokusy o zneužití aplikace přes její skutečné rozhraní a API.
+**Závislosti pro konečné uzavření:** etapy 5–7; testovat stabilního kandidáta první verze před širším spuštěním. Review zdroje a testy ve vyhrazeném místním prostředí mohou proběhnout před veřejným hostingem. Veřejné konfigurace, konečné iOS sestavení a relevantní scénáře se musí ověřit také po nasazení; předběžný audit není konečná akceptace. Tato etapa doplňuje základní kontrolu oprávnění před pilotem a zahrnuje pokusy o zneužití aplikace přes její skutečné rozhraní a API.
 
 **Výstup:** ověřené slabiny s prioritou, opravy a opakovaný test, který potvrdí jejich odstranění. Samotné spuštění skeneru tuto etapu neuzavírá.
 
@@ -225,10 +227,10 @@ Fakturaci neimplementovat znovu. Navázat na `docs/testing/2026-10-22-crew-invoi
 2. Dokončit lidský onboardingový průchod v nodu test.
 3. Uzavřít oprávnění a opravit dashboard.
 4. Ověřit a případně doplnit aktuálnost dat mezi účty.
-5. Zpřístupnit skutečné pozvánky a prostředí pro vybrané lidi.
-6. Dokončit malý skutečný pilot a opravit jeho blokující nálezy.
-7. Doplnit iOS push.
-8. Dokončit technický úklid a připravit finální verzi.
-9. Provést bezpečnostní audit a řízený penetrační test, opravit nálezy, zopakovat testy a uzavřít první verzi.
+5. Dokončit nezávislé místní opravy a technický úklid z etapy 7; navázat také kontrolami připravenosti etapy 4, které nevyžadují veřejnou doménu.
+6. Připravit a otestovat iOS push v dostupném vyhrazeném prostředí (etapa 6); chybějící Apple přístup evidovat jako čekající část.
+7. Provést předběžné bezpečnostní review a řízené testy místního kandidáta (etapa 8), opravit potvrzené nálezy.
+8. Až bude místní kandidát připravený, vrátit se k doméně, veřejnému prostředí, odesílateli a distribuci; dokončit etapu 4 a potom skutečný pilot etapy 5.
+9. Zapracovat nálezy pilotu, ověřit konečné push a nasazenou konfiguraci, dokončit kontroly etapy 7 a opakované bezpečnostní ověření etapy 8; teprve potom uzavřít první verzi.
 
-**Etapy 0–3 byly uzavřené 27. 10. 2026.** Oprávnění etapy 2 platí i v živém backendu; zdroj etapy 3 je v main a běžné instalace simulátoru i fyzického iPhonu jsou aktualizované. Časová akceptace aktuálnosti prošla se skutečnými místními účty na webu a iOS simulátoru. Navazuje etapa 4: připravit skutečné pozvánky a dostupné prostředí. Skutečné pozvánky zůstávají podmíněné dalšími etapami.
+**Etapy 0–3 byly uzavřené 27. 10. 2026.** Oprávnění etapy 2 platí i v živém backendu; zdroj etapy 3 je v main a běžné instalace simulátoru i fyzického iPhonu jsou aktualizované. Časová akceptace aktuálnosti prošla se skutečnými místními účty na webu a iOS simulátoru. **Rozhodnutí 29. 10.:** veřejná část etapy 4 a skutečný pilot etapy 5 se přesouvají na závěr po místním dokončení aplikace. Další práce může pokračovat nezávislými opravami a technickým úklidem bez pořizování domény nebo veřejného hostingu; konečné provozní přijetí zůstává otevřené.

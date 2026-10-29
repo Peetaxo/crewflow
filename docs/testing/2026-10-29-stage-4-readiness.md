@@ -1,6 +1,6 @@
 # Etapa 4 — výchozí připravenost a varianty provozu
 
-29. 10. 2026, zdroj `49251fc`, shodný s nově načteným `origin/main`. **Jde o průzkum a návrh k rozhodnutí, nikoli schválenou konfiguraci nebo provedené nasazení.** Etapa 3 zůstává uzavřená; etapa 4 začala ověřením předpokladů.
+29. 10. 2026, průzkum nad zdrojem `49251fc`, tehdy shodným s nově načteným `origin/main`. **Směr řešení uživatel přijal; konkrétní konfigurace a nasazení nejsou provedené.** Následně rozhodl doménu, veřejný hosting a skutečné pozvánky odložit až na závěr po dokončení a místním ověření aplikace. Etapa 3 zůstává uzavřená; veřejná akceptace etapy 4 je odložená, nikoli dokončená.
 
 ## Doporučení pro malý začátek a pozdější růst
 
@@ -46,6 +46,8 @@ Nezávislé read-only audity serveru a odkazů se shodují na těchto bodech:
 
 ## Dosud otevřená rozhodnutí a další krok
 
-Uživatel zatím neurčil veřejnou doménu a požádal o varianty malého začátku a pozdějšího růstu. Doporučená sestava výše zatím není odsouhlasená. Po výběru připravit konkrétní návrh a implementační plán s přesným hostem, odesílatelem, způsobem iOS distribuce, testovacím příjemcem a oprávněným COO. Následují izolované regrese, review a ověřený balík. Skutečné nasazení/odeslání první pozvánky má podle roadmapy samostatný schvalovací bod nad tímto konkrétním balíkem.
+Uživatel přijal směr vlastní doména + Cloudflare + současný Supabase + Resend a nechal prověřit dostupnost domény. Následně výslovně přesunul její řešení a veřejné spuštění na závěr po dokončení aplikace. Konkrétní doména, odesílatel a distribuce nejsou vybrané; jejich výběr teď neblokuje nezávislé místní opravy, technický úklid ani místní testování. Žádný tarif nebo doména se tím neobjednává.
+
+Při pozdějším návratu k veřejnému spuštění znovu ověřit dostupnost domény a ceny, připravit konkrétní návrh a implementační plán s přesným hostem, odesílatelem, způsobem iOS distribuce, testovacím příjemcem a oprávněným COO. Navázat na uložené technické nálezy výše, izolované regrese, review a ověřený balík. Skutečné nasazení/odeslání první pozvánky má podle roadmapy samostatný schvalovací bod nad tímto konkrétním balíkem. Místně dokončená aplikace nepředstavuje dokončení skutečného pilotu ani konečné provozní přijetí.
 
 V tomto průzkumu se nepořizovaly domény ani tarify, nevytvářely nové externí účty, neměnil produktový kód, živé schéma ani nastavení a neprováděla nová iOS instalace. Etapa 4 není dokončená.

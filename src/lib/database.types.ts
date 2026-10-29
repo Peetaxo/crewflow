@@ -21,6 +21,7 @@ export type CrewRatingSource = 'initial' | 'event';
 
 export interface Database {
   public: {
+    // Relationships describe public-schema foreign keys; auth.users is outside this contract.
     Tables: {
       shift_workflow_events: {
         Row: {
@@ -402,6 +403,29 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: 'budget_items_project_id_fkey';
+            columns: ['project_id'];
+            isOneToOne: false;
+            referencedRelation: 'projects';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'budget_items_budget_package_id_fkey';
+            columns: ['budget_package_id'];
+            isOneToOne: false;
+            referencedRelation: 'budget_packages';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'budget_items_event_id_fkey';
+            columns: ['event_id'];
+            isOneToOne: false;
+            referencedRelation: 'events';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       budget_package_events: {
         Row: {
@@ -419,6 +443,22 @@ export interface Database {
           event_id?: string;
           created_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: 'budget_package_events_budget_package_id_fkey';
+            columns: ['budget_package_id'];
+            isOneToOne: false;
+            referencedRelation: 'budget_packages';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'budget_package_events_event_id_fkey';
+            columns: ['event_id'];
+            isOneToOne: false;
+            referencedRelation: 'events';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       budget_packages: {
         Row: {
@@ -445,6 +485,15 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: 'budget_packages_project_id_fkey';
+            columns: ['project_id'];
+            isOneToOne: false;
+            referencedRelation: 'projects';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       candidates: {
         Row: {
@@ -476,6 +525,65 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
+        Insert: {
+          id?: string;
+          first_name: string;
+          last_name: string;
+          phone?: string | null;
+          email?: string | null;
+          tally_submission_id?: string | null;
+          tally_respondent_id?: string | null;
+          submitted_at?: string | null;
+          is_adult?: boolean | null;
+          has_ico?: boolean | null;
+          has_driving_license?: boolean | null;
+          can_drive_van?: boolean | null;
+          has_event_experience?: boolean | null;
+          source?: string | null;
+          utm_source?: string | null;
+          utm_content?: string | null;
+          cal_booking_url?: string | null;
+          cal_booking_uid?: string | null;
+          cal_booking_status?: string | null;
+          cal_event_type?: string | null;
+          stage?: RecruitmentStage;
+          interview_date?: string | null;
+          note?: string | null;
+          raw_payload?: Json | null;
+          cal_raw_payload?: Json | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          first_name?: string;
+          last_name?: string;
+          phone?: string | null;
+          email?: string | null;
+          tally_submission_id?: string | null;
+          tally_respondent_id?: string | null;
+          submitted_at?: string | null;
+          is_adult?: boolean | null;
+          has_ico?: boolean | null;
+          has_driving_license?: boolean | null;
+          can_drive_van?: boolean | null;
+          has_event_experience?: boolean | null;
+          source?: string | null;
+          utm_source?: string | null;
+          utm_content?: string | null;
+          cal_booking_url?: string | null;
+          cal_booking_uid?: string | null;
+          cal_booking_status?: string | null;
+          cal_event_type?: string | null;
+          stage?: RecruitmentStage;
+          interview_date?: string | null;
+          note?: string | null;
+          raw_payload?: Json | null;
+          cal_raw_payload?: Json | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
       };
       clients: {
         Row: {
@@ -493,6 +601,37 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
+        Insert: {
+          id?: string;
+          name: string;
+          ico?: string | null;
+          dic?: string | null;
+          street?: string | null;
+          zip?: string | null;
+          city?: string | null;
+          country?: string | null;
+          contact_person?: string | null;
+          email?: string | null;
+          phone?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          ico?: string | null;
+          dic?: string | null;
+          street?: string | null;
+          zip?: string | null;
+          city?: string | null;
+          country?: string | null;
+          contact_person?: string | null;
+          email?: string | null;
+          phone?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
       };
       crew_ratings: {
         Row: {
@@ -528,6 +667,29 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: 'crew_ratings_profile_id_fkey';
+            columns: ['profile_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'crew_ratings_event_id_fkey';
+            columns: ['event_id'];
+            isOneToOne: false;
+            referencedRelation: 'events';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'crew_ratings_rated_by_profile_id_fkey';
+            columns: ['rated_by_profile_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       event_assignments: {
         Row: {
@@ -536,6 +698,34 @@ export interface Database {
           profile_id: string;
           assigned_at: string;
         };
+        Insert: {
+          id?: string;
+          event_id: string;
+          profile_id: string;
+          assigned_at?: string;
+        };
+        Update: {
+          id?: string;
+          event_id?: string;
+          profile_id?: string;
+          assigned_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'event_assignments_event_id_fkey';
+            columns: ['event_id'];
+            isOneToOne: false;
+            referencedRelation: 'events';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'event_assignments_profile_id_fkey';
+            columns: ['profile_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       event_applications: {
         Row: {
@@ -549,6 +739,44 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
+        Insert: {
+          id?: string;
+          event_id: string;
+          profile_id: string;
+          status?: 'pending' | 'approved' | 'rejected' | 'withdrawn' | 'withdrawal_requested';
+          note?: string | null;
+          planned_from?: string | null;
+          planned_to?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          event_id?: string;
+          profile_id?: string;
+          status?: 'pending' | 'approved' | 'rejected' | 'withdrawn' | 'withdrawal_requested';
+          note?: string | null;
+          planned_from?: string | null;
+          planned_to?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'event_applications_event_id_fkey';
+            columns: ['event_id'];
+            isOneToOne: false;
+            referencedRelation: 'events';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'event_applications_profile_id_fkey';
+            columns: ['profile_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       events: {
         Row: {
@@ -589,6 +817,112 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
+        Insert: {
+          id?: string;
+          name: string;
+          project_id?: string | null;
+          job_number?: string | null;
+          client_name?: string | null;
+          date_from?: string | null;
+          date_to?: string | null;
+          time_from?: string | null;
+          time_to?: string | null;
+          city?: string | null;
+          address?: string | null;
+          place_id?: string | null;
+          location_lat?: number | null;
+          location_lng?: number | null;
+          crew_needed?: number | null;
+          crew_filled?: number | null;
+          status?: EventStatus;
+          description?: string | null;
+          contact_profile_id?: string | null;
+          coordinator_profile_id?: string | null;
+          contact_approves_hours?: boolean;
+          timelog_approver_profile_id?: string | null;
+          contact_person?: string | null;
+          contact_phone?: string | null;
+          contact_email?: string | null;
+          dresscode?: string | null;
+          meeting_point?: string | null;
+          show_day_types?: boolean | null;
+          schedule_version?: 1 | 2;
+          free_days?: string[];
+          allow_crew_time_proposal?: boolean;
+          day_types?: Json | null;
+          phase_times?: Json | null;
+          phase_schedules?: Json | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          project_id?: string | null;
+          job_number?: string | null;
+          client_name?: string | null;
+          date_from?: string | null;
+          date_to?: string | null;
+          time_from?: string | null;
+          time_to?: string | null;
+          city?: string | null;
+          address?: string | null;
+          place_id?: string | null;
+          location_lat?: number | null;
+          location_lng?: number | null;
+          crew_needed?: number | null;
+          crew_filled?: number | null;
+          status?: EventStatus;
+          description?: string | null;
+          contact_profile_id?: string | null;
+          coordinator_profile_id?: string | null;
+          contact_approves_hours?: boolean;
+          timelog_approver_profile_id?: string | null;
+          contact_person?: string | null;
+          contact_phone?: string | null;
+          contact_email?: string | null;
+          dresscode?: string | null;
+          meeting_point?: string | null;
+          show_day_types?: boolean | null;
+          schedule_version?: 1 | 2;
+          free_days?: string[];
+          allow_crew_time_proposal?: boolean;
+          day_types?: Json | null;
+          phase_times?: Json | null;
+          phase_schedules?: Json | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'events_project_id_fkey';
+            columns: ['project_id'];
+            isOneToOne: false;
+            referencedRelation: 'projects';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'events_contact_profile_id_fkey';
+            columns: ['contact_profile_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'events_timelog_approver_profile_id_fkey';
+            columns: ['timelog_approver_profile_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'events_coordinator_profile_id_fkey';
+            columns: ['coordinator_profile_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       invoices: {
         Row: {
@@ -624,6 +958,109 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
+        Insert: {
+          billing_kind?: 'self_billing' | 'uploaded';
+          billing_statement_id?: string | null;
+          billing_document_id?: string | null;
+          paid_by_user_id?: string | null;
+          paid_by_profile_id?: string | null;
+          payment_recorded_at?: string | null;
+          id?: string;
+          contractor_id: string;
+          event_id?: string | null;
+          timelog_id?: string | null;
+          job_number?: string | null;
+          total_hours?: number | null;
+          amount_hours?: number | null;
+          amount_km?: number | null;
+          amount_meals?: number | null;
+          amount_receipts?: number | null;
+          total_amount?: number | null;
+          invoice_number?: string | null;
+          issue_date?: string | null;
+          taxable_supply_date?: string | null;
+          due_date?: string | null;
+          currency?: string;
+          supplier_snapshot?: Json | null;
+          customer_snapshot?: Json | null;
+          pdf_path?: string | null;
+          pdf_generated_at?: string | null;
+          status?: InvoiceStatus;
+          sent_at?: string | null;
+          paid_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          billing_kind?: 'self_billing' | 'uploaded';
+          billing_statement_id?: string | null;
+          billing_document_id?: string | null;
+          paid_by_user_id?: string | null;
+          paid_by_profile_id?: string | null;
+          payment_recorded_at?: string | null;
+          id?: string;
+          contractor_id?: string;
+          event_id?: string | null;
+          timelog_id?: string | null;
+          job_number?: string | null;
+          total_hours?: number | null;
+          amount_hours?: number | null;
+          amount_km?: number | null;
+          amount_meals?: number | null;
+          amount_receipts?: number | null;
+          total_amount?: number | null;
+          invoice_number?: string | null;
+          issue_date?: string | null;
+          taxable_supply_date?: string | null;
+          due_date?: string | null;
+          currency?: string;
+          supplier_snapshot?: Json | null;
+          customer_snapshot?: Json | null;
+          pdf_path?: string | null;
+          pdf_generated_at?: string | null;
+          status?: InvoiceStatus;
+          sent_at?: string | null;
+          paid_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'invoices_contractor_id_fkey';
+            columns: ['contractor_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'invoices_event_id_fkey';
+            columns: ['event_id'];
+            isOneToOne: false;
+            referencedRelation: 'events';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'invoices_timelog_id_fkey';
+            columns: ['timelog_id'];
+            isOneToOne: false;
+            referencedRelation: 'timelogs';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'invoices_billing_statement_id_fkey';
+            columns: ['billing_statement_id'];
+            isOneToOne: false;
+            referencedRelation: 'invoice_billing_statements';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'invoices_billing_document_id_fkey';
+            columns: ['billing_document_id'];
+            isOneToOne: false;
+            referencedRelation: 'invoice_billing_documents';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       invoice_approval_documents: {
         Row: {
@@ -658,7 +1095,7 @@ export interface Database {
           approval_status?: PowerAppsApprovalStatus;
           approval_status_label?: string | null;
           comment?: string | null;
-          approvers?: string[] | null;
+          approvers?: string[];
           requester?: string | null;
           raw_payload?: Json | null;
           matched_invoice_id?: string | null;
@@ -678,7 +1115,7 @@ export interface Database {
           approval_status?: PowerAppsApprovalStatus;
           approval_status_label?: string | null;
           comment?: string | null;
-          approvers?: string[] | null;
+          approvers?: string[];
           requester?: string | null;
           raw_payload?: Json | null;
           matched_invoice_id?: string | null;
@@ -686,6 +1123,15 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: 'invoice_approval_documents_matched_invoice_id_fkey';
+            columns: ['matched_invoice_id'];
+            isOneToOne: false;
+            referencedRelation: 'invoices';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       fleet_reservations: {
         Row: {
@@ -701,6 +1147,62 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
+        Insert: {
+          id?: string;
+          vehicle_id: string;
+          project_id: string;
+          event_id?: string | null;
+          responsible_profile_id: string;
+          starts_at: string;
+          ends_at: string;
+          note?: string | null;
+          has_conflict?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          vehicle_id?: string;
+          project_id?: string;
+          event_id?: string | null;
+          responsible_profile_id?: string;
+          starts_at?: string;
+          ends_at?: string;
+          note?: string | null;
+          has_conflict?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'fleet_reservations_vehicle_id_fkey';
+            columns: ['vehicle_id'];
+            isOneToOne: false;
+            referencedRelation: 'fleet_vehicles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'fleet_reservations_project_id_fkey';
+            columns: ['project_id'];
+            isOneToOne: false;
+            referencedRelation: 'projects';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'fleet_reservations_event_id_fkey';
+            columns: ['event_id'];
+            isOneToOne: false;
+            referencedRelation: 'events';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'fleet_reservations_responsible_profile_id_fkey';
+            columns: ['responsible_profile_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       fleet_vehicle_documents: {
         Row: {
@@ -713,6 +1215,42 @@ export interface Database {
           uploaded_by_profile_id: string | null;
           created_at: string;
         };
+        Insert: {
+          id?: string;
+          vehicle_id: string;
+          file_name: string;
+          storage_path?: string | null;
+          content_type?: string | null;
+          size_bytes?: number | null;
+          uploaded_by_profile_id?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          vehicle_id?: string;
+          file_name?: string;
+          storage_path?: string | null;
+          content_type?: string | null;
+          size_bytes?: number | null;
+          uploaded_by_profile_id?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'fleet_vehicle_documents_vehicle_id_fkey';
+            columns: ['vehicle_id'];
+            isOneToOne: false;
+            referencedRelation: 'fleet_vehicles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'fleet_vehicle_documents_uploaded_by_profile_id_fkey';
+            columns: ['uploaded_by_profile_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       fleet_vehicles: {
         Row: {
@@ -730,6 +1268,37 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
+        Insert: {
+          id?: string;
+          slug: string;
+          name: string;
+          plate: string;
+          type: string;
+          status?: FleetVehicleStatus;
+          capacity?: string;
+          inspection_valid_until: string;
+          insurance_valid_until?: string | null;
+          service_due_at?: string | null;
+          note?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          slug?: string;
+          name?: string;
+          plate?: string;
+          type?: string;
+          status?: FleetVehicleStatus;
+          capacity?: string;
+          inspection_valid_until?: string;
+          insurance_valid_until?: string | null;
+          service_due_at?: string | null;
+          note?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
       };
       invoice_items: {
         Row: {
@@ -746,6 +1315,50 @@ export interface Database {
           total_amount: number;
           created_at: string;
         };
+        Insert: {
+          id?: string;
+          invoice_id: string;
+          job_number: string;
+          event_id?: string | null;
+          hours?: number;
+          amount_hours?: number;
+          km?: number;
+          amount_km?: number;
+          amount_receipts?: number;
+          amount_meals?: number;
+          total_amount?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          invoice_id?: string;
+          job_number?: string;
+          event_id?: string | null;
+          hours?: number;
+          amount_hours?: number;
+          km?: number;
+          amount_km?: number;
+          amount_receipts?: number;
+          amount_meals?: number;
+          total_amount?: number;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'invoice_items_invoice_id_fkey';
+            columns: ['invoice_id'];
+            isOneToOne: false;
+            referencedRelation: 'invoices';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'invoice_items_event_id_fkey';
+            columns: ['event_id'];
+            isOneToOne: false;
+            referencedRelation: 'events';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       invoice_timelogs: {
         Row: {
@@ -754,6 +1367,34 @@ export interface Database {
           timelog_id: string;
           created_at: string;
         };
+        Insert: {
+          id?: string;
+          invoice_id: string;
+          timelog_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          invoice_id?: string;
+          timelog_id?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'invoice_timelogs_invoice_id_fkey';
+            columns: ['invoice_id'];
+            isOneToOne: false;
+            referencedRelation: 'invoices';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'invoice_timelogs_timelog_id_fkey';
+            columns: ['timelog_id'];
+            isOneToOne: true;
+            referencedRelation: 'timelogs';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       invoice_receipts: {
         Row: {
@@ -762,9 +1403,52 @@ export interface Database {
           receipt_id: string;
           created_at: string;
         };
+        Insert: {
+          id?: string;
+          invoice_id: string;
+          receipt_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          invoice_id?: string;
+          receipt_id?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'invoice_receipts_invoice_id_fkey';
+            columns: ['invoice_id'];
+            isOneToOne: false;
+            referencedRelation: 'invoices';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'invoice_receipts_receipt_id_fkey';
+            columns: ['receipt_id'];
+            isOneToOne: true;
+            referencedRelation: 'receipts';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       profile_activity: {
         Row: { profile_id: string; last_active_at: string };
+        Insert: {
+          profile_id: string;
+        };
+        Update: {
+          profile_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'profile_activity_profile_id_fkey';
+            columns: ['profile_id'];
+            isOneToOne: true;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       profiles: {
         Row: {
@@ -793,6 +1477,59 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          first_name?: string;
+          last_name?: string;
+          phone?: string | null;
+          email?: string | null;
+          ico?: string | null;
+          dic?: string | null;
+          bank_account?: string | null;
+          iban?: string | null;
+          billing_street?: string | null;
+          billing_zip?: string | null;
+          billing_city?: string | null;
+          billing_country?: string | null;
+          hourly_rate?: number | null;
+          tags?: string[] | null;
+          avatar_color?: string | null;
+          avatar_bg?: string | null;
+          note?: string | null;
+          reliable?: boolean;
+          rating?: number | null;
+          reliability?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string | null;
+          first_name?: string;
+          last_name?: string;
+          phone?: string | null;
+          email?: string | null;
+          ico?: string | null;
+          dic?: string | null;
+          bank_account?: string | null;
+          iban?: string | null;
+          billing_street?: string | null;
+          billing_zip?: string | null;
+          billing_city?: string | null;
+          billing_country?: string | null;
+          hourly_rate?: number | null;
+          tags?: string[] | null;
+          avatar_color?: string | null;
+          avatar_bg?: string | null;
+          note?: string | null;
+          reliable?: boolean;
+          rating?: number | null;
+          reliability?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
       };
       projects: {
         Row: {
@@ -804,6 +1541,33 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
+        Insert: {
+          id?: string;
+          job_number: string;
+          name: string;
+          client_id?: string | null;
+          note?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          job_number?: string;
+          name?: string;
+          client_id?: string | null;
+          note?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'projects_client_id_fkey';
+            columns: ['client_id'];
+            isOneToOne: false;
+            referencedRelation: 'clients';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       receipts: {
         Row: {
@@ -820,6 +1584,50 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
+        Insert: {
+          id?: string;
+          contractor_id: string;
+          event_id?: string | null;
+          job_number?: string | null;
+          name: string;
+          supplier?: string | null;
+          amount?: number;
+          paid_at?: string | null;
+          note?: string | null;
+          status?: ReceiptStatus;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          contractor_id?: string;
+          event_id?: string | null;
+          job_number?: string | null;
+          name?: string;
+          supplier?: string | null;
+          amount?: number;
+          paid_at?: string | null;
+          note?: string | null;
+          status?: ReceiptStatus;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'receipts_contractor_id_fkey';
+            columns: ['contractor_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'receipts_event_id_fkey';
+            columns: ['event_id'];
+            isOneToOne: false;
+            referencedRelation: 'events';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       timelog_days: {
         Row: {
@@ -834,6 +1642,39 @@ export interface Database {
           note: string | null;
           created_at: string;
         };
+        Insert: {
+          id?: string;
+          timelog_id: string;
+          date: string;
+          time_from?: string | null;
+          time_to?: string | null;
+          day_type?: TimelogType;
+          meal?: string | null;
+          meals?: string[];
+          note?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          timelog_id?: string;
+          date?: string;
+          time_from?: string | null;
+          time_to?: string | null;
+          day_type?: TimelogType;
+          meal?: string | null;
+          meals?: string[];
+          note?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'timelog_days_timelog_id_fkey';
+            columns: ['timelog_id'];
+            isOneToOne: false;
+            referencedRelation: 'timelogs';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       timelog_approvals: {
         Row: {
@@ -854,6 +1695,65 @@ export interface Database {
           note: string;
           updated_at: string;
         };
+        Insert: {
+          id: string;
+          handoff_batch_id: string;
+          approval_round_id: string;
+          timelog_id: string;
+          approver_profile_id: string;
+          approver_user_id: string;
+          requested_by_profile_id: string;
+          requested_by_user_id: string;
+          status: TimelogApprovalStatus;
+          requested_at?: string;
+          resolved_at?: string | null;
+          resolved_timelog_expected_updated_at?: string | null;
+          resolved_approval_expected_updated_at?: string | null;
+          superseded_at?: string | null;
+          note?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          handoff_batch_id?: string;
+          approval_round_id?: string;
+          timelog_id?: string;
+          approver_profile_id?: string;
+          approver_user_id?: string;
+          requested_by_profile_id?: string;
+          requested_by_user_id?: string;
+          status?: TimelogApprovalStatus;
+          requested_at?: string;
+          resolved_at?: string | null;
+          resolved_timelog_expected_updated_at?: string | null;
+          resolved_approval_expected_updated_at?: string | null;
+          superseded_at?: string | null;
+          note?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'timelog_approvals_timelog_id_fkey';
+            columns: ['timelog_id'];
+            isOneToOne: false;
+            referencedRelation: 'timelogs';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'timelog_approvals_approver_profile_id_fkey';
+            columns: ['approver_profile_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'timelog_approvals_requested_by_profile_id_fkey';
+            columns: ['requested_by_profile_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       timelogs: {
         Row: {
@@ -870,6 +1770,50 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
+        Insert: {
+          id?: string;
+          event_id: string;
+          contractor_id: string;
+          crew_confirmation_snapshot?: Json | null;
+          km?: number | null;
+          note?: string | null;
+          review_note?: string | null;
+          status?: TimelogStatus;
+          submitted_at?: string | null;
+          approved_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          event_id?: string;
+          contractor_id?: string;
+          crew_confirmation_snapshot?: Json | null;
+          km?: number | null;
+          note?: string | null;
+          review_note?: string | null;
+          status?: TimelogStatus;
+          submitted_at?: string | null;
+          approved_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'timelogs_event_id_fkey';
+            columns: ['event_id'];
+            isOneToOne: false;
+            referencedRelation: 'events';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'timelogs_contractor_id_fkey';
+            columns: ['contractor_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       user_roles: {
         Row: {
@@ -877,8 +1821,20 @@ export interface Database {
           user_id: string;
           role: AppRole;
         };
+        Insert: {
+          id?: string;
+          user_id: string;
+          role: AppRole;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          role?: AppRole;
+        };
+        Relationships: [];
       };
     };
+    Views: { [_ in never]: never };
     Functions: {
       record_my_activity: { Args: Record<string, never>; Returns: undefined }
       read_shift_workflows: { Args: never; Returns: Json }

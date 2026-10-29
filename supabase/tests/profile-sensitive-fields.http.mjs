@@ -18,6 +18,7 @@ const createdProfiles = [];
 async function request(endpoint, { token = service, method = 'GET', body } = {}) {
   const response = await fetch(`${configuration.API_URL}${endpoint}`, {
     method,
+    redirect: 'error',
     headers: {
       apikey: configuration.ANON_KEY,
       Authorization: `Bearer ${token}`,
@@ -28,7 +29,14 @@ async function request(endpoint, { token = service, method = 'GET', body } = {})
     signal: AbortSignal.timeout(15_000),
   });
   const text = await response.text();
-  return { status: response.status, data: text ? JSON.parse(text) : null };
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    // Never let a parse diagnostic expose a private response body.
+    throw new Error('Local API returned an invalid JSON response');
+  }
+  return { status: response.status, data };
 }
 
 async function snapshot() {
@@ -36,6 +44,9 @@ async function snapshot() {
   for (const table of ['profiles', 'user_roles', 'timelogs', 'timelog_days']) {
     const result = await request(`/rest/v1/${table}?select=*&order=id`);
     assert.equal(result.status, 200, `Could not snapshot ${table}`);
+    assert.ok(Array.isArray(result.data), `Invalid snapshot for ${table}`);
+    // Fail closed if PostgREST may have truncated the comparison at its default cap.
+    assert.ok(result.data.length < 1000, `Snapshot cap reached for ${table}; add pagination before running`);
     state[table] = JSON.stringify(result.data);
   }
   return state;

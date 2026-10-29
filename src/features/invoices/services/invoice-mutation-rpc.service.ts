@@ -1,4 +1,4 @@
-import type { Json } from '../../../lib/database.types';
+import type { Database, Json } from '../../../lib/database.types';
 import { supabase } from '../../../lib/supabase';
 import type { InvoiceStatus, ReceiptStatus, TimelogStatus } from '../../../types';
 
@@ -227,9 +227,10 @@ const assertClient = () => {
   return supabase;
 };
 
-const runRpc = async (
-  functionName: 'create_invoice_atomic' | 'mark_invoice_sent_atomic' | 'mark_invoice_paid_atomic' | 'delete_invoice_atomic',
-  args: Record<string, Json | undefined>,
+type InvoiceMutationFunction = 'create_invoice_atomic' | 'mark_invoice_sent_atomic' | 'mark_invoice_paid_atomic' | 'delete_invoice_atomic';
+const runRpc = async <Name extends InvoiceMutationFunction>(
+  functionName: Name,
+  args: Database['public']['Functions'][Name]['Args'],
   expected: Parameters<typeof parseMutationResult>[1],
 ): Promise<InvoiceMutationRpcResult> => {
   const result = await assertClient().rpc(functionName, args);

@@ -310,7 +310,7 @@ describe('EventDetailView', () => {
     expect(screen.getByText('Přiřazená crew')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Evidence práce' })).toBeInTheDocument();
     const swipeSurface = container.querySelector('.nodu-mobile-event-swipe-surface');
-    const floatingPanel = container.querySelector('.nodu-mobile-event-floating-panel');
+    const floatingPanel = container.querySelector<HTMLElement>('.nodu-mobile-event-floating-panel');
     expect(swipeSurface).not.toContainElement(floatingPanel);
     expect(screen.getByText('Rozpracované')).toBeInTheDocument();
     expect(screen.queryByText('v evidenci')).not.toBeInTheDocument();

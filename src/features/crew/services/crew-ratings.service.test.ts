@@ -110,6 +110,8 @@ describe('crew-ratings.service', () => {
       candidates: [],
       projects: [],
       clients: [],
+      invoiceApprovalDocuments: [],
+      grasonEventConfirmations: [],
     };
 
     vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'local' }));

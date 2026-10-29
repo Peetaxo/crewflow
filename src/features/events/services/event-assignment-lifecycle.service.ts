@@ -70,7 +70,7 @@ const isCrewCount = (value: unknown): value is number => (
   && value >= 0
 );
 
-const assertAssignEventCrewRpcResult = (data: unknown): asserts data is AssignEventCrewRpcResult => {
+function assertAssignEventCrewRpcResult(data: unknown): asserts data is AssignEventCrewRpcResult {
   if (
     !isRecord(data)
     || !isNonemptyString(data.event_id)
@@ -83,9 +83,9 @@ const assertAssignEventCrewRpcResult = (data: unknown): asserts data is AssignEv
   ) {
     throw new Error(GENERIC_ERROR_MESSAGE);
   }
-};
+}
 
-const assertRemoveEventCrewRpcResult = (data: unknown): asserts data is RemoveEventCrewRpcResult => {
+function assertRemoveEventCrewRpcResult(data: unknown): asserts data is RemoveEventCrewRpcResult {
   if (
     !isRecord(data)
     || !isNonemptyString(data.event_id)
@@ -97,7 +97,7 @@ const assertRemoveEventCrewRpcResult = (data: unknown): asserts data is RemoveEv
   ) {
     throw new Error(GENERIC_ERROR_MESSAGE);
   }
-};
+}
 
 export const isDisposableTimelogStatus = (status: TimelogStatus): boolean => (
   status === 'draft' || status === 'rejected'

@@ -112,9 +112,9 @@ vi.mock('../../features/crew/services/crew.service', () => ({
 }));
 
 vi.mock('../../features/events/services/events.service', () => ({
-  assignCrewToEvent: (...args: unknown[]) => assignCrewToEvent(...args),
-  getContractorConflictsForEvent: (...args: unknown[]) => getContractorConflictsForEvent(...args),
-  getEventDetailData: (...args: unknown[]) => getEventDetailData(...args),
+  assignCrewToEvent: (...args: Parameters<typeof assignCrewToEvent>) => assignCrewToEvent(...args),
+  getContractorConflictsForEvent: (...args: Parameters<typeof getContractorConflictsForEvent>) => getContractorConflictsForEvent(...args),
+  getEventDetailData: (...args: Parameters<typeof getEventDetailData>) => getEventDetailData(...args),
 }));
 
 import { LegacyTimelogEditModal as TimelogEditModal } from './TimelogEditModal';
@@ -229,7 +229,7 @@ describe('modal contractor identity handling', () => {
         { id: 1, profileId: 'profile-uuid-1', name: 'Contractor One' },
         { id: 2, profileId: 'profile-uuid-2', name: 'Contractor Two' },
       ],
-      events: [{ id: 1, job: 'JOB-1', name: 'Test Event', client: 'Client' }],
+      events: [{ id: 1, job: 'JOB-1', name: 'Test Event', client: 'Client', startDate: '2026-04-01', endDate: '2026-04-01' }],
     };
 
     render(<ReceiptEditModal />);
@@ -462,7 +462,7 @@ describe('modal contractor identity handling', () => {
       />,
     );
 
-    expect(screen.getByText('Prirazen')).toBeInTheDocument();
+    expect(screen.getByText('Přiřazen')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Assigned Contractor/i })).toBeDisabled();
   });
 

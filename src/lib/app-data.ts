@@ -555,7 +555,7 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
         createdAt: row.created_at,
       } satisfies EventApplication;
     })
-    .filter((application): application is EventApplication => Boolean(application));
+    .filter((application) => application !== null);
 
   const contractorsByProfileId = new Map(
     contractors
@@ -575,7 +575,7 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
         name: contractorsByProfileId.get(row.profile_id)?.name ?? row.profile_id,
       } satisfies EventCrewAssignment;
     })
-    .filter((assignment): assignment is EventCrewAssignment => Boolean(assignment));
+    .filter((assignment) => assignment !== null);
 
   const timelogEventCrewAssignments = eventCrewAssignmentRows
     .map((row) => {
@@ -589,7 +589,7 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
         name: name || 'Clen crew',
       } satisfies EventCrewAssignment;
     })
-    .filter((assignment): assignment is EventCrewAssignment => Boolean(assignment));
+    .filter((assignment) => assignment !== null);
 
   const eventCrewAssignments = [
     ...explicitEventCrewAssignments,

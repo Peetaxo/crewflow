@@ -1,4 +1,5 @@
 import React from 'react';
+import type { Event } from '../types';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -1987,7 +1988,7 @@ describe('EventsView', () => {
       status: 'upcoming' as const,
       client: 'NextLevel s.r.o.',
     };
-    let currentEvents = [opicakEvent];
+    let currentEvents: Event[] = [opicakEvent];
 
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => ({
@@ -2195,7 +2196,7 @@ describe('EventsView', () => {
       applyForEvent: vi.fn(),
       requestEventWithdrawal: vi.fn(),
       withdrawEventApplication: vi.fn(),
-      filterEventsByStatus: (items: typeof mobileCrewEvents, filter: string) => (
+      filterEventsByStatus: (items: Array<Event & { derivedStatus?: Event['status'] }>, filter: string) => (
         filter === 'upcoming' ? items.filter((item) => item.derivedStatus !== 'past') : items
       ),
       getEventsWithDerivedStatus: (items: typeof mobileCrewEvents) => items.map((item) => ({

@@ -5,8 +5,8 @@ import { buildTimelogChangeSummary } from './timelog-change-summary';
 describe('buildTimelogChangeSummary', () => {
   it('summarizes changes made by CrewHead before Crew confirmation', () => {
     const timelog: Timelog = {
-      id: 'timelog-1',
-      eid: 'event-1',
+      id: 1,
+      eid: 1,
       contractorProfileId: 'profile-1',
       status: 'pending_crew_confirmation',
       km: 12,
@@ -37,8 +37,8 @@ describe('buildTimelogChangeSummary', () => {
 
   it('reports only an inserted earlier day without changing the unchanged later day', () => {
     const timelog: Timelog = {
-      id: 'timelog-2',
-      eid: 'event-1',
+      id: 2,
+      eid: 1,
       contractorProfileId: 'profile-1',
       status: 'pending_crew_confirmation',
       km: 0,
@@ -66,8 +66,8 @@ describe('buildTimelogChangeSummary', () => {
 
   it('reports only a removed earlier day without changing the unchanged later day', () => {
     const timelog: Timelog = {
-      id: 'timelog-3',
-      eid: 'event-1',
+      id: 3,
+      eid: 1,
       contractorProfileId: 'profile-1',
       status: 'pending_crew_confirmation',
       km: 0,
@@ -95,8 +95,8 @@ describe('buildTimelogChangeSummary', () => {
 
   it('still reports a time change on the same day', () => {
     const timelog: Timelog = {
-      id: 'timelog-4',
-      eid: 'event-1',
+      id: 4,
+      eid: 1,
       contractorProfileId: 'profile-1',
       status: 'pending_crew_confirmation',
       km: 0,
@@ -123,8 +123,8 @@ describe('buildTimelogChangeSummary', () => {
 
   it('reports a date change for the same row id instead of added and removed days', () => {
     const timelog: Timelog = {
-      id: 'timelog-5',
-      eid: 'event-1',
+      id: 5,
+      eid: 1,
       contractorProfileId: 'profile-1',
       status: 'pending_crew_confirmation',
       km: 0,
@@ -151,8 +151,8 @@ describe('buildTimelogChangeSummary', () => {
 
   it('keeps same-id pairing when a moved row lands on another unchanged row', () => {
     const timelog: Timelog = {
-      id: 'timelog-6',
-      eid: 'event-1',
+      id: 6,
+      eid: 1,
       contractorProfileId: 'profile-1',
       status: 'pending_crew_confirmation',
       km: 0,
@@ -181,8 +181,8 @@ describe('buildTimelogChangeSummary', () => {
 
   it('handles multiple rows on the same day without reporting the unchanged row', () => {
     const timelog: Timelog = {
-      id: 'timelog-7',
-      eid: 'event-1',
+      id: 7,
+      eid: 1,
       contractorProfileId: 'profile-1',
       status: 'pending_crew_confirmation',
       km: 0,

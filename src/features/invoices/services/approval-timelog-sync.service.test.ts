@@ -664,6 +664,9 @@ describe('approval timelog sync service', () => {
       ],
       grasonConfirmations: [
         {
+          id: 'grason-fixture', source: 'grason', sourceMonth: '2026-05', sourceKey: 'fixture',
+          sourceTitle: 'Fixture', phase: 'instal', sourceOccurrenceCount: 1, rawPayload: null,
+          importedAt: '2026-05-24T00:00:00Z', updatedAt: '2026-05-24T00:00:00Z',
           eventId: 'event-spartafest-note',
           eventName: 'SpartaFest',
           jobNumber: 'JTI001',
@@ -1168,6 +1171,9 @@ describe('approval timelog sync service', () => {
       ],
       grasonConfirmations: [
         {
+          id: 'grason-fixture', source: 'grason', sourceMonth: '2026-05', sourceKey: 'fixture',
+          sourceTitle: 'Fixture', phase: 'instal', sourceOccurrenceCount: 1, rawPayload: null,
+          importedAt: '2026-05-24T00:00:00Z', updatedAt: '2026-05-24T00:00:00Z',
           eventId: 'event-pivni-ridic-b',
           eventName: 'Deinstal Pivní slavnosti Třebíč',
           jobNumber: 'JTI001',

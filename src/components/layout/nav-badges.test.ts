@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Candidate, Invoice, Receipt, Timelog } from '../../types';
+import type { Candidate, Invoice, ReceiptItem, Timelog } from '../../types';
 import { buildNavBadgeCounts } from './nav-badges';
 
 describe('buildNavBadgeCounts', () => {
@@ -18,11 +18,11 @@ describe('buildNavBadgeCounts', () => {
       { id: 'invoice-3', contractorProfileId: 'profile-2', status: 'sent' },
     ] as Invoice[];
     const receipts = [
-      { id: 'receipt-1', contractorProfileId: 'profile-1', status: 'submitted' },
-      { id: 'receipt-2', contractorProfileId: 'profile-1', status: 'approved' },
-      { id: 'receipt-3', contractorProfileId: 'profile-1', status: 'reimbursed' },
-      { id: 'receipt-4', contractorProfileId: 'profile-2', status: 'approved' },
-    ] as Receipt[];
+      { id: 1, contractorProfileId: 'profile-1', status: 'submitted' },
+      { id: 2, contractorProfileId: 'profile-1', status: 'approved' },
+      { id: 3, contractorProfileId: 'profile-1', status: 'reimbursed' },
+      { id: 4, contractorProfileId: 'profile-2', status: 'approved' },
+    ] as ReceiptItem[];
     const candidates = [
       { id: 1, stage: 'new' },
       { id: 2, stage: 'screening' },
@@ -52,7 +52,7 @@ describe('buildNavBadgeCounts', () => {
       role: 'crew',
       timelogs: [{ id: 1, contractorProfileId: 'profile-1', status: 'draft' } as Timelog],
       invoices: [{ id: 'invoice-1', contractorProfileId: 'profile-1', status: 'sent' } as Invoice],
-      receipts: [{ id: 'receipt-1', contractorProfileId: 'profile-1', status: 'submitted' } as Receipt],
+      receipts: [{ id: 1, contractorProfileId: 'profile-1', status: 'submitted' } as ReceiptItem],
       candidates: [],
     })).toMatchObject({
       'my-timelogs': 0,

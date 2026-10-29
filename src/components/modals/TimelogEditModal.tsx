@@ -43,7 +43,7 @@ export const LegacyTimelogEditModal = () => {
   const { contractors, events } = getTimelogDependencies();
   const contractor = contractors.find((item) => item.profileId === editingTimelog.contractorProfileId)
     ?? null;
-  const event = events.find((item) => item.id === editingTimelog.eid || item.supabaseId === editingTimelog.eid) ?? null;
+  const event = events.find((item) => item.id === editingTimelog.eid || item.supabaseId === String(editingTimelog.eid)) ?? null;
   if (!contractor || !event) return null;
 
   const totalHours = calculateTotalHours(editingTimelog.days);

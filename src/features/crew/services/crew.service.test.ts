@@ -594,7 +594,7 @@ describe('crew.service', () => {
     };
 
     const updateEq = vi.fn().mockResolvedValue({ error: null });
-    const update = vi.fn(() => ({ eq: updateEq }));
+    const update = vi.fn((_payload: Record<string, unknown>) => ({ eq: updateEq }));
 
     vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
     vi.doMock('../../../lib/supabase', () => ({
@@ -684,7 +684,7 @@ describe('crew.service', () => {
     };
 
     const updateEq = vi.fn().mockResolvedValue({ error: null });
-    const update = vi.fn(() => ({ eq: updateEq }));
+    const update = vi.fn((_payload: Record<string, unknown>) => ({ eq: updateEq }));
 
     vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'supabase' }));
     vi.doMock('../../../lib/supabase', () => ({

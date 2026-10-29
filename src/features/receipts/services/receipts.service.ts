@@ -1,4 +1,5 @@
 import { appDataSource } from '../../../lib/app-config';
+import type { Database } from '../../../lib/database.types';
 import { getLocalAppState, subscribeToLocalAppState, updateLocalAppState } from '../../../lib/app-data';
 import { queryClient } from '../../../lib/query-client';
 import { queryKeys } from '../../../lib/query-keys';
@@ -126,8 +127,8 @@ const matchesSearch = (
 };
 
 const mapSupabaseReceipts = (
-  receiptRows: NonNullable<Awaited<ReturnType<typeof supabase.from<'receipts'>>>['data']>,
-  eventRows: NonNullable<Awaited<ReturnType<typeof supabase.from<'events'>>>['data']>,
+  receiptRows: Database['public']['Tables']['receipts']['Row'][],
+  eventRows: Pick<Database['public']['Tables']['events']['Row'], 'id'>[],
 ) => {
   const eventIdMap = new Map(
     eventRows.map((row, index) => [row.id, index + 1]),

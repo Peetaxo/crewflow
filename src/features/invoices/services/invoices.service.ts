@@ -1,5 +1,6 @@
 import { toast } from 'sonner';
 import { appDataSource } from '../../../lib/app-config';
+import type { Database } from '../../../lib/database.types';
 import { KM_RATE } from '../../../data';
 import { getLocalAppState, subscribeToLocalAppState, updateLocalAppState } from '../../../lib/app-data';
 import { queryClient } from '../../../lib/query-client';
@@ -204,7 +205,7 @@ const normalizeJobNumber = (jobNumber: string | null | undefined): string => {
   return normalized || 'BEZ JOB';
 };
 
-const safeSelect = async <TRow>(table: string, select = '*', orderBy = 'created_at'): Promise<TRow[]> => {
+const safeSelect = async <TRow>(table: keyof Database['public']['Tables'], select = '*', orderBy = 'created_at'): Promise<TRow[]> => {
   if (!supabase) {
     throw new Error('Faktury se nepodařilo načíst.');
   }
@@ -219,7 +220,7 @@ const safeSelect = async <TRow>(table: string, select = '*', orderBy = 'created_
 };
 
 const getSupabaseIdRows = async (
-  table: string,
+  table: keyof Database['public']['Tables'],
   orderBy: string,
 ): Promise<Array<{ id: string }>> => safeSelect<{ id: string }>(table, 'id', orderBy);
 

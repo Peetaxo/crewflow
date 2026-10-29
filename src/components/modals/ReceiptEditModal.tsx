@@ -41,7 +41,7 @@ const ReceiptEditModal = () => {
 
   const { events, contractors } = getReceiptDependencies();
   const selectedEvent = events.find((event) => event.id === editingReceipt.eid);
-  const selectedContractorValue = editingReceipt.contractorProfileId ?? String(editingReceipt.cid);
+  const selectedContractorValue = editingReceipt.contractorProfileId ?? '';
   const labelClass = 'mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--nodu-text-soft)]';
   const selectClass = 'h-10 w-full rounded-xl border border-[var(--nodu-border)] bg-white px-3 text-sm text-[var(--nodu-text)] outline-none transition focus:border-[var(--nodu-accent)] focus:ring-2 focus:ring-[rgba(var(--nodu-accent-rgb),0.16)]';
 

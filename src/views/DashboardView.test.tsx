@@ -320,7 +320,8 @@ describe('DashboardView', () => {
     mobileMockState.isMobile = true;
     eventApplicationMockState.applications = [
       {
-        id: 'application-1',
+        id: 1,
+        supabaseId: 'application-1',
         eventId: 101,
         contractorProfileId: 'profile-2',
         status: 'pending',

@@ -1,4 +1,4 @@
-import type { Candidate, Invoice, Receipt, Role, Timelog } from '../../types';
+import type { Candidate, Invoice, ReceiptItem, Role, Timelog } from '../../types';
 import { isTimelogWaitingForProfile } from '../../features/timelogs/services/timelog-approval-state';
 
 interface NavBadgeInput {
@@ -6,7 +6,7 @@ interface NavBadgeInput {
   role: Role;
   timelogs: Timelog[];
   invoices: Invoice[];
-  receipts: Receipt[];
+  receipts: ReceiptItem[];
   candidates: Candidate[];
 }
 

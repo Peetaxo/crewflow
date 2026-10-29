@@ -93,6 +93,18 @@ Na novem zarizeni se pred pokracovanim vzdy udela:
 git pull
 ```
 
+## Ověření změn
+
+Před začleněním změn spusťte `npm run check`. Příkaz postupně provede aplikační
+typecheck včetně testovacích souborů, lint, celou testovací sadu s nejvýše dvěma
+workery a webový build. Jednotlivé kontroly lze spouštět samostatně přes
+`npm run typecheck`, `npm run lint`, `npm test` a `npm run build`.
+Samotný webový build nenahrazuje kontrolu TypeScriptu.
+
+Po změně aplikace navazuje integrace do čistého synchronizovaného `main` a
+`npm run ios:refresh:devices` podle `AGENTS.md`. Vývojová instalace na simulátoru
+a fyzickém iPhonu se ověřuje samostatně.
+
 ## Preview
 
 - vyvojovy server spoustet pres `npm run dev`

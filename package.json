@@ -19,6 +19,8 @@
     "ios:refresh:devices:dry-run": "node scripts/ios-device-refresh.mjs --dry-run",
     "icons:generate": "node scripts/generate-app-icons.mjs",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "check": "npm run typecheck && npm run lint && npm test -- --maxWorkers=2 && npm run build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"

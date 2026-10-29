@@ -14,7 +14,7 @@ const createInput = {
     issue_date: '2026-04-27',
     taxable_supply_date: '2026-04-27',
     due_date: '2026-05-11',
-    currency: 'CZK',
+    currency: 'CZK' as const,
     supplier_snapshot: { name: 'Tomas Novak' },
     customer_snapshot: { name: 'Klient A' },
   },

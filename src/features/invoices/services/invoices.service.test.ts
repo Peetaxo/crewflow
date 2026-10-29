@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Invoice, ReceiptItem, Timelog } from '../../../types';
+import type { Contractor, Invoice, ReceiptItem, Timelog } from '../../../types';
 
 const createDeferred = <T,>() => {
   let resolve!: (value: T) => void;
@@ -15,6 +15,7 @@ const createDeferred = <T,>() => {
 
 const createSnapshot = (overrides?: Partial<{
   invoices: Invoice[];
+  contractors: Contractor[];
   timelogs: Timelog[];
   receipts: ReceiptItem[];
 }>) => ({
@@ -348,9 +349,7 @@ describe('invoices.service billing batches', () => {
         ...createSnapshot().contractors,
         {
           id: 2,
-          supabaseId: 'timelog-uuid-2',
-          eventSupabaseId: 'event-uuid-2',
-          updatedAt: '2026-04-20T11:00:00Z',
+          profileId: 'profile-uuid-2',
           name: 'Bez schvaleni',
           ii: 'BS',
           bg: '#111',

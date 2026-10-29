@@ -5,7 +5,7 @@ vi.mock('../features/shift-workflows/useSharedApprovals', () => ({ useSharedAppr
 }) }));
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Contractor, Event, Invoice, ReceiptItem, Timelog } from '../types';
+import type { Contractor, Event, Invoice, ReceiptItem, Role, Timelog } from '../types';
 
 let mockAuth = {
   isAuthRequired: true,
@@ -15,7 +15,7 @@ let mockAuth = {
   isDevSession: false,
   session: null,
   user: null,
-  role: 'crew' as const,
+  role: 'crew' as Role,
   isRoleSwitching: false,
   profile: { firstName: 'Test', lastName: 'User', email: 'test@example.com' },
   currentProfileId: 'profile-uuid-2',
@@ -45,7 +45,7 @@ const setSelectedClientIdForStats = vi.fn();
 let mockAppContext = {
   darkMode: false,
   searchQuery: '',
-  role: 'crew' as const,
+  role: 'crew' as Role,
   timelogFilter: 'all',
   setTimelogFilter: vi.fn(),
   setEditingReceipt,
@@ -57,7 +57,7 @@ let mockAppContext = {
   setRole,
   currentTab: 'dashboard',
   setCurrentTab,
-  settingsSection: 'menu' as const,
+  settingsSection: 'menu' as import('../context/app-context').AppContextType['settingsSection'],
   setSettingsSection,
   setSearchQuery,
   setSelectedContractorProfileId,

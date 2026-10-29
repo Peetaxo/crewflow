@@ -1,4 +1,6 @@
-﻿/** Uzivatelska role v systemu */
+import type { Json } from './lib/database.types';
+
+/** Uzivatelska role v systemu */
 export type Role = 'crew' | 'crewhead' | 'coo';
 
 /** Status akce */
@@ -8,15 +10,18 @@ export type EventStatus = 'upcoming' | 'full' | 'past' | 'planning';
 export type TimelogType = 'pripravy' | 'instal' | 'provoz' | 'deinstal';
 export type TimelogMeal = 'obed' | 'vecere';
 
-export interface EventPhaseTime {
+export type EventPhaseTime = {
   from: string;
   to: string;
-}
+};
 
-export interface EventPhaseSlot extends EventPhaseTime {
+export type EventPhaseSlot = EventPhaseTime & {
   id: string;
   dates: string[];
-}
+};
+
+/** Numeric compatibility index or persisted event UUID at legacy boundaries. */
+export type EventId = number | string;
 
 /** Akce (event) - konkretni realizace projektu */
 export interface Event {
@@ -84,13 +89,6 @@ export interface EventApplication {
   plannedFrom?: string | null;
   plannedTo?: string | null;
   createdAt?: string;
-}
-
-export interface EventCrewAssignment {
-  eventId: number;
-  eventSupabaseId?: string;
-  contractorProfileId: string;
-  name: string;
 }
 
 /** Kontraktor - clen crew */
@@ -286,7 +284,7 @@ export interface GrasonEventConfirmation {
   updatedAt: string;
 }
 
-export interface InvoiceSupplierSnapshot {
+export type InvoiceSupplierSnapshot = {
   profileId: string;
   name: string;
   ico: string;
@@ -298,9 +296,9 @@ export interface InvoiceSupplierSnapshot {
   billingCity: string;
   billingCountry: string;
   vatPayer: false;
-}
+};
 
-export interface InvoiceCustomerSnapshot {
+export type InvoiceCustomerSnapshot = {
   clientId: string;
   name: string;
   ico: string;
@@ -309,7 +307,7 @@ export interface InvoiceCustomerSnapshot {
   zip: string;
   city: string;
   country: string;
-}
+};
 
 /** Persisted monetary allocation; historical amounts must not be recalculated from current rates. */
 export interface InvoiceItem {

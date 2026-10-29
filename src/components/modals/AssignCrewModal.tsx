@@ -121,11 +121,11 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
       if (isMountedRef.current) {
         setPendingContractorSelection(null);
         setSelectedPhaseOptions([]);
-        toast.success('Clen crew byl prirazen bez kolize.');
+        toast.success('Člen crew byl přiřazen bez kolize.');
       }
     } catch (error) {
       if (isMountedRef.current) {
-        toast.error(error instanceof Error ? error.message : 'Nepodarilo se priradit clena crew.');
+        toast.error(error instanceof Error ? error.message : 'Nepodařilo se přiřadit člena crew.');
       }
     } finally {
       if (assigningProfileIdRef.current === contractorProfileId) {
@@ -350,7 +350,7 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
                             </span>
                           )}
                           <span className={`rounded-[4px] px-1 py-0.5 text-[8px] font-bold uppercase ${contractor.reliable ? 'bg-[color:var(--nodu-success-bg)] text-[color:var(--nodu-success-text)]' : 'bg-[color:var(--nodu-warning-bg)] text-[color:var(--nodu-warning-text)]'}`}>
-                            {contractor.reliable ? 'Spolehlivy' : 'Overit'}
+                            {contractor.reliable ? 'Spolehlivý' : 'Ověřit'}
                           </span>
                         </div>
                       </div>
@@ -359,7 +359,7 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
                         <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-800">
                           <div className="flex items-center gap-1 font-semibold">
                             <AlertTriangle size={12} />
-                            Kolize terminu
+                            Kolize termínu
                           </div>
                           <div className="mt-1 space-y-1">
                             {conflicts.map((conflict, index) => (
@@ -382,7 +382,7 @@ const AssignCrewModal = ({ event, onClose }: AssignCrewModalProps) => {
                       </div>
                     ) : (
                       <div className={`text-[10px] font-bold uppercase tracking-wider ${hasConflict || isMissingProfileId ? 'text-[color:var(--nodu-warning-text)]' : 'text-[color:var(--nodu-success-text)]'}`}>
-                        {hasConflict ? 'Kolize' : isMissingProfileId ? 'Bez UUID' : 'Prirazen'}
+                        {hasConflict ? 'Kolize' : isMissingProfileId ? 'Bez UUID' : 'Přiřazen'}
                       </div>
                     )}
                   </div>

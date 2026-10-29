@@ -16,6 +16,9 @@ export const supabase = isSupabaseConfigured
       auth: {
         persistSession: true,
         autoRefreshToken: true,
+        // Activation/recovery own isolated capabilities; a URL must not replace
+        // the ordinary account before their explicit route handlers run.
+        detectSessionInUrl: false,
       },
     })
   : null;

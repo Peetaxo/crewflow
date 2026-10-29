@@ -557,7 +557,7 @@ const loadEventsLifecycleSnapshot = async (): Promise<EventLifecycleSnapshot> =>
         name: contractorsByProfileId.get(row.profile_id)?.name ?? row.profile_id,
       } satisfies EventCrewAssignment;
     })
-    .filter((assignment): assignment is EventCrewAssignment => Boolean(assignment));
+    .filter((assignment) => assignment !== null);
 
   const eventLocalIdByRowId = new Map(eventRows.map((row, index) => [row.id, index + 1]));
   const eventApplications = applicationRows
@@ -577,7 +577,7 @@ const loadEventsLifecycleSnapshot = async (): Promise<EventLifecycleSnapshot> =>
         createdAt: row.created_at,
       } satisfies EventApplication;
     })
-    .filter((application): application is EventApplication => Boolean(application));
+    .filter((application) => application !== null);
 
   const timelogEventCrewAssignments = crewAssignmentRows
     .map((row) => {
@@ -591,7 +591,7 @@ const loadEventsLifecycleSnapshot = async (): Promise<EventLifecycleSnapshot> =>
         name: name || 'Clen crew',
       } satisfies EventCrewAssignment;
     })
-    .filter((assignment): assignment is EventCrewAssignment => Boolean(assignment));
+    .filter((assignment) => assignment !== null);
 
   const eventCrewAssignments = [
     ...explicitEventCrewAssignments,

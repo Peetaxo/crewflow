@@ -12,7 +12,7 @@ const signInWithPasswordMock = vi.fn(async (_credentials?: { email: string; pass
 const disconnectNativePushMock = vi.fn(async () => undefined);
 const signOutMock = vi.fn(async (_options?: { scope?: string }): Promise<SignOutResult> => ({ error: null }));
 const getSessionMock = vi.fn();
-const rpcMock = vi.fn(async () => ({ data: null, error: null }));
+const rpcMock = vi.fn(async (_name?: string, _args?: Record<string, unknown>) => ({ data: null, error: null }));
 const onAuthStateChangeMock = vi.fn((_listener?: (event: string, session: typeof mockSession | null) => void) => ({
   data: { subscription: { unsubscribe: vi.fn() } },
 }));
@@ -56,8 +56,8 @@ vi.mock('./reset-supabase-data-scope', () => ({
 vi.mock('../../lib/supabase', () => ({
   isSupabaseConfigured: true,
   supabase: {
-    from: (...args: unknown[]) => fromMock(...args),
-    rpc: (...args: unknown[]) => rpcMock(...args),
+    from: (...args: Parameters<typeof fromMock>) => fromMock(...args),
+    rpc: (...args: Parameters<typeof rpcMock>) => rpcMock(...args),
     auth: {
       getSession: () => getSessionMock(),
       onAuthStateChange: (listener: Parameters<typeof onAuthStateChangeMock>[0]) => onAuthStateChangeMock(listener),

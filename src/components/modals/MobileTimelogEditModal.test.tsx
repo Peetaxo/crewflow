@@ -7,7 +7,7 @@ import { assertTimelogComplete } from '../../features/timelogs/services/timelog-
 import { toast } from 'sonner';
 
 const testState = vi.hoisted(() => ({
-  editingTimelog: null as Timelog | null,
+  editingTimelog: null as Timelog | (Omit<Timelog, 'eid'> & { eid: string }) | null,
   cloneDependencies: false,
   role: 'crew' as Role,
 }));
@@ -761,7 +761,7 @@ describe('MobileTimelogEditModal', () => {
     expect(testMocks.saveTimelog).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      resolveAutosave(savedTimelog);
+      resolveAutosave({ ...savedTimelog, eid: testData.event.id });
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -1369,7 +1369,7 @@ describe('MobileTimelogEditModal', () => {
     expect(screen.getByLabelText('Poznámka k výkazu')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Přidat den' })).toBeDisabled();
 
-    resolveSave(testState.editingTimelog!);
+    resolveSave({ ...testState.editingTimelog!, eid: testData.event.id });
     await waitFor(() => expect(testMocks.setEditingTimelog).toHaveBeenCalledWith(null));
   });
 });

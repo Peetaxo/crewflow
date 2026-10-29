@@ -126,7 +126,7 @@ Navázat na `docs/superpowers/plans/2026-10-26-member-onboarding-trial-guide.md`
 
 ## Etapa 4 — Připravit skutečné pozvánky a dostupné prostředí
 
-**Stav: čeká.**
+**Stav: zahájeno 29. 10. 2026 — průzkum a návrh provozu.** Aktuální main ověřený, živý Supabase je na Free a databáze má přibližně 25 MB; onboardingové serverové objekty dosud nejsou nasazené. Připravené [varianty hostingu, náklady, skutečné předpoklady a kontroly před pilotem](../../testing/2026-10-29-stage-4-readiness.md). Doména, odesílatel a iOS distribuce se teprve vybírají; žádné nasazení nebo skutečná pozvánka touto přípravou neproběhly.
 
 **Závislosti:** etapy 1–3. **Potřebné vstupy od uživatele:** veřejná adresa aplikace, odesílací adresa a způsob distribuce iOS pro vybrané lidi. Tyto volby uzavřít na konkrétním návrhu této etapy; nebrzdí dokončení místního testu.
 

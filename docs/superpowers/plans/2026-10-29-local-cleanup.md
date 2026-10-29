@@ -40,8 +40,8 @@
 
 - [x] Run `npm run typecheck`, `npm run lint`, full `npm test`, `npm run build`, `git diff --check`. Expect exit 0 for each; classify environmental timeouts honestly and fix real failures. Server runtime checks use their own toolchain.
 - [ ] Integrate reviewed source into main, verify the merged code and clean synchronized main, preserve `.env.local`, and run `npm run ios:refresh:devices` per AGENTS. Report simulator/physical phone separately; unavailable paired phone waits, an available-device failure blocks that installation.
-- [ ] Save `docs/testing/2026-10-29-local-cleanup.md` and a clearly incomplete first-version acceptance record; update roadmap only for criteria actually completed. Public onboarding, real pilot, final push distribution and final security acceptance remain open.
+- [x] Save `docs/testing/2026-10-29-local-cleanup.md` and a clearly incomplete first-version acceptance record; update roadmap only for criteria actually completed. Public onboarding, real pilot, final push distribution and final security acceptance remain open.
 
-## Průběžný výsledek 29. 10.
+## Výsledek 29. 10.
 
-Zdrojový úklid a nezávislé spec/quality review databázového kontraktu i callerů prošly. Profilová ochrana má spec i quality PASS. Jednotlivě prošly typecheck, lint, 219 souborů / 2 878 testů a build. Sandboxový společný běh se zastavil při startu Vite; stejný build mimo sandbox prošel za 1,53 s. Společný příkaz a zařízení je ještě nutné ověřit na začleněném čistém main. [Evidence](../../testing/2026-10-29-local-cleanup.md).
+Databázový kontrakt, callery i profilová ochrana mají nezávislé spec a následné quality PASS. Čistý synchronizovaný main `e49c353` prošel celým `npm run check`: 0 typových chyb, lint, 219 souborů / 2 878 testů a build. Místní skutečné SQL/API regrese prošly. Refresh předepsaným příkazem aktualizoval a spustil simulátor; fyzický telefon byl úspěšně sestaven, podepsán a nainstalován, spuštění ale blokuje zamčené zařízení. Bez potvrzení spuštění zůstává tento instalační krok otevřený. [Úplná evidence](../../testing/2026-10-29-local-cleanup.md).

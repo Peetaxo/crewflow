@@ -182,7 +182,7 @@ Fakturaci neimplementovat znovu. Navázat na `docs/testing/2026-10-22-crew-invoi
 
 ## Etapa 7 — Technický úklid a příprava finální verze
 
-**Stav: probíhá — místní technický úklid má ověřené zdrojové změny, dokončuje se čistý main a vývojové instalace.** [Podrobná evidence 29. 10.](../../testing/2026-10-29-local-cleanup.md). Veřejný pilot, push a konečná akceptace zůstávají otevřené.
+**Stav: probíhá — místní zdroj, čistý main a simulátor ověřené; fyzický iPhone čeká na odemčení pro kontrolu spuštění.** [Podrobná evidence 29. 10.](../../testing/2026-10-29-local-cleanup.md). Veřejný pilot, push a konečná akceptace zůstávají otevřené.
 
 **Závislost pro technický úklid:** stabilní základ etap 0–3; podle rozhodnutí 29. 10. může předcházet veřejnému prostředí i skutečnému pilotu. Opravy nálezů pilotu a závěrečná akceptace nadále vyžadují etapu 5 a dokončenou etapu 6. Úspěšný místní úklid sám neuzavírá první verzi.
 
@@ -191,9 +191,9 @@ Fakturaci neimplementovat znovu. Navázat na `docs/testing/2026-10-22-crew-invoi
 - [ ] Opravit zbývající matoucí české texty a potvrzené vzhledové nálezy pilotu na mobilu a desktopu. Pomalé načítání řešit podle měření konkrétního hlavního kroku, ne plošným refaktorem.
 - [x] Aktualizovat `TODO.md`: hotové položky propojit s důkazy, ponechané nápady oddělit od nedostatků první verze a odstranit překonané předpoklady o chybějícím backendu, účtech nebo fakturaci.
 - [x] Porovnat staré větve a draft PR #6 se skutečně začleněným kódem; uzavřít pouze překonané položky. Pracovní kopie archivovat až po zachování veškeré dosud potřebné práce a místních konfigurací.
-- [ ] Na výsledném main spustit závěrečné ověření: `npm test`, `npm run lint`, `npm run build`, `npx tsc --noEmit -p tsconfig.app.json` a `git diff --check`. Očekávaný výsledek každého příkazu je exit 0; známé typové chyby už nejsou přijatelná výjimka tohoto milníku.
+- [x] Na výsledném main spustit závěrečné ověření: `npm test`, `npm run lint`, `npm run build`, `npx tsc --noEmit -p tsconfig.app.json` a `git diff --check`. Očekávaný výsledek každého příkazu je exit 0; známé typové chyby už nejsou přijatelná výjimka tohoto milníku.
 - [ ] Pro přesně ověřený commit dokončit refresh podle `AGENTS.md`, samostatně potvrdit simulátor a fyzický iPhone a zkontrolovat, že nasazený backend a mobilní balík odpovídají ověřené verzi.
-- [ ] Připravit `docs/testing/2026-10-27-v1-acceptance.md`: commit, cílové prostředí, zařízení, dosavadní výsledky etap, případná výslovná rozhodnutí o rozsahu, postup obnovení přístupu a kontakt pro provozní problém. Bezpečnostní výsledek a konečné přijetí doplnit až po etapě 8.
+- [x] Připravit `docs/testing/2026-10-27-v1-acceptance.md`: commit, cílové prostředí, zařízení, dosavadní výsledky etap, případná výslovná rozhodnutí o rozsahu, postup obnovení přístupu a kontakt pro provozní problém. Bezpečnostní výsledek a konečné přijetí doplnit až po etapě 8.
 
 **Hotovo, když:** milník A platí i na výsledné verzi, iOS push funguje a technické kontroly procházejí. Tato verze je připravená k závěrečnému bezpečnostnímu testu; milník B se uzavírá v etapě 8.
 
@@ -234,3 +234,5 @@ Fakturaci neimplementovat znovu. Navázat na `docs/testing/2026-10-22-crew-invoi
 9. Zapracovat nálezy pilotu, ověřit konečné push a nasazenou konfiguraci, dokončit kontroly etapy 7 a opakované bezpečnostní ověření etapy 8; teprve potom uzavřít první verzi.
 
 **Etapy 0–3 byly uzavřené 27. 10. 2026.** Oprávnění etapy 2 platí i v živém backendu; zdroj etapy 3 je v main a běžné instalace simulátoru i fyzického iPhonu jsou aktualizované. Časová akceptace aktuálnosti prošla se skutečnými místními účty na webu a iOS simulátoru. **Rozhodnutí 29. 10.:** veřejná část etapy 4 a skutečný pilot etapy 5 se přesouvají na závěr po místním dokončení aplikace. Další práce může pokračovat nezávislými opravami a technickým úklidem bez pořizování domény nebo veřejného hostingu; konečné provozní přijetí zůstává otevřené.
+
+**Místní úklid 29. 10.:** 108 → 0 typových diagnostik, 2 878 testů a společný check prošly na čistém main `e49c353`; opravená izolace URL relace a místně ověřená ochrana sazby/identity. Profilová migrace není v živém backendu. Simulátor aktualizovaný, fyzický iPhone nainstalovaný, kontrola spuštění čeká na odemčení. [Evidence a zbývající podmínky](../../testing/2026-10-29-local-cleanup.md). Další samostatné oblasti jsou iOS push a předběžný bezpečnostní audit; veřejná konfigurace zůstává na závěr.

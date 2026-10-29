@@ -1,6 +1,6 @@
 # Místní technický úklid nodu — 29. 10. 2026
 
-**Průběžný záznam: ověření čistého main a zařízení ještě probíhá.** Doména, veřejný hosting, skutečné rozesílání a veřejné spuštění zůstávají na přání uživatele odložené. Tento záznam neuzavírá první verzi ani celý bezpečnostní audit.
+**Technické kontroly čistého main a simulátor ověřené; spuštění na fyzickém telefonu čeká na odemčení.** Doména, veřejný hosting, skutečné rozesílání a veřejné spuštění zůstávají na přání uživatele odložené. Tento záznam neuzavírá první verzi ani celý bezpečnostní audit.
 
 ## Zdroj a rozsah
 
@@ -55,4 +55,17 @@ Vizuální kontrola lokálního webu `VITE_APP_DATA_SOURCE=local`, port 8114, po
 
 ## Čistý main a zařízení
 
-Čeká na dokončení integrační kontroly a refresh podle AGENTS. Výsledky simulátoru a fyzického iPhonu budou uvedeny samostatně.
+Začleněný a čerstvě synchronizovaný main **`e49c35360ed81911337c585036056f5d5e8042d2`** v čistém instalačním checkoutu `crewflow-stage2-refresh-20261027`. Nový společný `npm run check` **exit 0** mimo sandbox: typecheck 0, lint 0, **219 souborů / 2 878 testů**, 87,41 s; build 1,85 s. `git diff --check` exit 0. Log `/private/tmp/nodu-cleanup-main-check-20261029.log`.
+
+`IOS_REFRESH_DERIVED_DATA_ROOT=/private/tmp/nodu-stage2-ios-refresh-20261027 npm run ios:refresh:devices` spuštěno s nezměněným preflightem a zachovanou `.env.local` (SHA256 před/po shodný). Výsledek příkazu **exit 1 pouze při spuštění zamčeného fyzického telefonu**; nejde o úspěšný celkový refresh.
+
+| Zařízení | Skutečný výsledek |
+| --- | --- |
+| iPhone 17 Pro Simulator, iOS 26.5 | Build, instalace i spuštění `cz.nodu.app` **prošly**. Vizuálně ověřen Přehled přihlášené crew; místní snímek zůstává mimo Git. |
+| Peetax iPhone 13 mini | Dostupný; build, podpis a instalace prošly. Spuštění odmítnuto stavem **Locked**, proto není zatím označené jako aktualizované a ověřené. Požadavek na odemčení předaný uživateli. |
+
+Capacitor sync upravil pouze dva místní symlinkové package path v `Package.swift`; po porovnání byly tyto generované cesty obnovené. Instalační checkout je opět čistý a main = origin/main. Aplikace `cz.nodu.app.manualinvitations` (nodu test) ani `cz.nodu.app.refreshverification` (nodu sync) nebyly přestavované nebo přeinstalované.
+
+Samostatný nový `supabase db lint --local --level warning` skončil exit 0: **13 warning extra ve 4 existujících funkcích**, nečtené proměnné/nepoužité parametry a OUT hodnoty; nový profilový guard mezi nálezy není. Tento PL/pgSQL lint je odlišný od bezpečnostních advisorů s 9 WARN výše. Bez upgradu CLI, závislostí nebo vypínání kontrol. Log `/private/tmp/nodu-cleanup-db-lint-20261029.log`.
+
+Původní Info.plist a oba TimelogsView soubory znovu porovnané s uloženým SHA256 manifestem: beze změny. Žádná stará dirty pracovní kopie ani ignorované nastavení nebyly odstraněné.

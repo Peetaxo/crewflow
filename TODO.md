@@ -6,9 +6,11 @@ Místní test nenahrazuje skutečný pilot ani konečné přijetí první verze.
 
 ## Zbývá pro první verzi
 
-- [ ] Dokončit místní technický úklid a bezpečnostní regrese podle
-  [podrobného plánu](docs/superpowers/plans/2026-10-29-local-cleanup.md).
-  Přesné výsledky, commit a zařízení patří do navazující evidence.
+- [x] Místní technický úklid a bezpečnostní regrese prošly na čistém main:
+  0 typových chyb, lint, 2 878 testů a build.
+  [Přesná verze a výsledky](docs/testing/2026-10-29-local-cleanup.md).
+- [ ] Dokončit ověření spuštění fyzického iPhonu po odemčení. Sestavení,
+  podepsání a instalace prošly; simulátor je aktualizovaný a spuštěný.
 - [ ] Ověřit skutečné APNs doručení na fyzickém iPhonu, preference a vazbu na účet.
   Historie a simulovaný banner jsou ověřené; mobilní push zůstává samostatná
   akceptace. [Důkaz](docs/testing/2026-10-22-notifications-simulator.md).

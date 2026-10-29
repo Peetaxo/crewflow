@@ -1436,9 +1436,11 @@ export interface Database {
         Row: { profile_id: string; last_active_at: string };
         Insert: {
           profile_id: string;
+          last_active_at: string;
         };
         Update: {
           profile_id?: string;
+          last_active_at?: string;
         };
         Relationships: [
           {

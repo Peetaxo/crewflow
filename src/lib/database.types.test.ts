@@ -30,6 +30,9 @@ function schemaContractQueries(client: SupabaseClient<Database>) {
   const activity = client.rpc('record_my_activity');
   const workflows = client.rpc('read_shift_workflows');
   const profileActivity = client.from('profiles').select('profile_activity(last_active_at)');
+  client.from('profile_activity').insert({ profile_id: 'profile-id', last_active_at: '2026-10-29T12:00:00Z' });
+  client.from('profile_activity').update({ last_active_at: '2026-10-29T12:01:00Z' });
+  client.from('profile_activity').update({ profile_id: 'profile-id' });
   client.from('profiles').insert({ user_id: null, hourly_rate: 250 });
   client.from('invoice_approval_documents').insert({ document_name: 'Approval document' });
   client.from('invoice_items').insert({ invoice_id: 'invoice-id', job_number: 'JOB1' });
@@ -38,6 +41,10 @@ function schemaContractQueries(client: SupabaseClient<Database>) {
 
   // @ts-expect-error A client name has no database default.
   client.from('clients').insert({});
+  // @ts-expect-error The activity timestamp is required and has no SQL default.
+  client.from('profile_activity').insert({ profile_id: 'profile-id' });
+  // @ts-expect-error Activity timestamps use PostgreSQL timestamp strings.
+  client.from('profile_activity').update({ last_active_at: 123 });
   // @ts-expect-error Both assignment identities are required.
   client.from('event_assignments').insert({ event_id: 'event-id' });
   // @ts-expect-error Billing group IDs are assigned by the caller, with no SQL default.

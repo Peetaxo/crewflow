@@ -1,110 +1,86 @@
 # TODO
 
-Tento soubor je pracovni seznam napadu, poznamek a budouciho smerovani.
-Muzes sem psat svoje napady a ja z nich pak muzu delat konkretni ukoly.
+Stav po místním technickém úklidu, 29. 10. 2026. Pořadí a akceptaci určuje
+[plán dokončení nodu](docs/superpowers/plans/2026-10-27-nodu-completion-roadmap.md).
+Místní test nenahrazuje skutečný pilot ani konečné přijetí první verze.
 
-## Jak to pouzivat
+## Zbývá pro první verzi
 
-- Pis sem napady volne a jednoduse.
-- Klidne jen jednou vetou.
-- Kdyz budes chtit, muzu z toho pozdeji udelat priority nebo roadmapu.
+- [ ] Dokončit místní technický úklid a bezpečnostní regrese podle
+  [podrobného plánu](docs/superpowers/plans/2026-10-29-local-cleanup.md).
+  Přesné výsledky, commit a zařízení patří do navazující evidence.
+- [ ] Ověřit skutečné APNs doručení na fyzickém iPhonu, preference a vazbu na účet.
+  Historie a simulovaný banner jsou ověřené; mobilní push zůstává samostatná
+  akceptace. [Důkaz](docs/testing/2026-10-22-notifications-simulator.md).
+- [ ] Na závěr připravit veřejnou doménu, hosting, schváleného odesílatele,
+  aktivační/obnovovací HTTPS odkazy a distribuci iOS. Na přání uživatele odložené;
+  [předpoklady](docs/testing/2026-10-29-stage-4-readiness.md).
+- [ ] Projít skutečný pilot vybraných lidí, opravit jeho nálezy a zkontrolovat
+  výsledný backend i distribuované mobilní sestavení.
+- [ ] Dokončit bezpečnostní review, řízený test etapy 8 a opakované ověření oprav.
+  Před těmito výsledky první verzi neoznačovat za přijatou.
 
-## Sablona pro zapis
+## Doložené hotové části
 
-- [ ] Nazev napadu
-  Poznamka: proc to chceme nebo jak si to predstavujes
+- [x] Supabase backend, skutečné přihlášení a role. Předpoklady „napojit backend“
+  a „přidat účty“ jsou překonané. [Oprávnění](docs/testing/2026-10-27-pilot-access.md),
+  [místní aktivace a obnova](docs/superpowers/plans/2026-10-26-member-onboarding-completion-verification.md).
+- [x] Importované profily mohou záměrně zůstat bez loginu. Přístup se přidává
+  řízenou pozvánkou a aktivací; plošně nezakládat Auth účty všem importovaným lidem.
+  Veřejné pozvánky jsou stále čekající část výše.
+- [x] Vlastní faktura, self-billing, položky a vazby výkazů/účtenek, atomické zápisy
+  do Supabase, PDF a záznam úhrady. Ověřený scénář zahrnuje klienty i čitelné PDF.
+  [Ověření fakturace](docs/testing/2026-10-22-crew-invoicing-ui.md).
+- [x] Starý návrh obecného billing batch s více Job Number nahradilo přijaté
+  pravidlo jedné faktury za celý schválený výkaz pracovníka pro jednu akci.
+  Fungující fakturaci nepřestavovat podle překonaného návrhu.
+- [x] Přehled a výkazy mají sjednocené období/počty a aktuální měsíc;
+  [etapa 2](docs/testing/2026-10-27-stage-2-verification.md).
+- [x] Obnovování mezi účty, návrat, zachování konceptů, konflikt a oddělení relací
+  prošly na webu a iOS simulátoru; [etapa 3](docs/testing/2026-10-27-multi-account-refresh.md).
+- [x] Místo akce a zamčená mapa jsou implementované a ověřené;
+  [důkaz](docs/superpowers/plans/2026-09-23-locked-event-map.md).
+- [x] Mobilní přehled crew, nejbližší směna a karty směn jsou implementované;
+  [ověření](docs/testing/2026-10-12-crew-mobile-ux-verification.md).
+- [x] Kontrola kolizí při přiřazení na akci je implementovaná; dialog ukazuje
+  kolize a blokuje kolidující přiřazení. Pokrývají ji dialogové a servisní testy.
+- [x] Existují klienti, účtenky, sklad a flotila, jejich obrazovky a datové služby.
+  Přítomnost sekce není úplná provozní akceptace všech budoucích rozšíření.
+- [x] Existuje skládací desktopový sidebar a samostatná mobilní navigace.
+  Jiný vysouvací drawer je případný nový návrh.
 
-## Aktualni napady
+## Zachovaná rozpracovaná práce
 
-- [ ] Opravit rozbitou diakritiku v rozhrani
-  Poznamka: v casti souboru jsou texty spatne kodovane a kazi dojem z aplikace.
+- [ ] Původní změny Info.plist a manažerského měsíčního filtru/kompaktního
+  přepínače ve TimelogsView a jeho testu zůstávají v původním checkoutu.
+  Případně integrovat cíleně po porovnání s novějšími opravami, nepřepisovat celé
+  soubory. [Záznam zachování](docs/testing/2026-10-27-completion-baseline.md).
+- [ ] Staré dirty worktrees a ignorované .env.local zachovat, dokud nebude
+  doložené převzetí každé potřebné změny. Hromadné mazání není úklid.
 
-- [ ] Ujasnit, ktere casti jsou jen demo a ktere maji byt produkcni workflow
-  Poznamka: pomuze to rozhodnout, co dotahnout jako prvni.
+## Nápady a další rozvoj mimo dokončení první verze
 
-- [ ] Navrhnout dalsi produktove priority
-  Poznamka: hlavne obsazovani crew, schvalovani, finance a perzistence dat.
-
-- [ ] Zlepsit kalendar a zobrazeni akci
-  Poznamka: akce by mely byt v kalendari prehlednejsi a lepe citelne.
-
-- [ ] Pridat lokaci akce a zobrazeni na mape
-  Poznamka: u akci chceme videt misto i vizualne na mape.
-
-- [ ] Napojit aplikaci na backend
-  Poznamka: postupny prechod z lokalnich dat na realnou perzistenci.
-
-- [ ] Migrovat datovou vrstvu na TanStack Query + Supabase Realtime
-  Poznamka: po stabilizaci soucasne service vrstvy odstranit rucni hydration guardy a prejit na query-based caching, invalidaci a realtime synchronizaci po domenach.
-
-- [ ] Napojit aplikaci na toggl.com
-  Poznamka: casy nebo vybrane zaznamy z Togglu propojit tak, aby se promitaly do firemniho nastroje.
-
-- [ ] Vytvorit export do tabulky
-  Poznamka: export dat pro dalsi zpracovani mimo aplikaci.
-
-- [ ] Projekty: opravit graf a vypocet hodin
-  Poznamka: zkontrolovat chyby v projektu, napriklad kdyz je jen instal nebo u Gala Brno.
-
-- [ ] Crew detail: upravit sekci nadchazejicich akci
-  Poznamka: mozna bude lepsi tabulkove zobrazeni.
-
-- [ ] Pridat uzivatelske ucty
-  Poznamka: priprava na vice uzivatelu a role.
-
-- [ ] Obnovit Auth vazbu pro crew, kteri se budou prihlasovat
-  Poznamka: `profiles.user_id` je docasne nullable kvuli importu crew bez loginu. Az budou mit vybrani clenove pristup do aplikace, vytvorit jim Supabase Auth usera, doplnit `profiles.user_id = auth.users.id` a nastavit roli v `user_roles`.
-
-- [x] Pridat klienty
-  Poznamka: tato cast uz je v aplikaci dostupna.
-
-- [ ] Napojit faktury
-  Poznamka: dodelat realne navazani na fakturacni proces.
-
-- [ ] Zkontrolovat design faktury
-  Poznamka: doladit vizualni podobu generovaneho PDF po prvnim funkcim napojeni.
-
-- [ ] Prepracovat model fakturace na billing batch
-  Poznamka: jedna faktura ma umet obsahovat vice schvalenych timelogu a vice job number pro jednoho kontraktora.
-
-- [ ] Navrhnout a zavest invoice_items a vazbu invoice_timelogs
-  Poznamka: faktura nema byt 1:1 na timelog; polozky se maji seskupovat podle job number a timelogy se maji vazat pres spojovaci vrstvu.
-
-- [ ] Dodelat write flow pro fakturaci do Supabase
-  Poznamka: po vyberu schvalenych timelogu vytvorit fakturu, polozky faktury a teprve potom prepnout timelogy na invoiced.
-
-- [ ] Sekce uctenky
-  Poznamka: clen crew muze pridat uctenku nebo fakturu za vydaj, ktery zaplatil, a priradit ji ke konkretni akci / projektu.
-
-- [ ] Napojit nabor
-  Poznamka: dodelat realne propojeni naborove pipeline.
-
-- [ ] Pridat zasouvaci sidebar
-  Poznamka: zlepseni ovladani hlavne na mensich displejich.
-
-- [ ] Zakomponovat firemni obleceni
-  Poznamka: doplnit do procesu nebo detailu crew / akce.
-
-- [ ] Hromadna zprava pres Job Number
-  Poznamka: idealne pres webhook nebo podobnou integraci.
-
-- [ ] Offline rezim
-  Poznamka: aplikace by mela byt aspon castecne pouzitelna bez internetu.
-
-- [ ] Hodnoceni crew
-  Poznamka: doplnit zpetnou vazbu a kvalitu spoluprace.
-
-- [ ] Refaktor identity na UUID
-  Poznamka: odstranit zavislost na contractors[0] a lokalnich ciselnych id, prejit na skutecnou auth / profile identitu.
-
-- [ ] Hlidac kolizi pri prirazeni na akci
-  Poznamka: upozornit, pokud je clovek uz prirazeny na jinou akci.
-
-- [ ] System nahradniku
-  Poznamka: evidence zaloznich lidi pro pripad vypadku.
-
-- [ ] Sekce sklad
-  Poznamka: evidence vybaveni, materialu a dostupnosti veci pro akce.
-
-- [ ] Sekce flotila
-  Poznamka: sprava aut, voziku a dalsi techniky vcetne prirazeni na akce.
+- [ ] Další čitelnost kalendáře a akcí; nadcházející akce crew případně tabulkově.
+  Navázat na existující obrazovky, nezačínat je znovu.
+- [ ] Prověřit konkrétní hlášení grafu/hodin projektů: pouze instal, Gala Brno.
+  Samotný redesign projektu není důkaz opravy těchto konkrétních případů.
+- [ ] Dokončit přechod na UUID ve všech doménách a odstranit zbývající fallbacky
+  contractors[0] v účtenkách/flotile. Skutečná Auth/profile identita už existuje;
+  numerické kompatibilní indexy zatím nejsou odstraněné z celé aplikace.
+- [ ] Dopracovat náborovou pipeline. Kandidáti se načítají ze Supabase, ale posun
+  kandidáta má ještě místní větev; automatické zakládání z Tally je odložené.
+- [ ] Export do tabulky / CSV / XLSX a funkční export Call Sheet. Samotné tlačítko
+  bez obsluhy není hotová funkce.
+- [ ] Napojení Toggl.
+- [ ] Hromadná zpráva podle Job Number.
+- [ ] Firemní oblečení.
+- [ ] Plný offline režim.
+- [ ] Zpětná vazba a hodnocení crew nad rámec současného zobrazení hodnocení.
+- [ ] Náhradníci.
+- [ ] Další procesy aut, účtenek a skladu; nahradit ukázkové dokumenty flotily.
+- [ ] Odstranění shadow snapshotů/hydratačních guardů a plošný přechod na Realtime
+  posoudit samostatně podle potřeby. Etapa 3 cíleným obnovováním splnila současnou
+  akceptaci bez této migrace.
+- [ ] Další produktové priority a hranice demo/provozního workflow doplňovat
+  konkrétními požadavky do roadmapy. Chybu textu/diakritiky zaznamenat s přesným
+  místem; plošné poškození kódování aktuální kontrola nepotvrdila.

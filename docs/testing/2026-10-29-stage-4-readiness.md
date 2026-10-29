@@ -44,6 +44,10 @@ Nezávislé read-only audity serveru a odkazů se shodují na těchto bodech:
 - **Vlastní citlivé profilové sloupce:** zdroj i živý katalog ukazují širokou self UPDATE politiku `user_id = auth.uid()`, UPDATE grant i na `hourly_rate`, `email` a `user_id` a pouze trigger pro `updated_at`. To vyžaduje izolovanou regresi a případnou opravu před vzdáleným pilotem, zejména zákazu vlastní změny sazby při zachování legitimních osobních úprav. Neproběhl pokus změnit sazbu existujícího člověka ani runtime důkaz zneužití. Předchozí ověření zachování sazby při aktivaci tuto kontrolu nenahrazuje.
 - **Automatická URL relace:** skutečný singleton `src/lib/supabase.ts` neuvádí `detectSessionInUrl:false`; současný SDK umí implicitní callback uložit před React scrubem. Reprodukce/test musí použít skutečnou inicializaci singletonu a ověřit zachování existující relace při cizím aktivačním/obnovovacím callbacku. Nalezené izolované recovery testy toto nastavení skutečného singletonu netestují. Jde o zdrojové riziko k ověření, nikoli zde reprodukované převzetí účtu.
 
+## Doplnění po místním úklidu 29. 10. 2026
+
+Obě výše uvedené regrese byly potvrzené a místně opravené: skutečný singleton už nepřijímá implicitní URL relaci, profilový trigger blokuje vlastní změnu sazby a klientskou změnu identity při zachování osobních úprav, managementu a aktivace. [Přesný RED/GREEN záznam](2026-10-29-local-cleanup.md). Profilová migrace je dosud pouze ve zdroji a místním pilotu, **ne v živém backendu**; patří do pozdějšího přesného migračního balíku. Zbývající veřejné předpoklady výše se tím neuzavírají.
+
 ## Dosud otevřená rozhodnutí a další krok
 
 Uživatel přijal směr vlastní doména + Cloudflare + současný Supabase + Resend a nechal prověřit dostupnost domény. Následně výslovně přesunul její řešení a veřejné spuštění na závěr po dokončení aplikace. Konkrétní doména, odesílatel a distribuce nejsou vybrané; jejich výběr teď neblokuje nezávislé místní opravy, technický úklid ani místní testování. Žádný tarif nebo doména se tím neobjednává.

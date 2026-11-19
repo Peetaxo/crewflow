@@ -14,17 +14,23 @@ describe('nodu CSS helpers', () => {
     expect(viewport).toContain('viewport-fit=cover');
   });
 
-  it('paints the mobile detail viewport and keeps its safe-area clearance on the swipe surface', () => {
+  it('keeps the painted mobile sheet in place while its content can bounce within the viewport', () => {
     const base = readFileSync(resolve('src/index.css'), 'utf8');
     const events = readFileSync(resolve('src/styles/mobile-events.css'), 'utf8');
     const detailRules = (base + events).match(/\.nodu-mobile-event-detail\s*\{[^}]+\}/g)?.join(' ');
     const surface = events.match(/\.nodu-mobile-event-swipe-surface\s*\{[^}]+\}/)?.[0];
+    const scroll = events.match(/\.nodu-mobile-event-scroll\s*\{[^}]+\}/)?.[0];
 
     expect(detailRules).toContain('background: var(--nodu-paper)');
-    expect(detailRules).toContain('overscroll-behavior: contain');
-    expect(detailRules).not.toMatch(/padding(?:-bottom)?:/);
+    expect(detailRules).toContain('overflow: hidden');
+    expect(surface).toContain('position: absolute');
+    expect(surface).toContain('inset: 0');
+    expect(surface).toContain('linear-gradient');
+    expect(scroll).toContain('height: 100%');
+    expect(scroll).toContain('overflow-y: auto');
+    expect(scroll).toContain('overscroll-behavior-y: contain');
     for (const edge of ['top', 'right', 'bottom', 'left']) {
-      expect(surface).toContain('safe-area-inset-' + edge);
+      expect(scroll).toContain('safe-area-inset-' + edge);
     }
   });
 

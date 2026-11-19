@@ -151,7 +151,7 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
   const mobileEdgeSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const mobileHistoryEventIdRef = useRef<string | number | null>(null);
   const mobileCloseTimeoutRef = useRef<number | null>(null);
-  const mobileDetailRef = useRef<HTMLDivElement | null>(null);
+  const mobileScrollRef = useRef<HTMLDivElement | null>(null);
   const invoiceApprovalsQuery = useInvoiceApprovalsQuery();
   const anyCrewActionPending = pendingCrewAction !== null;
 
@@ -218,7 +218,7 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
     && (detail.event?.id === selectedEventId || detail.event?.supabaseId === selectedEventId);
   const mobileEventId = isMobile && isSelectedEvent ? selectedEventId : null;
   useEffect(() => {
-    if (mobileEventId != null) mobileDetailRef.current?.scrollTo?.({ top: 0, left: 0 });
+    if (mobileEventId != null) mobileScrollRef.current?.scrollTo?.({ top: 0, left: 0 });
   }, [mobileEventId]);
 
   const scheduleMobileEventDetailClose = useCallback((shouldPopHistory = false) => {
@@ -1056,7 +1056,6 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
 
     return (
       <div
-        ref={mobileDetailRef}
         className="nodu-mobile-event-detail"
         data-swiping={mobileEdgeSwipeOffset > 0 || undefined}
         onTouchStart={handleMobileDetailTouchStart}
@@ -1089,7 +1088,7 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
           }}
         />
         <div className={mobileSwipeSurfaceClassName} style={mobileSwipeSurfaceStyle}>
-        <div className="nodu-mobile-event-scroll">
+        <div ref={mobileScrollRef} className="nodu-mobile-event-scroll">
           <header className="nodu-mobile-event-topbar">
             <button
               type="button"

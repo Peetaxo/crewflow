@@ -816,7 +816,7 @@ describe('EventDetailView', () => {
         </main>
       );
       const { container, rerender } = render(tree());
-      const mobileDetail = container.querySelector<HTMLElement>('.nodu-mobile-event-detail')!;
+      const mobileDetail = container.querySelector<HTMLElement>('.nodu-mobile-event-swipe-surface > .nodu-mobile-event-scroll')!;
       const mobilePage = container.querySelector('.nodu-page-frame--mobile-crew');
 
       await waitFor(() => {

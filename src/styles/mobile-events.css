@@ -160,14 +160,11 @@
   position: fixed;
   inset: 0;
   z-index: 70;
-  min-height: 100dvh;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
   background: var(--nodu-paper);
   color: var(--nodu-text);
   overscroll-behavior: contain;
   touch-action: pan-y;
-  -webkit-overflow-scrolling: touch;
 }
 
 .nodu-mobile-event-detail[data-swiping] {
@@ -178,23 +175,37 @@
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
-}
-
-.nodu-mobile-event-swipe-surface {
-  min-height: 100dvh;
+  height: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
   padding:
     calc(1rem + env(safe-area-inset-top, 0px))
     calc(1rem + env(safe-area-inset-right, 0px))
     calc(6.5rem + env(safe-area-inset-bottom, 0px))
     calc(1rem + env(safe-area-inset-left, 0px));
+}
+
+.nodu-mobile-event-scroll > * {
+  flex-shrink: 0;
+}
+
+.nodu-mobile-event-swipe-surface {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
   background:
     radial-gradient(circle at top left, rgb(var(--nodu-surface-rgb) / 0.32), transparent 34%),
     linear-gradient(180deg, var(--nodu-paper) 0%, var(--nodu-paper-strong) 100%);
-  box-shadow: -18px 0 44px rgb(var(--nodu-text-rgb) / 0.12);
   opacity: var(--nodu-mobile-event-swipe-opacity, 1);
   transform: translateX(var(--nodu-mobile-event-swipe-x, 0));
   transition: var(--nodu-mobile-event-swipe-transition, none);
   will-change: transform;
+}
+
+.nodu-mobile-event-detail[data-swiping] .nodu-mobile-event-swipe-surface {
+  box-shadow: -18px 0 44px rgb(var(--nodu-text-rgb) / 0.12);
 }
 
 .nodu-mobile-event-swipe-surface--dragging {

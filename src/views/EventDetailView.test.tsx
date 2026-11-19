@@ -22,6 +22,18 @@ vi.mock('../app/providers/useAuth', () => ({
   useAuth: () => authMockState,
 }));
 
+const composeCrewMessage = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock('@capacitor/core', async (load) => {
+  const actual = await load<typeof import('@capacitor/core')>();
+  return {
+    ...actual,
+    Capacitor: { ...actual.Capacitor, isPluginAvailable: (name: string) =>
+      name === 'CrewMessages' || actual.Capacitor.isPluginAvailable(name) },
+    registerPlugin: (name: string, implementations?: Parameters<typeof actual.registerPlugin>[1]) =>
+      name === 'CrewMessages' ? { compose: composeCrewMessage } : actual.registerPlugin(name, implementations),
+  };
+});
+
 const setEditingTimelog = vi.fn();
 const setSelectedEventId = vi.fn();
 const updateTimelogStatus = vi.fn();
@@ -309,6 +321,7 @@ describe('EventDetailView', () => {
     expect(container.querySelector('.nodu-mobile-event-hero')).toHaveTextContent('Jsi přiřazen');
     expect(screen.queryByText('Moje výkazy')).not.toBeInTheDocument();
     expect(screen.getByText('Přiřazená crew')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Napsat crew' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Evidence práce' })).toBeInTheDocument();
     const swipeSurface = container.querySelector('.nodu-mobile-event-swipe-surface');
     const floatingPanel = container.querySelector<HTMLElement>('.nodu-mobile-event-floating-panel');
@@ -1226,11 +1239,16 @@ describe('EventDetailView', () => {
     }));
 
     vi.doMock('../features/events/services/events.service', () => ({
-      getEventCrew: () => [contractor],
+      getEventCrew: () => [
+        { ...contractor, phone: '+420 700 000 001' },
+        { ...contractor, id: 3, profileId: 'profile-3', name: 'Alex Test', phone: '00421 900 000 002' },
+        { ...contractor, id: 4, profileId: 'profile-4', name: 'Dana Test', phone: '700000001' },
+        { ...contractor, id: 5, profileId: 'profile-5', name: 'Eva Test', phone: '' },
+      ],
       getEventDetailData: () => ({
         event: { ...event, status: 'upcoming' as const, needed: 5, filled: 1, allowCrewTimeProposal: true },
         timelogs: [crewDraftTimelog, pendingCrewheadTimelog, secondPendingCrewheadTimelog],
-        contractors: [contractor, applicant],
+        contractors: [contractor, { ...applicant, phone: '+420700000009' }],
         receipts: [],
         applications: [
           {
@@ -1286,6 +1304,9 @@ describe('EventDetailView', () => {
     expect(screen.getByRole('button', { name: 'Přiřadit crew' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Schvalování' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Přiřazená crew' }).closest('section')).toHaveTextContent('1/5');
+    expect(screen.getByText(/Eva Test/, { selector: 'p' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Napsat crew' }));
+    expect(composeCrewMessage).toHaveBeenCalledExactlyOnceWith({ recipients: ['+420700000001', '+421900000002'] });
     const applicationsSection = screen.getByRole('heading', { name: 'Přihlášky crew' }).closest('section');
     expect(applicationsSection).toHaveTextContent('Jana Nova');
     expect(applicationsSection).toHaveTextContent('09:00 - 15:00');

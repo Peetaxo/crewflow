@@ -12,6 +12,7 @@ import { calculateDayHours, calculateMealAllowance, calculateTotalHours, formatC
 import { buildEventScheduleDays, resolveEventScheduleDay } from '../features/events/services/event-schedule';
 import { listEventDates } from '../features/timelogs/services/timelog-day-ui';
 import { Button } from '../components/ui/button';
+import { EventCrewMessageButton } from '../features/events/components/EventCrewMessageButton';
 import { EventHoursExportButton } from '../features/events/components/EventHoursExportButton';
 import StatusBadge from '../components/shared/StatusBadge';
 import EventEditModal from '../components/modals/EventEditModal';
@@ -413,9 +414,11 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
   const totalTravelCost = eventTimelogs.reduce((sum, timelog) => sum + timelog.km * KM_RATE, 0);
   const totalReceiptCost = eventReceipts.reduce((sum, receipt) => sum + receipt.amount, 0);
   const days = event.scheduleVersion === 2 ? listEventDates(event) : getDatesBetween(event.startDate, event.endDate);
-  const eventCrew = getEventCrew(event.id);
+  const eventCrew = getEventCrew(event.supabaseId ?? event.id);
   const canManageEvents = role !== 'crew';
-  const hoursExport = (role === 'crewhead' || role === 'coo') && (event.id === selectedEventId || event.supabaseId === selectedEventId)
+  const canManageSelectedEvent = (role === 'crewhead' || role === 'coo') && (event.id === selectedEventId || event.supabaseId === selectedEventId);
+  const crewMessage = canManageSelectedEvent ? <EventCrewMessageButton crew={eventCrew} /> : null;
+  const hoursExport = canManageSelectedEvent
     ? <EventHoursExportButton key={JSON.stringify([selectedEventId, currentProfileId, role])} detail={{ ...detail, event }} />
     : null;
   const isCrewRole = role === 'crew';
@@ -1229,7 +1232,10 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
               <h2 id="mobile-event-assigned-crew-title">Přiřazená crew</h2>
               <span className="nodu-mobile-event-capacity-chip">{crewCapacityLabel}</span>
             </div>
-            {hoursExport}
+            {canManageSelectedEvent && <div className="flex flex-wrap items-start gap-2">
+              {crewMessage}
+              {hoursExport}
+            </div>}
             {eventCrew.length > 0 ? (
               <div className="nodu-mobile-event-crew-list">
                 {eventCrew.map((contractor) => {
@@ -1707,6 +1713,7 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
                         Schvalovani timelogu ({eventApprovalTimelogs.length})
                       </button>
                     )}
+                    {crewMessage}
                     {hoursExport}
                   </div>
 

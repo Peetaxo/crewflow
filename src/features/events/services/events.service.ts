@@ -302,24 +302,28 @@ const requireCurrentEventMutationEpoch = (expectedEpoch: number): void => {
   }
 };
 
-const assignmentMatchesEvent = (assignment: EventCrewAssignment, event: Event): boolean => (
-  assignment.eventId === event.id
-  || Boolean(event.supabaseId && assignment.eventSupabaseId === event.supabaseId)
+const matchesRosterEvent = (event: Event, localId: number, stableId?: string, allowLocalId = true) => (
+  event.supabaseId && stableId ? event.supabaseId === stableId : allowLocalId && event.id === localId
+);
+
+const assignmentMatchesEvent = (assignment: EventCrewAssignment, event: Event, allowLocalId = true) => (
+  matchesRosterEvent(event, assignment.eventId, assignment.eventSupabaseId, allowLocalId)
 );
 
 const getAssignedProfileIdsForEvent = (
   event: Event,
   timelogs: Timelog[] = [],
   eventCrewAssignments: EventCrewAssignment[] = [],
+  allowLocalId = true,
 ): Set<string> => {
   const assignedProfileIds = new Set<string>();
 
   timelogs
-    .filter((timelog) => timelog.eid === event.id && timelog.contractorProfileId)
+    .filter((timelog) => timelog.contractorProfileId && matchesRosterEvent(event, timelog.eid, timelog.eventSupabaseId, allowLocalId))
     .forEach((timelog) => assignedProfileIds.add(timelog.contractorProfileId as string));
 
   eventCrewAssignments
-    .filter((assignment) => assignmentMatchesEvent(assignment, event))
+    .filter((assignment) => assignmentMatchesEvent(assignment, event, allowLocalId))
     .forEach((assignment) => assignedProfileIds.add(assignment.contractorProfileId));
 
   return assignedProfileIds;
@@ -2193,22 +2197,26 @@ export const deleteEvent = async (eventId: EventIdentifier): Promise<{ id: Event
   return deleteLocalEventUncoordinated(eventId);
 };
 
-export const getEventCrew = (eventId: number): Contractor[] => {
+export const getEventCrew = (eventId: EventIdentifier): Contractor[] => {
   ensureSupabaseEventsLoaded();
   requestSupabaseTimelogsHydration();
   const snapshot = getLocalAppState();
-  const event = (snapshot.events ?? []).find((item) => item.id === eventId);
+  const events = snapshot.events ?? [];
+  const event = events.find((item) => matchesEventIdentifier(item, eventId));
   if (!event) return [];
 
+  // Old records have only a local ID. It is usable only when it identifies one event.
+  const allowLocalId = !events.some((other) => other !== event && other.id === event.id);
   const assignedProfileIds = getAssignedProfileIdsForEvent(
     event,
     snapshot.timelogs ?? [],
     snapshot.eventCrewAssignments ?? [],
+    allowLocalId,
   );
 
   const assignmentsByProfileId = new Map(
     (snapshot.eventCrewAssignments ?? [])
-      .filter((assignment) => assignmentMatchesEvent(assignment, event))
+      .filter((assignment) => assignmentMatchesEvent(assignment, event, allowLocalId))
       .map((assignment) => [assignment.contractorProfileId, assignment]),
   );
   const contractorsByProfileId = new Map(

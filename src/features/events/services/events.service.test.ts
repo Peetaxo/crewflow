@@ -1549,6 +1549,31 @@ describe('events.service write flow', () => {
     ]);
   });
 
+  it('resolves each crew by stable event ID and keeps unambiguous legacy assignments', async () => {
+    const event = { id: 1, supabaseId: 'event-a' } as Event;
+    const otherEvent = { ...event, supabaseId: 'event-b' };
+    const snapshot = {
+      events: [otherEvent, event, { ...event, id: 3, supabaseId: 'event-c' }],
+      contractors: ['a', 'b', 'c', 'log-a', 'log-b', 'ambiguous'].map(profileId => ({ profileId, name: profileId })),
+      eventCrewAssignments: [
+        { eventId: 5, eventSupabaseId: 'event-a', contractorProfileId: 'a' },
+        { eventId: 1, eventSupabaseId: 'event-b', contractorProfileId: 'b' },
+        { eventId: 1, contractorProfileId: 'ambiguous' },
+        { eventId: 3, contractorProfileId: 'c' },
+      ],
+      timelogs: [
+        { eid: 4, eventSupabaseId: 'event-a', contractorProfileId: 'log-a' },
+        { eid: 1, eventSupabaseId: 'event-b', contractorProfileId: 'log-b' },
+      ],
+    };
+    vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'local' }));
+    vi.doMock('../../../lib/app-data', () => ({ getLocalAppState: () => snapshot }));
+    const { getEventCrew } = await import('./events.service');
+    expect(getEventCrew('event-a').map(member => member.profileId).sort()).toEqual(['a', 'log-a']);
+    expect(getEventCrew('event-b').map(member => member.profileId).sort()).toEqual(['b', 'log-b']);
+    expect(getEventCrew(3).map(member => member.profileId)).toEqual(['c']);
+  });
+
   it('does not leak local demo receipts into Supabase event detail by local numeric id', async () => {
     const ensureSupabaseTimelogsLoaded = vi.fn();
     const demoReceipt: ReceiptItem = {

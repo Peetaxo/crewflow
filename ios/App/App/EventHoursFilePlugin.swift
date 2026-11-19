@@ -4,6 +4,7 @@ import UIKit
 final class NoduBridgeViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(EventHoursFilePlugin())
+        bridge?.registerPluginInstance(CrewMessagesPlugin())
     }
 }
 

@@ -182,7 +182,7 @@ Fakturaci neimplementovat znovu. Navázat na `docs/testing/2026-10-22-crew-invoi
 
 ## Etapa 7 — Technický úklid a příprava finální verze
 
-**Stav: probíhá — místní zdroj, čistý main a simulátor ověřené; fyzický iPhone čeká na odemčení pro kontrolu spuštění.** [Podrobná evidence 29. 10.](../../testing/2026-10-29-local-cleanup.md). Veřejný pilot, push a konečná akceptace zůstávají otevřené.
+**Stav: probíhá.** Oprava pádu při startu je v main a ověřená na simulátorech iOS 27.0 a 26.5. Fyzický iPhone čeká na podpis, instalaci a ověření. Veřejný pilot, push a konečná akceptace zůstávají otevřené. [Aktuální evidence 19. 11.](../../testing/2026-11-19-ios27-startup.md)
 
 **Závislost pro technický úklid:** stabilní základ etap 0–3; podle rozhodnutí 29. 10. může předcházet veřejnému prostředí i skutečnému pilotu. Opravy nálezů pilotu a závěrečná akceptace nadále vyžadují etapu 5 a dokončenou etapu 6. Úspěšný místní úklid sám neuzavírá první verzi.
 
@@ -235,4 +235,6 @@ Fakturaci neimplementovat znovu. Navázat na `docs/testing/2026-10-22-crew-invoi
 
 **Etapy 0–3 byly uzavřené 27. 10. 2026.** Oprávnění etapy 2 platí i v živém backendu; zdroj etapy 3 je v main a běžné instalace simulátoru i fyzického iPhonu jsou aktualizované. Časová akceptace aktuálnosti prošla se skutečnými místními účty na webu a iOS simulátoru. **Rozhodnutí 29. 10.:** veřejná část etapy 4 a skutečný pilot etapy 5 se přesouvají na závěr po místním dokončení aplikace. Další práce může pokračovat nezávislými opravami a technickým úklidem bez pořizování domény nebo veřejného hostingu; konečné provozní přijetí zůstává otevřené.
 
-**Místní úklid 29. 10.:** 108 → 0 typových diagnostik, 2 878 testů a společný check prošly na čistém main `e49c353`; opravená izolace URL relace a místně ověřená ochrana sazby/identity. Profilová migrace není v živém backendu. Simulátor aktualizovaný, fyzický iPhone nainstalovaný, kontrola spuštění čeká na odemčení. [Evidence a zbývající podmínky](../../testing/2026-10-29-local-cleanup.md). Další samostatné oblasti jsou iOS push a předběžný bezpečnostní audit; veřejná konfigurace zůstává na závěr.
+**Místní úklid 29. 10.:** 108 → 0 typových diagnostik, 2 878 testů a společný check prošly na čistém main `e49c353`; opravená izolace URL relace a místně ověřená ochrana sazby/identity. Profilová migrace není v živém backendu. Simulátor byl aktualizovaný a na fyzickém iPhonu se sestavení nainstalovalo. Po odemčení telefonu se ukázal pád při startu na iOS 27. [Evidence a zbývající podmínky](../../testing/2026-10-29-local-cleanup.md). Další samostatné oblasti jsou iOS push a předběžný bezpečnostní audit; veřejná konfigurace zůstává na závěr.
+
+**Ověření 19. 11.** Oprava startu na iOS 27 prošla na simulátoru. Po ověření opravy na fyzickém telefonu navazuje místní průchod od směny přes výkaz až k faktuře. [Rozsah a důkazy](../../testing/2026-11-19-ios27-startup.md)

@@ -1,6 +1,6 @@
 # Místní technický úklid nodu — 29. 10. 2026
 
-**Technické kontroly čistého main a simulátor ověřené; spuštění na fyzickém telefonu čeká na odemčení.** Doména, veřejný hosting, skutečné rozesílání a veřejné spuštění zůstávají na přání uživatele odložené. Tento záznam neuzavírá první verzi ani celý bezpečnostní audit.
+**Záznam technického úklidu a ověření z 29. 10.** Doména, veřejný hosting, skutečné rozesílání a veřejné spuštění zůstávají na přání uživatele odložené. Tento záznam neuzavírá první verzi ani celý bezpečnostní audit.
 
 ## Zdroj a rozsah
 
@@ -54,6 +54,8 @@ Staré větve a dirty worktrees zůstávají zachované včetně ignorovaných k
 Vizuální kontrola lokálního webu `VITE_APP_DATA_SOURCE=local`, port 8114, potvrdila popisek **Spolehlivý** v dialogu Obsadit crew. Syntetická akce `LOCAL-CLEANUP` existuje pouze v místním prohlížečovém režimu; neproběhl zápis do živých dat. Ostatní opravené větve popisků ověřují testy. Plošné mojibake v src/public nebylo nalezené; širší korektura zbývajících textů bez diakritiky patří do konkrétních dalších nálezů.
 
 ## Čistý main a zařízení
+
+**Aktualizace 19. 11.** Po odemčení telefonu se ukázal pád při startu na iOS 27. Opravu a nové ověření zachycuje [aktuální záznam](2026-11-19-ios27-startup.md). Níže je původní pokus z 29. 10.
 
 Začleněný a čerstvě synchronizovaný main **`e49c35360ed81911337c585036056f5d5e8042d2`** v čistém instalačním checkoutu `crewflow-stage2-refresh-20261027`. Nový společný `npm run check` **exit 0** mimo sandbox: typecheck 0, lint 0, **219 souborů / 2 878 testů**, 87,41 s; build 1,85 s. `git diff --check` exit 0. Log `/private/tmp/nodu-cleanup-main-check-20261029.log`.
 

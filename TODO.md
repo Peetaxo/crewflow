@@ -9,8 +9,9 @@ Místní test nenahrazuje skutečný pilot ani konečné přijetí první verze.
 - [x] Místní technický úklid a bezpečnostní regrese prošly na čistém main:
   0 typových chyb, lint, 2 878 testů a build.
   [Přesná verze a výsledky](docs/testing/2026-10-29-local-cleanup.md).
-- [ ] Dokončit ověření spuštění fyzického iPhonu po odemčení. Sestavení,
-  podepsání a instalace prošly; simulátor je aktualizovaný a spuštěný.
+- [ ] Nainstalovat opravu startu na iOS 27 na fyzický iPhone a ověřit běžící aplikaci.
+  Opravu už potvrzuje simulátor iOS 27. Po ověření telefonu navázat testovacím
+  průchodem od přiřazení na směnu až po fakturu. [Výsledky](docs/testing/2026-11-19-ios27-startup.md).
 - [ ] Ověřit skutečné APNs doručení na fyzickém iPhonu, preference a vazbu na účet.
   Historie a simulovaný banner jsou ověřené; mobilní push zůstává samostatná
   akceptace. [Důkaz](docs/testing/2026-10-22-notifications-simulator.md).

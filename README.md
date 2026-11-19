@@ -104,6 +104,8 @@ Samotný webový build nenahrazuje kontrolu TypeScriptu.
 Po změně aplikace navazuje integrace do čistého synchronizovaného `main` a
 `npm run ios:refresh:devices` podle `AGENTS.md`. Vývojová instalace na simulátoru
 a fyzickém iPhonu se ověřuje samostatně.
+Při práci bez telefonu použijte `npm run ios:refresh:devices -- --simulator-only`.
+Tento režim přeskočí připojení k telefonu a ponechá jeho instalaci k ověření.
 
 ## Preview
 

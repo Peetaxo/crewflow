@@ -143,7 +143,7 @@ export const createRefreshPlan = (config) => {
       '--quiet',
       phoneApp,
     ]),
-    command('Launch phone app', 'phone', 'xcrun', [
+    command('Launch phone app', 'phoneLaunch', 'xcrun', [
       'devicectl',
       'device',
       'process',
@@ -154,6 +154,8 @@ export const createRefreshPlan = (config) => {
       '--timeout',
       '15',
       '--quiet',
+      '--json-output',
+      '-',
       config.bundleId,
     ]),
   ];
@@ -169,14 +171,59 @@ export class RefreshCommandError extends Error {
   }
 }
 
-const executeRequired = (run, step, summary) => {
-  const result = run(step.executable, step.args);
+const executeRequired = (run, step, summary, options) => {
+  const result = run(step.executable, step.args, options);
   if (result.status !== 0) {
     if (step.target === 'simulator') summary.simulator = { state: 'failed' };
-    if (step.target === 'phone') summary.phone = { state: 'failed' };
+    if (step.target.startsWith('phone')) summary.phone = { state: 'failed' };
     throw new RefreshCommandError(step, result, summary);
   }
   return result;
+};
+
+// Allow time for UIKit to initialize. CoreDevice can report a PID before a
+// startup crash, so a successful launch command alone does not verify the app.
+const phoneStartupWait = command('Wait for phone app startup', 'phone', '/bin/sleep', ['2']);
+
+const phoneProcessStep = (config, pid) => command('Verify phone app process', 'phone', 'xcrun', [
+  'devicectl', 'device', 'info', 'processes',
+  '--device', config.deviceId,
+  '--filter', `processIdentifier = ${pid}`,
+  '--timeout', '15',
+  '--quiet',
+  '--json-output', '-',
+]);
+
+const readDeviceResult = (stdout) => {
+  try {
+    return JSON.parse(stdout)?.result;
+  } catch {
+    return undefined;
+  }
+};
+
+const failPhoneStartup = (step, summary, message) => {
+  summary.phone = { state: 'failed' };
+  throw new RefreshCommandError(step, { status: 1, stderr: message }, summary);
+};
+
+const verifyPhoneStartup = (run, config, launch, summary) => {
+  const captured = executeRequired(run, launch, summary, { capture: true });
+  const launched = readDeviceResult(captured.stdout)?.process;
+  const pid = launched?.processIdentifier;
+  if (!Number.isSafeInteger(pid) || pid <= 0 || typeof launched.executable !== 'string' || !launched.executable) {
+    failPhoneStartup(launch, summary, 'Missing launched app process identity');
+  }
+
+  executeRequired(run, phoneStartupWait, summary);
+  const verify = phoneProcessStep(config, pid);
+  const checked = executeRequired(run, verify, summary, { capture: true });
+  const running = readDeviceResult(checked.stdout)?.runningProcesses;
+  if (!Array.isArray(running) || !running.some(
+    (process) => process?.processIdentifier === pid && process.executable === launched.executable,
+  )) {
+    failPhoneStartup(verify, summary, 'App stopped or could not be confirmed running');
+  }
 };
 
 const capture = (run, executable, args) => {
@@ -198,10 +245,17 @@ export const runIosDeviceRefresh = ({
   run,
   env = process.env,
   dryRun = false,
+  simulatorOnly = false,
 }) => {
   const config = createRefreshConfig(env);
-  const plan = createRefreshPlan(config);
-  if (dryRun) return { dryRun: true, plan };
+  const allSteps = createRefreshPlan(config);
+  const plan = simulatorOnly ? allSteps.filter((step) => !step.target.startsWith('phone')) : allSteps;
+  if (dryRun) {
+    return {
+      dryRun: true,
+      plan: simulatorOnly ? plan : [...plan, phoneStartupWait, phoneProcessStep(config, '<launch PID>')],
+    };
+  }
 
   const preflight = readPreflight(run);
   assertMainPreflight(preflight);
@@ -219,6 +273,11 @@ export const runIosDeviceRefresh = ({
   }
   summary.simulator = { state: 'updated' };
 
+  if (simulatorOnly) {
+    summary.phone = { state: 'waiting' };
+    return summary;
+  }
+
   const probe = plan.find((item) => item.target === 'phoneProbe');
   const probeResult = run(probe.executable, probe.args, { capture: true });
   if (probeResult.status !== 0) {
@@ -229,6 +288,7 @@ export const runIosDeviceRefresh = ({
   for (const step of plan.filter((item) => item.target === 'phone')) {
     executeRequired(run, step, summary);
   }
+  verifyPhoneStartup(run, config, plan.find((item) => item.target === 'phoneLaunch'), summary);
   summary.phone = {
     state: 'updated',
     transport: detectPhoneTransport(probeResult.stdout),

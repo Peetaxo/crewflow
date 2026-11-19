@@ -99,6 +99,11 @@ const makeRunner = (
   };
 };
 
+const launchedAppProcess = {
+  processIdentifier: 4312,
+  executable: 'file:///private/var/containers/Bundle/Application/build/App.app/App',
+};
+
 describe('iOS device refresh orchestration', () => {
   it('passes a locally configured development team only to the phone build', () => {
     const plan = createRefreshPlan(createRefreshConfig({
@@ -143,13 +148,25 @@ describe('iOS device refresh orchestration', () => {
     expect(runner.calls.some((call) => call.includes('devicectl device install app'))).toBe(false);
   });
 
-  it('builds, installs, and launches on an available phone', () => {
+  it('updates the simulator without contacting a phone in simulator-only mode', () => {
+    const runner = makeRunner(() => ({ status: 0 }));
+    const result = runIosDeviceRefresh({ run: runner.run, simulatorOnly: true });
+
+    expect(result.simulator.state).toBe('updated');
+    expect(result.phone.state).toBe('waiting');
+    expect(runner.calls.some((call) => call.includes('devicectl'))).toBe(false);
+  });
+
+  it('reports the phone updated only after confirming the exact launched process', () => {
     const runner = makeRunner((label) => ({
       status: 0,
       stdout: label.includes('devicectl device info details')
         ? 'transportType: localNetwork\n'
-        : '',
-      stderr: '',
+        : label.includes('devicectl device process launch')
+          ? JSON.stringify({ result: { process: launchedAppProcess } })
+          : label.includes('devicectl device info processes')
+            ? JSON.stringify({ result: { runningProcesses: [launchedAppProcess] } })
+            : '',
     }));
 
     const result = runIosDeviceRefresh({ run: runner.run });
@@ -159,7 +176,34 @@ describe('iOS device refresh orchestration', () => {
       phone: { state: 'updated', transport: 'Wi-Fi' },
     });
     expect(runner.calls.some((call) => call.includes('devicectl device install app'))).toBe(true);
-    expect(runner.calls.some((call) => call.includes('devicectl device process launch'))).toBe(true);
+    expect(runner.calls.filter((call) => call.includes('devicectl device info processes')))
+      .toEqual([expect.stringContaining('--filter processIdentifier = 4312')]);
+  });
+
+  it.each([
+    ['exits during startup', []],
+    ['is replaced by a different executable', [{ ...launchedAppProcess, executable: 'file:///other/App' }]],
+  ])('reports failure when the phone app %s despite launch exit 0', (_label, runningProcesses) => {
+    const runner = makeRunner((label) => ({
+      status: 0,
+      stdout: label.includes('devicectl device process launch')
+        ? JSON.stringify({ result: { process: launchedAppProcess } })
+        : JSON.stringify({ result: { runningProcesses } }),
+    }));
+
+    expect(() => runIosDeviceRefresh({ run: runner.run })).toThrow(
+      expect.objectContaining({
+        message: expect.stringContaining('App stopped or could not be confirmed running'),
+        summary: expect.objectContaining({ phone: { state: 'failed' } }),
+      }),
+    );
+  });
+
+  it('fails closed without querying processes when launch has no valid PID', () => {
+    const runner = makeRunner(() => ({ status: 0, stdout: '{"result":{}}' }));
+
+    expect(() => runIosDeviceRefresh({ run: runner.run })).toThrow('Missing launched app process identity');
+    expect(runner.calls.some((call) => call.includes('devicectl device info processes'))).toBe(false);
   });
 
   it('fails when an available phone cannot be installed', () => {
@@ -227,6 +271,16 @@ describe('iOS device refresh CLI', () => {
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
+  });
+
+  it('prints only simulator steps in a simulator-only dry run', () => {
+    const result = spawnSync(process.execPath, ['scripts/ios-device-refresh.mjs', '--dry-run', '--simulator-only'], {
+      encoding: 'utf8',
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('Install simulator app');
+    expect(result.stdout).not.toContain('devicectl');
   });
 
   it('prints a dry-run plan without touching either device', () => {

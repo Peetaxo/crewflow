@@ -9,7 +9,9 @@ import {
   runIosDeviceRefresh,
 } from './ios-device-refresh-lib.mjs';
 
-const dryRun = process.argv.slice(2).includes('--dry-run');
+const flags = process.argv.slice(2);
+const dryRun = flags.includes('--dry-run');
+const simulatorOnly = flags.includes('--simulator-only');
 
 const run = (command, args, options = {}) => {
   const result = spawnSync(command, args, {
@@ -36,7 +38,7 @@ try {
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
-  const result = runIosDeviceRefresh({ run, dryRun });
+  const result = runIosDeviceRefresh({ run, dryRun, simulatorOnly });
   if (result.dryRun) {
     console.log(
       result.plan

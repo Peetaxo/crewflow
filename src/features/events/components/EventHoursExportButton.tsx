@@ -67,7 +67,7 @@ export function EventHoursExportButton({ detail }: { detail: Detail }) {
   return <>
     <Button type="button" variant="outline" size="sm" onClick={exportHours}
       disabled={busy || !available} aria-busy={busy}
-      title={available ? 'Excel se schválenými hodinami za tuto akci' : 'Rozpis bude dostupný po schválení prvního výkazu.'}>
+      title={available ? 'Excel se schválenými hodinami, odměnami a náhradami crew za tuto akci' : 'Rozpis bude dostupný po schválení prvního výkazu.'}>
       <FileDown size={16} aria-hidden="true" />{busy ? 'Připravuji rozpis…' : 'Stáhnout rozpis hodin'}
     </Button>
     {remote && availability === 'failed' && <Button type="button" variant="ghost" size="sm"

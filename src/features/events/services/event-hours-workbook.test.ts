@@ -10,7 +10,7 @@ vi.mock('write-excel-file/browser', () => ({
 const report: EventHoursReport = {
   event: { name: 'Výstava / Praha', job: 'V01' },
   partial: true,
-  people: [{ name: 'Jana Nová', minutes: 330, shifts: [
+  people: [{ name: 'Jana Nová', minutes: 330, rate: 200, costs: { work: 1100, travel: 56, meals: 0, receipts: 14.5 }, shifts: [
     { date: '2026-11-18', from: 1320, to: 120, minutes: 240, phase: 'provoz', note: '=1+1' },
     { date: '2026-11-18', from: 720, to: 810, minutes: 90, phase: 'instal', note: '' },
   ] }],
@@ -28,7 +28,7 @@ describe('event hours workbook', () => {
     expect(shifts.data[3][1]).toMatchObject({ value: new Date('2026-11-18T00:00:00Z') });
     expect(shifts.data[3][6]).toMatchObject({ value: 4 });
     expect(shifts.data[3][7]).toMatchObject({ type: String, value: '=1+1' });
-    expect(summary.data[3]).toMatchObject([{ value: 'Jana Nová' }, { value: 1 }, { value: 5.5 }]);
+    expect(summary.data[3].slice(0, 3)).toMatchObject([{ value: 'Jana Nová' }, { value: 1 }, { value: 5.5 }]);
     expect(summary.data[4][2]).toMatchObject({ value: 5.5 });
   });
 
@@ -43,7 +43,17 @@ describe('event hours workbook', () => {
     expect(shifts.data[5][0]).toMatchObject({ value: 'Petr Malý', topBorderStyle: 'thin' });
     expect(shifts.data[3][0]).not.toHaveProperty('rowSpan');
     expect(summary.data[5][2]).toMatchObject({ value: 11, align: 'right', fontWeight: 'bold' });
+    expect(summary.data[3].slice(3).map(cell => (cell as { value: number }).value)).toEqual([200, 1100, 56, 0, 14.5, 1170.5]);
+    expect(summary.data[5][8]).toMatchObject({ value: 2341, align: 'right', format: expect.stringContaining('Kč') });
     expect(shifts.showGridLines).toBe(false);
     expect(shifts.stickyRowsCount).toBe(3);
+  });
+  it('keeps known expenses visible when a rate is unknown and marks the total incomplete', async () => {
+    const person = report.people[0];
+    await createEventHoursFile({ ...report, people: [{ ...person, rate: null, costs: { ...person.costs, work: null } }] });
+    const [, summary] = vi.mocked(writeXlsxFile).mock.lastCall![0] as Sheet<Blob>[];
+    expect(summary.data[3][3]).toMatchObject({ value: 'Chybí sazba' });
+    expect(summary.data[3][5]).toMatchObject({ value: 56 });
+    expect(summary.data[4][8]).toMatchObject({ value: 'Neúplné' });
   });
 });

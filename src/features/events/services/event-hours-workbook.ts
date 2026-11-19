@@ -1,6 +1,11 @@
 import writeXlsxFile, { type CellObject, type Row, type SheetData } from 'write-excel-file/browser';
 import { PHASE_CONFIG } from '../../../constants';
 import type { EventHoursReport } from './event-hours-report';
+import { addCrewCosts, costCategories, emptyCrewCosts, totalCrewCosts } from './event-hours-costs';
+
+const MONEY_FORMAT = '#,##0.00" Kč"';
+const amountCell = (value: number | null): CellObject =>
+  value === null ? { value: 'Neúplné' } : { value, format: MONEY_FORMAT };
 
 const HOURS_FORMAT = '0.00';
 const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -48,7 +53,7 @@ function sheetHeading(report: EventHoursReport, columns: Column[]): SheetData {
   }
   return [
     title,
-    [{ ...position('left'), value: report.partial ? 'Průběžný rozpis · pouze schválené hodiny' : 'Kompletní rozpis schválených hodin',
+    [{ ...position('left'), value: report.partial ? 'Průběžný rozpis · schválené hodiny a náhrady' : 'Kompletní rozpis · schválené hodiny a náhrady',
       columnSpan: columns.length, height: 24, fontWeight: 'bold',
       backgroundColor: report.partial ? '#FFF1D8' : '#E2F1E8', textColor: report.partial ? '#795014' : '#24593C' }],
     columns.map(column => ({
@@ -68,11 +73,15 @@ export async function createEventHoursFile(report: EventHoursReport): Promise<Fi
   ];
   const summaryColumns: Column[] = [
     { label: 'Jméno', width: nameWidth, align: 'left' }, { label: 'Odpracované dny', width: 21, align: 'right' },
-    { label: 'Celkem hodin', width: 18, align: 'right' },
+    { label: 'Celkem hodin', width: 16, align: 'right' }, { label: 'Sazba za hodinu', width: 20, align: 'right' },
+    { label: 'Práce', width: 17, align: 'right' }, { label: 'Cestovné', width: 16, align: 'right' },
+    { label: 'Stravné', width: 15, align: 'right' }, { label: 'Účtenky', width: 15, align: 'right' },
+    { label: 'Náklady celkem', width: 21, align: 'right' },
   ];
   const shifts = sheetHeading(report, shiftsColumns);
   const summary = sheetHeading(report, summaryColumns);
   let totalMinutes = 0;
+  const costs = emptyCrewCosts();
   for (const [personIndex, person] of report.people.entries()) {
     const backgroundColor = personIndex % 2 === 0 ? white : paleBlue;
     const nameHeight = textHeight(person.name, nameWidth, 16, 24);
@@ -91,21 +100,42 @@ export async function createEventHoursFile(report: EventHoursReport): Promise<Fi
       shifts.push(cells.map((cell, i) => ({ ...position(shiftsColumns[i].align), textColor: ink, backgroundColor, ...border, ...cell })));
     }
     const days = new Set(person.shifts.map(shift => shift.date)).size;
+    const rate: CellObject = person.rate === 'mixed' ? { value: 'Více sazeb' }
+      : person.rate === null ? { value: 'Chybí sazba' } : amountCell(person.rate);
     const values: CellObject[] = [
       { value: person.name, height: nameHeight, wrap: true }, { value: days }, { value: person.minutes / 60, format: HOURS_FORMAT, fontWeight: 'bold' },
+      rate, ...costCategories.map(key => amountCell(person.costs[key])),
+      { ...amountCell(totalCrewCosts(person.costs)), fontWeight: 'bold' },
     ];
     summary.push(values.map((cell, i) => ({ ...position(summaryColumns[i].align), textColor: ink, backgroundColor, ...cell })));
     totalMinutes += person.minutes;
+    addCrewCosts(costs, person.costs);
   }
   const total: CellObject = { fontWeight: 'bold', height: 32, textColor: white, backgroundColor: header, fontSize: 12 };
+  const estimatedMembers = report.people.filter(person => person.estimatedBilledCosts).map(person => person.name);
   summary.push([
-    { ...position('left'), ...total, value: 'Celkem za akci', columnSpan: 2 }, null,
+    { ...position('left'), ...total, value: estimatedMembers.length ? 'Celkem za crew na akci (odhad)' : 'Celkem za crew na akci', columnSpan: 2 }, null,
     { ...position('right'), ...total, value: totalMinutes / 60, format: HOURS_FORMAT },
+    { ...total },
+    ...[...costCategories.map(key => costs[key]), totalCrewCosts(costs)].map(amount =>
+      ({ ...position('right'), ...total, ...amountCell(amount) })),
   ]);
+  const note = 'U výkazů s uloženým vyúčtováním platí původní částky. Ostatní se počítají podle sazeb při exportu. Účtenky se započítají po schválení.';
+  summary.push([{ ...position('left'), value: note, columnSpan: summaryColumns.length, height: 26, wrap: true, fontSize: 10, textColor: '#456277' }]);
+  if (estimatedMembers.length) {
+    const estimate = `Odhad podle sazeb při exportu u dříve fakturovaných výkazů bez uloženého vyúčtování (${estimatedMembers.join(', ')}).`;
+    const width = summaryColumns.reduce((sum, column) => sum + column.width, 0);
+    summary.push([{ ...position('left'), value: estimate, columnSpan: summaryColumns.length, wrap: true,
+      height: textHeight(estimate, width, 16, 26), textColor: '#795014', backgroundColor: '#FFF1D8' }]);
+  }
+  if (totalCrewCosts(costs) === null) {
+    summary.push([{ ...position('left'), value: 'Neúplné částky vyžadují doplnění podkladů. Známé položky jsou uvedené samostatně.',
+      columnSpan: summaryColumns.length, height: 26, wrap: true, textColor: '#795014', backgroundColor: '#FFF1D8' }]);
+  }
 
   const blob = await writeXlsxFile([
     { sheet: 'Rozpis hodin', data: shifts, columns: shiftsColumns, stickyRowsCount: 3, showGridLines: false, orientation: 'landscape' },
-    { sheet: 'Souhrn', data: summary, columns: summaryColumns, stickyRowsCount: 3, showGridLines: false },
+    { sheet: 'Souhrn', data: summary, columns: summaryColumns, stickyRowsCount: 3, showGridLines: false, orientation: 'landscape' },
   ], { fontFamily: 'Arial', fontSize: 11 }).toBlob();
   const identifier = [report.event.job, report.event.name].filter(Boolean).join('-')
     .replace(/[^\p{L}\p{N}._-]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 120);

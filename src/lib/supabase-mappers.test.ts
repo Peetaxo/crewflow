@@ -240,6 +240,7 @@ describe('supabase mappers', () => {
       contact_email: null,
       dresscode: null,
       meeting_point: null,
+      meal_allowance_enabled: false,
       show_day_types: null,
       allow_crew_time_proposal: null,
       day_types: null,

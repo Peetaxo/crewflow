@@ -12,14 +12,15 @@ vi.mock('../../../lib/supabase', async () => {
 const event = { name: 'Veletrh', job: 'JOB', supabaseId: 'selected-event' };
 const day = (id: string) => ({ id, date: '2026-11-14', time_from: '23:00', time_to: '01:30', day_type: 'provoz', note: null });
 const reports = [
-  { id: 'a', updated_at: 'v1', status: 'approved', contractor_id: 'p1', profiles: { first_name: 'Eva', last_name: 'Malá' }, timelog_days: [day('a1'), day('a2'), day('a3')] },
+  { id: 'a', updated_at: 'v1', status: 'approved', km: 10, captured: null, contractor_id: 'p1', profiles: { first_name: 'Eva', last_name: 'Malá', hourly_rate: 200 }, timelog_days: [day('a1'), day('a2'), day('a3')] },
   { id: 'b', updated_at: 'v1', status: 'pending_coo', contractor_id: 'p2', profiles: null, timelog_days: [] },
-  { id: 'c', updated_at: 'v1', status: 'paid', contractor_id: 'p3', profiles: { first_name: 'Jan', last_name: 'Malý' }, timelog_days: [day('c1')] },
+  { id: 'c', updated_at: 'v1', status: 'paid', km: 0, captured: { rate: 300, work: 750, km: 0, travel: 0, meals: 0, hours: 2.5 }, contractor_id: 'p3', profiles: { first_name: 'Jan', last_name: 'Malý', hourly_rate: 400 }, timelog_days: [day('c1')] },
 ];
+const eventReceipts = [1, 2, 3].map(id => ({ id: String(id), contractor_id: 'p1', status: 'approved', amount: 11 }));
 const roster = ['p1', 'p2', 'p3'].map(profile_id => ({ profile_id }));
 
-function serve(options: { cap?: number; logs?: typeof reports; assignments?: typeof roster; onRead?: (table: string, snapshot: number) => Response | void } = {}) {
-  const { cap = 1000, logs = structuredClone(reports), assignments = structuredClone(roster), onRead } = options;
+function serve(options: { cap?: number; logs?: typeof reports; assignments?: typeof roster; receipts?: typeof eventReceipts; onRead?: (table: string, snapshot: number) => Response | void } = {}) {
+  const { cap = 1000, logs = structuredClone(reports), assignments = structuredClone(roster), receipts = structuredClone(eventReceipts), onRead } = options;
   const urls: URL[] = [];
   let snapshot = 0;
   io.fetch.mockImplementation((input: string) => {
@@ -38,7 +39,7 @@ function serve(options: { cap?: number; logs?: typeof reports; assignments?: typ
     let data: unknown;
     if (table === 'events') {
       expect(params.get('id')).toBe('eq.' + event.supabaseId);
-      data = { name: event.name, job_number: event.job, updated_at: 'v1', roster_size: [{ count: assignments.length }], report_count: [{ count: logs.length }],
+      data = { meal_allowance_enabled: true, receipts: receipts.slice(0, cap), receipt_count: [{ count: receipts.length }], name: event.name, job_number: event.job, updated_at: 'v1', roster_size: [{ count: assignments.length }], report_count: [{ count: logs.length }],
         assignments: assignments.slice(0, cap), reports: logs.slice(0, cap).map(withDays) };
     } else if (table === 'timelog_days') {
       expect(params.get('order')).toBe('id.asc');
@@ -50,6 +51,9 @@ function serve(options: { cap?: number; logs?: typeof reports; assignments?: typ
       if (table === 'event_assignments') {
         expect(params.get('order')).toBe('profile_id.asc');
         data = paged(assignments);
+      } else if (table === 'receipts') {
+        expect(params.get('order')).toBe('id.asc');
+        data = paged(receipts);
       } else if (table === 'timelogs') {
         expect(params.get('order')).toBe('id.asc');
         expect(params.get('days.order')).toBe('id.asc');
@@ -69,7 +73,7 @@ describe('event hours snapshot', () => {
     const report = await loadRemoteEventHours(event);
     expect(urls).toHaveLength(1);
     const selection = urls[0].searchParams.get('select');
-    for (const alias of ['assignments:event_assignments(', 'reports:timelogs(', 'days:timelog_days(']) expect(selection).toContain(alias);
+    for (const alias of ['assignments:event_assignments(', 'reports:timelogs(', 'days:timelog_days(', 'hourly_rate', 'captured:invoice_billing_sources(', 'receipts(']) expect(selection).toContain(alias);
     expect(report.partial).toBe(true);
     expect(report.people.map(p => [p.name, p.minutes])).toEqual([['Eva Malá', 450], ['Jan Malý', 150]]);
   });
@@ -79,10 +83,14 @@ describe('event hours snapshot', () => {
     const report = await loadRemoteEventHours(event);
     expect(report.partial).toBe(true);
     expect(report.people.map(p => [p.name, p.minutes])).toEqual([['Eva Malá', 450], ['Jan Malý', 150]]);
+    expect(report.people.map(p => p.costs)).toEqual([
+      { work: 1500, travel: 56, meals: 0, receipts: 33 },
+      { work: 750, travel: 0, meals: 0, receipts: 0 },
+    ]);
     for (const [table, order] of [['assignments', 'profile_id.asc'], ['reports', 'id.asc'], ['reports.days', 'id.asc']]) {
       expect(urls[0].searchParams.get(table + '.order')).toBe(order);
     }
-    for (const table of ['event_assignments', 'timelogs', 'timelog_days']) {
+    for (const table of ['event_assignments', 'timelogs', 'timelog_days', 'receipts']) {
       expect(urls.some(url => url.pathname.endsWith('/' + table) && url.searchParams.get('offset') === '2')).toBe(true);
     }
   });

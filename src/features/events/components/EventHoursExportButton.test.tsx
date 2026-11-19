@@ -14,7 +14,7 @@ vi.mock('../services/save-event-hours-file', () => ({ saveEventHoursFile: vi.fn(
 const event = { name: 'Test', job: 'Z1' };
 const log: Timelog = { id: 1, eid: 1, status: 'approved', contractorProfileId: 'p1', km: 0, note: '',
   days: [{ d: '2026-11-15', f: '08:00', t: '10:30', type: 'instal' }] };
-const detail = { event, crewAssignments: [], contractors: [{ profileId: 'p1', name: 'Alex' }], timelogs: [log] };
+const detail = { event, receipts: [], crewAssignments: [], contractors: [{ profileId: 'p1', name: 'Alex', rate: 250 }], timelogs: [log] };
 
 describe('event hours export action', () => {
   beforeEach(() => {

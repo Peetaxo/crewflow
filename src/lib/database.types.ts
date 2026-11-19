@@ -807,6 +807,7 @@ export interface Database {
           contact_email: string | null;
           dresscode: string | null;
           meeting_point: string | null;
+          meal_allowance_enabled: boolean;
           show_day_types: boolean | null;
           schedule_version?: 1 | 2;
           free_days?: string[] | null;
@@ -845,6 +846,7 @@ export interface Database {
           contact_email?: string | null;
           dresscode?: string | null;
           meeting_point?: string | null;
+          meal_allowance_enabled?: boolean;
           show_day_types?: boolean | null;
           schedule_version?: 1 | 2;
           free_days?: string[];
@@ -883,6 +885,7 @@ export interface Database {
           contact_email?: string | null;
           dresscode?: string | null;
           meeting_point?: string | null;
+          meal_allowance_enabled?: boolean;
           show_day_types?: boolean | null;
           schedule_version?: 1 | 2;
           free_days?: string[];

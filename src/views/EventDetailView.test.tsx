@@ -464,6 +464,16 @@ describe('EventDetailView', () => {
     expect(mobileSwipeEdge).toBeInTheDocument();
     expect(mobileSwipeSurface).toBeInTheDocument();
 
+    fireEvent.touchStart(mobileDetail!, {
+      touches: [{ clientX: 16, clientY: 260 }],
+    });
+    const scrolling = fireEvent.touchMove(mobileDetail!, {
+      touches: [{ clientX: 22, clientY: 237 }],
+    });
+    expect(scrolling).toBe(true);
+    expect(mobileSwipeSurface).toHaveStyle({ '--nodu-mobile-event-swipe-x': '0px' });
+    expect(mobileSwipeSurface).not.toHaveClass('nodu-mobile-event-swipe-surface--dragging');
+
     fireEvent.touchStart(mobileSwipeEdge!, {
       touches: [{ clientX: 8, clientY: 160 }],
     });
@@ -732,9 +742,14 @@ describe('EventDetailView', () => {
     pushStateSpy.mockRestore();
   });
 
-  it('resets the mobile detail scroll without moving the underlying page', async () => {
+  it('starts each mobile event at the top and keeps the crew position on a data refresh', async () => {
     mobileMockState.isMobile = true;
-    const scrollToMock = vi.fn();
+    let selectedId = event.supabaseId;
+    let eventName = event.name;
+    let refreshEvent: () => void;
+    const scrollToMock = vi.fn(function (this: HTMLElement, { top }: ScrollToOptions) {
+      this.scrollTop = top ?? 0;
+    });
     const originalScrollTo = HTMLElement.prototype.scrollTo;
 
     Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
@@ -745,7 +760,7 @@ describe('EventDetailView', () => {
     vi.doMock('../context/useAppContext', () => ({
       useAppContext: () => ({
         role: 'crew',
-        selectedEventId: 'event-uuid-1',
+        selectedEventId: selectedId,
         setSelectedEventId,
         eventTab: 'overview',
         setEventTab: vi.fn(),
@@ -757,8 +772,8 @@ describe('EventDetailView', () => {
 
     vi.doMock('../features/events/services/events.service', () => ({
       getEventCrew: () => [contractor],
-      getEventDetailData: () => ({
-        event: { ...event, status: 'upcoming' as const },
+      getEventDetailData: (id: string) => ({
+        event: { ...event, supabaseId: id, name: eventName, status: 'upcoming' as const },
         timelogs: [timelog],
         contractors: [contractor],
         receipts: [],
@@ -771,7 +786,10 @@ describe('EventDetailView', () => {
       createEventCopy: vi.fn((eventToCopy) => eventToCopy),
       removeContractorFromEvent: vi.fn(),
       requestEventWithdrawal: requestEventWithdrawalMock,
-      subscribeToEventChanges: vi.fn(() => () => undefined),
+      subscribeToEventChanges: (listener: () => void) => {
+        refreshEvent = listener;
+        return () => undefined;
+      },
       updateEventApplicationStatus: vi.fn(),
       withdrawEventApplication: vi.fn(),
     }));
@@ -792,12 +810,13 @@ describe('EventDetailView', () => {
     const { default: EventDetailView } = await import('./EventDetailView');
 
     try {
-      const { container } = render(
+      const tree = () => (
         <main className="nodu-page-frame nodu-page-frame--mobile-crew">
           <EventDetailView />
-        </main>,
+        </main>
       );
-      const mobileDetail = container.querySelector('.nodu-mobile-event-detail');
+      const { container, rerender } = render(tree());
+      const mobileDetail = container.querySelector<HTMLElement>('.nodu-mobile-event-detail')!;
       const mobilePage = container.querySelector('.nodu-page-frame--mobile-crew');
 
       await waitFor(() => {
@@ -805,6 +824,19 @@ describe('EventDetailView', () => {
       });
       expect(scrollToMock.mock.contexts).toContain(mobileDetail);
       expect(scrollToMock.mock.contexts).not.toContain(mobilePage);
+      mobileDetail.scrollTop = 465;
+      mobilePage!.scrollTop = 123;
+      eventName = 'Aktualizovaná akce';
+      act(() => refreshEvent());
+
+      expect(screen.getByRole('heading', { name: eventName })).toBeInTheDocument();
+      expect(mobileDetail.scrollTop).toBe(465);
+      expect(mobilePage!.scrollTop).toBe(123);
+
+      selectedId = 'event-uuid-2';
+      rerender(tree());
+      expect(mobileDetail.scrollTop).toBe(0);
+      expect(mobilePage!.scrollTop).toBe(123);
     } finally {
       Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
         configurable: true,

@@ -41,10 +41,33 @@ function textHeight(text: string, width: number, lineHeight: number, minimum: nu
   return Math.min(409, Math.max(minimum, 8 + lines * lineHeight));
 }
 
+function excelStyles(xml: string): string {
+  const styles = new DOMParser().parseFromString(xml, 'application/xml');
+  // Excel requires this order inside each font (MS-OI29500 §2.1.706).
+  const fontOrder = ['b', 'i', 'strike', 'condense', 'extend', 'outline', 'shadow', 'u', 'vertAlign',
+    'sz', 'color', 'name', 'family', 'charset', 'scheme'];
+  for (const font of styles.querySelectorAll('fonts > font')) {
+    const properties = [...font.children].sort((a, b) => fontOrder.indexOf(a.localName) - fontOrder.indexOf(b.localName));
+    font.append(...properties);
+  }
+
+  // Keep the writer's custom formats and their references outside Excel's built-in range.
+  const customIds = new Map<string, string>();
+  for (const format of styles.querySelectorAll('numFmts > numFmt')) {
+    customIds.set(format.getAttribute('numFmtId')!, String(164 + customIds.size));
+  }
+  for (const element of styles.querySelectorAll('[numFmtId]')) {
+    const id = customIds.get(element.getAttribute('numFmtId')!);
+    if (id) element.setAttribute('numFmtId', id);
+  }
+  return new XMLSerializer().serializeToString(styles);
+}
+
 function excelFeatures(cached: Map<string, number>): Feature<Blob> {
   // The writer exposes sheet transforms for print setup and formula previews.
   // Cached numeric results also let mobile readers display an approved report immediately.
   return { files: { transform: {
+    'xl/styles.xml': { transform: excelStyles },
     'xl/workbook.xml': {
       transform(xml) {
         const titles = `<definedName name="_xlnm.Print_Titles" localSheetId="0">'${SHEET_NAME}'!$1:$3</definedName>`;
@@ -58,7 +81,9 @@ function excelFeatures(cached: Map<string, number>): Feature<Blob> {
         return attrs;
       },
       transform(xml) {
+        // With only rows frozen the scrollable pane is bottomLeft.
         return xml.replace('<sheetViews>', '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews>')
+          .replace(/<pane\b[^>]*\/>/, '<pane ySplit="3" topLeftCell="A4" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A4" sqref="A4"/>')
           .replace(/<f>([^<]+)<\/f>/g, (element, formula: string) =>
             cached.has(formula) ? `${element}<v>${cached.get(formula)}</v>` : element);
       },

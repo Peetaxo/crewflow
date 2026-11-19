@@ -53,6 +53,7 @@ const EMPTY_APPROVAL_DOCUMENTS: InvoiceApprovalDocument[] = [];
 const CREW_ACTION_NAVIGATION_GUARD_MESSAGE = 'Probíhá změna v obsazení Crew. Počkejte prosím na její dokončení.';
 const MOBILE_EDGE_SWIPE_START_MAX_X = 96;
 const MOBILE_EDGE_SWIPE_MIN_DISTANCE = 64;
+const MOBILE_EDGE_SWIPE_INTENT_DISTANCE = 8;
 const MOBILE_EDGE_SWIPE_MAX_VERTICAL_DRIFT = 48;
 const MOBILE_EVENT_DETAIL_CLOSE_ANIMATION_MS = 180;
 const MOBILE_EVENT_DETAIL_HISTORY_KEY = 'noduMobileEventDetailId';
@@ -213,11 +214,12 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
     }
   }, [eventTab]);
 
+  const isSelectedEvent = selectedEventId != null
+    && (detail.event?.id === selectedEventId || detail.event?.supabaseId === selectedEventId);
+  const mobileEventId = isMobile && isSelectedEvent ? selectedEventId : null;
   useEffect(() => {
-    if (!isMobile || !selectedEventId || !detail.event) return;
-
-    mobileDetailRef.current?.scrollTo?.({ top: 0, left: 0 });
-  }, [detail.event, isMobile, selectedEventId]);
+    if (mobileEventId != null) mobileDetailRef.current?.scrollTo?.({ top: 0, left: 0 });
+  }, [mobileEventId]);
 
   const scheduleMobileEventDetailClose = useCallback((shouldPopHistory = false) => {
     if (mobileCloseTimeoutRef.current) {
@@ -285,19 +287,10 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
   }, []);
 
   const startMobileEdgeSwipe = useCallback((clientX: number, clientY: number, target: EventTarget | null = null) => {
-    if (shouldIgnoreMobileEventSwipeTarget(target)) {
-      resetMobileEdgeSwipe();
-      return;
-    }
-
-    if (clientX > MOBILE_EDGE_SWIPE_START_MAX_X) {
-      resetMobileEdgeSwipe();
-      return;
-    }
+    resetMobileEdgeSwipe();
+    if (clientX > MOBILE_EDGE_SWIPE_START_MAX_X || shouldIgnoreMobileEventSwipeTarget(target)) return;
 
     mobileEdgeSwipeStartRef.current = { x: clientX, y: clientY };
-    setMobileEdgeSwipeOffset(0);
-    setMobileEdgeSwipePhase('dragging');
   }, [resetMobileEdgeSwipe]);
 
   const completeMobileEdgeSwipe = useCallback((clientX: number, clientY: number, shouldFinalize = false) => {
@@ -308,27 +301,30 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
     const deltaX = clientX - touchStart.x;
     const deltaY = Math.abs(clientY - touchStart.y);
 
-    if (deltaY > MOBILE_EDGE_SWIPE_MAX_VERTICAL_DRIFT) {
+    if (deltaY > MOBILE_EDGE_SWIPE_MAX_VERTICAL_DRIFT
+      || (deltaY >= MOBILE_EDGE_SWIPE_INTENT_DISTANCE && deltaY >= deltaX)) {
       resetMobileEdgeSwipe();
       return false;
     }
 
-    const swipeOffset = Math.max(0, deltaX);
-    setMobileEdgeSwipeOffset(Math.min(swipeOffset, window.innerWidth || 390));
-
     if (shouldFinalize) {
-      mobileEdgeSwipeStartRef.current = null;
-      setMobileEdgeSwipePhase('idle');
-
-      if (deltaX >= MOBILE_EDGE_SWIPE_MIN_DISTANCE && deltaY <= MOBILE_EDGE_SWIPE_MAX_VERTICAL_DRIFT) {
+      if (deltaX >= MOBILE_EDGE_SWIPE_MIN_DISTANCE) {
         closeMobileEventDetail();
         return true;
       }
-
-      setMobileEdgeSwipeOffset(0);
+      resetMobileEdgeSwipe();
+      return false;
     }
 
-    return swipeOffset > 0;
+    if (deltaX < MOBILE_EDGE_SWIPE_INTENT_DISTANCE) {
+      setMobileEdgeSwipeOffset(0);
+      setMobileEdgeSwipePhase('idle');
+      return false;
+    }
+
+    setMobileEdgeSwipePhase('dragging');
+    setMobileEdgeSwipeOffset(Math.min(deltaX, window.innerWidth || 390));
+    return true;
   }, [closeMobileEventDetail, resetMobileEdgeSwipe]);
 
   const finishMobileEdgeSwipe = useCallback((clientX: number, clientY: number) => {
@@ -416,7 +412,7 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
   const days = event.scheduleVersion === 2 ? listEventDates(event) : getDatesBetween(event.startDate, event.endDate);
   const eventCrew = getEventCrew(event.supabaseId ?? event.id);
   const canManageEvents = role !== 'crew';
-  const canManageSelectedEvent = (role === 'crewhead' || role === 'coo') && (event.id === selectedEventId || event.supabaseId === selectedEventId);
+  const canManageSelectedEvent = (role === 'crewhead' || role === 'coo') && isSelectedEvent;
   const crewMessage = canManageSelectedEvent ? <EventCrewMessageButton crew={eventCrew} /> : null;
   const hoursExport = canManageSelectedEvent
     ? <EventHoursExportButton key={JSON.stringify([selectedEventId, currentProfileId, role])} detail={{ ...detail, event }} />
@@ -1059,11 +1055,10 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
     ) : null;
 
     return (
-      <motion.div
+      <div
         ref={mobileDetailRef}
         className="nodu-mobile-event-detail"
-        initial={{ opacity: 0, x: 20 }}
-        animate={{ opacity: 1, x: 0 }}
+        data-swiping={mobileEdgeSwipeOffset > 0 || undefined}
         onTouchStart={handleMobileDetailTouchStart}
         onTouchMove={handleMobileDetailTouchMove}
         onTouchEnd={handleMobileDetailTouchEnd}
@@ -1131,7 +1126,7 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
             </div>
           </section>
 
-          {(event.id === selectedEventId || event.supabaseId === selectedEventId) && <EventShiftWorkflowDetails event={event} />}
+          {isSelectedEvent && <EventShiftWorkflowDetails event={event} />}
 
           <EventMapPreview
             address={mobileAddress}
@@ -1235,7 +1230,7 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
               <h2 id="mobile-event-assigned-crew-title">Přiřazená crew</h2>
               <span className="nodu-mobile-event-capacity-chip">{crewCapacityLabel}</span>
             </div>
-            {hoursExport}
+            {hoursExport && <div className="nodu-mobile-event-hours-export">{hoursExport}</div>}
             {eventCrew.length > 0 ? (
               <div className="nodu-mobile-event-crew-list">
                 {eventCrew.map((contractor) => {
@@ -1516,7 +1511,7 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
           event={assigningEvent}
           onClose={() => setAssigningEvent(null)}
         />
-      </motion.div>
+      </div>
     );
   }
 
@@ -1657,7 +1652,7 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
           </div>
         </div>
 
-        {(event.id === selectedEventId || event.supabaseId === selectedEventId) && <EventShiftWorkflowDetails event={event} />}
+        {isSelectedEvent && <EventShiftWorkflowDetails event={event} />}
 
         <div className="-mx-6 flex gap-1 border-b border-[color:var(--nodu-border)] px-6">
           <button

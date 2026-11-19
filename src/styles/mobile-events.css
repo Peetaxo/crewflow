@@ -163,11 +163,15 @@
   min-height: 100dvh;
   overflow-x: hidden;
   overflow-y: auto;
-  background: transparent;
+  background: var(--nodu-paper);
   color: var(--nodu-text);
-  overscroll-behavior-x: contain;
+  overscroll-behavior: contain;
   touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
+}
+
+.nodu-mobile-event-detail[data-swiping] {
+  background: transparent;
 }
 
 .nodu-mobile-event-scroll {
@@ -178,7 +182,11 @@
 
 .nodu-mobile-event-swipe-surface {
   min-height: 100dvh;
-  padding: calc(1rem + env(safe-area-inset-top)) 1rem calc(6.5rem + env(safe-area-inset-bottom));
+  padding:
+    calc(1rem + env(safe-area-inset-top, 0px))
+    calc(1rem + env(safe-area-inset-right, 0px))
+    calc(6.5rem + env(safe-area-inset-bottom, 0px))
+    calc(1rem + env(safe-area-inset-left, 0px));
   background:
     radial-gradient(circle at top left, rgb(var(--nodu-surface-rgb) / 0.32), transparent 34%),
     linear-gradient(180deg, var(--nodu-paper) 0%, var(--nodu-paper-strong) 100%);
@@ -494,6 +502,19 @@ button.nodu-mobile-event-info-row:focus-visible {
   color: var(--nodu-text-soft);
   font-size: 0.88rem;
   line-height: 1.45;
+}
+
+.nodu-mobile-event-hours-export {
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+
+.nodu-mobile-event-hours-export button {
+  width: 100%;
+  height: auto;
+  min-height: 2.75rem;
+  white-space: normal;
 }
 
 .nodu-mobile-event-crew-list {

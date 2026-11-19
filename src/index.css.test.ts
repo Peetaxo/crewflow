@@ -14,6 +14,20 @@ describe('nodu CSS helpers', () => {
     expect(viewport).toContain('viewport-fit=cover');
   });
 
+  it('paints the mobile detail viewport and keeps its safe-area clearance on the swipe surface', () => {
+    const base = readFileSync(resolve('src/index.css'), 'utf8');
+    const events = readFileSync(resolve('src/styles/mobile-events.css'), 'utf8');
+    const detailRules = (base + events).match(/\.nodu-mobile-event-detail\s*\{[^}]+\}/g)?.join(' ');
+    const surface = events.match(/\.nodu-mobile-event-swipe-surface\s*\{[^}]+\}/)?.[0];
+
+    expect(detailRules).toContain('background: var(--nodu-paper)');
+    expect(detailRules).toContain('overscroll-behavior: contain');
+    expect(detailRules).not.toMatch(/padding(?:-bottom)?:/);
+    for (const edge of ['top', 'right', 'bottom', 'left']) {
+      expect(surface).toContain('safe-area-inset-' + edge);
+    }
+  });
+
   it('loads the complete mobile My Shifts stylesheet', () => {
     const main = readFileSync(resolve(process.cwd(), 'src/main.tsx'), 'utf8');
     const myShiftsCss = readFileSync(resolve(process.cwd(), 'src/styles/mobile-my-shifts.css'), 'utf8');
@@ -111,7 +125,6 @@ describe('nodu CSS helpers', () => {
     const mobileTimelogAddDayPickerGridRule = css.match(/\.nodu-mobile-timelog-add-day-picker-grid\s*\{[\s\S]*?\}/)?.[0];
     const mobileTimelogAddDayCellRule = css.match(/\.nodu-mobile-timelog-add-day-cell\s*\{[\s\S]*?\}/)?.[0];
     const mobileTimelogAddDayConfirmRule = css.match(/\.nodu-mobile-timelog-add-day-confirm\s*\{[\s\S]*?\}/)?.[0];
-    const mobileEventDetailRule = css.match(/\.nodu-mobile-event-detail\s*\{[\s\S]*?\}/)?.[0];
     const mobileEventFloatingPanelRule = css.match(/\.nodu-mobile-event-floating-panel\s*\{[\s\S]*?\}/)?.[0];
     const mobileEventFloatingPanelCompactRule = css.match(/\.nodu-mobile-event-floating-panel--compact\s*\{[\s\S]*?\}/)?.[0];
     const mobileEventWithdrawalDialogRule = css.match(/\.nodu-mobile-event-withdrawal-dialog\s*\{[\s\S]*?\}/)?.[0];
@@ -195,7 +208,6 @@ describe('nodu CSS helpers', () => {
     expect(mobileTimelogAddDayPickerGridRule).toContain('grid-template-columns: repeat(7, minmax(0, 1fr));');
     expect(mobileTimelogAddDayCellRule).toContain('aspect-ratio: 1;');
     expect(mobileTimelogAddDayConfirmRule).toContain('border-radius: 999px;');
-    expect(mobileEventDetailRule).toContain('padding-bottom');
     expect(mobileEventFloatingPanelRule).toContain('position: fixed;');
     expect(mobileEventFloatingPanelRule).toContain('backdrop-filter: blur');
     expect(mobileEventFloatingPanelCompactRule).toContain('grid-template-areas: "primary";');

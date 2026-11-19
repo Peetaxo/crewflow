@@ -30,6 +30,36 @@ async function readExport(input: EventHoursReport) {
 }
 
 describe('event hours workbook', () => {
+  it('writes valid SpreadsheetML font records for Excel on iPhone', async () => {
+    const { zip } = await readExport(report);
+    const styles = new DOMParser().parseFromString(strFromU8(zip['xl/styles.xml']), 'application/xml');
+    const fonts = [...styles.querySelectorAll('fonts font')];
+    expect(fonts.some(font => font.querySelector('b'))).toBe(true);
+    for (const font of fonts) {
+      const properties = [...font.children].map(property => property.localName);
+      expect(properties).toEqual([...(font.querySelector('b') ? ['b'] : []), 'sz', 'color', 'name', 'family']);
+    }
+  });
+
+  it('uses Excel-compatible format IDs and selects the visible pane below the frozen rows', async () => {
+    const { sheet, zip } = await readExport(report);
+    const styles = new DOMParser().parseFromString(strFromU8(zip['xl/styles.xml']), 'application/xml');
+    const formatIds = [...styles.querySelectorAll('numFmts numFmt')].map(el => Number(el.getAttribute('numFmtId')));
+    expect(formatIds.length).toBeGreaterThan(0);
+    expect(formatIds.every(id => id >= 164)).toBe(true);
+    const cellStyles = styles.querySelectorAll('cellXfs xf');
+    for (const [address, code] of Object.entries({ A5: 'dd.mm.yyyy', D5: 'hh:mm', F5: '0.00', G5: '#,##0.00" Kč"' })) {
+      const styleIndex = sheet.querySelector(`c[r="${address}"]`)?.getAttribute('s');
+      expect(styleIndex).toBeTruthy();
+      const formatId = cellStyles[Number(styleIndex)].getAttribute('numFmtId');
+      expect(styles.querySelector(`numFmt[numFmtId="${formatId}"]`)?.getAttribute('formatCode')).toBe(code);
+    }
+    const pane = sheet.querySelector('sheetView pane');
+    expect(pane?.getAttribute('topLeftCell')).toBe('A4');
+    expect(pane?.getAttribute('activePane')).toBe('bottomLeft');
+    expect(sheet.querySelector('selection[pane="bottomLeft"]')?.getAttribute('activeCell')).toBe('A4');
+  });
+
   it.each([true, false])('exports one branded sheet with shifts, person subtotals and a final crew total (partial=%s)', async partial => {
     const { file, sheet, rows, strings, workbook, zip } = await readExport({ ...report, partial });
     expect(file.name).toBe(`Hodiny-V01-Výstava-Praha${partial ? '-průběžný' : ''}.xlsx`);

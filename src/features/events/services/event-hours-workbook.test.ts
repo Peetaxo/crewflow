@@ -28,7 +28,22 @@ describe('event hours workbook', () => {
     expect(shifts.data[3][1]).toMatchObject({ value: new Date('2026-11-18T00:00:00Z') });
     expect(shifts.data[3][6]).toMatchObject({ value: 4 });
     expect(shifts.data[3][7]).toMatchObject({ type: String, value: '=1+1' });
-    expect(summary.data[3]).toEqual(['Jana Nová', 1, expect.objectContaining({ value: 5.5 })]);
+    expect(summary.data[3]).toMatchObject([{ value: 'Jana Nová' }, { value: 1 }, { value: 5.5 }]);
     expect(summary.data[4][2]).toMatchObject({ value: 5.5 });
+  });
+
+  it('aligns each heading with its data and separates people without merging their shifts', async () => {
+    await createEventHoursFile({ ...report, people: [...report.people, { ...report.people[0], name: 'Petr Malý' }] });
+    const [shifts, summary] = vi.mocked(writeXlsxFile).mock.lastCall![0] as Sheet<Blob>[];
+    const alignments = ['left', 'center', 'center', 'left', 'center', 'center', 'right', 'left'];
+    for (const row of [shifts.data[2], shifts.data[3]]) {
+      expect(row.map(cell => (cell as { align: string }).align)).toEqual(alignments);
+    }
+    expect(shifts.data[4][0]).toMatchObject({ value: 'Jana Nová' });
+    expect(shifts.data[5][0]).toMatchObject({ value: 'Petr Malý', topBorderStyle: 'thin' });
+    expect(shifts.data[3][0]).not.toHaveProperty('rowSpan');
+    expect(summary.data[5][2]).toMatchObject({ value: 11, align: 'right', fontWeight: 'bold' });
+    expect(shifts.showGridLines).toBe(false);
+    expect(shifts.stickyRowsCount).toBe(3);
   });
 });

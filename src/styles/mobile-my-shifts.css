@@ -347,10 +347,10 @@ button.nodu-my-shifts-stat-card:active {
 
 .nodu-my-shifts-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.45rem;
   max-width: 100%;
   margin-bottom: 0.9rem;
-  overflow-x: auto;
   border: 1px solid rgb(var(--nodu-text-rgb) / 0.08);
   border-radius: 15px;
   background: rgb(var(--nodu-paper-rgb) / 0.76);
@@ -363,7 +363,7 @@ button.nodu-my-shifts-stat-card:active {
   justify-content: center;
   gap: 0.35rem;
   min-height: 2.25rem;
-  flex: 0 0 auto;
+  max-width: 100%;
   border-radius: 12px;
   color: var(--nodu-text-soft);
   font-size: 0.76rem;

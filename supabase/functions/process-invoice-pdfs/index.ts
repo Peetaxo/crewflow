@@ -1,8 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.103.0";
-import {
-  type InvoiceItem,
-  renderInvoicePdf,
-} from "../generate-invoice-pdf/invoice-pdf.ts";
+import type { InvoiceItem } from "../generate-invoice-pdf/invoice-pdf.ts";
 import { isWorkerAuthorized, runInvoicePdfJobs } from "./worker.ts";
 const json = (value: unknown, status = 200) =>
   new Response(JSON.stringify(value), {
@@ -20,15 +16,17 @@ Deno.serve(async (request) => {
   const url = Deno.env.get("SUPABASE_URL");
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!url || !key) return json({ error: "worker_not_configured" }, 500);
-  const service = createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  const rpc = async (name: string, args: Record<string, unknown>) => {
-    const result = await service.rpc(name, args);
-    if (result.error) throw result.error;
-    return result.data;
-  };
   try {
+    // Keep authorization and rejected requests off the heavy SDK startup path.
+    const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.103.0");
+    const service = createClient(url, key, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const rpc = async (name: string, args: Record<string, unknown>) => {
+      const result = await service.rpc(name, args);
+      if (result.error) throw result.error;
+      return result.data;
+    };
     const result = await runInvoicePdfJobs({
       claim: async () =>
         (await rpc("claim_invoice_billing_jobs", { p_limit: 1 })).jobs[0] ??
@@ -38,11 +36,14 @@ Deno.serve(async (request) => {
           p_job_id: job.id,
           p_lease_token: job.lease_token,
         }),
-      render: async (job) =>
-        renderInvoicePdf({
+      render: async (job) => {
+        // Load fonts and PDF dependencies only for a leased render job.
+        const { renderInvoicePdf } = await import("../generate-invoice-pdf/invoice-pdf.ts");
+        return renderInvoicePdf({
           invoice: job.invoice,
           items: job.items as InvoiceItem[],
-        }),
+        });
+      },
       upload: async (path, bytes) => {
         const result = await service.storage.from("invoice-pdfs").upload(
           path,

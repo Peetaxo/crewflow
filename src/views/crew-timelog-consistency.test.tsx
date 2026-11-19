@@ -51,7 +51,7 @@ describe('Crew overview and reports consistency', () => {
     const summary = screen.getByRole('region', { name: 'Výkazy' });
     expect(within(summary).getByText('Všechna období · počty výkazů')).toBeInTheDocument();
     expect(within(summary).getByRole('button', { name: 'Ve zpracování3' })).toBeInTheDocument();
-    expect(within(summary).getByRole('button', { name: 'Schválené4' })).toBeInTheDocument();
+    expect(within(summary).getByRole('button', { name: 'Schválené, fakturované a zaplacené4' })).toBeInTheDocument();
     overview.unmount();
 
     render(<TimelogsView scope="mine" />);
@@ -80,10 +80,14 @@ describe('Crew overview and reports consistency', () => {
     expect(screen.getByRole('button', { name: 'Schváleno 2' })).toBeInTheDocument();
   });
 
-  it('explains the final approval total separately from individual invoicing statuses', () => {
+  it('shows approved, invoiced, and paid reports together in the explicitly labeled category', async () => {
     render(<MyShiftsView />);
-    fireEvent.click(screen.getByRole('button', { name: 'Schválené4' }));
-    expect(screen.getByText('Schválené, fakturované a zaplacené výkazy.')).toBeInTheDocument();
+    const summary = within(screen.getByRole('region', { name: 'Výkazy' }));
+    fireEvent.click(summary.getByRole('button', { name: 'Schválené, fakturované a zaplacené4' }));
+    expect(await summary.findByText('Akce 4')).toBeInTheDocument();
+    expect(summary.getByText('Akce 5')).toBeInTheDocument();
+    expect(summary.getByText('Akce 6')).toBeInTheDocument();
+    expect(summary.queryByText('Akce 8')).not.toBeInTheDocument();
   });
 
   it('uses the loaded report month when reports arrive after the first render', () => {

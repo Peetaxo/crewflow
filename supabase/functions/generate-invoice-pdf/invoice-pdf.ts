@@ -1,6 +1,5 @@
 import { PDFDocument, rgb } from 'https://esm.sh/pdf-lib@1.17.1';
 import fontkit from 'https://esm.sh/@pdf-lib/fontkit@1.1.1';
-import QRCode from 'https://esm.sh/qrcode@1.5.4';
 import { buildInvoicePdfLayout, buildInvoicePdfPages, formatInvoiceDuration, invoiceCostSubtotal, wrapInvoiceText } from './invoice-pdf-layout.ts';
 import { buildQrPaymentPayload, getVariableSymbol } from './payment-qr.ts';
 
@@ -27,7 +26,8 @@ const summaryBorder = rgb(1, 0.78, 0.63);
 const white = rgb(1, 1, 1);
 
 
-const money = (value: unknown): string => `${Number(value ?? 0).toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Kč`;
+const moneyFormat = new Intl.NumberFormat('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const money = (value: unknown): string => `${moneyFormat.format(Number(value ?? 0))} Kč`;
 const text = (value: unknown): string => String(value ?? '');
 const numberValue = (value: unknown): number => Number(value ?? 0);
 
@@ -209,6 +209,7 @@ export const renderInvoicePdf = async ({
       invoiceNumber,
       recipientName: text(supplier.name),
     });
+    const { default: QRCode } = await import('https://esm.sh/qrcode@1.5.4');
     const qrDataUrl = await QRCode.toDataURL(qrPayload, { errorCorrectionLevel: 'M', margin: 1, width: 112 });
     const qrImage = await pdfDoc.embedPng(dataUrlToBytes(qrDataUrl));
     page.drawImage(qrImage, {

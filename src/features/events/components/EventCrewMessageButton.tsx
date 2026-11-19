@@ -41,7 +41,7 @@ export function EventCrewMessageButton({ crew }: { crew: Pick<Contractor, 'phone
     }
   }
 
-  return <div>
+  return <div className="ml-auto min-w-0 max-w-full break-words text-right">
     <Button type="button" variant="outline" size="sm" disabled={opening || numbers.size === 0} onClick={compose}>
       <MessageSquare size={16} aria-hidden="true" />Napsat crew
     </Button>

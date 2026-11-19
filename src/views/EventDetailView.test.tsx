@@ -1305,7 +1305,11 @@ describe('EventDetailView', () => {
     expect(screen.getByRole('button', { name: 'Schvalování' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Přiřazená crew' }).closest('section')).toHaveTextContent('1/5');
     expect(screen.getByText(/Eva Test/, { selector: 'p' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Napsat crew' }));
+    const hero = screen.getByRole('region', { name: 'TEST' });
+    const messageButton = within(hero).getByRole('button', { name: 'Napsat crew' });
+    expect(within(hero).getByRole('button', { name: 'Upravit' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Napsat crew' })).toHaveLength(1);
+    fireEvent.click(messageButton);
     expect(composeCrewMessage).toHaveBeenCalledExactlyOnceWith({ recipients: ['+420700000001', '+421900000002'] });
     const applicationsSection = screen.getByRole('heading', { name: 'Přihlášky crew' }).closest('section');
     expect(applicationsSection).toHaveTextContent('Jana Nova');

@@ -1123,8 +1123,11 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
               )}
             </div>
             <h1 id="mobile-event-title" className="text-2xl font-bold text-[color:var(--nodu-text)]">{event.name}</h1>
-            <div className="mt-2 text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--nodu-text-soft)]">
-              {event.client}
+            <div className="mt-2 flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
+              <span className="min-w-0 break-words text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--nodu-text-soft)]">
+                {event.client}
+              </span>
+              {crewMessage}
             </div>
           </section>
 
@@ -1232,10 +1235,7 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
               <h2 id="mobile-event-assigned-crew-title">Přiřazená crew</h2>
               <span className="nodu-mobile-event-capacity-chip">{crewCapacityLabel}</span>
             </div>
-            {canManageSelectedEvent && <div className="flex flex-wrap items-start gap-2">
-              {crewMessage}
-              {hoursExport}
-            </div>}
+            {hoursExport}
             {eventCrew.length > 0 ? (
               <div className="nodu-mobile-event-crew-list">
                 {eventCrew.map((contractor) => {
@@ -1597,9 +1597,12 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
                 <Button onClick={() => setAssigningEvent(event)}>
                   Obsadit crew
                 </Button>
-                <Button onClick={() => setEditingEvent(event)} variant="outline">
-                  Upravit akci
-                </Button>
+                <div className="flex max-w-64 flex-col items-end gap-2">
+                  <Button onClick={() => setEditingEvent(event)} variant="outline">
+                    Upravit akci
+                  </Button>
+                  {crewMessage}
+                </div>
                 <Button
                   onClick={() => setDeleteConfirm({ type: 'event', id: event.supabaseId ?? event.id, name: event.name })}
                   variant="outline"
@@ -1713,7 +1716,6 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
                         Schvalovani timelogu ({eventApprovalTimelogs.length})
                       </button>
                     )}
-                    {crewMessage}
                     {hoursExport}
                   </div>
 

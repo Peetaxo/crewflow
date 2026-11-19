@@ -18,6 +18,7 @@ interface ApprovedShift {
   from: number;
   to: number;
   minutes: number;
+  work: number | null;
   phase: TimelogType;
   note: string;
 }
@@ -30,6 +31,8 @@ interface PersonHours {
   shifts: ApprovedShift[];
   minutes: number;
 }
+
+const byDateAndStart = (a: ApprovedShift, b: ApprovedShift) => a.date.localeCompare(b.date) || a.from - b.from;
 
 export interface EventHoursReport {
   event: EventHoursInput['event'];
@@ -59,7 +62,7 @@ export function buildEventHoursReport({ event, timelogs, crewAssignments, contra
         continue;
       }
       const shiftMinutes = Math.round(calculateDayHours(day.f, day.t) * 60);
-      shifts.push({ date: day.d, from, to, minutes: shiftMinutes, phase: day.type, note: day.note || '' });
+      shifts.push({ date: day.d, from, to, minutes: shiftMinutes, work: null, phase: day.type, note: day.note || '' });
       minutes += shiftMinutes;
       if (event.mealAllowanceEnabled) meals += calculateDayMealAllowance(day);
     }
@@ -77,7 +80,19 @@ export function buildEventHoursReport({ event, timelogs, crewAssignments, contra
     if (!log.captured && (log.status === 'invoiced' || log.status === 'paid')) person.estimatedBilledCosts = true;
     addCrewCosts(person.costs, priced.costs);
     person.minutes += minutes;
-    for (const shift of shifts) person.shifts.push(shift);
+    // Divide the approved report amount across its shifts. Rounding cumulative cents
+    // keeps the displayed rows reconciled, including captured and mixed-rate reports.
+    let elapsed = 0;
+    let allocatedCents = 0;
+    for (const shift of shifts.sort(byDateAndStart)) {
+      elapsed += shift.minutes;
+      if (priced.costs.work !== null) {
+        const cents = Math.round(Math.round(priced.costs.work * 100) * elapsed / minutes);
+        shift.work = (cents - allocatedCents) / 100;
+        allocatedCents = cents;
+      }
+      person.shifts.push(shift);
+    }
     people.set(key, person);
   }
 
@@ -93,7 +108,7 @@ export function buildEventHoursReport({ event, timelogs, crewAssignments, contra
   }
   const sortedPeople = [...people.values()].sort((a, b) => a.name.localeCompare(b.name, 'cs'));
   for (const person of sortedPeople) {
-    person.shifts.sort((a, b) => a.date.localeCompare(b.date) || a.from - b.from);
+    person.shifts.sort(byDateAndStart);
     if (totalCrewCosts(person.costs) === null) partial = true;
   }
   return { event, people: sortedPeople, partial: partial || crewAssignments.some(person => !people.has(person.contractorProfileId)) };

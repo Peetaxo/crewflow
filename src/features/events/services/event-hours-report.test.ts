@@ -70,6 +70,7 @@ describe('approved event hours', () => {
       log('approved', 2),
     ] });
     expect(result.people[0]).toMatchObject({ rate: 'mixed', costs: { work: 1575, travel: 28, meals: 250, receipts: 0 } });
+    expect(result.people[0].shifts.map(shift => shift.work)).toEqual([700, 875]);
   });
 
   it('keeps an unknown rate or distance distinct from a genuine zero', () => {
@@ -87,6 +88,16 @@ describe('approved event hours', () => {
         { ...log('approved', 2), days: [short] }] });
     expect(result.partial).toBe(true);
     expect(result.people[0].costs).toEqual({ work: 803.34, travel: 0, meals: 0, receipts: 0 });
+  });
+
+  it('keeps displayed shifts reconciled with an authoritative captured report amount down to the cent', () => {
+    const oneMinute = { ...day, f: '10:00', t: '10:01' };
+    const result = buildEventHoursReport({ event, contractors: [member], crewAssignments: [assignment], receipts: [], timelogs: [
+      { ...log('invoiced'), days: [oneMinute, { ...oneMinute, d: '2026-11-15' }],
+        captured: { hours: 2/60, rate: 100, work: 3.33, km: 0, travel: 0, meals: 0 } },
+    ] });
+    expect(result.people[0].shifts.map(shift => shift.work)).toEqual([1.67, 1.66]);
+    expect(result.people[0].costs.work).toBe(3.33);
   });
 
 });

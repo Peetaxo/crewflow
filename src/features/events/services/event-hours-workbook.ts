@@ -1,24 +1,28 @@
-import writeXlsxFile, { type CellObject, type Row, type SheetData } from 'write-excel-file/browser';
+import writeXlsxFile, { type CellObject, type Feature, type Row, type SheetData } from 'write-excel-file/browser';
+import wordmarkUrl from '../../../../supabase/functions/generate-invoice-pdf/assets/nodu-wordmark.png?inline';
 import { PHASE_CONFIG } from '../../../constants';
-import type { EventHoursReport } from './event-hours-report';
 import { addCrewCosts, costCategories, emptyCrewCosts, totalCrewCosts } from './event-hours-costs';
+import type { EventHoursReport } from './event-hours-report';
 
-const MONEY_FORMAT = '#,##0.00" Kč"';
-const amountCell = (value: number | null): CellObject =>
-  value === null ? { value: 'Neúplné' } : { value, format: MONEY_FORMAT };
-
-const HOURS_FORMAT = '0.00';
+const SHEET_NAME = 'Směny a náklady';
+const MONEY = '#,##0.00" Kč"';
+const HOURS = '0.00';
 const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-const weekday = new Intl.DateTimeFormat('cs-CZ', { weekday: 'short', timeZone: 'UTC' });
-const ink = '#18354C';
-const header = '#204660';
-const paleBlue = '#EEF4F7';
-const white = '#FFFFFF';
+// Light-theme colours from Nodu, shared by the screen and print layouts.
+const ink = '#2F261F';
+const muted = '#705E50';
+const orange = '#FF800D';
+const cream = '#FFEDE0';
+const paper = '#FFFFFF';
+const dateRange = new Intl.DateTimeFormat('cs-CZ', { day: 'numeric', month: 'numeric', year: 'numeric', timeZone: 'UTC' });
 
 type Column = { label: string; width: number; align: 'left' | 'center' | 'right' };
-const position = (align: Column['align']): CellObject => ({
-  align, alignVertical: 'center', indent: align === 'center' ? undefined : 1,
-});
+const label = (value: string): CellObject => ({ type: String, value });
+const numeric = (value: number | null, format = MONEY): CellObject => value === null ? label('Neúplné') : { value, format };
+const merged = (cell: CellObject, count: number): Row => [{ ...cell, columnSpan: count }, ...Array(count - 1).fill(null)];
+const letter = (index: number) => String.fromCharCode(65 + index); // A through K in this layout
+const left: CellObject = { align: 'left', indent: 1, alignVertical: 'center' };
+const right: CellObject = { ...left, align: 'right' };
 
 // Widths are expressed in Excel character units. Leave room for padding and word wrapping.
 function textHeight(text: string, width: number, lineHeight: number, minimum: number) {
@@ -37,115 +41,157 @@ function textHeight(text: string, width: number, lineHeight: number, minimum: nu
   return Math.min(409, Math.max(minimum, 8 + lines * lineHeight));
 }
 
-function sheetHeading(report: EventHoursReport, columns: Column[], status: string): SheetData {
-  const hasJob = Boolean(report.event.job);
-  const titleColumns = hasJob ? columns.slice(0, -1) : columns;
-  const titleWidth = titleColumns.reduce((total, column) => total + column.width, 0);
-  const title: Row = [{
-    ...position('left'), value: report.event.name, columnSpan: titleColumns.length, wrap: true,
-    height: textHeight(report.event.name, titleWidth * 0.63, 23, 37),
-    fontSize: 17, fontWeight: 'bold', textColor: ink,
-  }];
-  if (hasJob) {
-    while (title.length < columns.length - 1) title.push(null);
-    title.push({ ...position('right'), value: report.event.job, fontWeight: 'bold', textColor: '#456277', wrap: true,
-      height: textHeight(report.event.job, columns[columns.length - 1].width, 15, 37) });
-  }
-  return [
-    title,
-    [{ ...position('left'), value: status,
-      columnSpan: columns.length, height: 24, fontWeight: 'bold',
-      backgroundColor: report.partial ? '#FFF1D8' : '#E2F1E8', textColor: report.partial ? '#795014' : '#24593C' }],
-    columns.map(column => ({
-      ...position(column.align), value: column.label, height: 27, fontWeight: 'bold', backgroundColor: header, textColor: white,
-    })),
-  ];
+function excelFeatures(cached: Map<string, number>): Feature<Blob> {
+  // The writer exposes sheet transforms for print setup and formula previews.
+  // Cached numeric results also let mobile readers display an approved report immediately.
+  return { files: { transform: {
+    'xl/workbook.xml': {
+      transform(xml) {
+        const titles = `<definedName name="_xlnm.Print_Titles" localSheetId="0">'${SHEET_NAME}'!$1:$3</definedName>`;
+        return xml.replace('<definedNames/>', `<definedNames>${titles}</definedNames>`);
+      },
+    },
+    'xl/worksheets/sheet{id}.xml': {
+      transformElementAttributes(tag, attrs) {
+        if (tag === 'pageSetup') return { ...attrs, fitToWidth: 1, fitToHeight: 0 };
+        if (tag === 'pageMargins') return { ...attrs, left: 0.3, right: 0.3, top: 0.4, bottom: 0.4 };
+        return attrs;
+      },
+      transform(xml) {
+        return xml.replace('<sheetViews>', '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews>')
+          .replace(/<f>([^<]+)<\/f>/g, (element, formula: string) =>
+            cached.has(formula) ? `${element}<v>${cached.get(formula)}</v>` : element);
+      },
+    },
+  } } };
 }
 
 export async function createEventHoursFile(report: EventHoursReport): Promise<File> {
   if (!report.people.length) throw new Error('Akce zatím nemá žádné schválené hodiny.');
-  const nameWidth = report.people.reduce((width, person) => Math.max(width, Math.min(42, person.name.length + 5)), 24);
-  const shiftsColumns: Column[] = [
-    { label: 'Jméno', width: nameWidth, align: 'left' }, { label: 'Datum', width: 15, align: 'center' },
-    { label: 'Den', width: 7, align: 'center' }, { label: 'Typ práce', width: 14, align: 'left' },
-    { label: 'Od', width: 9, align: 'center' }, { label: 'Do', width: 9, align: 'center' },
-    { label: 'Počet hodin', width: 15, align: 'right' }, { label: 'Poznámka', width: 33, align: 'left' },
-  ];
   const costs = emptyCrewCosts();
-  for (const person of report.people) addCrewCosts(costs, person.costs);
-  // A missing amount stays visible as incomplete. Only a known zero can be omitted.
+  let minutes = 0;
+  let firstDate = '', lastDate = '';
+  for (const person of report.people) {
+    addCrewCosts(costs, person.costs);
+    minutes += person.minutes;
+    for (const shift of person.shifts) {
+      if (!firstDate || shift.date < firstDate) firstDate = shift.date;
+      if (shift.date > lastDate) lastDate = shift.date;
+    }
+  }
   const visibleCosts = costCategories.filter(key => key === 'work' || costs[key] !== 0);
-  const costColumns: Record<typeof costCategories[number], Column> = {
-    work: { label: 'Práce', width: 17, align: 'right' },
-    travel: { label: 'Cestovné', width: 16, align: 'right' },
-    meals: { label: 'Stravné', width: 15, align: 'right' },
-    receipts: { label: 'Účtenky', width: 15, align: 'right' },
-  };
-  const summaryColumns: Column[] = [
-    { label: 'Jméno', width: nameWidth, align: 'left' }, { label: 'Odpracované dny', width: 21, align: 'right' },
-    { label: 'Celkem hodin', width: 16, align: 'right' }, { label: 'Sazba za hodinu', width: 20, align: 'right' },
-    ...visibleCosts.map(key => costColumns[key]),
+  const names = { work: 'Práce', travel: 'Cestovné', meals: 'Stravné', receipts: 'Účtenky' };
+  const columns: Column[] = [
+    { label: 'Datum', width: 17, align: 'left' }, { label: 'Typ práce', width: 13, align: 'left' },
+    { label: 'Poznámka', width: 34, align: 'left' }, { label: 'Od', width: 9, align: 'center' },
+    { label: 'Do', width: 9, align: 'center' }, { label: 'Hodiny', width: 12, align: 'right' },
+    ...visibleCosts.map(key => ({ label: names[key], width: 17, align: 'right' as const })),
     { label: 'Náklady celkem', width: 21, align: 'right' },
   ];
+  const count = columns.length;
+  const lastCost = letter(count - 2);
+  const cached = new Map<string, number>();
+  const calculated = (formula: string, value: number | null, format = MONEY): CellObject => {
+    if (value === null) return numeric(null);
+    cached.set(formula, value);
+    return { type: 'Formula', value: formula, format };
+  };
+
+  const period = [...new Set([firstDate, lastDate])].filter(Boolean)
+    .map(date => dateRange.format(new Date(date))).join(' – ');
+  const metadata = [report.event.job, period && `Směny ${period}`].filter(Boolean).join('  ·  ');
   const status = `${report.partial ? 'Průběžný' : 'Kompletní'} rozpis · schválené hodiny${visibleCosts.length > 1 ? ' a náhrady' : ''}`;
-  const shifts = sheetHeading(report, shiftsColumns, status);
-  const summary = sheetHeading(report, summaryColumns, status);
-  let totalMinutes = 0;
-  for (const [personIndex, person] of report.people.entries()) {
-    const backgroundColor = personIndex % 2 === 0 ? white : paleBlue;
-    const nameHeight = textHeight(person.name, nameWidth, 16, 24);
-    for (const [index, shift] of person.shifts.entries()) {
-      const date = new Date(shift.date + 'T00:00:00Z');
-      const border: CellObject = index === 0 && personIndex > 0 ? { topBorderStyle: 'thin', topBorderColor: '#B7C9D3' } : {};
-      const cells: CellObject[] = [
-        { value: person.name, fontWeight: index === 0 ? 'bold' : undefined, wrap: true,
-          height: Math.max(nameHeight, textHeight(shift.note, shiftsColumns[7].width, 16, 24)) },
-        { value: date, format: 'dd.mm.yyyy' }, { value: weekday.format(date) },
-        { value: PHASE_CONFIG.find(p => p.type === shift.phase)?.label ?? '' },
-        { value: shift.from / 1440, format: 'hh:mm' }, { value: shift.to / 1440, format: 'hh:mm' },
-        { value: shift.minutes / 60, format: HOURS_FORMAT, fontWeight: 'bold' },
-        { type: String, value: shift.note, wrap: true },
-      ];
-      shifts.push(cells.map((cell, i) => ({ ...position(shiftsColumns[i].align), textColor: ink, backgroundColor, ...border, ...cell })));
-    }
+  const rows: SheetData = [
+    [
+      { height: 44 },
+      ...merged({ ...left, ...label(report.event.name), fontWeight: 'bold', fontSize: 17, textColor: ink,
+        wrap: true, height: textHeight(report.event.name, 41, 23, 44) }, 4),
+      ...merged({ ...right, ...label(metadata), wrap: true, textColor: muted, fontWeight: 'bold',
+        height: textHeight(metadata, columns.slice(5).reduce((sum, column) => sum + column.width, 0), 16, 44) }, count - 5),
+    ],
+    merged({ ...left, ...label(status), height: 23, fontWeight: 'bold',
+      textColor: report.partial ? '#705016' : '#245E3A', backgroundColor: report.partial ? '#F9E6B3' : '#D7EEDC' }, count),
+    columns.map(({ label: title, align }) => ({
+      ...left, ...label(title), align, indent: align === 'center' ? 0 : 1, height: 25,
+      fontWeight: 'bold', textColor: paper, backgroundColor: ink,
+    })),
+  ];
+
+  const totalRow = (title: string, cells: CellObject[], grand = false): Row => {
+    const style: CellObject = { fontWeight: 'bold', textColor: ink, backgroundColor: grand ? orange : '#F4EFEA',
+      height: grand ? 32 : 27, topBorderStyle: 'thin', topBorderColor: grand ? '#C75E00' : '#D7C7B9' };
+    return [...merged({ ...left, ...style, ...label(title), wrap: true,
+      height: textHeight(title, 78, 16, grand ? 32 : 27) }, 5), ...cells.map(cell => ({ ...right, ...style, ...cell }))];
+  };
+
+  for (const person of report.people) {
+    const head = rows.length + 1;
     const days = new Set(person.shifts.map(shift => shift.date)).size;
-    const rate: CellObject = person.rate === 'mixed' ? { value: 'Více sazeb' }
-      : person.rate === null ? { value: 'Chybí sazba' } : amountCell(person.rate);
-    const values: CellObject[] = [
-      { value: person.name, height: nameHeight, wrap: true }, { value: days }, { value: person.minutes / 60, format: HOURS_FORMAT, fontWeight: 'bold' },
-      rate, ...visibleCosts.map(key => amountCell(person.costs[key])),
-      { ...amountCell(totalCrewCosts(person.costs)), fontWeight: 'bold' },
-    ];
-    summary.push(values.map((cell, i) => ({ ...position(summaryColumns[i].align), textColor: ink, backgroundColor, ...cell })));
-    totalMinutes += person.minutes;
-  }
-  const total: CellObject = { fontWeight: 'bold', height: 32, textColor: white, backgroundColor: header, fontSize: 12 };
-  const estimatedMembers = report.people.filter(person => person.estimatedBilledCosts).map(person => person.name);
-  summary.push([
-    { ...position('left'), ...total, value: estimatedMembers.length ? 'Celkem za crew na akci (odhad)' : 'Celkem za crew na akci', columnSpan: 2 }, null,
-    { ...position('right'), ...total, value: totalMinutes / 60, format: HOURS_FORMAT },
-    { ...total },
-    ...[...visibleCosts.map(key => costs[key]), totalCrewCosts(costs)].map(amount =>
-      ({ ...position('right'), ...total, ...amountCell(amount) })),
-  ]);
-  const note = 'U výkazů s uloženým vyúčtováním platí původní částky. Ostatní se počítají podle sazeb při exportu.'
-    + (visibleCosts.includes('receipts') ? ' Účtenky se započítají po schválení.' : '');
-  summary.push([{ ...position('left'), value: note, columnSpan: summaryColumns.length, height: 26, wrap: true, fontSize: 10, textColor: '#456277' }]);
-  if (estimatedMembers.length) {
-    const estimate = `Odhad podle sazeb při exportu u dříve fakturovaných výkazů bez uloženého vyúčtování (${estimatedMembers.join(', ')}).`;
-    const width = summaryColumns.reduce((sum, column) => sum + column.width, 0);
-    summary.push([{ ...position('left'), value: estimate, columnSpan: summaryColumns.length, wrap: true,
-      height: textHeight(estimate, width, 16, 26), textColor: '#795014', backgroundColor: '#FFF1D8' }]);
-  }
-  if (totalCrewCosts(costs) === null) {
-    summary.push([{ ...position('left'), value: 'Neúplné částky vyžadují doplnění podkladů. Známé položky jsou uvedené samostatně.',
-      columnSpan: summaryColumns.length, height: 26, wrap: true, textColor: '#795014', backgroundColor: '#FFF1D8' }]);
+    const group: CellObject = { ...left, backgroundColor: cream, textColor: ink, fontWeight: 'bold', height: 28 };
+    const rate = typeof person.rate === 'number'
+      ? numeric(person.rate, '"Sazba "#,##0.00" Kč/h"')
+      : label(person.rate === 'mixed' ? 'Více sazeb' : 'Chybí sazba');
+    rows.push([
+      ...merged({ ...group, ...label(person.name), fontSize: 12, leftBorderStyle: 'medium', leftBorderColor: orange,
+        wrap: true, height: textHeight(person.name, 29, 17, 28) }, 2),
+      { ...group, ...label(`${days} ${days === 1 ? 'den' : days >= 2 && days <= 4 ? 'dny' : 'dní'}`), textColor: muted, fontWeight: undefined },
+      ...merged({ ...group, ...right, ...rate, textColor: muted }, count - 3),
+    ]);
+
+    for (const [index, shift] of person.shifts.entries()) {
+      const r = rows.length + 1;
+      // A log may have a frozen rate or an allocated rounding cent. In those cases
+      // keep its reconciled shift amount instead of substituting the person's rate.
+      const matchesRate = typeof person.rate === 'number' && shift.work !== null
+        && Math.round(shift.minutes * Math.round(person.rate * 100) / 60) === Math.round(shift.work * 100);
+      const work = matchesRate ? calculated(`ROUND(F${r}*ROUND($D$${head},2),2)`, shift.work) : numeric(shift.work);
+      const cells: CellObject[] = [
+        { value: new Date(shift.date), format: 'dd.mm.yyyy' },
+        label(PHASE_CONFIG.find(p => p.type === shift.phase)?.label ?? ''),
+        { ...label(shift.note), wrap: true, height: textHeight(shift.note, columns[2].width, 15, 23) },
+        { value: shift.from / 1440, format: 'hh:mm' }, { value: shift.to / 1440, format: 'hh:mm' },
+        calculated(`ROUND(MOD(E${r}-D${r},1)*1440,0)/60`, shift.minutes / 60, HOURS), work,
+      ];
+      rows.push(columns.map(({ align }, col) => ({
+        align, alignVertical: 'center', indent: align === 'center' ? 0 : 1, textColor: ink,
+        backgroundColor: index % 2 ? '#FBF8F5' : paper, ...cells[col],
+      })));
+    }
+
+    const r = rows.length + 1;
+    const subtotal = (col: string, sum: number | null, format?: string) =>
+      calculated(`SUBTOTAL(9,${col}${head + 1}:${col}${r - 1})`, sum, format);
+    rows.push(totalRow(`Celkem · ${person.name}${person.estimatedBilledCosts ? ' (odhad)' : ''}`, [
+      subtotal('F', person.minutes / 60, HOURS), subtotal('G', person.costs.work),
+      ...visibleCosts.filter(key => key !== 'work').map(key => numeric(person.costs[key])),
+      calculated(`ROUND(SUM(G${r}:${lastCost}${r}),2)`, totalCrewCosts(person.costs)),
+    ]));
+    rows.push([{ height: 7 }]);
   }
 
-  const blob = await writeXlsxFile([
-    { sheet: 'Rozpis hodin', data: shifts, columns: shiftsColumns, stickyRowsCount: 3, showGridLines: false, orientation: 'landscape' },
-    { sheet: 'Souhrn', data: summary, columns: summaryColumns, stickyRowsCount: 3, showGridLines: false, orientation: 'landscape' },
-  ], { fontFamily: 'Arial', fontSize: 11 }).toBlob();
+  const isEstimate = report.people.some(p => p.estimatedBilledCosts);
+  const notes = [];
+  if (isEstimate) notes.push('U označených členů jsou dříve fakturované výkazy bez uloženého vyúčtování oceněné podle sazeb při exportu.');
+  if (totalCrewCosts(costs) === null) notes.push('Neúplné částky vyžadují doplnění podkladů. Známé položky jsou uvedené samostatně.');
+  for (const note of notes) rows.push(merged({ ...left, ...label(note), wrap: true, textColor: muted, height: 26 }, count));
+  const end = rows.length;
+  const grand = end + 1;
+  // SUBTOTAL skips each person's nested SUBTOTAL. Expenses appear only once, in the person rows.
+  rows.push(totalRow(isEstimate ? 'Celkem za crew (odhad)' : 'Celkem za crew', [
+    calculated(`SUBTOTAL(9,F4:F${end})`, minutes / 60, HOURS),
+    ...visibleCosts.map((key, index) => {
+      const col = letter(6 + index), range = `${col}4:${col}${end}`;
+      return calculated(key === 'work' ? `SUBTOTAL(9,${range})` : `ROUND(SUM(${range}),2)`, costs[key]);
+    }),
+    calculated(`ROUND(SUM(G${grand}:${lastCost}${grand}),2)`, totalCrewCosts(costs)),
+  ], true));
+
+  const wordmark = Uint8Array.from(atob(wordmarkUrl.split(',')[1]), char => char.charCodeAt(0));
+  const blob = await writeXlsxFile([{
+    sheet: SHEET_NAME, data: rows, columns, stickyRowsCount: 3, showGridLines: false, orientation: 'landscape',
+    images: [{ content: new Blob([wordmark], { type: 'image/png' }), contentType: 'image/png', width: 91, height: 32,
+      dpi: 96, anchor: { row: 1, column: 1 }, offsetX: 12, offsetY: 12, title: 'Nodu', description: 'Logo Nodu' }],
+  }], { fontFamily: 'Arial', fontSize: 11, features: [excelFeatures(cached)] }).toBlob();
   const identifier = [report.event.job, report.event.name].filter(Boolean).join('-')
     .replace(/[^\p{L}\p{N}._-]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 120);
   const filename = ['Hodiny', identifier, report.partial ? 'průběžný' : ''].filter(Boolean).join('-') + '.xlsx';

@@ -1,5 +1,8 @@
 import type { Timelog, TimelogApproval } from '../../../types';
 
+export const APPROVED_HOURS_STATUSES: readonly Timelog['status'][] = ['approved', 'invoiced', 'paid'];
+export const hasApprovedHours = (timelog: Pick<Timelog, 'status'>) => APPROVED_HOURS_STATUSES.includes(timelog.status);
+
 export const getActiveTimelogApproval = (timelog: Timelog): TimelogApproval | null => {
   const activeApprovals = (timelog.approvals ?? []).filter((approval) => approval.supersededAt === null);
   return activeApprovals.length === 1 ? activeApprovals[0] : null;

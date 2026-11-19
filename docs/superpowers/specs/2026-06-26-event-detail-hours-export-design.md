@@ -1,5 +1,9 @@
 # Event Detail Hours Export Design
 
+## Varianta zavedená 19. 11. 2026
+
+CrewHead a COO mohou v detailu akce stáhnout Excel po schválení prvního výkazu. List **Rozpis hodin** obsahuje jednotlivé schválené směny, včetně vyfakturovaných a zaplacených. List **Souhrn** uvádí odpracované dny a hodiny za každého člověka a celkové hodiny akce. Pokud některému přiřazenému člověku výkaz chybí, je rozpracovaný, vrácený nebo čeká na schválení, soubor má v názvu i na obou listech označení **průběžný**. Následující text zachycuje původní červnový návrh.
+
 ## Cil
 
 Dotahnout existujici detail akce do prvniho plne pouzitelneho provozniho kroku: organizator vidi, kdo je prihlaseny, kdo je potvrzeny, komu chybi casy, ktere casy cekaji na schvaleni, a muze z akce vygenerovat rozpis hodin pro dalsi zpracovani.

@@ -12,6 +12,7 @@ import { calculateDayHours, calculateMealAllowance, calculateTotalHours, formatC
 import { buildEventScheduleDays, resolveEventScheduleDay } from '../features/events/services/event-schedule';
 import { listEventDates } from '../features/timelogs/services/timelog-day-ui';
 import { Button } from '../components/ui/button';
+import { EventHoursExportButton } from '../features/events/components/EventHoursExportButton';
 import StatusBadge from '../components/shared/StatusBadge';
 import EventEditModal from '../components/modals/EventEditModal';
 import AssignCrewModal from '../components/modals/AssignCrewModal';
@@ -414,6 +415,9 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
   const days = event.scheduleVersion === 2 ? listEventDates(event) : getDatesBetween(event.startDate, event.endDate);
   const eventCrew = getEventCrew(event.id);
   const canManageEvents = role !== 'crew';
+  const hoursExport = (role === 'crewhead' || role === 'coo') && (event.id === selectedEventId || event.supabaseId === selectedEventId)
+    ? <EventHoursExportButton key={JSON.stringify([selectedEventId, currentProfileId, role])} detail={{ ...detail, event }} />
+    : null;
   const isCrewRole = role === 'crew';
   const shouldShowCrewRatings = canManageEvents && eventStatus === 'past';
   const eventCrewRatings = shouldShowCrewRatings ? getCrewRatingsForEvent(event.id) : [];
@@ -1225,6 +1229,7 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
               <h2 id="mobile-event-assigned-crew-title">Přiřazená crew</h2>
               <span className="nodu-mobile-event-capacity-chip">{crewCapacityLabel}</span>
             </div>
+            {hoursExport}
             {eventCrew.length > 0 ? (
               <div className="nodu-mobile-event-crew-list">
                 {eventCrew.map((contractor) => {
@@ -1702,6 +1707,7 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
                         Schvalovani timelogu ({eventApprovalTimelogs.length})
                       </button>
                     )}
+                    {hoursExport}
                   </div>
 
                   {crewPanelTab === 'assigned' ? (

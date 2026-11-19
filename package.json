@@ -31,6 +31,7 @@
     "@capacitor/cli": "8.4.2",
     "@capacitor/core": "8.4.2",
     "@capacitor/ios": "8.4.2",
+    "@capacitor/push-notifications": "file:vendor/capacitor-push-notifications",
     "@hookform/resolvers": "^3.10.0",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",
@@ -82,8 +83,8 @@
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.9",
-    "zod": "^3.25.76",
-    "@capacitor/push-notifications": "file:vendor/capacitor-push-notifications"
+    "write-excel-file": "4.1.1",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",

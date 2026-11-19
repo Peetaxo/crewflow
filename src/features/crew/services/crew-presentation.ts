@@ -2,6 +2,7 @@ import { differenceInCalendarDays, format, parseISO } from 'date-fns';
 import type { Contractor, Event, Invoice, Timelog } from '../../../types';
 import { KM_RATE } from '../../../data';
 import { calculateMealAllowance, calculateTotalHours } from '../../../utils';
+import { hasApprovedHours } from '../../timelogs/services/timelog-approval-state';
 
 const normalizeSearch = (text: string) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('cs').trim();
 export const filterCrewMembers = (crew: Contractor[], ...queries: string[]) => crew.filter((person) => {
@@ -21,7 +22,7 @@ export const getCrewOverviewStats = (timelogs: Timelog[], invoices: Invoice[]) =
     pendingCount: pending.length,
     pendingHours: pending.reduce((sum, t) => sum + calculateTotalHours(t.days), 0),
     correctionCount: timelogs.filter((t) => t.status === 'rejected' || t.status === 'pending_crew_confirmation').length,
-    approvedHours: timelogs.filter((t) => ['approved', 'invoiced', 'paid'].includes(t.status)).reduce((sum, t) => sum + calculateTotalHours(t.days), 0),
+    approvedHours: timelogs.filter(hasApprovedHours).reduce((sum, t) => sum + calculateTotalHours(t.days), 0),
   };
 };
 
@@ -45,7 +46,7 @@ export type CrewTimelogFilter = 'all' | 'pending' | 'corrections' | 'approved';
 export const isCrewTimelogInFilter = (timelog: Timelog, filter: CrewTimelogFilter) => {
   if (filter === 'pending') return timelog.status === 'pending_ch' || timelog.status === 'pending_coo';
   if (filter === 'corrections') return ['draft', 'rejected', 'pending_crew_confirmation'].includes(timelog.status);
-  if (filter === 'approved') return ['approved', 'invoiced', 'paid'].includes(timelog.status);
+  if (filter === 'approved') return hasApprovedHours(timelog);
   return true;
 };
 

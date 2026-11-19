@@ -221,6 +221,7 @@ describe('EventDetailView', () => {
     const { default: EventDetailView } = await import('./EventDetailView');
 
     const { rerender } = render(<EventDetailView />);
+    expect(screen.queryByRole('button', { name: 'Stáhnout rozpis hodin' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Zpet na Akce' })).toBeInTheDocument();
     rerender(<EventDetailView backLabel="Zpět na projekt" />);
     fireEvent.click(screen.getByRole('button', { name: 'Zpět na projekt' }));
@@ -1278,6 +1279,7 @@ describe('EventDetailView', () => {
 
     expect(container.querySelector('.nodu-mobile-event-detail')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Upravit' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Stáhnout rozpis hodin' })).toBeInTheDocument();
     expect(screen.queryByText('Jsi přiřazen')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Přihlásit se' })).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Čas přihlášky' })).not.toBeInTheDocument();
@@ -2520,6 +2522,7 @@ describe('EventDetailView', () => {
     render(<EventDetailView />);
 
     fireEvent.click(screen.getByRole('button', { name: /Schvalovani timelogu \(1\)/ }));
+    expect(screen.getByRole('button', { name: 'Stáhnout rozpis hodin' })).toBeInTheDocument();
     expect(screen.queryByText('Petr Heitzer')).not.toBeInTheDocument();
     expect(screen.getAllByText('Jana Nova').length).toBeGreaterThan(0);
     expect(screen.getByText('09:00 - 15:00')).toBeInTheDocument();

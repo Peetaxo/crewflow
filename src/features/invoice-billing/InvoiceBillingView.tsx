@@ -31,7 +31,10 @@ function BillingContents({ billing, scope }: { billing: BillingController; scope
   };
   const download = (path: string) => {
     const isCurrent = billing.capture();
-    void run(async () => { const url = await getInvoicePdfDownloadUrl(path); if (isCurrent()) openInvoicePdfUrl(url); });
+    void run(async () => {
+      const url = await getInvoicePdfDownloadUrl(path);
+      if (isCurrent()) await openInvoicePdfUrl(url, undefined, isCurrent);
+    });
   };
   const command = (c: BillingCommand) => {
     if (!billing.capture()() || !billing.query.data || billing.query.error) return;

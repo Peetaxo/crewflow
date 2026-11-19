@@ -194,7 +194,7 @@ export const LegacyInvoicesView = ({ scope = 'all' }: InvoicesViewProps) => {
   const handleDownloadPdf = async (pdfPath: string) => {
     try {
       const url = await getInvoicePdfDownloadUrl(pdfPath);
-      openInvoicePdfUrl(url);
+      await openInvoicePdfUrl(url);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Nepodarilo se stahnout PDF.');
     }

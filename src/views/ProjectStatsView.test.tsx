@@ -432,7 +432,7 @@ describe('ProjectStatsView', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Otevřít PDF 2026-0042' })); });
     expect(mocks.generateInvoicePdf).toHaveBeenCalledWith(invoice.id);
     expect(mocks.getInvoicePdfDownloadUrl).toHaveBeenCalledWith('invoices/project.pdf');
-    expect(mocks.openInvoicePdfUrl).toHaveBeenCalledWith('https://signed.example/project.pdf');
+    expect(mocks.openInvoicePdfUrl).toHaveBeenCalledWith('https://signed.example/project.pdf', undefined, expect.any(Function));
   });
 
   it('shows PDF failures', async () => {

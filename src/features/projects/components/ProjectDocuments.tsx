@@ -50,7 +50,7 @@ const ProjectDocuments = ({ invoices, receipts, events, contractors, invoicesQue
       const pdfPath = record.invoice.pdfPath || (await generateInvoicePdf(record.invoice.id)).pdfPath;
       if (!isCurrent()) return;
       const url = await getInvoicePdfDownloadUrl(pdfPath);
-      if (isCurrent()) openInvoicePdfUrl(url);
+      if (isCurrent()) await openInvoicePdfUrl(url, undefined, isCurrent);
     } catch (error) {
       if (isCurrent()) setPdfError(error instanceof Error ? error.message : 'PDF se nepodařilo otevřít.');
     } finally {

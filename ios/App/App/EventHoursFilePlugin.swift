@@ -18,10 +18,10 @@ final class EventHoursFilePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerD
     @objc func save(_ call: CAPPluginCall) {
         guard let filename = call.getString("filename"),
               filename == (filename as NSString).lastPathComponent,
-              filename.lowercased().hasSuffix(".xlsx"),
+              ["xlsx", "pdf"].contains((filename as NSString).pathExtension.lowercased()),
               let base64 = call.getString("base64"),
               let bytes = Data(base64Encoded: base64) else {
-            call.reject("Soubor s rozpisem hodin se nepodařilo přečíst.")
+            call.reject("Soubor se nepodařilo přečíst.")
             return
         }
         let files = FileManager.default
@@ -32,7 +32,7 @@ final class EventHoursFilePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerD
             try bytes.write(to: file, options: .atomic)
         } catch {
             try? files.removeItem(at: directory)
-            call.reject("Soubor s rozpisem hodin se nepodařilo připravit.", nil, error)
+            call.reject("Soubor se nepodařilo připravit.", nil, error)
             return
         }
 

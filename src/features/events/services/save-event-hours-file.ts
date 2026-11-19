@@ -1,24 +1,9 @@
-import { Capacitor, registerPlugin } from '@capacitor/core';
-
-const nativeFile = registerPlugin<{
-  save(options: { filename: string; base64: string }): Promise<void>;
-}>('EventHoursFile');
-
-function readBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error);
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      resolve(dataUrl.slice(dataUrl.indexOf(',') + 1));
-    };
-    reader.readAsDataURL(file);
-  });
-}
+import { Capacitor } from '@capacitor/core';
+import { saveNativeDocument } from '../../../lib/native-document';
 
 export async function saveEventHoursFile(file: File): Promise<void> {
   if (Capacitor.isNativePlatform()) {
-    await nativeFile.save({ filename: file.name, base64: await readBase64(file) });
+    await saveNativeDocument(file);
     return;
   }
 

@@ -43,8 +43,8 @@ describe('event hours workbook', () => {
     expect(shifts.data[5][0]).toMatchObject({ value: 'Petr Malý', topBorderStyle: 'thin' });
     expect(shifts.data[3][0]).not.toHaveProperty('rowSpan');
     expect(summary.data[5][2]).toMatchObject({ value: 11, align: 'right', fontWeight: 'bold' });
-    expect(summary.data[3].slice(3).map(cell => (cell as { value: number }).value)).toEqual([200, 1100, 56, 0, 14.5, 1170.5]);
-    expect(summary.data[5][8]).toMatchObject({ value: 2341, align: 'right', format: expect.stringContaining('Kč') });
+    expect(summary.data[3].slice(3).map(cell => (cell as { value: number }).value)).toEqual([200, 1100, 56, 14.5, 1170.5]);
+    expect(summary.data[5].at(-1)).toMatchObject({ value: 2341, align: 'right', format: expect.stringContaining('Kč') });
     expect(shifts.showGridLines).toBe(false);
     expect(shifts.stickyRowsCount).toBe(3);
   });
@@ -54,6 +54,31 @@ describe('event hours workbook', () => {
     const [, summary] = vi.mocked(writeXlsxFile).mock.lastCall![0] as Sheet<Blob>[];
     expect(summary.data[3][3]).toMatchObject({ value: 'Chybí sazba' });
     expect(summary.data[3][5]).toMatchObject({ value: 56 });
-    expect(summary.data[4][8]).toMatchObject({ value: 'Neúplné' });
+    expect(summary.data[4].at(-1)).toMatchObject({ value: 'Neúplné' });
   });
+  it.each([
+    { travel: 0, meals: 0, receipts: 0, labels: [], totals: [2200] },
+    { travel: 42, meals: 0, receipts: 0, labels: ['Cestovné'], totals: [42, 2242] },
+    { travel: 0, meals: 250, receipts: 0, labels: ['Stravné'], totals: [250, 2450] },
+    { travel: 0, meals: 0, receipts: 75, labels: ['Účtenky'], totals: [75, 2275] },
+    { travel: 42, meals: 250, receipts: 75, labels: ['Cestovné', 'Stravné', 'Účtenky'], totals: [42, 250, 75, 2567] },
+    { travel: null, meals: 0, receipts: 0, labels: ['Cestovné'], totals: ['Neúplné', 'Neúplné'] },
+  ])('includes event-wide expense columns for $labels and aligns their totals', async ({ travel, meals, receipts, labels, totals }) => {
+    const person = report.people[0];
+    await createEventHoursFile({ ...report, people: [
+      { ...person, costs: { work: 1100, travel: 0, meals: 0, receipts: 0 } },
+      { ...person, name: 'Petr Malý', costs: { work: 1100, travel, meals, receipts } },
+    ] });
+    const [shifts, summary] = vi.mocked(writeXlsxFile).mock.lastCall![0] as Sheet<Blob>[];
+    const columns = summary.columns!.length;
+    expect(summary.data[2].slice(4).map(cell => (cell as { value: string }).value))
+      .toEqual(['Práce', ...labels, 'Náklady celkem']);
+    for (const row of summary.data.slice(2, 6)) expect(row).toHaveLength(columns);
+    expect(summary.data[5].slice(5).map(cell => (cell as { value: string | number }).value)).toEqual(totals);
+    expect(summary.data[0].at(-1)).toMatchObject({ value: 'V01' });
+    for (const sheet of [shifts, summary])
+      expect(sheet.data[1][0]).toMatchObject({ value: labels.length ? expect.stringContaining('náhrady') : 'Průběžný rozpis · schválené hodiny' });
+    expect((summary.data[6][0] as { value: string }).value.includes('Účtenky')).toBe(labels.includes('Účtenky'));
+  });
+
 });

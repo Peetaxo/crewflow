@@ -37,7 +37,7 @@ function textHeight(text: string, width: number, lineHeight: number, minimum: nu
   return Math.min(409, Math.max(minimum, 8 + lines * lineHeight));
 }
 
-function sheetHeading(report: EventHoursReport, columns: Column[]): SheetData {
+function sheetHeading(report: EventHoursReport, columns: Column[], status: string): SheetData {
   const hasJob = Boolean(report.event.job);
   const titleColumns = hasJob ? columns.slice(0, -1) : columns;
   const titleWidth = titleColumns.reduce((total, column) => total + column.width, 0);
@@ -53,7 +53,7 @@ function sheetHeading(report: EventHoursReport, columns: Column[]): SheetData {
   }
   return [
     title,
-    [{ ...position('left'), value: report.partial ? 'Průběžný rozpis · schválené hodiny a náhrady' : 'Kompletní rozpis · schválené hodiny a náhrady',
+    [{ ...position('left'), value: status,
       columnSpan: columns.length, height: 24, fontWeight: 'bold',
       backgroundColor: report.partial ? '#FFF1D8' : '#E2F1E8', textColor: report.partial ? '#795014' : '#24593C' }],
     columns.map(column => ({
@@ -71,17 +71,26 @@ export async function createEventHoursFile(report: EventHoursReport): Promise<Fi
     { label: 'Od', width: 9, align: 'center' }, { label: 'Do', width: 9, align: 'center' },
     { label: 'Počet hodin', width: 15, align: 'right' }, { label: 'Poznámka', width: 33, align: 'left' },
   ];
+  const costs = emptyCrewCosts();
+  for (const person of report.people) addCrewCosts(costs, person.costs);
+  // A missing amount stays visible as incomplete. Only a known zero can be omitted.
+  const visibleCosts = costCategories.filter(key => key === 'work' || costs[key] !== 0);
+  const costColumns: Record<typeof costCategories[number], Column> = {
+    work: { label: 'Práce', width: 17, align: 'right' },
+    travel: { label: 'Cestovné', width: 16, align: 'right' },
+    meals: { label: 'Stravné', width: 15, align: 'right' },
+    receipts: { label: 'Účtenky', width: 15, align: 'right' },
+  };
   const summaryColumns: Column[] = [
     { label: 'Jméno', width: nameWidth, align: 'left' }, { label: 'Odpracované dny', width: 21, align: 'right' },
     { label: 'Celkem hodin', width: 16, align: 'right' }, { label: 'Sazba za hodinu', width: 20, align: 'right' },
-    { label: 'Práce', width: 17, align: 'right' }, { label: 'Cestovné', width: 16, align: 'right' },
-    { label: 'Stravné', width: 15, align: 'right' }, { label: 'Účtenky', width: 15, align: 'right' },
+    ...visibleCosts.map(key => costColumns[key]),
     { label: 'Náklady celkem', width: 21, align: 'right' },
   ];
-  const shifts = sheetHeading(report, shiftsColumns);
-  const summary = sheetHeading(report, summaryColumns);
+  const status = `${report.partial ? 'Průběžný' : 'Kompletní'} rozpis · schválené hodiny${visibleCosts.length > 1 ? ' a náhrady' : ''}`;
+  const shifts = sheetHeading(report, shiftsColumns, status);
+  const summary = sheetHeading(report, summaryColumns, status);
   let totalMinutes = 0;
-  const costs = emptyCrewCosts();
   for (const [personIndex, person] of report.people.entries()) {
     const backgroundColor = personIndex % 2 === 0 ? white : paleBlue;
     const nameHeight = textHeight(person.name, nameWidth, 16, 24);
@@ -104,12 +113,11 @@ export async function createEventHoursFile(report: EventHoursReport): Promise<Fi
       : person.rate === null ? { value: 'Chybí sazba' } : amountCell(person.rate);
     const values: CellObject[] = [
       { value: person.name, height: nameHeight, wrap: true }, { value: days }, { value: person.minutes / 60, format: HOURS_FORMAT, fontWeight: 'bold' },
-      rate, ...costCategories.map(key => amountCell(person.costs[key])),
+      rate, ...visibleCosts.map(key => amountCell(person.costs[key])),
       { ...amountCell(totalCrewCosts(person.costs)), fontWeight: 'bold' },
     ];
     summary.push(values.map((cell, i) => ({ ...position(summaryColumns[i].align), textColor: ink, backgroundColor, ...cell })));
     totalMinutes += person.minutes;
-    addCrewCosts(costs, person.costs);
   }
   const total: CellObject = { fontWeight: 'bold', height: 32, textColor: white, backgroundColor: header, fontSize: 12 };
   const estimatedMembers = report.people.filter(person => person.estimatedBilledCosts).map(person => person.name);
@@ -117,10 +125,11 @@ export async function createEventHoursFile(report: EventHoursReport): Promise<Fi
     { ...position('left'), ...total, value: estimatedMembers.length ? 'Celkem za crew na akci (odhad)' : 'Celkem za crew na akci', columnSpan: 2 }, null,
     { ...position('right'), ...total, value: totalMinutes / 60, format: HOURS_FORMAT },
     { ...total },
-    ...[...costCategories.map(key => costs[key]), totalCrewCosts(costs)].map(amount =>
+    ...[...visibleCosts.map(key => costs[key]), totalCrewCosts(costs)].map(amount =>
       ({ ...position('right'), ...total, ...amountCell(amount) })),
   ]);
-  const note = 'U výkazů s uloženým vyúčtováním platí původní částky. Ostatní se počítají podle sazeb při exportu. Účtenky se započítají po schválení.';
+  const note = 'U výkazů s uloženým vyúčtováním platí původní částky. Ostatní se počítají podle sazeb při exportu.'
+    + (visibleCosts.includes('receipts') ? ' Účtenky se započítají po schválení.' : '');
   summary.push([{ ...position('left'), value: note, columnSpan: summaryColumns.length, height: 26, wrap: true, fontSize: 10, textColor: '#456277' }]);
   if (estimatedMembers.length) {
     const estimate = `Odhad podle sazeb při exportu u dříve fakturovaných výkazů bez uloženého vyúčtování (${estimatedMembers.join(', ')}).`;

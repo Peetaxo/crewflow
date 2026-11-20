@@ -1,3 +1,4 @@
+import { getTimelogReviewKey } from './timelog-approval-state';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -2170,6 +2171,7 @@ const setupTargetedRemoteHarness = async ({
   return {
     service: await import('./timelogs.service'),
     getSnapshot: () => structuredClone(snapshot),
+    replaceReports: (timelogs: Timelog[]) => { snapshot = { ...snapshot, timelogs }; },
     getUser,
     profileEq,
     from,
@@ -2235,6 +2237,54 @@ const setupTargetedLocalHarness = async ({
 };
 
 describe('targeted timelog approval action routing', () => {
+  it.each(['ch', 'rej'] as const)('rejects a reused numeric ID before the reviewed CH %s action can reach any RPC', async (action) => {
+    const shown = targetedTimelog();
+    const replacement = targetedTimelog({ supabaseId: TARGETED_IDS.timelog2 });
+    const harness = await setupTargetedRemoteHarness({ timelogs: [replacement, { ...shown, id: 91 }] });
+    await expect(harness.service.updateTimelogStatuses([shown.id], action, { expectedReviewKeys: [getTimelogReviewKey(shown)] }))
+      .rejects.toThrow(/Výběr výkazů se změnil/);
+    expect(harness.handoffTimelogsForApprovalAtomicRpc).not.toHaveBeenCalled();
+    expect(harness.transitionTimelogStatusesAtomicRpc).not.toHaveBeenCalled();
+  });
+
+  it('checks again after the async actor lookup if a pending report revision changes before handoff', async () => {
+    const shown = targetedTimelog();
+    const harness = await setupTargetedRemoteHarness({ timelogs: [shown] });
+    harness.getUser.mockImplementationOnce(async () => {
+      harness.replaceReports([{ ...shown, updatedAt: '2026-09-23T09:30:00Z' }]);
+      return { data: { user: { id: 'authenticated-user' } }, error: null };
+    });
+    await expect(harness.service.updateTimelogStatuses([shown.id], 'ch', { expectedReviewKeys: [getTimelogReviewKey(shown)] }))
+      .rejects.toThrow(/Výběr výkazů se změnil/);
+    expect(harness.handoffTimelogsForApprovalAtomicRpc).not.toHaveBeenCalled();
+  });
+
+  it.each(['report', 'approval'] as const)('rejects a COO return after its reviewed %s version changes', async (changed) => {
+    const shown = targetedTimelog({ status: 'pending_coo', approvals: [targetedApproval()] });
+    const later = '2026-09-22T11:15:00.123456Z';
+    const current = changed === 'report' ? { ...shown, updatedAt: later }
+      : { ...shown, approvals: [targetedApproval({ updatedAt: later })] };
+    const harness = await setupTargetedRemoteHarness({ timelogs: [current], authenticatedProfileId: TARGETED_IDS.approver });
+    await expect(harness.service.updateTimelogStatuses([shown.id], 'rej', {
+      note: 'Opravte čas', expectedReviewKeys: [getTimelogReviewKey(shown)],
+    })).rejects.toThrow(/Výběr výkazů se změnil/);
+    expect(harness.resolveTimelogApprovalsAtomicRpc).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['unversioned', { supabaseId: undefined, eventSupabaseId: undefined, updatedAt: undefined }],
+    ['timestamped', {}],
+  ] as const)('compares the evidence of a %s local report before returning it', async (_label, identity) => {
+    const shown = targetedTimelog(identity);
+    const current = { ...shown, km: shown.km + 10 };
+    const harness = await setupTargetedLocalHarness({ timelogs: [current] });
+    await expect(harness.service.updateTimelogStatuses([shown.id], 'rej', { expectedReviewKeys: [getTimelogReviewKey(shown)] }))
+      .rejects.toThrow(/Výběr výkazů se změnil/);
+    expect(harness.getSnapshot().timelogs[0].status).toBe('pending_ch');
+    await harness.service.updateTimelogStatuses([current.id], 'rej', { expectedReviewKeys: [getTimelogReviewKey(current)] });
+    expect(harness.getSnapshot().timelogs[0].status).toBe('rejected');
+  });
+
   it('never publishes a retired actor response or starts recovery after an in-flight RPC', async () => {
     const rpc = createDeferred<Array<Record<string, unknown>>>();
     const harness = await setupTargetedRemoteHarness({ timelogs: [targetedTimelog()], handoffImplementation: async () => rpc.promise });

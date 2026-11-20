@@ -1,7 +1,7 @@
 import { appDataSource } from '../../../lib/app-config';
 import { BillingApprovalPreview } from '../../invoice-billing/BillingApprovalPreview';
 import { billingUuid, type BillingQuote } from '../../invoice-billing/contract';
-import { getActiveTimelogApproval } from '../services/timelog-approval-state';
+import { getActiveTimelogApproval, getTimelogReviewKey } from '../services/timelog-approval-state';
 import type { TimelogApprovalResolutionTarget } from '../services/timelog-approval-rpc.service';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -32,6 +32,7 @@ interface UseTimelogApprovalActionsOptions {
 
 interface PendingReturnRequest {
   ids: number[];
+  expectedReviewKeys: string[];
 }
 
 interface TimelogApprovalActions {
@@ -84,6 +85,7 @@ export const useTimelogApprovalActions = ({
   const runMutation = useCallback(async (
     ids: number[],
     action: TimelogAction,
+    expectedReviewKeys?: string[],
     note?: string,
     keepDialogOpenOnError = false,
   ) => {
@@ -102,6 +104,7 @@ export const useTimelogApprovalActions = ({
         },
         ...(currentProfileId ? { currentProfileId } : {}),
         ...(note ? { note } : {}),
+        ...(expectedReviewKeys ? { expectedReviewKeys } : {}),
       });
 
       if (!mountedRef.current || !activation.active) return;
@@ -145,18 +148,27 @@ export const useTimelogApprovalActions = ({
       return;
     }
 
-    const requiresReturnNote = action === 'rej' && ids.some((id) => (
-      timelogsById.get(id)?.status === 'pending_coo'
-    ));
+    if (action === 'sub') {
+      void runMutation(ids, action);
+      return;
+    }
+
+    const selected = ids.map(id => timelogsById.get(id));
+    if (selected.some(report => !report)) {
+      toast.error('Výběr výkazů se změnil. Otevřete výkaz znovu.');
+      return;
+    }
+    const expectedReviewKeys = selected.map(report => getTimelogReviewKey(report!));
+    const requiresReturnNote = action === 'rej' && selected.some(report => report?.status === 'pending_coo');
 
     if (requiresReturnNote) {
-      setReturnRequest({ ids: [...ids] });
+      setReturnRequest({ ids: [...ids], expectedReviewKeys });
       setReturnNote('');
       setDialogError('');
       return;
     }
 
-    void runMutation(ids, action);
+    void runMutation(ids, action, expectedReviewKeys);
   }, [activation, reviewSelection, runMutation, timelogsById]);
 
   const closeDialog = useCallback(() => {
@@ -175,7 +187,7 @@ export const useTimelogApprovalActions = ({
       return;
     }
 
-    void runMutation(returnRequest.ids, 'rej', note, true);
+    void runMutation(returnRequest.ids, 'rej', returnRequest.expectedReviewKeys, note, true);
   }, [activation, returnNote, returnRequest, runMutation]);
 
   const approveQuote = useCallback(async (quote: BillingQuote) => {

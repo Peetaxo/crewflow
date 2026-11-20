@@ -36,7 +36,7 @@ export const NAV_ITEMS = [
   { id: 'timelogs', label: 'Schvalování', icon: FileText },
   { id: 'fleet', label: 'Flotila', icon: Car },
   { id: 'warehouse', label: 'Sklad', icon: Boxes },
-  { id: 'my-timelogs', label: 'Schvalování', icon: FileText },
+  { id: 'my-timelogs', label: 'Moje výkazy', icon: FileText },
   { id: 'invoices', label: 'Faktury', icon: Receipt },
   { id: 'my-invoices', label: 'Moje faktury', icon: Receipt },
   { id: 'receipts', label: 'Účtenky', icon: Receipt },

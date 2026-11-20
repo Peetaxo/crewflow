@@ -34,8 +34,12 @@ export function SharedApprovalCard({ group, contractors, events, canAct, onOpen,
     {lastReturn?.eventId && <span className="mt-1 block text-xs opacity-80">{events.find((event) => event.supabaseId === lastReturn.eventId)?.name ?? 'Dotčená směna'}</span>}
   </p>;
 
+  const open = canOpen && group.complete && contractor && parts.length
+    ? () => onOpen(group.timelogs[0])
+    : undefined;
+
   return <TimelogSummaryCard label={`Společný výkaz ${contractor?.name ?? ''}`}
-    person={showPerson ? { name: contractor?.name ?? 'Člen crew', initials: contractor?.ii } : undefined}
+    person={showPerson ? { name: contractor?.name ?? 'Člen crew', initials: contractor?.ii, onOpen: open } : undefined}
     metadata={partCount > 1 ? `Společný výkaz · ${partCount} ${partCount < 5 ? 'části' : 'částí'}` : undefined}
     status={<StatusBadge status={group.round.status} />} hours={hours} amount={amount}
     entries={parts.map(({ timelog, event, hours: partHours, meals, amount: partAmount }) => ({
@@ -50,9 +54,9 @@ export function SharedApprovalCard({ group, contractors, events, canAct, onOpen,
         <div>{displayTimelogHours(partHours)}</div><div className="mt-0.5 text-[11px] font-normal text-[color:var(--nodu-text-soft)]">{displayTimelogMoney(partAmount)}</div>
       </div>,
     }))}
-    control={<Button type="button" variant={canAct ? 'default' : 'outline'} disabled={!canOpen || !group.complete || !contractor || !parts.length}
+    control={<Button type="button" variant={canAct ? 'default' : 'outline'} disabled={!open}
       aria-label={canAct ? 'Zkontrolovat celý výkaz' : 'Otevřít celý výkaz'}
-      onClick={() => onOpen(group.timelogs[0])} className="h-11 gap-1.5 rounded-xl px-3 text-xs">
+      onClick={open} className="h-11 gap-1.5 rounded-xl px-3 text-xs">
       {canAct ? 'Zkontrolovat' : 'Otevřít'}<ArrowUpRight size={14} aria-hidden="true" />
     </Button>}
   >

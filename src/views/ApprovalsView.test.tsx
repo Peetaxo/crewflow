@@ -130,6 +130,7 @@ describe('ApprovalsView targeted approvals', () => {
 
     await waitFor(() => {
       expect(updateTimelogStatuses).toHaveBeenCalledWith([1], 'rej', {
+        expectedReviewKeys: expect.any(Array),
         assertCurrent: expect.any(Function),
         currentProfileId: 'profile-me',
         note: 'Doplň pauzu.',
@@ -145,6 +146,7 @@ describe('ApprovalsView targeted approvals', () => {
 
     await waitFor(() => {
       expect(updateTimelogStatuses).toHaveBeenCalledWith([1, 3], 'coo', {
+        expectedReviewKeys: expect.any(Array),
         assertCurrent: expect.any(Function),
         currentProfileId: 'profile-me',
       });

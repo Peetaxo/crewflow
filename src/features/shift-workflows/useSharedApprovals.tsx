@@ -5,15 +5,12 @@ import { useTimelogsQuery } from '../timelogs/queries/useTimelogsQuery';
 import { useEventsQuery } from '../events/queries/useEventsQuery';
 import { useShiftWorkflows } from './useShiftWorkflows';
 import { localShiftWorkflowId } from './shift-workflows.local';
-import { isShiftApprovalGroupActionable, selectShiftApprovalGroups, selectShiftReviewTarget } from './shift-approval-groups';
+import { selectShiftReviewTarget } from './shift-approval-groups';
 import { SharedApprovalCard } from './SharedApprovalCard';
 import { readShiftRoundHistory, type ShiftRoundAction } from './shift-round-history';
 import { compareShiftWorkflowTimestamps } from './shift-workflow-time';
 
-const localCanonicalReport = (report: Timelog): Timelog => ({ ...report,
-  supabaseId: localShiftWorkflowId('timelog', report.id), eventSupabaseId: localShiftWorkflowId('event', report.eid),
-  contractorProfileId: report.contractorProfileId ? localShiftWorkflowId('profile', report.contractorProfileId) : undefined,
-});
+import { getApprovalGroups, getApprovalInbox, localCanonicalReport } from './approval-inbox';
 
 /** All list surfaces share membership, presentation and the same global editor. */
 export function useSharedApprovals(timelogs: Timelog[], events: Event[], contractors: Contractor[]) {
@@ -44,24 +41,15 @@ export function useSharedApprovals(timelogs: Timelog[], events: Event[], contrac
     return () => { active = false; controller.abort(); };
   }, [historyKey, snapshot, workflows.ready, workflows.scope]);
 
-  const groupsFor = (visible: Timelog[]) => {
-    const selected = selectShiftApprovalGroups(local ? visible.map(localCanonicalReport) : visible, canonical, snapshot?.rounds ?? []);
-    const actor = { ...workflows.scope, role: local ? role : workflows.scope.role,
-      profileId: local && workflows.scope.profileId ? localShiftWorkflowId('profile', workflows.scope.profileId) : workflows.scope.profileId };
-    return { ...selected, rounds: selected.rounds.map((group) => ({ ...group,
-      canAct: isShiftApprovalGroupActionable(group, actor),
-    })) };
-  };
-  const legacyOnly = (visible: Timelog[]) => {
-    if (!snapshot) return [];
-    const sharedIds = new Set(groupsFor(visible).rounds.flatMap((group) => group.round.timelogIds));
-    return visible.filter((report) => !sharedIds.has((local ? localCanonicalReport(report) : report).supabaseId ?? ''));
-  };
-  const cards = (visible: Timelog[]) => <>
+  const scope = local ? { ...workflows.scope, role } : workflows.scope;
+  const groupsFor = (visible: Timelog[]) => getApprovalGroups(visible, allTimelogs, snapshot?.rounds ?? [], scope);
+  const inboxFor = (visible: Timelog[]) => getApprovalInbox(visible, allTimelogs, reviewReady ? snapshot?.rounds : undefined, scope);
+  const legacyOnly = (visible: Timelog[]) => snapshot ? groupsFor(visible).legacy : [];
+  const cards = (visible: Timelog[], rounds = groupsFor(visible).rounds) => <>
     {(!snapshot || workflows.query.isError) && <p role="status" className="mb-3 text-sm">{workflows.query.isError
       ? 'Společné výkazy se nepodařilo načíst. Obnovte data před rozhodnutím.'
       : 'Načítám společné výkazy…'}</p>}
-    {groupsFor(visible).rounds.map((group) => {
+    {rounds.map((group) => {
       const relatedRoundIds = new Set(snapshot?.rounds.filter((round) => round.contractorProfileId === group.round.contractorProfileId
         && compareShiftWorkflowTimestamps(round.updatedAt, group.round.updatedAt) <= 0 && (round.id === group.round.id
           || (group.round.workflowId !== null && round.workflowId === group.round.workflowId)
@@ -97,5 +85,5 @@ export function useSharedApprovals(timelogs: Timelog[], events: Event[], contrac
     setEditingTimelog(local ? allTimelogs.find((report) => report.id === target.id) ?? target : target);
     return true;
   };
-  return { cards, legacyOnly, reviewSelection, groupsFor, ready: reviewReady, identityKey: `${workflows.scopeKey}:${workflows.ready}` };
+  return { cards, inboxFor, legacyOnly, reviewSelection, groupsFor, ready: reviewReady, identityKey: `${workflows.scopeKey}:${workflows.ready}` };
 }

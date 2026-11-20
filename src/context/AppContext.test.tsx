@@ -218,6 +218,21 @@ describe('AppProvider UI session restore', () => {
     expect([context.editingReceipt, context.editingProject, context.editingClient, context.deleteConfirm]).toEqual([null, null, null, null]);
   });
 
+  it.each([['crew', 'my-timelogs'], ['crewhead', 'timelogs'], ['coo', 'timelogs']] as const)(
+    'opens the personal queue on every %s navigation click', (role, tab) => {
+      mockAuthState.role = role;
+      let context!: AppContextType;
+      function Probe() { context = useAppContext(); return null; }
+      render(<AppProvider><Probe /></AppProvider>);
+      act(() => context.setCurrentTab(tab));
+      act(() => { context.setTimelogFilter('paid'); context.setSearchQuery('old search'); });
+      act(() => context.setCurrentTab(tab));
+      expect(context.currentTab).toBe(tab);
+      expect(context.timelogFilter).toBe('inbox');
+      expect(context.searchQuery).toBe('');
+    },
+  );
+
   it('does not execute a captured delete handler after its identity retires', async () => {
     vi.mocked(deleteReceipt).mockClear();
     let context!: AppContextType;

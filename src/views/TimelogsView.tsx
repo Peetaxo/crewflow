@@ -150,11 +150,19 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
       : baseTimelogs
   ), [baseTimelogs, isCrewMineScope, selectedTimelogMonthEnd, selectedTimelogMonthStart, timelogPeriodMode]);
   const sharedApprovals = useSharedApprovals(timelogsQuery.data ?? [], events, contractors);
-  const visibleTimelogs = timelogFilter === 'all'
+  const showingInbox = timelogFilter === 'inbox';
+  const inbox = sharedApprovals.inboxFor(baseTimelogs);
+  const waitingCount = searchQuery.trim() ? sharedApprovals.inboxFor(timelogsQuery.data ?? []).count : inbox.count;
+  const visibleTimelogs = showingInbox ? baseTimelogs : timelogFilter === 'all'
     ? periodTimelogs
     : periodTimelogs.filter((timelog) => timelog.status === timelogFilter);
-  const filtered = sharedApprovals.legacyOnly(visibleTimelogs);
-  const title = scope === 'mine' ? 'Schvalování' : 'Timelogy';
+  const filtered = showingInbox ? inbox.legacy : sharedApprovals.legacyOnly(visibleTimelogs);
+  const reportsLoaded = Boolean(timelogsQuery.data) && sharedApprovals.ready !== false;
+  const empty = reportsLoaded && (showingInbox ? inbox.count === 0 : visibleTimelogs.length === 0);
+  const emptyMessage = showingInbox && !searchQuery.trim()
+    ? 'Žádné výkazy teď nečekají na tebe.'
+    : 'Žádné záznamy pro tento filtr';
+  const title = scope === 'mine' ? 'Moje výkazy' : 'Schvalování';
   const showTimelogNotes = canSeeTimelogNote(role);
   const getSubmitActionLabel = (timelog: typeof baseTimelogs[number]) => {
     if (timelog.status === 'pending_crew_confirmation') return 'Potvrdit a odeslat';
@@ -385,7 +393,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
             size="sm"
             className="border-[#e8b4a3] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39] text-[11px]"
           >
-            Zamítnout
+            Vrátit k opravě
           </Button>
         </>
       )}
@@ -406,7 +414,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
             size="sm"
             className="border-[#e8b4a3] text-[#c45c39] hover:bg-[rgba(212,93,55,0.06)] hover:text-[#c45c39] text-[11px]"
           >
-            Vrátit
+            Vrátit k opravě
           </Button>
         </>
       )}
@@ -469,28 +477,33 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <div className="mb-6 space-y-4">
+        <h1 className="pr-12 text-2xl font-semibold tracking-[-0.03em] text-[color:var(--nodu-text)]">{title}</h1>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="nodu-dashboard-kicker">Timesheets</div>
-            <h1 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--nodu-text)]">{title}</h1>
-            {scope === 'all' && (
-              <p className="mt-1 text-sm text-[color:var(--nodu-text-soft)]">
-                Schvalování i detail výkazů na jednom místě.
-              </p>
-            )}
+          <div role="group" aria-label="Zobrazení výkazů" className="inline-flex max-w-full rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] p-1">
+            {(['inbox', 'all'] as const).map(mode => {
+              const active = mode === 'inbox' ? showingInbox : !showingInbox;
+              return <button key={mode} type="button" aria-pressed={active} onClick={() => selectTimelogFilter(mode)}
+                className={`min-h-11 rounded-[14px] px-3 text-sm font-semibold transition-colors sm:px-4 ${active
+                  ? 'bg-[color:var(--nodu-accent-soft)] text-[color:var(--nodu-accent)]'
+                  : 'text-[color:var(--nodu-text-soft)]'}`}>
+                {mode === 'inbox' ? <>Čeká na mě <span className="ml-1 tabular-nums">{reportsLoaded ? `(${waitingCount})` : ''}</span></> : 'Všechny výkazy'}
+              </button>;
+            })}
           </div>
 
           {scope === 'all' && (
             <div className="inline-flex rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
               <button
+                aria-pressed={viewMode === 'event'}
                 onClick={() => setViewMode('event')}
-                className={`rounded-[14px] px-3.5 py-2 text-[11px] font-medium transition-all ${viewMode === 'event' ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)] shadow-[inset_0_0_0_1px_rgba(255,128,13,0.16)]' : 'text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
+                className={`min-h-11 rounded-[14px] px-3.5 py-2 text-[11px] font-medium transition-all ${viewMode === 'event' ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)] shadow-[inset_0_0_0_1px_rgba(255,128,13,0.16)]' : 'text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
               >
                 Po akci
               </button>
               <button
+                aria-pressed={viewMode === 'people'}
                 onClick={() => setViewMode('people')}
-                className={`rounded-[14px] px-3.5 py-2 text-[11px] font-medium transition-all ${viewMode === 'people' ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)] shadow-[inset_0_0_0_1px_rgba(255,128,13,0.16)]' : 'text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
+                className={`min-h-11 rounded-[14px] px-3.5 py-2 text-[11px] font-medium transition-all ${viewMode === 'people' ? 'bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)] shadow-[inset_0_0_0_1px_rgba(255,128,13,0.16)]' : 'text-[color:var(--nodu-text-soft)] hover:text-[color:var(--nodu-text)]'}`}
               >
                 Po lidech
               </button>
@@ -498,7 +511,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
           )}
         </div>
 
-        <section aria-label="Období a stav výkazů" className="space-y-3">
+        {!showingInbox && <section aria-label="Období a stav výkazů" className="space-y-3">
           {isCrewMineScope && (
             <div className="inline-flex rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.94)] p-1">
               {(['all', 'month'] as const).map((mode) => (
@@ -598,10 +611,13 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
               ))}
             </div>
           )}
-        </section>
+        </section>}
       </div>
 
-      {sharedApprovals.cards(visibleTimelogs)}
+      {!timelogsQuery.data && sharedApprovals.ready && <p role="status" className="mb-3 text-sm text-[color:var(--nodu-text-soft)]">
+        {timelogsQuery.isError ? 'Výkazy se nepodařilo načíst.' : 'Načítám výkazy…'}
+      </p>}
+      {sharedApprovals.cards(visibleTimelogs, showingInbox ? inbox.rounds : undefined)}
 
       {scope === 'all' && viewMode === 'event' ? (
         <div className="space-y-4">
@@ -653,9 +669,9 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
             );
           })}
 
-          {visibleTimelogs.length === 0 && (
+          {empty && (
             <div className="nodu-panel rounded-[24px] p-10 text-center text-sm text-[color:var(--nodu-text-soft)]">
-              Žádné záznamy pro tento filtr
+              {emptyMessage}
             </div>
           )}
         </div>
@@ -663,9 +679,9 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
         <div className="space-y-3">
           {filtered.map((timelog) => renderOriginalTimelog(timelog))}
 
-          {visibleTimelogs.length === 0 && (
+          {empty && (
             <div className="nodu-panel rounded-[24px] p-10 text-center text-sm text-[color:var(--nodu-text-soft)]">
-              Žádné záznamy pro tento filtr
+              {emptyMessage}
             </div>
           )}
         </div>

@@ -18,12 +18,14 @@ import {
   resolveTimelogApprovalsAtomicRpc,
   type TimelogApprovalResolutionTarget,
 } from './timelog-approval-rpc.service';
-import { getActiveTimelogApproval, isTimelogWaitingForProfile } from './timelog-approval-state';
+import { getActiveTimelogApproval, getTimelogReviewKey, isTimelogWaitingForProfile } from './timelog-approval-state';
 import { assertTimelogComplete } from './timelog-validation';
 import { assertLegacyTimelogWrite } from './timelog-shared-write-guard';
 
 export type TimelogAction = 'sub' | 'ch' | 'coo' | 'rej';
 export interface TimelogActionOptions {
+  /** One immutable review key per requested numeric ID, in selection order. */
+  expectedReviewKeys?: readonly string[];
   billingApproval?: { quoteId: string; targets: TimelogApprovalResolutionTarget[] };
   assertCurrent?: () => void;
   note?: string;
@@ -541,6 +543,7 @@ const persistSupabaseTimelogStatus = async (
     ));
     if (guardedTargets.length) await assertLegacyTimelogWrite(guardedTargets);
     assertCurrent();
+    assertReviewedSelection(localTimelogIds, options.expectedReviewKeys, targets.map(target => target.timelog));
     const results = await transitionTimelogStatusesAtomicRpc({
       targets: targets
         .map(({ timelog }) => ({
@@ -651,6 +654,24 @@ const getRequestedTimelogs = (ids: number[]): Timelog[] => {
     if (!timelog) throw new Error('Výkaz nebyl nalezen.');
     return timelog;
   });
+};
+
+const assertReviewedSelection = (
+  ids: number[],
+  expectedKeys: readonly string[] | undefined,
+  prepared?: Timelog[],
+) => {
+  if (!expectedKeys) return;
+  const snapshot = getLocalAppState().timelogs ?? [];
+  const changed = ids.length !== expectedKeys.length || ids.some((id, index) => {
+    const matches = snapshot.filter(report => report.id === id);
+    if (matches.length !== 1) return true;
+    const current = matches[0];
+    return (appDataSource === 'supabase' && (!current.supabaseId || !current.updatedAt))
+      || getTimelogReviewKey(current) !== expectedKeys[index]
+      || (prepared && getTimelogReviewKey(prepared[index]) !== expectedKeys[index]);
+  });
+  if (changed) throw new Error('Výběr výkazů se změnil. Otevřete výkaz znovu.');
 };
 
 const getConfiguredEventApprover = (timelog: Timelog): string => {
@@ -829,6 +850,7 @@ const persistSupabaseApprovalAction = async (
     const authenticatedProfileId = await getAuthenticatedSupabaseProfileId(assertCurrent);
     assertCurrent();
 
+    assertReviewedSelection(ids, options.expectedReviewKeys, targets);
     if (mode === 'handoff') {
       const rpcTargets = targets.map((timelog) => ({
         id: timelog.supabaseId as string,
@@ -872,6 +894,7 @@ const updateLocalApprovalAction = async (
   const targets = getRequestedTimelogs(ids);
   await assertLegacyTimelogWrite(targets);
   assertCurrent();
+  assertReviewedSelection(ids, options.expectedReviewKeys, targets);
   assertApprovalActionShape(
     targets,
     mode === 'handoff' ? 'ch' : mode === 'resolve-approved' ? 'coo' : 'rej',
@@ -995,6 +1018,7 @@ const updateTimelogStatusesTo = async (
     ));
     if (guardedTargets.length) await assertLegacyTimelogWrite(guardedTargets);
     assertCurrent();
+    assertReviewedSelection(ids, options.expectedReviewKeys, targets);
     const currentTimelogs = getLocalAppState().timelogs ?? [];
     ids.forEach((id) => {
       const timelog = currentTimelogs.find((item) => item.id === id);
@@ -1039,6 +1063,10 @@ export const updateTimelogStatuses = async (
       assertCurrent();
       return reloadApprovalMutationResults(command.targets.map((target) => target.id), assertCurrent);
     }, options.assertCurrent);
+  }
+  if (options.expectedReviewKeys) {
+    options = { ...options, expectedReviewKeys: [...options.expectedReviewKeys] };
+    assertReviewedSelection(ids, options.expectedReviewKeys);
   }
   const mode = assertApprovalActionShape(getRequestedTimelogs(ids), action, options);
   if (mode === 'transition') {

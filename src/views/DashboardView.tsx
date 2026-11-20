@@ -6,8 +6,8 @@ import { cs } from 'date-fns/locale';
 import { useAppContext } from '../context/useAppContext';
 import { useAuth } from '../app/providers/useAuth';
 import { useSharedApprovals } from '../features/shift-workflows/useSharedApprovals';
-import { Contractor, Event, EventApplication, ReceiptItem, Timelog } from '../types';
-import { calculateMealAllowance, calculateTotalHours, formatCurrency, formatDateRange, getDatesBetween, getEventStatus } from '../utils';
+import { Contractor, Event, EventApplication, Timelog } from '../types';
+import { calculateTotalHours, formatDateRange, getDatesBetween, getEventStatus } from '../utils';
 import StatCard from '../components/shared/StatCard';
 import StatusBadge from '../components/shared/StatusBadge';
 import { useIsMobile } from '../hooks/use-mobile';
@@ -19,7 +19,8 @@ import { useEventsQuery } from '../features/events/queries/useEventsQuery';
 import { useTimelogsQuery } from '../features/timelogs/queries/useTimelogsQuery';
 import { useReceiptsQuery } from '../features/receipts/queries/useReceiptsQuery';
 import { useInvoicesQuery } from '../features/invoices/queries/useInvoicesQuery';
-import { isTimelogApprovalActionable } from '../features/timelogs/services/timelog-approval-presentation';
+import { getTimelogReviewKey } from '../features/timelogs/services/timelog-approval-state';
+import DashboardApprovalRow from './DashboardApprovalRow';
 
 type PendingCrewApplicationViewModel = {
   application: EventApplication;
@@ -38,11 +39,16 @@ const applicationMatchesDashboardEvent = (application: EventApplication, event: 
   || idsMatch(application.eventSupabaseId, event.id)
 );
 
+const findTimelogEvent = (events: Event[], timelog: Timelog) => events.find(event => timelog.eventSupabaseId
+  ? event.supabaseId === timelog.eventSupabaseId
+  : idsMatch(event.id, timelog.eid) || idsMatch(event.supabaseId, timelog.eid));
+
 const DashboardView = () => {
   const {
     role,
     searchQuery,
     setCurrentTab,
+    setTimelogFilter,
     setSelectedEventId,
     setEventTab,
     setEditingTimelog,
@@ -95,7 +101,7 @@ const DashboardView = () => {
     if (!query) return safeTimelogs;
 
     return safeTimelogs.filter((timelog) => {
-      const event = events.find((item) => item.id === timelog.eid || item.supabaseId === String(timelog.eid));
+      const event = findTimelogEvent(events, timelog);
       const contractor = findContractor(timelog.contractorProfileId);
       if (!event || !contractor) return false;
 
@@ -153,21 +159,27 @@ const DashboardView = () => {
     events.find((event) => event.id === id) ?? null
   ), [events]);
 
-  const approvalStatus = role === 'crewhead' ? 'pending_ch' : 'pending_coo';
   const roleLabel = role === 'crewhead' ? 'Pohled CrewHead' : 'Pohled COO';
   const reviewLabel = role === 'crewhead' ? 'Ke kontrole (CH)' : 'Ke schvaleni (COO)';
 
   const sharedApprovals = useSharedApprovals(timelogsQuery.data ?? [], events, contractors);
-  const allTimelogQueue = useMemo(() => (
-    timelogs.filter((timelog) => {
-      if (timelog.status !== approvalStatus) return false;
-      const rounds = sharedApprovals.groupsFor([timelog]).rounds;
-      return rounds.length > 0 ? rounds.some((group) => group.canAct)
-        : isTimelogApprovalActionable(timelog, role, currentProfileId);
-    })
-  ), [approvalStatus, currentProfileId, role, timelogs, sharedApprovals]);
-  const timelogQueue = sharedApprovals.legacyOnly(allTimelogQueue);
-  const pendingForMe = timelogQueue.length + sharedApprovals.groupsFor(allTimelogQueue).rounds.length;
+  const inbox = sharedApprovals.inboxFor(role === 'crew' ? [] : timelogs);
+  const pendingForMe = searchQuery.trim() && role !== 'crew'
+    ? sharedApprovals.inboxFor(timelogsQuery.data ?? []).count
+    : inbox.count;
+  const emptyApprovalMessage = searchQuery.trim()
+    ? 'Žádné výkazy neodpovídají hledání.'
+    : 'Žádné výkazy teď nečekají na tebe.';
+  const approvalRows = inbox.legacy.slice(0, isMobile ? 3 : 4).map((timelog) => {
+    const contractor = findContractor(timelog.contractorProfileId);
+    const event = findTimelogEvent(events, timelog);
+    if (!contractor || !event) return null;
+    return <DashboardApprovalRow
+      key={JSON.stringify([sharedApprovals.identityKey, role, currentProfileId, getTimelogReviewKey(timelog)])}
+      timelog={timelog} contractor={contractor} event={event} isMobile={isMobile}
+      currentProfileId={currentProfileId} reviewSelection={sharedApprovals.reviewSelection}
+    />;
+  });
   const pendingInvoices = filteredInvoices.filter((invoice) => invoice.status === 'sent').length;
   const pendingReceipts = receipts.filter((receipt) => receipt.status === 'submitted' || receipt.status === 'approved').length;
   const approvedHours = timelogs
@@ -275,6 +287,7 @@ const DashboardView = () => {
 
     if (timelogsWaitingForCrew.length > 0) {
       openTab('timelogs');
+      setTimelogFilter('pending_crew_confirmation');
       return;
     }
 
@@ -363,30 +376,11 @@ const DashboardView = () => {
             <button type="button" onClick={() => openTab('timelogs')}>Otevřít schvalování</button>
           </div>
           <div className="nodu-management-overview-list">
-            {sharedApprovals.cards(allTimelogQueue)}
-            {timelogQueue.slice(0, 3).map((timelog) => {
-              const contractor = findContractor(timelog.contractorProfileId);
-              const event = findEvent(timelog.eid);
-              if (!contractor || !event) return null;
+            {sharedApprovals.cards(timelogs, inbox.rounds)}
+            {approvalRows}
 
-              const hours = calculateTotalHours(timelog.days);
-
-              return (
-                <button key={timelog.id} type="button" className="nodu-management-overview-row" onClick={() => setEditingTimelog(timelog)}>
-                  <div className="av h-9 w-9 text-[11px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>
-                    {contractor.ii}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <strong>{contractor.name}</strong>
-                    <span>{event.name}</span>
-                  </div>
-                  <span className="nodu-management-overview-value">{hours.toFixed(1)}h</span>
-                </button>
-              );
-            })}
-
-            {sharedApprovals.ready !== false && pendingForMe === 0 && (
-              <div className="nodu-dashboard-empty">Žádné výkazy k akci</div>
+            {timelogsQuery.data && sharedApprovals.ready !== false && inbox.count === 0 && (
+              <div className="nodu-dashboard-empty">{emptyApprovalMessage}</div>
             )}
           </div>
         </section>
@@ -492,47 +486,16 @@ const DashboardView = () => {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
         <div className="nodu-dashboard-panel rounded-[28px] p-5 lg:col-span-3">
-          <h2 className="nodu-dashboard-panel-title mb-3">Ke schválení</h2>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="nodu-dashboard-panel-title">Ke schválení</h2>
+            <button type="button" className="min-h-11 text-xs font-semibold text-[var(--nodu-accent)]" onClick={() => openTab('timelogs')}>Otevřít schvalování</button>
+          </div>
           <div className="space-y-1">
-            {sharedApprovals.cards(allTimelogQueue)}
-            {timelogQueue
-              .slice(0, 4)
-              .map((timelog) => {
-                const contractor = findContractor(timelog.contractorProfileId);
-                const event = findEvent(timelog.eid);
-                if (!contractor || !event) return null;
+            {sharedApprovals.cards(timelogs, inbox.rounds)}
+            {approvalRows}
 
-                const hours = calculateTotalHours(timelog.days);
-
-                return (
-                  <button
-                    key={timelog.id}
-                    onClick={() => setEditingTimelog(timelog)}
-                    className="nodu-dashboard-row flex w-full items-center gap-3 rounded-[20px] border-b px-3 py-3 text-left transition-colors last:border-0"
-                  >
-                    <div className="av h-8 w-8 text-[10px]" style={{ backgroundColor: contractor.bg, color: contractor.fg }}>
-                      {contractor.ii}
-                    </div>
-                    <div className="min-width-0 flex-1">
-                      <div className="nodu-dashboard-row-title">{contractor.name}</div>
-                      <div className="nodu-dashboard-row-meta mt-1 gap-2">
-                        <span>{event.name}</span>
-                        <span className="jn nodu-job-badge">{event.job}</span>
-                      </div>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <div className="nodu-dashboard-row-value">{hours.toFixed(1)}h</div>
-                      <div className="text-[11px] text-[color:var(--nodu-text-soft)]">{formatCurrency(hours * contractor.rate + calculateMealAllowance(timelog.days, { enabled: Boolean(event.mealAllowanceEnabled) }))}</div>
-                    </div>
-                    <div className="nodu-dashboard-action">
-                      <ChevronRight size={14} />
-                    </div>
-                  </button>
-                );
-              })}
-
-            {sharedApprovals.ready !== false && pendingForMe === 0 && (
-              <div className="nodu-dashboard-empty">Zadne vykazy k akci</div>
+            {timelogsQuery.data && sharedApprovals.ready !== false && inbox.count === 0 && (
+              <div className="nodu-dashboard-empty">{emptyApprovalMessage}</div>
             )}
           </div>
         </div>

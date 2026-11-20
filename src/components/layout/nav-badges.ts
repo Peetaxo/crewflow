@@ -1,10 +1,9 @@
-import type { Candidate, Invoice, ReceiptItem, Role, Timelog } from '../../types';
-import { isTimelogWaitingForProfile } from '../../features/timelogs/services/timelog-approval-state';
+import type { Candidate, Invoice, ReceiptItem, Role } from '../../types';
 
 interface NavBadgeInput {
   currentProfileId: string | null | undefined;
   role: Role;
-  timelogs: Timelog[];
+  approvalCount: number;
   invoices: Invoice[];
   receipts: ReceiptItem[];
   candidates: Candidate[];
@@ -13,27 +12,13 @@ interface NavBadgeInput {
 export const buildNavBadgeCounts = ({
   currentProfileId,
   role,
-  timelogs,
+  approvalCount,
   invoices,
   receipts,
   candidates,
 }: NavBadgeInput): Record<string, number> => ({
-  timelogs: timelogs.filter((timelog) => {
-    if (role === 'crewhead') return timelog.status === 'pending_ch';
-    if (role === 'coo') return isTimelogWaitingForProfile(timelog, currentProfileId ?? undefined);
-    return false;
-  }).length,
-  'my-timelogs': currentProfileId
-    ? timelogs.filter((timelog) => (
-      timelog.contractorProfileId === currentProfileId
-      && (
-        timelog.status === 'draft'
-        || timelog.status === 'pending_ch'
-        || timelog.status === 'pending_coo'
-        || timelog.status === 'rejected'
-      )
-    )).length
-    : 0,
+  timelogs: role === 'crew' ? 0 : approvalCount,
+  'my-timelogs': role === 'crew' ? approvalCount : 0,
   invoices: invoices.filter((invoice) => invoice.status === 'sent').length,
   'my-invoices': currentProfileId
     ? invoices.filter((invoice) => (

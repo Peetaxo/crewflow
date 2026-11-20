@@ -129,7 +129,7 @@ export const TimelogReportSummary: React.FC<TimelogReportSummaryProps> = ({
           </div>
           <h4>Všechny záznamy</h4>
         </div>
-        <span>{days.length} záznamů</span>
+        <span>{days.length} {days.length === 1 ? 'záznam' : days.length >= 2 && days.length <= 4 ? 'záznamy' : 'záznamů'}</span>
       </div>
 
       <TimelogSummaryList days={days} mealAllowanceEnabled={mealAllowanceEnabled} />

@@ -1,15 +1,29 @@
 import React from 'react';
+const backend = vi.hoisted(() => ({ source: 'local', quote: vi.fn() }));
+vi.mock('../lib/app-config', () => ({ get appDataSource() { return backend.source; } }));
+vi.mock('../features/invoice-billing/service', () => ({ billingService: { quote: backend.quote } }));
+const updateTimelogStatuses = vi.hoisted(() => vi.fn());
 const sharedMockState = vi.hoisted(() => ({ group: null as { canAct: boolean } | null }));
 vi.mock('../features/shift-workflows/useSharedApprovals', () => ({ useSharedApprovals: () => ({
-  cards: () => null, legacyOnly: (reports: unknown[]) => sharedMockState.group ? [] : reports, reviewSelection: () => false,
-  groupsFor: (reports: unknown[]) => ({ rounds: reports.length && sharedMockState.group ? [sharedMockState.group] : [], legacy: [] }),
+  cards: () => null, ready: true, identityKey: authMockState.currentProfileId, reviewSelection: () => false,
+  inboxFor: (reports: Timelog[]) => {
+    if (sharedMockState.group) {
+      const rounds = sharedMockState.group.canAct ? [sharedMockState.group] : [];
+      return { rounds, legacy: [], count: rounds.length };
+    }
+    return getApprovalInbox(reports, reports, [], {
+      role: mockAppContext.role as Role, profileId: authMockState.currentProfileId, userId: 'user', source: 'supabase',
+    });
+  },
 }) }));
+import DashboardView from './DashboardView';
+import { getApprovalInbox } from '../features/shift-workflows/approval-inbox';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { EventApplication, TimelogApproval } from '../types';
+import type { EventApplication, Role, Timelog, TimelogApproval } from '../types';
 
 const mockAppContext = {
   role: 'crewhead',
@@ -50,7 +64,9 @@ const mockEvents = [
 
 const defaultMockTimelogs = [
   {
-    id: 'tl-1',
+    id: 1,
+    note: 'Kontrola kabeláže',
+    km: 12,
     eid: 101,
     cid: 1,
     contractorProfileId: 'profile-1',
@@ -59,6 +75,7 @@ const defaultMockTimelogs = [
   },
 ];
 const mockTimelogsState: { timelogs: (typeof defaultMockTimelogs[number] & {
+  supabaseId?: string; updatedAt?: string;
   approvals?: Pick<TimelogApproval, 'status' | 'supersededAt' | 'approverProfileId'>[];
 })[] } = { timelogs: [...defaultMockTimelogs] };
 
@@ -146,12 +163,15 @@ vi.mock('../features/invoices/queries/useInvoicesQuery', () => ({
 
 vi.mock('../features/timelogs/services/timelogs.service', () => ({
   getTimelogDependencies: () => mockDependencies,
+  updateTimelogStatuses,
 }));
 
 describe('DashboardView', () => {
   afterEach(() => vi.useRealTimers());
   beforeEach(() => {
     vi.clearAllMocks();
+    updateTimelogStatuses.mockResolvedValue([]);
+    backend.source = 'local';
     mockAppContext.role = 'crewhead';
     mockAppContext.searchQuery = '';
     mobileMockState.isMobile = false;
@@ -173,17 +193,16 @@ describe('DashboardView', () => {
     mockAppContext.role = role;
     mobileMockState.isMobile = mobile;
     mockTimelogsState.timelogs = [
-      { ...defaultMockTimelogs[0], id: 'cross-year', status: 'approved', days: [
+      { ...defaultMockTimelogs[0], id: 10, status: 'approved', days: [
         { d: '2026-12-31', f: '08:00', t: '11:00' },
         { d: '2027-01-01', f: '08:00', t: '12:00' },
       ] },
-      { ...defaultMockTimelogs[0], id: 'issued', status: 'invoiced', days: [{ d: '2027-01-02', f: '08:00', t: '13:00' }] },
-      { ...defaultMockTimelogs[0], id: 'paid', status: 'paid', days: [{ d: '2027-01-03', f: '08:00', t: '10:00' }] },
-      { ...defaultMockTimelogs[0], id: 'unapproved', status: 'draft', days: [{ d: '2027-01-04', f: '08:00', t: '18:00' }] },
-      { ...defaultMockTimelogs[0], id: 'historical-pending', status: role === 'crewhead' ? 'pending_ch' : 'pending_coo',
+      { ...defaultMockTimelogs[0], id: 11, status: 'invoiced', days: [{ d: '2027-01-02', f: '08:00', t: '13:00' }] },
+      { ...defaultMockTimelogs[0], id: 12, status: 'paid', days: [{ d: '2027-01-03', f: '08:00', t: '10:00' }] },
+      { ...defaultMockTimelogs[0], id: 13, status: 'draft', days: [{ d: '2027-01-04', f: '08:00', t: '18:00' }] },
+      { ...defaultMockTimelogs[0], id: 14, status: role === 'crewhead' ? 'pending_ch' : 'pending_coo',
         days: [{ d: '2026-06-01', f: '08:00', t: '16:00' }] },
     ];
-    const { default: DashboardView } = await import('./DashboardView');
     render(<DashboardView />);
     expect(screen.getByText(label)).toBeInTheDocument();
     const hourCard = mobile && role !== 'crew'
@@ -202,9 +221,8 @@ describe('DashboardView', () => {
   it.each([false, true])('counts a shared COO round only when personally actionable: %s', async (canAct) => {
     mockAppContext.role = 'coo'; mobileMockState.isMobile = true;
     sharedMockState.group = { canAct };
-    mockTimelogsState.timelogs = [1, 2].map((id) => ({ ...defaultMockTimelogs[0], id: `shared-${id}`, status: 'pending_coo',
+    mockTimelogsState.timelogs = [1, 2].map((id) => ({ ...defaultMockTimelogs[0], id, status: 'pending_coo',
       approvals: [{ status: 'pending', supersededAt: null, approverProfileId: canAct ? 'profile-current' : 'profile-other' }] }));
-    const { default: DashboardView } = await import('./DashboardView');
     render(<DashboardView />);
     expect(within(screen.getByRole('region', { name: 'Rychlý stav' })).getByText(canAct ? '1 výkaz' : '0 výkazů')).toBeInTheDocument();
   });
@@ -215,25 +233,24 @@ describe('DashboardView', () => {
     mockTimelogsState.timelogs = [
       {
         ...defaultMockTimelogs[0],
-        id: 'mine',
+        id: 15,
         status: 'pending_coo',
         approvals: [{ status: 'pending', supersededAt: null, approverProfileId: 'profile-current' }],
       },
       {
         ...defaultMockTimelogs[0],
-        id: 'other',
+        id: 16,
         status: 'pending_coo',
         approvals: [{ status: 'pending', supersededAt: null, approverProfileId: 'profile-other' }],
       },
       {
         ...defaultMockTimelogs[0],
-        id: 'legacy',
+        id: 17,
         status: 'pending_coo',
         approvals: [],
       },
     ];
 
-    const { default: DashboardView } = await import('./DashboardView');
     render(<DashboardView />);
 
     expect(screen.getByText('2 výkazy')).toBeInTheDocument();
@@ -242,7 +259,6 @@ describe('DashboardView', () => {
   });
 
   it('renders the dashboard with semantic nodu helpers instead of light-only surface utilities', async () => {
-    const { default: DashboardView } = await import('./DashboardView');
     const queryClient = new QueryClient();
     const { container } = render(
       <QueryClientProvider client={queryClient}>
@@ -276,28 +292,123 @@ describe('DashboardView', () => {
     expect(upcomingEventRow.className).not.toContain('border-[#f1e4d6]');
   });
 
-  it('opens the same global timelog detail from a dashboard approval row', async () => {
-    const { default: DashboardView } = await import('./DashboardView');
-    const queryClient = new QueryClient();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <DashboardView />
-      </QueryClientProvider>,
-    );
+  const reviewCases = ['crewhead', 'coo'].flatMap(role => [false, true].map(mobile => ({ role, mobile })));
 
-    const timelogsHeading = screen.getByRole('heading', { name: 'Ke schválení' });
-    const timelogPanel = timelogsHeading.closest('.nodu-dashboard-panel');
-    const timelogRow = within(timelogPanel as HTMLElement).getByRole('button', { name: /Alex Novak/i });
+  const openSecondReport = async (role: string, mobile: boolean) => {
+    mockAppContext.role = role;
+    mobileMockState.isMobile = mobile;
+    const status = role === 'crewhead' ? 'pending_ch' : 'pending_coo';
+    const identity = { supabaseId: '20000000-0000-4000-8000-000000000002', updatedAt: '2026-01-11T08:00:00Z' };
+    const approvals = [{ status: 'pending' as const, supersededAt: null, approverProfileId: 'profile-current' }];
+    mockTimelogsState.timelogs = [
+      { ...defaultMockTimelogs[0], status, approvals },
+      { ...defaultMockTimelogs[0], ...identity, id: 2, eid: 102, status, approvals, days: [{ d: '2026-01-10', f: '09:00', t: '13:00' }] },
+    ];
+    const view = render(<DashboardView />);
+    fireEvent.click(screen.getByRole('button', { name: /Alex Novak.*Old understaffed event/ }));
+    expect(mockAppContext.setEditingTimelog).not.toHaveBeenCalled();
+    expect(updateTimelogStatuses).not.toHaveBeenCalled();
+    return { ...view, review: within(screen.getByRole('dialog', { name: 'Kontrola výkazu' })) };
+  };
 
-    fireEvent.click(timelogRow);
+  it.each(reviewCases)('reviews and approves the selected report as $role (mobile=$mobile)', async ({ role, mobile }) => {
+    const { review } = await openSecondReport(role, mobile);
+    expect(review.getByText(/Alex Novak/)).toBeVisible();
+    expect(review.getByText(/Old understaffed event/)).toBeVisible();
+    expect(review.getByText('09:00 - 13:00')).toBeVisible();
+    expect(review.queryByText('08:00 - 16:00')).not.toBeInTheDocument();
+    expect(review.queryByRole('textbox')).not.toBeInTheDocument();
+    if (role === 'coo') {
+      expect(review.queryByText('Kontrola kabeláže')).not.toBeInTheDocument();
+      expect(review.queryByRole('button', { name: 'Upravit výkaz' })).not.toBeInTheDocument();
+    }
+    fireEvent.click(review.getByRole('button', { name: role === 'crewhead' ? 'Schválit a poslat COO' : 'Schválit výkaz' }));
+    await waitFor(() => expect(updateTimelogStatuses).toHaveBeenCalledExactlyOnceWith([2],
+      role === 'crewhead' ? 'ch' : 'coo', expect.objectContaining({ currentProfileId: 'profile-current' })));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
 
-    expect(mockAppContext.setEditingTimelog).toHaveBeenCalledWith(expect.objectContaining({ eid: 101 }));
-    expect(mockAppContext.setTimelogFilter).not.toHaveBeenCalled();
+  it.each(reviewCases)('returns only the reviewed report as $role (mobile=$mobile)', async ({ role, mobile }) => {
+    const { review } = await openSecondReport(role, mobile);
+    fireEvent.click(review.getByRole('button', { name: 'Vrátit k opravě' }));
+    if (role === 'coo') {
+      expect(updateTimelogStatuses).not.toHaveBeenCalled();
+      const confirm = within(screen.getByRole('dialog', { name: 'Vrátit výkaz k opravě' }));
+      fireEvent.change(confirm.getByLabelText('Důvod vrácení'), { target: { value: 'Opravte počet hodin' } });
+      fireEvent.click(confirm.getByRole('button', { name: 'Vrátit výkaz' }));
+    }
+    await waitFor(() => expect(updateTimelogStatuses).toHaveBeenCalledExactlyOnceWith([2], 'rej',
+      expect.objectContaining(role === 'coo' ? { note: 'Opravte počet hodin' } : { currentProfileId: 'profile-current' })));
+  });
+
+  it('requests the selected report’s billing preview before a remote COO decision', async () => {
+    backend.source = 'supabase';
+    backend.quote.mockResolvedValue({ id: 'quote-2', preview: { totalAmount: 1400, reports: [] } });
+    const { review } = await openSecondReport('coo', true);
+    fireEvent.click(review.getByRole('button', { name: 'Schválit výkaz' }));
+    const quote = within(screen.getByRole('dialog', { name: 'Schválení výkazů a fakturačního podkladu' }));
+    const confirm = await quote.findByRole('button', { name: 'Potvrdit schválení s touto částkou' });
+    const { supabaseId, updatedAt } = mockTimelogsState.timelogs[1];
+    expect(backend.quote).toHaveBeenCalledExactlyOnceWith([supabaseId]);
+    expect(updateTimelogStatuses).not.toHaveBeenCalled();
+    fireEvent.click(confirm);
+    await waitFor(() => expect(updateTimelogStatuses).toHaveBeenCalledExactlyOnceWith([2], 'coo', expect.objectContaining({
+      currentProfileId: 'profile-current',
+      billingApproval: { quoteId: 'quote-2', targets: [expect.objectContaining({ id: supabaseId, expectedUpdatedAt: updatedAt })] },
+    })));
+  });
+
+  it('opens the CH editor only through the explicit edit button', async () => {
+    const { review } = await openSecondReport('crewhead', true);
+    fireEvent.click(review.getByRole('button', { name: 'Upravit výkaz' }));
+    expect(mockAppContext.setEditingTimelog).toHaveBeenCalledExactlyOnceWith(mockTimelogsState.timelogs[1]);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(updateTimelogStatuses).not.toHaveBeenCalled();
+  });
+
+  it('pins the report as displayed when the review opens, even before a cache change is rendered', async () => {
+    const { review } = await openSecondReport('crewhead', true);
+    const displayed = mockTimelogsState.timelogs[1].updatedAt!;
+    mockTimelogsState.timelogs[1].updatedAt = 'a-newer-unseen-revision';
+    fireEvent.click(review.getByRole('button', { name: 'Schválit a poslat COO' }));
+    await waitFor(() => expect(updateTimelogStatuses).toHaveBeenCalledExactlyOnceWith([2], 'ch', expect.objectContaining({
+      expectedReviewKeys: [expect.stringContaining(displayed)],
+    })));
+  });
+
+  it('requires opening a refreshed report again after its recorded hours change', async () => {
+    const { rerender } = await openSecondReport('crewhead', true);
+    mockTimelogsState.timelogs = mockTimelogsState.timelogs.map(report => report.id === 2 ? {
+      ...report, updatedAt: '2026-01-11T08:05:00Z', days: [{ ...report.days[0], t: '15:00' }],
+    } : report);
+    rerender(<DashboardView />);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Alex Novak.*Old understaffed event/ }));
+    expect(within(screen.getByRole('dialog')).getByText('09:00 - 15:00')).toBeVisible();
+    expect(updateTimelogStatuses).not.toHaveBeenCalled();
+  });
+
+  it('dismisses an open COO return if the report is reassigned during review', async () => {
+    const { review, rerender } = await openSecondReport('coo', true);
+    fireEvent.click(review.getByRole('button', { name: 'Vrátit k opravě' }));
+    expect(screen.getByLabelText('Důvod vrácení')).toBeVisible();
+    mockTimelogsState.timelogs = mockTimelogsState.timelogs.map(report => report.id === 2 ? {
+      ...report, approvals: [{ status: 'pending', supersededAt: null, approverProfileId: 'another-coo' }],
+    } : report);
+    rerender(<DashboardView />);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(updateTimelogStatuses).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('opens the management timelogs inbox from the approval shortcut (mobile=%s)', async (mobile) => {
+    mobileMockState.isMobile = mobile;
+    render(<DashboardView />);
+    fireEvent.click(screen.getByRole('button', { name: 'Otevřít schvalování' }));
+    expect(mockAppContext.setCurrentTab).toHaveBeenCalledWith('timelogs');
   });
 
   it('renders a mobile management overview focused on CH and COO actions', async () => {
     mobileMockState.isMobile = true;
-    const { default: DashboardView } = await import('./DashboardView');
     const queryClient = new QueryClient();
     const { container } = render(
       <QueryClientProvider client={queryClient}>
@@ -329,7 +440,6 @@ describe('DashboardView', () => {
         plannedTo: '18:00',
       },
     ];
-    const { default: DashboardView } = await import('./DashboardView');
     const queryClient = new QueryClient();
     render(
       <QueryClientProvider client={queryClient}>
@@ -353,9 +463,20 @@ describe('DashboardView', () => {
     expect(mockAppContext.setEventTab).toHaveBeenCalledWith('overview');
   });
 
+  it('opens reports waiting for crew when following the incomplete-work shortcut', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2027, 0, 15, 12));
+    mobileMockState.isMobile = true;
+    mockTimelogsState.timelogs = [{ ...defaultMockTimelogs[0], status: 'pending_crew_confirmation' }];
+    render(<DashboardView />);
+    fireEvent.click(screen.getByRole('button', { name: 'Zobrazit' }));
+    expect(mockAppContext.setCurrentTab).toHaveBeenCalledExactlyOnceWith('timelogs');
+    expect(mockAppContext.setTimelogFilter).toHaveBeenCalledExactlyOnceWith('pending_crew_confirmation');
+    expect(mockAppContext.setEditingTimelog).not.toHaveBeenCalled();
+  });
+
   it('keeps incomplete management work compact on mobile', async () => {
     mobileMockState.isMobile = true;
-    const { default: DashboardView } = await import('./DashboardView');
     const queryClient = new QueryClient();
     render(
       <QueryClientProvider client={queryClient}>

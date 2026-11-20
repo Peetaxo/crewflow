@@ -10,7 +10,6 @@ const mobileLabels: Partial<Record<NavItemId, string>> = {
   events: 'Akce',
   timelogs: 'Schvalování',
   projects: 'Projekty',
-  'my-timelogs': 'Výkazy',
   'my-invoices': 'Faktury',
   crew: 'Crew',
 };

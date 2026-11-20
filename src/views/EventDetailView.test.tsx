@@ -1389,6 +1389,7 @@ describe('EventDetailView', () => {
 
     fireEvent.click(within(approvalDialog).getAllByRole('button', { name: 'Schválit výkaz Jana Nova' })[0]);
     await waitFor(() => expect(updateTimelogStatus).toHaveBeenCalledWith([pendingCrewheadTimelog.id], 'ch', {
+        expectedReviewKeys: expect.any(Array),
         assertCurrent: expect.any(Function),
       currentProfileId: 'profile-1',
     }));
@@ -2689,6 +2690,7 @@ describe('EventDetailView', () => {
 
     await waitFor(() => {
       expect(updateTimelogStatuses).toHaveBeenCalledWith([8], 'rej', {
+        expectedReviewKeys: expect.any(Array),
         assertCurrent: expect.any(Function),
         currentProfileId: 'profile-current',
         note: 'Doplň konec směny.',

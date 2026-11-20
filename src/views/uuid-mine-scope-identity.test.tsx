@@ -1,5 +1,6 @@
 import React from 'react';
 vi.mock('../features/shift-workflows/useSharedApprovals', () => ({ useSharedApprovals: () => ({
+  inboxFor: () => ({ count: 0, legacy: [], rounds: [] }),
   cards: () => null, legacyOnly: (reports: unknown[]) => reports, reviewSelection: () => false,
   groupsFor: () => ({ rounds: [], legacy: [] }),
 }) }));
@@ -27,6 +28,14 @@ let mockAuth = {
   switchRole: vi.fn(),
   signOut: vi.fn(),
 };
+
+vi.mock('../features/shift-workflows/useShiftWorkflows', () => ({
+  useShiftWorkflows: () => ({
+    ready: true,
+    scope: { source: 'supabase', role: mockAuth.role, userId: mockAuth.currentUserId, profileId: mockAuth.currentProfileId },
+    query: { data: { rounds: [] } },
+  }),
+}));
 
 const setEditingReceipt = vi.fn();
 const setEditingTimelog = vi.fn();
@@ -206,7 +215,7 @@ vi.mock('../components/ui/alert-dialog', () => ({
 
 vi.mock('../constants', () => ({
   getNavItemsForRole: () => [
-    { id: 'my-timelogs', label: 'Schvalování', icon: () => <span>T</span> },
+    { id: 'my-timelogs', label: 'Moje výkazy', icon: () => <span>T</span> },
     { id: 'my-invoices', label: 'Moje faktury', icon: () => <span>I</span> },
     { id: 'my-receipts', label: 'Moje účtenky', icon: () => <span>R</span> },
   ],
@@ -377,8 +386,8 @@ describe('UUID mine-scope identity', () => {
     expect(screen.getByPlaceholderText(/Hledat akci, job nebo jmeno/i)).toHaveClass('nodu-sidebar-search');
     expect(screen.getByTitle('Profil')).toHaveTextContent('Crew');
     expect(screen.getByTitle('Profil')).toHaveClass('nodu-sidebar-hover-surface');
-    expect(screen.getByRole('button', { name: /Schvalování/i })).toHaveClass('nodu-nav-active');
-    expect(screen.getByRole('button', { name: /Schvalování/i })).toHaveTextContent('1');
+    expect(screen.getByRole('button', { name: /Moje výkazy/i })).toHaveClass('nodu-nav-active');
+    expect(screen.getByRole('button', { name: /Moje výkazy/i })).toHaveTextContent('1');
     expect(screen.getByRole('button', { name: /Moje faktury/i })).toHaveTextContent('1');
     expect(screen.getByRole('button', { name: /Moje účtenky/i })).toHaveTextContent('1');
   });

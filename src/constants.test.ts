@@ -28,9 +28,9 @@ describe('navigation items by role', () => {
     expect(cooItems.indexOf('timelogs')).toBe(cooItems.indexOf('crew') + 1);
   });
 
-  it('labels crew personal timelogs as approvals', () => {
+  it('labels crew personal reports consistently', () => {
     const crewTimelogsItem = getNavItemsForRole('crew').find((item) => item.id === 'my-timelogs');
 
-    expect(crewTimelogsItem?.label).toBe('Schvalování');
+    expect(crewTimelogsItem?.label).toBe('Moje výkazy');
   });
 });

@@ -1,3 +1,4 @@
+import { getApprovalInbox } from './approval-inbox';
 import { describe, expect, it } from 'vitest';
 import type { Timelog } from '../../types';
 import type { ShiftWorkflowRound } from './shift-workflows.model';
@@ -49,5 +50,26 @@ describe('frozen approval group selection', () => {
     const snapshot = { revision: 1, assignedEventIds: [], workflows: [], rounds: [] };
     expect(selectShiftReviewTarget([1], reports, snapshot)?.id).toBe(1);
     expect(() => selectShiftReviewTarget([1, 2], reports, snapshot)).toThrow(/samostatně/);
+  });
+});
+
+describe('personal approval inbox', () => {
+  const scope = { source: 'supabase' as const, role: 'crewhead' as const, userId: 'CH', profileId: 'ch-profile' };
+  it('counts a complete round once and includes standalone work for the current stage', () => {
+    const reports = [report(1), report(2), report(3), { ...report(4), status: 'approved' as const }];
+    const inbox = getApprovalInbox(reports, reports, [round], scope);
+    expect(inbox.count).toBe(2);
+    expect(inbox.rounds.map(group => group.round.id)).toEqual(['round']);
+    expect(inbox.legacy.map(item => item.id)).toEqual([3]);
+    expect(getApprovalInbox([reports[0]], reports, [round], scope).rounds[0].timelogs).toHaveLength(2);
+    expect(getApprovalInbox([reports[0]], [reports[0]], [round], scope).count).toBe(0);
+  });
+  it('counts crew drafts, returns and corrections requiring confirmation and excludes work pending with others', () => {
+    const statuses = ['draft', 'rejected', 'pending_crew_confirmation', 'pending_ch', 'pending_coo', 'approved'] as const;
+    const reports = statuses.map((status, index) => ({ ...report(index + 1), status }));
+    reports.push({ ...report(7), status: 'draft', contractorProfileId: 'another' });
+    const inbox = getApprovalInbox(reports, reports, [], { ...scope, role: 'crew', profileId: 'person' });
+    expect(inbox.legacy.map(item => item.id)).toEqual([1, 2, 3]);
+    expect(inbox.count).toBe(3);
   });
 });

@@ -31,10 +31,17 @@ export function selectShiftApprovalGroups(visible: Timelog[], all: Timelog[], ro
   for (const round of [...rounds].sort((a, b) => compareShiftWorkflowTimestamps(a.updatedAt, b.updatedAt))) {
     for (const id of round.timelogIds) latestByTimelog.set(id, round);
   }
+  const reportsById = new Map<string, Timelog[]>();
+  for (const report of all) {
+    if (!report.supabaseId) continue;
+    const matches = reportsById.get(report.supabaseId);
+    if (matches) matches.push(report);
+    else reportsById.set(report.supabaseId, [report]);
+  }
   const selected = rounds.filter((round) => round.timelogIds.some((id) => visibleIds.has(id) && latestByTimelog.get(id) === round));
   return {
     rounds: selected.map((round): ShiftApprovalGroup => {
-      const timelogs = round.timelogIds.flatMap((id) => all.filter((report) => report.supabaseId === id));
+      const timelogs = round.timelogIds.flatMap((id) => reportsById.get(id) ?? []);
       const complete = timelogs.length === round.timelogIds.length
         && new Set(timelogs.map((report) => report.supabaseId)).size === round.timelogIds.length
         && timelogs.every((report) => report.contractorProfileId === round.contractorProfileId

@@ -51,6 +51,10 @@ it('completes the real shared crew → CH correction → crew confirmation → C
   editor.close();
 
   editor = open(ch, 1);
+  expect(screen.getByRole('heading', { name: 'Kontrola výkazu' })).toBeInTheDocument();
+  expect(screen.queryAllByLabelText('Cestovné celkem (km)')).toHaveLength(0);
+  expect(screen.getAllByText('08:00 - 16:00')).toHaveLength(2);
+  fireEvent.click(screen.getByRole('button', { name: 'Upravit výkaz' }));
   fireEvent.change(within(screen.getByRole('region', { name: 'Instalace' })).getByLabelText('Cestovné celkem (km)'), { target: { value: '12' } });
   fireEvent.change(screen.getByLabelText('Důvod vrácení nebo úpravy'), { target: { value: 'Doplněno cestovné instalace' } });
   fireEvent.change(screen.getByLabelText('Dotčená směna'), { target: { value: localShiftWorkflowId('event', 2) } });
@@ -70,7 +74,7 @@ it('completes the real shared crew → CH correction → crew confirmation → C
   editor.close();
 
   editor = open(coo, 1);
-  expect(screen.queryByLabelText('Cestovné celkem (km)')).not.toBeInTheDocument();
+  expect(screen.queryAllByLabelText('Cestovné celkem (km)')).toHaveLength(0);
   expect(screen.getByRole('button', { name: 'Schválit celé kolo' })).toBeEnabled();
   fireEvent.click(screen.getByRole('button', { name: 'Schválit celé kolo' }));
   await waitFor(() => expect(currentStatus()).toEqual(['approved', 'approved']));

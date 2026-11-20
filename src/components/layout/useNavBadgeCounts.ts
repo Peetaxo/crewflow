@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../app/providers/useAuth';
-import { useAppContext } from '../../context/useAppContext';
+import { getApprovalInbox } from '../../features/shift-workflows/approval-inbox';
+import { useShiftWorkflows } from '../../features/shift-workflows/useShiftWorkflows';
 import { getCandidates, subscribeToCandidateChanges } from '../../features/recruitment/services/candidates.service';
 import { useInvoicesQuery } from '../../features/invoices/queries/useInvoicesQuery';
 import { useReceiptsQuery } from '../../features/receipts/queries/useReceiptsQuery';
@@ -8,9 +9,10 @@ import { useTimelogsQuery } from '../../features/timelogs/queries/useTimelogsQue
 import { buildNavBadgeCounts } from './nav-badges';
 
 export const useNavBadgeCounts = () => {
-  const { currentProfileId, role: authRole } = useAuth();
-  const { role: previewRole } = useAppContext();
-  const role = authRole ?? previewRole;
+  const { currentProfileId } = useAuth();
+  const workflows = useShiftWorkflows();
+  const scope = workflows.scope;
+  const rounds = workflows.ready && !workflows.query.isError ? workflows.query.data?.rounds : undefined;
   const timelogsQuery = useTimelogsQuery();
   const receiptsQuery = useReceiptsQuery();
   const invoicesQuery = useInvoicesQuery();
@@ -32,10 +34,10 @@ export const useNavBadgeCounts = () => {
 
   return useMemo(() => buildNavBadgeCounts({
     currentProfileId,
-    role,
-    timelogs,
+    role: scope.role,
+    approvalCount: getApprovalInbox(timelogs, timelogs, rounds, scope).count,
     invoices,
     receipts,
     candidates,
-  }), [candidates, currentProfileId, invoices, receipts, role, timelogs]);
+  }), [candidates, currentProfileId, invoices, receipts, rounds, scope, timelogs]);
 };

@@ -130,7 +130,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [settingsSection, setSettingsSection] = useState<'menu' | 'profile' | 'appearance' | 'billing' | 'notifications'>('menu');
   const pendingNotification = useRef<{target:NotificationTarget;scope:string}|null>(null);
   const [searchQuery, setSearchQuery] = useState(initialUiSession?.searchQuery ?? '');
-  const [timelogFilter, setTimelogFilter] = useState(initialUiSession?.timelogFilter ?? 'all');
+  const [timelogFilter, setTimelogFilter] = useState(initialUiSession?.timelogFilter ?? 'inbox');
   const [projectFilter, setProjectFilter] = useState(initialUiSession?.projectFilter ?? 'all');
 
   const [selectedContractorProfileId, setSelectedContractorProfileId] = useState<string | null>(initialUiSession?.selectedContractorProfileId ?? null);
@@ -154,6 +154,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [eventsFilter, setEventsFilter] = useState<'upcoming' | 'past' | 'all'>(initialUiSession?.eventsFilter ?? 'all');
   const [eventsCalendarDate, setEventsCalendarDate] = useState<string>(initialUiSession?.eventsCalendarDate ?? '');
 
+  const navigateToTab = useCallback((tab: string) => {
+    if (tab === 'timelogs' || tab === 'my-timelogs' || tab === 'approvals') {
+      setTimelogFilter('inbox');
+      setSearchQuery('');
+    }
+    setCurrentTabState(tab);
+  }, []);
+
   const setCurrentTab = useCallback((tab: string) => {
     pendingNotification.current=null;
     if (navigationGuardMessage && tab !== currentTab) {
@@ -161,8 +169,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    setCurrentTabState(tab);
-  }, [currentTab, navigationGuardMessage]);
+    navigateToTab(tab);
+  }, [currentTab, navigationGuardMessage, navigateToTab]);
 
   const applyNotificationTarget = (target:NotificationTarget) => {
     if(!NAV_BY_ROLE[role].includes(target.tab)) {
@@ -392,7 +400,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 if (pendingTab) {
                   setNavigationGuardMessage(null);
                   if(pendingNotification.current?.scope===evidenceScopeKey) applyNotificationTarget(pendingNotification.current.target);
-                  else if(!pendingNotification.current) setCurrentTabState(pendingTab);
+                  else if(!pendingNotification.current) navigateToTab(pendingTab);
                 }
                 pendingNotification.current=null;
                 setPendingTab(null);

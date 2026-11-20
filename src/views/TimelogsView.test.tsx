@@ -1,6 +1,7 @@
 import React from 'react';
 const sharedCardMock = vi.hoisted(() => ({ visible: false, onlyShared: false }));
 vi.mock('../features/shift-workflows/useSharedApprovals', () => ({ useSharedApprovals: () => ({
+  inboxFor: (reports: typeof timelogs) => ({ count: reports.length, legacy: reports, rounds: [] }),
   cards: () => sharedCardMock.visible ? <section aria-label="Společné výkazy">Výkaz k ověření pořadí</section> : null, legacyOnly: (reports: unknown[]) => sharedCardMock.onlyShared ? [] : reports, reviewSelection: () => false,
   groupsFor: () => ({ rounds: [], legacy: [] }),
 }) }));
@@ -345,10 +346,33 @@ describe('TimelogsView', () => {
 
     render(<TimelogsView />);
 
+    expect(screen.getByRole('heading', { name: 'Schvalování' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Čeká na mě/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Po akci' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Po Job Number' })).not.toBeInTheDocument();
     expect(screen.getAllByText('Ploom Chodov').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Ploom Zlicin').length).toBeGreaterThan(0);
+  });
+
+  it('keeps the queue total visible while searching and separates decision and archive controls', async () => {
+    mockExternalApprovalModules();
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => ({ ...mockContext, timelogFilter: 'inbox', searchQuery: 'missing person' }),
+    }));
+    vi.doMock('../app/providers/useAuth', () => ({ useAuth: () => ({ currentProfileId: 'manager' }) }));
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
+      useTimelogsQuery: () => ({ data: pendingCrewheadTimelogs }),
+    }));
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      getTimelogDependencies: () => ({ contractors, events }), updateTimelogStatus: vi.fn(),
+    }));
+    const { default: TimelogsView } = await import('./TimelogsView');
+    render(<TimelogsView />);
+    expect(screen.getByRole('button', { name: 'Čeká na mě (1)', pressed: true })).toBeInTheDocument();
+    expect(screen.getByText('Žádné záznamy pro tento filtr')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Období a stav výkazů' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Všechny výkazy' }));
+    expect(mockContext.setTimelogFilter).toHaveBeenCalledWith('all');
   });
 
   it('does not show an empty state when all visible reports use shared cards', async () => {
@@ -397,11 +421,11 @@ describe('TimelogsView', () => {
     render(<TimelogsView />);
 
     expect(screen.queryByRole('button', { name: 'Schválit za CH' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Zamítnout' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Vrátit k opravě' })).not.toBeInTheDocument();
     expect(updateTimelogStatus).not.toHaveBeenCalled();
   });
 
-  it('labels the mine scope as Schvalovani for crew', async () => {
+  it('labels the personal reports consistently for crew', async () => {
     mockExternalApprovalModules();
 
     vi.doMock('../context/useAppContext', () => ({
@@ -428,7 +452,7 @@ describe('TimelogsView', () => {
 
     render(<TimelogsView scope="mine" />);
 
-    expect(screen.getByRole('heading', { name: 'Schvalování' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Moje výkazy' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Moje timelogy' })).not.toBeInTheDocument();
   });
 

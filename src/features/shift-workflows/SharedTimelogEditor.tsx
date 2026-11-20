@@ -43,6 +43,7 @@ function EvidenceTotal({ label, reports, data }: { label: string; reports: Timel
 
 export default function SharedTimelogEditor({ data, role, session, editorSessionKey, actorProfileId, actorUserId, onClose, onReload, source = appDataSource }: SharedTimelogEditorProps) {
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
+  const [editingRoundId, setEditingRoundId] = useState<string | null>(null);
   const [showBillingQuote, setShowBillingQuote] = useState(false);
   const [reason, setReason] = useState('');
   const [affectedEvent, setAffectedEvent] = useState('');
@@ -66,6 +67,9 @@ export default function SharedTimelogEditor({ data, role, session, editorSession
     return approval?.status === 'pending' && approval.approverProfileId === actorProfileId && approval.approverUserId === actorUserId;
   });
   const canChDecide = role === 'crewhead' && round?.status === 'pending_ch';
+  const editingRound = canChDecide && editingRoundId === round.id;
+  let title = data.events.length > 1 ? 'Společná evidence' : 'Evidence hodin';
+  if (canChDecide || canCooDecide) title = editingRound ? 'Úprava výkazu' : 'Kontrola výkazu';
   const locked = actionBusy || state.busy || state.canRetry || state.needsReload;
   const run = async (action: () => Promise<unknown>) => {
     if (actionBusy) return;
@@ -99,7 +103,7 @@ export default function SharedTimelogEditor({ data, role, session, editorSession
       <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm" />
       <Dialog.Content className="fixed inset-0 z-50 flex h-[100dvh] flex-col bg-[rgb(var(--nodu-paper-rgb))] text-[var(--nodu-text)] sm:inset-x-[5vw] sm:inset-y-[4vh] sm:h-auto sm:rounded-[28px] sm:border sm:border-[var(--nodu-border)] lg:inset-x-[15vw]">
         <header className="flex shrink-0 items-start justify-between gap-3 border-b border-[var(--nodu-border)] px-4 pb-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6">
-          <div><Dialog.Title className="text-xl font-semibold">{data.events.length > 1 ? 'Společná evidence' : 'Evidence hodin'}</Dialog.Title>
+          <div><Dialog.Title className="text-xl font-semibold">{title}</Dialog.Title>
             <Dialog.Description className="mt-1 text-sm text-[var(--nodu-text-soft)]">{data.contractor.name} · {data.events.length} {data.events.length === 1 ? 'směna' : 'směny'}</Dialog.Description>
           </div>
           <Button variant="ghost" size="icon" aria-label="Zavřít evidenci" onClick={requestClose}><X size={20} /></Button>
@@ -116,6 +120,9 @@ export default function SharedTimelogEditor({ data, role, session, editorSession
             <Button variant={state.cohort === 'confirmation' ? 'default' : 'outline'} disabled={locked || state.dirty} onClick={() => session.setCohort('confirmation')}>Upravit potvrzované kolo</Button>
             <Button variant={state.cohort === 'drafts' ? 'default' : 'outline'} disabled={locked || state.dirty} onClick={() => session.setCohort('drafts')}>Upravit pozdější směny</Button>
           </div>}
+          {canChDecide && <Button variant="outline" disabled={locked || confirmClose || state.dirty} onClick={() => setEditingRoundId(editingRound ? null : round.id)}>
+            {editingRound ? 'Zpět na kontrolu' : 'Upravit výkaz'}
+          </Button>}
           {data.events.map((event) => {
             const report = state.context.timelogs.find((t) => t.eventSupabaseId === event.supabaseId);
             const outside = round && report && !round.timelogIds.includes(report.supabaseId!) && ['draft', 'rejected'].includes(report.status);
@@ -125,7 +132,7 @@ export default function SharedTimelogEditor({ data, role, session, editorSession
               {invalidSection?.id === event.supabaseId && <p role="alert" className="mb-3 text-sm text-red-700">{invalidSection.message}</p>}
               {outside && <p className="mb-3 text-sm font-medium text-[var(--nodu-accent)]">Mimo aktuální schvalování</p>}
               {report ? <TimelogEvidenceSection timelog={report} event={event} contractor={data.contractor} role={role}
-                editorSessionKey={editorSessionKey} readOnly={actionBusy || confirmClose || !session.isEditable(report)} showReviewNoteEditor={false}
+                editorSessionKey={editorSessionKey} readOnly={actionBusy || confirmClose || (role === 'crewhead' && !editingRound) || !session.isEditable(report)} showReviewNoteEditor={false}
                 onChange={(value) => { session.edit(value); if (invalidSection?.id === value.eventSupabaseId) setInvalidSection(null); setActionError(null); }} />
                 : <p role="alert">Výkaz této směny se nepodařilo načíst. Před odesláním obnovte data.</p>}
             </section>;
@@ -162,7 +169,7 @@ export default function SharedTimelogEditor({ data, role, session, editorSession
                 : <Button disabled={locked || confirmClose || Boolean(round)} onClick={() => { void run(() => { validateSections(drafts); return session.submit(); }); }}>Odeslat vše ke kontrole</Button>}
             </>}
             {canChDecide && <>
-              <Button variant="outline" disabled={locked || confirmClose || !annotationsReady || !state.dirty} onClick={() => { void run(() => session.transition('correct', { note: reason, affectedEventId: affectedEvent })); }}>Odeslat úpravy crew k potvrzení</Button>
+              {editingRound && <Button variant="outline" disabled={locked || confirmClose || !annotationsReady || !state.dirty} onClick={() => { void run(() => session.transition('correct', { note: reason, affectedEventId: affectedEvent })); }}>Odeslat úpravy crew k potvrzení</Button>}
               <Button disabled={locked || confirmClose || state.dirty} onClick={() => { void run(() => session.transition('handoff')); }}>Předat celé kolo ke schválení</Button>
             </>}
             {role === 'coo' && round?.status === 'pending_coo' && <Button disabled={locked || confirmClose || !canCooDecide} onClick={() => { if (source === 'supabase') setShowBillingQuote(true); else void run(() => session.transition('approve')); }}>Schválit celé kolo</Button>}

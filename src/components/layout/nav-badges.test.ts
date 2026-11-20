@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { Candidate, Invoice, ReceiptItem, Timelog } from '../../types';
-import { buildNavBadgeCounts } from './nav-badges';
+import { buildNavBadgeCounts as buildCounts } from './nav-badges';
+import { getApprovalInbox } from '../../features/shift-workflows/approval-inbox';
+
+function buildNavBadgeCounts({ timelogs, ...input }: Omit<Parameters<typeof buildCounts>[0], 'approvalCount'> & { timelogs: Timelog[] }) {
+  const scope = { source: 'supabase' as const, role: input.role, userId: 'user', profileId: input.currentProfileId ?? null };
+  return buildCounts({ ...input, approvalCount: getApprovalInbox(timelogs, timelogs, [], scope).count });
+}
 
 describe('buildNavBadgeCounts', () => {
   it('builds shared desktop and mobile nav badges for the active profile', () => {
@@ -37,7 +43,7 @@ describe('buildNavBadgeCounts', () => {
       candidates,
     })).toEqual({
       timelogs: 2,
-      'my-timelogs': 4,
+      'my-timelogs': 0,
       invoices: 2,
       'my-invoices': 1,
       receipts: 3,

@@ -115,6 +115,18 @@ describe('useTimelogApprovalActions', () => {
     expect(screen.getByTestId('pending')).toHaveTextContent('false');
   });
 
+  it('retains the reviewed return targets when a refreshed list reuses their numeric IDs', async () => {
+    const original = { ...pendingCooTimelog(4), supabaseId: 'original-uuid', updatedAt: 'first-version' };
+    const h = render(<Harness timelogs={[original]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Vrátit' }));
+    h.rerender(<Harness timelogs={[{ ...original, supabaseId: 'different-uuid', updatedAt: 'new-version' }]} />);
+    fireEvent.change(screen.getByLabelText('Důvod vrácení'), { target: { value: 'Hodiny nesedí' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Vrátit výkaz' }));
+    await waitFor(() => expect(updateTimelogStatuses).toHaveBeenCalledWith([4], 'rej', expect.objectContaining({
+      expectedReviewKeys: [expect.stringContaining('original-uuid')],
+    })));
+  });
+
   it('requires a trimmed note before returning one or more pending COO reports', async () => {
     render(<Harness timelogs={[pendingCooTimelog(4), pendingCooTimelog(7)]} />);
 
@@ -131,6 +143,7 @@ describe('useTimelogApprovalActions', () => {
 
     await waitFor(() => {
       expect(updateTimelogStatuses).toHaveBeenCalledWith([4, 7], 'rej', {
+        expectedReviewKeys: expect.any(Array),
         assertCurrent: expect.any(Function),
         currentProfileId: 'profile-coo',
         note: 'Opravit přestávku.',
@@ -199,6 +212,7 @@ describe('useTimelogApprovalActions', () => {
 
     await waitFor(() => {
       expect(updateTimelogStatuses).toHaveBeenCalledWith([3], 'rej', {
+        expectedReviewKeys: expect.any(Array),
         assertCurrent: expect.any(Function),
         currentProfileId: 'profile-coo',
       });
@@ -212,6 +226,7 @@ describe('useTimelogApprovalActions', () => {
 
     await waitFor(() => {
       expect(updateTimelogStatuses).toHaveBeenCalledWith([9], 'coo', {
+        expectedReviewKeys: expect.any(Array),
         assertCurrent: expect.any(Function),
         currentProfileId: 'profile-coo',
       });

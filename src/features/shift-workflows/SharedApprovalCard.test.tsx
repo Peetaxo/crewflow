@@ -17,7 +17,8 @@ describe('SharedApprovalCard', () => {
       contractors={[{ profileId: 'person', name: 'Eva Crew', rate: 100 } as Contractor]} events={events} canAct
       history={[{ id: 'returned', roundId: 'old-round', action: 'return', label: 'Vráceno', note: 'Opravte cestovné', eventId: 'e1', createdAt: '2026-09-20T00:00:00Z' }]}
       onOpen={open} />);
-    expect(screen.getByText('Eva Crew')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Eva Crew/ }));
+    expect(open).toHaveBeenCalledExactlyOnceWith(reports[0]);
     expect(screen.getByRole('heading', { name: 'Směna 1' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Směna 2' })).toBeInTheDocument();
     expect(screen.queryByText('Nesprávná směna')).not.toBeInTheDocument();

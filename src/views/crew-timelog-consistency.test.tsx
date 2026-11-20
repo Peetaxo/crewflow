@@ -20,6 +20,7 @@ vi.mock('../features/projects/services/projects.service', () => ({ getProjects: 
 vi.mock('../features/timelogs/services/timelogs.service', () => ({ getTimelogDependencies: () => ({ contractors: [], events: data.events }) }));
 vi.mock('../features/timelogs/hooks/useTimelogApprovalActions', () => ({ useTimelogApprovalActions: () => ({ dialog: null, execute: vi.fn(), isPending: false }) }));
 vi.mock('../features/shift-workflows/useSharedApprovals', () => ({ useSharedApprovals: () => ({
+  inboxFor: () => ({ count: 0, legacy: [], rounds: [] }),
   cards: () => null, legacyOnly: (reports: Timelog[]) => reports, reviewSelection: () => false,
 }) }));
 vi.mock('recharts', async (importOriginal) => ({ ...await importOriginal<typeof import('recharts')>(), ResponsiveContainer: () => null }));

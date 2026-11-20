@@ -455,7 +455,11 @@ describe('EventDetailView', () => {
 
     const { default: EventDetailView } = await import('./EventDetailView');
 
+    const listen = vi.spyOn(window, 'addEventListener');
     const { container } = render(<EventDetailView />);
+    const touchListeners = listen.mock.calls.filter(([name]) => name === 'touchstart' || name === 'touchmove');
+    listen.mockRestore();
+    for (const [, , options] of touchListeners) expect(options).toMatchObject({ passive: true });
     const mobileDetail = container.querySelector('.nodu-mobile-event-detail');
     const mobileSwipeEdge = container.querySelector('.nodu-mobile-event-swipe-edge');
     const mobileSwipeSurface = container.querySelector('.nodu-mobile-event-swipe-surface');
@@ -477,10 +481,11 @@ describe('EventDetailView', () => {
     fireEvent.touchStart(mobileSwipeEdge!, {
       touches: [{ clientX: 8, clientY: 160 }],
     });
-    fireEvent.touchMove(mobileSwipeEdge!, {
+    const horizontalSwipe = fireEvent.touchMove(mobileSwipeEdge!, {
       touches: [{ clientX: 44, clientY: 162 }],
     });
 
+    expect(horizontalSwipe).toBe(true);
     expect(mobileSwipeSurface).toHaveStyle({ '--nodu-mobile-event-swipe-x': '36px' });
     expect(setSelectedEventId).not.toHaveBeenCalled();
 
@@ -652,6 +657,11 @@ describe('EventDetailView', () => {
     const { container, rerender } = render(<EventDetailView />);
     const mobileSwipeSurface = container.querySelector('.nodu-mobile-event-swipe-surface');
     const backButton = screen.getByRole('button', { name: 'Zpět na akce' });
+
+    // A full-screen editor or portal can be above the detail in the DOM.
+    fireEvent.touchStart(document.body, { touches: [{ clientX: 18, clientY: 220 }] });
+    fireEvent.touchMove(document.body, { touches: [{ clientX: 92, clientY: 222 }] });
+    expect(mobileSwipeSurface).toHaveStyle({ '--nodu-mobile-event-swipe-x': '0px' });
 
     fireEvent.touchStart(backButton, {
       touches: [{ clientX: 24, clientY: 32 }],

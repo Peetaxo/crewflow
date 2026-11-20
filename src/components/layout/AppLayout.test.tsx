@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Session, User } from '@supabase/supabase-js';
 
@@ -31,6 +31,8 @@ const authMockState = {
 
 let mockAppContext = { ...defaultAppContext };
 let mockIsMobile = false;
+let setBadgeCount: (count: number) => void;
+const dashboardRender = vi.fn();
 
 vi.mock('framer-motion', () => ({
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -49,7 +51,11 @@ vi.mock('../../hooks/use-mobile', () => ({
 }));
 
 vi.mock('./useNavBadgeCounts', () => ({
-  useNavBadgeCounts: () => ({ 'my-timelogs': 2 }),
+  useNavBadgeCounts: () => {
+    const [count, setCount] = React.useState(2);
+    setBadgeCount = setCount;
+    return { 'my-timelogs': count };
+  },
 }));
 
 vi.mock('./Sidebar', () => ({
@@ -63,7 +69,10 @@ vi.mock('./MobileCrewNav', () => ({
 }));
 
 vi.mock('../../views/DashboardView', () => ({
-  default: () => <div data-testid="dashboard-view" />,
+  default: () => {
+    dashboardRender();
+    return <div data-testid="dashboard-view" />;
+  },
 }));
 
 vi.mock('../../views/MyShiftsView', () => ({
@@ -258,6 +267,15 @@ describe('AppLayout shell', () => {
     expect(screen.queryByRole('button', { name: 'Crew' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'CrewHead' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'COO' })).not.toBeInTheDocument();
+  });
+
+  it('updates a mobile navigation badge without rendering the active page again', () => {
+    mockIsMobile = true;
+    render(<AppLayout />);
+    dashboardRender.mockClear();
+    act(() => setBadgeCount(3));
+    expect(screen.getByTestId('mobile-crew-nav')).toHaveTextContent('3');
+    expect(dashboardRender).not.toHaveBeenCalled();
   });
 
   it('hides the mobile Crew nav while a Crew event detail is open', () => {

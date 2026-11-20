@@ -6,6 +6,7 @@ import { useIsMobile } from '../../hooks/use-mobile';
 import Sidebar from './Sidebar';
 import AppDataFreshness from './AppDataFreshness';
 import MobileCrewNav from './MobileCrewNav';
+import type { Role } from '../../types';
 import { useNavBadgeCounts } from './useNavBadgeCounts';
 import { NotificationsProvider } from '../../features/notifications/NotificationsProvider';
 import { NotificationCenter,NotificationBell } from '../../features/notifications/NotificationCenter';
@@ -31,6 +32,11 @@ import ReceiptEditModal from '../modals/ReceiptEditModal';
 import DeleteConfirmModal from '../modals/DeleteConfirmModal';
 
 
+function MobileNavigation({ role, hidden }: { role: Role; hidden: boolean }) {
+  const badgeCounts = useNavBadgeCounts();
+  return hidden ? null : <MobileCrewNav badgeCounts={badgeCounts} role={role} />;
+}
+
 const AppLayoutContent: React.FC = () => {
   const {
     darkMode,
@@ -40,7 +46,6 @@ const AppLayoutContent: React.FC = () => {
     selectedProjectIdForStats,
   } = useAppContext();
   const isMobile = useIsMobile();
-  const badgeCounts = useNavBadgeCounts();
   const isMobileAppShell = isMobile;
   const isMobileEventDetail = isMobileAppShell && Boolean(selectedEventId)
     && (currentTab === 'events' || (currentTab === 'projects' && Boolean(selectedProjectIdForStats)));
@@ -96,7 +101,7 @@ const AppLayoutContent: React.FC = () => {
         </div>
       </main>
 
-      {isMobileAppShell && !isMobileEventDetail && <MobileCrewNav badgeCounts={badgeCounts} role={role} />}
+      {isMobileAppShell && <MobileNavigation role={role} hidden={isMobileEventDetail} />}
 
       <TimelogEditModal />
       <ProjectEditModal />

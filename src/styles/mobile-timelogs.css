@@ -11,7 +11,7 @@
   left: 0;
   z-index: 3;
   width: max(1.75rem, env(safe-area-inset-left));
-  touch-action: none;
+  pointer-events: none;
   -webkit-user-select: none;
   user-select: none;
 }
@@ -34,7 +34,7 @@
   transition: var(--nodu-mobile-timelog-swipe-transition, none);
   will-change: transform;
   overscroll-behavior-x: contain;
-  touch-action: pan-y;
+  touch-action: pan-y pinch-zoom;
 }
 
 .nodu-mobile-timelog-modal--dragging {

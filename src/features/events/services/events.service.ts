@@ -1059,7 +1059,7 @@ export const getEventById = (id: EventIdentifier | null): Event | null => {
   return (getLocalAppState().events ?? []).find((event) => matchesEventIdentifier(event, id)) ?? null;
 };
 
-export const getEventDetailData = (eventId: EventIdentifier | null): {
+export const getEventDetailData = (eventId: EventIdentifier | null, listSnapshot?: ReturnType<typeof getLocalAppState>): {
   event: Event | null;
   timelogs: Timelog[];
   contractors: Contractor[];
@@ -1068,9 +1068,11 @@ export const getEventDetailData = (eventId: EventIdentifier | null): {
   applications: EventApplication[];
   crewAssignments: EventCrewAssignment[];
 } => {
-  ensureSupabaseEventsLoaded();
-  requestSupabaseTimelogsHydration();
-  const snapshot = getLocalAppState();
+  if (!listSnapshot) {
+    ensureSupabaseEventsLoaded();
+    requestSupabaseTimelogsHydration();
+  }
+  const snapshot = listSnapshot ?? getLocalAppState();
   const event = eventId == null ? null : (snapshot.events ?? []).find((item) => matchesEventIdentifier(item, eventId)) ?? null;
 
   if (!event) {

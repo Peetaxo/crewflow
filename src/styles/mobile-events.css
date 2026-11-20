@@ -164,7 +164,7 @@
   background: var(--nodu-paper);
   color: var(--nodu-text);
   overscroll-behavior: contain;
-  touch-action: pan-y;
+  touch-action: pan-y pinch-zoom;
 }
 
 .nodu-mobile-event-detail[data-swiping] {
@@ -180,6 +180,7 @@
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior-y: contain;
+  touch-action: pan-y pinch-zoom;
   padding:
     calc(1rem + env(safe-area-inset-top, 0px))
     calc(1rem + env(safe-area-inset-right, 0px))

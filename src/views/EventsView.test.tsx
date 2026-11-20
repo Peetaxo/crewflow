@@ -999,7 +999,7 @@ describe('EventsView', () => {
     },
   );
 
-  it('opens an in-app date picker for mobile Crew events and filters from the selected date', async () => {
+  async function renderMobileDateFeed() {
     mobileMockState.isMobile = true;
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-08-11T12:00:00'));
@@ -1062,9 +1062,8 @@ describe('EventsView', () => {
       }),
     }));
 
-    vi.doMock('../features/events/queries/useEventsQuery', () => ({
-      useEventsQuery: () => ({ data: mobileCrewEvents, isLoading: false, error: null }),
-    }));
+    const useEventsQuery = vi.fn(() => ({ data: mobileCrewEvents, isLoading: false, error: null }));
+    vi.doMock('../features/events/queries/useEventsQuery', () => ({ useEventsQuery }));
 
     vi.doMock('../features/events/services/events.service', () => ({
       createEmptyEvent: vi.fn(),
@@ -1104,28 +1103,80 @@ describe('EventsView', () => {
       </QueryClientProvider>,
     );
 
+    return { setEventsCalendarDate, useEventsQuery };
+  }
+
+  it('opens an in-app date picker for mobile Crew events and filters from the selected date', async () => {
+    const { setEventsCalendarDate, useEventsQuery } = await renderMobileDateFeed();
     expect(screen.queryByText('Akce pred dneskem')).not.toBeInTheDocument();
     expect(screen.getByText('Akce pred vyberem')).toBeInTheDocument();
-    expect(screen.getByText('Akce po vyberu')).toBeInTheDocument();
 
+    useEventsQuery.mockClear();
     fireEvent.click(screen.getByRole('button', { name: 'Vybrat datum akci' }));
-
+    fireEvent.click(screen.getByRole('button', { name: 'Dalsi mesic vyberu akci' }));
+    expect(screen.getByText('září 2026')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Predchozi mesic vyberu akci' }));
     expect(screen.getByText('srpen 2026')).toBeInTheDocument();
+    expect(useEventsQuery).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Zobrazit akce od 5. srpna 2026' }));
-
     expect(screen.getByText('Akce pred dneskem')).toBeInTheDocument();
-    expect(screen.getByText('Akce pred vyberem')).toBeInTheDocument();
     expect(screen.getByText('Akce po vyberu')).toBeInTheDocument();
     expect(setEventsCalendarDate).toHaveBeenCalledWith('2026-08-05');
 
     fireEvent.click(screen.getByRole('button', { name: 'Vybrat datum akci' }));
     fireEvent.click(screen.getByRole('button', { name: 'Dnes a dál' }));
-
     expect(screen.queryByText('Akce pred dneskem')).not.toBeInTheDocument();
     expect(screen.getByText('Akce pred vyberem')).toBeInTheDocument();
-    expect(screen.getByText('Akce po vyberu')).toBeInTheDocument();
     expect(setEventsCalendarDate).toHaveBeenCalledWith('2026-08-11');
+  });
+
+  it('protects the newly exposed event from a repeat tap at the date location', async () => {
+    await renderMobileDateFeed();
+    const tap = { detail: 1, clientX: 125, clientY: 314 };
+    const chooseDay = () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Vybrat datum akci' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Zobrazit akce od 5. srpna 2026' }), tap);
+    };
+    chooseDay();
+    const card = screen.getByText('Akce pred dneskem');
+    fireEvent.click(card, { ...tap, clientY: 319 });
+    expect(mockAppContext.setSelectedEventId).not.toHaveBeenCalled();
+
+    chooseDay();
+    fireEvent.click(card, { ...tap, clientY: 390 });
+    expect(mockAppContext.setSelectedEventId).toHaveBeenCalledWith('event-before-today');
+
+    mockAppContext.setSelectedEventId.mockClear();
+    chooseDay();
+    vi.advanceTimersByTime(600);
+    fireEvent.click(card, tap);
+    expect(mockAppContext.setSelectedEventId).toHaveBeenCalledWith('event-before-today');
+  });
+
+  it('protects a second touch that starts as the date picker closes and ends later', async () => {
+    await renderMobileDateFeed();
+    const tap = { detail: 1, clientX: 125, clientY: 314 };
+    fireEvent.click(screen.getByRole('button', { name: 'Vybrat datum akci' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Dnes a dál' }), tap);
+    const card = screen.getByText('Akce pred vyberem');
+    vi.advanceTimersByTime(300);
+    fireEvent.pointerDown(card, { ...tap, pointerType: 'touch' });
+    vi.advanceTimersByTime(250);
+    fireEvent.pointerUp(card, { ...tap, pointerType: 'touch' });
+    fireEvent.click(card, tap);
+    expect(mockAppContext.setSelectedEventId).not.toHaveBeenCalled();
+  });
+
+  it('returns keyboard focus to the calendar trigger after choosing a day', async () => {
+    await renderMobileDateFeed();
+    const trigger = screen.getByRole('button', { name: 'Vybrat datum akci' });
+    fireEvent.click(trigger);
+    const selectedDay = screen.getByRole('button', { name: 'Zobrazit akce od 11. srpna 2026' });
+    expect(selectedDay).toHaveAttribute('aria-pressed', 'true');
+    selectedDay.focus();
+    fireEvent.click(selectedDay, { detail: 0 });
+    expect(trigger).toHaveFocus();
   });
 
   it('renders single-day event meta without dangling separators when client is missing', async () => {

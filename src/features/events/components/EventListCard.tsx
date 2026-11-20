@@ -349,7 +349,6 @@ export default function EventListCard({ occurrence, canManageEvents, role, curre
   const isFullyStaffed = event.needed > 0 && event.filled >= event.needed;
   const isClosedForApplications = event.status === 'full' || isFullyStaffed;
   const canApplyToEvent = event.status === 'upcoming' && !isClosedForApplications;
-  const occurrenceTimeLabel = getEventOccurrenceTimeLabel(event, occurrenceDate, eventTimelogs);
   const isMultiDayOccurrence = occurrence.dayCount > 1;
   const shouldShowMultiDayAccent = canManageEvents && isMultiDayOccurrence;
   const isContinuationOccurrence = occurrence.kind === 'continuation' || occurrence.kind === 'end';
@@ -437,7 +436,7 @@ export default function EventListCard({ occurrence, canManageEvents, role, curre
               </div>
             ) : (
               <div className="mt-1 flex items-center gap-1.5 text-xs text-[color:var(--nodu-text-soft)]">
-                {formatSingleDayOccurrenceMeta(occurrenceDate, occurrenceTimeLabel, event.client)}
+                {formatSingleDayOccurrenceMeta(occurrenceDate, getEventOccurrenceTimeLabel(event, occurrenceDate, eventTimelogs), event.client)}
               </div>
             )}
           </div>

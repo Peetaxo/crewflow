@@ -523,13 +523,20 @@ describe('MobileTimelogEditModal', () => {
     expect(swipeEdge).toBeInTheDocument();
     expect(modal).toBeInTheDocument();
 
+    fireEvent.touchStart(modal!, { touches: [{ clientX: 12, clientY: 120 }] });
+    const verticalScroll = fireEvent.touchMove(modal!, { touches: [{ clientX: 16, clientY: 144 }] });
+    expect(verticalScroll).toBe(true);
+    expect(modal).not.toHaveClass('nodu-mobile-timelog-modal--dragging');
+    expect(modal).toHaveStyle({ '--nodu-mobile-timelog-swipe-x': '0px' });
+
     fireEvent.touchStart(swipeEdge!, {
       touches: [{ clientX: 8, clientY: 164 }],
     });
-    fireEvent.touchMove(swipeEdge!, {
+    const horizontalSwipe = fireEvent.touchMove(swipeEdge!, {
       touches: [{ clientX: 70, clientY: 166 }],
     });
 
+    expect(horizontalSwipe).toBe(true);
     expect(modal).toHaveStyle({ '--nodu-mobile-timelog-swipe-x': '62px' });
     expect(modal).toHaveClass('nodu-mobile-timelog-modal--dragging');
     expect(testMocks.setEditingTimelog).not.toHaveBeenCalledWith(null);

@@ -49,6 +49,8 @@ import { canCreateTimelog, canEditTimelog, canOpenTimelogDetail } from '../featu
 import { isDisposableTimelogStatus } from '../features/events/services/event-assignment-lifecycle.service';
 import { createEmptyReceipt } from '../features/receipts/services/receipts.service';
 
+import { listenForEdgeSwipe } from '../lib/edge-swipe-touch';
+
 const EMPTY_APPROVAL_DOCUMENTS: InvoiceApprovalDocument[] = [];
 const CREW_ACTION_NAVIGATION_GUARD_MESSAGE = 'Probíhá změna v obsazení Crew. Počkejte prosím na její dokončení.';
 const MOBILE_EDGE_SWIPE_START_MAX_X = 96;
@@ -151,6 +153,7 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
   const mobileEdgeSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const mobileHistoryEventIdRef = useRef<string | number | null>(null);
   const mobileCloseTimeoutRef = useRef<number | null>(null);
+  const mobileDetailRef = useRef<HTMLDivElement | null>(null);
   const mobileScrollRef = useRef<HTMLDivElement | null>(null);
   const invoiceApprovalsQuery = useInvoiceApprovalsQuery();
   const anyCrewActionPending = pendingCrewAction !== null;
@@ -288,9 +291,10 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
 
   const startMobileEdgeSwipe = useCallback((clientX: number, clientY: number, target: EventTarget | null = null) => {
     resetMobileEdgeSwipe();
-    if (clientX > MOBILE_EDGE_SWIPE_START_MAX_X || shouldIgnoreMobileEventSwipeTarget(target)) return;
+    if (clientX > MOBILE_EDGE_SWIPE_START_MAX_X || shouldIgnoreMobileEventSwipeTarget(target)) return false;
 
     mobileEdgeSwipeStartRef.current = { x: clientX, y: clientY };
+    return true;
   }, [resetMobileEdgeSwipe]);
 
   const completeMobileEdgeSwipe = useCallback((clientX: number, clientY: number, shouldFinalize = false) => {
@@ -332,60 +336,18 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
   }, [completeMobileEdgeSwipe]);
 
   useEffect(() => {
-    if (!isMobile || selectedEventId == null || !detail.event) return undefined;
-
-    const handleWindowTouchStart = (touchEvent: TouchEvent) => {
-      const touch = touchEvent.touches[0];
-
-      if (!touch) {
-        resetMobileEdgeSwipe();
-        return;
-      }
-
-      startMobileEdgeSwipe(touch.clientX, touch.clientY, touchEvent.target);
-    };
-
-    const handleWindowTouchMove = (touchEvent: TouchEvent) => {
-      const touch = touchEvent.touches[0];
-
-      if (!touch) return;
-
-      if (completeMobileEdgeSwipe(touch.clientX, touch.clientY)) {
-        touchEvent.preventDefault();
-      }
-    };
-
-    const handleWindowTouchEnd = (touchEvent: TouchEvent) => {
-      const touch = touchEvent.changedTouches[0];
-
-      if (!touch) {
-        resetMobileEdgeSwipe();
-        return;
-      }
-
-      finishMobileEdgeSwipe(touch.clientX, touch.clientY);
-    };
-
-    const listenerOptions = { capture: true, passive: false } as AddEventListenerOptions;
-
-    window.addEventListener('touchstart', handleWindowTouchStart, listenerOptions);
-    window.addEventListener('touchmove', handleWindowTouchMove, listenerOptions);
-    window.addEventListener('touchend', handleWindowTouchEnd, listenerOptions);
-    window.addEventListener('touchcancel', resetMobileEdgeSwipe, listenerOptions);
-
-    return () => {
-      window.removeEventListener('touchstart', handleWindowTouchStart, listenerOptions);
-      window.removeEventListener('touchmove', handleWindowTouchMove, listenerOptions);
-      window.removeEventListener('touchend', handleWindowTouchEnd, listenerOptions);
-      window.removeEventListener('touchcancel', resetMobileEdgeSwipe, listenerOptions);
-    };
+    if (mobileEventId == null || !mobileDetailRef.current) return;
+    return listenForEdgeSwipe(mobileDetailRef.current, {
+      start: startMobileEdgeSwipe,
+      move: completeMobileEdgeSwipe,
+      end: finishMobileEdgeSwipe,
+      cancel: resetMobileEdgeSwipe,
+    });
   }, [
     completeMobileEdgeSwipe,
-    detail.event,
     finishMobileEdgeSwipe,
-    isMobile,
+    mobileEventId,
     resetMobileEdgeSwipe,
-    selectedEventId,
     startMobileEdgeSwipe,
   ]);
 
@@ -718,38 +680,6 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
     timelogActions.execute([timelog.id], resolvedAction);
   };
 
-  const handleMobileDetailTouchStart = (touchEvent: React.TouchEvent<HTMLDivElement>) => {
-    const touch = touchEvent.touches[0];
-
-    if (!touch) {
-      resetMobileEdgeSwipe();
-      return;
-    }
-
-    startMobileEdgeSwipe(touch.clientX, touch.clientY, touchEvent.target);
-  };
-
-  const handleMobileDetailTouchMove = (touchEvent: React.TouchEvent<HTMLDivElement>) => {
-    const touch = touchEvent.touches[0];
-
-    if (!touch) return;
-
-    if (completeMobileEdgeSwipe(touch.clientX, touch.clientY)) {
-      touchEvent.preventDefault();
-    }
-  };
-
-  const handleMobileDetailTouchEnd = (touchEvent: React.TouchEvent<HTMLDivElement>) => {
-    const touch = touchEvent.changedTouches[0];
-
-    if (!touch) {
-      resetMobileEdgeSwipe();
-      return;
-    }
-
-    finishMobileEdgeSwipe(touch.clientX, touch.clientY);
-  };
-
   const handleMobileDetailPointerDown = (pointerEvent: React.PointerEvent<HTMLDivElement>) => {
     if (pointerEvent.pointerType === 'touch') return;
 
@@ -1058,12 +988,7 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
       <div
         className="nodu-mobile-event-detail"
         data-swiping={mobileEdgeSwipeOffset > 0 || undefined}
-        onTouchStart={handleMobileDetailTouchStart}
-        onTouchMove={handleMobileDetailTouchMove}
-        onTouchEnd={handleMobileDetailTouchEnd}
-        onTouchCancel={() => {
-          mobileEdgeSwipeStartRef.current = null;
-        }}
+        ref={mobileDetailRef}
         onPointerDown={handleMobileDetailPointerDown}
         onPointerMove={handleMobileDetailPointerMove}
         onPointerUp={handleMobileDetailPointerUp}
@@ -1074,18 +999,6 @@ const EventDetailView = ({ backLabel }: { backLabel?: string } = {}) => {
         <div
           className="nodu-mobile-event-swipe-edge"
           aria-hidden="true"
-          onTouchStart={handleMobileDetailTouchStart}
-          onTouchMove={handleMobileDetailTouchMove}
-          onTouchEnd={handleMobileDetailTouchEnd}
-          onTouchCancel={() => {
-            resetMobileEdgeSwipe();
-          }}
-          onPointerDown={handleMobileDetailPointerDown}
-          onPointerMove={handleMobileDetailPointerMove}
-          onPointerUp={handleMobileDetailPointerUp}
-          onPointerCancel={() => {
-            resetMobileEdgeSwipe();
-          }}
         />
         <div className={mobileSwipeSurfaceClassName} style={mobileSwipeSurfaceStyle}>
         <div ref={mobileScrollRef} className="nodu-mobile-event-scroll">

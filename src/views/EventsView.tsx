@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, ChevronLeft, ChevronRight, Filter, Link2, List } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Link2, List } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import {
@@ -23,10 +23,12 @@ import { useAuth } from '../app/providers/useAuth';
 import { useIsMobile } from '../hooks/use-mobile';
 import { Event } from '../types';
 import type { SelectedEventId } from '../context/app-context';
+import { useEventListDetails } from '../features/events/queries/useEventListDetails';
 import { eventOccursOnDate } from '../utils';
 import { resolveEventScheduleDay } from '../features/events/services/event-schedule';
 import { Button } from '../components/ui/button';
 import EventDetailView from './EventDetailView';
+import MobileEventsHeader, { type MobileCrewEventFilter } from '../features/events/components/MobileEventsHeader';
 import EventEditModal from '../components/modals/EventEditModal';
 import { useEventsQuery } from '../features/events/queries/useEventsQuery';
 import { useTimelogsQuery } from '../features/timelogs/queries/useTimelogsQuery';
@@ -71,20 +73,10 @@ type EventColorStyle = {
   metaColor: string;
 };
 
-type MobileCrewEventFilter = 'all' | 'open' | 'assigned' | 'pending' | 'full';
-
 const EVENT_FILTER_OPTIONS = [
   { id: 'upcoming' as const, label: 'Nadchazejici' },
   { id: 'past' as const, label: 'Uplynule' },
   { id: 'all' as const, label: 'Vse' },
-];
-
-const MOBILE_CREW_EVENT_FILTER_OPTIONS = [
-  { id: 'all' as const, label: 'Vse' },
-  { id: 'open' as const, label: 'Volne' },
-  { id: 'assigned' as const, label: 'Moje akce' },
-  { id: 'pending' as const, label: 'Cekam' },
-  { id: 'full' as const, label: 'Obsazeno' },
 ];
 
 const buildWeekSegments = (weekDays: Date[], events: CalendarEvent[]): CalendarSegment[] => {
@@ -162,22 +154,19 @@ const eventOverlapsDateRange = (event: Event, startDate: string, endDate: string
 );
 
 const getTodayDateKey = () => format(new Date(), 'yyyy-MM-dd');
+const occurrenceHeadingDate = new Intl.DateTimeFormat('cs-CZ', { weekday: 'short', day: 'numeric', month: 'long' });
 
-const MOBILE_CREW_DATE_PICKER_WEEKDAYS = ['PO', 'UT', 'ST', 'CT', 'PA', 'SO', 'NE'];
-
-const getSafeDateFromKey = (dateKey: string | null | undefined, fallback: Date) => {
-  if (!dateKey) return fallback;
-
-  const parsedDate = parseISO(dateKey);
-  return isValid(parsedDate) ? parsedDate : fallback;
-};
-
+// A second tap intended for the date can land on a card when the picker collapses.
+const REPEAT_TAP_RADIUS_PX = 24;
+const REPEAT_TAP_WINDOW_MS = 400;
 const getEventSelectionId = (event: Event): SelectedEventId => event.supabaseId ?? event.id;
 
 const isEventFullyStaffed = (event: Event) => event.needed > 0 && event.filled >= event.needed;
 
-const getMobileCrewEventState = (event: Event, currentProfileId?: string | null) => {
-  const eventDetail = getEventDetailData(getEventSelectionId(event));
+type ReadEventDetail = ReturnType<typeof useEventListDetails>;
+
+const getMobileCrewEventState = (event: Event, currentProfileId: string | null | undefined, readDetail: ReadEventDetail) => {
+  const eventDetail = readDetail(getEventSelectionId(event));
   const isAssigned = currentProfileId
     ? eventDetail.crewAssignments.some((assignment) => assignment.contractorProfileId === currentProfileId)
     : false;
@@ -199,12 +188,13 @@ const isEventVisibleFromMobileDate = (
   role: 'crew' | 'crewhead' | 'coo',
   currentProfileId: string | null | undefined,
   startDate: string,
+  readDetail: ReadEventDetail,
 ) => {
   if (role !== 'crew') return event.endDate >= startDate;
   if (event.startDate >= startDate) return true;
   if (event.endDate < startDate) return false;
 
-  const { hasPendingApplication, isAssigned } = getMobileCrewEventState(event, currentProfileId);
+  const { hasPendingApplication, isAssigned } = getMobileCrewEventState(event, currentProfileId, readDetail);
   return isAssigned || hasPendingApplication;
 };
 
@@ -212,10 +202,11 @@ const matchesMobileCrewEventFilter = (
   event: Event,
   currentProfileId: string | null | undefined,
   filter: MobileCrewEventFilter,
+  readDetail: ReadEventDetail,
 ) => {
   if (filter === 'all') return true;
 
-  const { hasPendingApplication, isAssigned, isFullyStaffed } = getMobileCrewEventState(event, currentProfileId);
+  const { hasPendingApplication, isAssigned, isFullyStaffed } = getMobileCrewEventState(event, currentProfileId, readDetail);
 
   if (filter === 'open') return !isFullyStaffed;
   if (filter === 'assigned') return isAssigned;
@@ -251,6 +242,7 @@ const EventsOverview = ({ selection = null }: { selection?: MobileWorkflowSelect
   const { currentProfileId } = useAuth();
   const isMobile = useIsMobile();
   const eventsQuery = useEventsQuery();
+  const readDetail = useEventListDetails();
   const timelogsQuery = useTimelogsQuery();
   void timelogsQuery.data;
   const [didInitCalendarDate, setDidInitCalendarDate] = useState(false);
@@ -267,15 +259,17 @@ const EventsOverview = ({ selection = null }: { selection?: MobileWorkflowSelect
   const [selectionFilter, setSelectionFilter] = useState<EventFilter>('all');
   const eventFilter = selectionActive ? selectionFilter : eventsFilter as EventFilter;
   const todayDateKey = getTodayDateKey();
-  const [showMobileDatePicker, setShowMobileDatePicker] = useState(false);
-  const [showMobileCrewFilters, setShowMobileCrewFilters] = useState(false);
+  const lastDateTap = useRef<{ x: number; y: number; expiresAt: number; repeatStarted: boolean } | null>(null);
   const [mobileListStartDate, setMobileListStartDate] = useState(() => getTodayDateKey());
-  const [mobilePickerMonthDate, setMobilePickerMonthDate] = useState(() => getTodayDateKey());
   const [mobileCrewFilter, setMobileCrewFilter] = useState<MobileCrewEventFilter>('all');
   const [presentation, setPresentation] = useState<CapturedEventsPresentation | null>(null);
   const [selectionTimeline, setSelectionTimeline] = useState<CardTimeline>(() => ({ anchorDate: todayDateKey, startDate: todayDateKey, query: '' }));
   const [searchAllPresentation, setSearchAllPresentation] = useState(false);
   const mobileViewDate = selectionActive ? selectionTimeline.anchorDate : mobileListStartDate;
+  useLayoutEffect(() => {
+    // Measure from the commit so a second tap queued during a slow render is covered.
+    if (lastDateTap.current) lastDateTap.current.expiresAt = performance.now() + REPEAT_TAP_WINDOW_MS;
+  }, [mobileViewDate]);
   const overview = useRef<HTMLDivElement>(null);
   const entryPosition = useRef<CardScrollPosition | null>(null);
   const entryPreferences = useRef<{ date: string; filter: EventFilter; query: string; calendarDate: string } | null>(null);
@@ -305,12 +299,12 @@ const EventsOverview = ({ selection = null }: { selection?: MobileWorkflowSelect
       restoreEntry.current = true;
       const entry = entryPreferences.current;
       if (entry) {
-        setMobileListStartDate(entry.date); setMobilePickerMonthDate(entry.date);
+        setMobileListStartDate(entry.date);
         if (eventsFilter !== entry.filter) setEventsFilter(entry.filter);
         if (searchQuery !== entry.query) setSearchQuery(entry.query);
         if (eventsCalendarDate !== entry.calendarDate) setEventsCalendarDate(entry.calendarDate);
       }
-      setPresentation(null); setShowMobileDatePicker(false);
+      setPresentation(null);
     } else if (before.summary && !selection?.summary && selectionActive && frame && summaryPosition.current && overview.current) {
       restoreCardScrollPosition(frame, summaryPosition.current, overview.current);
       rememberLayout();
@@ -329,12 +323,12 @@ const EventsOverview = ({ selection = null }: { selection?: MobileWorkflowSelect
     entryPosition.current = frame && overview.current ? captureCardScrollPosition(frame, overview.current) : null;
     entryPreferences.current = { date: mobileListStartDate, filter: eventsFilter as EventFilter, query: searchQuery, calendarDate: eventsCalendarDate };
     const capturedEvents = structuredClone(eventsQuery.data ?? []);
-    const details = new Map(capturedEvents.map((event) => [getEventSelectionId(event), structuredClone(getEventDetailData(getEventSelectionId(event)))]));
+    const details = new Map(capturedEvents.map((event) => [getEventSelectionId(event), readDetail(getEventSelectionId(event))]));
     setPresentation({ events: capturedEvents, details });
     setSelectionFilter(eventsFilter as EventFilter);
     setSelectionTimeline({ anchorDate: mobileListStartDate, startDate: mobileListStartDate, query: searchQuery });
     setSearchAllPresentation(false); cardScroll.rememberWindow();
-    setShowMobileDatePicker(false); selection.open();
+    selection.open();
   };
   const changeSelectionQuery = (query: string) => {
     if (!searchAllPresentation) cardScroll.rememberWindow();
@@ -409,12 +403,12 @@ const EventsOverview = ({ selection = null }: { selection?: MobileWorkflowSelect
     if (isMobileEventFeed) {
       return visibleEvents
         .filter((event) => (
-          isEventVisibleFromMobileDate(event, role, currentProfileId, selectionActive ? (searchAllPresentation ? '0001-01-01' : selectionTimeline.startDate) : mobileListStartDate)
+          isEventVisibleFromMobileDate(event, role, currentProfileId, selectionActive ? (searchAllPresentation ? '0001-01-01' : selectionTimeline.startDate) : mobileListStartDate, readDetail)
           || (isMobileEventDetailOpen && selectedEventId != null && getEventSelectionId(event) === selectedEventId)
         ))
         .filter((event) => (
           !isMobileCrewEventFeed
-          || matchesMobileCrewEventFilter(event, currentProfileId, mobileCrewFilter)
+          || matchesMobileCrewEventFilter(event, currentProfileId, mobileCrewFilter, readDetail)
         ))
         .sort((a, b) => (
           a.startDate.localeCompare(b.startDate)
@@ -423,20 +417,9 @@ const EventsOverview = ({ selection = null }: { selection?: MobileWorkflowSelect
     }
 
     return monthVisibleEvents;
-  }, [currentProfileId, effectiveViewMode, isMobileCrewEventFeed, isMobileEventDetailOpen, isMobileEventFeed, mobileCrewFilter, mobileListStartDate, monthVisibleEvents, role, selectedEventId, visibleEvents, selectionActive, selectionTimeline, searchAllPresentation]);
+  }, [currentProfileId, effectiveViewMode, isMobileCrewEventFeed, isMobileEventDetailOpen, isMobileEventFeed, mobileCrewFilter, mobileListStartDate, monthVisibleEvents, role, selectedEventId, visibleEvents, selectionActive, selectionTimeline, searchAllPresentation, readDetail]);
   const listRangeStart = isMobileEventFeed ? (selectionActive ? (searchAllPresentation ? '0001-01-01' : selectionTimeline.startDate) : mobileListStartDate) : selectedMonthStart;
   const listRangeEnd = isMobileEventFeed ? '9999-12-31' : selectedMonthEnd;
-  const mobilePickerDate = useMemo(
-    () => getSafeDateFromKey(mobilePickerMonthDate, getSafeDateFromKey(mobileViewDate, new Date())),
-    [mobileViewDate, mobilePickerMonthDate],
-  );
-  const mobilePickerStart = startOfWeek(startOfMonth(mobilePickerDate), { weekStartsOn: 1 });
-  const mobilePickerEnd = endOfWeek(endOfMonth(mobilePickerDate), { weekStartsOn: 1 });
-  const mobilePickerDays = useMemo(
-    () => eachDayOfInterval({ start: mobilePickerStart, end: mobilePickerEnd }),
-    [mobilePickerStart, mobilePickerEnd],
-  );
-
   const eventColorMap = useMemo(() => (
     new Map(
       visibleEvents.map((event) => [
@@ -576,31 +559,38 @@ const EventsOverview = ({ selection = null }: { selection?: MobileWorkflowSelect
     setEventsCalendarDate(format(startOfMonth(nextDate), 'yyyy-MM-dd'));
   };
 
-  const toggleMobileDatePicker = () => {
-    setShowMobileCrewFilters(false);
-    setMobilePickerMonthDate(mobileViewDate);
-    setShowMobileDatePicker((isOpen) => !isOpen);
-  };
-
-  const updateMobileStartDate = (value: string) => {
-    if (!value) return;
-
+  const updateMobileStartDate = (value: string, click: React.MouseEvent<HTMLButtonElement>) => {
+    lastDateTap.current = click.detail > 0
+      ? { x: click.clientX, y: click.clientY, expiresAt: performance.now() + REPEAT_TAP_WINDOW_MS, repeatStarted: false }
+      : null;
     if (selectionActive) {
-      cardScroll.jumpToAnchor(); setSelectionTimeline((current) => ({ ...current, anchorDate: value, startDate: value }));
-      setMobilePickerMonthDate(value); setShowMobileDatePicker(false); return;
+      cardScroll.jumpToAnchor();
+      setSelectionTimeline((current) => ({ ...current, anchorDate: value, startDate: value }));
+    } else {
+      setMobileListStartDate(value);
+      setEventsCalendarDate(value);
     }
-    setMobileListStartDate(value);
-    setMobilePickerMonthDate(value);
-    setShowMobileDatePicker(false);
-    setEventsCalendarDate(value);
   };
 
-  const resetMobileStartDate = () => {
-    if (selectionActive) { updateMobileStartDate(todayDateKey); return; }
-    setMobileListStartDate(todayDateKey);
-    setMobilePickerMonthDate(todayDateKey);
-    setShowMobileDatePicker(false);
-    setEventsCalendarDate(todayDateKey);
+  const handlePointerDownAfterDateSelection = (pointer: React.PointerEvent<HTMLDivElement>) => {
+    const tap = lastDateTap.current;
+    if (!tap) return;
+    if (performance.now() <= tap.expiresAt && Math.hypot(pointer.clientX - tap.x, pointer.clientY - tap.y) <= REPEAT_TAP_RADIUS_PX) {
+      tap.repeatStarted = true;
+    } else {
+      lastDateTap.current = null;
+    }
+  };
+
+  const handleClickAfterDateSelection = (click: React.MouseEvent<HTMLDivElement>) => {
+    const tap = lastDateTap.current;
+    if (!tap) return;
+    lastDateTap.current = null;
+    if (click.detail > 0 && (tap.repeatStarted || performance.now() <= tap.expiresAt)
+      && Math.hypot(click.clientX - tap.x, click.clientY - tap.y) <= REPEAT_TAP_RADIUS_PX) {
+      click.preventDefault();
+      click.stopPropagation();
+    }
   };
 
   if (selectedEventId && selectedEvent && !isMobile) {
@@ -608,54 +598,33 @@ const EventsOverview = ({ selection = null }: { selection?: MobileWorkflowSelect
   }
 
   const normalView = (createAction: React.ReactNode) => (
-    <motion.div ref={overview} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={selectionActive ? 'nodu-workflow-selection nodu-mobile-workflow-selection' : undefined} data-workflow-start-date={selectionActive ? selectionTimeline.startDate : undefined}>
+    <motion.div
+      ref={overview}
+      onPointerDownCapture={isMobileEventFeed ? handlePointerDownAfterDateSelection : undefined}
+      onPointerCancelCapture={() => { lastDateTap.current = null; }}
+      onClickCapture={isMobileEventFeed ? handleClickAfterDateSelection : undefined}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className={selectionActive ? 'nodu-workflow-selection nodu-mobile-workflow-selection' : undefined}
+      data-workflow-start-date={selectionActive ? selectionTimeline.startDate : undefined}
+    >
       <div data-workflow-toolbar-space={selectionActive ? '' : undefined} className={selectionActive && !isMobileEventFeed ? 'nodu-workflow-selection__toolbar-space' : undefined}>
       <div data-workflow-toolbar={selectionActive ? '' : undefined} className={isMobileEventFeed ? 'nodu-mobile-events-toolbar' : 'mb-5 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_auto_1fr] lg:items-start'}>
         <div className="flex min-w-0 flex-1 flex-col gap-3">
           {isMobileEventFeed ? (
-            <div className="nodu-mobile-events-header">
-              <button
-                type="button"
-                aria-label="Vybrat datum akci"
-                className={`nodu-mobile-events-header__action nodu-mobile-events-header__action--left ${showMobileDatePicker ? 'nodu-mobile-events-header__action--active' : ''}`}
-                aria-pressed={showMobileDatePicker}
-                onClick={toggleMobileDatePicker}
-              >
-                <CalendarDays size={18} />
-              </button>
-              <h1 className="nodu-mobile-events-header__title">Akce</h1>
-              {isMobileCrewEventFeed ? <button
-                type="button"
-                aria-label="Filtrovat akce"
-                aria-pressed={showMobileCrewFilters}
-                className={`nodu-mobile-events-header__action nodu-mobile-events-header__action--right ${showMobileCrewFilters ? 'nodu-mobile-events-header__action--active' : ''}`}
-                onClick={() => {
-                  setShowMobileDatePicker(false);
-                  setShowMobileCrewFilters((isOpen) => !isOpen);
-                }}
-              >
-                <Filter size={18} />
-              </button> : <span className="nodu-mobile-events-header__action--right" />}
-            </div>
+            <MobileEventsHeader
+              date={mobileViewDate}
+              crew={isMobileCrewEventFeed}
+              crewFilter={mobileCrewFilter}
+              eventCount={listVisibleEvents.length}
+              selectionActive={selectionActive}
+              onCrewFilterChange={setMobileCrewFilter}
+              onDateChange={updateMobileStartDate}
+            />
           ) : (
             <div>
               <div className="nodu-dashboard-kicker">Event Planner</div>
               <div className="mt-1 flex flex-wrap items-center gap-4">
-                {isMobileEventFeed && (
-                  <button
-                    type="button"
-                    aria-label="Vybrat datum akci"
-                    aria-pressed={showMobileDatePicker}
-                    onClick={toggleMobileDatePicker}
-                    className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.96)] text-[color:var(--nodu-text-soft)] shadow-[0_12px_28px_rgba(47,38,31,0.08)] ${
-                      showMobileDatePicker
-                        ? 'border-[color:rgb(var(--nodu-accent-rgb)/0.18)] bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)]'
-                        : ''
-                    }`}
-                  >
-                    <CalendarDays size={18} />
-                  </button>
-                )}
                 <h1 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--nodu-text)]">Akce</h1>
                 {canUseCalendarView && <div className="flex items-center rounded-[18px] border border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.92)] p-1 shadow-[0_12px_28px_rgba(47,38,31,0.08)]">
                   {[
@@ -673,95 +642,6 @@ const EventsOverview = ({ selection = null }: { selection?: MobileWorkflowSelect
                   ))}
                 </div>}
               </div>
-            </div>
-          )}
-
-          {isMobileEventFeed && showMobileDatePicker && (
-            <div
-              className="nodu-mobile-events-date-panel"
-              role="dialog"
-              aria-label="Vyber data od kdy zobrazit akce"
-            >
-              <div className="nodu-mobile-events-date-panel__bar">
-                <button
-                  type="button"
-                  aria-label="Predchozi mesic vyberu akci"
-                  className="nodu-mobile-events-date-panel__nav"
-                  onClick={() => setMobilePickerMonthDate(format(subMonths(mobilePickerDate, 1), 'yyyy-MM-dd'))}
-                >
-                  <ChevronLeft size={15} />
-                </button>
-                <div className="nodu-mobile-events-date-panel__month">
-                  {format(mobilePickerDate, 'LLLL yyyy', { locale: cs })}
-                </div>
-                <button
-                  type="button"
-                  aria-label="Dalsi mesic vyberu akci"
-                  className="nodu-mobile-events-date-panel__nav"
-                  onClick={() => setMobilePickerMonthDate(format(addMonths(mobilePickerDate, 1), 'yyyy-MM-dd'))}
-                >
-                  <ChevronRight size={15} />
-                </button>
-              </div>
-
-              <button
-                type="button"
-                className="mb-3 w-full rounded-xl border border-[color:rgb(var(--nodu-accent-rgb)/0.2)] bg-[color:rgb(var(--nodu-accent-rgb)/0.08)] px-3 py-2 text-xs font-bold text-[color:var(--nodu-accent)]"
-                onClick={resetMobileStartDate}
-              >
-                Dnes a dál
-              </button>
-
-              <div className="nodu-mobile-events-date-panel__weekdays" aria-hidden="true">
-                {MOBILE_CREW_DATE_PICKER_WEEKDAYS.map((day) => (
-                  <span key={day}>{day}</span>
-                ))}
-              </div>
-
-              <div className="nodu-mobile-events-date-panel__grid">
-                {mobilePickerDays.map((day) => {
-                  const dayKey = format(day, 'yyyy-MM-dd');
-                  const isSelectedDay = Boolean(mobileViewDate) && dayKey === mobileViewDate;
-                  const isToday = dayKey === todayDateKey;
-
-                  return (
-                    <button
-                      key={dayKey}
-                      type="button"
-                      aria-label={`Zobrazit akce od ${format(day, 'd. MMMM yyyy', { locale: cs })}`}
-                      className={`nodu-mobile-events-date-panel__day ${
-                        isSelectedDay ? 'nodu-mobile-events-date-panel__day--selected' : ''
-                      } ${isToday ? 'nodu-mobile-events-date-panel__day--today' : ''} ${
-                        isSameMonth(day, mobilePickerDate) ? '' : 'nodu-mobile-events-date-panel__day--outside'
-                      }`}
-                      onClick={() => updateMobileStartDate(dayKey)}
-                    >
-                      {format(day, 'd.')}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {isMobileCrewEventFeed && showMobileCrewFilters && (
-            <div className="nodu-mobile-events-filter-panel">
-              {MOBILE_CREW_EVENT_FILTER_OPTIONS.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => setMobileCrewFilter(item.id)}
-                  className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-all ${
-                    mobileCrewFilter === item.id
-                      ? 'border-[color:rgb(var(--nodu-accent-rgb)/0.18)] bg-[color:rgb(var(--nodu-accent-rgb)/0.12)] text-[color:var(--nodu-accent)]'
-                      : 'border-[color:var(--nodu-border)] bg-[color:rgb(var(--nodu-surface-rgb)/0.98)] text-[color:var(--nodu-text-soft)] hover:border-[color:rgb(var(--nodu-accent-rgb)/0.18)] hover:text-[color:var(--nodu-text)]'
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
-              <span className="text-[11px] font-medium text-[color:var(--nodu-text-soft)]">
-                {listVisibleEvents.length} akci
-              </span>
             </div>
           )}
 
@@ -905,7 +785,7 @@ const EventsOverview = ({ selection = null }: { selection?: MobileWorkflowSelect
               <div className="flex items-center gap-4 py-4" data-workflow-date={date}>
                 <div className="h-px flex-1 bg-[color:rgb(var(--nodu-text-rgb)/0.1)]"></div>
                 <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-[color:var(--nodu-text-soft)]">
-                  {new Date(date).toLocaleDateString('cs-CZ', { weekday: 'short', day: 'numeric', month: 'long' })}
+                  {occurrenceHeadingDate.format(new Date(date))}
                 </span>
                 <div className="h-px flex-1 bg-[color:rgb(var(--nodu-text-rgb)/0.1)]"></div>
               </div>
@@ -922,7 +802,7 @@ const EventsOverview = ({ selection = null }: { selection?: MobileWorkflowSelect
                     canManageEvents={canManageEvents}
                     role={role}
                     currentProfileId={currentProfileId}
-                    detail={selectionActive ? presentation?.details.get(getEventSelectionId(occurrence.event)) : undefined}
+                    detail={selectionActive ? presentation?.details.get(getEventSelectionId(occurrence.event)) : readDetail(getEventSelectionId(occurrence.event))}
                     selection={selectionActive && selection ? { checked, disabled: selection.draft.locked || (!checked && Boolean(reason)), reason, onToggle: () => selection.toggle(workflowEventId) } : undefined}
                     onOpen={openEventDetail}
                     onDelete={(event) => setDeleteConfirm({ type: 'event', id: event.supabaseId ?? event.id, name: event.name })}

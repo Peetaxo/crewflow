@@ -122,6 +122,9 @@ const getInitialLocalAppData = (): AppDataSnapshot => (
 );
 
 let localAppState = cloneSnapshot(getInitialLocalAppData());
+let localAppStateRevision = 0;
+
+export const getLocalAppStateRevision = () => localAppStateRevision;
 
 const localAppListeners = new Set<AppDataListener>();
 
@@ -137,6 +140,7 @@ export function updateLocalAppState(
   updater: (snapshot: AppDataSnapshot) => AppDataSnapshot,
 ): AppDataSnapshot {
   localAppState = cloneSnapshot(updater(cloneSnapshot(localAppState)));
+  localAppStateRevision += 1;
   const nextSnapshot = getLocalAppState();
   localAppListeners.forEach((listener) => listener(nextSnapshot));
   return nextSnapshot;

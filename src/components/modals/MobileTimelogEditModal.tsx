@@ -7,6 +7,7 @@ import { calculateMealAllowance, calculateTotalHours, normalizeMealSelection } f
 import { getTimelogDependencies, reloadTimelogForEditor, saveTimelog } from '../../features/timelogs/services/timelogs.service';
 import { canEditTimelog, canSubmitTimelog } from '../../features/timelogs/services/timelog-permissions';
 import type { Contractor, Event, Role, Timelog } from '../../types';
+import { listenForEdgeSwipe } from '../../lib/edge-swipe-touch';
 import { Button } from '../ui/button';
 import TimelogEvidenceSection from '../../features/shift-workflows/TimelogEvidenceSection';
 import { TimelogSubmitConfirmationDialog } from '../../features/shift-workflows/timelog-evidence-presentation';
@@ -14,6 +15,7 @@ import { TimelogSubmitConfirmationDialog } from '../../features/shift-workflows/
 type AutosaveState = 'idle' | 'pending' | 'saved' | 'error';
 const autosaveDelayMs = 800;
 const mobileTimelogSwipeStartMaxX = 96;
+const mobileTimelogSwipeIntentDistance = 8;
 const mobileTimelogSwipeMinDistance = 64;
 const mobileTimelogSwipeMaxVerticalDrift = 48;
 const mobileTimelogCloseAnimationMs = 180;
@@ -99,6 +101,7 @@ const MobileTimelogSession = ({ initialTimelog, event, contractor, role, setEdit
   const lastAutosavedSignatureRef = React.useRef<string | null>(null);
   const retiredRef = React.useRef(false);
   const saveInFlightRef = React.useRef(false);
+  const timelogModalRef = React.useRef<HTMLElement>(null);
   const timelogSwipeStartRef = React.useRef<{ x: number; y: number } | null>(null);
   const timelogCloseTimeoutRef = React.useRef<number | null>(null);
 
@@ -295,14 +298,10 @@ const MobileTimelogSession = ({ initialTimelog, event, contractor, role, setEdit
   }, [closeEditor]);
 
   const startTimelogSwipe = React.useCallback((clientX: number, clientY: number) => {
-    if (clientX > mobileTimelogSwipeStartMaxX) {
-      resetTimelogSwipe();
-      return;
-    }
-
+    resetTimelogSwipe();
+    if (clientX > mobileTimelogSwipeStartMaxX) return false;
     timelogSwipeStartRef.current = { x: clientX, y: clientY };
-    setTimelogSwipeOffset(0);
-    setTimelogSwipePhase('dragging');
+    return true;
   }, [resetTimelogSwipe]);
 
   const completeTimelogSwipe = React.useCallback((clientX: number, clientY: number, shouldFinalize = false) => {
@@ -313,27 +312,29 @@ const MobileTimelogSession = ({ initialTimelog, event, contractor, role, setEdit
     const deltaX = clientX - touchStart.x;
     const deltaY = Math.abs(clientY - touchStart.y);
 
-    if (deltaY > mobileTimelogSwipeMaxVerticalDrift) {
+    if (deltaY > mobileTimelogSwipeMaxVerticalDrift
+      || (deltaY >= mobileTimelogSwipeIntentDistance && deltaY >= deltaX)) {
       resetTimelogSwipe();
       return false;
     }
-
-    const swipeOffset = Math.max(0, deltaX);
-    setTimelogSwipeOffset(Math.min(swipeOffset, window.innerWidth || 390));
 
     if (shouldFinalize) {
       timelogSwipeStartRef.current = null;
       setTimelogSwipePhase('idle');
 
-      if (deltaX >= mobileTimelogSwipeMinDistance && deltaY <= mobileTimelogSwipeMaxVerticalDrift) {
+      if (deltaX >= mobileTimelogSwipeMinDistance) {
         scheduleTimelogClose();
         return true;
       }
 
       setTimelogSwipeOffset(0);
+      return false;
     }
 
-    return swipeOffset > 0;
+    if (deltaX < mobileTimelogSwipeIntentDistance) return false;
+    setTimelogSwipeOffset(Math.min(deltaX, window.innerWidth || 390));
+    setTimelogSwipePhase('dragging');
+    return true;
   }, [resetTimelogSwipe, scheduleTimelogClose]);
 
   const finishTimelogSwipe = React.useCallback((clientX: number, clientY: number) => {
@@ -348,56 +349,15 @@ const MobileTimelogSession = ({ initialTimelog, event, contractor, role, setEdit
   }, []);
 
   React.useEffect(() => {
-    if (!editingTimelog) return undefined;
-
-    const handleWindowTouchStart = (touchEvent: TouchEvent) => {
-      const touch = touchEvent.touches[0];
-
-      if (!touch) {
-        resetTimelogSwipe();
-        return;
-      }
-
-      startTimelogSwipe(touch.clientX, touch.clientY);
-    };
-
-    const handleWindowTouchMove = (touchEvent: TouchEvent) => {
-      const touch = touchEvent.touches[0];
-
-      if (!touch) return;
-
-      if (completeTimelogSwipe(touch.clientX, touch.clientY)) {
-        touchEvent.preventDefault();
-      }
-    };
-
-    const handleWindowTouchEnd = (touchEvent: TouchEvent) => {
-      const touch = touchEvent.changedTouches[0];
-
-      if (!touch) {
-        resetTimelogSwipe();
-        return;
-      }
-
-      finishTimelogSwipe(touch.clientX, touch.clientY);
-    };
-
-    const listenerOptions = { capture: true, passive: false } as AddEventListenerOptions;
-
-    window.addEventListener('touchstart', handleWindowTouchStart, listenerOptions);
-    window.addEventListener('touchmove', handleWindowTouchMove, listenerOptions);
-    window.addEventListener('touchend', handleWindowTouchEnd, listenerOptions);
-    window.addEventListener('touchcancel', resetTimelogSwipe, listenerOptions);
-
-    return () => {
-      window.removeEventListener('touchstart', handleWindowTouchStart, listenerOptions);
-      window.removeEventListener('touchmove', handleWindowTouchMove, listenerOptions);
-      window.removeEventListener('touchend', handleWindowTouchEnd, listenerOptions);
-      window.removeEventListener('touchcancel', resetTimelogSwipe, listenerOptions);
-    };
+    if (!timelogModalRef.current) return;
+    return listenForEdgeSwipe(timelogModalRef.current, {
+      start: startTimelogSwipe,
+      move: completeTimelogSwipe,
+      end: finishTimelogSwipe,
+      cancel: resetTimelogSwipe,
+    });
   }, [
     completeTimelogSwipe,
-    editingTimelog,
     finishTimelogSwipe,
     resetTimelogSwipe,
     startTimelogSwipe,
@@ -453,15 +413,8 @@ const MobileTimelogSession = ({ initialTimelog, event, contractor, role, setEdit
 
   return (
     <div className="nodu-mobile-timelog-layer fixed inset-0 z-[90] flex items-end">
-      <div
-        className="nodu-mobile-timelog-swipe-edge"
-        aria-hidden="true"
-        onPointerDown={handleTimelogPointerDown}
-        onPointerMove={handleTimelogPointerMove}
-        onPointerUp={handleTimelogPointerUp}
-        onPointerCancel={resetTimelogSwipe}
-      />
       <section
+        ref={timelogModalRef}
         className={timelogModalClassName}
         style={timelogModalStyle}
         role="dialog"
@@ -472,6 +425,7 @@ const MobileTimelogSession = ({ initialTimelog, event, contractor, role, setEdit
         onPointerUp={handleTimelogPointerUp}
         onPointerCancel={resetTimelogSwipe}
       >
+        <div className="nodu-mobile-timelog-swipe-edge" aria-hidden="true" />
         <header className="nodu-mobile-timelog-header">
           <div className="min-w-0">
             <h3 id="mobile-timelog-title" className="text-xl font-semibold tracking-[-0.03em] text-[color:var(--nodu-text)]">
@@ -516,7 +470,7 @@ const MobileTimelogSession = ({ initialTimelog, event, contractor, role, setEdit
             </Button>
           </div>
         )}
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto touch-pan-y touch-pinch-zoom">
         <TimelogEvidenceSection
           timelog={editingTimelog}
           event={event}

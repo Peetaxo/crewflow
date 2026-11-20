@@ -2,6 +2,7 @@ import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Event, EventCrewAssignment, Timelog } from '../../../types';
+import * as schedule from '../services/event-schedule';
 import EventListCard, { type EventCardSelection } from './EventListCard';
 
 const liveDetail = vi.hoisted(() => ({ timelogs: [] as Timelog[], crewAssignments: [] as EventCrewAssignment[] }));
@@ -15,6 +16,17 @@ function setup(selection?: EventCardSelection) {
 }
 beforeEach(() => { liveDetail.timelogs = []; liveDetail.crewAssignments = []; });
 describe('EventListCard', () => {
+  it('shows multiday boundaries without building a daily schedule for every occurrence', () => {
+    const build = vi.spyOn(schedule, 'buildEventScheduleDays');
+    try {
+      const multiday: Event = { ...event, scheduleVersion: 2, startTime: '06:00', endTime: '22:00' };
+      render(<EventListCard occurrence={{ ...occurrence, event: multiday }} role="crewhead" canManageEvents detail={detail} />);
+      expect(screen.getByText('11. 10. 2026 · 06:00')).toBeInTheDocument();
+      expect(build).not.toHaveBeenCalled();
+    } finally {
+      build.mockRestore();
+    }
+  });
   it('keeps normal cards on live report and crew presentation when no captured detail is supplied', () => {
     const props = { occurrence: { ...occurrence, kind: 'single' as const, dayCount: 1, dayIndex: 1 }, role: 'crewhead' as const, canManageEvents: true };
     const { rerender } = render(<EventListCard {...props} />); expect(screen.getByText('Casy nezadane')).toBeInTheDocument();

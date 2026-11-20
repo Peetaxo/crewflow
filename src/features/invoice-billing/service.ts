@@ -47,13 +47,25 @@ function assertScope(scope: BillingScope) {
     throw new BillingError('denied', 'Pro fakturaci se přihlaste.');
 }
 export function createBillingService(client: BillingClient | null) {
-  const call = async (name: string, args?: Record<string, unknown>) => {
+  const call = async (name: string, args?: Record<string, unknown>, missingFunctionFallback?: string) => {
     if (!client) throw new BillingError('denied', 'Pro fakturaci se přihlaste.');
-    try { const result = await client.rpc(name, args); if (result.error) throw toBillingError(result.error); return result.data; }
+    try {
+      let result = await client.rpc(name, args);
+      const code = (result.error as { code?: string } | undefined)?.code;
+      if (missingFunctionFallback && (code === 'PGRST202' || code === '42883')) {
+        result = await client.rpc(missingFunctionFallback, args);
+      }
+      if (result.error) throw toBillingError(result.error);
+      return result.data;
+    }
     catch (error) { throw toBillingError(error); }
   };
   return {
-    read: async (scope: BillingScope) => { assertScope(scope); return parseBillingSnapshot(await call('get_invoice_billing_snapshot'), scope); },
+    read: async (scope: BillingScope) => {
+      assertScope(scope);
+      const data = await call('get_invoice_billing_snapshot_with_preliminary', undefined, 'get_invoice_billing_snapshot');
+      return parseBillingSnapshot(data, scope);
+    },
     quote: async (timelogIds: string[]) => {
       if (!timelogIds.length || new Set(timelogIds).size !== timelogIds.length || timelogIds.some((id) => !billingUuid.safeParse(id).success))
         throw new BillingError('invalid', 'Vyberte úplné výkazy ke schválení.');

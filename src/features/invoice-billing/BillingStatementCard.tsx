@@ -2,6 +2,7 @@ import { billingActorName, billingSourceApproval, type BillingActor } from './bi
 import { useRef, useState } from 'react';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
+import { billingStatementNotificationId } from '../notifications/contract';
 import { formatBillingHours, formatBillingMoney, type BillingDocument, type BillingJob, type BillingScope, type BillingStatement } from './contract';
 import { makeBillingCommand, type BillingCommand } from './service';
 import { BillingFinancePreview } from './BillingFinancePreview';
@@ -21,6 +22,12 @@ const reasons: Record<string, string> = {
   financial_data_incomplete: 'Finanční údaje nejsou úplné. COO musí doplnit ověřená data.', customer_identity_refresh_required: 'Údaje odběratele se změnily. COO obnoví podklad.',
   financial_preview_required: 'Finanční podklad vyžaduje ověření COO.', statement_consolidated: 'Podklad byl nahrazen sloučeným podkladem.',
 };
+const preliminaryReasons = new Map([
+  ['amount_changed', 'Částka na PDF se liší od schváleného podkladu.'],
+  ['customer_changed', 'Odběratel na PDF se liší od schváleného podkladu.'],
+  ['scope_changed', 'Změnil se rozsah výkazů zahrnutých v podkladu. Zkontrolujte původní PDF.'],
+  ['document_unavailable', 'Původní PDF není dostupné.'],
+]);
 export function BillingStatementCard({ statement: s, documents, jobs, scope, onCommand, onDownload, onBillingSettings, busy, readOnly = false, actors = [] }: {
   actors?: readonly BillingActor[];
   statement: BillingStatement; documents: BillingDocument[]; jobs: BillingJob[]; scope: BillingScope; onCommand: (command: BillingCommand) => void;
@@ -32,19 +39,22 @@ export function BillingStatementCard({ statement: s, documents, jobs, scope, onC
   const closed = s.needsSourceVerification || readOnly || Boolean(s.supersededByStatementId) || s.status === 'issued';
   const activeDocument = documents.find((d) => d.id === s.activeDocumentId);
   const ownDocuments = documents.filter((d) => d.statementId === s.id);
+  const preliminaryHistory = owned ? s.preliminaryDocuments?.filter((d) => d.reason) ?? [] : [];
   const issueJob = jobs.find((j) => j.statementId === s.id && j.kind === 'issue' && ['queued', 'running'].includes(j.status));
   const allowed = !closed && !issueJob && ['ready', 'document_returned'].includes(s.status);
   const reports = s.financialSnapshot.reports;
   const eventNames = [...new Set(reports.map((report) => report.eventName))].join(' · ');
   const jobNumbers = [...new Set(reports.map((report) => report.jobNumber || 'Bez čísla zakázky'))].join(' · ');
+  const cardId = billingStatementNotificationId(s.id);
+  const headingId = `${cardId}-heading`;
   const badgeTone = s.status === 'blocked' || s.status === 'document_returned' ? styles.error
     : s.status === 'document_pending' ? styles.warning : s.status === 'issued' ? styles.success : '';
   const review = (decision: 'accept' | 'return') => activeDocument && onCommand(makeBillingCommand({ kind: 'review', statementId: s.id, documentId: activeDocument.id, expectedUpdatedAt: s.updatedAt, decision, note: decision === 'return' ? note.trim() : '' }));
-  return <article className={`nodu-panel ${styles.card}`}>
+  return <article id={cardId} tabIndex={-1} aria-labelledby={headingId} className={`nodu-panel ${styles.card}`}>
     <header className={styles.cardHeader}>
       <div className={styles.identity}>
         <span className={`${styles.badge} ${badgeTone}`}>{billingStateLabels[s.status]}{closed && s.supersededByStatementId ? ' · Historie, nahrazeno' : ''}</span>
-        <h3>{eventNames || 'Fakturační podklad'}</h3>
+        <h3 id={headingId}>{eventNames || 'Fakturační podklad'}</h3>
         <p className={styles.muted}>{jobNumbers}</p>
       </div>
       <div className={styles.amount}><span className={styles.amountLabel}>Celkem k fakturaci</span><strong>{s.financialVerified ? formatBillingMoney(s.totalAmount) : 'Částka k ověření'}</strong></div>
@@ -58,6 +68,14 @@ export function BillingStatementCard({ statement: s, documents, jobs, scope, onC
     {s.needsSourceVerification && <p className={styles.notice} role="status">Historický náhled zachycuje původní verzi před schválením. Podklad je dostupný pouze ke čtení a vyžaduje ověření zdrojů.</p>}
     {s.blockedReason && <p className={styles.notice} role="status">{reasons[s.blockedReason] ?? 'Podklad vyžaduje ověření COO. Obnovte podklady nebo požádejte o kontrolu.'}</p>}
     {issueJob && <p className={styles.notice} role="status">Čeká na automatické vystavení podle dřívějšího souhlasu. Faktura zatím nevznikla.</p>}
+    {preliminaryHistory.length > 0 && <ul className={styles.preliminaryHistory}>{preliminaryHistory.map(({ id, invoiceNumber, storagePath, totalAmount, reason }) => {
+      const canDownload = storagePath && !ownDocuments.some((d) => d.storagePath === storagePath);
+      return <li className={styles.notice} key={id}>
+        <p>{preliminaryReasons.get(reason ?? '') ?? 'Původní PDF vyžaduje kontrolu podle schváleného podkladu.'}</p>
+        <p>Původní faktura {invoiceNumber} · {formatBillingMoney(totalAmount)}</p>
+        {canDownload && <Button disabled={busy} variant="link" onClick={() => onDownload(storagePath)}>Stáhnout původní PDF {invoiceNumber}</Button>}
+      </li>;
+    })}</ul>}
     <details ref={preview} className={styles.disclosure}>
       <summary>Přesný finanční náhled</summary>
       <div className={styles.preview}>

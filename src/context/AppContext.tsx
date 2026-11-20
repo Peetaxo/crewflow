@@ -22,7 +22,7 @@ import { deleteReceipt } from '../features/receipts/services/receipts.service';
 import { loadPersistedUiSession, readPersistedUiSession, savePersistedUiSession, type PersistedUiSessionState } from './ui-session-storage';
 import { loadUiPreferences, saveUiPreferences } from './ui-preferences-storage';
 import { AppContext, type AppContextType, type DeleteConfirmData, type SelectedEventId } from './app-context';
-import type { NotificationTarget } from '../features/notifications/contract';
+import { billingStatementNotificationId, type NotificationTarget } from '../features/notifications/contract';
 import { getTimelogs } from '../features/timelogs/services/timelogs.service';
 import { getReceipts } from '../features/receipts/services/receipts.service';
 
@@ -148,6 +148,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [editingReceipt, setEditingReceipt] = useScopedPrivateState<ReceiptItem>(evidenceScopeKey, evidenceReady);
   const [editingClient, setEditingClient] = useScopedPrivateState<Client>(evidenceScopeKey, evidenceReady);
   const [deleteConfirm, setDeleteConfirm, isDeleteScopeActive] = useScopedPrivateState<DeleteConfirmData>(evidenceScopeKey, evidenceReady);
+  const [notificationFocus, setNotificationFocus] = useScopedPrivateState<{ tab: string; elementId: string }>(evidenceScopeKey, evidenceReady);
   const [eventTab, setEventTab] = useState<string>(initialUiSession?.eventTab ?? 'overview');
   const [eventsViewMode, setEventsViewMode] = useState<'list' | 'calendar'>(initialUiSession?.eventsViewMode ?? 'list');
   const [eventsCalendarMode, setEventsCalendarMode] = useState<'month' | 'week'>(initialUiSession?.eventsCalendarMode ?? 'month');
@@ -164,13 +165,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const setCurrentTab = useCallback((tab: string) => {
     pendingNotification.current=null;
+    setNotificationFocus(null);
     if (navigationGuardMessage && tab !== currentTab) {
       setPendingTab(tab);
       return;
     }
 
     navigateToTab(tab);
-  }, [currentTab, navigationGuardMessage, navigateToTab]);
+  }, [currentTab, navigationGuardMessage, navigateToTab, setNotificationFocus]);
 
   const applyNotificationTarget = (target:NotificationTarget) => {
     if(!NAV_BY_ROLE[role].includes(target.tab)) {
@@ -190,19 +192,39 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const receipt=getReceipts().find(r=>r.supabaseId===target.receiptId);
       if(receipt) setEditingReceipt(receipt);
     }
-    if(target.invoiceId) {
-      const id=target.invoiceId;
-      let observer:MutationObserver|null=null;
-      const focus=()=>{const node=document.getElementById(`notification-invoice-${id}`);if(node){node.scrollIntoView({block:'center'});node.focus({preventScroll:true});observer?.disconnect();return true;}return false;};
-      if(!focus()) {observer=new MutationObserver(focus);observer.observe(document.body,{subtree:true,childList:true});setTimeout(()=>observer?.disconnect(),5000);}
+    if (target.billingStatementId) {
+      setNotificationFocus({ tab: target.tab, elementId: billingStatementNotificationId(target.billingStatementId) });
+    } else if (target.invoiceId) {
+      setNotificationFocus({ tab: target.tab, elementId: `notification-invoice-${target.invoiceId}` });
     }
   };
   const openNotificationTarget = (target:NotificationTarget) => {
+    setNotificationFocus(null);
     if(navigationGuardMessage) {
       pendingNotification.current={target,scope:evidenceScopeKey};setPendingTab(target.tab);return;
     }
     applyNotificationTarget(target);
   };
+
+  useLayoutEffect(() => {
+    if (!notificationFocus || notificationFocus.tab !== currentTab) return;
+    const focusTarget = () => {
+      const node = document.getElementById(notificationFocus.elementId);
+      if (!node || node.closest('[aria-hidden="true"], [inert]')) return false;
+      // Old notifications may point at cards now enclosed in the invoice history.
+      for (let details = node.parentElement?.closest('details'); details; details = details.parentElement?.closest('details')) {
+        details.open = true;
+      }
+      node.focus({ preventScroll: true });
+      if (document.activeElement !== node) return false;
+      node.scrollIntoView?.({ block: 'center' });
+      return true;
+    };
+    if (focusTarget()) return;
+    const observer = new MutationObserver(() => { if (focusTarget()) observer.disconnect(); });
+    observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['aria-hidden', 'inert'] });
+    return () => observer.disconnect();
+  }, [currentTab, notificationFocus]);
 
   useEffect(() => {
     if (previousTab.current === currentTab) return;

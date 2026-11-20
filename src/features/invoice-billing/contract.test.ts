@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parseBillingSnapshot, parseBillingQuote, formatBillingMoney, formatBillingHours } from './contract';
-import { billingSnapshotFixture, billingStatementFixture, billingDocumentFixture, id } from './test-fixtures';
+import { parseBillingSnapshot, parseBillingQuote, parseBillingDocument, formatBillingMoney, formatBillingHours } from './contract';
+import { billingSnapshotFixture, billingStatementFixture, billingDocumentFixture, preliminaryDocumentFixture, id } from './test-fixtures';
 const scope = { source: 'supabase' as const, userId: id(2), profileId: id(1), role: 'crew' as const };
 describe('billing contract', () => {
   it('preserves exact versions, frozen decimals and nested identities', () => {
@@ -70,6 +70,28 @@ describe('canonical billing integrity', () => {
     expect(() => parseBillingSnapshot(value, scope)).toThrow();
     value.documents[0].storage_path = `billing-statements/${id(8)}/documents/${value.documents[0].id}.pdf`;
     expect(() => parseBillingSnapshot(value, scope)).toThrow();
+  });
+  it('accepts a promoted original only at the canonical statement and request path', () => {
+    const requestId = id(91);
+    const document = { ...billingDocumentFixture(), statement_id: requestId, storage_path: `billing-statements/${requestId}/documents/${requestId}.pdf` };
+    expect(parseBillingDocument(document).storagePath).toBe(document.storage_path);
+    document.storage_path = `shift-invoice-previews/${id(2)}/${requestId}.pdf`;
+    expect(() => parseBillingDocument(document)).toThrow();
+  });
+  it('keeps the preliminary attachment path after the original statement is consolidated', () => {
+    const document = preliminaryDocumentFixture();
+    const value = { ...fresh(), statements: [{ ...billingStatementFixture(), preliminary_documents: [document] }] };
+    expect(value.statements[0].id).not.toBe(document.id);
+    expect(parseBillingSnapshot(value, scope).statements[0]).toMatchObject({ preliminaryDocuments: [
+      { id: document.id, invoiceNumber: 'PRE-01', storagePath: document.storage_path, totalAmount: 2000, reason: 'amount_changed' },
+    ] });
+    document.storage_path = `billing-statements/${value.statements[0].id}/documents/${document.id}.pdf`;
+    expect(() => parseBillingSnapshot(value, scope)).toThrow();
+    document.storage_path = `billing-statements/${document.id}/documents/${id(99)}.pdf`;
+    expect(() => parseBillingSnapshot(value, scope)).toThrow();
+    document.storage_path = null;
+    document.reason = 'document_unavailable';
+    expect(parseBillingSnapshot(value, scope).statements[0]).toMatchObject({ preliminaryDocuments: [{ storagePath: null }] });
   });
   it('accepts a blocked mixed-customer statement with nullable unknown money and matching source bindings', () => {
     const value = fresh(); const s = value.statements[0];

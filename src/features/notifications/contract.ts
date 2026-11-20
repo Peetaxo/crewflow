@@ -9,9 +9,14 @@ export const notificationTarget = z.object({
   tab: z.enum(['events','my-shifts','my-timelogs','timelogs','my-invoices','invoices','my-receipts']),
   eventId: z.string().uuid().optional(), eventTab: z.enum(['crew','overview']).optional(),
   timelogId: z.string().uuid().optional(), invoiceId: z.string().uuid().optional(), receiptId: z.string().uuid().optional(),
+  billingStatementId: z.string().uuid().optional(),
   scheduledAt: z.string().optional(),
-});
+}).refine(
+  ({ tab, billingStatementId }) => !billingStatementId || tab === 'my-invoices' || tab === 'invoices',
+  { path: ['billingStatementId'], message: 'Fakturační podklad musí odkazovat do faktur.' },
+);
 export type NotificationTarget = z.infer<typeof notificationTarget>;
+export const billingStatementNotificationId = (id: string) => `notification-billing-statement-${id}`;
 export const notificationSchema = z.object({
   id: z.string().uuid(), recipient_user_id: z.string().uuid(), recipient_profile_id: z.string().uuid(),
   category: z.enum(Object.keys(categoryLabels) as [keyof typeof categoryLabels, ...(keyof typeof categoryLabels)[]]),

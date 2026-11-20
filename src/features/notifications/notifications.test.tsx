@@ -1,7 +1,7 @@
 import React from 'react';
 import { act,fireEvent,render,screen,waitFor } from '@testing-library/react';
 import { beforeEach,describe,expect,it,vi } from 'vitest';
-import { parseSnapshot,type NotificationSnapshot } from './contract';
+import { notificationTarget,parseSnapshot,type NotificationSnapshot } from './contract';
 import { NotificationsProvider } from './NotificationsProvider';
 import {useNotifications} from './notifications-context';
 const mocks=vi.hoisted(()=>({read:vi.fn(),call:vi.fn(),open:vi.fn(),save:vi.fn(),navigate:vi.fn(),connect:vi.fn(async()=>()=>{})}));
@@ -22,6 +22,16 @@ function Probe() {const n=useNotifications()!;return <><div>{n.data?.items.map(i
 const tree=()=> <NotificationsProvider><Probe/></NotificationsProvider>;
 beforeEach(()=>{vi.clearAllMocks();auth={currentUserId:ids.user,currentProfileId:ids.profile,role:'crew',isAuthenticated:true,isLoading:false,isRoleSwitching:false};mocks.read.mockImplementation(async()=>snapshot());mocks.call.mockResolvedValue(null);});
 describe('Notification identity and history',()=>{
+ it.each(['my-invoices','invoices'] as const)('preserves the exact billing statement target for %s',tab=>{
+  const value=snapshot();
+  const target={tab,billingStatementId:ids.other};
+  value.items[0].target=target;
+  expect(parseSnapshot(value,ids.user,ids.profile).items[0].target).toEqual(target);
+ });
+ it('accepts a billing statement UUID only on invoice tabs',()=>{
+  expect(notificationTarget.safeParse({tab:'events',billingStatementId:ids.other}).success).toBe(false);
+  expect(notificationTarget.safeParse({tab:'invoices',billingStatementId:'any-statement'}).success).toBe(false);
+ });
  it('rejects server data belonging to another account even with valid notification shapes',()=>{
   const bad=snapshot();bad.items[0].recipient_user_id=ids.other;
   expect(()=>parseSnapshot(bad,ids.user,ids.profile)).toThrow('nepatří');

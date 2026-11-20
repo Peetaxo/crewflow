@@ -8,6 +8,9 @@ static_files = ["./functions/generate-invoice-pdf/assets/*"]
 [functions.upload-invoice-document]
 verify_jwt = true
 
+[functions.upload-shift-invoice]
+verify_jwt = true
+
 [functions.process-invoice-pdfs]
 # Custom server-only secret protects this existing processor.
 verify_jwt = false

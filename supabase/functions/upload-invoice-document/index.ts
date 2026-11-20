@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.103.0";
-import { MAX_PDF_BYTES, readBoundedMultipart, UploadError } from "./request.ts";
+import { readInvoicePdfForm, UploadError } from "../_shared/invoice-pdf-upload.ts";
 import { saveInvoiceDocument, type UploadStore } from "./upload.ts";
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -40,35 +40,7 @@ Deno.serve(async (request) => {
     if (auth.error || !auth.data.user) {
       return json({ error: "invoice_billing_unauthorized" }, 401);
     }
-    // Bound multipart parsing too; byte length below remains authoritative.
-    const length = Number(request.headers.get("content-length"));
-    if (length > MAX_PDF_BYTES + 64 * 1024) {
-      return json({ error: "invoice_billing_pdf_size_invalid" }, 413);
-    }
-    let form: FormData;
-    try {
-      form = await readBoundedMultipart(request);
-    } catch (error) {
-      if (error instanceof UploadError) throw error;
-      return json({ error: "invoice_billing_multipart_invalid" }, 400);
-    }
-    const file = form.get("file");
-    if (!(file instanceof File)) {
-      return json({ error: "invoice_billing_pdf_missing" }, 400);
-    }
-    if (file.size > MAX_PDF_BYTES) {
-      return json({ error: "invoice_billing_pdf_size_invalid" }, 413);
-    }
-    const field = (name: string) => {
-      const values = form.getAll(name);
-      if (values.length !== 1 || typeof values[0] !== "string") {
-        throw new UploadError("invoice_billing_multipart_invalid");
-      }
-      return values[0];
-    };
-    if (form.getAll("file").length !== 1) {
-      throw new UploadError("invoice_billing_multipart_invalid");
-    }
+    const { file, field } = await readInvoicePdfForm(request);
     const service = createClient(url, key, options);
     const bucket = service.storage.from("invoice-pdfs");
     const store: UploadStore = {

@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { BillingConsentPanel } from './BillingConsentPanel';
 import { BillingStatementCard } from './BillingStatementCard';
 import { parseBillingSnapshot, type BillingDocument } from './contract';
-import { billingSnapshotFixture, id } from './test-fixtures';
+import { billingDocumentFixture, billingSnapshotFixture, billingStatementFixture, id, preliminaryDocumentFixture } from './test-fixtures';
 const scope = { source: 'supabase' as const, userId: id(2), profileId: id(1), role: 'crew' as const };
 const data = () => parseBillingSnapshot(billingSnapshotFixture(), scope);
 describe('billing consent and document decisions', () => {
@@ -64,6 +64,47 @@ describe('billing consent and document decisions', () => {
     fireEvent.change(screen.getByLabelText('Důvod vrácení originálu'), { target: { value: 'Chybné číslo' } });
     fireEvent.click(screen.getByRole('button', { name: 'Vrátit originál' }));
     expect(submit).toHaveBeenCalledWith(expect.objectContaining({ kind: 'review', expectedUpdatedAt: s.updatedAt, documentId: doc.id, note: 'Chybné číslo' }));
+  });
+  it('lets the owner focus the exact statement, see why the amount needs correction and download the prior PDF', () => {
+    const fixture = billingSnapshotFixture();
+    const document = preliminaryDocumentFixture();
+    const snapshot = parseBillingSnapshot({ ...fixture, statements: [{ ...fixture.statements[0], preliminary_documents: [document] }] }, scope);
+    const onDownload = vi.fn();
+    const props = { statement: snapshot.statements[0], documents: [], jobs: [], onCommand: vi.fn(), onDownload, onBillingSettings: vi.fn(), busy: false };
+    const view = render(<BillingStatementCard {...props} scope={scope} />);
+    const card = screen.getByRole('article', { name: 'Festival' });
+    expect(card).toHaveAttribute('id', `notification-billing-statement-${props.statement.id}`);
+    card.focus();
+    expect(card).toHaveFocus();
+    expect(screen.getByText('Částka na PDF se liší od schváleného podkladu.')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Stáhnout původní PDF PRE-01' }));
+    expect(onDownload).toHaveBeenCalledWith(document.storage_path);
+    expect(screen.getByRole('button', { name: 'Nahrát vlastní PDF' })).toBeEnabled();
+    view.rerender(<BillingStatementCard {...props} scope={{ ...scope, role: 'crewhead' }} />);
+    expect(screen.queryByText('Částka na PDF se liší od schváleného podkladu.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Stáhnout původní PDF PRE-01' })).not.toBeInTheDocument();
+  });
+  it('shows the reason for an unavailable preliminary PDF without a download button', () => {
+    const fixture = billingSnapshotFixture();
+    const document = { ...preliminaryDocumentFixture(), reason: 'document_unavailable', storage_path: null };
+    const snapshot = parseBillingSnapshot({ ...fixture, statements: [{ ...fixture.statements[0], preliminary_documents: [document] }] }, scope);
+    render(<BillingStatementCard statement={snapshot.statements[0]} documents={[]} jobs={[]} scope={scope} onCommand={vi.fn()} onDownload={vi.fn()} onBillingSettings={vi.fn()} busy={false} />);
+    expect(screen.getByText('Původní PDF není dostupné.')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Stáhnout původní PDF PRE-01' })).not.toBeInTheDocument();
+  });
+  it('shows a promoted PDF once in existing original history when it is also present in preliminary history', () => {
+    const fixture = billingSnapshotFixture();
+    const document = preliminaryDocumentFixture();
+    const original = { ...billingDocumentFixture(), statement_id: document.id, request_id: document.id, storage_path: document.storage_path, external_invoice_number: document.invoice_number };
+    const statement = { ...billingStatementFixture(document.id), status: 'document_pending', active_document_id: original.id, preliminary_documents: [document] };
+    const snapshot = parseBillingSnapshot({ ...fixture, documents: [original], statements: [statement] }, scope);
+    const onDownload = vi.fn();
+    render(<BillingStatementCard statement={snapshot.statements[0]} documents={snapshot.documents} jobs={[]} scope={scope} onCommand={vi.fn()} onDownload={onDownload} onBillingSettings={vi.fn()} busy={false} />);
+    expect(screen.getByText('Částka na PDF se liší od schváleného podkladu.')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Stáhnout původní PDF PRE-01' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Historie originálů (1)'));
+    fireEvent.click(screen.getByRole('button', { name: 'PRE-01 · Čeká na kontrolu' }));
+    expect(onDownload).toHaveBeenCalledWith(document.storage_path);
   });
   it('shows an old provenance statement read-only without offering false repair actions', () => {
     const s = { ...data().statements[0], needsSourceVerification: true };

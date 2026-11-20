@@ -1,13 +1,21 @@
 import type { Database } from '../../lib/database.types';
 import { advanceLifecycleSnapshotGeneration, runLifecycleDataMutation } from '../event-lifecycle-generation';
+import { stageShiftInvoiceAttachment, type ShiftInvoiceChange, type ShiftInvoiceUploadClient } from './shift-invoice-attachment';
 import type { ShiftBatchCommand } from './shift-workflows.batch-commands';
 import { assertShiftBatchCommand, parseShiftBatchResult } from './shift-workflows.batch-contract';
 import { canonicalUuid, ShiftWorkflowError, shiftWorkflowAmbiguous, shiftWorkflowConflict, type ShiftWorkflowScope } from './shift-workflows.contract';
 
 type RpcName = 'save_shift_workflow_drafts_atomic' | 'submit_shift_workflow_round_atomic' | 'transition_shift_workflow_round_atomic';
+type BatchRpcArgs = { [Name in RpcName]: Database['public']['Functions'][Name]['Args'] };
+type InvoiceRpcArgs = { p_attachment_id: string | null };
+type ShiftBatchRpcArgs = BatchRpcArgs & {
+  submit_shift_workflow_invoice_atomic: BatchRpcArgs['submit_shift_workflow_round_atomic'] & InvoiceRpcArgs;
+  transition_shift_workflow_invoice_atomic: BatchRpcArgs['transition_shift_workflow_round_atomic'] & InvoiceRpcArgs;
+};
 type RpcResponse = { data: unknown; error: { code?: string; message?: string } | null };
 export interface ShiftBatchClient {
-  rpc<N extends RpcName>(name: N, args: Database['public']['Functions'][N]['Args']): PromiseLike<RpcResponse>;
+  rpc<N extends keyof ShiftBatchRpcArgs>(name: N, args: ShiftBatchRpcArgs[N]): PromiseLike<RpcResponse>;
+  functions?: ShiftInvoiceUploadClient;
 }
 const messages: Record<string, string> = {
   shift_workflow_invalid: 'Společná evidence obsahuje neplatné údaje.',
@@ -19,7 +27,11 @@ const messages: Record<string, string> = {
   shift_workflow_round_invalid: 'Schvalovací kolo není úplné. Obnovte evidenci.',
   shift_workflow_request_conflict: 'Tentýž požadavek už obsahuje jiné údaje. Obnovte evidenci.',
 };
-function errorFor(error: NonNullable<RpcResponse['error']>) {
+function errorFor(error: NonNullable<RpcResponse['error']>, hasInvoiceChange: boolean) {
+  if (hasInvoiceChange && (['PGRST202', '42883'].includes(error.code ?? '') || error.message === 'shift_invoice_attachment_not_eligible')) {
+    return new ShiftWorkflowError('invalid', 'Přílohu teď nelze změnit. Zrušte změnu přílohy a odešlete hodiny.');
+  }
+  if (hasInvoiceChange && error.message === 'invoice_billing_request_reuse') return shiftWorkflowConflict();
   if (error.code === 'PT409' || error.code === '40001' || error.code === 'P0002') return shiftWorkflowConflict();
   if (error.code === '42501') return new ShiftWorkflowError('denied', 'K tomuto kroku nemáte oprávnění.');
   return error.message && messages[error.message]
@@ -45,12 +57,16 @@ export function createShiftBatchWriter(dependencies: {
   client: ShiftBatchClient | null;
   localWrite: (scope: ShiftWorkflowScope, command: ShiftBatchCommand) => unknown | Promise<unknown>;
 }) {
-  return async (scope: ShiftWorkflowScope, input: ShiftBatchCommand, assertCurrent: () => void) => {
+  return async (scope: ShiftWorkflowScope, input: ShiftBatchCommand, assertCurrent: () => void, invoice?: ShiftInvoiceChange) => {
     assertCurrent();
     const command = structuredClone(input);
+    const invoiceChange = invoice && { ...invoice };
     const capturedScope = { ...scope };
     assertShiftBatchCommand(command);
     assertShiftBatchAccess(capturedScope, command);
+    if (invoiceChange && (scope.source !== 'supabase' || !(command.kind === 'submit' || command.kind === 'transition' && command.action === 'confirm'))) {
+      throw new ShiftWorkflowError('invalid', 'Přílohu lze změnit při odeslání nebo potvrzení výkazu.');
+    }
     const ids = (command.kind === 'transition' ? command.targets : command.timelogs).map((t) => t.id);
     // Exact frozen targets are already expanded before reserving lock keys.
     return runLifecycleDataMutation(ids.map((id) => `timelog:${id}`), async () => {
@@ -65,28 +81,37 @@ export function createShiftBatchWriter(dependencies: {
         }
         const client = dependencies.client;
         if (!client) throw new ShiftWorkflowError('denied', 'Pro práci s evidencí se přihlaste.');
+        const attachmentId = invoiceChange?.kind === 'replace'
+          ? await stageShiftInvoiceAttachment(client.functions, invoiceChange, ids, assertCurrent) : null;
+        assertCurrent();
         let response: RpcResponse;
         try {
           if (command.kind === 'transition') {
-            response = await client.rpc('transition_shift_workflow_round_atomic', {
+            const args: BatchRpcArgs['transition_shift_workflow_round_atomic'] = {
               p_request_id: command.requestId, p_round_id: command.roundId, p_expected_round_updated_at: command.expectedRoundUpdatedAt,
               p_targets: command.targets, p_action: command.action, p_note: command.note,
               ...(command.billingQuoteId ? { p_billing_quote: command.billingQuoteId } : {}),
-              p_affected_event_id: command.affectedEventId, p_corrections: command.corrections as unknown as Database['public']['Functions']['transition_shift_workflow_round_atomic']['Args']['p_corrections'],
-            });
+              p_affected_event_id: command.affectedEventId, p_corrections: command.corrections as unknown as BatchRpcArgs['transition_shift_workflow_round_atomic']['p_corrections'],
+            };
+            response = invoiceChange
+              ? await client.rpc('transition_shift_workflow_invoice_atomic', { ...args, p_attachment_id: attachmentId })
+              : await client.rpc('transition_shift_workflow_round_atomic', args);
           } else {
-            response = await client.rpc(command.kind === 'save' ? 'save_shift_workflow_drafts_atomic' : 'submit_shift_workflow_round_atomic', {
+            const args: BatchRpcArgs['submit_shift_workflow_round_atomic'] = {
               p_request_id: command.requestId, p_round_id: command.roundId, p_workflow_id: command.workflowId,
               p_contractor_id: command.contractorProfileId, p_anchor_event_id: command.anchorEventId,
-              p_timelogs: command.timelogs as unknown as Database['public']['Functions']['save_shift_workflow_drafts_atomic']['Args']['p_timelogs'],
-            });
+              p_timelogs: command.timelogs as unknown as BatchRpcArgs['submit_shift_workflow_round_atomic']['p_timelogs'],
+            };
+            response = invoiceChange
+              ? await client.rpc('submit_shift_workflow_invoice_atomic', { ...args, p_attachment_id: attachmentId })
+              : await client.rpc(command.kind === 'save' ? 'save_shift_workflow_drafts_atomic' : 'submit_shift_workflow_round_atomic', args);
           }
         } catch {
           assertCurrent();
           throw shiftWorkflowAmbiguous();
         }
         assertCurrent();
-        if (response.error) throw errorFor(response.error);
+        if (response.error) throw errorFor(response.error, Boolean(invoiceChange));
         return parseShiftBatchResult(response.data, command);
       } finally {
         // Retire reads started before or during a write, even after an ambiguous

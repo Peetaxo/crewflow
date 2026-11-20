@@ -35,6 +35,8 @@ const source = z.object({ statement_id: billingUuid, timelog_id: billingUuid, ev
   round_id: nullableId, reserved: z.boolean(), source_snapshot: report.extend({ approved_at: billingVersion.nullable().optional(),
     approved_by: nullableId.optional(), billing_prepared_by: nullableId.optional(), approval: z.record(z.unknown()).nullable().optional(),
     workflow_round_id: nullableId.optional(), workflow_round_updated_at: billingVersion.nullable().optional() }) }).strict();
+const preliminaryDocument = z.object({ id: billingUuid, invoice_number: z.string().min(1), storage_path: z.string().min(1).nullable(),
+  total_amount: money, reason: z.string().nullable() }).strict();
 const statement = z.object({ id: billingUuid, contractor_id: billingUuid, contractor_user_id: nullableId, round_id: nullableId,
   status: z.enum(['ready', 'blocked', 'document_pending', 'document_returned', 'issued']), blocked_reason: z.string().nullable(),
   capture_kind: z.enum(['approval', 'selection']), financial_verified: z.boolean(), financial_version: z.number().int().positive(),
@@ -42,7 +44,7 @@ const statement = z.object({ id: billingUuid, contractor_id: billingUuid, contra
   preview_issue_date: billingDate, preview_due_date: billingDate, preview_taxable_supply_date: billingDate.nullable(), preview_valid_until: billingVersion,
   total_amount: money, currency: z.literal('CZK'), approved_by: nullableId, approved_at: billingVersion, consent_grant_id: nullableId,
   superseded_by_statement_id: nullableId, active_document_id: nullableId, invoice_id: nullableId,
-  created_at: billingVersion, updated_at: billingVersion, sources: z.array(source).min(1) }).strict();
+  created_at: billingVersion, updated_at: billingVersion, sources: z.array(source).min(1), preliminary_documents: z.array(preliminaryDocument).optional() }).strict();
 const consent = z.object({ contractor_id: billingUuid, enabled: z.boolean(), active_grant_id: nullableId, updated_at: billingVersion.nullable() }).strict();
 const consentHistory = z.object({ id: billingUuid, contractor_id: billingUuid, actor_id: billingUuid, enabled: z.boolean(),
   non_vat_confirmed: z.boolean(), wording_version: z.literal(1), wording: z.string(), created_at: billingVersion }).strict();
@@ -105,11 +107,13 @@ function completeFinance(value: z.infer<typeof financial>) {
     && r.days.length > 0 && r.days.every((d) => d.hours != null && d.amount_meals != null
       && d.time_from != null && time.test(d.time_from) && d.time_to != null && time.test(d.time_to)));
 }
+const billingDocumentPath = (statementId: string, requestId: string) => `billing-statements/${statementId}/documents/${requestId}.pdf`;
 const validDocumentPath = (d: Pick<z.infer<typeof document>, 'statement_id' | 'request_id' | 'storage_path'>) =>
-  d.storage_path === `billing-statements/${d.statement_id}/documents/${d.request_id}.pdf`;
+  d.storage_path === billingDocumentPath(d.statement_id, d.request_id);
 export function parseBillingStatement(value: unknown): BillingStatement {
   const parsed = statement.safeParse(value); if (!parsed.success) return invalid();
   const s = parsed.data;
+  const preliminaryDocuments = s.preliminary_documents ?? [];
   let needsSourceVerification = false;
   if ((!s.financial_verified && s.status !== 'blocked') || (s.financial_verified && !completeFinance(s.financial_snapshot))
     || !validFinance(s.financial_snapshot) || (s.financial_snapshot.total_amount !== null && cents(s.total_amount) !== cents(s.financial_snapshot.total_amount))
@@ -120,6 +124,9 @@ export function parseBillingStatement(value: unknown): BillingStatement {
       || (s.status !== 'blocked' && !same(s.customer_snapshot, r.customer_snapshot)))
     || s.supplier_snapshot.profileId !== s.contractor_id || (s.status === 'issued') !== Boolean(s.invoice_id)
     || (s.status === 'blocked') !== Boolean(s.blocked_reason) || s.preview_due_date < s.preview_issue_date
+    || !unique(preliminaryDocuments.map((d) => d.id))
+    || preliminaryDocuments.some((d) => d.storage_path !== null
+      && d.storage_path !== billingDocumentPath(d.id, d.id))
     || !unique(s.sources.map((x) => x.timelog_id)) || !unique(s.financial_snapshot.reports.map((r) => r.timelog_id))
     || s.sources.length !== s.financial_snapshot.reports.length || s.sources.some((x) => {
       const r = s.financial_snapshot.reports.find((r) => r.timelog_id === x.timelog_id);

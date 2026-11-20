@@ -9,10 +9,13 @@ import type { Role, Timelog } from '../../types';
 import { KM_RATE } from '../../data';
 import { calculateMealAllowance, calculateTotalHours, formatCurrency } from '../../utils';
 import { getActiveTimelogApproval } from '../timelogs/services/timelog-approval-state';
+import { ShiftInvoiceAttachment } from './ShiftInvoiceAttachment';
 import TimelogEvidenceSection from './TimelogEvidenceSection';
 import type { ShiftEvidenceData } from './shift-evidence-loader';
 import type { ShiftEvidenceSession } from './shift-evidence-session';
 import { serializeShiftReports } from './shift-workflows.batch-commands';
+import { canonicalUuid } from './shift-workflows.contract';
+import { useShiftInvoiceDraft } from './useShiftInvoiceDraft';
 
 export interface SharedTimelogEditorProps {
   source?: 'local' | 'supabase'; data: ShiftEvidenceData; role: Role; session: ShiftEvidenceSession; editorSessionKey: string;
@@ -62,6 +65,13 @@ export default function SharedTimelogEditor({ data, role, session, editorSession
   const frozen = state.context.timelogs.filter((t) => round?.timelogIds.includes(t.supabaseId!));
   const drafts = state.context.timelogs.filter((t) => !round?.timelogIds.includes(t.supabaseId!) && ['draft', 'rejected'].includes(t.status));
   const later = drafts.length > 0;
+  const invoiceOwner = source === 'supabase' && role === 'crew' && actorProfileId === state.context.contractorProfileId
+    && canonicalUuid.safeParse(actorUserId).success && canonicalUuid.safeParse(actorProfileId).success
+    ? JSON.stringify([editorSessionKey, actorUserId, actorProfileId]) : null;
+  const invoiceTimelogKey = (round ? [...round.timelogIds] : drafts.map((report) => report.supabaseId!)).sort().join(',');
+  const invoice = useShiftInvoiceDraft(invoiceOwner, invoiceTimelogKey, round ? `${round.id}:${round.status}` : 'draft');
+  const confirmsRound = state.cohort === 'confirmation' && round?.status === 'pending_crew_confirmation';
+  const canEditInvoice = Boolean(invoiceOwner && (!round && later || confirmsRound));
   const canCooDecide = role === 'coo' && round?.status === 'pending_coo' && frozen.length === round.timelogIds.length && frozen.every((t) => {
     const approval = getActiveTimelogApproval(t);
     return approval?.status === 'pending' && approval.approverProfileId === actorProfileId && approval.approverUserId === actorUserId;
@@ -78,11 +88,11 @@ export default function SharedTimelogEditor({ data, role, session, editorSession
     finally { if (alive.current) setActionBusy(false); }
   };
   const requestClose = () => {
-    if (state.busy || actionBusy || state.dirty || state.canRetry) setConfirmClose(true);
+    if (state.busy || actionBusy || state.dirty || state.canRetry || invoice.draft) setConfirmClose(true);
     else onClose();
   };
   const requestReload = () => {
-    if (state.dirty && !window.confirm('Znovu načíst evidenci a zahodit neuložené změny?')) return;
+    if ((state.dirty || invoice.draft) && !window.confirm('Znovu načíst evidenci a zahodit neuložené změny?')) return;
     onReload();
   };
   const annotationsReady = reason.trim().length > 0 && Boolean(affectedEvent);
@@ -137,6 +147,9 @@ export default function SharedTimelogEditor({ data, role, session, editorSession
                 : <p role="alert">Výkaz této směny se nepodařilo načíst. Před odesláním obnovte data.</p>}
             </section>;
           })}
+          {invoiceOwner && invoiceTimelogKey && <ShiftInvoiceAttachment key={`${invoiceOwner}:${invoiceTimelogKey}:${round?.id ?? ''}:${round?.status ?? ''}`}
+            invoice={invoice} editable={canEditInvoice} waiting={round?.status === 'pending_ch' || round?.status === 'pending_coo'}
+            locked={locked || confirmClose} onChange={() => setActionError(null)} />}
           {(canChDecide || role === 'coo' && round?.status === 'pending_coo') && <div className="space-y-3 rounded-2xl border border-[var(--nodu-border)] p-4">
             <label className="block text-sm">Důvod vrácení nebo úpravy<Textarea aria-label="Důvod vrácení nebo úpravy" value={reason} onChange={(e) => setReason(e.target.value)} disabled={locked} /></label>
             <label className="block text-sm">Dotčená směna<select className="mt-1 block w-full rounded-xl border border-[var(--nodu-border)] bg-transparent p-2" aria-label="Dotčená směna" value={affectedEvent} disabled={locked} onChange={(e) => setAffectedEvent(e.target.value)}>
@@ -148,13 +161,17 @@ export default function SharedTimelogEditor({ data, role, session, editorSession
             onCancel={() => setShowBillingQuote(false)} onStale={requestReload} />}
           {(actionError || state.error) && <p role="alert" className="text-sm text-red-700">{actionError ?? state.error?.message}</p>}
           {state.refreshError && <p role="alert" className="text-sm">{state.refreshError.message}</p>}
-          {state.canRetry && <Button disabled={state.busy || actionBusy} onClick={() => { void run(session.retry); }}>Opakovat stejný požadavek</Button>}
+          {state.canRetry && <Button disabled={state.busy || actionBusy} onClick={() => { void run(async () => {
+            const result = await session.retry();
+            if (alive.current && result.round?.status === 'pending_ch') invoice.reset();
+          }); }}>Opakovat stejný požadavek</Button>}
           {(state.needsReload || state.refreshError) && <Button variant="outline" disabled={state.busy || actionBusy} onClick={requestReload}>Znovu načíst evidenci</Button>}
           {confirmClose && <div role="alert" className="space-y-3 rounded-2xl border border-[var(--nodu-border)] p-4">
-            <p>{state.canRetry || state.busy ? 'Uložení ještě není potvrzené. Po opětovném otevření zkontrolujte stav.' : 'V evidenci jsou neuložené změny.'}</p>
+            <p>{state.canRetry || state.busy || actionBusy ? 'Uložení ještě není potvrzené. Po opětovném otevření zkontrolujte stav.' : 'V evidenci jsou neuložené změny.'}</p>
+            {invoice.draft && <p>Změna přílohy se ukládá při odeslání výkazu.</p>}
             <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setConfirmClose(false)}>Pokračovat v úpravách</Button>
-              <Button variant="outline" onClick={onClose}>{state.canRetry || state.busy ? 'Zavřít a ověřit později' : 'Zahodit neuložené změny'}</Button>
-              {role === 'crew' && state.dirty && !state.canRetry && !state.needsReload && <Button disabled={locked} onClick={() => { void run(async () => { await session.save(); if (alive.current) onClose(); }); }}>Uložit a zavřít</Button>}
+              <Button variant="outline" onClick={onClose}>{state.canRetry || state.busy || actionBusy ? 'Zavřít a ověřit později' : 'Zahodit neuložené změny'}</Button>
+              {role === 'crew' && state.dirty && !invoice.draft && !state.canRetry && !state.needsReload && <Button disabled={locked} onClick={() => { void run(async () => { await session.save(); if (alive.current) onClose(); }); }}>Uložit a zavřít</Button>}
             </div>
           </div>}
         </div>
@@ -162,11 +179,21 @@ export default function SharedTimelogEditor({ data, role, session, editorSession
           {role === 'crew' && <p className="text-sm text-[var(--nodu-text-soft)]">Odesláním ke kontrole uzavíráte veškerou svou práci na všech uvedených směnách odesílaného kola. Pokud budete hodiny ještě doplňovat, uložte výkazy jako rozpracované.</p>}
           <p role="status" className="text-xs text-[var(--nodu-text-soft)]">{state.busy ? 'Ukládání…' : state.canRetry ? 'Uložení není potvrzené' : state.dirty ? 'Neuložené změny' : 'Údaje jsou aktuální'}</p>
           <div className="flex flex-wrap justify-end gap-2">
-            {role === 'crew' && (later || state.cohort === 'confirmation' && round?.status === 'pending_crew_confirmation') && <>
+            {role === 'crew' && (later || confirmsRound) && <>
               <Button variant="outline" disabled={locked || confirmClose} onClick={() => { void run(session.save); }}>Uložit rozpracované části</Button>
-              {state.cohort === 'confirmation' && round?.status === 'pending_crew_confirmation'
-                ? <Button disabled={locked || confirmClose} onClick={() => { void run(async () => { validateSections(frozen); await session.save(); await session.transition('confirm'); }); }}>Potvrdit a odeslat celé kolo</Button>
-                : <Button disabled={locked || confirmClose || Boolean(round)} onClick={() => { void run(() => { validateSections(drafts); return session.submit(); }); }}>Odeslat vše ke kontrole</Button>}
+              {confirmsRound
+                ? <Button disabled={locked || confirmClose} onClick={() => { void run(async () => {
+                  validateSections(frozen);
+                  const change = canEditInvoice ? invoice.prepare() : undefined;
+                  await session.save();
+                  await session.transition('confirm', { invoice: change });
+                  if (alive.current) invoice.reset();
+                }); }}>Potvrdit a odeslat celé kolo</Button>
+                : <Button disabled={locked || confirmClose || Boolean(round)} onClick={() => { void run(async () => {
+                  validateSections(drafts);
+                  await session.submit(canEditInvoice ? invoice.prepare() : undefined);
+                  if (alive.current) invoice.reset();
+                }); }}>Odeslat vše ke kontrole</Button>}
             </>}
             {canChDecide && <>
               {editingRound && <Button variant="outline" disabled={locked || confirmClose || !annotationsReady || !state.dirty} onClick={() => { void run(() => session.transition('correct', { note: reason, affectedEventId: affectedEvent })); }}>Odeslat úpravy crew k potvrzení</Button>}

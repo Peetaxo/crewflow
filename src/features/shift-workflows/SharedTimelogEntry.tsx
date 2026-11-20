@@ -19,7 +19,7 @@ function EvidenceSessionHost(props: { data: ShiftEvidenceData; workflows: Return
     const { data, workflows, signal } = initial.current;
     const assertCurrent = () => { if (signal.aborted) throw new ShiftWorkflowError('denied', 'Přístup k evidenci se změnil.'); };
     const next = createShiftEvidenceSession({ context: data.context, role: workflows.scope.role, assertCurrent,
-      write: (command, current) => writeShiftEvidenceBatch(workflows.scope, command, current),
+      write: (command, current, invoice) => writeShiftEvidenceBatch(workflows.scope, command, current, invoice),
       onSaved: () => refreshShiftEvidence(assertCurrent, workflows.reload),
     });
     setSession(next);

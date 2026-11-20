@@ -72,6 +72,16 @@
   overflow-wrap: anywhere;
 }
 
+.card:focus-visible {
+  outline: 2px solid var(--nodu-accent);
+  outline-offset: 3px;
+}
+
+.preliminaryHistory {
+  display: grid;
+  gap: 0.5rem;
+}
+
 .identity {
   flex: 1 1 16rem;
   min-width: 0;

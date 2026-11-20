@@ -17,10 +17,25 @@ const result = () => ({ request_id: id(50), workflow_id: id(10), round: null,
     submitted_at: null, approved_at: null, days: [], approval: null })) });
 const harness = () => {
   const rpc = vi.fn(async (_name: string, _args: Record<string, unknown>) => ({ data: result(), error: null }));
+  const invoke = vi.fn(async (_name: string, _options: { body: FormData }) => ({ data: { attachment_id: id(80) }, error: null }));
   const localWrite = vi.fn(() => result());
-  const write = createShiftBatchWriter({ client: { rpc }, localWrite });
-  return { rpc, localWrite, write };
+  const write = createShiftBatchWriter({ client: { rpc, functions: { invoke } }, localWrite });
+  return { rpc, invoke, localWrite, write };
 };
+
+const submission = (): ShiftDraftCommand => {
+  const cmd = { ...command(), kind: 'submit' as const, roundId: id(40) };
+  cmd.timelogs.forEach((row, index) => row.days.push({ id: id(121 + index), date: '2026-09-23', time_from: '10:00',
+    time_to: '14:00', day_type: 'pripravy', note: '', meal: null, meals: [] }));
+  return cmd;
+};
+const submissionResult = (cmd: ShiftDraftCommand) => ({ request_id: cmd.requestId, workflow_id: cmd.workflowId,
+  round: { id: cmd.roundId, workflow_id: cmd.workflowId, contractor_id: cmd.contractorProfileId, status: 'pending_ch',
+    event_ids: cmd.timelogs.map((t) => t.event_id), timelog_ids: cmd.timelogs.map((t) => t.id), updated_at: next, note: '' },
+  timelogs: result().timelogs.map((t, index) => ({ ...t, days: cmd.timelogs[index].days, status: 'pending_ch', submitted_at: next })) });
+const invoice = () => ({ kind: 'replace' as const, requestId: id(80), customerId: id(81), invoiceNumber: '2026-01',
+  issueDate: '2026-09-23', dueDate: '2026-10-01', totalAmount: '1500.00',
+  file: new File(['%PDF-1.7'], 'faktura.pdf', { type: 'application/pdf' }) });
 
 describe('atomic shift batch writer', () => {
   it('uses one exact draft RPC and no per-report writes or local fallback', async () => {
@@ -106,5 +121,60 @@ describe('atomic shift batch writer', () => {
     await expect(h.write({ ...scope, role: 'coo' }, cmd, () => {})).rejects.toMatchObject({ kind: 'ambiguous' });
     expect(h.rpc.mock.calls[0]).toEqual(h.rpc.mock.calls[1]);
   });
+
+  it('stages the selected PDF on submit and uses the same request, exact reports and binding when replayed', async () => {
+    const h = harness(); const cmd = submission(); const attachment = invoice();
+    h.rpc.mockRejectedValueOnce(new Error('network'));
+    await expect(h.write(scope, cmd, () => {}, attachment)).rejects.toMatchObject({ kind: 'ambiguous' });
+    h.rpc.mockResolvedValueOnce({ data: submissionResult(cmd), error: null });
+    await expect(h.write(scope, cmd, () => {}, attachment)).resolves.toMatchObject({ requestId: cmd.requestId, round: { status: 'pending_ch' } });
+    expect(h.invoke).toHaveBeenCalledTimes(2);
+    for (const [endpoint, { body }] of h.invoke.mock.calls) {
+      expect(endpoint).toBe('upload-shift-invoice');
+      expect(Object.fromEntries(body)).toEqual({ ...Object.fromEntries(Object.entries(attachment).filter(([name]) => name !== 'kind')),
+        timelogIds: JSON.stringify([id(21), id(22)]) });
+    }
+    expect(h.rpc.mock.calls).toEqual(Array(2).fill(['submit_shift_workflow_invoice_atomic', {
+      p_request_id: id(50), p_round_id: id(40), p_workflow_id: id(10), p_contractor_id: id(3), p_anchor_event_id: id(31),
+      p_timelogs: cmd.timelogs, p_attachment_id: id(80),
+    }]));
+  });
+
+  it.each(['remove', 'replace'] as const)('sends an explicit %s on confirm using only the frozen round', async (kind) => {
+    const h = harness();
+    const cmd: ShiftTransitionCommand = { kind: 'transition', requestId: id(50), roundId: id(40), workflowId: id(10),
+      contractorProfileId: id(3), expectedRoundUpdatedAt: time, action: 'confirm', note: '', affectedEventId: null, corrections: null,
+      targets: command().timelogs.slice(0, 1).map((t) => ({ id: t.id, expected_updated_at: time, expected_status: 'pending_crew_confirmation' })) };
+    const submitted = submissionResult(submission());
+    h.rpc.mockResolvedValueOnce({ data: { ...submitted, round: { ...submitted.round, timelog_ids: [id(21)], event_ids: [id(31)] },
+      timelogs: [submitted.timelogs[0]] }, error: null });
+    await expect(h.write(scope, cmd, () => {}, kind === 'remove' ? { kind } : invoice())).resolves.toMatchObject({ round: { status: 'pending_ch' } });
+    if (kind === 'remove') expect(h.invoke).not.toHaveBeenCalled();
+    else expect(h.invoke.mock.calls[0][1].body.get('timelogIds')).toBe(JSON.stringify([id(21)]));
+    expect(h.rpc).toHaveBeenCalledExactlyOnceWith('transition_shift_workflow_invoice_atomic', {
+      p_request_id: id(50), p_round_id: id(40), p_expected_round_updated_at: time, p_targets: cmd.targets,
+      p_action: 'confirm', p_note: '', p_affected_event_id: null, p_corrections: null, p_attachment_id: kind === 'remove' ? null : id(80),
+    });
+  });
+
+  it('does not send the hours write when a staged upload completes for a retired owner', async () => {
+    const h = harness(); let complete!: () => void; let current = true;
+    h.invoke.mockImplementationOnce(() => new Promise((resolve) => { complete = () => resolve({ data: { attachment_id: id(80) }, error: null }); }));
+    const attempt = h.write(scope, submission(), () => { if (!current) throw new Error('retired'); }, invoice());
+    const observed = expect(attempt).rejects.toThrow('retired');
+    await vi.waitFor(() => expect(complete).toBeTypeOf('function'));
+    current = false; complete(); await observed;
+    expect(h.rpc).not.toHaveBeenCalled();
+  });
+
+  it.each([{ code: 'PGRST202' }, { code: '42501', message: 'shift_invoice_attachment_not_eligible' }])(
+    'keeps the plain hours path available after a definite attachment failure ($code)', async (error) => {
+      const h = harness(); const cmd = submission();
+      h.rpc.mockResolvedValueOnce({ data: null, error } as never);
+      await expect(h.write(scope, cmd, () => {}, invoice())).rejects.toMatchObject({ kind: 'invalid', message: expect.stringContaining('příloh') });
+      h.rpc.mockResolvedValueOnce({ data: submissionResult(cmd), error: null });
+      await expect(h.write(scope, cmd, () => {})).resolves.toMatchObject({ round: { status: 'pending_ch' } });
+      expect(h.rpc.mock.calls[1][0]).toBe('submit_shift_workflow_round_atomic');
+    });
 
 });

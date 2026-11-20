@@ -1,8 +1,27 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createBillingService, makeBillingCommand } from './service';
-import { billingSnapshotFixture, billingDocumentFixture, id, version } from './test-fixtures';
+import { billingSnapshotFixture, billingDocumentFixture, preliminaryDocumentFixture, id, version } from './test-fixtures';
 const scope = { source: 'supabase' as const, userId: id(2), profileId: id(1), role: 'crew' as const };
 describe('billing I/O', () => {
+  it('reads preliminary documents through the new snapshot RPC', async () => {
+    const fixture = billingSnapshotFixture();
+    const document = preliminaryDocumentFixture();
+    const rpc = vi.fn().mockResolvedValue({ data: { ...fixture, statements: [{ ...fixture.statements[0], preliminary_documents: [document] }] } });
+    const snapshot = await createBillingService({ rpc }).read(scope);
+    expect(snapshot.statements[0].preliminaryDocuments?.[0].id).toBe(document.id);
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual(['get_invoice_billing_snapshot_with_preliminary']);
+  });
+  it.each(['PGRST202', '42883'])('uses the original snapshot when the new RPC is missing (%s)', async (code) => {
+    const rpc = vi.fn().mockResolvedValueOnce({ error: { code } }).mockResolvedValueOnce({ data: billingSnapshotFixture() });
+    const snapshot = await createBillingService({ rpc }).read(scope);
+    expect(snapshot.statements[0].id).toBe(id(8));
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual(['get_invoice_billing_snapshot_with_preliminary', 'get_invoice_billing_snapshot']);
+  });
+  it('preserves authorization errors without attempting the original snapshot', async () => {
+    const rpc = vi.fn().mockResolvedValue({ error: { code: '42501' } });
+    await expect(createBillingService({ rpc }).read(scope)).rejects.toMatchObject({ kind: 'denied' });
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual(['get_invoice_billing_snapshot_with_preliminary']);
+  });
   it('sends the same immutable UUID and raw expected version on a retry', async () => {
     const rpc = vi.fn().mockResolvedValueOnce({ error: { code: '503' } }).mockResolvedValue({ data: { statement: billingSnapshotFixture().statements[0] } });
     const service = createBillingService({ rpc });

@@ -1,11 +1,16 @@
-import React from 'react';
+import React, { StrictMode } from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import SharedTimelogEditor from './SharedTimelogEditor';
 import { createShiftEvidenceSession } from './shift-evidence-session';
+import { ShiftWorkflowError } from './shift-workflows.contract';
 import type { ShiftEvidenceData } from './shift-evidence-loader';
 import type { Role } from '../../types';
 
+const { readInvoice, downloadInvoice } = vi.hoisted(() => ({ readInvoice: vi.fn(), downloadInvoice: vi.fn() }));
+vi.mock('./shift-invoice-attachment', async (importOriginal) => ({
+  ...await importOriginal<object>(), readShiftInvoiceAttachment: readInvoice, downloadShiftInvoiceAttachment: downloadInvoice,
+}));
 vi.mock('./TimelogEvidenceSection', () => ({ default: ({ timelog, readOnly, onChange }: { timelog: { note: string; supabaseId: string }; readOnly: boolean; onChange: (v: unknown) => void }) => (
   <input aria-label={`Hodiny ${timelog.supabaseId}`} disabled={readOnly} value={timelog.note} onChange={(e) => onChange({ ...timelog, note: e.target.value })} />
 ) }));
@@ -16,12 +21,13 @@ const data = (): ShiftEvidenceData => ({ legacy: false, contractor: { profileId:
   context: { workflowId: id(10), contractorProfileId: id(3), anchorEventId: id(31), eventIds: [id(31), id(32)], activeRound: null,
     timelogs: [21, 22].map((n) => ({ id: n, supabaseId: id(n), eid: n + 10, eventSupabaseId: id(n + 10), contractorProfileId: id(3),
       updatedAt: time, status: 'draft', km: 0, note: '', days: [{ id: id(n + 100), d: '2026-09-29', f: '08:00', t: '10:00', type: 'pripravy' }] })) } });
-const setup = (value = data(), role: Role = 'crew') => {
-  const write = vi.fn(async () => { throw new Error('test write blocked'); });
+const setup = (value = data(), role: Role = 'crew', source: 'local' | 'supabase' = 'local', strict = false) => {
+  const write = vi.fn<Parameters<typeof createShiftEvidenceSession>[0]['write']>(async () => { throw new Error('test write blocked'); });
   const session = createShiftEvidenceSession({ context: value.context, role, write, assertCurrent: () => {} });
   const close = vi.fn(); const reload = vi.fn();
-  const view = render(<SharedTimelogEditor data={value} role={role} session={session} editorSessionKey="one" onClose={close} onReload={reload}
-    actorProfileId={id(3)} actorUserId={id(4)} />);
+  const editor = <SharedTimelogEditor source={source} data={value} role={role} session={session} editorSessionKey="one" onClose={close} onReload={reload}
+    actorProfileId={id(3)} actorUserId={id(4)} />;
+  const view = render(strict ? <StrictMode>{editor}</StrictMode> : editor);
   return { ...view, session, write, close, reload };
 };
 
@@ -93,5 +99,125 @@ describe('shared evidence modal composition', () => {
     fireEvent.change(screen.getByLabelText('Dotčená směna'), { target: { value: id(31) } });
     fireEvent.click(screen.getByRole('button', { name: 'Vrátit celé kolo' }));
     await waitFor(() => expect(h.write).toHaveBeenCalledOnce());
+  });
+});
+
+const recipient = { eligible: true, customer_id: id(80), customer_name: 'Produkční odběratel', attachment: null };
+const attached = { ...recipient, attachment: { id: id(81), invoice_number: '2026-17', issue_date: '2026-09-29',
+  due_date: '2026-10-13', total_amount: 1200.5, storage_path: 'private/faktura.pdf' } };
+const submit = () => fireEvent.click(screen.getByRole('button', { name: 'Odeslat vše ke kontrole' }));
+const pdf = () => new File(['%PDF-1.7'], 'faktura.pdf', { type: 'application/pdf' });
+
+function fillInvoice(file: File) {
+  fireEvent.change(screen.getByLabelText('Originál faktury PDF'), { target: { files: [file] } });
+  fireEvent.change(screen.getByLabelText('Číslo originální faktury'), { target: { value: ' FA-3 ' } });
+  fireEvent.change(screen.getByLabelText('Datum vystavení'), { target: { value: '2026-09-29' } });
+  fireEvent.change(screen.getByLabelText('Datum splatnosti'), { target: { value: '2026-10-13' } });
+  fireEvent.change(screen.getByLabelText('Celková částka (Kč)'), { target: { value: '1200,50' } });
+}
+
+describe('optional invoice in the crew evidence editor', () => {
+  beforeEach(() => { readInvoice.mockReset(); downloadInvoice.mockReset(); });
+
+  it('captures one PDF on submit and replays its exact contents after an inconclusive submit', async () => {
+    readInvoice.mockResolvedValue(recipient);
+    const h = setup(data(), 'crew', 'supabase', true);
+    h.write.mockRejectedValueOnce(new ShiftWorkflowError('ambiguous', 'Nejistý výsledek'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Přiložit vlastní fakturu (PDF)' }));
+    expect(screen.getByText('Produkční odběratel')).toBeInTheDocument();
+    const file = pdf(); fillInvoice(file);
+    expect(h.write).not.toHaveBeenCalled();
+    submit();
+    const retry = await screen.findByRole('button', { name: 'Opakovat stejný požadavek' });
+    expect(screen.getByLabelText('Originál faktury PDF')).toBeDisabled();
+    const [hours, , invoice] = h.write.mock.calls[0];
+    expect(hours).toMatchObject({ kind: 'submit', timelogs: [{ id: id(21) }, { id: id(22) }] });
+    expect(invoice).toMatchObject({ kind: 'replace', file, customerId: id(80), invoiceNumber: 'FA-3',
+      issueDate: '2026-09-29', dueDate: '2026-10-13', totalAmount: '1200.50', requestId: expect.any(String) });
+    fireEvent.click(retry);
+    await waitFor(() => expect(h.write).toHaveBeenCalledTimes(2));
+    expect(h.write.mock.calls[1][0]).toEqual(hours);
+    expect(h.write.mock.calls[1][2]).toEqual(invoice);
+  });
+
+  it('shows unavailable attachment support while preserving ordinary report submission', async () => {
+    readInvoice.mockRejectedValue(new Error('private backend detail'));
+    const h = setup(data(), 'crew', 'supabase');
+    fireEvent.click(await screen.findByRole('button', { name: 'Přiložit vlastní fakturu (PDF)' }));
+    expect(await screen.findByText(/Přílohu se nepodařilo načíst/)).toBeInTheDocument();
+    expect(screen.queryByText('private backend detail')).not.toBeInTheDocument();
+    submit();
+    await waitFor(() => expect(h.write).toHaveBeenCalledOnce());
+    expect(h.write.mock.calls[0][2]).toBeUndefined();
+  });
+
+  it('keeps a returned PDF through note edits unless the crew member explicitly removes it', async () => {
+    readInvoice.mockResolvedValue(attached);
+    const value = data(); value.context.timelogs.forEach((t) => { t.status = 'rejected'; });
+    const first = setup(value, 'crew', 'supabase');
+    expect(await screen.findByText(/2026-17/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(`Hodiny ${id(21)}`), { target: { value: 'Opravená poznámka' } });
+    submit();
+    await waitFor(() => expect(first.write).toHaveBeenCalledOnce());
+    expect(first.write.mock.calls[0][2]).toBeUndefined();
+    first.unmount();
+    const second = setup(value, 'crew', 'supabase');
+    fireEvent.click(await screen.findByRole('button', { name: 'Odebrat přílohu' }));
+    submit();
+    await waitFor(() => expect(second.write).toHaveBeenCalledOnce());
+    expect(second.write.mock.calls[0][2]).toEqual({ kind: 'remove' });
+  });
+
+  it('shows the submitted PDF only for the frozen round while approval is pending', async () => {
+    readInvoice.mockResolvedValue(attached);
+    const value = data(); value.context.timelogs[0].status = 'pending_ch';
+    value.context.activeRound = { id: id(40), workflowId: id(10), contractorProfileId: id(3), status: 'pending_ch',
+      eventIds: [id(31)], timelogIds: [id(21)], note: '', updatedAt: time };
+    setup(value, 'crew', 'supabase');
+    expect(await screen.findByText('Příloha čeká na schválení hodin.')).toBeInTheDocument();
+    expect(readInvoice).toHaveBeenLastCalledWith([id(21)], expect.any(Function));
+    expect(screen.queryByRole('button', { name: 'Odebrat přílohu' })).not.toBeInTheDocument();
+  });
+
+  it('rejects oversized PDFs while letting the crew member cancel the selection and send hours', async () => {
+    readInvoice.mockResolvedValue(recipient);
+    const h = setup(data(), 'crew', 'supabase');
+    fireEvent.click(await screen.findByRole('button', { name: 'Přiložit vlastní fakturu (PDF)' }));
+    fillInvoice(new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'velka.pdf', { type: 'application/pdf' }));
+    expect(within(screen.getByRole('region', { name: 'Vlastní faktura' })).getByRole('alert')).toHaveTextContent('do 5 MiB');
+    submit();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Odeslat vše ke kontrole' })).toBeEnabled());
+    expect(h.write).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Zrušit výběr PDF' }));
+    submit();
+    await waitFor(() => expect(h.write).toHaveBeenCalledOnce());
+    expect(h.write.mock.calls[0][2]).toBeUndefined();
+  });
+
+  it.each([true, false])('disables new upload when standing consent or an unresolved recipient precludes it (consent=%s)', async (consent) => {
+    readInvoice.mockResolvedValue({ ...recipient, eligible: false, ...(consent ? {} : { customer_id: null, customer_name: null }) });
+    const h = setup(data(), 'crew', 'supabase');
+    await waitFor(() => expect(screen.queryByText('Načítání údajů k příloze…')).not.toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Přiložit vlastní fakturu (PDF)' })).not.toBeInTheDocument();
+    if (!consent) expect(screen.getByText(/nelze jednoznačně určit odběratele/)).toBeInTheDocument();
+    submit();
+    await waitFor(() => expect(h.write).toHaveBeenCalledOnce());
+  });
+
+  it('ignores a pending attachment lookup after the editor changes owner in StrictMode', async () => {
+    let finishOld: (value: typeof attached) => void;
+    readInvoice.mockImplementationOnce(() => new Promise((resolve) => { finishOld = resolve; })).mockResolvedValue(recipient);
+    const value = data();
+    const session = createShiftEvidenceSession({ context: value.context, role: 'crew', write: vi.fn(), assertCurrent: () => {} });
+    const view = (user: string) => <StrictMode><SharedTimelogEditor source="supabase" data={value} role="crew" session={session}
+      actorProfileId={id(3)} actorUserId={user} editorSessionKey={user} onClose={vi.fn()} onReload={vi.fn()} /></StrictMode>;
+    const editor = render(view(id(4)));
+    await waitFor(() => expect(finishOld).toBeTypeOf('function'));
+    const retiredAssert = readInvoice.mock.calls[0][1];
+    editor.rerender(view(id(5)));
+    await act(async () => { finishOld(attached); });
+    expect(retiredAssert).toThrow('Přístup k evidenci se změnil.');
+    expect(screen.queryByText(/2026-17/)).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Přiložit vlastní fakturu (PDF)' })).toBeInTheDocument();
   });
 });

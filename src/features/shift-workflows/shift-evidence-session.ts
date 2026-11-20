@@ -1,6 +1,7 @@
 import type { Role, Timelog } from '../../types';
 import { createStableDraftUuid } from '../stable-draft-identity';
 import { mapTimelogConfirmationSnapshot } from '../timelogs/services/timelog-confirmation-snapshot';
+import type { ShiftInvoiceChange } from './shift-invoice-attachment';
 import { canonicalUuid, ShiftWorkflowError } from './shift-workflows.contract';
 import type { ShiftWorkflowContext } from './shift-workflows.model';
 import { prepareShiftDraftSave, prepareShiftSubmission, prepareShiftTransition,
@@ -12,10 +13,10 @@ export interface ShiftEvidenceState {
   busy: boolean; busyKind: ShiftBatchCommand['kind'] | null;
   error: Error | null; refreshError: Error | null; canRetry: boolean; needsReload: boolean;
 }
-type Attempt = { command: ShiftBatchCommand; revisions: Map<string, number> };
+type Attempt = { command: ShiftBatchCommand; revisions: Map<string, number>; invoice?: ShiftInvoiceChange };
 export function createShiftEvidenceSession(options: {
   context: ShiftWorkflowContext; role: Role;
-  write: (command: ShiftBatchCommand, assertCurrent: () => void) => Promise<ShiftBatchResult>;
+  write: (command: ShiftBatchCommand, assertCurrent: () => void, invoice?: ShiftInvoiceChange) => Promise<ShiftBatchResult>;
   assertCurrent: () => void;
   onSaved?: (result: ShiftBatchResult) => void | Promise<void>;
 }) {
@@ -76,7 +77,10 @@ export function createShiftEvidenceSession(options: {
     publish({ busy: true, busyKind: attempt.command.kind, error: null });
     const running = (async () => {
       try {
-        const result = await options.write(structuredClone(attempt.command), assertCurrent);
+        const command = structuredClone(attempt.command);
+        const result = attempt.invoice
+          ? await options.write(command, assertCurrent, { ...attempt.invoice })
+          : await options.write(command, assertCurrent);
         assertCurrent();
         pending = null;
         merge(result, attempt);
@@ -105,12 +109,15 @@ export function createShiftEvidenceSession(options: {
     inFlight = running;
     return running;
   };
-  const execute = async (build: () => ShiftBatchCommand) => {
+  const execute = async (build: () => ShiftBatchCommand, invoice?: ShiftInvoiceChange) => {
+    // File contents are immutable. Keep the original File so retries can use it
+    // without passing it through the structured clone of the hours command.
+    const capturedInvoice = invoice && { ...invoice };
     assertCurrent();
     while (inFlight) await inFlight;
     assertAvailable();
     const command = build();
-    return perform({ command, revisions: new Map(revisions) });
+    return perform({ command, revisions: new Map(revisions), invoice: capturedInvoice });
   };
   return {
     getSnapshot: () => state,
@@ -136,14 +143,14 @@ export function createShiftEvidenceSession(options: {
       if (options.role !== 'crew') throw new ShiftWorkflowError('denied', 'Produkce odesílá úpravy s důvodem k potvrzení crew.');
       return prepareShiftDraftSave(state.context, createStableDraftUuid(), state.cohort);
     }),
-    submit: () => execute(() => {
+    submit: (invoice?: ShiftInvoiceChange) => execute(() => {
       if (options.role !== 'crew') throw new ShiftWorkflowError('denied', 'Evidenci odesílá člen crew.');
       return prepareShiftSubmission(state.context, createStableDraftUuid(), createStableDraftUuid());
-    }),
-    transition: (action: ShiftRoundAction, detail: { note?: string; affectedEventId?: string; billingQuoteId?: string } = {}) => execute(() => {
+    }, invoice),
+    transition: (action: ShiftRoundAction, detail: { note?: string; affectedEventId?: string; billingQuoteId?: string; invoice?: ShiftInvoiceChange } = {}) => execute(() => {
       if (state.dirty && action !== 'correct') throw new ShiftWorkflowError('blocked', 'Nejdříve uložte úpravy nebo je odešlete crew k potvrzení.');
       return prepareShiftTransition(state.context, createStableDraftUuid(), action, detail);
-    }),
+    }, detail.invoice),
     retry: async () => {
       assertCurrent();
       if (inFlight) return inFlight;

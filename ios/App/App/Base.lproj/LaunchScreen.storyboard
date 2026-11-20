@@ -4,7 +4,7 @@
     <dependencies>
         <deployment identifier="iOS"/>
         <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="17105"/>
-        <capability name="System colors in document resources" minToolsVersion="11.0"/>
+        <capability name="Safe area layout guides" minToolsVersion="9.0"/>
         <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
     </dependencies>
     <scenes>
@@ -12,11 +12,27 @@
         <scene sceneID="EHf-IW-A2E">
             <objects>
                 <viewController id="01J-lp-oVM" sceneMemberID="viewController">
-                    <imageView key="view" userInteractionEnabled="NO" contentMode="scaleAspectFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="Splash" id="snD-IY-ifK">
+                    <view key="view" contentMode="scaleToFill" id="snD-IY-ifK">
                         <rect key="frame" x="0.0" y="0.0" width="375" height="667"/>
-                        <autoresizingMask key="autoresizingMask"/>
-                        <color key="backgroundColor" systemColor="systemBackgroundColor"/>
-                    </imageView>
+                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                        <subviews>
+                            <imageView userInteractionEnabled="NO" contentMode="scaleAspectFit" image="Splash" translatesAutoresizingMaskIntoConstraints="NO" id="NDu-Mk-I01">
+                                <rect key="frame" x="131.25" y="276" width="112.5" height="135"/>
+                                <constraints>
+                                    <constraint firstAttribute="width" relation="greaterThanOrEqual" constant="112" id="NDu-Mk-Min"/>
+                                    <constraint firstAttribute="width" relation="lessThanOrEqual" constant="160" id="NDu-Mk-Max"/>
+                                    <constraint firstAttribute="height" secondItem="NDu-Mk-I01" secondAttribute="width" multiplier="6:5" id="NDu-Mk-Asp"/>
+                                </constraints>
+                            </imageView>
+                        </subviews>
+                        <viewLayoutGuide key="safeArea" id="NDu-Sf-Are"/>
+                        <color key="backgroundColor" red="1" green="1" blue="1" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                        <constraints>
+                            <constraint firstItem="NDu-Mk-I01" firstAttribute="width" secondItem="snD-IY-ifK" secondAttribute="width" multiplier="0.3" priority="999" id="NDu-Mk-Wdt"/>
+                            <constraint firstItem="NDu-Mk-I01" firstAttribute="centerX" secondItem="snD-IY-ifK" secondAttribute="centerX" id="NDu-Mk-CnX"/>
+                            <constraint firstItem="NDu-Mk-I01" firstAttribute="centerY" secondItem="NDu-Sf-Are" secondAttribute="centerY" id="NDu-Mk-CnY"/>
+                        </constraints>
+                    </view>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="iYj-Kq-Ea1" userLabel="First Responder" sceneMemberID="firstResponder"/>
             </objects>
@@ -24,9 +40,6 @@
         </scene>
     </scenes>
     <resources>
-        <image name="Splash" width="1366" height="1366"/>
-        <systemColor name="systemBackgroundColor">
-            <color white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
-        </systemColor>
+        <image name="Splash" width="160" height="192"/>
     </resources>
 </document>

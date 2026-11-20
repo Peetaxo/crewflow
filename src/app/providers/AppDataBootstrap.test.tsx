@@ -127,6 +127,35 @@ describe('AppDataBootstrap', () => {
     expect(screen.getByText('Ready dashboard')).toBeInTheDocument();
   });
 
+  it('counts visible session discovery toward the intro and only hydrates after metadata is ready', async () => {
+    vi.useFakeTimers();
+    prefersReducedMotion = false;
+    const attempt = createDeferred<void>();
+    mocks.bootstrap.mockReturnValueOnce(attempt.promise);
+    Object.assign(mockAuthState, { currentUserId: null, currentProfileId: null, profile: null, isAuthenticated: false, isLoading: true });
+    const shell = () => <AppDataBootstrap><div>Ready dashboard</div></AppDataBootstrap>;
+    const view = render(shell());
+    const mark = screen.getByRole('status', { name: 'Připravuji aplikaci' });
+    act(() => { vi.advanceTimersByTime(1_000); });
+    expect(mocks.bootstrap).not.toHaveBeenCalled();
+    expect(screen.queryByText('Ready dashboard')).not.toBeInTheDocument();
+
+    Object.assign(mockAuthState, { currentUserId: 'user-1', isAuthenticated: true });
+    view.rerender(shell());
+    expect(screen.getByRole('status', { name: 'Připravuji aplikaci' })).toBe(mark);
+    expect(mocks.bootstrap).not.toHaveBeenCalled();
+
+    Object.assign(mockAuthState, { currentProfileId: 'profile-1', profile: { firstName: 'Ready', lastName: 'User', email: '' }, isLoading: false });
+    view.rerender(shell());
+    expect(mocks.bootstrap).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('status', { name: 'Připravuji aplikaci' })).toBe(mark);
+    await act(async () => { attempt.resolve(); });
+    act(() => { vi.advanceTimersByTime(AUTHENTICATED_LOADING_INTRO_MS - 1_001); });
+    expect(screen.queryByText('Ready dashboard')).not.toBeInTheDocument();
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(screen.getByText('Ready dashboard')).toBeInTheDocument();
+  });
+
   it('reveals immediately when bootstrap finishes after the outward-ray intro', async () => {
     vi.useFakeTimers();
     prefersReducedMotion = false;
@@ -143,6 +172,38 @@ describe('AppDataBootstrap', () => {
     await act(async () => { attempt.resolve(); });
 
     expect(screen.getByText('Ready dashboard')).toBeInTheDocument();
+  });
+
+  it('uses the running document animation and starts a fresh intro after login hid the logo', async () => {
+    vi.useFakeTimers();
+    prefersReducedMotion = false;
+    const dot = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    dot.classList.add('nodu-app-loading__dot');
+    const getAnimations = vi.fn(() => [{ currentTime: 1_600 }]);
+    Object.defineProperty(dot, 'getAnimations', { value: getAnimations });
+    document.body.append(dot);
+    const start = () => render(<AppDataBootstrap><div>Ready dashboard</div></AppDataBootstrap>);
+    try {
+      const first = start();
+      await act(async () => { await Promise.resolve(); });
+      act(() => { vi.advanceTimersByTime(199); });
+      expect(screen.queryByText('Ready dashboard')).not.toBeInTheDocument();
+      act(() => { vi.advanceTimersByTime(1); });
+      expect(screen.getByText('Ready dashboard')).toBeInTheDocument();
+      first.unmount();
+
+      // Rendering the login screen hides the document logo. Its next CSS animation starts at zero.
+      getAnimations.mockReturnValue([{ currentTime: 0 }]);
+      start();
+      await act(async () => { await Promise.resolve(); });
+      act(() => { vi.advanceTimersByTime(AUTHENTICATED_LOADING_INTRO_MS - 1); });
+      expect(screen.queryByText('Ready dashboard')).not.toBeInTheDocument();
+      act(() => { vi.advanceTimersByTime(1); });
+      expect(screen.getByText('Ready dashboard')).toBeInTheDocument();
+      expect(getAnimations).toHaveBeenCalledTimes(2);
+    } finally {
+      dot.remove();
+    }
   });
 
   it('does not impose the intro minimum again for a later role scope', async () => {

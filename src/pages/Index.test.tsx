@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppShell } from './Index';
 
@@ -211,7 +211,7 @@ describe('Index unauthenticated routing', () => {
     expect(screen.queryByText('App layout')).not.toBeInTheDocument();
   });
 
-  it('keeps an unknown unauthenticated session outside the data bootstrap gate', () => {
+  it.each(['/app', '/login'])('keeps the same loading mark when a session is discovered on %s', async (path) => {
     Object.assign(mockAuthState, {
       hasKnownSession: false,
       isAuthRequired: true,
@@ -219,14 +219,22 @@ describe('Index unauthenticated routing', () => {
       isLoading: true,
     });
 
-    render(
-      <MemoryRouter initialEntries={['/app']}>
-        <AppShell />
-      </MemoryRouter>,
+    const shell = () => (
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path="/login" element={<AppShell />} />
+          <Route path="/app" element={<AppShell />} />
+        </Routes>
+        <CurrentPath />
+      </MemoryRouter>
     );
+    const view = render(shell());
 
-    expect(screen.getByRole('status', { name: 'Připravuji aplikaci' })).toBeInTheDocument();
-    expect(screen.queryByTestId('app-data-bootstrap')).not.toBeInTheDocument();
+    const mark = screen.getByRole('status', { name: 'Připravuji aplikaci' });
+    Object.assign(mockAuthState, { isAuthenticated: true, hasKnownSession: true });
+    view.rerender(shell());
+    expect(screen.getByRole('status', { name: 'Připravuji aplikaci' })).toBe(mark);
+    expect(await screen.findByTestId('current-path')).toHaveTextContent('/app');
     expect(screen.queryByText('App layout')).not.toBeInTheDocument();
   });
 

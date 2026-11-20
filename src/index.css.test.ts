@@ -88,16 +88,18 @@ describe('nodu CSS helpers', () => {
   });
 
   it('animates the loading rays from and back into the orange dot', () => {
-    const css = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8');
+    const css = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
     const rayRule = css.match(/\.nodu-app-loading__ray\s*\{[\s\S]*?\}/)?.[0];
-    const rayKeyframes = css.match(/@keyframes nodu-app-loading-ray-cycle\s*\{[\s\S]*?\n\}/)?.[0];
-    const reducedMotion = css.match(/@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.nodu-app-loading__ray[\s\S]*?\n\}/)?.[0];
+    const rayKeyframes = css.match(/@keyframes nodu-app-loading-ray-cycle\s*\{[\s\S]*?\n\s*\}/)?.[0];
+    const reducedMotion = css.match(/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.nodu-app-loading__ray\s*\{[^}]*\}/)?.[0];
 
     expect(rayRule).toContain('transform-box: view-box;');
     expect(rayRule).toContain('transform-origin: 887px 302px;');
-    expect(rayRule).toContain('3.7s');
-    expect(rayKeyframes).toContain('transform: scale(0.001);');
-    expect(rayKeyframes).toContain('transform: scale(1);');
+    expect(rayRule).toContain('ease-in-out infinite');
+    // There should be motion between every turning point, including the loop seam.
+    expect(rayKeyframes).toMatch(/0%, 100%\s*\{[^}]*scale\(0\.08\)/);
+    expect(rayKeyframes).toMatch(/50%\s*\{[^}]*scale\(1\)/);
+    expect(rayKeyframes).not.toMatch(/\d+%,\s*(?!100%)\d+%\s*\{/);
     expect(css).toContain('.nodu-app-loading__ray--1');
     expect(css).toContain('.nodu-app-loading__ray--6');
     expect(reducedMotion).toContain('animation: none;');

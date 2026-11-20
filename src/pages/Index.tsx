@@ -1,11 +1,10 @@
 import { useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider } from '../app/providers/AuthProvider';
 import { useAuth } from '../app/providers/useAuth';
 import AppDataBootstrap from '../app/providers/AppDataBootstrap';
 import AppLayout from '../components/layout/AppLayout';
-import AppLoadingMark from '../components/shared/AppLoadingMark';
 import { AppProvider } from '../context/AppContext';
 import { appDataSource } from '../lib/app-config';
 import { isSupabaseConfigured } from '../lib/supabase';
@@ -39,12 +38,16 @@ export const AppShell = () => {
     && typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('previewLogin') === '1';
   const isNativeRoot = Capacitor.isNativePlatform() && location.pathname === '/';
+  const missingConfig = appDataSource === 'supabase' && !isSupabaseConfigured;
+  const discoveringSession = isLoading && !isAuthenticated;
+  const showLogin = !discoveringSession && (isLoginPreview || (isAuthRequired && !isAuthenticated));
+  const openAppRoute = isNativeRoot || (location.pathname === '/login' && !missingConfig && !discoveringSession && !showLogin);
 
   useEffect(() => {
-    if (isNativeRoot) {
+    if (openAppRoute) {
       navigate('/app', { replace: true });
     }
-  }, [isNativeRoot, navigate]);
+  }, [openAppRoute, navigate]);
 
   if (location.pathname === '/' && !isNativeRoot && !isLoginPreview) {
     return (
@@ -55,24 +58,12 @@ export const AppShell = () => {
     );
   }
 
-  if (appDataSource === 'supabase' && !isSupabaseConfigured) {
+  if (missingConfig) {
     return <MissingSupabaseConfigView />;
   }
 
-  if (isLoading && !isAuthenticated) {
-    return <AppLoadingMark />;
-  }
-
-  if (isAuthRequired && !isAuthenticated) {
+  if (showLogin) {
     return <LoginView />;
-  }
-
-  if (isLoginPreview) {
-    return <LoginView />;
-  }
-
-  if (location.pathname === '/login') {
-    return <Navigate to="/app" replace />;
   }
 
   return (

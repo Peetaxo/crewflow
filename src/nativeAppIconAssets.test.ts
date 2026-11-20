@@ -37,6 +37,20 @@ describe('native application shell', () => {
     expect(packageJson.dependencies['@capacitor/android']).toBe('8.4.2');
   });
 
+  it('hands off from a white system splash with the Nodu dot to a matching web view', () => {
+    const assets = 'ios/App/App/Assets.xcassets/Splash.imageset';
+    const { images } = JSON.parse(read(`${assets}/Contents.json`)) as { images: { filename: string }[] };
+    expect(images).toHaveLength(1);
+    expect(read(`${assets}/${images[0].filename}`)).toContain('#ff800d');
+    expect(read('ios/App/App/Base.lproj/LaunchScreen.storyboard')).toContain('image="Splash"');
+
+    const theme = read('android/app/src/main/res/values/styles.xml');
+    expect(theme).toContain('<item name="windowSplashScreenAnimatedIcon">@drawable/launch_mark</item>');
+    expect(theme).toContain('<item name="windowSplashScreenBackground">@android:color/white</item>');
+    expect(read('android/app/src/main/res/drawable/launch_mark.xml')).toContain('#ff800d');
+    expect(read('capacitor.config.ts')).toContain("backgroundColor: '#ffffff'");
+  });
+
   it('generates iOS and Android launcher icons from the bundled nodu mark', () => {
     const generator = read('scripts/generate-app-icons.mjs');
     const iosContents = read('ios/App/App/Assets.xcassets/AppIcon.appiconset/Contents.json');

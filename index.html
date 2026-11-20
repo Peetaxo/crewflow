@@ -17,10 +17,103 @@
     <meta name="twitter:title" content="Event Helper" />
     <meta name="twitter:description" content="Interni operacni system pro event crew management." />
     <meta name="twitter:image" content="/event-helper-og.svg" />
+    <style>
+      .nodu-app-loading {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        box-sizing: border-box;
+        min-height: 100dvh;
+        place-items: center;
+        padding: calc(env(safe-area-inset-top) + 1.5rem) 1.5rem calc(env(safe-area-inset-bottom) + 1.5rem);
+        background: #fff;
+      }
+
+      /* The same artwork is visible before React mounts and while a loading gate is active. */
+      #root:not(:empty) + #nodu-loading-status:empty + .nodu-app-loading,
+      #nodu-loading-status:not(:empty) + .nodu-app-loading .nodu-app-loading__initial-status {
+        display: none;
+      }
+
+      .nodu-app-loading__initial-status {
+        position: absolute;
+      }
+
+      .nodu-app-loading__mark {
+        --nodu-loading-cycle: 3s;
+        width: clamp(7rem, 30vw, 10rem);
+        height: auto;
+        overflow: visible;
+      }
+
+      .nodu-app-loading__ray {
+        transform-box: view-box;
+        transform-origin: 887px 302px;
+        animation: nodu-app-loading-ray-cycle var(--nodu-loading-cycle) ease-in-out infinite;
+        animation-fill-mode: backwards;
+      }
+
+      .nodu-app-loading__ray path {
+        fill: none;
+        stroke: #17130f;
+        stroke-width: 50;
+        stroke-linecap: round;
+      }
+
+      .nodu-app-loading__ray--1 { animation-delay: 0s; }
+      .nodu-app-loading__ray--2 { animation-delay: 0.05s; }
+      .nodu-app-loading__ray--3 { animation-delay: 0.10s; }
+      .nodu-app-loading__ray--4 { animation-delay: 0.15s; }
+      .nodu-app-loading__ray--5 { animation-delay: 0.20s; }
+      .nodu-app-loading__ray--6 { animation-delay: 0.25s; }
+
+      .nodu-app-loading__dot {
+        fill: #ff800d;
+        stroke: #c75e00;
+        transform-box: fill-box;
+        transform-origin: center;
+        animation: nodu-app-loading-dot-pulse var(--nodu-loading-cycle) ease-in-out infinite;
+      }
+
+      @keyframes nodu-app-loading-ray-cycle {
+        0%, 100% { transform: scale(0.08); }
+        50% { transform: scale(1); }
+      }
+
+      @keyframes nodu-app-loading-dot-pulse {
+        0%, 100% { transform: scale(0.92); }
+        50% { transform: scale(1); }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .nodu-app-loading__ray {
+          animation: none;
+          transform: scale(1);
+          opacity: 1;
+        }
+
+        .nodu-app-loading__dot {
+          animation: none;
+        }
+      }
+    </style>
   </head>
 
   <body>
     <div id="root"></div>
+    <div id="nodu-loading-status"></div>
+    <div class="nodu-app-loading">
+      <span class="nodu-app-loading__initial-status" role="status" aria-label="Připravuji aplikaci"></span>
+      <svg class="nodu-app-loading__mark" viewBox="470 0 500 600" fill="none" aria-hidden="true">
+        <g class="nodu-app-loading__ray nodu-app-loading__ray--1"><path d="M887.188 293.598C887.188 293.598 716.633 300.313 651.723 270.768C586.813 241.223 504.238 187.952 504.238 187.952" /></g>
+        <g class="nodu-app-loading__ray nodu-app-loading__ray--2"><path d="M887.191 293.598L768.115 25.0063" /></g>
+        <g class="nodu-app-loading__ray nodu-app-loading__ray--3"><path d="M887.191 293.598L636.505 119.909" /></g>
+        <g class="nodu-app-loading__ray nodu-app-loading__ray--4"><path d="M886.951 309.469C886.951 309.469 716.395 302.755 651.485 332.3C586.576 361.845 504 415.116 504 415.116" /></g>
+        <g class="nodu-app-loading__ray nodu-app-loading__ray--5"><path d="M886.951 309.47L767.875 578.061" /></g>
+        <g class="nodu-app-loading__ray nodu-app-loading__ray--6"><path d="M886.951 309.47L636.265 483.159" /></g>
+        <path class="nodu-app-loading__dot" d="M867.495 231.427C906.281 231.427 937.723 262.87 937.723 301.656C937.723 340.442 906.281 371.884 867.495 371.885C828.708 371.885 797.265 340.442 797.265 301.656C797.265 262.87 828.708 231.427 867.495 231.427Z" />
+      </svg>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

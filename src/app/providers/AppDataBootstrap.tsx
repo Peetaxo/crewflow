@@ -14,6 +14,15 @@ const prefersReducedMotion = () => (
   && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 );
 
+const remainingLoadingIntro = (fallbackStart: number) => {
+  const dot = document.querySelector('.nodu-app-loading__dot');
+  const animationTime = dot?.getAnimations?.()[0]?.currentTime;
+  const elapsed = typeof animationTime === 'number' && Number.isFinite(animationTime)
+    ? animationTime
+    : performance.now() - fallbackStart;
+  return Math.max(0, AUTHENTICATED_LOADING_INTRO_MS - elapsed);
+};
+
 const AppDataBootstrap = ({ children }: { children: ReactNode }) => {
   const {
     currentProfileId,
@@ -38,7 +47,7 @@ const AppDataBootstrap = ({ children }: { children: ReactNode }) => {
     status: appDataSource === 'supabase' && isAuthRequired ? 'loading' : 'ready',
   });
   const generation = useRef(0);
-  const introStartedAt = useRef<number | null>(isAuthenticated ? Date.now() : null);
+  const introStartedAt = useRef(performance.now());
   const hasCompletedInitialIntro = useRef(false);
   const readyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -54,10 +63,6 @@ const AppDataBootstrap = ({ children }: { children: ReactNode }) => {
       return;
     }
     if (!isAuthenticated) return;
-
-    if (introStartedAt.current === null) {
-      introStartedAt.current = Date.now();
-    }
 
     if (isAuthLoading) {
       setState({ scopeKey, status: 'loading' });
@@ -83,10 +88,9 @@ const AppDataBootstrap = ({ children }: { children: ReactNode }) => {
       .then(() => {
         if (generation.current !== currentGeneration) return;
 
-        const elapsed = Date.now() - (introStartedAt.current ?? Date.now());
         const remainingIntro = hasCompletedInitialIntro.current || prefersReducedMotion()
           ? 0
-          : Math.max(0, AUTHENTICATED_LOADING_INTRO_MS - elapsed);
+          : remainingLoadingIntro(introStartedAt.current);
 
         if (remainingIntro === 0) {
           revealChildren();

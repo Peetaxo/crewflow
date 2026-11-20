@@ -19,13 +19,11 @@
     <meta name="twitter:image" content="/event-helper-og.svg" />
     <style>
       .nodu-app-loading {
+        /* Match LaunchScreen's full-screen center before WebKit receives safe-area insets. */
         position: fixed;
         inset: 0;
         display: grid;
-        box-sizing: border-box;
-        min-height: 100dvh;
         place-items: center;
-        padding: calc(env(safe-area-inset-top) + 1.5rem) 1.5rem calc(env(safe-area-inset-bottom) + 1.5rem);
         background: #fff;
       }
 
@@ -41,7 +39,7 @@
 
       .nodu-app-loading__mark {
         --nodu-loading-cycle: 3s;
-        width: clamp(7rem, 30vw, 10rem);
+        width: clamp(112px, 30vw, 160px);
         height: auto;
         overflow: visible;
       }

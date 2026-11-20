@@ -4,7 +4,6 @@
     <dependencies>
         <deployment identifier="iOS"/>
         <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="17105"/>
-        <capability name="Safe area layout guides" minToolsVersion="9.0"/>
         <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
     </dependencies>
     <scenes>
@@ -17,7 +16,7 @@
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
                             <imageView userInteractionEnabled="NO" contentMode="scaleAspectFit" image="Splash" translatesAutoresizingMaskIntoConstraints="NO" id="NDu-Mk-I01">
-                                <rect key="frame" x="131.25" y="276" width="112.5" height="135"/>
+                                <rect key="frame" x="131.25" y="266" width="112.5" height="135"/>
                                 <constraints>
                                     <constraint firstAttribute="width" relation="greaterThanOrEqual" constant="112" id="NDu-Mk-Min"/>
                                     <constraint firstAttribute="width" relation="lessThanOrEqual" constant="160" id="NDu-Mk-Max"/>
@@ -25,12 +24,11 @@
                                 </constraints>
                             </imageView>
                         </subviews>
-                        <viewLayoutGuide key="safeArea" id="NDu-Sf-Are"/>
                         <color key="backgroundColor" red="1" green="1" blue="1" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
                         <constraints>
                             <constraint firstItem="NDu-Mk-I01" firstAttribute="width" secondItem="snD-IY-ifK" secondAttribute="width" multiplier="0.3" priority="999" id="NDu-Mk-Wdt"/>
                             <constraint firstItem="NDu-Mk-I01" firstAttribute="centerX" secondItem="snD-IY-ifK" secondAttribute="centerX" id="NDu-Mk-CnX"/>
-                            <constraint firstItem="NDu-Mk-I01" firstAttribute="centerY" secondItem="NDu-Sf-Are" secondAttribute="centerY" id="NDu-Mk-CnY"/>
+                            <constraint firstItem="NDu-Mk-I01" firstAttribute="centerY" secondItem="snD-IY-ifK" secondAttribute="centerY" id="NDu-Mk-CnY"/>
                         </constraints>
                     </view>
                 </viewController>

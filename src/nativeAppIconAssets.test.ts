@@ -51,6 +51,25 @@ describe('native application shell', () => {
     expect(read('capacitor.config.ts')).toContain("backgroundColor: '#ffffff'");
   });
 
+  it('centers both launch frames on the full screen even before WebKit knows its safe area', () => {
+    const storyboard = new DOMParser().parseFromString(
+      read('ios/App/App/Base.lproj/LaunchScreen.storyboard'), 'application/xml',
+    );
+    const root = storyboard.querySelector('viewController > view[key="view"]')!;
+    const mark = root.querySelector('imageView[image="Splash"]')!;
+    for (const axis of ['centerX', 'centerY']) {
+      const constraint = root.querySelector(`constraint[firstItem="${mark.id}"][firstAttribute="${axis}"]`);
+      expect(constraint?.getAttribute('secondItem')).toBe(root.id);
+      expect(constraint?.getAttribute('secondAttribute')).toBe(axis);
+    }
+
+    const layout = read('index.html').match(/\.nodu-app-loading\s*\{([^}]+)\}/)?.[1];
+    expect(layout).toContain('position: fixed;');
+    expect(layout).toContain('inset: 0;');
+    expect(layout).toContain('place-items: center;');
+    expect(layout).not.toContain('safe-area-inset');
+  });
+
   it('generates iOS and Android launcher icons from the bundled nodu mark', () => {
     const generator = read('scripts/generate-app-icons.mjs');
     const iosContents = read('ios/App/App/Assets.xcassets/AppIcon.appiconset/Contents.json');

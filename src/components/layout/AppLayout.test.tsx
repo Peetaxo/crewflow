@@ -195,7 +195,7 @@ describe('AppLayout shell', () => {
   it('opens My Shifts from the guide and keeps it dismissed after remount', () => {
     enableCrewGuide();
     const first = render(<AppLayout />);
-    fireEvent.click(screen.getByRole('button', { name: 'Zobrazit směny' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Přejít na přehled' }));
     expect(setCurrentTab).toHaveBeenCalledExactlyOnceWith('my-shifts');
     first.unmount();
     render(<AppLayout />);

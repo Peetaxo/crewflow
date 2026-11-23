@@ -155,7 +155,7 @@ describe('SettingsView crew guide', () => {
   it('navigates to My Shifts when continuing from the reopened guide', () => {
     render(settings());
     fireEvent.click(screen.getByRole('button', { name: /Jak používat nodu/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Zobrazit směny' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Přejít na přehled' }));
     expect(state.setCurrentTab).toHaveBeenCalledExactlyOnceWith('my-shifts');
     expect(state.setSettingsSection).not.toHaveBeenCalled();
   });

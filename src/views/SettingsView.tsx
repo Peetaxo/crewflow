@@ -161,7 +161,7 @@ const SettingsView = () => {
                       <BookOpen size={18} aria-hidden="true" />
                     </div>
                     <CardTitle className="text-lg">Jak používat nodu</CardTitle>
-                    <CardDescription>Krátký průvodce směnami, potvrzením a výkazy.</CardDescription>
+                    <CardDescription>Směny, výkazy, faktury a upozornění.</CardDescription>
                   </CardHeader>
                 </button>
               </Card>

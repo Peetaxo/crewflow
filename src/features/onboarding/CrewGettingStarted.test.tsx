@@ -49,15 +49,20 @@ describe('Crew first-use guide boundary', () => {
   });
   afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
-  it('explains all three steps and leaves profile and billing optional', () => {
+  it('uses the current Crew screens and explains where to return for help', () => {
     render(subject());
     expect(guide()).toBeInTheDocument();
-    expect(screen.getAllByRole('listitem')).toHaveLength(3);
-    expect(screen.getByText(/Přihláška ještě není potvrzená směna/)).toBeInTheDocument();
-    expect(screen.getByText(/odpracované hodiny a účtenky/)).toBeInTheDocument();
-    expect(screen.getByText(/Profil a fakturační údaje můžeš doplnit později/)).toBeInTheDocument();
+    const steps = screen.getAllByRole('listitem');
+    expect(steps).toHaveLength(3);
+    expect(steps[0]).toHaveTextContent('V Akcích');
+    expect(steps[1]).toHaveTextContent('v Přehledu a pod zvonečkem');
+    expect(steps[2]).toHaveTextContent('v části Moje výkazy');
+    expect(steps[2]).toHaveTextContent('přiložit už k hodinám');
+    expect(screen.getByText(/Schválené podklady a hotová PDF/)).toHaveTextContent('ve Fakturách');
+    expect(screen.getByText(/V Nastavení si kdykoli otevřeš/)).toHaveTextContent('Jak používat nodu');
+    expect(screen.getByText(/Pokud se zasekneš/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Přeskočit' })).toHaveClass('min-h-11');
-    expect(screen.getByRole('button', { name: 'Zobrazit směny' })).toHaveClass('min-h-11');
+    expect(screen.getByRole('button', { name: 'Přejít na přehled' })).toHaveClass('min-h-11');
   });
 
   it.each(['http://127.0.0.1:55431', 'http://localhost:55431/', 'http://[::1]:55431'])('allows the dedicated loopback API %s', (url) => {
@@ -176,7 +181,7 @@ describe('Crew first-use guide boundary', () => {
 
   it('continues to My Shifts without an Auth or data mutation', () => {
     render(subject());
-    fireEvent.click(screen.getByRole('button', { name: 'Zobrazit směny' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Přejít na přehled' }));
     expect(state.setCurrentTab).toHaveBeenCalledExactlyOnceWith('my-shifts');
     expect(screen.getByText('Obsah aplikace')).toBeInTheDocument();
     expect(state.mutation).not.toHaveBeenCalled();

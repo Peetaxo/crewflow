@@ -17,17 +17,21 @@ export default function CrewGettingStarted({ onContinue, onClose, fromSettings }
     <Card className="mx-auto w-full max-w-lg">
       <CardHeader>
         <h1 ref={heading} tabIndex={-1} className="text-2xl font-semibold tracking-tight">Jak používat nodu</h1>
-        <CardDescription>Tři kroky pro první směnu. Průvodce můžeš kdykoliv otevřít v Nastavení.</CardDescription>
+        <CardDescription>Od výběru první směny po odevzdání hodin.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <ol className="list-decimal space-y-4 pl-5 text-sm leading-6 marker:font-semibold marker:text-[color:var(--nodu-accent)]">
-          <li><strong>Vyber si směnu.</strong> V Moje směny najdi nabídku a přihlas se na směnu, která ti vyhovuje.</li>
-          <li><strong>Počkej na potvrzení koordinátora.</strong> Přihláška ještě není potvrzená směna. Potvrzení uvidíš u směny.</li>
-          <li><strong>Odevzdej odpracované hodiny a účtenky.</strong> Po směně je doplň v aplikaci ke kontrole.</li>
+          <li><strong>Přihlas se na směnu.</strong> V Akcích najdi nabídku, otevři detail směny a přihlas se.</li>
+          <li><strong>Počkej na potvrzení.</strong> Koordinátor potvrdí tvoje zařazení. Potvrzení uvidíš v Přehledu a pod zvonečkem, kde najdeš i případné změny.</li>
+          <li><strong>Odevzdej hodiny.</strong> Po směně v části Moje výkazy doplň hodiny a odešli je ke kontrole. Doplň i případné účtenky. Pokud vystavuješ vlastní fakturu, můžeš ji přiložit už k hodinám.</li>
         </ol>
-        <p className="text-sm leading-6 text-[color:var(--nodu-text-soft)]">Profil a fakturační údaje můžeš doplnit později v Nastavení.</p>
+        <div className="space-y-2 text-sm leading-6 text-[color:var(--nodu-text-soft)]">
+          <p>Schválené podklady a hotová PDF najdeš ve Fakturách.</p>
+          <p>V Nastavení si kdykoli otevřeš Jak používat nodu nebo doplníš profil a fakturační údaje.</p>
+          <p>Pokud se zasekneš, ozvi se koordinátorovi směny nebo člověku, který tě pozval.</p>
+        </div>
         <div className="flex flex-col gap-3">
-          <Button type="button" className="min-h-11 h-auto whitespace-normal" onClick={onContinue}>Zobrazit směny</Button>
+          <Button type="button" className="min-h-11 h-auto whitespace-normal" onClick={onContinue}>Přejít na přehled</Button>
           <Button type="button" variant="outline" className="min-h-11 h-auto whitespace-normal" onClick={onClose}>{fromSettings ? 'Zpět do nastavení' : 'Přeskočit'}</Button>
         </div>
       </CardContent>

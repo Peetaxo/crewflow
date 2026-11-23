@@ -57,8 +57,10 @@ describe('EventApprovalPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Schválené výkazy (18)' }));
     expect(review(1)).toBeVisible();
     fireEvent.click(review(19));
-    expect(screen.getByText('Celoakční výkaz 19 · 3 položky')).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Zpět na přehled akce' }));
+    const dialog = screen.getByRole('dialog', { name: 'Kontrola výkazu' });
+    expect(dialog).toHaveAccessibleDescription('Osoba 19 · Podzimní festival · FEST026');
+    expect(within(dialog).getByText('Celoakční výkaz 19 · 3 položky')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Zavřít kontrolu výkazu' }));
     expect(review(19)).toBeVisible();
     expect(review(1)).toBeVisible();
   });
@@ -79,8 +81,10 @@ describe('EventApprovalPanel', () => {
     expect(screen.getByRole('button', { name: 'Schválené dny (1)' })).toBeVisible();
     expect(within(affected).getByRole('button', { name: 'Schválené výkazy (18)' })).toBeVisible();
     fireEvent.click(review(19, affected));
-    expect(screen.getByText('Celoakční výkaz 19 · 3 položky')).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Zpět na přehled akce' }));
+    const dialog = screen.getByRole('dialog', { name: 'Kontrola výkazu' });
+    expect(dialog).toHaveAccessibleDescription('Osoba 19 · Podzimní festival · FEST026');
+    expect(within(dialog).getByText('Celoakční výkaz 19 · 3 položky')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Zavřít kontrolu výkazu' }));
     expect(screen.getByRole('button', { name: 'Dny', pressed: true })).toBeVisible();
   });
 
@@ -174,7 +178,7 @@ describe('EventApprovalPanel', () => {
     expect(screen.getByRole('button', { name: mode, pressed: true })).toBeVisible();
     expect(screen.queryByText(/Celoakční výkaz/)).toBeNull();
     fireEvent.click(review(20));
-    expect(screen.getByRole('button', { name: 'Zpět na přehled akce' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Zavřít kontrolu výkazu' })).toBeVisible();
   });
 
   it('keeps filtered results separate from attendance and only identifies missing people on complete data', () => {

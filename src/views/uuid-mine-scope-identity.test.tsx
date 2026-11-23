@@ -213,7 +213,8 @@ vi.mock('../components/ui/alert-dialog', () => ({
   AlertDialogTitle: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
-vi.mock('../constants', () => ({
+vi.mock('../constants', async importOriginal => ({
+  ...await importOriginal<typeof import('../constants')>(),
   getNavItemsForRole: () => [
     { id: 'my-timelogs', label: 'Moje výkazy', icon: () => <span>T</span> },
     { id: 'my-invoices', label: 'Moje faktury', icon: () => <span>I</span> },

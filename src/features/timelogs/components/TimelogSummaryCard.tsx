@@ -15,7 +15,7 @@ interface SummaryEntry {
 /** Presentation shared by original reports and persisted approval rounds. */
 export function TimelogSummaryCard({ label, person, metadata, status, entries, hours, amount, control, children }: {
   label: string;
-  person?: { name: string; initials?: string; onOpen?: () => void };
+  person?: { name: string; initials?: string; onOpen?: () => void; nameControl?: React.ReactNode };
   metadata?: string;
   status: React.ReactNode;
   entries: SummaryEntry[];
@@ -30,8 +30,8 @@ export function TimelogSummaryCard({ label, person, metadata, status, entries, h
         {person ? <div className="flex min-w-0 flex-1 items-center gap-2">
           <div aria-hidden="true" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[color:rgb(var(--nodu-accent-rgb)/0.1)] text-[10px] font-semibold text-[color:var(--nodu-accent)]">{person.initials || person.name.split(' ').map((part) => part[0]).slice(0, 2).join('')}</div>
           <h3 className="text-xs font-semibold [overflow-wrap:anywhere]">
-            {person.onOpen ? <button type="button" aria-haspopup="dialog" onClick={person.onOpen}
-              className="min-h-11 rounded-md text-left hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--nodu-accent)]">{person.name}</button> : person.name}
+            {person.nameControl ?? (person.onOpen ? <button type="button" aria-haspopup="dialog" onClick={person.onOpen}
+              className="min-h-11 rounded-md text-left hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--nodu-accent)]">{person.name}</button> : person.name)}
           </h3>
         </div> : <span className="text-[11px] text-[color:var(--nodu-text-soft)]">{metadata ?? 'Výkaz práce'}</span>}
         {status}

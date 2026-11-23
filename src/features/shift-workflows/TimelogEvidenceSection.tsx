@@ -500,8 +500,6 @@ const EvidenceSectionFields = ({ timelog: editingTimelog, event, contractor, rol
           {readOnlyCopy ? (
             <TimelogReportSummary
               days={displayDays}
-              totalHours={totalHours}
-              totalCompensation={totalCompensation}
               km={draftKm}
               note={canSeeTimelogNote(role) ? draftNote : ''}
               mealAllowanceEnabled={mealAllowanceEnabled}

@@ -98,8 +98,6 @@ const TimelogSummaryList: React.FC<TimelogSummaryListProps> = ({
 
 type TimelogReportSummaryProps = {
   days: TimelogDay[];
-  totalHours: number;
-  totalCompensation: number;
   km: number;
   note: string;
   mealAllowanceEnabled: boolean;
@@ -162,6 +160,8 @@ export const TimelogReportSummary: React.FC<TimelogReportSummaryProps> = ({
 };
 
 type TimelogSubmitConfirmationDialogProps = TimelogReportSummaryProps & {
+  totalHours: number;
+  totalCompensation: number;
   title: string;
   confirmLabel: string;
   onClose: () => void;

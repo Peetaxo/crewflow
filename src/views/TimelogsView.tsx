@@ -18,6 +18,7 @@ import { getContractors, subscribeToCrewChanges } from '../features/crew/service
 import { useEventsQuery } from '../features/events/queries/useEventsQuery';
 import { useEventListDetails } from '../features/events/queries/useEventListDetails';
 import { EventHoursExportButton } from '../features/events/components/EventHoursExportButton';
+import { PersonReviewTrigger, TimelogReviewDetails } from '../features/timelogs/components/TimelogReviewDialog';
 import { EventApprovalPanel } from '../features/timelogs/components/EventApprovalPanel';
 import { getActiveTimelogApproval } from '../features/timelogs/services/timelog-approval-state';
 import {
@@ -443,18 +444,50 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
     </div>
   );
 
-  const renderOriginalTimelog = (timelog: Timelog, withinEvent = false, rosterName?: string) => {
+  const openRound = (report: Timelog) => {
+    const rounds = sharedApprovals.groupsFor([report]).rounds;
+    if (!rounds.length || !rounds.every(round => round.complete) || !sharedApprovals.ready) return false;
+    try {
+      return sharedApprovals.reviewSelection([report.id]);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Výkaz se mezitím změnil. Obnovte data.');
+      return true;
+    }
+  };
+
+  const renderReview = (report: Timelog, event: Event, close: () => void) => {
+    const rounds = sharedApprovals.groupsFor([report]).rounds;
+    if (rounds.length) return sharedApprovals.cards([report], rounds);
+    const person = findContractor(report.contractorProfileId);
+    const actionable = isTimelogApprovalActionable(report, role, currentProfileId);
+    const changes = buildTimelogChangeSummary(report);
+    return <TimelogReviewDetails report={report} event={event} role={role} busy={isTimelogActionPending}
+      rate={person?.hasKnownRate === false ? undefined : person?.rate}
+      onEdit={canEditTimelog(report, role) ? () => { close(); setEditingTimelog(report); } : undefined}
+      onReturn={actionable ? () => handleTimelogAction(report.id, 'rej') : undefined}
+      onApprove={actionable ? () => handleTimelogAction(report.id, role === 'crewhead' ? 'ch' : 'coo') : undefined}>
+      {renderApprovalAssignee(report, event)}
+      {shouldShowCrewConfirmedCorrection(report, changes) && renderCrewConfirmedCorrectionNotice(changes)}
+      {renderReturnedReview(report)}
+    </TimelogReviewDetails>;
+  };
+
+  const renderOriginalTimelog = (timelog: Timelog, withinEvent = false) => {
     const contractor = findContractor(timelog.contractorProfileId);
     const event = findEvent(timelog);
-    if (!event || (!contractor && !rosterName)) return null;
-    const name = contractor?.name ?? rosterName ?? 'Člen crew';
+    if (!event || !contractor) return null;
+    const name = contractor.name;
     const hours = calculateTotalHours(timelog.days);
     const meals = calculateMealAllowance(timelog.days, { enabled: Boolean(event.mealAllowanceEnabled) });
     const changes = buildTimelogChangeSummary(timelog);
     const showConfirmation = isCrewMineScope && timelog.status === 'pending_crew_confirmation' && changes.length > 0;
     return <TimelogSummaryCard key={timelog.supabaseId ?? timelog.id}
       label={`Výkaz ${event.name} – ${name}`}
-      person={isCrewMineScope ? undefined : { name, initials: contractor?.ii }}
+      person={isCrewMineScope ? undefined : { name, initials: contractor?.ii,
+        nameControl: scope === 'all' && !isCrew && !withinEvent ? <PersonReviewTrigger
+          key={JSON.stringify([scopeKey, timelog.supabaseId ?? timelog.id, event.supabaseId ?? event.id, timelog.contractorProfileId, timelog.status])}
+          person={name} event={event} busy={isTimelogActionPending} openRound={() => openRound(timelog)}
+          renderReview={close => renderReview(timelog, event, close)} /> : undefined }}
       status={<StatusBadge status={timelog.status} label={getTimelogStatusLabel(timelog.status, isCrewMineScope)} />}
       hours={hours} amount={contractor && contractor.hasKnownRate !== false ? hours * contractor.rate + timelog.km * KM_RATE + meals : null}
       entries={[{ id: String(timelog.id), name: withinEvent ? undefined : event.name,
@@ -673,20 +706,8 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                   legacyOnlyAction={legacyIds.length > 0 && <Button size="sm" className="min-h-11" disabled={isTimelogActionPending || !ready}
                     onClick={() => executeTimelogAction(legacyIds, role === 'crewhead' ? 'ch' : 'coo')}>{actionLabel(legacyIds.length)}</Button>} />}
                 exportAction={renderExport(group.event)}
-                onOpenReview={report => {
-                  const groupRounds = sharedApprovals.groupsFor([report]).rounds;
-                  if (!groupRounds.length || !groupRounds.every(round => round.complete) || !sharedApprovals.ready) return false;
-                  try {
-                    return sharedApprovals.reviewSelection([report.id]);
-                  } catch (error) {
-                    toast.error(error instanceof Error ? error.message : 'Výkaz se mezitím změnil. Obnovte data.');
-                    return true;
-                  }
-                }}
-                renderReview={report => {
-                  const groupRounds = sharedApprovals.groupsFor([report]).rounds;
-                  return groupRounds.length ? sharedApprovals.cards([report], groupRounds) : renderOriginalTimelog(report, true, personName(report));
-                }} />;
+                onOpenReview={openRound} reviewBusy={isTimelogActionPending}
+                renderReview={(report, close) => renderReview(report, group.event, close)} />;
             }
             const totalHours = group.timelogs.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
             const totalAmount = group.timelogs.reduce((sum, timelog) => {

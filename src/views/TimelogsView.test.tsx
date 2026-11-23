@@ -329,7 +329,7 @@ function openPerson(name = 'Crew One') {
 }
 
 function backToEvent() {
-  fireEvent.click(screen.getByRole('button', { name: 'Zpět na přehled akce' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Zavřít kontrolu výkazu' }));
 }
 
 describe('TimelogsView', () => {
@@ -359,6 +359,38 @@ describe('TimelogsView', () => {
     expect(screen.getByText(/Schválené výkazy \(1\)/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Dny' }));
     expect(screen.getByRole('button', { name: 'Stáhnout rozpis hodin' })).toBeInTheDocument();
+  });
+
+  it('opens an individual report from Po lidech in the same review dialog', async () => {
+    mockExternalApprovalModules();
+
+    vi.doMock('../context/useAppContext', () => ({
+      useAppContext: () => mockContext,
+    }));
+
+    vi.doMock('../app/providers/useAuth', () => ({
+      useAuth: () => ({ currentProfileId: null }),
+    }));
+
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({
+      useTimelogsQuery: () => ({ data: timelogs }),
+    }));
+
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      getTimelogDependencies: () => ({ contractors, events }),
+      updateTimelogStatus: vi.fn(),
+    }));
+
+    const { default: TimelogsView } = await import('./TimelogsView');
+    render(<TimelogsView />);
+    fireEvent.click(screen.getByRole('button', { name: 'Po lidech' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Crew One' }));
+    const dialog = screen.getByRole('dialog', { name: 'Kontrola výkazu' });
+    expect(dialog).toHaveAccessibleDescription(/Crew One · Ploom Chodov/);
+    expect(within(dialog).getByText('Provoz')).toBeVisible();
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Po lidech', pressed: true })).toBeInTheDocument();
   });
 
   it('groups all timelogs by event instead of job number', async () => {
@@ -949,7 +981,7 @@ describe('TimelogsView', () => {
     openEvent();
     openPerson();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Upravit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Upravit výkaz' }));
 
     expect(mockContext.setEditingTimelog).toHaveBeenCalledWith(expect.objectContaining({
       id: 1,
@@ -987,7 +1019,7 @@ describe('TimelogsView', () => {
     openEvent();
     openPerson();
 
-    expect(screen.queryByRole('button', { name: 'Upravit' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Upravit výkaz' })).not.toBeInTheDocument();
   });
 
   it('shows timelog notes to Crew but hides them from COO', async () => {
@@ -1191,11 +1223,11 @@ describe('TimelogsView', () => {
     openEvent();
     openPerson();
     expect(screen.getByText('Schvaluje: Current COO')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Schválit' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Schválit výkaz' })).toBeEnabled();
     backToEvent();
     openPerson('Crew Two');
-    expect(within(screen.getByRole('region', { name: 'Výkaz Ploom Chodov – Crew Two' })).getByText('Schvaluje: Other COO')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Schválit' })).not.toBeInTheDocument();
+    expect(within(screen.getByRole('dialog', { name: 'Kontrola výkazu' })).getByText('Schvaluje: Other COO')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Schválit výkaz' })).not.toBeInTheDocument();
     backToEvent();
     fireEvent.click(screen.getByRole('button', { name: 'Schválit 1 výkaz k proplacení' }));
     expect(updateTimelogStatuses).not.toHaveBeenCalled();

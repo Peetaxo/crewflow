@@ -1,6 +1,8 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ArrowLeft, CalendarDays, ChevronDown, ChevronRight, Inbox, Users } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronRight, Inbox, Users } from 'lucide-react';
 import StatusBadge from '../../../components/shared/StatusBadge';
+import { Dialog } from '../../../components/ui/dialog';
+import { TimelogReviewContent } from './TimelogReviewDialog';
 import { Button } from '../../../components/ui/button';
 import type { Event, Role, Timelog } from '../../../types';
 import { calculateTotalHours, formatShortDate } from '../../../utils';
@@ -23,7 +25,8 @@ interface EventApprovalPanelProps {
   exportAction?: ReactNode;
   onExpandedChange?: (open: boolean) => void;
   onOpenReview?: (report: Timelog) => boolean;
-  renderReview: (report: Timelog) => ReactNode;
+  reviewBusy?: boolean;
+  renderReview: (report: Timelog, close: () => void) => ReactNode;
 }
 
 function reviewIdentity(report: Timelog) {
@@ -65,7 +68,7 @@ function ReportButton({ row, role, assigneeName, onReview }: RowProps & { row: R
     ? assigneeName?.(report) : null;
   const waitingLabel = report.status === 'pending_ch' ? 'Čeká na CH' : report.status === 'pending_coo' ? 'Čeká na COO' : undefined;
   const status = actionable ? queueLabel[role] : waitingLabel;
-  return <button type="button" onClick={e => onReview(row, e.currentTarget)} aria-label={`Otevřít celý výkaz – ${name}`}
+  return <button type="button" aria-haspopup="dialog" onClick={e => onReview(row, e.currentTarget)} aria-label={`Otevřít celý výkaz – ${name}`}
     aria-describedby={`${descriptionId}-status ${descriptionId}-hours`} data-queue-row={actionable || undefined}
     className="grid min-h-12 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 rounded-xl px-2.5 py-2 text-left hover:bg-[color:rgb(var(--nodu-accent-rgb)/0.065)] focus-visible:outline-[color:var(--nodu-accent)] sm:grid-cols-[minmax(0,1fr)_auto_auto]">
     <span className="min-w-0">
@@ -135,7 +138,7 @@ function DaysView({ rows, reports, ...rowProps }: RowProps & { rows: ReportRow[]
 }
 
 export function EventApprovalPanel({ event, reports, visibleReports, actionableIds, personName, assigneeName, roster,
-  reportsComplete = true, includeHistory = false, role, bulkAction, exportAction, onExpandedChange, onOpenReview, renderReview }: EventApprovalPanelProps) {
+  reportsComplete = true, includeHistory = false, role, bulkAction, exportAction, onExpandedChange, onOpenReview, reviewBusy = false, renderReview }: EventApprovalPanelProps) {
   const [expanded, setExpanded] = useState(false);
   const [view, setView] = useState<'people' | 'days'>('people');
   const [selection, setSelection] = useState<{ key: string; wasActionable: boolean } | null>(null);
@@ -156,12 +159,11 @@ export function EventApprovalPanel({ event, reports, visibleReports, actionableI
     const previous = triggerRef.current;
     const fallback = panel.current?.querySelector<HTMLButtonElement>('button[data-queue-row]')
       ?? panel.current?.querySelector<HTMLButtonElement>('button[aria-pressed="true"]');
-    (previous?.isConnected && previous.getClientRects().length ? previous : fallback)?.focus();
+    (previous?.isConnected && previous.getClientRects().length ? previous : fallback)?.focus({ preventScroll: true });
   });
   useEffect(() => {
     if (selection && !selected) {
       setSelection(null);
-      restoreFocus();
     }
   }, [selection, selected]);
   const suffix = attendance.complete ? ` / ${attendance.expected}` : '';
@@ -173,10 +175,7 @@ export function EventApprovalPanel({ event, reports, visibleReports, actionableI
     triggerRef.current = trigger;
     setSelection({ key: reviewIdentity(row.report), wasActionable: row.bucket === 'mine' });
   } };
-  const backToList = () => {
-    setSelection(null);
-    restoreFocus();
-  };
+  const closeReview = () => { if (!reviewBusy) setSelection(null); };
   const toggle = () => {
     setExpanded(!expanded);
     setSelection(null);
@@ -225,11 +224,15 @@ export function EventApprovalPanel({ event, reports, visibleReports, actionableI
       {draftNames.length > 0 && <p className="col-span-2 text-xs text-[color:var(--nodu-text-soft)]"><strong className="font-semibold">Neodeslaný koncept ({draftNames.length})</strong> · {nameList(draftNames)}</p>}
     </header>
     {expanded && <div id={detailId} className="mt-3 space-y-3 border-t border-[color:var(--nodu-border)] pt-3">
-      {selected && <>
-        <Button type="button" variant="ghost" autoFocus onClick={backToList} className="h-11 px-2 text-xs"><ArrowLeft aria-hidden="true" />Zpět na přehled akce</Button>
-        {renderReview(selected.report)}
-      </>}
-      <div hidden={Boolean(selected)} className="space-y-3">
+      <Dialog open={Boolean(selected)} onOpenChange={open => { if (!open) closeReview(); }}>
+        {selected && <TimelogReviewContent person={selected.name} event={event} dismiss={closeReview} onCloseAutoFocus={e => {
+          e.preventDefault();
+          if (!document.querySelector('[role="dialog"][data-state="open"]')) restoreFocus();
+        }}>
+          {renderReview(selected.report, closeReview)}
+        </TimelogReviewContent>}
+      </Dialog>
+      <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div aria-label="Přehled akce" role="group" className="inline-flex rounded-[16px] border border-[color:var(--nodu-border)] bg-[color:var(--nodu-paper-strong)] p-1">
             {(['people', 'days'] as const).map(mode => {

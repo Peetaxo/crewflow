@@ -1,15 +1,13 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
-import StatusBadge from '../components/shared/StatusBadge';
-import { Button } from '../components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
+import { Dialog, DialogTrigger } from '../components/ui/dialog';
 import { useAppContext } from '../context/useAppContext';
 import { KM_RATE } from '../data';
-import { TimelogReportSummary } from '../features/shift-workflows/timelog-evidence-presentation';
-import { displayTimelogHours, displayTimelogMoney, timelogPeriod } from '../features/timelogs/components/timelog-summary-format';
+import { TimelogReviewContent, TimelogReviewDetails } from '../features/timelogs/components/TimelogReviewDialog';
+import { displayTimelogMoney } from '../features/timelogs/components/timelog-summary-format';
 import { useTimelogApprovalActions } from '../features/timelogs/hooks/useTimelogApprovalActions';
-import { canEditTimelog, canSeeTimelogNote } from '../features/timelogs/services/timelog-permissions';
+import { canEditTimelog } from '../features/timelogs/services/timelog-permissions';
 import type { Contractor, Event, Timelog } from '../types';
 import { calculateMealAllowance, calculateTotalHours } from '../utils';
 
@@ -26,7 +24,6 @@ export default function DashboardApprovalRow({ timelog, event, contractor, isMob
   const { role, setEditingTimelog } = useAppContext();
   const [reviewed, setReviewed] = useState<Timelog | null>(null);
   const report = reviewed ?? timelog;
-  const heading = useRef<HTMLHeadingElement>(null);
   const openSharedReview = (ids: number[]) => {
     const routed = reviewSelection(ids);
     if (routed) setReviewed(null);
@@ -75,35 +72,14 @@ export default function DashboardApprovalRow({ timelog, event, contractor, isMob
           {!isMobile && <span aria-hidden="true" className="nodu-dashboard-action"><ChevronRight size={14} /></span>}
         </button>
       </DialogTrigger>
-      {reviewed && <DialogContent
-        className="max-h-[85dvh] w-[calc(100%-2rem)] max-w-lg overflow-y-auto p-4 sm:p-6"
-        onOpenAutoFocus={(event) => { event.preventDefault(); heading.current?.focus(); }}
-      >
-        <DialogHeader className="pr-10">
-          <DialogTitle ref={heading} tabIndex={-1}>Kontrola výkazu</DialogTitle>
-          <DialogDescription>{contractor.name} · {event.name} · {event.job}</DialogDescription>
-        </DialogHeader>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-sm">{timelogPeriod(reviewed)}</span>
-          <StatusBadge status={reviewed.status} />
-        </div>
-        <TimelogReportSummary
-          days={reviewed.days} totalHours={hours} totalCompensation={total} km={reviewed.km}
-          note={canSeeTimelogNote(role) ? reviewed.note : ''} mealAllowanceEnabled={mealsEnabled} mealAllowanceTotal={meals}
-        />
-        <p className="text-right text-sm font-semibold">{displayTimelogHours(hours)} · {displayTimelogMoney(total)}</p>
-        <DialogFooter className="flex-wrap">
-          {canEditTimelog(reviewed, role) && <Button variant="outline" disabled={actions.isPending} onClick={() => {
-            setReviewed(null);
-            setEditingTimelog(reviewed);
-          }}>Upravit výkaz</Button>}
-          <Button variant="outline" disabled={actions.isPending} onClick={() => actions.execute([reviewed.id], 'rej')}>Vrátit k opravě</Button>
-          <Button disabled={actions.isPending} onClick={() => actions.execute([reviewed.id], role === 'crewhead' ? 'ch' : 'coo')}>
-            {role === 'crewhead' ? 'Schválit a poslat COO' : 'Schválit výkaz'}
-          </Button>
-        </DialogFooter>
+      {reviewed && <TimelogReviewContent person={contractor.name} event={event} dismiss={() => changeOpen(false)}>
+        <TimelogReviewDetails report={reviewed} event={event} role={role} busy={actions.isPending}
+          rate={contractor.hasKnownRate === false ? undefined : contractor.rate}
+          onEdit={canEditTimelog(reviewed, role) ? () => { setReviewed(null); setEditingTimelog(reviewed); } : undefined}
+          onReturn={() => actions.execute([reviewed.id], 'rej')}
+          onApprove={() => actions.execute([reviewed.id], role === 'crewhead' ? 'ch' : 'coo')} />
         {actions.dialog}
-      </DialogContent>}
+      </TimelogReviewContent>}
     </Dialog>
   );
 }

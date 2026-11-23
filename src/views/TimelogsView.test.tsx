@@ -1,4 +1,10 @@
 import React from 'react';
+vi.mock('../features/events/queries/useEventListDetails', () => ({
+  useEventListDetails: () => (id: number) => ({
+    event: events.find(event => event.id === id), timelogs: [], contractors, receipts: [], hasExplicitRoster: true,
+    crewAssignments: contractors.slice(0, 2).map(c => ({ contractorProfileId: c.profileId, name: c.name })),
+  }),
+}));
 const sharedCardMock = vi.hoisted(() => ({ visible: false, onlyShared: false }));
 vi.mock('../features/shift-workflows/useSharedApprovals', () => ({ useSharedApprovals: () => ({
   inboxFor: (reports: typeof timelogs) => ({ count: reports.length, legacy: reports, rounds: [] }),
@@ -27,6 +33,7 @@ vi.mock('../hooks/use-mobile', () => ({
 const events = [
   {
     id: 1,
+    supabaseId: '00000000-0000-4000-8000-000000000101',
     name: 'Ploom Chodov',
     job: 'JTI001',
     startDate: '2026-04-20',
@@ -313,6 +320,18 @@ const mockExternalApprovalModules = () => {
   }));
 };
 
+function openEvent(name = 'Ploom Chodov') {
+  fireEvent.click(screen.getByRole('button', { name: `Otevřít akci ${name}` }));
+}
+
+function openPerson(name = 'Crew One') {
+  fireEvent.click(screen.getByRole('button', { name: `Otevřít celý výkaz – ${name}` }));
+}
+
+function backToEvent() {
+  fireEvent.click(screen.getByRole('button', { name: 'Zpět na přehled akce' }));
+}
+
 describe('TimelogsView', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -320,6 +339,26 @@ describe('TimelogsView', () => {
     mobileMockState.isMobile = false;
     sharedCardMock.visible = false;
     sharedCardMock.onlyShared = false;
+  });
+
+  it('keeps the event workbook and prior approvals together when a late report is awaiting review', async () => {
+    mockExternalApprovalModules();
+    const eventId = events[0].supabaseId;
+    const reports = [{ ...timelogs[1], eid: 1, status: 'approved' as const }, ...pendingCrewheadTimelogs]
+      .map(report => ({ ...report, eventSupabaseId: eventId }));
+    vi.doMock('../context/useAppContext', () => ({ useAppContext: () => ({ ...mockContext, timelogFilter: 'inbox' }) }));
+    vi.doMock('../app/providers/useAuth', () => ({ useAuth: () => ({ currentProfileId: 'manager' }) }));
+    vi.doMock('../features/timelogs/queries/useTimelogsQuery', () => ({ useTimelogsQuery: () => ({ data: reports }) }));
+    vi.doMock('../features/timelogs/services/timelogs.service', () => ({
+      getTimelogDependencies: () => ({ contractors, events }), updateTimelogStatuses: vi.fn(),
+    }));
+    const { default: TimelogsView } = await import('./TimelogsView');
+    render(<TimelogsView />);
+    fireEvent.click(screen.getByRole('button', { name: 'Otevřít akci Ploom Chodov' }));
+    expect(screen.getByRole('button', { name: /Stáhnout rozpis hodin/ })).toBeEnabled();
+    expect(screen.getByText(/Schválené výkazy \(1\)/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Dny' }));
+    expect(screen.getByRole('button', { name: 'Stáhnout rozpis hodin' })).toBeInTheDocument();
   });
 
   it('groups all timelogs by event instead of job number', async () => {
@@ -419,6 +458,8 @@ describe('TimelogsView', () => {
     const { default: TimelogsView } = await import('./TimelogsView');
 
     render(<TimelogsView />);
+    openEvent();
+    openPerson();
 
     expect(screen.queryByRole('button', { name: 'Schválit za CH' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Vrátit k opravě' })).not.toBeInTheDocument();
@@ -586,7 +627,13 @@ describe('TimelogsView', () => {
     expect(screen.getAllByText('Ploom Chodov')).toHaveLength(1);
     expect(screen.getByText('2 výkazy')).toBeInTheDocument();
     expect(screen.queryByText(/Praha ·/)).not.toBeInTheDocument();
-    expect(screen.getAllByText('Provoz')).toHaveLength(2);
+    openEvent();
+    fireEvent.click(screen.getByRole('button', { name: 'Schválené výkazy (2)' }));
+    openPerson();
+    expect(screen.getByText('Provoz')).toBeInTheDocument();
+    backToEvent();
+    openPerson('Crew Two');
+    expect(screen.getByText('Provoz')).toBeInTheDocument();
   });
 
   it('leads mobile Crew Schvalovani cards with event information instead of the crew member name', async () => {
@@ -711,6 +758,8 @@ describe('TimelogsView', () => {
 
     const { default: TimelogsView } = await import('./TimelogsView');
     const { unmount } = render(<TimelogsView />);
+    openEvent();
+    openPerson();
 
     expect(screen.getByText('Potvrzeno Crew po úpravě')).toBeInTheDocument();
     expect(screen.getByText('Historie úpravy')).toBeInTheDocument();
@@ -744,6 +793,8 @@ describe('TimelogsView', () => {
 
     const { default: TimelogsViewForCoo } = await import('./TimelogsView');
     render(<TimelogsViewForCoo />);
+    openEvent();
+    openPerson();
 
     expect(screen.queryByText('Potvrzeno Crew po úpravě')).not.toBeInTheDocument();
     expect(screen.queryByText('Historie úpravy')).not.toBeInTheDocument();
@@ -895,6 +946,8 @@ describe('TimelogsView', () => {
 
     const { default: TimelogsView } = await import('./TimelogsView');
     const { unmount } = render(<TimelogsView />);
+    openEvent();
+    openPerson();
 
     fireEvent.click(screen.getByRole('button', { name: 'Upravit' }));
 
@@ -931,6 +984,8 @@ describe('TimelogsView', () => {
 
     const { default: TimelogsViewForCoo } = await import('./TimelogsView');
     render(<TimelogsViewForCoo />);
+    openEvent();
+    openPerson();
 
     expect(screen.queryByRole('button', { name: 'Upravit' })).not.toBeInTheDocument();
   });
@@ -991,6 +1046,11 @@ describe('TimelogsView', () => {
     const { default: TimelogsViewForCoo } = await import('./TimelogsView');
     render(<TimelogsViewForCoo />);
 
+    openEvent('Ploom Zlicin');
+    const returnedRow = screen.getAllByRole('button', { name: 'Otevřít celý výkaz – Crew One' })
+      .find(row => row.textContent?.includes('Vráceno'));
+    expect(returnedRow).toBeDefined();
+    fireEvent.click(returnedRow!);
     expect(screen.queryByText('"Upraveno po telefonu"')).not.toBeInTheDocument();
   });
 
@@ -1128,11 +1188,16 @@ describe('TimelogsView', () => {
     const { default: TimelogsView } = await import('./TimelogsView');
     render(<TimelogsView />);
 
+    openEvent();
+    openPerson();
     expect(screen.getByText('Schvaluje: Current COO')).toBeInTheDocument();
-    expect(screen.getByText('Schvaluje: Other COO')).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Schválit' })).toHaveLength(1);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Schválit vše (1)' }));
+    expect(screen.getByRole('button', { name: 'Schválit' })).toBeEnabled();
+    backToEvent();
+    openPerson('Crew Two');
+    expect(within(screen.getByRole('region', { name: 'Výkaz Ploom Chodov – Crew Two' })).getByText('Schvaluje: Other COO')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Schválit' })).not.toBeInTheDocument();
+    backToEvent();
+    fireEvent.click(screen.getByRole('button', { name: 'Schválit 1 výkaz k proplacení' }));
     expect(updateTimelogStatuses).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Potvrdit serverový náhled' }));
 
@@ -1173,6 +1238,8 @@ describe('TimelogsView', () => {
 
     const { default: TimelogsView } = await import('./TimelogsView');
     render(<TimelogsView />);
+    openEvent();
+    openPerson();
 
     expect(screen.getByText('Důvod vrácení')).toBeInTheDocument();
     expect(screen.getByText('Doplň čas ukončení.')).toBeInTheDocument();

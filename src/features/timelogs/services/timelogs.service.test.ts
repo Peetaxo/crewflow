@@ -986,49 +986,37 @@ describe('timelogs.service write flow', () => {
         from: vi.fn((table: string) => {
           if (table === 'timelogs') {
             return {
-              select: vi.fn(() => ({
-                order: vi.fn().mockResolvedValue({
-                  data: [
-                    {
-                      id: 'timelog-row-1',
-                      event_id: 'event-row-1',
-                      contractor_id: 'profile-uuid-1',
-                      km: 12,
-                      note: 'Hydrated timelog',
-                      status: 'approved',
-                    },
-                  ],
-                  error: null,
-                }),
-              })),
+              select: vi.fn(() => createDoubleOrderMock([
+                {
+                  id: 'timelog-row-1',
+                  event_id: 'event-row-1',
+                  contractor_id: 'profile-uuid-1',
+                  km: 12,
+                  note: 'Hydrated timelog',
+                  status: 'approved',
+                },
+              ])),
             };
           }
 
           if (table === 'timelog_days') {
             return {
-              select: vi.fn(() => ({
-                order: vi.fn().mockResolvedValue({
-                  data: [
-                    {
-                      id: 'day-row-1',
-                      timelog_id: 'timelog-row-1',
-                      date: '2026-04-10',
-                      time_from: '08:00',
-                      time_to: '16:00',
-                      day_type: 'instal',
-                    },
-                  ],
-                  error: null,
-                }),
-              })),
+              select: vi.fn(() => createDoubleOrderMock([
+                {
+                  id: 'day-row-1',
+                  timelog_id: 'timelog-row-1',
+                  date: '2026-04-10',
+                  time_from: '08:00',
+                  time_to: '16:00',
+                  day_type: 'instal',
+                },
+              ])),
             };
           }
 
           if (table === 'timelog_approvals') {
             return {
-              select: vi.fn(() => ({
-                order: vi.fn().mockResolvedValue({ data: [], error: null }),
-              })),
+              select: vi.fn(() => createDoubleOrderMock([])),
             };
           }
 
@@ -2734,6 +2722,24 @@ describe('timelog Supabase policies', () => {
       expectedUpdatedAt: '2026-09-21T10:00:00.123456+00:00', approvalId: TARGETED_IDS.approval1, approvalUpdatedAt: '2026-09-21T09:00:00.123456+00:00' }] };
     await harness.service.updateTimelogStatuses([47], 'coo', { billingApproval: captured });
     expect(harness.resolveTimelogApprovalsAtomicRpc).toHaveBeenCalledWith({ targets: captured.targets, resolution: 'approved', billingQuoteId: captured.quoteId });
+  });
+
+  it('preserves reviewed handoff identities on first dispatch and on an exact committed replay after reindexing', async () => {
+    vi.resetModules(); vi.clearAllMocks();
+    const original = targetedTimelog({ status: 'pending_ch', approvals: [] });
+    const committed = { ...original, id: 999, status: 'pending_coo' as const, approvals: [targetedApproval()] };
+    const harness = await setupTargetedRemoteHarness({ timelogs: [original], authoritativeTimelogs: [committed], authenticatedProfileId: TARGETED_IDS.requester });
+    const targets = [{ id: original.supabaseId!, expectedUpdatedAt: original.updatedAt!, approvalId: TARGETED_IDS.approval1, approvalRoundId: TARGETED_IDS.round1 }];
+    const options = { currentProfileId: TARGETED_IDS.requester, expectedReviewKeys: [getTimelogReviewKey(original)], handoffTargets: targets };
+    await harness.service.updateTimelogStatuses([original.id], 'ch', options);
+    expect(harness.handoffTimelogsForApprovalAtomicRpc).toHaveBeenCalledExactlyOnceWith(targets);
+    harness.replaceReports([committed]);
+    await harness.service.updateTimelogStatuses([original.id], 'ch', options);
+    expect(harness.handoffTimelogsForApprovalAtomicRpc.mock.calls.map(call => call[0])).toEqual([targets, targets]);
+    harness.replaceReports([{ ...committed, status: 'approved', approvals: [targetedApproval({ status: 'approved' })] }]);
+    await harness.service.updateTimelogStatuses([original.id], 'ch', options);
+    await expect(harness.service.updateTimelogStatuses([original.id], 'ch', { ...options, handoffTargets: [{ ...targets[0], approvalId: TARGETED_IDS.approval2 }] })).rejects.toThrow();
+    expect(harness.handoffTimelogsForApprovalAtomicRpc).toHaveBeenCalledTimes(3);
   });
 
 });

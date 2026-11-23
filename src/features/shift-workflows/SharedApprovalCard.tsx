@@ -11,8 +11,9 @@ import type { ShiftRoundAction } from './shift-round-history';
 import { TimelogSummaryCard } from '../timelogs/components/TimelogSummaryCard';
 import { displayTimelogHours, displayTimelogMoney, timelogPeriod } from '../timelogs/components/timelog-summary-format';
 
-export function SharedApprovalCard({ group, contractors, events, canAct, onOpen, history = [], showPerson = true, canOpen = true }: {
+export function SharedApprovalCard({ group, contractors, events, canAct, onOpen, history = [], showPerson = true, canOpen = true, eventAction }: {
   group: ShiftApprovalGroup; contractors: Contractor[]; events: Event[]; canAct: boolean;
+  eventAction?: (event: Event) => React.ReactNode;
   canOpen?: boolean; onOpen: (timelog: Timelog) => void; history?: ShiftRoundAction[]; showPerson?: boolean;
 }) {
   const contractor = contractors.find((person) => person.profileId === group.round.contractorProfileId);
@@ -45,11 +46,14 @@ export function SharedApprovalCard({ group, contractors, events, canAct, onOpen,
     entries={parts.map(({ timelog, event, hours: partHours, meals, amount: partAmount }) => ({
       id: timelog.supabaseId ?? String(timelog.id), name: event?.name ?? 'Nedostupná směna', job: event?.job,
       period: timelogPeriod(timelog), client: event?.client,
-      supplement: (timelog.km > 0 || meals > 0) && <p className="mt-1 text-[11px] text-[color:var(--nodu-text-soft)]">
-        {timelog.km > 0 && `Cestovné ${timelog.km.toLocaleString('cs-CZ')} km`}
-        {timelog.km > 0 && meals > 0 && ' · '}
-        {meals > 0 && `Stravné ${displayTimelogMoney(meals)}`}
-      </p>,
+      supplement: <>
+        {event && eventAction?.(event)}
+        {(timelog.km > 0 || meals > 0) && <p className="mt-1 text-[11px] text-[color:var(--nodu-text-soft)]">
+          {timelog.km > 0 && `Cestovné ${timelog.km.toLocaleString('cs-CZ')} km`}
+          {timelog.km > 0 && meals > 0 && ' · '}
+          {meals > 0 && `Stravné ${displayTimelogMoney(meals)}`}
+        </p>}
+      </>,
       totals: parts.length > 1 && <div className="text-right text-xs font-semibold tabular-nums">
         <div>{displayTimelogHours(partHours)}</div><div className="mt-0.5 text-[11px] font-normal text-[color:var(--nodu-text-soft)]">{displayTimelogMoney(partAmount)}</div>
       </div>,

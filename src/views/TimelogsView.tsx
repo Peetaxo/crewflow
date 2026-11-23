@@ -3,6 +3,7 @@ import { addMonths, endOfMonth, format, isValid, parseISO, startOfMonth, subMont
 import { cs } from 'date-fns/locale';
 import { ChevronDown, ChevronLeft, ChevronRight, SlidersHorizontal } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { useAuth } from '../app/providers/useAuth';
 import { useAppContext } from '../context/useAppContext';
@@ -15,11 +16,17 @@ import { TimelogSummaryCard } from '../features/timelogs/components/TimelogSumma
 import { displayTimelogHours, timelogPeriod } from '../features/timelogs/components/timelog-summary-format';
 import { getContractors, subscribeToCrewChanges } from '../features/crew/services/crew.service';
 import { useEventsQuery } from '../features/events/queries/useEventsQuery';
+import { useEventListDetails } from '../features/events/queries/useEventListDetails';
+import { EventHoursExportButton } from '../features/events/components/EventHoursExportButton';
+import { EventApprovalPanel } from '../features/timelogs/components/EventApprovalPanel';
+import { getActiveTimelogApproval } from '../features/timelogs/services/timelog-approval-state';
 import {
   getTimelogDependencies,
   type TimelogAction,
 } from '../features/timelogs/services/timelogs.service';
 import { useTimelogApprovalActions } from '../features/timelogs/hooks/useTimelogApprovalActions';
+import { EventRoundBatchAction } from '../features/shift-workflows/EventRoundBatchAction';
+import { splitEventRounds } from '../features/shift-workflows/approval-inbox';
 import { useSharedApprovals } from '../features/shift-workflows/useSharedApprovals';
 import {
   getTimelogApprovalAssigneeName,
@@ -79,6 +86,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
   const isMobile = useIsMobile();
   const timelogsQuery = useTimelogsQuery();
   const eventsQuery = useEventsQuery();
+  const getEventDetail = useEventListDetails();
 
   const [viewMode, setViewMode] = useState<ViewMode>(scope === 'mine' ? 'people' : 'event');
   const [contractors, setContractors] = useState<Contractor[]>([]);
@@ -107,9 +115,15 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
       : null
   ), [contractors]);
 
-  const findEvent = useCallback((id: EventId) => (
-    events.find((event) => event.id === id || event.supabaseId === id) ?? null
-  ), [events]);
+  const eventsById = useMemo(() => {
+    const index = new Map<EventId, Event>();
+    for (const event of events) {
+      index.set(event.id, event);
+      if (event.supabaseId) index.set(event.supabaseId, event);
+    }
+    return index;
+  }, [events]);
+  const findEvent = useCallback((report: Timelog) => eventsById.get(report.eventSupabaseId ?? report.eid) ?? null, [eventsById]);
 
   const timelogs = useMemo(() => {
     const safeTimelogs = timelogsQuery.data ?? [];
@@ -118,7 +132,7 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
     if (!query) return safeTimelogs;
 
     return safeTimelogs.filter((timelog) => {
-      const event = findEvent(timelog.eid);
+      const event = findEvent(timelog);
       const contractor = findContractor(timelog.contractorProfileId);
       if (!event || !contractor) return false;
 
@@ -157,6 +171,21 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
     ? periodTimelogs
     : periodTimelogs.filter((timelog) => timelog.status === timelogFilter);
   const filtered = showingInbox ? inbox.legacy : sharedApprovals.legacyOnly(visibleTimelogs);
+  const managerEventView = scope === 'all' && viewMode === 'event' && !isCrew;
+  const rounds = showingInbox ? inbox.rounds : managerEventView ? sharedApprovals.groupsFor(visibleTimelogs).rounds : undefined;
+  const eventRounds = splitEventRounds(visibleTimelogs, managerEventView ? rounds ?? [] : [], sharedApprovals.scope?.source === 'local');
+  const scopeKey = JSON.stringify([sharedApprovals.identityKey, currentProfileId, role, searchQuery, timelogFilter, viewMode, scope]);
+  const [expandedEvents, setExpandedEvents] = useState<{ key: string; ids: EventId[] }>({ key: '', ids: [] });
+  const allByEvent = useMemo(() => {
+    const byEvent = new Map<EventId, Timelog[]>();
+    for (const report of timelogsQuery.data ?? []) {
+      const key = report.eventSupabaseId ?? findEvent(report)?.supabaseId ?? report.eid;
+      const list = byEvent.get(key);
+      if (list) list.push(report);
+      else byEvent.set(key, [report]);
+    }
+    return byEvent;
+  }, [findEvent, timelogsQuery.data]);
   const reportsLoaded = Boolean(timelogsQuery.data) && sharedApprovals.ready !== false;
   const empty = reportsLoaded && (showingInbox ? inbox.count === 0 : visibleTimelogs.length === 0);
   const emptyMessage = showingInbox && !searchQuery.trim()
@@ -210,32 +239,35 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
     setSelectedTimelogMonth(format(startOfMonth(nextDate), 'yyyy-MM-dd'));
   };
 
-  const groupedByEvent = useMemo(() => {
-    const groups = new Map<EventId, { eventId: EventId; job: string; eventName: string; startDate: string; mealAllowanceEnabled: boolean; timelogs: typeof filtered }>();
-
-    filtered.forEach((timelog) => {
-      const event = findEvent(timelog.eid);
-      if (!event) return;
-
-      const existing = groups.get(event.id) || {
-        eventId: event.id,
-        job: event.job,
-        eventName: event.name,
-        startDate: event.startDate,
-        mealAllowanceEnabled: Boolean(event.mealAllowanceEnabled),
-        timelogs: [],
-      };
-
-      existing.timelogs.push(timelog);
-      groups.set(event.id, existing);
-    });
-
-    return Array.from(groups.values()).sort((a, b) => {
-      const dateDiff = a.startDate.localeCompare(b.startDate);
-      if (dateDiff !== 0) return dateDiff;
-      return a.eventName.localeCompare(b.eventName);
-    });
-  }, [filtered, findEvent]);
+  const groups = new Map<EventId, { event: Event; eventId: EventId; timelogs: Timelog[] }>();
+  function groupFor(event: Event) {
+    const id = event.supabaseId ?? event.id;
+    let group = groups.get(id);
+    if (!group) {
+      group = { event, eventId: id, timelogs: [] };
+      groups.set(id, group);
+    }
+    return group;
+  }
+  for (const report of [...filtered, ...eventRounds.byReport.keys()]) {
+    const event = findEvent(report);
+    if (event) groupFor(event).timelogs.push(report);
+  }
+  if (showingInbox && expandedEvents.key === scopeKey) {
+    for (const event of events) {
+      const key = event.supabaseId ?? event.id;
+      if (expandedEvents.ids.includes(key) && allByEvent.has(key)) groupFor(event);
+    }
+  }
+  const queueTime = (reports: Timelog[]) => reports.reduce((latest, report) => {
+    const round = eventRounds.byReport.get(report);
+    if (!(round?.canAct ?? isTimelogApprovalActionable(report, role, currentProfileId))) return latest;
+    const queuedAt = report.status === 'pending_coo' ? getActiveTimelogApproval(report)?.requestedAt : report.submittedAt;
+    return Math.max(latest, Date.parse(queuedAt ?? round?.round.updatedAt ?? '') || 1);
+  }, 0);
+  const groupedByEvent = [...groups.values()].sort((a, b) =>
+    (showingInbox ? queueTime(b.timelogs) - queueTime(a.timelogs) : 0)
+    || a.event.startDate.localeCompare(b.event.startDate) || a.event.name.localeCompare(b.event.name, 'cs'));
 
   const timelogActions = useTimelogApprovalActions({
     currentProfileId,
@@ -249,30 +281,10 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
     executeTimelogAction([id], action);
   }, [executeTimelogAction]);
 
-  const runBulkAction = (ids: Timelog['id'][], action: TimelogAction) => {
-    executeTimelogAction(ids, action);
-  };
-
-  const getBulkActionMeta = (timelogsInGroup: typeof filtered) => {
-    if (role === 'crew' || scope === 'mine') return null;
-
-    const pendingStatus = role === 'crewhead' ? 'pending_ch' : 'pending_coo';
-    const actionableIds = timelogsInGroup
-      .filter((timelog) => (
-        timelog.status === pendingStatus
-        && isTimelogApprovalActionable(timelog, role, currentProfileId)
-      ))
-      .map((timelog) => timelog.id);
-
-    if (actionableIds.length === 0) return null;
-
-    return {
-      ids: actionableIds,
-      action: role === 'crewhead' ? 'ch' as const : 'coo' as const,
-      label: role === 'crewhead'
-        ? `Schválit vše a poslat COO (${actionableIds.length})`
-        : `Schválit vše (${actionableIds.length})`,
-    };
+  const renderExport = (event: Event) => {
+    const id = event.supabaseId ?? event.id;
+    const detail = getEventDetail(id);
+    return <EventHoursExportButton availabilityFromDetail detail={{ ...detail, event, timelogs: allByEvent.get(id) ?? [] }} />;
   };
 
   const renderApprovalAssignee = (timelog: Timelog, event: Event) => {
@@ -431,19 +443,20 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
     </div>
   );
 
-  const renderOriginalTimelog = (timelog: Timelog, withinEvent = false) => {
+  const renderOriginalTimelog = (timelog: Timelog, withinEvent = false, rosterName?: string) => {
     const contractor = findContractor(timelog.contractorProfileId);
-    const event = findEvent(timelog.eid);
-    if (!contractor || !event) return null;
+    const event = findEvent(timelog);
+    if (!event || (!contractor && !rosterName)) return null;
+    const name = contractor?.name ?? rosterName ?? 'Člen crew';
     const hours = calculateTotalHours(timelog.days);
     const meals = calculateMealAllowance(timelog.days, { enabled: Boolean(event.mealAllowanceEnabled) });
     const changes = buildTimelogChangeSummary(timelog);
     const showConfirmation = isCrewMineScope && timelog.status === 'pending_crew_confirmation' && changes.length > 0;
     return <TimelogSummaryCard key={timelog.supabaseId ?? timelog.id}
-      label={`Výkaz ${event.name} – ${contractor.name}`}
-      person={isCrewMineScope ? undefined : { name: contractor.name, initials: contractor.ii }}
+      label={`Výkaz ${event.name} – ${name}`}
+      person={isCrewMineScope ? undefined : { name, initials: contractor?.ii }}
       status={<StatusBadge status={timelog.status} label={getTimelogStatusLabel(timelog.status, isCrewMineScope)} />}
-      hours={hours} amount={hours * contractor.rate + timelog.km * KM_RATE + meals}
+      hours={hours} amount={contractor && contractor.hasKnownRate !== false ? hours * contractor.rate + timelog.km * KM_RATE + meals : null}
       entries={[{ id: String(timelog.id), name: withinEvent ? undefined : event.name,
         job: withinEvent ? undefined : event.job, period: timelogPeriod(timelog), client: withinEvent ? undefined : event.client,
         supplement: <>{renderApprovalAssignee(timelog, event)}
@@ -617,26 +630,78 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
       {!timelogsQuery.data && sharedApprovals.ready && <p role="status" className="mb-3 text-sm text-[color:var(--nodu-text-soft)]">
         {timelogsQuery.isError ? 'Výkazy se nepodařilo načíst.' : 'Načítám výkazy…'}
       </p>}
-      {sharedApprovals.cards(visibleTimelogs, showingInbox ? inbox.rounds : undefined)}
+      {sharedApprovals.cards(visibleTimelogs, managerEventView ? eventRounds.separate : rounds,
+        scope === 'all' && !isCrew ? renderExport : undefined)}
 
       {scope === 'all' && viewMode === 'event' ? (
         <div className="space-y-4">
           {groupedByEvent.map((group) => {
+            if (role === 'coo' || role === 'crewhead') {
+              const reports = allByEvent.get(group.eventId) ?? group.timelogs;
+              const detail = getEventDetail(group.eventId);
+              const roster = detail.hasExplicitRoster ? detail.crewAssignments : null;
+              const ready = reportsLoaded && Boolean(eventsQuery.data) && !timelogsQuery.isError && !eventsQuery.isError;
+              const personName = (report: Timelog) => findContractor(report.contractorProfileId)?.name
+                ?? detail.crewAssignments.find(person => person.contractorProfileId === report.contractorProfileId)?.name ?? 'Člen crew';
+              const legacyEntries = group.timelogs.filter(report => !eventRounds.byReport.has(report)
+                && isTimelogApprovalActionable(report, role, currentProfileId)).map(report => ({ report, name: personName(report) }));
+              const legacyIds = legacyEntries.map(entry => entry.report.id);
+              const eligibleRounds = group.timelogs.flatMap(report => {
+                const round = eventRounds.byReport.get(report);
+                return round?.canAct ? [{ group: round, report, name: personName(report) }] : [];
+              });
+              const actionableIds = new Set([...legacyIds, ...eligibleRounds.map(entry => entry.report.id)]);
+              const submittedPeople = new Set(reports.filter(report => report.status !== 'draft').map(report => report.contractorProfileId));
+              const wholeEvent = ready && roster?.length && roster.every(person => person.contractorProfileId && submittedPeople.has(person.contractorProfileId))
+                && reports.every(report => report.contractorProfileId && actionableIds.has(report.id));
+              const actionLabel = (count: number) => {
+                const selection = wholeEvent && count > 1 && count === actionableIds.size ? 'celou akci' : formatTimelogCount(count);
+                return role === 'crewhead' ? `Předat ${selection} COO` : `Schválit ${selection} k proplacení`;
+              };
+              return <EventApprovalPanel key={JSON.stringify([scopeKey, group.eventId])} event={group.event} role={role}
+                reports={reports} visibleReports={group.timelogs} actionableIds={actionableIds}
+                roster={roster} reportsComplete={ready}
+                includeHistory={showingInbox && !searchQuery.trim()}
+                onExpandedChange={open => setExpandedEvents(prev => {
+                  const ids = prev.key === scopeKey ? prev.ids.filter(id => id !== group.eventId) : [];
+                  return { key: scopeKey, ids: open ? [...ids, group.eventId] : ids };
+                })}
+                personName={personName}
+                assigneeName={report => getTimelogApprovalAssigneeName(report, group.event, contractors)}
+                bulkAction={<EventRoundBatchAction event={group.event} entries={eligibleRounds} legacyEntries={legacyEntries}
+                  label={actionLabel(actionableIds.size)} disabled={isTimelogActionPending || !ready}
+                  legacyOnlyAction={legacyIds.length > 0 && <Button size="sm" className="min-h-11" disabled={isTimelogActionPending || !ready}
+                    onClick={() => executeTimelogAction(legacyIds, role === 'crewhead' ? 'ch' : 'coo')}>{actionLabel(legacyIds.length)}</Button>} />}
+                exportAction={renderExport(group.event)}
+                onOpenReview={report => {
+                  const groupRounds = sharedApprovals.groupsFor([report]).rounds;
+                  if (!groupRounds.length || !groupRounds.every(round => round.complete) || !sharedApprovals.ready) return false;
+                  try {
+                    return sharedApprovals.reviewSelection([report.id]);
+                  } catch (error) {
+                    toast.error(error instanceof Error ? error.message : 'Výkaz se mezitím změnil. Obnovte data.');
+                    return true;
+                  }
+                }}
+                renderReview={report => {
+                  const groupRounds = sharedApprovals.groupsFor([report]).rounds;
+                  return groupRounds.length ? sharedApprovals.cards([report], groupRounds) : renderOriginalTimelog(report, true, personName(report));
+                }} />;
+            }
             const totalHours = group.timelogs.reduce((sum, timelog) => sum + calculateTotalHours(timelog.days), 0);
             const totalAmount = group.timelogs.reduce((sum, timelog) => {
               const contractor = findContractor(timelog.contractorProfileId);
               if (!contractor) return sum;
-              return sum + (calculateTotalHours(timelog.days) * contractor.rate) + (timelog.km * KM_RATE) + calculateMealAllowance(timelog.days, { enabled: group.mealAllowanceEnabled });
+              return sum + (calculateTotalHours(timelog.days) * contractor.rate) + (timelog.km * KM_RATE) + calculateMealAllowance(timelog.days, { enabled: Boolean(group.event.mealAllowanceEnabled) });
             }, 0);
-            const bulkAction = getBulkActionMeta(group.timelogs);
 
             return (
               <div key={group.eventId} className="nodu-panel rounded-[20px] p-3 sm:p-4">
                 <div className="mb-3 flex flex-wrap items-start justify-between gap-3 border-b border-[color:rgb(var(--nodu-text-rgb)/0.08)] pb-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="jn nodu-job-badge px-2 py-1 text-sm">{group.job}</span>
-                      <span className="text-base font-semibold text-[color:var(--nodu-text)]">{group.eventName}</span>
+                      <span className="jn nodu-job-badge px-2 py-1 text-sm">{group.event.job}</span>
+                      <span className="text-base font-semibold text-[color:var(--nodu-text)]">{group.event.name}</span>
                     </div>
                     <div className="mt-1 text-xs text-[color:var(--nodu-text-soft)]">
                       {formatTimelogCount(group.timelogs.length)}
@@ -652,24 +717,11 @@ const TimelogsView = ({ scope = 'all' }: TimelogsViewProps) => {
                 <div className="space-y-3">
                   {group.timelogs.map((timelog) => renderOriginalTimelog(timelog, true))}
                 </div>
-
-                {bulkAction && (
-                  <div className="mt-4 flex justify-end">
-                    <Button
-                      onClick={() => runBulkAction(bulkAction.ids, bulkAction.action)}
-                      disabled={isTimelogActionPending}
-                      size="sm"
-                      className="border border-[color:var(--nodu-success-border)] bg-[color:var(--nodu-success-bg)] text-xs text-[color:var(--nodu-success-text)] shadow-[0_14px_28px_rgba(47,125,79,0.10)] hover:bg-[color:var(--nodu-success-bg-hover)] hover:shadow-[0_14px_28px_rgba(47,125,79,0.14)] hover:text-[color:var(--nodu-success-text)]"
-                    >
-                      {bulkAction.label}
-                    </Button>
-                  </div>
-                )}
               </div>
             );
           })}
 
-          {empty && (
+          {empty && groupedByEvent.length === 0 && (
             <div className="nodu-panel rounded-[24px] p-10 text-center text-sm text-[color:var(--nodu-text-soft)]">
               {emptyMessage}
             </div>

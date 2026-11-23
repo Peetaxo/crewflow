@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNo
 import { useAppContext } from '../../context/useAppContext';
 import { Button } from '../../components/ui/button';
 import type { Timelog } from '../../types';
+import { localShiftWorkflowId } from './shift-workflows.local';
 import { useShiftWorkflows } from './useShiftWorkflows';
 import { ShiftWorkflowError } from './shift-workflows.contract';
 import { loadShiftEvidenceData, type ShiftEvidenceData } from './shift-evidence-loader';
@@ -26,8 +27,10 @@ function EvidenceSessionHost(props: { data: ShiftEvidenceData; workflows: Return
     return () => next.dispose();
   }, []);
   if (!session) return null;
+  const scope = props.workflows.scope;
+  const actorProfileId = scope.source === 'local' && scope.profileId ? localShiftWorkflowId('profile', scope.profileId) : scope.profileId;
   return <SharedTimelogEditor source={props.workflows.scope.source} data={props.data} role={props.workflows.scope.role} session={session} editorSessionKey={props.sessionKey}
-    actorProfileId={props.workflows.scope.profileId} actorUserId={props.workflows.scope.userId} onClose={props.onClose} onReload={props.onReload} />;
+    actorProfileId={actorProfileId} actorUserId={props.workflows.scope.userId} onClose={props.onClose} onReload={props.onReload} />;
 }
 
 function EvidenceLoadSession({ workflows, opened, onClose, legacy }: {

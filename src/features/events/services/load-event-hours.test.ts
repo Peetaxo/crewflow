@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadRemoteEventHours } from './load-event-hours';
+import { hasRemoteEventHours, loadRemoteEventHours } from './load-event-hours';
 
 const io = vi.hoisted(() => ({ fetch: vi.fn() }));
 vi.mock('../../../lib/supabase', async () => {
@@ -17,7 +17,9 @@ const reports = [
   { id: 'c', updated_at: 'v1', status: 'paid', km: 0, captured: { rate: 300, work: 750, km: 0, travel: 0, meals: 0, hours: 2.5 }, contractor_id: 'p3', profiles: { first_name: 'Jan', last_name: 'Malý', hourly_rate: 400 }, timelog_days: [day('c1')] },
 ];
 const eventReceipts = [1, 2, 3].map(id => ({ id: String(id), contractor_id: 'p1', status: 'approved', amount: 11 }));
-const roster = ['p1', 'p2', 'p3'].map(profile_id => ({ profile_id }));
+const roster = ['p1', 'p2', 'p3'].map((profile_id, i) => ({
+  profile_id, profiles: { first_name: ['Eva', 'Adam', 'Jan'][i], last_name: 'Malý' },
+}));
 
 function serve(options: { cap?: number; logs?: typeof reports; assignments?: typeof roster; receipts?: typeof eventReceipts; onRead?: (table: string, snapshot: number) => Response | void } = {}) {
   const { cap = 1000, logs = structuredClone(reports), assignments = structuredClone(roster), receipts = structuredClone(eventReceipts), onRead } = options;
@@ -68,6 +70,16 @@ function serve(options: { cap?: number; logs?: typeof reports; assignments?: typ
 describe('event hours snapshot', () => {
   beforeEach(() => { io.fetch.mockReset(); });
 
+  it('checks for a submitted report without requiring an approved status or shifts', async () => {
+    io.fetch.mockResolvedValue(new Response(JSON.stringify([{ id: 'awaiting-review' }])));
+    expect(await hasRemoteEventHours(event.supabaseId)).toBe(true);
+    const params = new URL(io.fetch.mock.calls[0][0]).searchParams;
+    expect(params.get('event_id')).toBe('eq.' + event.supabaseId);
+    expect(params.get('status')).toBe('neq.draft');
+    expect(params.get('select')).toBe('id');
+    expect(params.get('limit')).toBe('1');
+  });
+
   it('reads current shifts and roster in one request scoped by event UUID', async () => {
     const urls = serve();
     const report = await loadRemoteEventHours(event);
@@ -96,8 +108,17 @@ describe('event hours snapshot', () => {
   });
 
   it.each([['p3', false], ['p4', true]] as const)('checks a roster member appearing after the cap (%s)', async (profileId, partial) => {
-    serve({ cap: 1, logs: [reports[0], reports[2]], assignments: [roster[0], { profile_id: profileId }] });
+    serve({ cap: 1, logs: [reports[0], reports[2]], assignments: [roster[0], { ...roster[2], profile_id: profileId }] });
     expect((await loadRemoteEventHours(event)).partial).toBe(partial);
+  });
+
+  it('gets the names of unsubmitted crew from the selected event, including overflow assignments', async () => {
+    const urls = serve({ cap: 1, logs: [reports[0]], assignments: [roster[0], roster[1]], receipts: [] });
+    const report = await loadRemoteEventHours(event);
+    const nameFields = 'profiles!event_assignments_profile_id_fkey(first_name,last_name)';
+    expect(urls[0].searchParams.get('select')).toContain(nameFields);
+    expect(urls.find(url => url.pathname.endsWith('/event_assignments'))?.searchParams.get('select')).toContain(nameFields);
+    expect(report.progress.missingNames).toEqual(['Adam Malý']);
   });
 
   it('recovers when only nested days overflow', async () => {

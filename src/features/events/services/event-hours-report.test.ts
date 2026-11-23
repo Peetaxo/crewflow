@@ -12,6 +12,67 @@ const log = (status: TimelogStatus, id = 1, profileId = 'p1'): Timelog => ({
 const report = (timelogs: Timelog[], crewAssignments = [assignment]) =>
   buildEventHoursReport({ event, timelogs, crewAssignments, contractors: [member], receipts: [] });
 
+describe('event submission and approval progress', () => {
+  it('counts distinct people and keeps every stage of a mixed historical member visible', () => {
+    const assignments = [assignment, assignment, ...['Bára', 'Cyril', 'Dana', 'Eva', 'Filip', 'Gita', 'Hana'].map((name, i) =>
+      ({ contractorProfileId: 'p' + (i + 2), name }))];
+    const result = report([log('approved'), log('pending_ch', 2), log('draft', 3, 'p2'),
+      log('invoiced', 4, 'p3'), log('paid', 5, 'p3'), log('pending_coo', 6, 'p4'),
+      log('rejected', 7, 'p5'), log('pending_crew_confirmation', 8, 'p6'), log('approved', 9, 'p8')], assignments);
+    expect(result.progress).toMatchObject({ expected: 8, submitted: 6, approved: 2, missingNames: ['Bára', 'Gita'] });
+    expect(result.hasSubmittedReports).toBe(true);
+    expect(result.roster.find(p => p.name === 'Alex')).toMatchObject({
+      approvedMinutes: 210, unapprovedMinutes: 210,
+      statuses: expect.arrayContaining(['approved', 'pending_ch']),
+    });
+    expect(result.roster.find(p => p.name === 'Cyril')?.statuses).toEqual(expect.arrayContaining(['invoiced', 'paid']));
+    expect(result.roster.find(p => p.name === 'Bára')).toMatchObject({ statuses: ['draft'], unapprovedMinutes: 0 });
+    expect(result.roster.find(p => p.name === 'Gita')).toMatchObject({ statuses: [], unapprovedMinutes: 0 });
+    expect(result.partial).toBe(true);
+  });
+
+  it('opens on first submission even with no payable shifts, while incomplete hours stay identifiable', () => {
+    const result = report([{ ...log('pending_ch'), days: [{ ...day, t: '' }] }]);
+    expect(result.hasSubmittedReports).toBe(true);
+    expect(result.progress).toMatchObject({ expected: 1, submitted: 1, approved: 0 });
+    expect(result.roster[0].unapprovedMinutes).toBeNull();
+    expect(result.people).toEqual([]);
+    expect(result.partial).toBe(true);
+    expect(report([log('draft')]).hasSubmittedReports).toBe(false);
+    expect(report([]).partial).toBe(true);
+  });
+
+  it('derives a legacy roster by profile and preserves separate unidentified reports', () => {
+    const result = report([log('paid'), log('invoiced', 2), { ...log('approved', 3), contractorProfileId: undefined },
+      { ...log('paid', 4), contractorProfileId: undefined }], []);
+    expect(result.progress).toMatchObject({ expected: 1, submitted: 1, approved: 1 });
+    expect(result.roster.map(person => person.name)).toEqual(['Alex', 'Neznámý člen (výkaz 3)', 'Neznámý člen (výkaz 4)']);
+    expect(result.people).toHaveLength(3);
+    expect(result.partial).toBe(true);
+  });
+
+  it('uses the same unique roster as the event for historical and currently assigned people', () => {
+    const result = report([log('paid'), log('approved', 2, 'old')], [assignment, { contractorProfileId: 'p3', name: 'Dana' }]);
+    expect(result.progress).toMatchObject({ expected: 3, submitted: 2, approved: 2, missingNames: ['Dana'] });
+    expect(result.partial).toBe(true);
+  });
+
+  it('labels an inferred event roster even when every known owner is approved', () => {
+    const result = buildEventHoursReport({ event, crewAssignments: [assignment], hasExplicitRoster: false, contractors: [member],
+      timelogs: [log('approved')], receipts: [] });
+    expect(result.progress).toMatchObject({ expected: 1, submitted: 1, approved: 1, hasExplicitRoster: false });
+    expect(result.partial).toBe(true);
+  });
+
+  it('keeps completion separate from missing financial data and incomplete approved shifts', () => {
+    const result = report([{ ...log('approved'), days: [day, { ...day, t: '' }] }]);
+    expect(result.partial).toBe(true);
+    expect(result.people[0].minutes).toBe(210);
+    expect(result.roster[0].approvedMinutes).toBeNull();
+    expect(result.progress.approved).toBe(1);
+    expect(report([log('approved')]).partial).toBe(false);
+  });
+});
 describe('approved event hours', () => {
   it('includes approved, invoiced and paid shifts and totals overnight hours once per profile', () => {
     const result = report([

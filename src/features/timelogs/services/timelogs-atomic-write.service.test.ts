@@ -257,7 +257,7 @@ describe('timelog atomic write coordination', () => {
       authoritativeTimelogs: [makeTimelog({ note: 'Private actor A' })], authoritativeReadGate: read.promise,
       saveImplementation: async () => { throw new Error('conflict'); } });
     const write = harness.service.saveTimelog(makeTimelog());
-    await vi.waitFor(() => expect(harness.from).toHaveBeenCalledTimes(5));
+    await vi.waitFor(() => expect(harness.from.mock.calls.map(([table]) => table)).toEqual(['timelogs', 'timelog_days', 'timelog_approvals', 'events']));
     harness.service.resetSupabaseTimelogsHydration(); read.resolve();
     await expect(write).rejects.toThrow(/Přístup/);
     expect(harness.getSnapshot().timelogs[0].note).toBe('');
@@ -391,7 +391,7 @@ describe('timelog atomic write coordination', () => {
 
     const reload = harness.service.reloadTimelogForEditor(reviewed);
     const result = expect(reload).rejects.toThrow(/během načítání změnil/);
-    await vi.waitFor(() => expect(harness.from).toHaveBeenCalledTimes(5));
+    await vi.waitFor(() => expect(harness.from.mock.calls.map(([table]) => table)).toEqual(['timelogs', 'timelog_days', 'timelog_approvals', 'events']));
     if (generation === 'lifecycle') {
       const { advanceLifecycleSnapshotGeneration } = await import('../../event-lifecycle-generation');
       advanceLifecycleSnapshotGeneration();
@@ -478,7 +478,7 @@ describe('timelog atomic write coordination', () => {
     const firstSave = harness.service.saveTimelog({ ...staleLocalTimelog, note: 'first' });
     const secondSave = harness.service.saveTimelog({ ...staleLocalTimelog, note: 'second' });
 
-    await vi.waitFor(() => expect(harness.from).toHaveBeenCalledTimes(5));
+    await vi.waitFor(() => expect(harness.from.mock.calls.map(([table]) => table)).toEqual(['timelogs', 'timelog_days', 'timelog_approvals', 'events']));
     expect(harness.saveTimelogAtomicRpc).not.toHaveBeenCalled();
 
     authoritativeRead.resolve();
@@ -507,7 +507,7 @@ describe('timelog atomic write coordination', () => {
     const harness = await setupAtomicHarness({ timelogs: [makeTimelog({ eventSupabaseId: undefined })], authoritativeTimelogs: [makeTimelog()] });
     await harness.service.updateTimelogStatuses([1], 'sub');
     expect(harness.transitionTimelogStatusesAtomicRpc).toHaveBeenCalledOnce();
-    expect(harness.from).toHaveBeenCalledTimes(5);
+    expect(harness.from.mock.calls.map(([table]) => table)).toEqual(['timelogs', 'timelog_days', 'timelog_approvals', 'events']);
   });
 
   it('coordinates a batch and a same-row delete without Promise.all partial writes', async () => {
@@ -623,6 +623,6 @@ describe('timelog atomic write coordination', () => {
         approverUserId: '44444444-4444-4444-8444-444444444444',
       })],
     });
-    expect(harness.from).toHaveBeenCalledTimes(5);
+    expect(harness.from.mock.calls.map(([table]) => table)).toEqual(['timelogs', 'timelog_days', 'timelog_approvals', 'events']);
   });
 });

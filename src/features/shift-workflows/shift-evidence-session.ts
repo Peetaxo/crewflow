@@ -60,7 +60,8 @@ export function createShiftEvidenceSession(options: {
       if (!raw) return report;
       const changedSince = revisions.get(raw.id) !== attempt.revisions.get(raw.id);
       savedRevisions.set(raw.id, attempt.revisions.get(raw.id)!);
-      return { ...report, status: raw.status, updatedAt: raw.updated_at, reviewNote: raw.review_note ?? '',
+      return { ...report, status: raw.status, updatedAt: raw.updated_at, submittedAt: raw.submitted_at ?? undefined,
+        approvedAt: raw.approved_at ?? undefined, reviewNote: raw.review_note ?? '',
         crewConfirmationSnapshot: mapTimelogConfirmationSnapshot(raw.crew_confirmation_snapshot, raw),
         ...(changedSince ? {} : { km: raw.km, note: raw.note, days: raw.days.map((d) => ({
           id: d.id, d: d.date, f: d.time_from, t: d.time_to, type: d.day_type, note: d.note, meal: d.meal, meals: [...d.meals],

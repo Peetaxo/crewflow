@@ -20,6 +20,10 @@ const reportRow = (overrides: Partial<TimelogRow> = {}): TimelogRow => ({
 });
 
 describe('supabase mappers', () => {
+  it('keeps submission and approval times separate from subsequent edits', () => {
+    const row = reportRow({ submitted_at: '2026-09-23T08:00:00Z', approved_at: '2026-09-23T09:00:00Z' });
+    expect(mapTimelog(row)).toMatchObject({ submittedAt: row.submitted_at, approvedAt: row.approved_at });
+  });
   it('hydrates both meal fields, stable day ids and preparation types', () => {
     const day = { id: 'day', date: '2026-09-23', time_from: '22:00', time_to: '02:00', day_type: 'pripravy',
       note: 'Příprava', meal: 'obed', meals: ['obed', 'vecere'] } as TimelogDayRow;

@@ -41,3 +41,19 @@ export function getApprovalInbox(visible: Timelog[], all: Timelog[], rounds: Shi
   ));
   return { legacy, rounds: actionable, count: legacy.length + actionable.length };
 }
+
+/** An event can handle a complete submission for one event. Keep cross-event decisions together. */
+export function splitEventRounds(visible: Timelog[], rounds: ReturnType<typeof getApprovalGroups>['rounds'], local: boolean) {
+  const byId = new Map(visible.map(report => [local ? report.id : report.supabaseId, report]));
+  const byReport = new Map<Timelog, typeof rounds[number]>();
+  const separate = rounds.filter(group => {
+    if (!group.complete || group.round.workflowId !== null || group.round.eventIds.length !== 1 || group.timelogs.length !== 1) return true;
+    const part = group.timelogs[0];
+    if (!local && !part.supabaseId) return true;
+    const original = byId.get(local ? part.id : part.supabaseId);
+    if (!original) return true;
+    byReport.set(original, group);
+    return false;
+  });
+  return { separate, byReport };
+}

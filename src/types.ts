@@ -210,6 +210,8 @@ export interface Timelog {
   contractorProfileId?: string;
   /** Optimisticka verze radku ze Supabase */
   updatedAt?: string;
+  submittedAt?: string;
+  approvedAt?: string;
   days: TimelogDay[];
   /** Cestovne v km */
   km: number;
@@ -226,6 +228,7 @@ export interface EventCrewAssignment {
   eventSupabaseId?: string | null;
   contractorProfileId: string;
   name: string;
+  inferredFromTimelog?: boolean;
 }
 
 /** Status faktury */

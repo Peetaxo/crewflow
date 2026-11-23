@@ -3,12 +3,12 @@ import type { Database } from '../../../lib/database.types';
 import type { Event } from '../../../types';
 import { normalizeMealSelection } from '../../../utils';
 import { supabase } from '../../../lib/supabase';
-import { APPROVED_HOURS_STATUSES } from '../../timelogs/services/timelog-approval-state';
 import type { CapturedCosts } from './event-hours-costs';
 import { buildEventHoursReport } from './event-hours-report';
 
 const dayFields = 'id,date,time_from,time_to,day_type,note,meal,meals';
 const receiptFields = 'id,contractor_id,status,amount';
+const assignmentFields = 'profile_id,profiles!event_assignments_profile_id_fkey(first_name,last_name)';
 // Select only the financial fields, never the supplier/customer identity in the billing snapshot.
 const billingFields = 'rate:source_snapshot->hourly_rate,hours:source_snapshot->hours,work:source_snapshot->amount_hours,km:source_snapshot->km,travel:source_snapshot->amount_km,meals:source_snapshot->amount_meals';
 const reportFields: string = `id,updated_at,status,km,contractor_id,profiles!timelogs_contractor_id_fkey(first_name,last_name,hourly_rate),
@@ -16,7 +16,7 @@ const reportFields: string = `id,updated_at,status,km,contractor_id,profiles!tim
   day_count:timelog_days(count),days:timelog_days(${dayFields})`;
 const eventHoursSelect: string = `name,job_number,meal_allowance_enabled,updated_at,
   receipts(${receiptFields}),receipt_count:receipts(count),
-  assignments:event_assignments(profile_id),roster_size:event_assignments(count),report_count:timelogs(count),
+  assignments:event_assignments(${assignmentFields}),roster_size:event_assignments(count),report_count:timelogs(count),
   reports:timelogs(${reportFields})`;
 
 type Client = NonNullable<typeof supabase>;
@@ -37,10 +37,12 @@ const readReportPage = (client: Client, eventId: string, from: number, to: numbe
   .overrideTypes<ReportRow[], { merge: false }>();
 const readReceipts = (client: Client, eventId: string) => client.from('receipts').select(receiptFields)
   .eq('event_id', eventId).order('id');
+const readAssignments = (client: Client, eventId: string) => client.from('event_assignments').select(assignmentFields)
+  .eq('event_id', eventId).order('profile_id');
 
 // Compose the typed embeds separately: the full PostgREST select exceeds TypeScript's parser depth.
 type Snapshot = Pick<Tables['events']['Row'], 'name' | 'job_number' | 'meal_allowance_enabled' | 'updated_at'> & {
-  assignments: { profile_id: string }[]; roster_size: Counts;
+  assignments: QueryData<ReturnType<typeof readAssignments>>; roster_size: Counts;
   reports: ReportRow[]; report_count: Counts;
   receipts: QueryData<ReturnType<typeof readReceipts>>; receipt_count: Counts;
 };
@@ -74,8 +76,7 @@ async function fillSnapshot(client: Client, eventId: string, snapshot: Snapshot)
   await fillPages(snapshot.receipts, snapshot.receipt_count[0]?.count, row => row.id,
     (from, to) => readReceipts(client, eventId).range(from, to));
   await fillPages(snapshot.assignments, snapshot.roster_size[0]?.count, row => row.profile_id,
-    (from, to) => client.from('event_assignments').select('profile_id').eq('event_id', eventId)
-      .order('profile_id').range(from, to));
+    (from, to) => readAssignments(client, eventId).range(from, to));
   await fillPages(snapshot.reports, snapshot.report_count[0]?.count, row => row.id,
     (from, to) => readReportPage(client, eventId, from, to));
   for (const report of snapshot.reports) {
@@ -86,7 +87,7 @@ async function fillSnapshot(client: Client, eventId: string, snapshot: Snapshot)
 }
 
 export async function loadRemoteEventHours(event: Pick<Event, 'name' | 'job' | 'supabaseId'>) {
-  if (!supabase || !event.supabaseId) throw new Error('Pro tuto akci se nepodařilo načíst schválené hodiny.');
+  if (!supabase || !event.supabaseId) throw readError();
   const data = await readEvent(supabase, event.supabaseId);
   if (data.receipts.length !== data.receipt_count[0]?.count
     || data.assignments.length !== data.roster_size[0]?.count
@@ -112,7 +113,10 @@ export async function loadRemoteEventHours(event: Pick<Event, 'name' | 'job' | '
     event: { name: data.name, job: data.job_number || event.job, mealAllowanceEnabled: data.meal_allowance_enabled },
     receipts: data.receipts.map(row => ({ contractorProfileId: row.contractor_id, status: row.status, amount: row.amount })),
     timelogs,
-    crewAssignments: data.assignments.map(row => ({ contractorProfileId: row.profile_id, name: '' })),
+    crewAssignments: data.assignments.map(row => ({
+      contractorProfileId: row.profile_id,
+      name: [row.profiles?.first_name, row.profiles?.last_name].filter(Boolean).join(' '),
+    })),
     contractors: data.reports.map(log => ({
       profileId: log.contractor_id, rate: log.profiles?.hourly_rate ?? null, name: [log.profiles?.first_name, log.profiles?.last_name].filter(Boolean).join(' '),
     })),
@@ -120,10 +124,9 @@ export async function loadRemoteEventHours(event: Pick<Event, 'name' | 'job' | '
 }
 
 export async function hasRemoteEventHours(eventId: string): Promise<boolean> {
-  if (!supabase) throw new Error('Nepodařilo se ověřit schválení hodin.');
-  const { data, error } = await supabase.from('timelogs').select('id,timelog_days!inner(id)')
-    .eq('event_id', eventId).in('status', APPROVED_HOURS_STATUSES)
-    .limit(1).limit(1, { referencedTable: 'timelog_days' });
-  if (error) throw new Error('Nepodařilo se ověřit schválení hodin.');
+  if (!supabase) throw readError();
+  const { data, error } = await supabase.from('timelogs').select('id')
+    .eq('event_id', eventId).neq('status', 'draft').limit(1);
+  if (error) throw readError();
   return Boolean(data?.length);
 }

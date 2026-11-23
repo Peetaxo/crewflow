@@ -159,7 +159,7 @@ export function createLocalShiftBatchExecutor(deps: Dependencies) {
       currentRound ? Date.parse(currentRound.updatedAt) + 1 : 0)).toISOString();
     const nextMetadata = new Map(metadata);
     const metadataFor = (report: Timelog): ReportMetadata => nextMetadata.get(report.supabaseId!)
-      ?? { submittedAt: null, approvedAt: null, snapshot: report.crewConfirmationSnapshot ?? null };
+      ?? { submittedAt: report.submittedAt ?? null, approvedAt: report.approvedAt ?? null, snapshot: report.crewConfirmationSnapshot ?? null };
     const receiptReport = (report: Timelog) => {
       const meta = metadataFor(report);
       const approvals = (report.approvals ?? []).filter((a) => a.supersededAt === null);
@@ -242,6 +242,8 @@ export function createLocalShiftBatchExecutor(deps: Dependencies) {
           if (command.action === 'approve') { meta.approvedAt = now; next.reviewNote = undefined; }
         }
       }
+      next.submittedAt = meta.submittedAt ?? undefined;
+      next.approvedAt = meta.approvedAt ?? undefined;
       nextMetadata.set(report.supabaseId!, meta);
       return next;
     });

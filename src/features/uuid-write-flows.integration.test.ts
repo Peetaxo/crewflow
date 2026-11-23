@@ -176,23 +176,10 @@ describe('UUID write flows integration', () => {
         };
       }
 
-      if (table === 'timelog_days') {
-        return {
-          select: vi.fn(() => ({
-            order: vi.fn().mockResolvedValue({
-              data: [],
-              error: null,
-            }),
-          })),
-        };
-      }
-
-      if (table === 'timelog_approvals') {
-        return {
-          select: vi.fn(() => ({
-            order: vi.fn().mockResolvedValue({ data: approvalRows, error: null }),
-          })),
-        };
+      if (table === 'timelog_days' || table === 'timelog_approvals') {
+        const result = Promise.resolve({ data: table === 'timelog_days' ? [] : approvalRows, error: null });
+        const query = Object.assign(result, { order: () => query });
+        return { select: () => query };
       }
 
       if (table === 'timelogs') {
@@ -465,7 +452,7 @@ describe('UUID write flows integration', () => {
     savedReceipt = await updateReceiptStatus(savedReceipt.id, 'submit');
     savedReceipt = await updateReceiptStatus(savedReceipt.id, 'approve');
 
-    expect(profileSelectCalls).toBeGreaterThanOrEqual(4);
+    expect(profileSelectCalls).toBe(2);
 
     expect(snapshot.timelogs).toEqual([
       expect.objectContaining({ id: savedTimelog.id, supabaseId: INTEGRATION_TIMELOG_ID, updatedAt: expect.any(String) }),

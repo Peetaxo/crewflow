@@ -591,6 +591,7 @@ export async function getSupabaseAppData(): Promise<AppDataSnapshot> {
         eventSupabaseId: row.event_id,
         contractorProfileId: row.profile_id,
         name: name || 'Clen crew',
+        inferredFromTimelog: true,
       } satisfies EventCrewAssignment;
     })
     .filter((assignment) => assignment !== null);

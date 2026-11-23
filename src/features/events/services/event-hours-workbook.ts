@@ -3,8 +3,10 @@ import wordmarkUrl from '../../../../supabase/functions/generate-invoice-pdf/ass
 import { PHASE_CONFIG } from '../../../constants';
 import { addCrewCosts, costCategories, emptyCrewCosts, totalCrewCosts } from './event-hours-costs';
 import type { EventHoursReport } from './event-hours-report';
+import type { TimelogStatus } from '../../../types';
 
 const SHEET_NAME = 'Směny a náklady';
+const STATUS_SHEET = 'Stav výkazů';
 const MONEY = '#,##0.00" Kč"';
 const HOURS = '0.00';
 const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -15,6 +17,14 @@ const orange = '#FF800D';
 const cream = '#FFEDE0';
 const paper = '#FFFFFF';
 const dateRange = new Intl.DateTimeFormat('cs-CZ', { day: 'numeric', month: 'numeric', year: 'numeric', timeZone: 'UTC' });
+const timestamp = new Intl.DateTimeFormat('cs-CZ', { day: 'numeric', month: 'numeric', year: 'numeric',
+  hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Prague', timeZoneName: 'short' });
+
+const stageLabels: Record<TimelogStatus, string> = {
+  draft: 'Koncept · neodevzdáno', rejected: 'Vráceno k opravě', pending_crew_confirmation: 'Čeká na potvrzení crew',
+  pending_ch: 'Čeká na kontrolu CH', pending_coo: 'Čeká na schválení COO', approved: 'Schváleno k proplacení',
+  invoiced: 'Fakturováno', paid: 'Zaplaceno',
+};
 
 type Column = { label: string; width: number; align: 'left' | 'center' | 'right' };
 const label = (value: string): CellObject => ({ type: String, value });
@@ -39,6 +49,43 @@ function textHeight(text: string, width: number, lineHeight: number, minimum: nu
     }
   }
   return Math.min(409, Math.max(minimum, 8 + lines * lineHeight));
+}
+
+function workflowSheet(report: EventHoursReport, calculated: (formula: string, value: number | null, format: string) => CellObject) {
+  const { expected, submitted, approved, hasExplicitRoster, missingNames } = report.progress;
+  const columns = [{ width: 32 }, { width: 34 }, { width: 24 }, { width: 23 }];
+  const base: CellObject = { ...left, textColor: ink, wrap: true };
+  const title = [report.event.job, report.event.name].filter(Boolean).join(' · ');
+  const state = report.partial ? 'Průběžný rozpis' : 'Kompletní rozpis';
+  const header: CellObject = { ...base, textColor: paper, backgroundColor: ink, fontWeight: 'bold', height: 38 };
+  const summary: CellObject = { ...base, backgroundColor: cream, fontWeight: 'bold', height: 43 };
+  const denominator = hasExplicitRoster ? ` / ${expected}` : '';
+  const missing = hasExplicitRoster ? `Chybí odevzdání · ${missingNames.length}` : 'Celkový počet přiřazených lidí není známý';
+  const basis = hasExplicitRoster ? 'Podle soupisky crew na akci' : 'Podle dostupných výkazů';
+  const data: SheetData = [
+    [...merged({ ...base, ...label(title), fontSize: 16, fontWeight: 'bold', height: textHeight(title, 60, 23, 42) }, 2),
+      ...merged({ ...right, ...label(`${state}\nExport ${timestamp.format(new Date(report.generatedAt))}`), wrap: true, textColor: muted }, 2)],
+    [...merged({ ...summary, ...label(`Odevzdalo alespoň jeden výkaz · ${submitted}${denominator}\n${missing}`) }, 2),
+      ...merged({ ...summary, ...label(`Schváleno v plném rozsahu · ${approved}${denominator}\n${basis}`) }, 2)],
+    ['Člen crew', 'Stav výkazu', 'Odevzdané hodiny bez schválení', 'Schválené hodiny'].map((value, i) =>
+      ({ ...header, ...label(value), align: i < 2 ? 'left' : 'right' })),
+  ];
+  for (const person of report.roster) {
+    const status = person.statuses.length ? person.statuses.map(stage => stageLabels[stage]).join('\n') : 'Neodevzdáno';
+    const height = Math.max(textHeight(person.name, columns[0].width, 16, 27), textHeight(status, columns[1].width, 16, 27));
+    const style: CellObject = { ...base, height, backgroundColor: data.length % 2 ? paper : '#FBF8F5' };
+    const hours = (minutes: number | null) => ({ ...style, ...right, ...numeric(minutes === null ? null : minutes / 60, HOURS) });
+    data.push([{ ...style, ...label(person.name) }, { ...style, ...label(status), fontWeight: 'bold' },
+      hours(person.unapprovedMinutes), hours(person.approvedMinutes)]);
+  }
+  const total = (key: 'unapprovedMinutes' | 'approvedMinutes', column: string) => {
+    const minutes = report.roster.reduce<number | null>((sum, person) =>
+      sum === null || person[key] === null ? null : sum + person[key], 0);
+    return { ...summary, ...right, ...calculated(`SUM(${column}4:${column}${data.length})`, minutes === null ? null : minutes / 60, HOURS) };
+  };
+  data.push([...merged({ ...summary, ...label('Celkem hodin') }, 2),
+    total('unapprovedMinutes', 'C'), total('approvedMinutes', 'D')]);
+  return { sheet: STATUS_SHEET, data, columns, stickyRowsCount: 3, showGridLines: false, orientation: 'landscape' as const };
 }
 
 function excelStyles(xml: string): string {
@@ -70,7 +117,8 @@ function excelFeatures(cached: Map<string, number>): Feature<Blob> {
     'xl/styles.xml': { transform: excelStyles },
     'xl/workbook.xml': {
       transform(xml) {
-        const titles = `<definedName name="_xlnm.Print_Titles" localSheetId="0">'${SHEET_NAME}'!$1:$3</definedName>`;
+        const titles = [STATUS_SHEET, SHEET_NAME].map((name, i) =>
+          `<definedName name="_xlnm.Print_Titles" localSheetId="${i}">'${name}'!$1:$3</definedName>`).join('');
         return xml.replace('<definedNames/>', `<definedNames>${titles}</definedNames>`);
       },
     },
@@ -92,7 +140,7 @@ function excelFeatures(cached: Map<string, number>): Feature<Blob> {
 }
 
 export async function createEventHoursFile(report: EventHoursReport): Promise<File> {
-  if (!report.people.length) throw new Error('Akce zatím nemá žádné schválené hodiny.');
+  if (!report.hasSubmittedReports) throw new Error('Akce zatím nemá žádný odevzdaný výkaz.');
   const costs = emptyCrewCosts();
   let minutes = 0;
   let firstDate = '', lastDate = '';
@@ -195,24 +243,28 @@ export async function createEventHoursFile(report: EventHoursReport): Promise<Fi
   }
 
   const isEstimate = report.people.some(p => p.estimatedBilledCosts);
+  const incompleteShifts = report.roster.some(p => p.approvedMinutes === null);
   const notes = [];
+  if (incompleteShifts) notes.push('Chybí údaje o schválených směnách. Rozpis zahrnuje směny s doloženým datem a časem.');
   if (isEstimate) notes.push('U označených členů jsou dříve fakturované výkazy bez uloženého vyúčtování oceněné podle sazeb při exportu.');
   if (totalCrewCosts(costs) === null) notes.push('Neúplné částky vyžadují doplnění podkladů. Známé položky jsou uvedené samostatně.');
   for (const note of notes) rows.push(merged({ ...left, ...label(note), wrap: true, textColor: muted, height: 26 }, count));
   const end = rows.length;
   const grand = end + 1;
+  const emptyTotal = incompleteShifts ? null : 0;
   // SUBTOTAL skips each person's nested SUBTOTAL. Expenses appear only once, in the person rows.
-  rows.push(totalRow(isEstimate ? 'Celkem za crew (odhad)' : 'Celkem za crew', [
+  const grandCells = report.people.length ? [
     calculated(`SUBTOTAL(9,F4:F${end})`, minutes / 60, HOURS),
     ...visibleCosts.map((key, index) => {
       const col = letter(6 + index), range = `${col}4:${col}${end}`;
       return calculated(key === 'work' ? `SUBTOTAL(9,${range})` : `ROUND(SUM(${range}),2)`, costs[key]);
     }),
     calculated(`ROUND(SUM(G${grand}:${lastCost}${grand}),2)`, totalCrewCosts(costs)),
-  ], true));
+  ] : [numeric(emptyTotal, HOURS), ...visibleCosts.map(() => numeric(emptyTotal)), numeric(emptyTotal)];
+  rows.push(totalRow(isEstimate ? 'Celkem za crew (odhad)' : 'Celkem za crew', grandCells, true));
 
   const wordmark = Uint8Array.from(atob(wordmarkUrl.split(',')[1]), char => char.charCodeAt(0));
-  const blob = await writeXlsxFile([{
+  const blob = await writeXlsxFile([workflowSheet(report, calculated), {
     sheet: SHEET_NAME, data: rows, columns, stickyRowsCount: 3, showGridLines: false, orientation: 'landscape',
     images: [{ content: new Blob([wordmark], { type: 'image/png' }), contentType: 'image/png', width: 91, height: 32,
       dpi: 96, anchor: { row: 1, column: 1 }, offsetX: 12, offsetY: 12, title: 'Nodu', description: 'Logo Nodu' }],

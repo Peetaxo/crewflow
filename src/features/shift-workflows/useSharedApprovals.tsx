@@ -45,7 +45,7 @@ export function useSharedApprovals(timelogs: Timelog[], events: Event[], contrac
   const groupsFor = (visible: Timelog[]) => getApprovalGroups(visible, allTimelogs, snapshot?.rounds ?? [], scope);
   const inboxFor = (visible: Timelog[]) => getApprovalInbox(visible, allTimelogs, reviewReady ? snapshot?.rounds : undefined, scope);
   const legacyOnly = (visible: Timelog[]) => snapshot ? groupsFor(visible).legacy : [];
-  const cards = (visible: Timelog[], rounds = groupsFor(visible).rounds) => <>
+  const cards = (visible: Timelog[], rounds = groupsFor(visible).rounds, eventAction?: (event: Event) => React.ReactNode) => <>
     {(!snapshot || workflows.query.isError) && <p role="status" className="mb-3 text-sm">{workflows.query.isError
       ? 'Společné výkazy se nepodařilo načíst. Obnovte data před rozhodnutím.'
       : 'Načítám společné výkazy…'}</p>}
@@ -56,7 +56,10 @@ export function useSharedApprovals(timelogs: Timelog[], events: Event[], contrac
           || round.timelogIds.some((id) => group.round.timelogIds.includes(id))
           || round.eventIds.some((id) => group.round.eventIds.includes(id)))).map((round) => round.id));
       return <SharedApprovalCard key={group.round.id} group={group} contractors={people}
-        events={canonicalEvents} canAct={reviewReady && group.canAct} canOpen={reviewReady} showPerson={role !== 'crew'}
+        events={canonicalEvents} eventAction={eventAction && (canonicalEvent => {
+          const event = local ? allEvents.find(candidate => candidate.id === canonicalEvent.id) : canonicalEvent;
+          return event && eventAction(event);
+        })} canAct={reviewReady && group.canAct} canOpen={reviewReady} showPerson={role !== 'crew'}
         onOpen={(report) => {
           if (!reviewReady) return;
           setEditingTimelog(local ? allTimelogs.find((item) => item.id === report.id) ?? report : report);
@@ -85,5 +88,5 @@ export function useSharedApprovals(timelogs: Timelog[], events: Event[], contrac
     setEditingTimelog(local ? allTimelogs.find((report) => report.id === target.id) ?? target : target);
     return true;
   };
-  return { cards, inboxFor, legacyOnly, reviewSelection, groupsFor, ready: reviewReady, identityKey: `${workflows.scopeKey}:${workflows.ready}` };
+  return { cards, scope, inboxFor, legacyOnly, reviewSelection, groupsFor, ready: reviewReady, identityKey: `${workflows.scopeKey}:${workflows.ready}` };
 }

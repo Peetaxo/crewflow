@@ -264,6 +264,8 @@ export function mapTimelog(row: TimelogRow, days: TimelogDayRow[] = []): Timelog
     eid: Number.NaN,
     contractorProfileId: row.contractor_id,
     updatedAt: row.updated_at,
+    submittedAt: row.submitted_at ?? undefined,
+    approvedAt: row.approved_at ?? undefined,
     days: days.map(mapTimelogDay),
     km: Number(row.km ?? 0),
     note: row.note ?? '',

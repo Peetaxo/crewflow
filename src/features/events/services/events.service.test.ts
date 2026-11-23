@@ -3,6 +3,12 @@ import type { Event, EventApplication, EventCrewAssignment, GrasonEventConfirmat
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+function orderedQuery<T>(result: Promise<{ data: T[]; error: { message: string } | null }>) {
+  const counted = result.then(page => ({ ...page, count: page.data.length }));
+  const query = Object.assign(counted, { order: vi.fn(() => query) });
+  return query;
+}
+
 describe('events.service fetch snapshot', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -39,6 +45,7 @@ describe('events.service fetch snapshot', () => {
                 phase_schedules: null,
               },
             ],
+            count: 1,
             error: null,
           }),
         })),
@@ -101,12 +108,7 @@ describe('events.service fetch snapshot', () => {
       data: [],
       error: null,
     });
-    const eventAssignmentsSelect = vi.fn(() => ({
-      order: vi.fn().mockResolvedValue({
-        data: [],
-        error: null,
-      }),
-    }));
+    const eventAssignmentsSelect = vi.fn(() => orderedQuery(Promise.resolve({ data: [], error: null })));
     const grasonConfirmationsSelect = vi.fn(() => ({
       order: vi.fn().mockResolvedValue({
         data: [
@@ -234,6 +236,7 @@ describe('events.service fetch snapshot', () => {
           eventSupabaseId: 'event-row-1',
           contractorProfileId: 'profile-uuid-1',
           name: 'Test User',
+          inferredFromTimelog: true,
         },
       ],
       grasonEventConfirmations: [
@@ -582,30 +585,17 @@ describe('events.service write flow', () => {
       },
     }));
 
-    const createEventsQuery = (result: Promise<{
-      data: typeof eventRows;
-      error: { message: string } | null;
-    }>) => {
-      const order = vi.fn();
-      const query = {
-        order,
-        then: result.then.bind(result),
-      };
-      order.mockReturnValue(query);
-      return query;
-    };
-    const eventsQuery = createEventsQuery(Promise.resolve({
-      data: eventRows,
-      error: failEventsRefresh ? { message: 'event refresh failed' } : null,
-    }));
     const deferredPublicEventsResult = createDeferred<{
       data: typeof eventRows;
       error: null;
     }>();
-    const deferredPublicEventsQuery = createEventsQuery(deferredPublicEventsResult.promise);
-    const eventsSelect = vi.fn(() => eventsQuery);
+    const deferredPublicEventsQuery = orderedQuery(deferredPublicEventsResult.promise);
+    const eventsSelect = vi.fn(() => orderedQuery(Promise.resolve({
+      data: structuredClone(eventRows),
+      error: failEventsRefresh ? { message: 'event refresh failed' } : null,
+    })));
     if (failFirstEventsRefresh) {
-      eventsSelect.mockImplementationOnce(() => createEventsQuery(Promise.resolve({
+      eventsSelect.mockImplementationOnce(() => orderedQuery<typeof eventRows[number]>(Promise.resolve({
         data: [],
         error: { message: 'offline' },
       })));
@@ -675,9 +665,7 @@ describe('events.service write flow', () => {
       }
       if (table === 'event_assignments') {
         return {
-          select: vi.fn(() => ({
-            order: vi.fn().mockResolvedValue({ data: [], error: null }),
-          })),
+          select: vi.fn(() => orderedQuery(Promise.resolve({ data: [], error: null }))),
           insert: eventAssignmentsInsert,
           delete: eventAssignmentsDelete,
         };
@@ -783,7 +771,6 @@ describe('events.service write flow', () => {
         resetOnSnapshotReadCountdown = readNumber;
         return hydrationResetTriggered.promise;
       },
-      eventsOrder: eventsQuery.order,
       eventsSelect,
       resolveDeferredPublicEvents: () => {
         deferredPublicEventsResult.resolve({
@@ -882,12 +869,6 @@ describe('events.service write flow', () => {
       return { eq: updateIdEq };
     });
 
-    const orderedQuery = <T,>(result: Promise<{ data: T[]; error: { message: string } | null }>) => {
-      const order = vi.fn();
-      const query = { order, then: result.then.bind(result) };
-      order.mockReturnValue(query);
-      return query;
-    };
     const reorderObject = (value: unknown): unknown => {
       if (Array.isArray(value)) return value.map(reorderObject);
       if (!value || typeof value !== 'object') return value;
@@ -1429,6 +1410,8 @@ describe('events.service write flow', () => {
     const detail = getEventDetailData(1);
 
     expect(detail.event?.filled).toBe(1);
+    expect(detail.hasExplicitRoster).toBe(false);
+    expect(detail.crewAssignments).toHaveLength(1);
     expect(detail.timelogs).toEqual([
       expect.objectContaining({
         supabaseId: 'timelog-uuid-1',
@@ -1537,6 +1520,7 @@ describe('events.service write flow', () => {
     const detail = getEventDetailData('event-uuid-1');
 
     expect(detail.timelogs).toEqual([]);
+    expect(detail.hasExplicitRoster).toBe(true);
     expect(detail.event?.filled).toBe(1);
     expect(getEventCrew(1).map((contractor) => contractor.name)).toEqual(['Test User']);
     expect(detail.grasonConfirmations.map((confirmation) => confirmation.confirmedName)).toEqual([
@@ -1557,7 +1541,7 @@ describe('events.service write flow', () => {
       contractors: ['a', 'b', 'c', 'log-a', 'log-b', 'ambiguous'].map(profileId => ({ profileId, name: profileId })),
       eventCrewAssignments: [
         { eventId: 5, eventSupabaseId: 'event-a', contractorProfileId: 'a' },
-        { eventId: 1, eventSupabaseId: 'event-b', contractorProfileId: 'b' },
+        { eventId: 1, eventSupabaseId: 'event-b', contractorProfileId: 'b', inferredFromTimelog: true },
         { eventId: 1, contractorProfileId: 'ambiguous' },
         { eventId: 3, contractorProfileId: 'c' },
       ],
@@ -1565,13 +1549,23 @@ describe('events.service write flow', () => {
         { eid: 4, eventSupabaseId: 'event-a', contractorProfileId: 'log-a' },
         { eid: 1, eventSupabaseId: 'event-b', contractorProfileId: 'log-b' },
       ],
+      receipts: [
+        { eid: 1, eventSupabaseId: 'event-a', id: 1 },
+        { eid: 4, eventSupabaseId: 'event-b', id: 2 },
+        { eid: 1, id: 3 },
+      ],
     };
     vi.doMock('../../../lib/app-config', () => ({ appDataSource: 'local' }));
     vi.doMock('../../../lib/app-data', () => ({ getLocalAppState: () => snapshot }));
-    const { getEventCrew } = await import('./events.service');
+    const { getEventCrew, getEventDetailData } = await import('./events.service');
     expect(getEventCrew('event-a').map(member => member.profileId).sort()).toEqual(['a', 'log-a']);
     expect(getEventCrew('event-b').map(member => member.profileId).sort()).toEqual(['b', 'log-b']);
     expect(getEventCrew(3).map(member => member.profileId)).toEqual(['c']);
+    expect(getEventDetailData('event-a').hasExplicitRoster).toBe(true);
+    const detail = getEventDetailData('event-b');
+    expect(detail.hasExplicitRoster).toBe(false);
+    expect(detail.crewAssignments.map(member => member.contractorProfileId)).toEqual(['b']);
+    expect(detail.receipts.map(receipt => receipt.id)).toEqual([2]);
   });
 
   it('does not leak local demo receipts into Supabase event detail by local numeric id', async () => {
@@ -2123,13 +2117,11 @@ describe('events.service write flow', () => {
       };
     });
     const eventOrderResult = () => {
-      const result = Promise.resolve({
+      return orderedQuery(Promise.resolve({
         data: authoritativeEventRow ? [authoritativeEventRow] : [], error: null,
-      });
-      const query = Object.assign(result, { order: vi.fn(() => query) });
-      return query;
+      }));
     };
-    const emptyOrderResult = { order: vi.fn().mockResolvedValue({ data: [], error: null }) };
+    const emptyOrderResult = orderedQuery(Promise.resolve({ data: [], error: null }));
     const projectRows = [{
       id: 'project-row-1', job_number: 'AK001', client_id: 'client-row-1', name: 'Projekt 1',
       note: null, created_at: '2026-04-10', updated_at: '2026-04-10',
@@ -3692,7 +3684,7 @@ describe('events.service write flow', () => {
     expect(harness.invalidateQueries).not.toHaveBeenCalled();
     expect(harness.updateLocalAppState.mock.invocationCallOrder[0])
       .toBeLessThan(harness.setQueryData.mock.invocationCallOrder[0]);
-    expect(harness.eventsOrder.mock.calls).toEqual([
+    expect(harness.eventsSelect.mock.results[0].value.order.mock.calls).toEqual([
       ['date_from'],
       ['name'],
       ['id'],

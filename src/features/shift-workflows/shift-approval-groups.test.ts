@@ -1,4 +1,4 @@
-import { getApprovalInbox } from './approval-inbox';
+import { getApprovalInbox, splitEventRounds } from './approval-inbox';
 import { describe, expect, it } from 'vitest';
 import type { Timelog } from '../../types';
 import type { ShiftWorkflowRound } from './shift-workflows.model';
@@ -37,6 +37,17 @@ describe('frozen approval group selection', () => {
     const group = selectShiftApprovalGroups([reports[0]], reports, [round]).rounds[0];
     expect(group.complete).toBe(true);
     expect(isShiftApprovalGroupActionable(group, { source: 'supabase', role: 'crewhead', profileId: 'CH', userId: 'CH-user' })).toBe(false);
+  });
+  it('places standalone rounds under their event using the canonical report identity', () => {
+    const records = [report(1), report(2), report(3)];
+    const independent = { round: { ...round, workflowId: null, eventIds: ['e1'], timelogIds: ['t1'] },
+      timelogs: [{ ...records[0], id: 99 }], complete: true, canAct: true };
+    const linked = { round, timelogs: [records[1], records[2]], complete: true, canAct: true };
+    const result = splitEventRounds(records, [independent, linked], false);
+    expect([...result.byReport.keys()]).toEqual([records[0]]);
+    expect(result.separate).toEqual([linked]);
+    const unavailable = { ...independent, complete: false };
+    expect(splitEventRounds(records, [unavailable], false).separate).toEqual([unavailable]);
   });
   it('resolves either part to the same representative and rejects independent rounds before mutation', () => {
     const reports = [report(1), report(2), report(3)];

@@ -20,7 +20,7 @@ export function TimelogSummaryCard({ label, person, metadata, status, entries, h
   status: React.ReactNode;
   entries: SummaryEntry[];
   hours: number;
-  amount: number;
+  amount: number | null;
   control?: React.ReactNode;
   children?: React.ReactNode;
 }) {
@@ -58,7 +58,7 @@ export function TimelogSummaryCard({ label, person, metadata, status, entries, h
           <section aria-label="Souhrn výkazu" className="min-w-0 flex-1">
             <dl className="flex flex-wrap gap-x-5 gap-y-1">
               <div><dt className="text-[10px] text-[color:var(--nodu-text-soft)]">Celkem hodin</dt><dd className="text-base font-semibold leading-snug tabular-nums">{displayTimelogHours(hours)}</dd></div>
-              <div><dt className="text-[10px] text-[color:var(--nodu-text-soft)]">Odměna celkem</dt><dd className="text-base font-semibold leading-snug tabular-nums">{displayTimelogMoney(amount)}</dd></div>
+              <div><dt className="text-[10px] text-[color:var(--nodu-text-soft)]">Odměna celkem</dt><dd className="text-base font-semibold leading-snug tabular-nums">{amount === null ? 'Chybí sazba' : displayTimelogMoney(amount)}</dd></div>
             </dl>
           </section>
           {control}

@@ -371,6 +371,7 @@ describe('app-data Supabase loading', () => {
         eventSupabaseId: 'event-uuid-1',
         contractorProfileId: 'profile-uuid-1',
         name: 'Petr Heitzer',
+        inferredFromTimelog: true,
       },
     ]);
   });

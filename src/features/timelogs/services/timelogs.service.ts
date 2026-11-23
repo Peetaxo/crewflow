@@ -1,3 +1,4 @@
+import { readCompleteRows } from '../../../lib/read-complete-rows';
 import { appDataSource } from '../../../lib/app-config';
 import { getLocalAppState, subscribeToLocalAppState, updateLocalAppState } from '../../../lib/app-data';
 import { queryClient } from '../../../lib/query-client';
@@ -16,6 +17,7 @@ import {
 import {
   handoffTimelogsForApprovalAtomicRpc,
   resolveTimelogApprovalsAtomicRpc,
+  type TimelogApprovalHandoffTarget,
   type TimelogApprovalResolutionTarget,
 } from './timelog-approval-rpc.service';
 import { getActiveTimelogApproval, getTimelogReviewKey, isTimelogWaitingForProfile } from './timelog-approval-state';
@@ -27,6 +29,7 @@ export interface TimelogActionOptions {
   /** One immutable review key per requested numeric ID, in selection order. */
   expectedReviewKeys?: readonly string[];
   billingApproval?: { quoteId: string; targets: TimelogApprovalResolutionTarget[] };
+  handoffTargets?: TimelogApprovalHandoffTarget[];
   assertCurrent?: () => void;
   note?: string;
   /** Local/demo identity only. Remote authority always comes from Supabase Auth. */
@@ -117,19 +120,14 @@ const matchesSearch = (
 type TimelogRow = Database['public']['Tables']['timelogs']['Row'];
 type TimelogDayRow = Database['public']['Tables']['timelog_days']['Row'];
 type TimelogApprovalRow = Database['public']['Tables']['timelog_approvals']['Row'];
-type ProfileIdentityRow = Pick<Database['public']['Tables']['profiles']['Row'], 'id'>;
 type EventIdentityRow = Pick<Database['public']['Tables']['events']['Row'], 'id'>;
 
 const mapSupabaseTimelogs = (
   timelogRows: TimelogRow[],
   timelogDayRows: TimelogDayRow[],
   timelogApprovalRows: TimelogApprovalRow[],
-  profileRows: ProfileIdentityRow[],
   eventRows: EventIdentityRow[],
 ) => {
-  const profileIdMap = new Map(
-    profileRows.map((row, index) => [row.id, index + 1]),
-  );
   const eventIdMap = new Map(
     eventRows.map((row, index) => [row.id, index + 1]),
   );
@@ -164,33 +162,14 @@ export const loadTimelogsSnapshot = async (): Promise<Timelog[]> => {
     return getLocalAppState().timelogs ?? [];
   }
 
-  const [timelogsResult, timelogDaysResult, timelogApprovalsResult, profilesResult, eventsResult] = await Promise.all([
-    supabase.from('timelogs').select('*').order('created_at'),
-    supabase.from('timelog_days').select('*').order('date'),
-    supabase.from('timelog_approvals').select('*').order('requested_at'),
-    supabase.from('profiles').select('id').order('last_name').order('first_name'),
-    supabase.from('events').select('id').order('date_from').order('name').order('id'),
+  const client = supabase;
+  const [reports, days, approvals, events] = await Promise.all([
+    readCompleteRows(() => client.from('timelogs').select('*', { count: 'exact' }).order('created_at').order('id'), row => row.id),
+    readCompleteRows(() => client.from('timelog_days').select('*', { count: 'exact' }).order('date').order('id'), row => row.id),
+    readCompleteRows(() => client.from('timelog_approvals').select('*', { count: 'exact' }).order('requested_at').order('id'), row => row.id),
+    readCompleteRows(() => client.from('events').select('id', { count: 'exact' }).order('date_from').order('name').order('id'), row => row.id),
   ]);
-
-  const firstError =
-    timelogsResult.error
-    ?? timelogDaysResult.error
-    ?? timelogApprovalsResult.error
-    ?? profilesResult.error
-    ?? eventsResult.error;
-  if (firstError) {
-    throw new Error(firstError.message);
-  }
-
-  const supabaseTimelogs = mapSupabaseTimelogs(
-    timelogsResult.data ?? [],
-    timelogDaysResult.data ?? [],
-    timelogApprovalsResult.data ?? [],
-    profilesResult.data ?? [],
-    eventsResult.data ?? [],
-  );
-
-  return supabaseTimelogs;
+  return mapSupabaseTimelogs(reports.data, days.data, approvals.data, events.data);
 };
 
 export const fetchTimelogsSnapshot = async (): Promise<Timelog[]> => {
@@ -969,6 +948,7 @@ const updateLocalApprovalAction = async (
     updatedById.set(timelog.id, {
       ...timelog,
       status: isApproved ? 'approved' : 'rejected',
+      approvedAt: isApproved ? now : undefined,
       reviewNote: isApproved ? undefined : note,
       updatedAt: now,
       approvals: (timelog.approvals ?? []).map((approval) => (
@@ -1031,6 +1011,8 @@ const updateTimelogStatusesTo = async (
       timelogs: (snapshot.timelogs ?? []).map((timelog) => {
         if (!ids.includes(timelog.id)) return timelog;
         const updatedTimelog = { ...timelog, status: nextStatus };
+        if (nextStatus === 'pending_ch') updatedTimelog.submittedAt = new Date().toISOString();
+        if (nextStatus === 'approved' && timelog.status === 'pending_coo') updatedTimelog.approvedAt = new Date().toISOString();
         updatedTimelogs.push(updatedTimelog);
         return updatedTimelog;
       }),
@@ -1052,6 +1034,44 @@ export const updateTimelogStatuses = async (
 ): Promise<Timelog[]> => {
   if (ids.length === 0) return [];
   options.assertCurrent?.();
+  if (options.handoffTargets) {
+    if (action !== 'ch' || appDataSource !== 'supabase' || !supabase || !isSupabaseConfigured
+      || !options.currentProfileId || options.handoffTargets.length !== ids.length || options.expectedReviewKeys?.length !== ids.length) {
+      throw new Error(TARGETED_BATCH_MESSAGE);
+    }
+    const targets = structuredClone(options.handoffTargets);
+    const stableIds = targets.map(target => target.id);
+    if (new Set(stableIds).size !== ids.length || new Set(ids).size !== ids.length) throw new Error(TARGETED_BATCH_MESSAGE);
+    const keys = [...options.expectedReviewKeys];
+    return runTimelogMutation(stableIds.map(id => `timelog:${id}`), async assertCurrent => {
+      const actor = await getAuthenticatedSupabaseProfileId(assertCurrent);
+      if (actor !== options.currentProfileId) throw new Error(TARGETED_PROFILE_MESSAGE);
+      const snapshot = getLocalAppState().timelogs;
+      const reports = stableIds.map(id => {
+        const matches = snapshot.filter(report => report.supabaseId === id);
+        if (matches.length !== 1) throw new Error(TARGETED_BATCH_MESSAGE);
+        return matches[0];
+      });
+      await assertLegacyTimelogWrite(reports);
+      assertCurrent();
+      // A lost response may leave the reviewed reports under new numeric IDs.
+      // Only the identical approval IDs for the authenticated requester authorize replay.
+      const replay = reports.every((report, index) => {
+        const active = getActiveTimelogApproval(report);
+        return active?.requestedByProfileId === actor
+          && active.timelogId === targets[index].id && active.id === targets[index].approvalId
+          && active.approvalRoundId === targets[index].approvalRoundId;
+      });
+      if (!replay) {
+        assertReviewedSelection(ids, keys, reports);
+        assertApprovalActionShape(reports, 'ch', options);
+        if (reports.some((report, index) => report.updatedAt !== targets[index].expectedUpdatedAt)) throw new Error(TARGETED_BATCH_MESSAGE);
+      }
+      await handoffTimelogsForApprovalAtomicRpc(targets);
+      assertCurrent();
+      return reloadApprovalMutationResults(stableIds, assertCurrent);
+    }, options.assertCurrent);
+  }
   if (action === 'coo' && options.billingApproval && appDataSource === 'supabase' && supabase && isSupabaseConfigured) {
     // The reviewed quote and stable UUID targets own retries. A successful first
     // attempt may already have approved/reindexed the reports before its reply

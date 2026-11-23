@@ -95,7 +95,13 @@ export default function SharedTimelogEditor({ data, role, session, editorSession
     if ((state.dirty || invoice.draft) && !window.confirm('Znovu načíst evidenci a zahodit neuložené změny?')) return;
     onReload();
   };
-  const annotationsReady = reason.trim().length > 0 && Boolean(affectedEvent);
+  const singleReport = round?.workflowId === null && round.timelogIds.length === 1;
+  const affectedEventId = singleReport ? round.eventIds[0] : affectedEvent;
+  const annotationsReady = reason.trim().length > 0 && Boolean(affectedEventId);
+  const finishReview = async (decision: () => Promise<unknown>) => {
+    await decision();
+    if (singleReport && alive.current && !session.getSnapshot().refreshError) onClose();
+  };
   const validateSections = (reports: Timelog[]) => {
     setInvalidSection(null);
     for (const report of reports) {
@@ -152,12 +158,12 @@ export default function SharedTimelogEditor({ data, role, session, editorSession
             locked={locked || confirmClose} onChange={() => setActionError(null)} />}
           {(canChDecide || role === 'coo' && round?.status === 'pending_coo') && <div className="space-y-3 rounded-2xl border border-[var(--nodu-border)] p-4">
             <label className="block text-sm">Důvod vrácení nebo úpravy<Textarea aria-label="Důvod vrácení nebo úpravy" value={reason} onChange={(e) => setReason(e.target.value)} disabled={locked} /></label>
-            <label className="block text-sm">Dotčená směna<select className="mt-1 block w-full rounded-xl border border-[var(--nodu-border)] bg-transparent p-2" aria-label="Dotčená směna" value={affectedEvent} disabled={locked} onChange={(e) => setAffectedEvent(e.target.value)}>
+            {!singleReport && <label className="block text-sm">Dotčená směna<select className="mt-1 block w-full rounded-xl border border-[var(--nodu-border)] bg-transparent p-2" aria-label="Dotčená směna" value={affectedEvent} disabled={locked} onChange={(e) => setAffectedEvent(e.target.value)}>
               <option value="">Vyberte směnu</option>{data.events.filter((e) => round?.eventIds.includes(e.supabaseId!)).map((e) => <option key={e.supabaseId} value={e.supabaseId}>{e.name}</option>)}
-            </select></label>
+            </select></label>}
           </div>}
           {showBillingQuote && round?.status === 'pending_coo' && <BillingApprovalPreview timelogIds={frozen.map((t) => t.supabaseId!)}
-            onApprove={(quote) => session.transition('approve', { billingQuoteId: quote.id })} retryApproval={session.retry}
+            onApprove={(quote) => finishReview(() => session.transition('approve', { billingQuoteId: quote.id }))} retryApproval={() => finishReview(session.retry)}
             onCancel={() => setShowBillingQuote(false)} onStale={requestReload} />}
           {(actionError || state.error) && <p role="alert" className="text-sm text-red-700">{actionError ?? state.error?.message}</p>}
           {state.refreshError && <p role="alert" className="text-sm">{state.refreshError.message}</p>}
@@ -196,12 +202,12 @@ export default function SharedTimelogEditor({ data, role, session, editorSession
                 }); }}>Odeslat vše ke kontrole</Button>}
             </>}
             {canChDecide && <>
-              {editingRound && <Button variant="outline" disabled={locked || confirmClose || !annotationsReady || !state.dirty} onClick={() => { void run(() => session.transition('correct', { note: reason, affectedEventId: affectedEvent })); }}>Odeslat úpravy crew k potvrzení</Button>}
-              <Button disabled={locked || confirmClose || state.dirty} onClick={() => { void run(() => session.transition('handoff')); }}>Předat celé kolo ke schválení</Button>
+              {editingRound && <Button variant="outline" disabled={locked || confirmClose || !annotationsReady || !state.dirty} onClick={() => { void run(() => session.transition('correct', { note: reason, affectedEventId })); }}>Odeslat úpravy crew k potvrzení</Button>}
+              <Button disabled={locked || confirmClose || state.dirty} onClick={() => { void run(() => finishReview(() => session.transition('handoff'))); }}>{singleReport ? 'Předat výkaz COO' : 'Předat celé kolo ke schválení'}</Button>
             </>}
-            {role === 'coo' && round?.status === 'pending_coo' && <Button disabled={locked || confirmClose || !canCooDecide} onClick={() => { if (source === 'supabase') setShowBillingQuote(true); else void run(() => session.transition('approve')); }}>Schválit celé kolo</Button>}
+            {role === 'coo' && round?.status === 'pending_coo' && <Button disabled={locked || confirmClose || !canCooDecide} onClick={() => { if (source === 'supabase') setShowBillingQuote(true); else void run(() => finishReview(() => session.transition('approve'))); }}>{singleReport ? 'Schválit výkaz k proplacení' : 'Schválit celé kolo'}</Button>}
             {(canChDecide || role === 'coo' && round?.status === 'pending_coo') && <Button variant="outline" disabled={locked || confirmClose || !annotationsReady || state.dirty || role === 'coo' && !canCooDecide}
-              onClick={() => { void run(() => session.transition('return', { note: reason, affectedEventId: affectedEvent })); }}>Vrátit celé kolo</Button>}
+              onClick={() => { void run(() => finishReview(() => session.transition('return', { note: reason, affectedEventId }))); }}>{singleReport ? 'Vrátit výkaz k opravě' : 'Vrátit celé kolo'}</Button>}
           </div>
         </footer>
       </Dialog.Content>

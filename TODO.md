@@ -23,6 +23,26 @@ Místní test nenahrazuje skutečný pilot ani konečné přijetí první verze.
 - [ ] Dokončit bezpečnostní review, řízený test etapy 8 a opakované ověření oprav.
   Před těmito výsledky první verzi neoznačovat za přijatou.
 
+## Plánované zlepšení UX pro crew — 26. 11. 2026
+
+- [ ] V Přehledu zvýraznit právě probíhající přiřazenou směnu a směnu těsně
+  po skončení. Ukázat stav typu „Probíhá akce“ / „Doplňte odpracované hodiny“
+  a přímou akci pro snadný zápis nebo dokončení hodin ke správné směně.
+- [ ] Několik hodin po skončení směny připomenout doplnění odpracovaných hodin,
+  pokud je člen ještě nedoplnil nebo neodeslal. Přesný odstup a pravidla
+  rozpracovaného výkazu upřesnit při návrhu. Využít existující historii upozornění
+  a navázat na mobilní push po jeho zprovoznění; sjednotit s existujícími
+  připomínkami chybějících výkazů, aby se upozornění neduplikovala.
+- [ ] V Přehledu nebo snadno dostupné sekci zobrazovat osobní seznam
+  „Co mi zbývá udělat“: například doplnit/odeslat hodiny, opravit vrácený výkaz
+  nebo dokončit příslušný krok fakturace. Každá položka má vysvětlit další krok
+  a otevřít odpovídající formulář či detail. Dokončené položky ze seznamu zmizí
+  a vyřešené úkoly už nebudou vyvolávat připomínku.
+
+Zachycený uživatelský požadavek pro pozdější návrh a implementaci. Navázat na
+existující crew Přehled, zápis hodin a upozornění. Konkrétní vzhled, pořadí úkolů
+a zařazení do plánu dokončení zatím nejsou rozhodnuté.
+
 ## Doložené hotové části
 
 - [x] Supabase backend, skutečné přihlášení a role. Předpoklady „napojit backend“
